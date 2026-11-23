@@ -7,6 +7,7 @@
 //! notes a minute whatever the meter (docs/architecture.md 11, 22-1, 22-2).
 
 mod added;
+mod ai;
 mod audio;
 mod automation;
 mod export;
@@ -26,6 +27,7 @@ pub use added::{
     PluginKindView, PluginRole, PluginRowView, PluginState, PluginView, SamplePlaying, Sf2FileView,
     Sf2PresetView, SoundName, SoundRef, SoundSampleView, SoundView, StandIn,
 };
+pub use ai::{AiLinkView, AiPort};
 pub use audio::{
     AUDIO_EXTENSIONS, AudioClipState, AudioClipView, AudioJob, AudioJobKind, AudioWorkView,
     CLIP_CENTS_MAX, CLIP_GAIN_MAX_DB, CLIP_GAIN_MIN_DB, CLIP_SEMITONES_MAX, ClipField, DropMode,
@@ -64,7 +66,7 @@ pub use vocal::{
     VocalRef,
 };
 
-pub const PROTOCOL_VERSION: u32 = 28;
+pub const PROTOCOL_VERSION: u32 = 29;
 
 /// Screen → Rust. Intent only; Rust decides what the state becomes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -862,6 +864,14 @@ pub enum Command {
     SetOverdub {
         on: bool,
     },
+    /// 「AI とつなぐ」 in the advanced settings (`AiLinkView::on`): while on, meloet keeps a
+    /// socket open inside the PC, usable only by the same user, through which an AI app reads
+    /// the song and writes when asked (each write one step). Turning it off closes the socket
+    /// and cuts the AI apps connected. A meloet setting (settings.json), not part of the song,
+    /// and not a step.
+    SetAiLink {
+        on: bool,
+    },
     /// Mod Shift S and the file menu (B-59). Rust shows the PC's save window, titled
     /// "名前をつけて保存", with the song's name filled in. The folder `<name>/<name>.meloet` is made
     /// where the user chose, and the song takes that name. Cancelling the window changes
@@ -1196,6 +1206,16 @@ pub enum Command {
     CreateClip {
         track: u32,
         tick: u64,
+    },
+    /// 「ピアノロールでひらく」 of the right-click menu of a keys track's header: the track is
+    /// selected (as `SelectTrack`), the piano roll shows the clip of that track under the play
+    /// line (selected, as `SelectClip`) or, with none there, no clip (the hint 「ここにはクリップ
+    /// がありません。」; no clip of another track stays shown), and the piano roll band opens
+    /// (it stays open when it is open). Nothing happens on a vocal track. Not a step. While
+    /// counting in or recording the track is not selected, as with `SelectTrack`, and with no
+    /// clip under the play line the piano roll keeps what it shows.
+    OpenPianoRoll {
+        track: u32,
     },
     /// A value of a vocal clip, as one step: the end of a drag of the volume line or of a
     /// fade handle, a double click on the volume line (`GainDb` 0), and a value typed into
@@ -1676,6 +1696,7 @@ pub struct AppState {
     pub audio_work: AudioWorkView,
     pub export: ExportView,
     pub sounds: SoundsView,
+    pub ai_link: AiLinkView,
     pub status: StatusView,
 }
 
@@ -1743,6 +1764,9 @@ impl AppState {
         if old.sounds != new.sounds {
             out.push(Change::Sounds(new.sounds.clone()));
         }
+        if old.ai_link != new.ai_link {
+            out.push(Change::AiLink(new.ai_link));
+        }
         if old.status != new.status {
             out.push(Change::Status(new.status.clone()));
         }
@@ -1772,6 +1796,7 @@ impl AppState {
             Change::AudioWork(v) => self.audio_work = v,
             Change::Export(v) => self.export = v,
             Change::Sounds(v) => self.sounds = v,
+            Change::AiLink(v) => self.ai_link = v,
             Change::Status(v) => self.status = v,
         }
     }
@@ -3445,6 +3470,7 @@ pub enum Change {
     AudioWork(AudioWorkView),
     Export(ExportView),
     Sounds(SoundsView),
+    AiLink(AiLinkView),
     Status(StatusView),
 }
 
@@ -3575,3 +3601,5 @@ mod tests26;
 mod tests27;
 #[cfg(test)]
 mod tests28;
+#[cfg(test)]
+mod tests29;

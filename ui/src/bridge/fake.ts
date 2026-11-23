@@ -628,6 +628,7 @@ export function fakeState(): AppState {
     audioWork: { jobs: [] },
     export: { dialog: null, run: null },
     sounds: fakeSounds(),
+    aiLink: { on: false, port: "closed" },
     status: { message: NEW_SONG },
   };
 }
@@ -3422,6 +3423,19 @@ SCENES.packSettings = {
 };
 // Spec 6 「音の素材 ・ 新しい包み」: said once at a start.
 SCENES.packNew = packScene((s) => (s.sounds.newPackBytes = 12 * MB), { id: "newPack", bytes: 12 * MB });
+
+// ---- round 10 (protocol 29): the row 「AI とつなぐ」 of the advanced sound settings (P10-AiLink, option B) ----
+const aiLinkScene = (aiLink: AppState["aiLink"]): SceneDef => ({
+  setup(s) {
+    settingsAdv7(s);
+    s.aiLink = aiLink;
+  },
+  meters: QUIET,
+  scrollToEnd: true,
+});
+SCENES.aiLinkOff = aiLinkScene({ on: false, port: "closed" });
+SCENES.aiLinkWaiting = aiLinkScene({ on: true, port: "waiting" });
+SCENES.aiLinkConnected = aiLinkScene({ on: true, port: "connected" });
 
 // F8-MultiClip: the two clips of "6 歌" and one of "7 歌 2" selected; their volumes differ.
 SCENES.multiClip = {

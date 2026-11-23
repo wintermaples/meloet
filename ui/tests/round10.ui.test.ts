@@ -344,16 +344,11 @@ describe("トラックの見出しの「ピアノロールでひらく」（第 
     app.sent.length = 0;
     row.run();
   };
-  it("再生の線にクリップがあれば、そのクリップを選んでひらく", () => {
-    open(song([], null, (s) => (s.transport.position = 5 * BAR)));
-    expect(app.sent).toEqual([
-      { type: "selectClip", clip: 3 },
-      { type: "toggleBand", band: "pianoRoll" },
-    ]);
-  });
-  it("クリップがなければ、ひらくだけ（トラックは右クリックで選んである）", () => {
-    open(song([], null, (s) => (s.transport.position = 9.5 * BAR)));
-    expect(app.sent).toEqual([{ type: "toggleBand", band: "pianoRoll" }]);
+  it("意図を 1 つ送る（どのクリップを見せるかは core が決める）", () => {
+    for (const at of [5 * BAR, 9.5 * BAR]) {
+      open(song([], null, (s) => (s.transport.position = at)));
+      expect(app.sent).toEqual([{ type: "openPianoRoll", track: 1 }]);
+    }
   });
   it("歌のトラックには出さない", () => {
     show(Arrange, song());

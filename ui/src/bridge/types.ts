@@ -1,4 +1,6 @@
 // The protocol types, written from crates/meloet-protocol by `cargo test -p meloet-protocol`.
+export type { AiLinkView } from "./generated/AiLinkView";
+export type { AiPort } from "./generated/AiPort";
 export type { AppState } from "./generated/AppState";
 export type { ArrangeView } from "./generated/ArrangeView";
 export type { AudioView } from "./generated/AudioView";

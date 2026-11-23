@@ -1,6 +1,7 @@
 //! The pure rules: an input comes in, the state changes, and a list of things to do comes back.
 //! Nothing here touches a device, a file or a thread.
 
+mod ai;
 mod audio;
 mod buttons;
 mod export;
@@ -283,6 +284,8 @@ pub enum Input {
     },
     /// The answer to [`Effect::PickAudio`]; empty when the window was put away.
     AudioPicked(Vec<PathBuf>),
+    /// From the AI socket's thread: what the port is doing now. Nothing sends it yet.
+    AiPort(meloet_protocol::AiPort),
     /// From the thread that reads audio files in: the answers to [`Effect::BringAudio`],
     /// [`Effect::WatchAudio`] and [`Effect::FindAudio`].
     Audio(AudioNews),
@@ -689,6 +692,7 @@ pub struct Model {
     audio: audio::AudioSide,
     export: crate::export::Exporting,
     pack: pack::PackSide,
+    ai: ai::AiSide,
 }
 
 /// Audio files let go of over the window (`Model::pending_drop`).
@@ -804,6 +808,7 @@ impl Model {
             audio: audio::AudioSide::default(),
             export: crate::export::Exporting::default(),
             pack: pack::PackSide::new(settings.pack_fetch),
+            ai: ai::AiSide::new(settings.ai_link),
         }
     }
 
@@ -1192,6 +1197,7 @@ impl Model {
             Input::Export(news) => self.export_news(news),
             Input::Pack(news) => self.pack_news(news, &mut effects),
             Input::ScreenUp => self.pack_screen_up(&mut effects),
+            Input::AiPort(port) => self.ai.port_said(port),
         }
         self.settle_export(&mut effects);
         if !self.play.is_moving() {
@@ -1682,6 +1688,13 @@ impl Model {
                     self.toggle_band(Band::PianoRoll);
                 }
             }
+            Command::OpenPianoRoll { track } => {
+                if self.play.open_piano_roll(track)
+                    && !self.bands.bottom_is_open(BottomBand::PianoRoll)
+                {
+                    self.toggle_band(Band::PianoRoll);
+                }
+            }
             Command::SetClipField { clip, field, value } => {
                 if let Some(n) = self.play.set_clip_field(clip, field, value, effects) {
                     self.notice = Some(n);
@@ -1749,6 +1762,11 @@ impl Model {
             Command::SetOverdub { on } => {
                 if self.play.overdub() != on {
                     self.play.set_overdub(on);
+                    effects.push(Effect::SaveSettings(self.settings()));
+                }
+            }
+            Command::SetAiLink { on } => {
+                if self.ai.set(on) {
                     effects.push(Effect::SaveSettings(self.settings()));
                 }
             }
@@ -2421,6 +2439,7 @@ impl Model {
             velocity_fixed: self.velocity_fixed.on,
             fixed_velocity: self.velocity_fixed.value,
             overdub: self.play.overdub(),
+            ai_link: self.ai.on,
             favorites: self.favorites.clone(),
             plugin_places: self.plugins.added_places().to_vec(),
             shelf: self.catalog.settings().clone(),
@@ -2633,6 +2652,7 @@ impl Model {
             audio_work: self.play.audio_work_view(),
             export: self.export_view(),
             sounds: self.sounds_view(),
+            ai_link: self.ai.view(),
             status: StatusView { message: status },
         }
     }

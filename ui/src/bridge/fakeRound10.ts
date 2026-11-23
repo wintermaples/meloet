@@ -1,5 +1,6 @@
-// The fake's side of protocol 28 (round 10): clip names, cutting a clip at a place, joining clips, an empty clip
-// made in the arrange, a marker at a place, overdub and the chord stamp. Each changes the fake's song as Rust does
+// The fake's side of protocols 28 and 29 (round 10): clip names, cutting a clip at a place, joining clips, an empty
+// clip made in the arrange, a marker at a place, overdub, the chord stamp, 「ピアノロールでひらく」 of a track's header
+// and the switch 「AI とつなぐ」. Each changes the fake's song as Rust does
 // and gives the row of the history band; the fake has no undo. The scenes are in fake.ts.
 
 import type { FakeBands, FakeState, FakeTake } from "./fake";
@@ -26,6 +27,7 @@ export function reduceRound10(
   const timeline = structuredClone(state.timeline);
   const transport = structuredClone(state.transport);
   const workspace = structuredClone(state.workspace);
+  const aiLink = structuredClone(state.aiLink);
   const map = new TempoMap(state.timeline);
   const busy = state.transport.state === "recording" || state.transport.state === "countIn";
   const nothing = { changes: [], row: null };
@@ -146,6 +148,33 @@ export function reduceRound10(
     case "setOverdub":
       transport.overdub = command.on;
       break;
+    case "setAiLink":
+      // The fake has no socket: on is 「待っています」 (the scene aiLinkConnected shows the third state).
+      aiLink.on = command.on;
+      aiLink.port = command.on ? "waiting" : "closed";
+      break;
+    case "openPianoRoll": {
+      const track = song.tracks.find((t) => t.id === command.track);
+      if (!track || track.kind.kind === "vocal") return nothing;
+      const at = transport.position;
+      const clip = track.clips.find((c) => c.start <= at && at < c.end) ?? null;
+      if (!busy) {
+        song.playTarget = track.id;
+        song.keysTarget = track.id;
+      }
+      if (clip) show(clip);
+      else if (!busy) {
+        arrange.selectedClips = [];
+        arrange.selectedClip = null;
+        arrange.pianoRollClip = null;
+        Object.assign(pianoRoll, { take: null, selectedNotes: [], selectedControls: [] });
+      }
+      if (!bands.bottom.includes("pianoRoll")) {
+        bands.toggle("pianoRoll");
+        workspace.layout = bands.layout();
+      }
+      break;
+    }
     case "addNotes": {
       const keys = [...new Set(command.keys)].filter((k) => k <= 127);
       if (busy || keys.length === 0) return nothing;
@@ -217,6 +246,7 @@ export function reduceRound10(
   if (changed(timeline, state.timeline)) changes.push({ section: "timeline", value: timeline });
   if (changed(transport, state.transport)) changes.push({ section: "transport", value: transport });
   if (changed(workspace, state.workspace)) changes.push({ section: "workspace", value: workspace });
+  if (changed(aiLink, state.aiLink)) changes.push({ section: "aiLink", value: aiLink });
   if (message) changes.push({ section: "status", value: { message } });
   return { changes, row: made };
 }

@@ -35,6 +35,9 @@ rubato = { version = "=5.1.0", default-features = false, features = ["fft_resamp
 flacenc = { version = "=0.5.1", default-features = false }
 # The true peak of an export's check (ITU-R BS.1770 4× oversampling), on the export's thread.
 ebur128 = { version = "=0.1.11", default-features = false }
+# 「曲の情報」 of an export: Vorbis comments in flac, RIFF INFO in wav. With its default feature
+# (flate2): 0.25.5 does not build without it.
+lofty = { version = "=0.25.5" }
 
 [dev-dependencies]
 # The tests reach the hooks above (MELOET_INPUT_SINK_MONITOR, the measurements).

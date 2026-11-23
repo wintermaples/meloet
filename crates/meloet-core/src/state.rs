@@ -2986,7 +2986,14 @@ impl Model {
             return Some(StatusMessage::SettingsOpen);
         }
         if self.export.dialog_open() {
-            return Some(StatusMessage::ExportDialogOpen);
+            // A picture chosen for 「絵」 that cannot be used is said over the open dialog.
+            return match &self.notice {
+                Some(
+                    m @ (StatusMessage::ExportPictureTooLarge { .. }
+                    | StatusMessage::ExportPictureUnreadable { .. }),
+                ) => Some(m.clone()),
+                _ => Some(StatusMessage::ExportDialogOpen),
+            };
         }
         if self.plugins.stopped_open() {
             // What "もう一度ためす" came to is said over the open dialog.

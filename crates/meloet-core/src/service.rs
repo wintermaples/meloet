@@ -215,6 +215,9 @@ pub enum ShellRequest {
         name: String,
         folder_only: bool,
     },
+    /// The PC's open window for a png or a jpg, the picture of an export's 「曲の情報」
+    /// (round 12 F2), starting in `folder`. Answer with [`Core::export_picture_picked`].
+    PickExportPicture { folder: Option<PathBuf> },
     /// Open this address (`https://` only) in the PC's browser (round 12, G1 and D1).
     OpenUrl { url: String },
     /// Open this file with the PC's own app for it (round 12, E9 「PC のプレーヤーで聞く」).
@@ -824,6 +827,34 @@ impl Core {
     pub fn export_place_picked(&self, path: Option<PathBuf>) {
         let news = crate::export::ExportNews::PlacePicked(path);
         let _ = self.tx.send(Msg::Input(Input::Export(news), None));
+    }
+
+    /// The answer to [`ShellRequest::PickExportPicture`]. Does not wait: the picture is read
+    /// on a thread of its own.
+    pub fn export_picture_picked(&self, path: Option<PathBuf>) {
+        let tx = self.tx.clone();
+        let tell = move |picked| {
+            let news = crate::export::ExportNews::PicturePicked(picked);
+            let _ = tx.send(Msg::Input(Input::Export(news), None));
+        };
+        let Some(path) = path else {
+            tell(None);
+            return;
+        };
+        let read = std::thread::Builder::new()
+            .name("meloet-picture".into())
+            .spawn({
+                let (tell, path) = (tell.clone(), path.clone());
+                move || {
+                    let read = crate::export::tags::read_picture(&path);
+                    tell(Some((path, read)));
+                }
+            });
+        if let Err(e) = read {
+            eprintln!("meloet: cannot start reading the picture: {e}");
+            let unread = Err(crate::export::tags::PictureProblem::Unreadable);
+            tell(Some((path, unread)));
+        }
     }
 
     /// From this call on, every patch reaches `messages` in rev order: a snapshot taken after

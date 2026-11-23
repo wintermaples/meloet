@@ -369,6 +369,10 @@ fn an_export_runs_in_the_status_line_and_ends() {
                 sample_rate: 48_000,
                 bits: RecordFormat::Bits24,
                 loudness: ExportLoudness::AsIs,
+                info: super::tags::SongInfo {
+                    title: name.clone(),
+                    ..Default::default()
+                },
             },
         }]
     );

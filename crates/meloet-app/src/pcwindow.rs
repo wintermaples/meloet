@@ -43,10 +43,14 @@ pub enum Pick {
     },
     /// The folder window again, for where the files of 「トラックごと」 go.
     ExportFolder,
+    /// The open window again, for the picture of an export's 「曲の情報」 (round 12 F2).
+    Picture,
 }
 
 /// The ending of the files the SF2 window offers.
 const SF2_EXTENSION: &str = "sf2";
+/// The endings of the pictures the window for 「絵」 offers (png or jpg; the file's bytes decide).
+const PICTURE_EXTENSIONS: [&str; 3] = ["png", "jpg", "jpeg"];
 
 /// The patterns of a filter that takes files with these endings, in small and in capital
 /// letters.
@@ -66,8 +70,8 @@ mod imp {
     use tauri::WebviewWindow;
 
     use super::{
-        EXPORT_FOLDER_TITLE, EXPORT_TITLE, FOLDER_TITLE, OPEN_TITLE, Pick, SAVE_AS_TITLE,
-        SF2_EXTENSION, patterns,
+        EXPORT_FOLDER_TITLE, EXPORT_TITLE, FOLDER_TITLE, OPEN_TITLE, PICTURE_EXTENSIONS, Pick,
+        SAVE_AS_TITLE, SF2_EXTENSION, patterns,
     };
 
     thread_local! {
@@ -84,7 +88,7 @@ mod imp {
         answer: impl FnOnce(Vec<PathBuf>) + 'static,
     ) {
         let (title, action) = match pick {
-            Pick::SongFile | Pick::Sf2 | Pick::Audio { .. } => {
+            Pick::SongFile | Pick::Sf2 | Pick::Audio { .. } | Pick::Picture => {
                 (OPEN_TITLE, gtk::FileChooserAction::Open)
             }
             Pick::Folder | Pick::PluginPlace => {
@@ -135,6 +139,16 @@ mod imp {
             filter.set_name(Some(&endings.map(|e| format!("*.{e}")).join(" ")));
             dialog.add_filter(filter);
             dialog.set_select_multiple(many);
+        }
+        if pick == Pick::Picture {
+            let filter = gtk::FileFilter::new();
+            for pattern in patterns(&PICTURE_EXTENSIONS) {
+                filter.add_pattern(&pattern);
+            }
+            filter.set_name(Some(
+                &PICTURE_EXTENSIONS.map(|e| format!("*.{e}")).join(" "),
+            ));
+            dialog.add_filter(filter);
         }
         let answer = RefCell::new(Some(answer));
         dialog.connect_response(move |dialog, response| {

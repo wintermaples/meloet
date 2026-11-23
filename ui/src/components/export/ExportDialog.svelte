@@ -23,6 +23,10 @@
     ["match", "export.loudnessMatch"],
   ];
   const TAILS: ExportTail[] = ["untilSilent", "off"];
+  const TEXT_FIELDS: ["title" | "artist", TextKey][] = [
+    ["title", "export.songTitle"],
+    ["artist", "export.artist"],
+  ];
 
   const app = $derived(current.state);
   const dialog = $derived<ExportDialogView | null>(exportShown.current?.dialog ?? null);
@@ -80,6 +84,23 @@
       checked: tail === d.tail,
       run: () => set({ kind: "tail", tail }),
     }));
+
+  // 「題名」 and 「作者」 (round 12 F2): what is typed stays on the screen and is sent once, when the box is left or Enter is pressed. Esc puts back what Rust has.
+  let drafts = $state<{ title: string | null; artist: string | null }>({ title: null, artist: null });
+  function commitText(field: "title" | "artist"): void {
+    const typed = drafts[field];
+    drafts[field] = null;
+    if (typed === null || !dialog || typed === dialog[field]) return;
+    set(field === "title" ? { kind: "title", title: typed } : { kind: "artist", artist: typed });
+  }
+  function textKey(e: KeyboardEvent, field: "title" | "artist"): void {
+    if (e.isComposing) return;
+    if (e.key !== "Enter" && e.key !== "Escape") return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.key === "Escape") drafts[field] = null;
+    (e.currentTarget as HTMLInputElement).blur();
+  }
 </script>
 
 {#snippet dropdown(label: string, test: string, open: (e: MouseEvent) => void)}
@@ -223,6 +244,35 @@
                 <span class="mark" class:on={dialog.realtime}><span class="dot"></span></span>
                 <span>{t("export.realtime")}</span>
               </button>
+            </div>
+            <!-- 「曲の情報」 (round 12 F2): a wav holds no picture, so its row is there but cannot be used. -->
+            <div class="sub label" data-test="export-song-info">{t("export.songInfo")}</div>
+            {#each TEXT_FIELDS as [field, name] (field)}
+              <div class="row">
+                <span class="strong name">{t(name)}</span>
+                <input
+                  class="text"
+                  type="text"
+                  aria-label={t(name)}
+                  data-test="export-{field}"
+                  value={drafts[field] ?? dialog[field]}
+                  oninput={(e) => (drafts[field] = e.currentTarget.value)}
+                  onkeydown={(e) => textKey(e, field)}
+                  onblur={() => commitText(field)}
+                />
+              </div>
+            {/each}
+            <div class="row" class:off={!dialog.pictureUsable} data-test="export-picture-row">
+              <span class="strong name">{t("export.picture")}</span>
+              <span class="grow picture" class:label={dialog.picture === null} data-test="export-picture">{dialog.picture ?? t("export.noPicture")}</span>
+              {#if dialog.picture !== null}
+                <Button test="export-remove-picture" disabled={!dialog.pictureUsable} onclick={() => set({ kind: "removePicture" })}
+                  >{t("export.removePicture")}</Button
+                >
+              {/if}
+              <Button test="export-choose-picture" disabled={!dialog.pictureUsable} onclick={() => set({ kind: "choosePicture" })}
+                >{t("export.choosePicture")}</Button
+              >
             </div>
           </div>
         {/if}
@@ -446,6 +496,34 @@
   }
   .row:last-child {
     border-bottom: 0;
+  }
+  /* 「曲の情報」 over its rows, as the name of a part of the dialog. */
+  .sub {
+    padding: var(--space-3) 0 var(--space-1);
+  }
+  .text {
+    flex: 1;
+    min-width: 0;
+    height: var(--part-input-height);
+    padding: 0 var(--part-input-pad-x);
+    background: var(--color-gray-0);
+    border: var(--line-hair) solid var(--color-gray-6);
+    border-radius: var(--radius-1);
+    color: var(--color-gray-10);
+    font: inherit;
+    outline: none;
+  }
+  .text:focus {
+    border-color: var(--color-gray-8);
+  }
+  .picture {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .row.off .name,
+  .row.off .picture {
+    color: var(--color-gray-7);
   }
   .name {
     flex-shrink: 0;

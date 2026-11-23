@@ -419,11 +419,11 @@ In the "Basis" column: "spec 3" is chapter 3 of this spec; "mock Main" is a mock
 
 | Where | Rule | Basis |
 |---|---|---|
-| 「重ねる」 while recording | Stays accent (the ● is rec), as in P10-Overdub. No key and no row in the menu bar for now. When the window is narrow, it hides before 「ループ」. | the developers' decision |
+| 「重ねる」 while recording | Stays accent (the ● is rec), as in P10-Overdub. No key and no row in the menu bar for now. When the transport is narrow, the other folding parts fold first and 「重ねる」 hides last (`transportWithOverdub` in `ui/src/components/fit.ts`). | the developers' decision |
 | Overdub where no clip is | Recording starts a new clip, as without 「重ねる」. The take tag of the piano roll does not change. | the developers' decision |
 | The chord stamp | The shadow before pressing is a 1px accent border. The list shows the notes of each shape with C as the root. Shape names are the usual symbols (7, M7, m7, sus4, dim, aug). Changing to another tool keeps the shape. No key for now. | the developers' decision |
 | The chord table | Pressing a chord and then a row with the draw tool puts the chord with its root on the nearest row of that note name. Degrees (Ⅰ, Ⅱm …) are not shown. In a minor key the list starts from the tonic (Am, Bdim, C, Dm, Em, F, G). The table chord and the stamp shape share one choice: the last one chosen. A chord sounds while it is pressed. | the developers' decision |
-| The clip name box | It may be wider than a narrow clip, up to 120. It fills the name strip. In the params panel, the 「選んだクリップ」 label is hidden while typing. | the developers' decision (P10-ClipName) |
+| The clip name box | It fills the name strip and grows to the right with a long name (spec 1 has no name for the 120 of the mock). Pressing outside decides, the same as the track name box. In the params panel, the 「選んだクリップ」 label is hidden while typing. | the developers' decision (P10-ClipName) |
 | Joining with another clip between | When a clip that is not chosen lies between the chosen ones, nothing is joined, and the rows 「つなげる」 and 「クリップをつなげる」 are disabled. | the developers' decision |
 | Notes hidden by a shortened clip, when joining | Only the notes inside each clip's range are joined; a note that goes past a clip's end is cut there. | the developers' decision |
 | 「AI とつなぐ」 | No status line text and no 「切る」 button: turning it off closes the port and cuts the AI. How to set up the AI app (starting `meloet-mcp`) is told in the user guide, not on this screen. Remembered as a meloet setting, not in the song. | the developers' decision |

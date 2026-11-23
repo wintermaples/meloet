@@ -71,7 +71,24 @@ export const FACTORY_PRESETS: { readonly [K in EffectKind]: readonly FactoryPres
       ]
     }
   ],
-  "deEsser": [],
+  "deEsser": [
+    {
+      "id": "softS",
+      "values": [
+        6500.0,
+        -32.0,
+        6.0
+      ]
+    },
+    {
+      "id": "firmS",
+      "values": [
+        5500.0,
+        -38.0,
+        12.0
+      ]
+    }
+  ],
   "delay": [
     {
       "id": "echo",
@@ -175,7 +192,24 @@ export const FACTORY_PRESETS: { readonly [K in EffectKind]: readonly FactoryPres
       ]
     }
   ],
-  "gate": [],
+  "gate": [
+    {
+      "id": "noiseOff",
+      "values": [
+        -50.0,
+        -60.0,
+        250.0
+      ]
+    },
+    {
+      "id": "shortTail",
+      "values": [
+        -30.0,
+        -24.0,
+        80.0
+      ]
+    }
+  ],
   "limiter": [
     {
       "id": "finish",
@@ -232,5 +266,24 @@ export const FACTORY_PRESETS: { readonly [K in EffectKind]: readonly FactoryPres
       ]
     }
   ],
-  "saturation": []
+  "saturation": [
+    {
+      "id": "warm",
+      "values": [
+        4.0,
+        9000.0,
+        100.0,
+        0.0
+      ]
+    },
+    {
+      "id": "rough",
+      "values": [
+        20.0,
+        6000.0,
+        70.0,
+        0.0
+      ]
+    }
+  ]
 };

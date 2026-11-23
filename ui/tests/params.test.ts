@@ -270,6 +270,36 @@ describe("params panel (mock F4-Mixer)", () => {
   });
 });
 
+describe("gate, de-esser and saturation (round 12 M6)", () => {
+  it("the names, the rows and the values as they are new", () => {
+    const rows = () => qa("[data-test=param-row]").map(text);
+    show(RightRail, scene("paramsGate"));
+    expect(text(q("[data-test=params] .who"))).toContain("ゲート");
+    expect(text(q("[data-test=params-count]"))).toBe("3 / 3");
+    expect(qa("[data-test=param-value]").map(text)).toEqual(["−45.0 dB", "−60.0 dB", "120 ms"]);
+    expect(rows().join(" ")).toMatch(/しきい値.*下げる量.*戻る速さ/);
+    unmount(mounted!);
+    show(RightRail, scene("paramsDeEsser"));
+    expect(text(q("[data-test=params] .who"))).toContain("ディエッサー");
+    expect(qa("[data-test=param-value]").map(text)).toEqual(["6500 Hz", "−30.0 dB", "8.0 dB"]);
+    expect(rows().join(" ")).toMatch(/周波数.*しきい値.*下げる量/);
+    unmount(mounted!);
+    show(RightRail, scene("paramsSaturation"));
+    expect(text(q("[data-test=params] .who"))).toContain("サチュレーション");
+    expect(qa("[data-test=param-value]").map(text)).toEqual(["6.0 dB", "20000 Hz", "100 %", "0.0 dB"]);
+    expect(rows().join(" ")).toMatch(/ひずみ.*明るさ.*まぜる量.*出る大きさ/);
+  });
+
+  it("values are written like the other effects' (dB one place, Hz and ms none, 「+」 where the range goes below zero)", () => {
+    expect(valueText("gate", spec("gate", "range"), -12)).toBe("−12.0 dB");
+    expect(valueText("gate", spec("gate", "release"), 5)).toBe("5 ms");
+    expect(valueText("deEsser", spec("deEsser", "reduction"), 18)).toBe("18.0 dB");
+    expect(valueText("saturation", spec("saturation", "output"), 6)).toBe("+6.0 dB");
+    expect(valueText("saturation", spec("saturation", "drive"), 36)).toBe("36.0 dB");
+    expect(valueText("saturation", spec("saturation", "tone"), 1000)).toBe("1000 Hz");
+  });
+});
+
 describe("delay (mock R6-Delay)", () => {
   it("interval is steps (◂ 5 squares ▸), tempo sync is on, ping-pong is off", () => {
     show(RightRail, scene("paramsDelay"));

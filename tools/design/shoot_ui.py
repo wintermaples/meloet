@@ -273,11 +273,15 @@ BOARDS = {
     "exportFailed": None,
     # Round 12 R3: the metronome ▾ window (the mock is in docs/history/round12-spec.ja.html, not a board).
     "metronomeWindow": None,
-    # Round 12 M1: 「プリセット ▾」, its list, the name box; a gate with no preset of its own (the mock is in the spec).
+    # Round 12 M1: 「プリセット ▾」, its list, the name box; a gate whose values are not a preset's (the mock is in the spec).
     "presets": None,
     "presetsMenu": None,
     "presetsSaving": None,
     "presetsNone": None,
+    # Round 12 M6: the parameters of the gate, the de-esser and the saturation (no mock).
+    "paramsGate": None,
+    "paramsDeEsser": None,
+    "paramsSaturation": None,
 }
 # Double-clicks the Vel cell of a row of the note list and types into the field (R3-Lanes: "96|" and "200").
 TYPE_KEY_FILTER = """
@@ -790,6 +794,9 @@ ONLY = {
     "presetsMenu": [(1280, 800, 100), (1280, 800, 150)],
     "presetsSaving": [(1280, 800, 100)],
     "presetsNone": [(1280, 800, 100)],
+    "paramsGate": [(1280, 800, 100)],
+    "paramsDeEsser": [(1280, 800, 100)],
+    "paramsSaturation": [(1280, 800, 100)],
 }
 scenes = args[1:] or list(BOARDS)
 

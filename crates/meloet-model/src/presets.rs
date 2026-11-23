@@ -35,7 +35,9 @@ pub fn factory(kind: EffectKind) -> &'static [FactoryPreset] {
         EffectKind::Delay => &DELAY,
         EffectKind::Chorus => &CHORUS,
         EffectKind::Limiter => &LIMITER,
-        EffectKind::Gate | EffectKind::DeEsser | EffectKind::Saturation => &[],
+        EffectKind::Gate => &GATE,
+        EffectKind::DeEsser => &DE_ESSER,
+        EffectKind::Saturation => &SATURATION,
     }
 }
 
@@ -266,6 +268,57 @@ const LIMITER: [FactoryPreset; 2] = [
     ),
 ];
 
+const GATE: [FactoryPreset; 2] = [
+    preset(
+        "noiseOff",
+        &[("threshold", -50.0), ("range", -60.0), ("release", 250.0)],
+    ),
+    preset(
+        "shortTail",
+        &[("threshold", -30.0), ("range", -24.0), ("release", 80.0)],
+    ),
+];
+
+const DE_ESSER: [FactoryPreset; 2] = [
+    preset(
+        "softS",
+        &[
+            ("frequency", 6500.0),
+            ("threshold", -32.0),
+            ("reduction", 6.0),
+        ],
+    ),
+    preset(
+        "firmS",
+        &[
+            ("frequency", 5500.0),
+            ("threshold", -38.0),
+            ("reduction", 12.0),
+        ],
+    ),
+];
+
+const SATURATION: [FactoryPreset; 2] = [
+    preset(
+        "warm",
+        &[
+            ("drive", 4.0),
+            ("tone", 9000.0),
+            ("mix", 100.0),
+            ("output", 0.0),
+        ],
+    ),
+    preset(
+        "rough",
+        &[
+            ("drive", 20.0),
+            ("tone", 6000.0),
+            ("mix", 70.0),
+            ("output", 0.0),
+        ],
+    ),
+];
+
 pub fn find(kind: EffectKind, id: &str) -> Option<&'static FactoryPreset> {
     factory(kind).iter().find(|p| p.id == id)
 }
@@ -304,7 +357,7 @@ mod tests {
 
     #[test]
     fn the_spec_counts_and_every_parameter_named_but_the_one_left_as_is() {
-        let counts = [4, 4, 3, 3, 2, 2, 0, 0, 0];
+        let counts = [4, 4, 3, 3, 2, 2, 2, 2, 2];
         for (kind, count) in EffectKind::ALL.into_iter().zip(counts) {
             assert_eq!(factory(kind).len(), count, "{}", kind.name());
             for preset in factory(kind) {

@@ -12,6 +12,7 @@
   import AutoClock from "./components/automation/AutoClock.svelte";
   import BandRow from "./components/BandRow.svelte";
   import ExportDialog from "./components/export/ExportDialog.svelte";
+  import ExportedDialog from "./components/export/ExportedDialog.svelte";
   import FileDropNotice from "./components/FileDropNotice.svelte";
   import InputMeter from "./components/InputMeter.svelte";
   import LatencyDialog from "./components/LatencyDialog.svelte";
@@ -105,6 +106,11 @@
   {#if state.export.dialog}
     <div class="dialog">
       <ExportDialog />
+    </div>
+  {/if}
+  {#if state.export.run?.state === "done"}
+    <div class="dialog">
+      <ExportedDialog run={state.export.run} />
     </div>
   {/if}
   {#if about.open}

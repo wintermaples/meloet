@@ -49,6 +49,10 @@ impl Model {
             effects.push(Effect::ShowFile(path.to_path_buf()));
             return;
         }
+        if let (Command::PlayExported, Some(path)) = (command, self.export.played()) {
+            effects.push(Effect::OpenFile(path.to_path_buf()));
+            return;
+        }
         let mut export = std::mem::take(&mut self.export);
         let mut asks = Vec::new();
         export.command(command, &self.export_scene(), &mut asks);

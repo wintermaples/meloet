@@ -2,6 +2,7 @@
 // Menu bar rows that have a key also go through runKeyAction here (so the choice between the piano roll and the arrange is made in one place).
 import type { AppState, Command } from "../bridge";
 import { aboutBack } from "../components/about/about.svelte";
+import { exportedOpen } from "../components/export/exported";
 import { keyListBack } from "../components/keylist/keyList.svelte";
 import { closeContextMenu } from "../components/menu/contextMenu.svelte";
 import { closeMenuBar, openMenuBar } from "../components/menu/menuBar.svelte";
@@ -390,6 +391,7 @@ function historyKeys(state: AppState, doc: Document): boolean {
     ws.songDialog === null &&
     ws.settings === null &&
     state.export.dialog === null &&
+    exportedOpen(state) === null &&
     !state.plugins.stoppedOpen &&
     ws.layout.lower.some((l) => l.band === "history") &&
     historyFocused(doc)
@@ -488,6 +490,10 @@ export function handleKeydown(ev: KeyboardEvent, deps: KeyDeps): void {
       // The bright button on the right, 「書き出す」 (does nothing when it cannot be pressed).
       ev.preventDefault();
       if (state.export.dialog.canExport) deps.send({ type: "startExport" });
+    } else if (plainEnter && exportedOpen(state)) {
+      // 「書き出しました」: the bright button 「閉じる」 (round 12 E9).
+      ev.preventDefault();
+      deps.send({ type: "closeExport" });
     } else if (plainEnter && state.workspace.settings) {
       ev.preventDefault();
       deps.send({ type: "settingsApply" });
@@ -509,7 +515,7 @@ export function handleKeydown(ev: KeyboardEvent, deps: KeyDeps): void {
       deps.send(
         context === "history"
           ? { type: "toggleBand", band: "history" }
-          : state.export.dialog
+          : state.export.dialog || exportedOpen(state)
             ? { type: "closeExport" }
             : auditionToCancel(state)
               ? { type: "shelfCancel" }

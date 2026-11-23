@@ -22,6 +22,7 @@ import {
   CLIP_SEMITONES_MAX,
   EFFECT_PARAMS,
   EXPORT_FORMATS,
+  EXPORT_WAVE_BARS,
   INSTRUMENT_GROUPS,
   LATENCY_CLICKS,
   PROTOCOL_VERSION,
@@ -3472,12 +3473,34 @@ const EXPORTED_FILE = "はじめての曲.wav";
 SCENES.exporting = exportingScene({ state: "running", percent: 46, file: EXPORTED_FILE, remainingS: 40, realtime: false, realtimeForced: false, lengthS: 182 });
 // Spec 6 「実時間で書き出している」: 「速く書き出せないプラグインがあるので、実時間で書き出します（3:02）。」
 SCENES.exportingRealtime = exportingScene({ state: "running", percent: 12, file: EXPORTED_FILE, remainingS: 160, realtime: true, realtimeForced: true, lengthS: 182 });
-// Spec 6 「書き出した」 and 「書き出しが終わった」, with 「フォルダをひらく」.
+/** A made-up song for 「書き出しました」 (round 12 E9): a quiet start, two louder parts, and the tail dying away. */
+export function fakeExportWave(): number[] {
+  return Array.from({ length: EXPORT_WAVE_BARS }, (_, i) => {
+    const x = i / EXPORT_WAVE_BARS;
+    const shape = x < 0.1 ? 0.25 + x * 3 : x < 0.45 ? 0.62 : x < 0.55 ? 0.45 : x < 0.9 ? 0.85 : 0.85 * (1 - (x - 0.9) * 9);
+    const beat = 0.85 + 0.15 * Math.abs(Math.sin(i * 1.7));
+    return Math.max(0, Math.min(255, Math.round(255 * shape * beat)));
+  });
+}
+// Spec 6 「書き出した」 and 「書き出しが終わった」, with 「フォルダをひらく」; and the dialog 「書き出しました」 (round 12 E9).
 SCENES.exportDone = exportingScene({
   state: "done",
   file: EXPORTED_FILE,
   files: 1,
   place: `~/ミュージック/はじめての曲/${EXPORTED_FILE}`,
+  lengthS: 182,
+  sampleRate: 48000,
+  bits: "bits24",
+  wave: fakeExportWave(),
+  lufs: -14.0,
+  truePeakDb: -1.0,
+});
+// 「トラックごと」: 「5 つのファイル」, no waveform, no loudness, 「PC のプレーヤーで聞く」 off.
+SCENES.exportDoneTracks = exportingScene({
+  state: "done",
+  file: "ピアノ.wav",
+  files: 5,
+  place: "~/ミュージック/はじめての曲/",
   lengthS: 182,
   sampleRate: 48000,
   bits: "bits24",
@@ -3628,7 +3651,12 @@ export function reduceExport(state: AppState, command: Command): Change[] | null
       message = { id: "exportDialogOpen" };
       break;
     case "closeExport":
-      if (!view.dialog) return [];
+      // With no dialog, an ended run goes away (the dialog 「書き出しました」 closes), as any command makes it in core.
+      if (!view.dialog) {
+        if (!view.run || view.run.state === "running") return [];
+        view.run = null;
+        break;
+      }
       view.dialog = null;
       message = null;
       break;
@@ -3664,6 +3692,7 @@ export function reduceExport(state: AppState, command: Command): Change[] | null
     }
     case "chooseExportPlace":
     case "showExported":
+    case "playExported":
       return [];
     case "startExport": {
       const d = view.dialog;

@@ -521,6 +521,8 @@ pub enum Effect {
     ShowFile(PathBuf),
     /// Open this address (`https://`) in the PC's browser.
     OpenUrl(String),
+    /// Open this file with the PC's own app for it.
+    OpenFile(PathBuf),
     /// Look for a new version of meloet, off the core thread. Answer with
     /// [`Input::NewVersion`] when there is one.
     CheckUpdates,
@@ -1811,7 +1813,8 @@ impl Model {
             | Command::ChooseExportPlace
             | Command::StartExport
             | Command::CancelExport
-            | Command::ShowExported => self.export_command(&command, effects),
+            | Command::ShowExported
+            | Command::PlayExported => self.export_command(&command, effects),
             Command::ShiftClipGains { clips, by_db } => {
                 (self.play).set_clip_gains(&clips, ClipGains::By(by_db), effects);
             }
@@ -2289,8 +2292,6 @@ impl Model {
             Command::AddNotesAt { take, notes } => {
                 self.notice = self.play.add_notes_at(take, &notes, effects);
             }
-            // round12 stub: E9
-            Command::PlayExported => {}
             Command::DuplicateTrack { track } => {
                 if let Some(n) = self.play.duplicate_track(track, effects) {
                     self.notice = Some(n);

@@ -302,6 +302,7 @@ it("every dialog's heading row has the move pointer, and bg gray.4 on hover", ()
     "../src/components/SongDialog.svelte",
     "../src/components/about/AboutDialog.svelte",
     "../src/components/export/ExportDialog.svelte",
+    "../src/components/export/ExportedDialog.svelte",
     "../src/components/keylist/KeyListDialog.svelte",
     "../src/components/plugins/ScanStoppedDialog.svelte",
   ]);

@@ -33,7 +33,7 @@
   const settings = $derived(app?.workspace.settings ?? null);
   const advanced = $derived(settings?.advancedOpen ?? false);
   const scale = $derived((app?.workspace.scale ?? 100) as Scale);
-  const meterGap = $derived(space["space.1"][scale === 100 ? 0 : scale === 125 ? 1 : 2]);
+  const meterGap = $derived(space["space.1"][scale === 100 ? 0 : 1]);
 
   const groups = $derived(endpointGroups(app?.outputs.list ?? []));
   const notUsed: EndpointLook = { name: t("settings.notUsed"), side: null, link: null };

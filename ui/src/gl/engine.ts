@@ -292,7 +292,7 @@ export class Engine {
     this.invalidate();
   }
 
-  /** The app's scale (100, 125 or 150). */
+  /** The app's scale (100 or 125). */
   setScale(scale: number): void {
     this.scale = (SCALES as readonly number[]).includes(scale) ? (scale as Scale) : 100;
     this.touch(null);

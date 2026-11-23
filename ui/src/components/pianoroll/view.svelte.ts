@@ -46,7 +46,7 @@ export const prView = $state({
   drums: false,
 });
 
-/** CSS px per tick at scale (100, 125, 150). */
+/** CSS px per tick at scale (100, 125). */
 export function pxPerTick(scale: number): number {
   return (prView.quarterPx * scale) / 100 / TICKS_PER_QUARTER;
 }

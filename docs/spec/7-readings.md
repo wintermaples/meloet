@@ -18,7 +18,7 @@ In the "Basis" column: "spec 3" is chapter 3 of this spec; "mock Main" is a mock
 | Where | Reading | Basis |
 |---|---|---|
 | Example values inside the texts of spec 6 (「鍵盤 49」「ヘッドホン」「1024」「256」「53」「13.5」「1」「7」, and so on) | They are holes for the real values. The text around them is not changed by even one character. A test puts the example values of the spec into the holes and checks that the result is the spec text | the developers' reading |
-| 「rec の 2px」 (the clipping mark of a meter) | A small size inside a part: multiplied by the scale and rounded (2 / 3 / 3) | spec 1 |
+| 「rec の 2px」 (the clipping mark of a meter) | A small size inside a part: multiplied by the scale and rounded (2 / 3) | spec 1 |
 | 「最後に弾いた鍵盤」 (the keyboard played last) | Counted only when a key is pressed (NoteOn). Pedals and wheels do not change it. Before anything is played, it is the keyboard plugged in last | the developers' reading |
 | 「同じ装置の中で PC が切りかえる穴」 and 「PC の設定で止まっている出口」 | If the output has a node and the PC is using another jack of the same device, it is the first kind. If it has no node, it is the second kind (even when another jack of the same device has a node) | the developers' reading |
 | The right of the heading of outputs that cannot be chosen (「PC が切りかえる物 1 ・ PC の設定で止まっている物 7」) | The counts are the real numbers. A kind with none is shown as 0 | the developers' reading |
@@ -34,7 +34,7 @@ In the "Basis" column: "spec 3" is chapter 3 of this spec; "mock Main" is a mock
 | Place of the 「いまは使えない入口」 heading | In the sound settings, in 「歌の入口」, under the 「いまの大きさ」 row (the same order as the heading of the outputs). No text on its right | the developers' decision |
 | Outputs with the same name | Compared only among the outputs that can be chosen. The device name goes in the friendly-name column. When the device name is not known, the friendly name stays | the developers' decision |
 | Two or more keyboards | The rule that widens the name field for a name over 8 characters counts the whole 「名前 +N」. Hovering shows all the names joined with 「 ・ 」. 「入口:」 on the status line shows the name of one keyboard only | the developers' decision |
-| Black keys with an even width (the thin keys at 125 % and 150 %) | They cannot sit on the middle of a line, so the extra 1 dot goes on the right | the developers' decision |
+| Black keys with an even width (the thin keys at 125 %) | They cannot sit on the middle of a line, so the extra 1 dot goes on the right | the developers' decision |
 | A lower band that does not fit even alone | Its lowest height is its toolbar, 32 | the developers' decision |
 
 ## A-4 Round 2 (recording, transport, arrange)
@@ -121,7 +121,7 @@ In the "Basis" column: "spec 3" is chapter 3 of this spec; "mock Main" is a mock
 |---|---|---|
 | Names in the menu bar | Text-only buttons (text.s, gray.9). space.1 inside at the left and right ends of the bar. Hover: text gray.10 | other text-only buttons, such as band tabs |
 | Place of the list | Its left edge lines up with the name, just below the menu bar | spec 2 |
-| Width of the list | 220. Only at 150 %, when a row does not fit its name and key (「名前をつけて保存… Ctrl Shift S」), wide enough to fit | the developers' reading |
+| Width of the list | 220. Only when a row does not fit its name and key (「名前をつけて保存… Ctrl Shift S」), wide enough to fit | the developers' reading |
 | A row with ▸ | ▸ (gray.8) in the place of the key. While its children are open, it looks the same as hover | the hover of list rows |
 | Place of the child list | To the right of the parent row (see A-10 for the gap and the top). If it does not fit in the window, to the left of the parent. If it goes out at the bottom, moved up | the developers' reading |
 | An on mark in a disabled row | Mark border gray.5, dot inside gray.7 | spec 2 (disabled) |
@@ -189,7 +189,7 @@ In the "Basis" column: "spec 3" is chapter 3 of this spec; "mock Main" is a mock
 | Draw tool for drums | One grid cell. Moving right while held does not change the length | spec 3 |
 | Where there is no clip | If the instrument of the selected track is a drum kit, the drum rows are shown | the developers' reading (drawing makes a clip on that track) |
 | Typing 「音」 for drums | Both piece names and note names are read. The piece name is shown | the developers' reading |
-| Third sentence of the F-Empty hint | 「トラックを増やすには左下の「＋ トラックを追加」」 is shown. It is not shown during recording and count-in | the hint rules of spec 3 |
+| Third sentence of the F-Empty hint | 「トラックを増やすには左下の「＋ 鍵盤のトラック」か「＋ 歌のトラック」」 is shown (the button names of spec 3, 93-1). It is not shown during recording and count-in | the hint rules of spec 3; the sentence user:2026-11-24 (B-96-2) |
 | Who holds 「meloet について」 | Only the screen (a read-only dialog that touches neither the song nor the sound). Esc comes after menus and before the core's back. While another dialog is open, the menu bar is disabled | the developers' reading |
 | Version | The version in `crates/meloet-app/Cargo.toml`. The mock's 「（例）」 is not shown | spec 3 (counted and put in at build time) |
 | Version on a component row | The full version (1.0.228), because a crate with the same name can be in with 2 versions | the developers' reading |
@@ -697,7 +697,7 @@ The rules are in spec 3, "Rules added in round 12"; how each is built is archite
 | Order, shapes | Notes sorted by pitch over all octaves, each once. 「上下」 does not say the top and bottom twice; 「ばらばら」 never says one note twice in a row (a fixed seed that runs on; it is recorded as notes). | the developers' decision |
 | Keys that come and go | The step count runs on; a change is heard from the next step. A short step before a bar line ends at the bar line. A rate change is taken at the next step of the new grid. A 17th key is left out. With hold, a key after all were let go replaces the chord. Octaves out of range are brought into 1..3. | the developers' decision |
 | The mixer strip | No free seat above 「音源」 was laid out, so 「アルペジオ」 is at the right end of the strip's heading, only while on, and can only turn it off; the track name is then cut to about one character on a 108 px strip (B-98-6). | the developers' decision |
-| The input meter | Takes left-over room before 「キーで弾く」; at 1280 × 800 at 150 % it is not shown and there is no other way to turn the arpeggio on (B-98-6). While counting in or recording the button is shown disabled. | the developers' decision |
+| The input meter | Takes left-over room before 「キーで弾く」; at 1280 × 800 at 125 % it is not shown and there is no other way to turn the arpeggio on (B-98-6). While counting in or recording the button is shown disabled. | the developers' decision |
 | Wording | 「アルペジオの設定」 (the screen-reader name of ▾ and of the window). | builder:2026-11-24 |
 
 ### E3 The knobs of a built-in sound
@@ -807,5 +807,14 @@ The rules are in spec 3, "Rules added in round 12"; how each is built is archite
 | Joints | 「 ・ 」 → " · ", 「、」 → ", ", two sentences one after the other get a space; 「（…の帯も消えました）」 goes before the first "." as before the first 「。」. | the developers' decision |
 | Numbers | A text whose noun follows a number has a form for 1 and one for any other number (`n(by, one, other)` in en.ts); Japanese is unchanged. | the request |
 | Term tips | Looked up by the Japanese word as before; in English a name shown in English (drum names, …) finds its term too. Explanations that said "also called 「ハイカット」" where the English word is that name now leave it out. | the developers' decision |
-| Shortened to fit (1280×800 at 150 %) | 「アレンジ 全体」 "Arrange · all"; 「公開の目安は…」 "Target …"; 「センド B の戻り」 "Send B return"; 「出口 ・ …」 (mixer) "Out · …"; 「もとの位置へ戻す」 (quantize panel) "Put back"; 「新しい版をたしかめる」 "Check for updates"; 「いま … ・ 点 5」 "Now … · 5 pts"; 「録った音の位置」 "Recorded position"; 「次の音までのばす」 "Stretch to next"; 「さがす枠を空にすると…」 "Clear the search to go back to the groups"; the output chooser's help; 「鍵盤を USB でつなぐと…」 "Plug in a USB keyboard and it shows here. Or write with the mouse."; 「音源 202」 (shelf tab) "Instr. 202"; 「選択 80 83」 (velocity band) "Sel. 80 83"; 「止」 (stopped insert) "■". | the developers' decision (the request: reword, do not widen) |
+| Shortened to fit (a page 853 wide) | 「アレンジ 全体」 "Arrange · all"; 「公開の目安は…」 "Target …"; 「センド B の戻り」 "Send B return"; 「出口 ・ …」 (mixer) "Out · …"; 「もとの位置へ戻す」 (quantize panel) "Put back"; 「新しい版をたしかめる」 "Check for updates"; 「いま … ・ 点 5」 "Now … · 5 pts"; 「録った音の位置」 "Recorded position"; 「次の音までのばす」 "Stretch to next"; 「さがす枠を空にすると…」 "Clear the search to go back to the groups"; the output chooser's help; 「鍵盤を USB でつなぐと…」 "Plug in a USB keyboard and it shows here. Or write with the mouse."; 「音源 202」 (shelf tab) "Instr. 202"; 「選択 80 83」 (velocity band) "Sel. 80 83"; 「止」 (stopped insert) "■". | the developers' decision (the request: reword, do not widen) |
 | shoot_ui.py | `--lang=en` adds `&lang=en`, names the files `-en`, puts no mock beside them, and turns the Japanese words the clicks look for into the English ones (`EN_WORDS`). | the developers' decision |
+
+### Scales and the smallest window (user:2026-11-24)
+
+| Where | Rule | Basis |
+|---|---|---|
+| Scales | 100 % and 125 % only; 150 % is gone. Its key Mod Alt 3 is free and not given to anything else. A settings file that holds 150 (meloet 0.3.x) is read as 125; any other unknown scale as 100. | user:2026-11-24 |
+| The smallest window | 1024×640 at 100 % and 1280×800 at 125 % (1024×640 times the scale); it was 853×448 times the scale. A scale whose smallest window does not fit the screen cannot be chosen, as before. | user:2026-11-24 |
+| What must fit | Everything fits in 1280×800 at 100 % and at 125 % (a page of 1024×640), and in the smallest window 1024×640 at 100 %. | user:2026-11-24 |
+| Rules for narrower or lower pages | Rules written for pages narrower than 1024 or lower than 640 (the 853-wide forms, the 448-high piano roll) are not reached any more. They stay in the code and in the spec until it is decided whether to remove them. | the lead's request (user:2026-11-24) |

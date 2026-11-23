@@ -145,12 +145,6 @@ Sent back at the end of round 8 with the items above:
 - Now: the dialog shows the 41-A texts; the spec 6 text is used on the status line when clipping is found only after the export (chapter 7, A-24). The spec body and the screen do not agree.
 - From: the developers' reading (A-24 item 8).
 
-### B-96-2 The third sentence of the empty arrange hint
-
-- Question: the third sentence of the F-Empty hint still says 「トラックを増やすには左下の「＋ トラックを追加」」, but spec 3 (93-1) replaced that button with 「＋ 鍵盤のトラック」 and 「＋ 歌のトラック」.
-- Now: the old sentence is shown (only while a track can be added). `ui/src/components/SoundHint.svelte`.
-- From: chapter 7, A-13.
-
 ### B-96-3 The name of key 47 in the built-in drum kits
 
 - Question: the built-in kits call key 47 「ミッドタム」, but the table of spec 3 for SF2 kits (GM) calls 47 「ミッドタム 2」 and 48 「ミッドタム」.
@@ -239,7 +233,7 @@ The readings behind these are in [chapter 7](7-readings.md), A-29; how each is b
 ### B-98-6 E2: arpeggio — stop, small windows, the mixer strip
 
 - Question 1: should stop also end a held chord (「指を離しても続ける」)? Now it goes on after stop, at the tempo (one line would change it).
-- Question 2: at 1280 × 800 at 150 % the button 「アルペジオ ▾」 does not fit in the input meter, and there is no menu row or key, so the arpeggio cannot be turned on there. Add a way?
+- Question 2: at 1280 × 800 at 125 % (150 % is gone, user:2026-11-24; seen in the fake scenes arpOn, arpSettings and loop) the button 「アルペジオ ▾」 does not fit in the input meter, and there is no menu row or key, so the arpeggio cannot be turned on there. Add a way?
 - Question 3: on the mixer strip 「アルペジオ」 sits at the right end of the heading only while on (the track name is cut to about one character on a 108 px strip). The other way is an empty row on every strip, which moves everything below down by about 32 px. Which?
 - Listening files: `target/r12-e2-ear/`.
 - From: architecture 25-26; chapter 7 A-29 (E2).

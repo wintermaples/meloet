@@ -68,7 +68,7 @@ const TARGET_ORDER: readonly Step[] = ["modulation", "pitchBend", "narrowKeys", 
 const MESSAGE_ORDER: readonly Step[] = ["modulation", "pitchBend", "narrowKeys", "sentence", "sustain"];
 
 export function nameWidthPx(name: NameWidth, scale: Scale): number {
-  const i = scale === 100 ? 0 : scale === 125 ? 1 : 2;
+  const i = scale === 100 ? 0 : 1;
   return name === "size.meter.name" || name === "size.meter.name.slim" ? size[name][i] : partAt(name, scale);
 }
 

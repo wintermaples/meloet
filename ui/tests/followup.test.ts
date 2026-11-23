@@ -93,11 +93,10 @@ describe("folding the velocity band (spec 3 band table「ベロシティ」, the
     expect(q('[data-test="pr-velocity-open"]')).toBeNull();
   });
 
-  // The spec 1 example is 18 rows and 24 rows. The menu bar (36 at 150 %) takes 2 rows from each (docs/history/design-notes.ja.md B-59).
-  // The chord row under the tool row (36 at 150 %) takes 2 more rows.
-  it("at 150 % in a 1280×800 window, 14 note rows. Folded, 20 rows (the folded 72 goes to the note area)", () => {
-    const scale: Scale = 150;
-    const scene = fakeScene("pianoRoll150")!;
+  // The spec 1 example: the menu bar and the chord row under the tool row are counted too.
+  it("at 125 % in a 1280×800 window, 23 note rows. Folded, 29 rows (the folded 72 goes to the note area)", () => {
+    const scale: Scale = 125;
+    const scene = fakeScene("pianoRoll125")!;
     const band = scene.state.workspace.layout.lower.find((l) => l.band === "pianoRoll")!.height;
     const px = tokensAt(scale, 1);
     const n = (name: string) => px[name] as number;
@@ -106,8 +105,8 @@ describe("folding the velocity band (spec 3 band table「ベロシティ」, the
     const rows = (velocity: boolean) => Math.floor((Math.round((band * scale) / 100) - around - (velocity ? n("size.lane.vel") : 0)) / n("size.note"));
     expect(scene.state.workspace.viewportWidth).toBe(1280);
     expect(scene.state.workspace.viewportHeight).toBe(800);
-    expect(rows(true)).toBe(14);
-    expect(rows(false)).toBe(20);
+    expect(rows(true)).toBe(23);
+    expect(rows(false)).toBe(29);
   });
 });
 

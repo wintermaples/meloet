@@ -855,10 +855,10 @@ describe("hint above the arrange", () => {
     expect(text('[data-test="sound-hint"]')).toBe("音が出ました。");
   });
 
-  it("empty arrange: 3 sentences (mock F-Empty). The third only when 「＋ トラックを追加」 can be used", () => {
+  it("empty arrange: 3 sentences (mock F-Empty). The third only when 「＋ 鍵盤のトラック」 and 「＋ 歌のトラック」 can be used", () => {
     show(SoundHint, ready((s) => (s.workspace.hint = "emptyArrange")));
     expect(text('[data-test="empty-hint"]')).toBe(
-      "ここに、録った音がならびます。 鍵盤を弾いて音を確かめたら、赤い丸の録音ボタンへ。 トラックを増やすには左下の「＋ トラックを追加」",
+      "ここに、録った音がならびます。 鍵盤を弾いて音を確かめたら、赤い丸の録音ボタンへ。 トラックを増やすには左下の「＋ 鍵盤のトラック」か「＋ 歌のトラック」",
     );
     app.setState(
       ready((s) => {

@@ -47,8 +47,8 @@ describe("fake intent", () => {
 describe("scenes in a theme", () => {
   it("fakeScene takes a theme; without one the scene is dark", () => {
     expect(fakeScene("empty")!.state.workspace.theme).toBe("dark");
-    for (const id of THEME_IDS) expect(fakeScene("empty", 150, undefined, id)!.state.workspace.theme).toBe(id);
-    expect(fakeScene("empty", 150, undefined, "pinkDark")!.state.workspace.scale).toBe(150);
+    for (const id of THEME_IDS) expect(fakeScene("empty", 125, undefined, id)!.state.workspace.theme).toBe(id);
+    expect(fakeScene("empty", 125, undefined, "pinkDark")!.state.workspace.scale).toBe(125);
   });
 
   it("?theme= in the URL, with a scene or without; a name not known is left out", async () => {

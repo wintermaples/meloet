@@ -18,9 +18,9 @@ There are three rules for the wording. Say first what happened. If the song is s
 | Recording in a loop | 1 ピアノ へ録音 ・ ループ 5–9 の 2 周目 ・ 周ごとにテイクを分けています | Status line | — |
 | Take switched | 1 ピアノ ・ Aメロ をテイク 2 / 3 に切りかえました | Status line | — |
 | Scale that does not fit the screen | この画面には入りません | The 「拡大率」 list in the status line. That scale is shown as 「使えない」 | — |
-| Scale that does not fit, chosen with a key | 150 % は、この画面には入りません。125 % のままです。 | Status line. The scale is not changed | — |
+| Scale that does not fit, chosen with a key | 125 % は、この画面には入りません。100 % のままです。 | Status line. The scale is not changed | — |
 | Scale changed and the window made larger | 拡大率を 125 % にしました。窓を、いちばん小さい大きさまで広げました。 | Status line | — |
-| Screen became smaller | 画面が小さくなったので、拡大率を 150 % から 125 % にしました。 | Status line | — |
+| Screen became smaller | 画面が小さくなったので、拡大率を 125 % から 100 % にしました。 | Status line | — |
 | Band folded automatically | 窓が低くなったので、ミキサーをたたみました。帯札を押すと、またひらきます。 | Status line | — |
 | Opened a band that does not fit | ピアノロールをひらくために、ミキサーをたたみました。窓を高くすると、両方ひらけます。 | Status line | — |
 | Heading of unusable outputs | いまは使えない出口 8 ・ PC が切りかえる物 1 ・ PC の設定で止まっている物 7 (in the sound settings: 「meloet は、PC 全体の設定を変えません」) | Output chooser, sound settings | — |
@@ -59,7 +59,7 @@ There are three rules for the wording. Say first what happened. If the song is s
 | Only the sound stream of meloet stopped | While not recording, reconnect up to 4 times without showing any text. If all 4 times fail, show the same text as "Output gone". While recording, the same text as "Output gone while recording". | Status line | 音の設定をひらく |
 | Input from the keyboard stopped | 鍵盤からの入力が止まりました。曲はそのままです。いま、つなぎなおしています。 | Status line | — |
 | Opened a third band | 取り消しの履歴をひらいたので、いちばん前にひらいたミキサーをたたみました。下の帯は、2 つまでひらけます。 | Status line | — |
-| Band folded after raising the scale | 拡大率を 150 % にしたので、ミキサーをたたみました。帯札を押すと、またひらきます。 | Status line | — |
+| Band folded after raising the scale | 拡大率を 125 % にしたので、ミキサーをたたみました。帯札を押すと、またひらきます。 | Status line | — |
 | Typed a value out of range | 「ベロシティは 1〜127 なので、127 にしました。」「拍子の下は 2 ・ 4 ・ 8 ・ 16 なので、4 にしました。」 (the same form for 「テンポ」 30.00〜300.00 and 「拍子の上」 1〜12) | Status line. The value is set to the nearer end of the range | — |
 | Position rounded | Say only the part that was rounded. 「拍は 1〜4 なので、3. 4. 000 にしました。」「ティックは 0〜1919 なので、…」 (0〜0959 in 6/8) 「小節は 1 からなので、1. 1. 000 にしました。」. For the position of a note that went outside the clip: 「位置は 1. 1. 0000〜4. 4. 1919 なので、…」 | Status line | — |
 | Not readable as a position | 位置は「5」「5.2」「5.2.240」の形で打ちます。もとの 1. 1. 000 のままです。 | Status line. The box stays 「こわれた」 | — |

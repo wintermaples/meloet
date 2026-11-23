@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 
 const FILE_NAME: &str = "settings.json";
 const VERSION: u32 = 1;
-pub const SCALES: [u16; 3] = [100, 125, 150];
+pub const SCALES: [u16; 2] = [100, 125];
 pub const DEFAULT_SCALE: u16 = 100;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -374,6 +374,15 @@ fn click_from_disk(disk: &OnDisk) -> ClickSettings {
     }
 }
 
+/// A file from meloet 0.3.x may hold 150 %: it is read as the largest scale.
+fn scale_from_disk(scale: u16) -> u16 {
+    match scale {
+        _ if SCALES.contains(&scale) => scale,
+        150 => SCALES[SCALES.len() - 1],
+        _ => DEFAULT_SCALE,
+    }
+}
+
 /// `$MELOET_CONFIG_DIR`, else `$XDG_CONFIG_HOME/meloet`, else `$HOME/.config/meloet`.
 pub fn config_dir() -> Option<PathBuf> {
     config_dir_from(|name| std::env::var_os(name))
@@ -402,11 +411,7 @@ pub fn load(dir: &Path) -> Settings {
             sound: sound_from_disk(&mut disk),
             output_name: disk.output_name.filter(|_| disk.output.is_some()),
             output: disk.output,
-            scale: if SCALES.contains(&disk.scale) {
-                disk.scale
-            } else {
-                DEFAULT_SCALE
-            },
+            scale: scale_from_disk(disk.scale),
             theme: (disk.theme.as_deref())
                 .and_then(Theme::from_name)
                 .unwrap_or_default(),
@@ -723,7 +728,7 @@ mod tests {
         let dir = temp_dir("plain");
         std::fs::write(
             dir.join("settings.json"),
-            r#"{ "version": 1, "output": "x:y", "scale": 150 }"#,
+            r#"{ "version": 1, "output": "x:y", "scale": 125 }"#,
         )
         .unwrap();
         assert_eq!(
@@ -731,7 +736,7 @@ mod tests {
             Settings {
                 output: Some("x:y".into()),
                 output_name: None,
-                scale: 150,
+                scale: 125,
                 theme: Theme::Dark,
                 note_glow: true,
                 export_artist: String::new(),
@@ -886,6 +891,16 @@ mod tests {
         .unwrap();
         assert_eq!(load(&dir).scale, 100);
         assert_eq!(load(&dir).output.as_deref(), Some("x"));
+        std::fs::write(
+            dir.join("settings.json"),
+            r#"{"version":1,"output":"x","scale":150}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            load(&dir).scale,
+            125,
+            "150 % is gone; the largest scale there is now"
+        );
 
         std::fs::write(
             dir.join("settings.json"),

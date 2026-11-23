@@ -324,9 +324,9 @@ describe("bridge session", () => {
     const connection = await connectWith(createFakeTransport(state), r.handlers);
     const now = () => r.states.at(-1)!.state;
 
-    await connection.send({ type: "setScale", percent: 150 });
-    expect(now().workspace.scale).toBe(125);
-    expect(now().status.message).toEqual({ id: "scaleDoesNotFit", requested: 150, kept: 125 });
+    await connection.send({ type: "setScale", percent: 125 });
+    expect(now().workspace.scale).toBe(100);
+    expect(now().status.message).toEqual({ id: "scaleDoesNotFit", requested: 125, kept: 100 });
 
     await connection.send({ type: "toggleBand", band: "mixer" });
     expect(now().status.message?.id).toBe("newSong");
@@ -336,11 +336,11 @@ describe("bridge session", () => {
     await connection.send({ type: "setViewport", width: 1280, height: 900 });
     expect(now().status.message).toEqual({ id: "bandFoldedToOpen", opened: "pianoRoll", folded: "mixer" });
 
-    // 853x448 is too small for 125 %: the window grows to 1067x560.
-    await connection.send({ type: "setScale", percent: 100 });
-    await connection.send({ type: "setViewport", width: 853, height: 448 });
-    await connection.send({ type: "setScale", percent: 125 });
-    expect(now().workspace).toMatchObject({ scale: 125, viewportWidth: 1067, viewportHeight: 560 });
+    // 1024x640 is too small for 125 %: the window grows to 1280x800 (a screen where 125 % fits).
+    const fits = await connectWith(createFakeTransport(fakeScene("empty")!.state), r.handlers);
+    await fits.send({ type: "setViewport", width: 1024, height: 640 });
+    await fits.send({ type: "setScale", percent: 125 });
+    expect(now().workspace).toMatchObject({ scale: 125, viewportWidth: 1280, viewportHeight: 800 });
     expect(now().status.message).toEqual({ id: "scaleWindowGrown", scale: 125 });
   });
 });

@@ -150,7 +150,7 @@
 </div>
 
 <style>
-  /* Width 220. Only when a row does not fit its name and key at 150 % (「名前をつけて保存… Ctrl Shift S」), widen to fit. */
+  /* Width 220. Only when a row does not fit its name and key (「名前をつけて保存… Ctrl Shift S」), widen to fit. */
   .menu {
     width: max-content;
     min-width: var(--part-list-width);

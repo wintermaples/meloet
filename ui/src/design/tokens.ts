@@ -1,8 +1,8 @@
 // Values. The names are those of docs/spec/1-tokens.md ("1 List of values"). Values are px at scale 100 %.
 
-export const SCALES = [100, 125, 150] as const;
+export const SCALES = [100, 125] as const;
 export type Scale = (typeof SCALES)[number];
-type Triple = readonly [number, number, number];
+type Pair = readonly [number, number];
 
 export const colors = {
   "color.gray.0": "#000000",
@@ -49,60 +49,60 @@ export type ColorName = keyof typeof colors;
 
 /** weights: the weights that may be used at that size (the same at every scale). */
 export interface TextToken {
-  size: Triple;
-  lineHeight: Triple;
+  size: Pair;
+  lineHeight: Pair;
   weights: readonly number[];
 }
 
 export const text = {
-  "text.s": { size: [12, 15, 18], lineHeight: [16, 20, 24], weights: [400, 500, 600] },
-  "text.m": { size: [16, 20, 24], lineHeight: [20, 25, 30], weights: [400, 500] },
-  "text.l": { size: [20, 25, 30], lineHeight: [24, 30, 36], weights: [600] },
+  "text.s": { size: [12, 15], lineHeight: [16, 20], weights: [400, 500, 600] },
+  "text.m": { size: [16, 20], lineHeight: [20, 25], weights: [400, 500] },
+  "text.l": { size: [20, 25], lineHeight: [24, 30], weights: [600] },
 } as const satisfies Record<string, TextToken>;
 export type TextName = keyof typeof text;
 
 export const space = {
-  "space.1": [4, 5, 6],
-  "space.2": [8, 10, 12],
-  "space.3": [12, 15, 18],
-  "space.4": [16, 20, 24],
-  "space.5": [20, 25, 30],
-  "space.6": [24, 30, 36],
-} as const satisfies Record<string, Triple>;
+  "space.1": [4, 5],
+  "space.2": [8, 10],
+  "space.3": [12, 15],
+  "space.4": [16, 20],
+  "space.5": [20, 25],
+  "space.6": [24, 30],
+} as const satisfies Record<string, Pair>;
 export type SpaceName = keyof typeof space;
 
 export const size = {
-  "size.menubar": [24, 30, 36],
-  "size.transport": [48, 60, 72],
-  "size.meter.full": [52, 65, 78],
-  "size.meter.slim": [24, 30, 36],
-  "size.meter.name": [108, 135, 162],
-  "size.meter.name.slim": [176, 220, 264],
-  "size.bandrow": [24, 30, 36],
-  "size.status": [24, 30, 36],
-  "size.row": [24, 30, 36],
-  "size.row.s": [20, 25, 30],
-  "size.note": [12, 15, 18],
-  "size.toolbar": [32, 40, 48],
-  "size.track": [64, 80, 96],
-  "size.lane": [48, 60, 72],
-  "size.lane.vel": [72, 90, 108],
-  "size.overview": [40, 50, 60],
-  "size.col.head": [220, 275, 330],
-  "size.col.keys": [104, 130, 156],
-  "size.panel.list": [216, 270, 324],
-  "size.panel.insp": [240, 300, 360],
-  "size.shelf": [320, 400, 480],
-  "size.tab.v": [24, 30, 36],
-  "size.strip": [108, 135, 162],
-} as const satisfies Record<string, Triple>;
+  "size.menubar": [24, 30],
+  "size.transport": [48, 60],
+  "size.meter.full": [52, 65],
+  "size.meter.slim": [24, 30],
+  "size.meter.name": [108, 135],
+  "size.meter.name.slim": [176, 220],
+  "size.bandrow": [24, 30],
+  "size.status": [24, 30],
+  "size.row": [24, 30],
+  "size.row.s": [20, 25],
+  "size.note": [12, 15],
+  "size.toolbar": [32, 40],
+  "size.track": [64, 80],
+  "size.lane": [48, 60],
+  "size.lane.vel": [72, 90],
+  "size.overview": [40, 50],
+  "size.col.head": [220, 275],
+  "size.col.keys": [104, 130],
+  "size.panel.list": [216, 270],
+  "size.panel.insp": [240, 300],
+  "size.shelf": [320, 400],
+  "size.tab.v": [24, 30],
+  "size.strip": [108, 135],
+} as const satisfies Record<string, Pair>;
 export type SizeName = keyof typeof size;
 
 /** line.hair is one physical px at every scale. Only the 100 % value is kept here; it is divided by devicePixelRatio when made into CSS px. */
 export const line = {
   "line.hair": 1,
-  "line.mark": [2, 2, 3],
-  "line.track": [4, 5, 6],
+  "line.mark": [2, 2],
+  "line.track": [4, 5],
 } as const;
 export type LineName = keyof typeof line;
 
@@ -382,7 +382,7 @@ export const meterScale: readonly (readonly [number, number])[] = [
 /** From the text under the same spec heading: a meter falls fallDb over fallSeconds, and rises at once. */
 export const meterFall = { fallDb: 20, fallSeconds: 1.7 } as const;
 
-const scaleIndex = (scale: Scale): 0 | 1 | 2 => (scale === 100 ? 0 : scale === 125 ? 1 : 2);
+const scaleIndex = (scale: Scale): 0 | 1 => (scale === 100 ? 0 : 1);
 
 /** A part size times the scale, rounded to an integer (.5 rounds up; those that round up are listed in tests/design). */
 export function partAt(name: PartName, scale: Scale): number {

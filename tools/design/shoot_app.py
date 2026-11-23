@@ -34,8 +34,8 @@ vkeys_bin = os.path.join(target, "release", "meloet-vkeys")
 out = os.path.join(root, "docs", "screenshots")
 
 SIZES = [(1280, 800), (1920, 1080)]
-SCALES = [100, 150]
-BIG, SMALLEST = ((1280, 800), 100), ((1280, 672), 150)
+SCALES = [100, 125]
+BIG, SMALLEST = ((1280, 800), 100), ((1280, 800), 125)
 CHORD = ["60", "64", "67"]
 QUIET = "25"
 TICKS_PER_QUARTER = 1920
@@ -541,8 +541,8 @@ STATES = {
                                   (2000, {"type": "setClipStretch", "clip": VOCAL + 4, "change": {"kind": "follow", "on": True}}),
                                   (2050, {"type": "setClipStretch", "clip": VOCAL + 4,
                                           "change": {"kind": "semitones", "semitones": 2}})]),
-    # 1280x800 at 150 % is the smallest window (853 wide): the input meter in two halves and the
-    # export dialog scrolling inside, at once.
+    # The input meter in two halves and the export dialog, at once (at 1280x800 at 125 %, the
+    # smallest window, a page of 1024x640).
     "r11FitApp": dict(board="R11-Fit", remembered=True, snap=9000, song=SONG7, loop=(5, 9), vocal=ONE_CLIP,
                       env=SINK_MONITOR,
                       commands=[(1500, {"type": "selectTrack", "track": VOCAL, "fromArm": False}),
@@ -556,7 +556,7 @@ STATES = {
                                       (2000, {"type": "setTimelineOpen", "open": True}),
                                       (2200, {"type": "selectTimeline", "target": {"kind": "tempoPoint", "tick": 0}})]),
     # shots: the (size, scale) pairs taken instead of every SIZES x SCALES; SMALLEST is the
-    # smallest window (853x448 at 150 %).
+    # smallest window at 125 % (1280x800, a page of 1024x640).
     "firstLaneApp": dict(board="F8-FirstLane", remembered=True, snap=3000, song=SONG7, loop=(5, 9), shots=[BIG],
                          evals=[(2300, "document.querySelectorAll('[data-test=\"track-lanes\"]')[1].click()")]),
     "multiClipApp": dict(board="F8-MultiClip", remembered=True, snap=3200, song=SONG7, loop=(5, 9), env=SINK_MONITOR,

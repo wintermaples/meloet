@@ -1,5 +1,5 @@
 // A Transport with no Rust behind it: for tests, and for looking at the screen in a plain
-// browser (`npm run dev`, `vite preview`). `?scene=<name>&scale=<100|125|150>` picks a fixed
+// browser (`npm run dev`, `vite preview`). `?scene=<name>&scale=<100|125>` picks a fixed
 // scene (see SCENES). It answers the few commands below; the band heights follow the same
 // numbers as crates/meloet-core/src/layout.rs, but meloet-core stays the rule book.
 
@@ -143,8 +143,8 @@ const SMALLEST: Partial<Record<Band, number>> = { pianoRoll: 292, mixer: 516, hi
 const LARGEST: Partial<Record<Band, number>> = { pianoRoll: 760, mixer: 660, history: 248 };
 const BAND_TOOLS = 32;
 const MAX_BOTTOM_OPEN = 2;
-const MIN_WINDOW = { width: 853, height: 448 };
-const SCALES = [100, 125, 150];
+const MIN_WINDOW = { width: 1024, height: 640 };
+const SCALES = [100, 125];
 const BOTTOM_ORDER: Band[] = ["pianoRoll", "mixer", "history"];
 const isBottom = (b: Band) => BOTTOM_ORDER.includes(b);
 
@@ -1188,7 +1188,7 @@ export const SCENES: Record<string, SceneDef> = {
   pianoRoll: { setup: pianoRollSong, bands: ["pianoRoll"], meters: QUIET },
   // The same at a window of 1280x720: open it in a window of that size.
   pianoRoll720: { setup: pianoRollSong, bands: ["pianoRoll"], meters: QUIET },
-  pianoRoll150: { setup: pianoRollSong, bands: ["pianoRoll"], meters: QUIET, scale: 150 },
+  pianoRoll125: { setup: pianoRollSong, bands: ["pianoRoll"], meters: QUIET, scale: 125 },
   // Open it in a window of 1920x1080.
   pianoRollWide: { setup: pianoRollWide, bands: ["pianoRoll"], meters: QUIET },
   // A-PianoRoll with the pitch bend point at 2.2.000 selected, for the CC lanes (R3-Lanes). The lanes are opened by clicking their tags.
@@ -1362,8 +1362,8 @@ export const SCENES: Record<string, SceneDef> = {
   arrangeTrimmed: { setup: arrangeTrimmed, meters: QUIET },
   // The same with the piano roll open on the trimmed clip: the notes trimmed off are not shown there either.
   arrangeTrimmedRoll: { setup: arrangeTrimmed, bands: ["pianoRoll"], meters: QUIET },
-  // The mock 「拡大率をえらぶ所」: a 1200x700 screen, 150 % does not fit, 125 % is on.
-  zoom: { setup: ready, scale: 125, screen: { width: 1200, height: 700 }, meters: QUIET },
+  // The mock 「拡大率をえらぶ所」: a 1200x700 screen, 125 % does not fit, 100 % is on.
+  zoom: { setup: ready, scale: 100, screen: { width: 1200, height: 700 }, meters: QUIET },
   // The mixer was open, then the piano roll was opened in a window too low for both.
   bandFolded: {
     setup: ready,

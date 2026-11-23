@@ -59,7 +59,7 @@ const readMock = (board: string) => fs.readFileSync(new URL(`../../docs/design/m
 describe("sizes (mock F7-AudioEdit)", () => {
   it.each(Object.entries(mock).filter(([k]) => k.startsWith("mock.wave.")))("%s の値はモックに書いてあり、率をかけた値は整数", (name, tok) => {
     expect(readMock(tok.board)).toContain(`${tok.value}px`);
-    for (const s of [100, 125, 150] as const) expect(Number.isInteger(tokensAt(s, 1)[name as keyof typeof mock] as number)).toBe(true);
+    for (const s of [100, 125] as const) expect(Number.isInteger(tokensAt(s, 1)[name as keyof typeof mock] as number)).toBe(true);
   });
 });
 

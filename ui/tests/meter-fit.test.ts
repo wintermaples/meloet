@@ -29,8 +29,8 @@ describe("name column of the input meter (spec 1 (size.meter.name), spec 3)", ()
     expect(meterFit({ ...base, meter: "slim", name: 300 }).nameWidth).toBe("size.meter.name.slim");
     expect(nameWidthPx("size.meter.name.slim", 100)).toBe(176);
     expect(nameWidthPx("part.meter.name.slim-narrow", 100)).toBe(128);
-    expect(nameWidthPx("size.meter.name.slim", 150)).toBe(264);
-    expect(nameWidthPx("part.meter.name.slim-narrow", 150)).toBe(192);
+    expect(nameWidthPx("size.meter.name.slim", 125)).toBe(220);
+    expect(nameWidthPx("part.meter.name.slim-narrow", 125)).toBe(160);
   });
 
   it("before narrowing, hide modulation, then pitch bend", () => {
@@ -72,13 +72,13 @@ describe("name column of the input meter (spec 1 (size.meter.name), spec 3)", ()
     expect(fit).toMatchObject({ nameWidth: "part.meter.name.long", pitchBend: false, modulation: false });
   });
 
-  it("at 150 %, compare with the 150 % width (the 853px example in F-MeterLongName)", () => {
-    // 853 × 1.5 ≒ 1280 CSS px. 1050 + 230 does not fit, 1050 + 192 does.
+  it("at 125 %, compare with the 125 % width", () => {
+    // 1250 CSS px: 1050 + 220 does not fit, 1050 + 160 does.
     const fit = meterFit({
       meter: "slim",
-      scale: 150,
+      scale: 125,
       nameChars: 17,
-      available: 1280 - 36,
+      available: 1280 - 30,
       rest: 1050,
       name: 230,
       pitchBend: 120,

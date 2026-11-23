@@ -468,3 +468,173 @@ fn the_scan_waits_for_the_screen() {
     drop(core);
     let _ = std::fs::remove_dir_all(root);
 }
+
+/// 「トラックを複製」 (round 12, A3) with the fake plugins: the copy's instrument and effect
+/// start from what the track's have now, which the song does not have yet; undo lets go of
+/// them in their processes.
+#[test]
+fn a_duplicated_track_starts_its_plugins_from_the_ones_that_sound() {
+    let root = plughost::temp_dir("plug-duplicate");
+    let core = Core::start(options(&root));
+    state_when(&core, "the scan", |s| s.library.plugins.len() == 2);
+    let sine = SoundRef::Plugin { key: SINE.into() };
+    core.send(Command::OpenShelf {
+        mode: ShelfMode::NewTrack,
+    });
+    core.send(Command::ShelfSelectSound {
+        sound: Some(sine.clone()),
+    });
+    state_when(&core, "the sine is read", |s| {
+        s.shelf.selected_sound == Some(sine.clone()) && s.shelf.loading_sound.is_none()
+    });
+    core.send(Command::ShelfConfirm);
+    let track = core.snapshot().state.song.tracks[1].id;
+    let strip = StripRef::Track { id: track };
+    core.send(Command::OpenShelf {
+        mode: ShelfMode::InsertEffect { strip, slot: 0 },
+    });
+    core.send(Command::ShelfChooseEffect {
+        effect: Some(EffectRef::Plugin { key: PASS.into() }),
+    });
+    core.send(Command::ShelfConfirm);
+    let slot_state = |s: &AppState, track: usize| match &s.song.tracks.get(track)?.slots[0] {
+        Some(insert) => match &insert.effect {
+            InsertEffectView::Plugin(p) => Some(p.state),
+            InsertEffectView::Builtin { .. } => None,
+        },
+        None => None,
+    };
+    state_when(&core, "the effect is read", |s| {
+        slot_state(s, 1) == Some(PluginState::Ready)
+    });
+    // Turned down over the socket, as the plugin's window would: the song does not know.
+    let id = core.track_plugin(1);
+    core.peek(move |w| {
+        let hosts = &w.plugins.as_ref().unwrap().hosts;
+        wait(|done| hosts.set_param(id, LEVEL, 0.25, done)).unwrap();
+    });
+    let steps = core.snapshot().state.song.undo_count;
+
+    core.send(Command::DuplicateTrack { track });
+    let state = state_when(&core, "the copy is read", |s| {
+        plugin_of(s, 2) == Some(PluginState::Ready) && slot_state(s, 2) == Some(PluginState::Ready)
+    });
+    assert_eq!(state.song.tracks[2].name, "Fake Sine 2");
+    assert_eq!(state.song.undo_count, steps + 1);
+    assert_eq!(
+        core.level(core.track_plugin(2)),
+        0.25,
+        "as the track sounds now"
+    );
+    let slots = |core: &Core| {
+        let mut n: Vec<usize> = core.processes().iter().map(|p| p.slots.len()).collect();
+        n.sort_unstable();
+        n
+    };
+    assert_eq!(
+        slots(&core),
+        [2, 2],
+        "each copy in the process of its plugin"
+    );
+
+    core.send(Command::Undo);
+    wait_for(PATIENCE, || (slots(&core) == [1, 1]).then_some(()))
+        .unwrap_or_else(|| panic!("{:?}", core.processes()));
+    assert_eq!(core.level(core.track_plugin(1)), 0.25);
+    core.send(Command::Redo);
+    state_when(&core, "the copy is back", |s| {
+        plugin_of(s, 2) == Some(PluginState::Ready) && slot_state(s, 2) == Some(PluginState::Ready)
+    });
+    assert_eq!(core.level(core.track_plugin(2)), 0.25, "as the song has it");
+    drop(core);
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// The real Surge XT (VST3): the copy of a track sounds as the track does, with what was
+/// changed in it that the song does not have yet.
+#[test]
+#[ignore = "needs Surge XT (VST3)"]
+fn surge_xt_a_duplicated_track_sounds_the_same() {
+    assert!(Path::new(SURGE_BUNDLE).is_dir(), "no {SURGE_BUNDLE}");
+    let root = plughost::temp_dir("plug-surge-duplicate");
+    std::fs::create_dir_all(root.join("vst3")).unwrap();
+    std::os::unix::fs::symlink(SURGE_BUNDLE, root.join("vst3/Surge XT.vst3")).unwrap();
+    let core = Core::start(CoreOptions {
+        config_dir: Some(root.join("config")),
+        songs_dir: Some(root.join("songs")),
+        plugins: Some(PluginOptions {
+            host_exe: plughost::exe(),
+            cache_dir: Some(root.join("cache")),
+            usual_places: vec![root.join("vst3")],
+            scan_timeout: Duration::from_secs(30),
+            child_env: Vec::new(),
+            wait_for_screen: false,
+        }),
+        ..CoreOptions::offline()
+    });
+    let state = state_when(&core, "the scan", |s| {
+        s.library.plugins.iter().any(|row| row.name == "Surge XT")
+    });
+    let row = (state.library.plugins.iter())
+        .find(|row| row.name == "Surge XT")
+        .unwrap();
+    let surge = SoundRef::Plugin {
+        key: row.key.clone(),
+    };
+    core.send(Command::OpenShelf {
+        mode: ShelfMode::NewTrack,
+    });
+    core.send(Command::ShelfSelectSound {
+        sound: Some(surge.clone()),
+    });
+    state_when(&core, "Surge XT is read", |s| {
+        s.shelf.selected_sound == Some(surge.clone()) && s.shelf.loading_sound.is_none()
+    });
+    core.send(Command::ShelfConfirm);
+    let track = core.snapshot().state.song.tracks[1].id;
+    let first = core.hear(1);
+    eprintln!("as it starts: {first:?}");
+    assert!(first.rms > 0.01, "Surge XT sounds: {first:?}");
+
+    // Another sound of it, an octave up and quieter, which the song does not have.
+    let id = core.track_plugin(1);
+    core.peek(move |w| {
+        let hosts = &w.plugins.as_ref().unwrap().hosts;
+        let params = wait(|done| hosts.params(id, done)).unwrap();
+        let find = |name: &str| params.iter().find(|p| p.name == name).unwrap().id;
+        let (octave, volume) = (find("A Octave"), find("Global Volume"));
+        wait(|done| hosts.set_param(id, octave, 1.0, done)).unwrap();
+        wait(|done| hosts.set_param(id, volume, 0.5, done)).unwrap();
+    });
+    let changed = core.hear(1);
+    eprintln!("changed: {changed:?}");
+    assert!(changed.hz > first.hz * 1.5, "{first:?} {changed:?}");
+
+    core.send(Command::DuplicateTrack { track });
+    state_when(&core, "the copy is read", |s| {
+        plugin_of(s, 2) == Some(PluginState::Ready)
+    });
+    let copy = core.hear(2);
+    eprintln!("the copy: {copy:?}");
+    let near = |a: f32, b: f32, part: f32| (a - b).abs() <= part * b;
+    assert!(near(copy.hz, changed.hz, 0.05), "{changed:?} {copy:?}");
+    assert!(near(copy.rms, changed.rms, 0.15), "{changed:?} {copy:?}");
+
+    // Taken back and done again: the song has the state the copy started from.
+    core.send(Command::Undo);
+    wait_for(PATIENCE, || {
+        let slots: usize = core.processes().iter().map(|p| p.slots.len()).sum();
+        (slots == 1).then_some(())
+    })
+    .unwrap_or_else(|| panic!("{:?}", core.processes()));
+    core.send(Command::Redo);
+    state_when(&core, "the copy is back", |s| {
+        plugin_of(s, 2) == Some(PluginState::Ready)
+    });
+    let again = core.hear(2);
+    eprintln!("done again: {again:?}");
+    assert!(near(again.hz, changed.hz, 0.05), "{changed:?} {again:?}");
+    assert!(near(again.rms, changed.rms, 0.15), "{changed:?} {again:?}");
+    drop(core);
+    let _ = std::fs::remove_dir_all(root);
+}

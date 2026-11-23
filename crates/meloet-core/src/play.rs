@@ -1930,6 +1930,7 @@ impl Play {
     /// file. Only while not busy.
     pub fn replace_song(&mut self, song: Song, unsaved: bool, effects: &mut Vec<Effect>) {
         self.shelf_closed(effects);
+        self.forget_copy();
         self.song = song;
         self.saving = None;
         self.forget_mixer();

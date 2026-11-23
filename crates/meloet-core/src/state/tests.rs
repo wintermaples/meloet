@@ -1998,7 +1998,6 @@ fn the_commands_of_round_12_are_taken_and_change_nothing_yet() {
     );
     assert!(before.recent.is_empty());
     assert_eq!(before.updates, UpdatesView::default());
-    let track = before.song.tracks[0].id;
     let commands = [
         Command::SetClick {
             volume_db: Some(-6.0),
@@ -2037,7 +2036,6 @@ fn the_commands_of_round_12_are_taken_and_change_nothing_yet() {
             }],
         },
         Command::PlayExported,
-        Command::DuplicateTrack { track },
         Command::OpenRecent { id: 1 },
         Command::ClearRecent,
         Command::NormalizeClips { clips: vec![1] },

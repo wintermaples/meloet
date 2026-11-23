@@ -566,7 +566,7 @@ fn held(doc: &Doc) -> Doc {
 #[test]
 fn random_track_edits_undo_and_redo_keep_the_engine_with_the_song() {
     instruments::tests::EVERY_SOUND.set(true);
-    const ACTIONS: usize = 21;
+    const ACTIONS: usize = 22;
     let mut made = [0usize; ACTIONS];
     let mut most_tracks = 0;
     let mut auditioned_checks = 0;
@@ -782,6 +782,9 @@ fn random_track_edits_undo_and_redo_keep_the_engine_with_the_song() {
                         go(Command::ShelfConfirm);
                     }
                 }
+                21 => go(Command::DuplicateTrack {
+                    track: some_track(&mut rng),
+                }),
                 _ => go(match rng.below(3) {
                     0 => Command::CancelMixPreview,
                     n => Command::ToggleReturnMute {
@@ -861,9 +864,9 @@ fn random_track_edits_undo_and_redo_keep_the_engine_with_the_song() {
             "seed {seed}: all redone"
         );
     }
-    // Adding, deleting, moving, renaming, coloring, replacing, muting and recording all made
-    // steps, and the engine was looked at while rows were auditioned.
-    for action in [0, 1, 2, 3, 4, 5, 6, 7, 11, 12, 15, 16, 17, 18, 19, 20] {
+    // Adding, deleting, moving, renaming, coloring, replacing, muting, recording and
+    // duplicating all made steps, and the engine was looked at while rows were auditioned.
+    for action in [0, 1, 2, 3, 4, 5, 6, 7, 11, 12, 15, 16, 17, 18, 19, 20, 21] {
         assert!(made[action] > 20, "action {action}: {made:?}");
     }
     assert!(most_tracks >= 8, "{most_tracks} tracks");

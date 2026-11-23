@@ -1226,6 +1226,7 @@ impl Play {
         if steps == 0 {
             return 0;
         }
+        self.forget_copy();
         if crossed {
             // Over "なおすためのファイルから戻す" or "戻さない": between the recovered song and
             // the saved one, whose takes may have gone their own ways (a file changed from

@@ -3,9 +3,9 @@
 
 use std::sync::Arc;
 
-use crate::automation::AutoTarget;
+use crate::automation::{AutoTarget, Lane, LaneId};
 use crate::history::StepKind;
-use crate::mixer::{self, Channel};
+use crate::mixer::{self, Channel, InsertId};
 use crate::song::{
     Clip, ClipId, ClipTake, ClipTakes, ControlPoint, ControlValue, Doc, Note, Take, TakeId, Track,
 };
@@ -473,13 +473,7 @@ fn add_track_of(
         Some(id) => track_index(doc, id)? + 1,
         None => doc.tracks.len(),
     };
-    let highest = doc.tracks.iter().map(|t| t.id.0).max();
-    let mut ids = Ids(match highest {
-        Some(h) => doc
-            .next_id
-            .max(h.checked_add(1).ok_or(EditError::OutOfIds)?),
-        None => doc.next_id,
-    });
+    let mut ids = track_ids(doc)?;
     let id = TrackId(ids.next()?);
     let taken = |name: &str| doc.tracks.iter().any(|t| t.name == name);
     let name = if taken(base) {
@@ -517,6 +511,121 @@ fn add_track_of(
         },
         id,
     ))
+}
+
+/// The ids a new track takes its own from: `next_id`, or past the highest track id when that
+/// is higher.
+fn track_ids(doc: &Doc) -> Result<Ids, EditError> {
+    let highest = doc.tracks.iter().map(|t| t.id.0).max();
+    Ok(Ids(match highest {
+        Some(h) => doc
+            .next_id
+            .max(h.checked_add(1).ok_or(EditError::OutOfIds)?),
+        None => doc.next_id,
+    }))
+}
+
+/// What [`duplicate_track`] made.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Duplicated {
+    pub edit: Edit,
+    /// The track copied.
+    pub from: TrackId,
+    /// The copy.
+    pub track: TrackId,
+    /// Each insert of the track, and the one in the same slot of the copy.
+    pub inserts: Vec<(InsertId, InsertId)>,
+}
+
+impl Duplicated {
+    /// What a lane of the track moves, as a lane of the copy.
+    pub fn target(&self, target: AutoTarget) -> AutoTarget {
+        match target {
+            AutoTarget::Insert { insert, param } => {
+                let copied = self.inserts.iter().find(|(from, _)| *from == insert);
+                AutoTarget::Insert {
+                    insert: copied.map_or(insert, |(_, to)| *to),
+                    param,
+                }
+            }
+            other => other,
+        }
+    }
+
+    /// Of the folded lanes `folded` (`Session::folded_lanes`), those of the track, as lanes of
+    /// the copy.
+    pub fn folded(&self, folded: &[(TrackId, AutoTarget)]) -> Vec<(TrackId, AutoTarget)> {
+        (folded.iter())
+            .filter(|(track, _)| *track == self.from)
+            .map(|&(_, target)| (self.track, self.target(target)))
+            .collect()
+    }
+}
+
+/// 「トラックを複製」 (round 12, A3): a copy of `track` right below it. The copy has every
+/// field of the track as it is, its color too, but a name of its own (`copy_name`) and new
+/// ids: its own (as [`add_track`] gives one), and those of its clips (which share the takes),
+/// its inserts and its lanes, whose targets name the copy's inserts.
+pub fn duplicate_track(doc: &Doc, track: TrackId) -> Result<Duplicated, EditError> {
+    let ti = track_index(doc, track)?;
+    let from = &doc.tracks[ti];
+    let mut ids = track_ids(doc)?;
+    let id = TrackId(ids.next()?);
+    let mut copy = Track::clone(from);
+    copy.id = id;
+    copy.name = copy_name(doc, &from.name);
+    for clip in &mut copy.clips {
+        *clip = Arc::new(Clip {
+            id: ClipId(ids.next()?),
+            ..Clip::clone(clip)
+        });
+    }
+    let mut inserts = Vec::new();
+    for insert in copy.channel.inserts.iter_mut().flatten() {
+        let new = InsertId(ids.next()?);
+        inserts.push((insert.id, new));
+        insert.id = new;
+    }
+    let mut made = Duplicated {
+        edit: Edit {
+            doc: doc.clone(),
+            step: StepKind::DuplicateTrack { track: id },
+        },
+        from: track,
+        track: id,
+        inserts,
+    };
+    for lane in &mut copy.automation {
+        *lane = Arc::new(Lane {
+            id: LaneId(ids.next()?),
+            target: made.target(lane.target),
+            ..Lane::clone(lane)
+        });
+    }
+    let new = &mut made.edit.doc;
+    new.tracks.insert(ti + 1, Arc::new(copy));
+    new.next_id = ids.0;
+    Ok(made)
+}
+
+/// The name of a copy of the track named `name`: the name without the number [`add_track`]
+/// puts at its end, with the smallest number from 2 that no track has ("ピアノ 2" of
+/// "ピアノ", "ピアノ 3" of "ピアノ 2").
+fn copy_name(doc: &Doc, name: &str) -> String {
+    let numbered = |n: &str| {
+        !n.starts_with('0')
+            && n.bytes().all(|b| b.is_ascii_digit())
+            && n.parse::<u32>().is_ok_and(|n| n >= 2)
+    };
+    let base = match name.rsplit_once(' ') {
+        Some((base, n)) if !base.is_empty() && numbered(n) => base,
+        _ => name,
+    };
+    let taken = |name: &str| doc.tracks.iter().any(|t| t.name == name);
+    (2u32..)
+        .map(|n| format!("{base} {n}"))
+        .find(|name| !taken(name))
+        .expect("fewer tracks than numbers")
 }
 
 /// The track sounds with another instrument. Its notes and its name stay.
@@ -602,3 +711,6 @@ pub(crate) fn with_track(doc: &Doc, index: usize, track: Track) -> Doc {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod duplicate_tests;

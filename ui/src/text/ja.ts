@@ -287,6 +287,8 @@ export const texts = {
     "{track} を消しました。取り消せます（{undoKey}）",
     { track: "3 ドラム", undoKey: "Mod Z" },
   ),
+  // A3: a song has 64 tracks and one more was asked for (not in the spec; in the words of 「SF2 のファイルではないので、足せません。」).
+  "msg.tooManyTracks": e("トラックは 64 本までなので、これ以上足せません。", "builder:2026-11-23"),
   "msg.drumsNoScaleLock": s6(
     "Drums and 「スケール固定」",
     "ドラムには音階がないので、スケール固定は使えません。",
@@ -2482,6 +2484,7 @@ export const texts = {
   // [Track heads and shelf screens]
   // The 「トラック」 and 「ヘルプ」 rows of the menu bar (the menu bar of spec 3). Context menus use the same names.
   "menu.renameTrack": e("名前を変える", "spec:3"),
+  "menu.duplicateTrack": e("トラックを複製", "user:2026-11-23"),
   "menu.trackColor": e("色", "spec:3"),
   "menu.moveTrackUp": e("上へ動かす", "spec:3"),
   "menu.moveTrackDown": e("下へ動かす", "spec:3"),

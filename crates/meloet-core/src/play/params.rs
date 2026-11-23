@@ -858,6 +858,13 @@ impl Play {
                 self.panel.ai_lists.insert(ticket, params);
             }
             PluginSaid::Params { ask, params } => self.params_listed(ticket, ask, params),
+            PluginSaid::State {
+                ask: StateAsk::Copy(serial),
+                state,
+            } => {
+                let (track, states) = self.copy_state_said(ticket, serial, state)?;
+                return self.make_copy(track, states, effects);
+            }
             PluginSaid::State { ask, state } => self.state_said(ticket, ask, state, effects),
             PluginSaid::KeyNames(names) => self.key_names_said(ticket, names),
             PluginSaid::StatePut(put) => self.ai_state_put(ticket, put, effects),
@@ -907,7 +914,7 @@ impl Play {
             (StateAsk::Param { ai: Some(ai), .. }, None) => {
                 self.ai_set_ended(ai, AiSetEnd::NoState)
             }
-            (StateAsk::Base | StateAsk::Param { .. }, None) => {}
+            (StateAsk::Base | StateAsk::Param { .. }, None) | (StateAsk::Copy(_), _) => {}
             (StateAsk::Entered(_) | StateAsk::Left(_), state) => {
                 self.visit_state(ticket, ask, state, effects);
             }

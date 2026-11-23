@@ -100,6 +100,9 @@ BOARDS = {
     "trackRename": "R6-Tracks",
     "trackDrag": "R6-Tracks",
     "trackColorMenu": "R6-Tracks",
+    # Round 12, A3.
+    "trackDuplicated": None,
+    "tooManyTracks": None,
     "drumRoll": "R7-Drum",
     # About meloet.
     "about": "R7-About",

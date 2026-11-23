@@ -46,7 +46,9 @@ describe("the chords of each progression", () => {
     expect(names({ root: 9, mode: "minorPentatonic" })).toEqual(C);
     expect(names({ root: 9, mode: "blues" })).toEqual(C);
     expect(names({ root: 9, mode: "harmonicMinor" })).toEqual(C);
-    expect(names({ root: 0, mode: "mixolydian" })).toEqual(C);
+    // Dorian and Mixolydian read as the major scale with the same notes.
+    expect(names({ root: 7, mode: "mixolydian" })).toEqual(C);
+    expect(names({ root: 2, mode: "dorian" })).toEqual(C);
   });
 
   it("the parent scale", () => {

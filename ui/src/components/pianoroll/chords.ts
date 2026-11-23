@@ -147,8 +147,8 @@ export function parentScale(mode: ScaleMode): ScaleMode {
   return mode;
 }
 
-/** Scales read from their relative major (the root + 3 semitones): those whose third is minor. */
-const MINOR_LIKE: ReadonlySet<ScaleMode> = new Set<ScaleMode>(["minor", "harmonicMinor", "melodicMinor", "dorian"]);
+/** Semitones from a scale's root up to the tonic of the major key a progression is read in: the major scale with the same notes (minor kinds: the relative major). */
+const MAJOR_TONIC: Partial<Record<ScaleMode, number>> = { minor: 3, harmonicMinor: 3, melodicMinor: 3, dorian: 10, mixolydian: 5 };
 
 export type Progression = "royal" | "canon" | "komuro" | "circle" | "pop" | "sad";
 
@@ -170,9 +170,9 @@ export const PROGRESSIONS: readonly { id: Progression; name: TextKey; degrees: r
   { id: "sad", name: "pr.progSad", degrees: [vi, V, IV, V] },
 ];
 
-/** The major key a progression is read in: the tonic of the scale, or of its relative major for minor-like scales. */
+/** The major key a progression is read in. */
 export function progressionTonic(scale: Pick<MusicalScale, "root" | "mode">): number {
-  return MINOR_LIKE.has(parentScale(scale.mode)) ? (scale.root + 3) % 12 : scale.root;
+  return (scale.root + (MAJOR_TONIC[parentScale(scale.mode)] ?? 0)) % 12;
 }
 
 /** The chords of a progression in the scale. */

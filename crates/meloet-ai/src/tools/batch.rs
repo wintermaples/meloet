@@ -31,7 +31,7 @@ pub const MAX_OPERATIONS: usize = 200;
 /// Tools that are refused before anything runs, and why. Tools that only read are refused
 /// by their `readOnlyHint`. A tool not listed here whose ask ends later is refused by the
 /// core when its turn comes, and the batch is taken back.
-const NOT_IN_A_BATCH: [(&str, &str); 11] = [
+const NOT_IN_A_BATCH: &[(&str, &str)] = &[
     (
         "set_plugin_state",
         "the plugin takes a state later; call it by itself",
@@ -43,6 +43,22 @@ const NOT_IN_A_BATCH: [(&str, &str); 11] = [
     (
         "save_preset",
         "saving a preset writes a file and changes nothing in the song; call it by itself",
+    ),
+    (
+        "set_plugin_state_text",
+        "the plugin takes a state later; call it by itself",
+    ),
+    (
+        "surge_set_modulation",
+        "the plugin takes a state later; call it by itself",
+    ),
+    (
+        "surge_remove_modulation",
+        "the plugin takes a state later; call it by itself",
+    ),
+    (
+        "surge_set_patch_params",
+        "the plugin takes a state later; call it by itself",
     ),
     ("batch", "a batch cannot hold a batch"),
     ("undo", "undo takes back a step; it cannot be a part of one"),

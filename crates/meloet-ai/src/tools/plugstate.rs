@@ -33,6 +33,17 @@ pub(super) const MAX_STATE: usize = 64 << 20;
 const MAX_INLINE: usize = 256 << 10;
 /// How long the plugin may take to say its state.
 const STATE_WAIT: Duration = Duration::from_secs(10);
+/// Core's words when a plugin, asked right after it took a state, says the state it had
+/// (`crates/meloet-core/src/play/plugs/aistate.rs`).
+const SAID_THE_OLD_STATE: &str = "says it has the state it had";
+/// How long after that a state is put in once more.
+const PUT_AGAIN_AFTER: Duration = Duration::from_millis(200);
+
+fn said_the_old_state(result: &CallToolResult) -> bool {
+    (result.content.iter())
+        .filter_map(|c| c.as_text())
+        .any(|t| t.text.contains(SAID_THE_OLD_STATE))
+}
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 pub struct GetStateArgs {
@@ -48,6 +59,10 @@ pub struct GetStateArgs {
     /// Default false: the state is written to a file.
     #[serde(default)]
     pub inline: bool,
+    /// For a plugin whose state meloet reads as text (Surge XT: its patch XML), give that
+    /// text in the answer, when it is at most 256 KiB. Default false: it is written to a file.
+    #[serde(default)]
+    pub readable_inline: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
@@ -65,6 +80,26 @@ pub struct SetStateArgs {
     pub base64: Option<String>,
     /// A file holding the state: an absolute path, such as get_plugin_state writes. Give this
     /// or `base64`.
+    #[serde(default)]
+    #[schemars(length(min = 1, max = 4096))]
+    pub file: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+pub struct SetTextArgs {
+    #[serde(default)]
+    pub track: Option<TrackRef>,
+    #[serde(default)]
+    pub bus: Option<BusArg>,
+    /// The insert slot, 1 to 4. Leave out for the track's instrument plugin.
+    #[serde(default)]
+    #[schemars(range(min = 1, max = 4))]
+    pub slot: Option<u32>,
+    /// The text, as get_plugin_state gives it in `readable` (edited). Give this or `file`.
+    #[serde(default)]
+    pub text: Option<String>,
+    /// A file holding the text: an absolute path, such as get_plugin_state writes. Give this
+    /// or `text`.
     #[serde(default)]
     #[schemars(length(min = 1, max = 4096))]
     pub file: Option<String>,
@@ -110,7 +145,7 @@ fn format_of(key: &str) -> String {
 }
 
 /// What a blocking piece of work gives, or "closing" when the pool lost it.
-async fn off_thread<T: Send + 'static>(
+pub(super) async fn off_thread<T: Send + 'static>(
     work: impl FnOnce() -> T + Send + 'static,
 ) -> Result<T, CallToolResult> {
     tokio::task::spawn_blocking(work)
@@ -197,26 +232,46 @@ impl Tools {
         if bytes.len() > MAX_STATE {
             return Err(failed(too_large()));
         }
-        let (done, _) = self
-            .ticketed(AiAsk::SetPluginState {
-                place,
-                state: bytes,
-            })
-            .await?;
-        Ok(done)
+        let ask = || AiAsk::SetPluginState {
+            place,
+            state: bytes.clone(),
+        };
+        match self.ticketed(ask()).await {
+            Ok((done, _)) => Ok(done),
+            // A plugin that takes a state on its next audio block (Surge XT while the sound
+            // runs) may still say its old state when core asks right after, and have the new
+            // one a moment later. Put in again, its state is already the new one.
+            Err(failure) if said_the_old_state(&failure) => {
+                eprintln!("meloet: a plugin took a state late; it is put in once more");
+                tokio::time::sleep(PUT_AGAIN_AFTER).await;
+                let (done, _) = self.ticketed(ask()).await?;
+                Ok(done)
+            }
+            Err(failure) => Err(failure),
+        }
     }
 
     /// A new file in the private temporary folder with the state in it.
     async fn state_file(&self, got: &PluginStateGot) -> Result<PathBuf, CallToolResult> {
+        let name = format!("state-{}-{}", got.format, got.plugin.name);
+        self.scratch_file(&name, "bin", got.bytes.clone()).await
+    }
+
+    /// A new file in the private temporary folder with `bytes` in it.
+    async fn scratch_file(
+        &self,
+        name: &str,
+        ending: &str,
+        bytes: Arc<[u8]>,
+    ) -> Result<PathBuf, CallToolResult> {
         self.scratch.clean(crate::scratch::KEEP);
         let dir = self.scratch.dir().map_err(|e| {
             failed(format!(
                 "the private temporary folder is not usable ({e}); ask with `inline: true`"
             ))
         })?;
-        let name = format!("state-{}-{}", got.format, got.plugin.name);
-        let path = self.scratch.name(&dir, &name, "bin");
-        let (to, bytes) = (path.clone(), got.bytes.clone());
+        let path = self.scratch.name(&dir, name, ending);
+        let to = path.clone();
         off_thread(move || write_state_file(&to, &bytes))
             .await?
             .map_err(|e| failed(format!("the state could not be written ({e})")))?;
@@ -226,10 +281,10 @@ impl Tools {
 
 #[tool_router(router = plugstate_router, vis = "pub(super)")]
 impl Tools {
-    /// The whole state of a plugin (a track's instrument, or an insert with `slot`), asked
-    /// of it now: name, format, key, size, sha256, and the bytes, written to a private
-    /// temporary file (deleted after an hour) or, with `inline`, as base64. Only the same
-    /// plugin in the same format can take it back.
+    /// A plugin's whole state (a track's instrument, or an insert with `slot`), asked of it
+    /// now: name, format, size, sha256, and the bytes in a private temporary file (deleted
+    /// after an hour) or, with `inline`, as base64. Only the same plugin and format takes it
+    /// back. Surge XT also gives `readable`: its patch XML (file, or `readable_inline`).
     #[tool(annotations(
         title = "Get plugin state",
         read_only_hint = true,
@@ -256,6 +311,19 @@ impl Tools {
             })
             .await
         );
+        let readable = match readable {
+            Some(r) if a.readable_inline && r.text.len() <= MAX_INLINE => {
+                Some(json!({ "kind": r.kind, "bytes": r.text.len(), "text": r.text }))
+            }
+            Some(r) => {
+                let name = format!("state-{}-{}", got.format, got.plugin.name);
+                let size = r.text.len();
+                let text = Arc::<[u8]>::from(r.text.into_bytes());
+                let file = check!(self.scratch_file(&name, r.kind, text).await);
+                Some(json!({ "kind": r.kind, "bytes": size, "file": file.display().to_string() }))
+            }
+            None => None,
+        };
         let value = json!({
             "plugin": {
                 "name": &*got.plugin.name,
@@ -267,7 +335,7 @@ impl Tools {
             "sha256": sha256,
             "file": file.as_ref().map(|f| f.display().to_string()),
             "base64": base64,
-            "readable": readable.map(|r| json!({ "kind": r.kind, "text": r.text })),
+            "readable": readable,
         });
         let lines = [
             format!(
@@ -343,6 +411,96 @@ impl Tools {
             format!("Done: set the plugin's state.\n{value}"),
             value,
         ))
+    }
+
+    /// Puts in Surge XT's patch XML (get_plugin_state's `readable`, edited); its wavetables
+    /// and the rest of the state stay. One undo step; a broken patch changes nothing. Change
+    /// no effect type (fxN_type) here: Surge XT keeps the old effect's values, some as
+    /// nonsense; set_param on "FX … FX Type" gives the defaults.
+    #[tool(annotations(
+        title = "Set plugin state as text",
+        read_only_hint = false,
+        destructive_hint = true,
+        idempotent_hint = false,
+        open_world_hint = false
+    ))]
+    async fn set_plugin_state_text(
+        &self,
+        Parameters(a): Parameters<SetTextArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        check!(self.allowed());
+        let text = match (a.text, a.file) {
+            (Some(text), None) => text,
+            (None, Some(file)) => {
+                let bytes = check!(check!(off_thread(move || read_state_file(&file)).await));
+                check!(String::from_utf8(bytes).map_err(|_| failed("the file is not UTF-8 text")))
+            }
+            _ => return Ok(failed("give `text` or `file`, one of them")),
+        };
+        let read = check!(self.read().await);
+        let place = check!(plugin_place(&read, a.track, a.bus, a.slot));
+        if let Some(plugin) = read.song.doc.plugin(place)
+            && !readable::knows(plugin)
+        {
+            let plugin = plugin.clone();
+            return Ok(failed(
+                readable::with_text(&plugin, &[], "")
+                    .err()
+                    .unwrap_or_default(),
+            ));
+        }
+        let now = check!(self.plugin_state(place).await);
+        let (plugin, bytes) = (now.plugin.clone(), now.bytes.clone());
+        let put = check!(off_thread(move || readable::with_text(&plugin, &bytes, &text)).await);
+        let state = match put {
+            Ok(state) => state,
+            Err(why) => return Ok(failed(format!("Nothing was set: {why}."))),
+        };
+        let (given, sha256) = check!(
+            off_thread(move || {
+                let sha256 = sha256_hex(&state);
+                (Arc::<[u8]>::from(state), sha256)
+            })
+            .await
+        );
+        let size = given.len();
+        let d = check!(self.put_plugin_state(place, given).await);
+        let mut value = done_value(&d);
+        value["given"] = json!({ "bytes": size, "sha256": sha256 });
+        value["now"] = match self.plugin_state(place).await {
+            Ok(now) => {
+                let (plugin, bytes) = (now.plugin.clone(), now.bytes.clone());
+                let (sha256, text) = check!(
+                    off_thread(move || (sha256_hex(&bytes), readable(&plugin, &bytes))).await
+                );
+                json!({
+                    "bytes": now.bytes.len(),
+                    "sha256": sha256,
+                    "readable_bytes": text.map(|t| t.text.len()),
+                })
+            }
+            Err(_) => Value::Null,
+        };
+        Ok(done(
+            format!("Done: set the plugin's state from the text.\n{value}"),
+            value,
+        ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The words a second put waits for are core's own.
+    #[test]
+    fn core_says_the_words_a_put_again_looks_for() {
+        let core = include_str!("../../../meloet-core/src/play/plugs/aistate.rs");
+        assert!(core.contains(SAID_THE_OLD_STATE));
+        assert!(said_the_old_state(&failed(format!(
+            "Could not set the plugin's state: the plugin took the state but {SAID_THE_OLD_STATE}."
+        ))));
+        assert!(!said_the_old_state(&failed("the plugin refused the state")));
     }
 }
 

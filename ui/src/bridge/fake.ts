@@ -13,6 +13,7 @@ import { FAKE_TABLES, FakeParamTables, SURGE_AUTOMATED, fakeParamCount } from ".
 import { FAKE_SONG_BPM, fakeAudioClip, fakePeaks, fakeStretch, fakeVocalClip, steadyTempo, type FakeAudio } from "./fakeAudio";
 import { advancePack, fakeClipsPanel, fakeSolo, fakeSounds, packAsking, packFailed, packFetching, reduceClips27, reducePack, withPack } from "./fakeRound8";
 import { reduceRound10 } from "./fakeRound10";
+import { reduceSections, withSections } from "./fakeSections";
 import { FAKE_PATTERNS, reduceP4 } from "./fakeP4";
 import { reduceUpdates } from "./fakeUpdates";
 import { CLICK_VOLUME_MAX_DB, CLICK_VOLUME_MIN_DB, REPEAT_COUNT_MAX } from "./types";
@@ -2610,6 +2611,33 @@ SCENES.markerAdded = {
   meters: QUIET,
 };
 
+// Round 12 A2 (no mock board): the markers of R10-Markers and two more, so that every state of a section is there.
+// 「イントロ」 (bars 1–4) can be used; 「Aメロ」 ends at 「ブリッジ」, which is inside bar 7, so neither can; 「サビ」
+// (bars 10–16) can; 「おわり」, at the song's end, has nothing after it.
+SCENES.sections = {
+  setup(s) {
+    markerSong(s);
+    const end = Math.max(...s.song.tracks.flatMap((t) => t.clips.map((c) => c.end)));
+    s.timeline.markers = [
+      ...MARKERS,
+      { id: 4, tick: 6 * BAR + TPQ, name: "ブリッジ", section: "usable" as const },
+      { id: 5, tick: Math.ceil(end / BAR) * BAR, name: "おわり", section: "usable" as const },
+    ]
+      .map((m) => ({ ...m }))
+      .sort((a, b) => a.tick - b.tick);
+    s.timeline.markers = withSections(s.song, s.timeline);
+    s.transport.position = 0;
+  },
+  meters: QUIET,
+};
+
+// Round 12 A2: a section step that would make the song longer than it can be did nothing.
+SCENES.songTooLong = {
+  setup: (s) => SCENES.sections!.setup(s),
+  after: (s) => (s.status.message = { id: "songTooLong" }),
+  meters: QUIET,
+};
+
 // R10-Markers, 「名前を変えている」: the name field of 「Aメロ」 is open (what is typed in it is the screen's own).
 SCENES.markerRenaming = {
   setup(s) {
@@ -4252,6 +4280,7 @@ const NOTICES: StatusMessage["id"][] = [
   "trackDeleted",
   "tooManyTracks",
   "nothingToKeep",
+  "songTooLong",
   "instrumentReplaced",
   "paramClamped",
   "paramRejected",
@@ -5503,7 +5532,8 @@ export function createFakeTransport(initial?: AppState): Transport {
       return { rev, state };
     },
     async send(command) {
-      const round10 = reduceRound10(state, bands, command, FAKE_TAKES) ?? reduceP4(state, command, FAKE_TAKES, newKitTrack, nowUs());
+      const round10 =
+        reduceRound10(state, bands, command, FAKE_TAKES) ?? reduceP4(state, command, FAKE_TAKES, newKitTrack, nowUs()) ?? reduceSections(state, command, FAKE_TAKES);
       if (round10?.row) {
         historyRows.length = Math.min(historyRows.length, round10.row.index - 1);
         historyRows[round10.row.index - 1] = round10.row;

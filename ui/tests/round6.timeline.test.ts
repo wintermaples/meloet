@@ -361,7 +361,7 @@ describe("marker row (mock R10-Markers)", () => {
     expect(app.sent.at(-1)).toEqual({ type: "closeMarkerName" });
   });
 
-  it("right click:「ループに」, 「名前を変える」F2, 「消す」Delete", () => {
+  it("right click:「ループに」, the rows of the section (round 12 A2), 「名前を変える」F2, 「消す」Delete", () => {
     show(scene("markerMoving"));
     const tag = qa('[data-test="marker-tag"]')[2]!;
     tag.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
@@ -370,6 +370,9 @@ describe("marker row (mock R10-Markers)", () => {
     const rows = contextMenu.open!.entries.filter((e): e is MenuRow => e.kind === "row");
     expect(rows.map((r) => [r.label, r.key ?? null])).toEqual([
       ["menu.loopFromMarker", null],
+      ["menu.duplicateSection", null],
+      ["menu.deleteSection", null],
+      ["menu.insertSpace", null],
       ["menu.renameMarker", "F2"],
       ["menu.delete", "Delete"],
     ]);

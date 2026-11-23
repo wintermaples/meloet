@@ -456,6 +456,8 @@
         return plain("msg.tooManyTracks");
       case "nothingToKeep":
         return plain("msg.nothingToKeep");
+      case "songTooLong":
+        return plain("msg.songTooLong");
       case "instrumentReplaced":
         return withLanes(
           plain("msg.instrumentReplaced", {

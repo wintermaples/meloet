@@ -22,6 +22,7 @@ pub mod presets;
 pub mod quantize;
 pub mod record;
 pub mod roll;
+pub mod sections;
 pub mod song;
 pub mod tempo_map;
 pub mod time;

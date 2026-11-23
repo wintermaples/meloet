@@ -242,6 +242,16 @@ BOARDS = {
     "arrangeRepeatDrag": None,
     "arrangeRepeatBox": None,
     "arrangeRepeated": None,
+    # Whole sections (round 12, A2; the spec's mock is not a board).
+    "sections": None,
+    "songTooLong": None,
+    "menuMarker": None,
+    "menuMarkerOffBars": None,
+    "menuMarkerEmpty": None,
+    "sectionSpaceBox": None,
+    "sectionSpaceIn": None,
+    "sectionDuplicated": None,
+    "sectionDeleted": None,
     # Stretch and pitch.
     "stretch": "F7-Stretch",
     "stretchRendering": "F7-Stretch",
@@ -438,6 +448,32 @@ await new Promise((r) => setTimeout(r, 300));
 """
 
 
+# Right-clicks the marker of that name in the scene sections (round 12 A2), then runs what follows: nothing (the menu
+# stays open) or a press on a row. MARKER_ROW is the row with that text, for a "mouse:" step (a disabled row shows
+# its reason under the pointer).
+CONTEXT_MARKER = """
+const tag = [...document.querySelectorAll('[data-test="marker-tag"]')].find((el) => el.textContent.trim() === "%s");
+const r = tag.getBoundingClientRect();
+tag.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2, clientX: r.left + 4, clientY: r.bottom }));
+await new Promise((r) => setTimeout(r, 100));
+const row = (text) => [...document.querySelectorAll('[data-test="context-menu"] button')].find((b) => b.textContent.includes(text));
+%s
+"""
+MARKER_ROW = """mouse:[...document.querySelectorAll('[data-test="context-menu"] button')].find((b) => b.textContent.includes("%s"))"""
+PRESS_MARKER_ROW = """
+row("%s").click();
+await new Promise((r) => setTimeout(r, 300));
+"""
+PRESS_ENTER_IN_SPACE_BOX = """
+document.querySelector('[data-test="insert-space-field"]').dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+await new Promise((r) => setTimeout(r, 300));
+"""
+
+
+def marker_menu(name, then=""):
+    return "js:" + CONTEXT_MARKER % (name, then)
+
+
 # Turns the wheel sideways over the notes area of the piano roll by dx CSS px.
 WHEEL_ROLL = """
 document.querySelector(".roll .middle").dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaX: %d }));
@@ -571,6 +607,7 @@ for (const key of %s) list.dispatchEvent(new KeyboardEvent("keydown", { key, bub
 
 # Shots that need a click first (a menu is screen-only state): name -> (scene, CSS selector to click).
 # A selector that starts with "js:" is run as a script instead (it may await).
+# One that starts with "mouse:" is an expression for an element: the real pointer goes to its middle (CSS :hover).
 # Several selectors (a tuple) are clicked one after another.
 CLICKS = {
     "songMenu": ("saved", '[data-test="transport-song"]'),
@@ -609,6 +646,15 @@ CLICKS = {
     "arrangeRepeatDrag": ("arrangeTrimmed", repeat_handle(384)),
     "arrangeRepeatBox": ("arrangeTrimmed", "js:" + REPEAT_BOX % ""),
     "arrangeRepeated": ("arrangeTrimmed", "js:" + REPEAT_BOX % PRESS_ENTER_IN_REPEAT_BOX),
+    # Round 12 A2: the menu of a marker whose section can be used, of one off the bars and of the last one (the
+    # pointer on a disabled row), the box of 「この前に空きを入れる…」, and what the fake answers to the three rows.
+    "menuMarker": ("sections", marker_menu("イントロ")),
+    "menuMarkerOffBars": ("sections", (marker_menu("Aメロ"), MARKER_ROW % "消して詰める")),
+    "menuMarkerEmpty": ("sections", (marker_menu("おわり"), MARKER_ROW % "複製")),
+    "sectionSpaceBox": ("sections", marker_menu("サビ", PRESS_MARKER_ROW % "空きを入れる")),
+    "sectionSpaceIn": ("sections", marker_menu("サビ", PRESS_MARKER_ROW % "空きを入れる" + PRESS_ENTER_IN_SPACE_BOX)),
+    "sectionDuplicated": ("sections", marker_menu("イントロ", PRESS_MARKER_ROW % "複製")),
+    "sectionDeleted": ("sections", marker_menu("イントロ", PRESS_MARKER_ROW % "消して詰める")),
     # A clip with every note deleted, scrolled 1 bar sideways (the ruler and the grid show there too).
     "pianoRollNoNotesScrolled": ("pianoRollNoNotes", "js:" + WHEEL_ROLL % 160),
     # F4-ShelfSample: the ▶ of the grand piano pressed.
@@ -759,6 +805,14 @@ ONLY = {
     "arrangeRepeatDrag": [(1280, 800, 100)],
     "arrangeRepeatBox": [(1280, 800, 100)],
     "arrangeRepeated": [(1280, 800, 100)],
+    "sections": [(1280, 800, 100)],
+    "menuMarker": [(1280, 800, 100), (1280, 800, 150)],
+    "menuMarkerOffBars": [(1280, 800, 100)],
+    "menuMarkerEmpty": [(1280, 800, 100)],
+    "sectionSpaceBox": [(1280, 800, 100), (1280, 800, 150)],
+    "sectionSpaceIn": [(1280, 800, 100)],
+    "sectionDuplicated": [(1280, 800, 100)],
+    "sectionDeleted": [(1280, 800, 100)],
     "tracks6": [(1280, 800, 100), (1280, 800, 150), (1920, 1080, 100)],
     "shelfNewTrack": [(1280, 800, 100), (1280, 800, 150)],
     "shelfSample": [(1280, 800, 100)],
@@ -911,6 +965,10 @@ try {
   for (const selector of JSON.parse(selectors)) {
     if (selector.startsWith("js:")) {
       await evaluate(`(async () => {${selector.slice(3)}})()`);
+      await settle("true");
+    } else if (selector.startsWith("mouse:")) {
+      const [x, y] = await evaluate(`(() => { const r = (${selector.slice(6)}).getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()`);
+      await call("Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
       await settle("true");
     } else {
       await settle(`document.querySelector(${JSON.stringify(selector)}) !== null`);

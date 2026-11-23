@@ -1141,3 +1141,57 @@ fn audio_the_disk_did_not_give_in_time_is_said_once_until_the_song_stops() {
     m.handle(Input::DiskTooSlow);
     assert_eq!(status(&m), Some(StatusMessage::DiskTooSlow));
 }
+
+/// Round 12 A2: a section with an audio clip over its end is copied; the engine is told the clips of the seat again,
+/// and every clip plays the audio the one clip did.
+#[test]
+fn a_copied_section_cuts_an_audio_clip_and_tells_the_engine_its_clips() {
+    let (mut m, clip, _) = one_clip(48_000);
+    assert_eq!((clip.start, clip.end), (0, 2 * BAR));
+    let mark = |m: &mut Model, tick: u64, name: &str| {
+        cmd(
+            m,
+            Command::AddMarker {
+                name: name.into(),
+                tick: Some(tick),
+            },
+        );
+        let id = m.view().timeline.renaming.unwrap();
+        cmd(m, Command::CloseMarkerName);
+        id
+    };
+    let intro = mark(&mut m, 0, "イントロ");
+    mark(&mut m, BAR, "A メロ");
+    let steps = undo_count(&m);
+    let effects = cmd(&mut m, Command::DuplicateSection { marker: intro });
+    assert_eq!(undo_count(&m), steps + 1);
+    let all: Vec<ClipView> = clips(&m).into_iter().map(|(_, c)| c).collect();
+    assert_eq!(
+        all.iter().map(|c| (c.start, c.end)).collect::<Vec<_>>(),
+        [(0, BAR), (BAR, 2 * BAR), (2 * BAR, 3 * BAR)]
+    );
+    assert_eq!(all[0].id, clip.id);
+    assert!(all.iter().all(|c| c.take_id == clip.take_id));
+    // The copy plays what bar 1 played; the later half plays on from where the cut is.
+    assert_eq!(
+        all.iter().map(|c| c.take_offset).collect::<Vec<_>>(),
+        [0, 0, -(BAR as i64)]
+    );
+    let sent: Vec<usize> = (effects.iter())
+        .filter_map(|e| match e {
+            Effect::Engine(crate::state::EngineOp::Clips { clips, .. }) => Some(clips.len()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(sent, [3]);
+    assert!(
+        !(effects.iter()).any(|e| matches!(
+            e,
+            Effect::Engine(crate::state::EngineOp::AudioSources { .. })
+        )),
+        "the audio table is the same"
+    );
+    cmd(&mut m, Command::Undo);
+    let back: Vec<ClipView> = clips(&m).into_iter().map(|(_, c)| c).collect();
+    assert_eq!(back, [clip]);
+}

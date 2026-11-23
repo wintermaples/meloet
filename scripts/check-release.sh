@@ -25,7 +25,7 @@ trap 'rm -rf "$work"' EXIT
 rust_names='MELOET_|devhooks|measure_enabled|measure_report|ui_script|key-to-sound\.json|vocal-faults\.log|urn:meloet:fake'
 page_names='MELOET_|measure_enabled|measure_report|ui_script|uiScript|__meloetMeasure|key-to-screen|frame-times|pr-scroll'
 # What the build with the hooks must show, one name from each place.
-rust_must=(MELOET_PIPE MELOET_UI_SCRIPT MELOET_MEASURE_DIR MELOET_STATE_DIR MELOET_ACCEPT_VIRTUAL MELOET_PACK_ORIGIN MELOET_ENGINE_RT devhooks measure_report)
+rust_must=(MELOET_PIPE MELOET_UI_SCRIPT MELOET_MEASURE_DIR MELOET_STATE_DIR MELOET_ACCEPT_VIRTUAL MELOET_PACK_ORIGIN MELOET_UPDATE_URL MELOET_ENGINE_RT devhooks measure_report)
 plughost_must=(MELOET_PLUGHOST_FAKE MELOET_PLUGHOST_RT urn:meloet:fake)
 page_must=(measure_report ui_script pr-scroll)
 

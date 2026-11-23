@@ -2457,6 +2457,13 @@ export const texts = {
   "settings.aiConnected": e("つながっています", "user:2026-11-23"),
   "settings.aiLinkNote": e("オンの間だけ、この PC の中に口をひらきます。同じユーザーのアプリだけがつなげます。", "user:2026-11-23"),
   "settings.aiLinkCan": e("できること: 曲を読んで助言する ・ 頼まれたら書く（1 手ずつ取り消せます） ・ 書き出した音を調べる", "user:2026-11-23"),
+  // 「新しい版をたしかめる」 (round 12, D1): the status line, 「meloet について」 and the row of the advanced settings.
+  "update.newVersion": e("新しい版 {version} があります", "user:2026-11-23", { version: "0.3.0" }),
+  "button.openReleasePage": e("ページをひらく", "user:2026-11-23"),
+  "button.newVersionLater": e("あとで", "user:2026-11-23"),
+  "settings.checkUpdates": e("新しい版をたしかめる", "user:2026-11-23"),
+  "settings.checkUpdatesOn": e("オン", "user:2026-11-23"),
+  "settings.checkUpdatesOff": e("オフ", "user:2026-11-23"),
 
   // [Menus, keys]
   // Key names written at the right of menu rows (the table in spec 4). Mod becomes key.ctrl or key.cmd.

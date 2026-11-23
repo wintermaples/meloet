@@ -360,6 +360,21 @@
                 {/if}
               </div>
               <div class="note ai-note" data-test="settings-ai-note">{t("settings.aiLinkNote")}<br />{t("settings.aiLinkCan")}</div>
+              <!-- 「新しい版をたしかめる」 (round 12, D1): the same choice mark as 「AI とつなぐ」. -->
+              <div class="row" data-test="settings-updates">
+                <span class="strong name">{t("settings.checkUpdates")}</span>
+                <button
+                  type="button"
+                  class="pick"
+                  role="checkbox"
+                  aria-checked={app.updates.check}
+                  data-test="settings-check-updates"
+                  onclick={() => send({ type: "setCheckUpdates", on: !app.updates.check })}
+                >
+                  <span class="mark" class:on={app.updates.check}><span class="dot"></span></span>
+                  <span class="strong">{app.updates.check ? t("settings.checkUpdatesOn") : t("settings.checkUpdatesOff")}</span>
+                </button>
+              </div>
             </div>
           {/if}
         </div>

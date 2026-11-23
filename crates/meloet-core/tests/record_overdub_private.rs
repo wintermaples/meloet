@@ -77,6 +77,7 @@ fn overdub_over_a_loop_adds_each_pass_as_one_step() {
         state_dir: None,
         sounds_dir: None,
         pack: None,
+        updates: None,
         plugins: None,
         sf2_dir: None,
         cache_dir: None,

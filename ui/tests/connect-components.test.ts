@@ -402,7 +402,7 @@ describe("sound settings", () => {
     expect(qa('[data-test="endpoint-row"]')).toHaveLength(0);
     expect(target.textContent).not.toContain("音のしくみ");
     expect(target.textContent).not.toContain("PipeWire");
-    expect(qa(".adv-body .row .name").map((n) => n.textContent!.trim())).toEqual(["入口", "バッファ", "サンプルレート", "録る形", "遅れの合わせ", "音の素材", "プラグインの場所", "AI とつなぐ"]);
+    expect(qa(".adv-body .row .name").map((n) => n.textContent!.trim())).toEqual(["入口", "バッファ", "サンプルレート", "録る形", "遅れの合わせ", "音の素材", "プラグインの場所", "AI とつなぐ", "新しい版をたしかめる"]);
   });
 
   it("advanced settings: the running number to the right of the asked number. If different,「頼んだ 256 ではなく、1024 で動いています…」below. The fixed box is not shown", () => {

@@ -187,6 +187,7 @@ fn start(config: &Path, state: &Path) -> Core {
         state_dir: Some(state.to_owned()),
         sounds_dir: None,
         pack: None,
+        updates: None,
         plugins: None,
         sf2_dir: None,
         cache_dir: None,

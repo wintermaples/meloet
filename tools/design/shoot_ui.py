@@ -517,6 +517,8 @@ CLICKS = {
     "aboutLicenses": ("tracks6", ('[data-menu="6"]', '[data-test="menubar-list"] [data-row="0"]', '[data-test="about-licenses"]')),
     "aboutPart": ("tracks6", ('[data-menu="6"]', '[data-test="menubar-list"] [data-row="0"]', '[data-test="about-licenses"]',
                                '[data-test="about-group"]', "js:" + OPEN_PART)),
+    # 「meloet について」 with the line of a newer version (round 12, D1).
+    "aboutNewVersion": ("newVersion", ('[data-menu="6"]', '[data-test="menubar-list"] [data-row="0"]')),
     "settingsAdv": ("settings", '[data-test="settings-advanced"]'),
     "settingsMoved": ("settings", drag_dialog('[data-test="settings-dialog"]', -200, -40)),
     "scanStoppedMoved": ("scanStopped", drag_dialog('[data-test="scan-stopped-dialog"]', 260, 120)),
@@ -633,6 +635,7 @@ ONLY = {
     "about": [(1280, 800, 100), (1280, 800, 150)],
     "aboutLicenses": [(1280, 800, 100), (1280, 800, 150)],
     "aboutPart": [(1280, 800, 100), (1920, 1080, 150)],
+    "aboutNewVersion": [(1280, 800, 100), (1280, 800, 150)],
     # The mixer (F4-Mixer is 1280x800 at 100 %). 150 % is to see that it fits.
     "mixer": [(1280, 800, 100), (1280, 800, 150), (1920, 1080, 100)],
     "paramsDelay": [(1280, 800, 100), (1280, 800, 150)],

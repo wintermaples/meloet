@@ -76,7 +76,6 @@ describe("fake intents", () => {
       { type: "normalizeClips", clips: [1] },
       { type: "reverseClips", clips: [1] },
       { type: "openUserGuide" },
-      { type: "setCheckUpdates", on: false },
       { type: "openReleasePage" },
       { type: "dismissNewVersion" },
     ];

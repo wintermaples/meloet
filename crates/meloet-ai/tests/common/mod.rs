@@ -33,6 +33,7 @@ pub fn options(runtime: &Path) -> Options {
         runtime_dir: Some(runtime.to_path_buf()),
         expect_uid: my_uid(),
         temp_dir: temp,
+        presets: meloet_ai::PresetDirs::home(&runtime.join("home")),
     }
 }
 

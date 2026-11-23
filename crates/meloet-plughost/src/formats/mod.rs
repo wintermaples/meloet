@@ -21,12 +21,12 @@ pub mod vst3;
 /// What plugins asked the main thread to watch and to call. Only VST3 has such a thing.
 pub use vst3::runloop;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU8, Ordering::SeqCst};
 use std::time::{Duration, Instant};
 
 use meloet_plugin::ipc::{FromPlugin, ToPlugin, Transport};
-use meloet_plugin::wire::{KeyName, LoadedPlugin, ParamInfo, ParamNow};
+use meloet_plugin::wire::{KeyName, LoadedPlugin, ParamInfo, ParamNow, PresetInfo};
 use meloet_plugin::{PluginFormat, PluginKey};
 
 /// What a plugin is made ready for.
@@ -191,6 +191,9 @@ pub trait Processor: Send {
     }
 }
 
+/// What a plugin whose format has no presets meloet reads answers about them.
+const NO_PRESETS: &str = "meloet reads no presets of this plugin's format";
+
 /// The half of a plugin on the main thread.
 pub trait Controller {
     /// Every parameter a person can move, with its value now.
@@ -209,6 +212,26 @@ pub trait Controller {
     /// name them. Must not reach into a plugin that may be running.
     fn key_names(&mut self) -> Option<Vec<KeyName>> {
         None
+    }
+    /// The presets the plugin's format lists for it, with those of the preset bundles
+    /// `bundles` (LV2).
+    fn presets(&mut self, _bundles: &[PathBuf]) -> Result<Vec<PresetInfo>, String> {
+        Err(NO_PRESETS.into())
+    }
+    /// The state of one of [`Controller::presets`], as `save_state` would give it with the
+    /// preset loaded, made without changing the plugin.
+    fn preset_state(&mut self, _uri: &str, _bundles: &[PathBuf]) -> Result<Vec<u8>, String> {
+        Err(NO_PRESETS.into())
+    }
+    /// Writes the plugin's state now as a preset named `label`, described in `file` of the
+    /// bundle folder `dir`; the preset as [`Controller::presets`] lists it.
+    fn save_preset(
+        &mut self,
+        _dir: &Path,
+        _file: &str,
+        _label: &str,
+    ) -> Result<PresetInfo, String> {
+        Err(NO_PRESETS.into())
     }
     /// Puts the plugin's window into the X11 window `parent`.
     fn open_editor(&mut self, parent: u32) -> Result<Opened, String>;

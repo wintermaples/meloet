@@ -55,7 +55,7 @@ use crate::play::{
 };
 use crate::plugins::hosts::{
     DEFAULT_GEOMETRY, EditorKind, HostError, HostNews, HostOptions, Hosts, LoadSpec, Loaded,
-    ParamNow, SlotId, StartState,
+    ParamNow, PresetAsk, PresetSaid, SlotId, StartState,
 };
 use crate::plugins::housed::{HousedEffect, HousedInstrument, Which};
 use crate::plugins::scanner::Scanner;
@@ -2623,6 +2623,9 @@ impl Worker {
                 Ok(Msg::AiSong(reply)) => {
                     let _ = reply.send(self.model.ai_song());
                 }
+                Ok(Msg::Ai(AiAsk::Preset { place, ask }, reply)) => {
+                    self.ask_preset(place, ask, reply);
+                }
                 Ok(Msg::Ai(ask, reply)) => {
                     self.handle(Input::Ai(ask));
                     let answer = (self.model.take_ai_answer()).map(|a| {
@@ -3229,6 +3232,26 @@ impl Worker {
             PluginAsk::Watch { on } => hosts.watch(id, on),
         }
         None
+    }
+
+    /// [`AiAsk::Preset`]: the plugin's host answers the AI link from the plugins' thread. It
+    /// changes nothing of the song, so the rules are not asked.
+    fn ask_preset(&self, place: PluginPlace, ask: PresetAsk, reply: Sender<AiAnswer>) {
+        let ticket = (self.model.plugin_tickets().into_iter()).find(|(p, _)| *p == place);
+        let side = self.plugins.as_ref();
+        let id = ticket.and_then(|(_, ticket)| Some(side?.ids.get(&ticket)?.0));
+        let (Some(side), Some(id)) = (side, id) else {
+            let _ = reply.send(AiAnswer::Refused(AiRefusal::PluginNotLoaded));
+            return;
+        };
+        let done = move |said: Result<PresetSaid, HostError>| {
+            let _ = reply.send(match said {
+                Ok(said) => AiAnswer::Preset(said),
+                Err(HostError::Refused(why)) => AiAnswer::Refused(AiRefusal::Cannot(why)),
+                Err(_) => AiAnswer::Refused(AiRefusal::PluginNotLoaded),
+            });
+        };
+        side.hosts.preset(id, ask, Box::new(done));
     }
 
     /// [`Effect::LoadPlugin`]. Returns whether the load was asked for.

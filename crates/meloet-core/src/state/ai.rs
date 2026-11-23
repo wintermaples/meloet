@@ -488,6 +488,7 @@ impl Model {
             AiAsk::PluginParams { .. }
             | AiAsk::KeyNames { .. }
             | AiAsk::PluginState { .. }
+            | AiAsk::Preset { .. }
             | AiAsk::ParamsSet { .. }
             | AiAsk::ParamTexts { .. } => {
                 return Err(AiRefusal::Cannot("that is a read, not a write".into()));

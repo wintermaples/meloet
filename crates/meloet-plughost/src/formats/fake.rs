@@ -14,7 +14,8 @@
 //! - `urn:meloet:fake:slowwindow`: as `window`; its window takes 0.4 s to open.
 //! - `urn:meloet:fake:choices`: as `sine`, with no window and the two parameters of `window`
 //!   and a third in their group: `Type`, of no steps, whose texts are four names. Its state
-//!   holds the level, the step and the type, not the switch.
+//!   holds the level, the step and the type, not the switch. Its presets are [`PRESETS`] and
+//!   the preset files in the bundles it is given; a preset it saves is such a file.
 //! - `urn:meloet:fake:notyet`: as `pass`, with a window of a kind meloet does not open.
 //! - `urn:meloet:fake:slow`: as `pass`; every block takes it 30 ms, longer than the block is.
 //! - `urn:meloet:fake:mode`: an effect. 1 in every sample when it was made ready for an
@@ -30,12 +31,12 @@
 //! - `mixed`: `urn:meloet:fake:a`, `…:b` and `…:c`. Reading `b` crashes; `a` and `c` are read.
 //! - `drums`: `drums` and `kit`, both drum instruments.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 
 use meloet_plugin::ipc::ToPlugin;
-use meloet_plugin::wire::{KeyName, LoadedPlugin, ParamInfo, ParamNow, ParamShape};
+use meloet_plugin::wire::{KeyName, LoadedPlugin, ParamInfo, ParamNow, ParamShape, PresetInfo};
 use meloet_plugin::{
     EditorKind, EffectCategory, InstrumentCategory, PluginFormat, PluginInfo, PluginKey, PluginKind,
 };
@@ -62,6 +63,15 @@ const KNOB_MOVES: u32 = 40;
 const KNOB_END: f64 = 0.9;
 /// The keys `drums` names.
 pub const DRUM_NAMES: [(u8, &str); 2] = [(36, "Fake Kick"), (38, "Fake Snare")];
+/// The presets of `choices`: URI, label, and its state (level, step, type).
+pub const PRESETS: [(&str, &str, [f64; 3]); 2] = [
+    ("urn:meloet:fake:preset:quiet", "Quiet", [0.125, 0.0, 0.0]),
+    ("urn:meloet:fake:preset:loud", "Loud", [0.875, 1.0, 0.625]),
+];
+pub const PRESET_BANK: &str = "Fake Bank";
+/// A preset of `choices` written into a bundle is a file of this ending holding its state;
+/// the bundle's manifest says it applies to `choices`.
+const PRESET_ENDING: &str = "fakepreset";
 
 fn enabled() -> bool {
     std::env::var_os(ENV).is_some_and(|v| !v.is_empty())
@@ -457,6 +467,70 @@ impl Controller for FakeController {
             name: name.into(),
         };
         self.names.then(|| DRUM_NAMES.map(name).to_vec())
+    }
+
+    fn presets(&mut self, bundles: &[PathBuf]) -> Result<Vec<PresetInfo>, String> {
+        if !self.choices {
+            return Err("this fake plugin has no presets".into());
+        }
+        let mut presets: Vec<PresetInfo> = (PRESETS.iter())
+            .map(|(uri, label, _)| PresetInfo {
+                uri: (*uri).into(),
+                label: (*label).into(),
+                bank: Some(PRESET_BANK.into()),
+                file: None,
+            })
+            .collect();
+        for bundle in bundles {
+            let Ok(entries) = std::fs::read_dir(bundle) else {
+                continue;
+            };
+            let mut files: Vec<PathBuf> = (entries.flatten().map(|e| e.path()))
+                .filter(|p| p.extension().is_some_and(|e| e == PRESET_ENDING))
+                .collect();
+            files.sort();
+            presets.extend(files.into_iter().map(|file| PresetInfo {
+                uri: format!("file://{}", file.display()),
+                label: (file.file_stem().unwrap_or_default().to_string_lossy()).into(),
+                bank: None,
+                file: Some(file),
+            }));
+        }
+        Ok(presets)
+    }
+
+    fn preset_state(&mut self, uri: &str, bundles: &[PathBuf]) -> Result<Vec<u8>, String> {
+        let none = || format!("no preset {uri} applies to this plugin");
+        let presets = self.presets(bundles)?;
+        let preset = (presets.iter().find(|p| p.uri == uri)).ok_or_else(none)?;
+        if let Some(file) = &preset.file {
+            return std::fs::read(file).map_err(|e| e.to_string());
+        }
+        let (_, _, values) = (PRESETS.iter().find(|(u, ..)| *u == uri)).ok_or_else(none)?;
+        Ok(values.iter().flat_map(|v| v.to_le_bytes()).collect())
+    }
+
+    fn save_preset(&mut self, dir: &Path, file: &str, label: &str) -> Result<PresetInfo, String> {
+        if !self.choices {
+            return Err("this fake plugin has no presets".into());
+        }
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        let path = dir
+            .join(file)
+            .with_file_name(format!("{label}.{PRESET_ENDING}"));
+        std::fs::write(&path, self.save_state()?).map_err(|e| e.to_string())?;
+        let uri = format!("file://{}", path.display());
+        let manifest = format!(
+            "<{uri}> a <http://lv2plug.in/ns/ext/presets#Preset> ;\n    \
+             <http://lv2plug.in/ns/lv2core#appliesTo> <{PREFIX}choices> .\n"
+        );
+        std::fs::write(dir.join("manifest.ttl"), manifest).map_err(|e| e.to_string())?;
+        Ok(PresetInfo {
+            uri,
+            label: label.into(),
+            bank: None,
+            file: Some(path),
+        })
     }
 
     fn open_editor(&mut self, _parent: u32) -> Result<Opened, String> {

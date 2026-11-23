@@ -48,7 +48,7 @@ pub use meloet_plugin::EditorKind;
 use meloet_plugin::PluginKey;
 use meloet_plugin::ipc::{EngineEnd, Geometry, Mapping};
 use meloet_plugin::launch::{self, PidFd};
-pub use meloet_plugin::wire::{EditorOpen, KeyName, ParamNow, ParamShape, TextValue};
+pub use meloet_plugin::wire::{EditorOpen, KeyName, ParamNow, ParamShape, PresetInfo, TextValue};
 use meloet_plugin::wire::{
     FromHost, LoadedPlugin, Notice, ParamInfo, Reply, Request, ToHost, WIRE_VERSION, read_frame,
     write_frame,
@@ -61,6 +61,9 @@ pub const WATCH_TICK: Duration = Duration::from_millis(10);
 const ANSWER_WAIT: Duration = Duration::from_secs(5);
 /// Loading reads the plugin's files; big ones take seconds.
 const LOAD_WAIT: Duration = Duration::from_secs(30);
+/// Presets are read from files of their own, a bundle of them the first time it is asked
+/// for (ZynAddSubFX's: 1149 presets).
+const PRESET_WAIT: Duration = Duration::from_secs(15);
 /// How long a process that was told to end may take before it is killed.
 const QUIT_WAIT: Duration = Duration::from_millis(300);
 
@@ -111,6 +114,31 @@ pub struct Loaded {
     pub slot: PluginSlot,
     pub watch: Arc<PluginWatch>,
     pub plugin: LoadedPlugin,
+}
+
+/// What is asked about the presets of an LV2 plugin.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PresetAsk {
+    /// Its presets, with those of these bundles of presets (folders).
+    List { bundles: Vec<PathBuf> },
+    /// The state of the preset `uri` of `List`, as [`Hosts::state`] gives a state, made
+    /// without changing the plugin.
+    State { uri: String, bundles: Vec<PathBuf> },
+    /// Writes the plugin's state now as the preset `label`: the file `file` of the bundle
+    /// folder `dir`, which is made when it is not there.
+    Save {
+        dir: PathBuf,
+        file: String,
+        label: String,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum PresetSaid {
+    Listed(Vec<PresetInfo>),
+    State(Arc<[u8]>),
+    /// The preset written, as it is listed from now on.
+    Saved(PresetInfo),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -225,6 +253,7 @@ enum Ask {
     State(SlotId, Done<Vec<u8>>),
     SetState(SlotId, Vec<u8>, Done<()>),
     KeyNames(SlotId, Done<Option<Vec<KeyName>>>),
+    Preset(SlotId, PresetAsk, Done<PresetSaid>),
     Params(SlotId, Done<Vec<ParamInfo>>),
     Param(SlotId, u32, Done<(f64, String)>),
     SetParam(SlotId, u32, f64, Done<ParamNow>),
@@ -348,6 +377,11 @@ impl Hosts {
     /// A stopped plugin answers `Gone`.
     pub fn key_names(&self, id: SlotId, done: Done<Option<Vec<KeyName>>>) {
         self.ask(Ask::KeyNames(id, done));
+    }
+
+    /// An ask about the presets of an LV2 plugin. A stopped plugin answers `Gone`.
+    pub fn preset(&self, id: SlotId, ask: PresetAsk, done: Done<PresetSaid>) {
+        self.ask(Ask::Preset(id, ask, done));
     }
 
     /// Every parameter a person can move, in the plugin's order: name, group (the top of a
@@ -580,6 +614,7 @@ impl Run {
                         other => Err(refused(other)),
                     }),
             ),
+            Ask::Preset(id, ask, done) => done(self.preset(id, ask)),
             Ask::Params(id, done) => done(
                 self.ask_slot(id, |slot| Request::Params { slot }, &[])
                     .and_then(|answer| match answer.0 {
@@ -851,6 +886,38 @@ impl Run {
         let (proc, place) = slot.home.ok_or(HostError::Gone)?;
         let at = self.proc_at(proc).ok_or(HostError::Gone)?;
         self.request(at, request(place), blob, ANSWER_WAIT)
+    }
+
+    fn preset(&mut self, id: SlotId, ask: PresetAsk) -> Result<PresetSaid, HostError> {
+        let slot = self.slots.get(&id).ok_or(HostError::UnknownSlot)?;
+        let (proc, slot) = slot.home.ok_or(HostError::Gone)?;
+        let at = self.proc_at(proc).ok_or(HostError::Gone)?;
+        let request = match &ask {
+            PresetAsk::List { bundles } => {
+                let bundles = bundles.clone();
+                Request::Presets { slot, bundles }
+            }
+            PresetAsk::State { uri, bundles } => {
+                let (uri, bundles) = (uri.clone(), bundles.clone());
+                Request::PresetState { slot, uri, bundles }
+            }
+            PresetAsk::Save { dir, file, label } => Request::SavePreset {
+                slot,
+                dir: dir.clone(),
+                file: file.clone(),
+                label: label.clone(),
+            },
+        };
+        match (ask, self.request(at, request, &[], PRESET_WAIT)?) {
+            (PresetAsk::List { .. }, (Reply::Presets { presets }, _)) => {
+                Ok(PresetSaid::Listed(presets))
+            }
+            (PresetAsk::State { .. }, (Reply::State, state)) => Ok(PresetSaid::State(state.into())),
+            (PresetAsk::Save { .. }, (Reply::Presets { mut presets }, _)) if presets.len() == 1 => {
+                Ok(PresetSaid::Saved(presets.remove(0)))
+            }
+            (_, (other, _)) => Err(refused(other)),
+        }
     }
 
     fn start_proc(&mut self, key: &PluginKey) -> Result<usize, HostError> {

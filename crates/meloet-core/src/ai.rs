@@ -13,6 +13,8 @@ use meloet_model::{
 };
 use meloet_protocol::{Command, ExportFormat, HistoryRow, LibraryView, RecordFormat};
 
+pub use crate::plugins::hosts::{PresetAsk, PresetInfo, PresetSaid};
+
 /// Called on the core thread with the switch 「AI とつなぐ」, once when it is set and again
 /// whenever the switch changes. Must not wait.
 pub type AiSwitch = Box<dyn Fn(bool) + Send>;
@@ -300,6 +302,13 @@ pub enum AiAsk {
         place: PluginPlace,
         state: Arc<[u8]>,
     },
+    /// About the presets of the LV2 plugin at `place`, asked of its plugin host and answered
+    /// from there with [`AiAnswer::Preset`]. Not a write: a preset saved is a file, not a
+    /// change of the song.
+    Preset {
+        place: PluginPlace,
+        ask: PresetAsk,
+    },
     /// Over the song's file. Answered with a ticket; see [`AiSong::outcomes`].
     Save,
     /// A new song folder `name` in `folder`, holding `name.meloet`. With a ticket.
@@ -395,6 +404,7 @@ pub fn batchable(ask: &AiAsk) -> bool {
             | AiAsk::ParamTexts { .. }
             | AiAsk::PluginState { .. }
             | AiAsk::SetPluginState { .. }
+            | AiAsk::Preset { .. }
             | AiAsk::KeyNames { .. }
             | AiAsk::Save
             | AiAsk::SaveAs { .. }
@@ -474,6 +484,11 @@ impl AiAsk {
             AiAsk::PluginParams { .. } => "read the plugin's parameters",
             AiAsk::PluginState { .. } => "read the plugin's state",
             AiAsk::SetPluginState { .. } => "set the plugin's state",
+            AiAsk::Preset {
+                ask: PresetAsk::Save { .. },
+                ..
+            } => "save the preset",
+            AiAsk::Preset { .. } => "read the plugin's presets",
             AiAsk::Save => "save the song",
             AiAsk::SaveAs { .. } => "save the song as",
             AiAsk::Open { .. } => "open the song",
@@ -719,6 +734,7 @@ pub enum AiAnswer {
     Params(AiParams),
     KeyNames(AiKeyNames),
     State(AiState),
+    Preset(PresetSaid),
     Refused(AiRefusal),
 }
 

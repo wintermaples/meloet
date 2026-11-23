@@ -1418,4 +1418,69 @@ mod tests {
             assert!(loudest > 0.01, "offline {offline}: {loudest}");
         }
     }
+
+    /// Which VST3 plugins of this PC have programs a host can list (`IUnitInfo` program
+    /// lists) and choose (a `kIsProgramChange` parameter: its name, whether it is hidden, and
+    /// the texts of its steps). Prints what it finds.
+    #[test]
+    #[ignore = "reads the VST3 plugins of this PC"]
+    fn vst3_programs_of_this_pc() {
+        let Ok(bundles) = std::fs::read_dir("/usr/lib/vst3") else {
+            return;
+        };
+        for bundle in bundles.flatten().map(|e| e.path()) {
+            let Ok(module) = module(&bundle) else {
+                continue;
+            };
+            for class in &module.classes {
+                let Ok(instance) = Instance::create(&module, &class.cid) else {
+                    continue;
+                };
+                let Some(controller) = &instance.controller else {
+                    continue;
+                };
+                let mut lists = Vec::new();
+                let mut changers = Vec::new();
+                // SAFETY: plain questions on the main thread, into zeroed structs.
+                unsafe {
+                    if let Some(units) = controller.cast::<IUnitInfo>() {
+                        for index in 0..units.getProgramListCount() {
+                            let mut info: vst3::Steinberg::Vst::ProgramListInfo =
+                                std::mem::zeroed();
+                            if units.getProgramListInfo(index, &mut info) != kResultOk {
+                                continue;
+                            }
+                            let mut names = Vec::new();
+                            for program in 0..info.programCount.min(8) {
+                                let mut name = [0u16; 128];
+                                units.getProgramName(info.id, program, &mut name);
+                                names.push(com::read_utf16(&name));
+                            }
+                            lists.push((com::read_utf16(&info.name), info.programCount, names));
+                        }
+                    }
+                    for index in 0..controller.getParameterCount() {
+                        let mut info: ParameterInfo = std::mem::zeroed();
+                        if controller.getParameterInfo(index, &mut info) == kResultOk
+                            && info.flags & ParameterFlags_::kIsProgramChange != 0
+                        {
+                            let texts: Vec<Option<String>> = (0..=info.stepCount.max(0))
+                                .map(|step| {
+                                    let at = f64::from(step) / f64::from(info.stepCount.max(1));
+                                    value_text(controller, info.id, at, "")
+                                })
+                                .collect();
+                            let hidden = info.flags & ParameterFlags_::kIsHidden != 0;
+                            changers.push((com::read_utf16(&info.title), hidden, texts));
+                        }
+                    }
+                }
+                println!(
+                    "{} ({}): lists {lists:?}; program change {changers:?}",
+                    class.name,
+                    bundle.display()
+                );
+            }
+        }
+    }
 }

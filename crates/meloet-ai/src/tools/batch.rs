@@ -31,10 +31,18 @@ pub const MAX_OPERATIONS: usize = 200;
 /// Tools that are refused before anything runs, and why. Tools that only read are refused
 /// by their `readOnlyHint`. A tool not listed here whose ask ends later is refused by the
 /// core when its turn comes, and the batch is taken back.
-const NOT_IN_A_BATCH: [(&str, &str); 9] = [
+const NOT_IN_A_BATCH: [(&str, &str); 11] = [
     (
         "set_plugin_state",
         "the plugin takes a state later; call it by itself",
+    ),
+    (
+        "load_preset",
+        "the plugin takes a preset later; call it by itself",
+    ),
+    (
+        "save_preset",
+        "saving a preset writes a file and changes nothing in the song; call it by itself",
     ),
     ("batch", "a batch cannot hold a batch"),
     ("undo", "undo takes back a step; it cannot be a part of one"),
@@ -229,6 +237,7 @@ impl Tools {
                 at: Instant::now(),
             })),
             scratch: self.scratch.clone(),
+            presets: self.presets.clone(),
             tool_router: self.tool_router.clone(),
         }
     }

@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use crate::key::PluginKey;
 use crate::scan::{EditorKind, PluginInfo};
 
-pub const WIRE_VERSION: u32 = 6;
+pub const WIRE_VERSION: u32 = 7;
 
 /// No message's text is longer than this.
 pub const MAX_TEXT_LEN: usize = 16 << 20;
@@ -63,6 +63,25 @@ pub enum Request {
     SetState { slot: u32 },
     /// The names the plugin gives its keys (LV2 midnam). Answered by `KeyNames`.
     KeyNames { slot: u32 },
+    /// The presets of an LV2 plugin: those its own bundle and the preset bundles `bundles`
+    /// (folders; each is read once for the process) say apply to it. Answered by `Presets`.
+    Presets { slot: u32, bundles: Vec<PathBuf> },
+    /// The state of the preset `uri` of `Presets`, in the form `GetState` gives, made
+    /// without changing the plugin. Answered by `State`.
+    PresetState {
+        slot: u32,
+        uri: String,
+        bundles: Vec<PathBuf>,
+    },
+    /// Writes the plugin's state now as a preset named `label` into the bundle folder `dir`
+    /// (made when not there), described in its file `file`. Answered by `Presets` with the
+    /// preset written.
+    SavePreset {
+        slot: u32,
+        dir: PathBuf,
+        file: String,
+        label: String,
+    },
     /// The list of parameters, in the plugin's order, each with its value now.
     Params { slot: u32 },
     /// One parameter's value now, with the text the plugin shows for it.
@@ -132,6 +151,9 @@ pub enum Reply {
     KeyNames {
         names: Option<Vec<KeyName>>,
     },
+    Presets {
+        presets: Vec<PresetInfo>,
+    },
     Params {
         params: Vec<ParamInfo>,
     },
@@ -171,6 +193,18 @@ pub struct KeyName {
     /// 0..=127.
     pub key: u8,
     pub name: String,
+}
+
+/// A preset of a plugin, as its plugin format describes it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PresetInfo {
+    pub uri: String,
+    pub label: String,
+    /// The label of its bank, when it is in one.
+    pub bank: Option<String>,
+    /// The file that describes it, when that is a file of this PC.
+    pub file: Option<PathBuf>,
 }
 
 /// What a typed text stands for.
@@ -654,6 +688,21 @@ mod tests {
             Request::GetState { slot: 1 },
             Request::SetState { slot: 1 },
             Request::KeyNames { slot: 1 },
+            Request::Presets {
+                slot: 1,
+                bundles: vec!["/usr/lib/lv2/x.lv2presets".into()],
+            },
+            Request::PresetState {
+                slot: 1,
+                uri: "urn:x#preset1".into(),
+                bundles: Vec::new(),
+            },
+            Request::SavePreset {
+                slot: 1,
+                dir: "/home/me/.lv2/X_Soft.preset.lv2".into(),
+                file: "Soft.ttl".into(),
+                label: "Soft".into(),
+            },
             Request::Params { slot: 1 },
             Request::GetParam { slot: 1, id: 2 },
             Request::Texts {
@@ -758,6 +807,14 @@ mod tests {
                 }]),
             },
             Reply::KeyNames { names: None },
+            Reply::Presets {
+                presets: vec![PresetInfo {
+                    uri: "urn:x#preset1".into(),
+                    label: "Zero".into(),
+                    bank: Some("Basics".into()),
+                    file: Some("/usr/lib/lv2/x.lv2/presets.ttl".into()),
+                }],
+            },
             Reply::Param {
                 now: ParamNow {
                     id: 2,

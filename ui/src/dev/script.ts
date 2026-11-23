@@ -3,8 +3,11 @@
 // The input goes in as DOM events on the note area, so the page's own handlers do the work. Nothing here runs
 // unless Rust hands over a script.
 
-/** rows: count is the row height (ROW_PX_STEPS) to step to before the parts after it. hist*: historyScript.ts. */
-export type PartKind = "scroll" | "zoom" | "drag" | "rows" | "histMake" | "histOpen" | "histScroll" | "histJump";
+/**
+ * rows: count is the row height (ROW_PX_STEPS) to step to before the parts after it. ghosts: turns 「ほかのトラックも見る」 on
+ * for the parts after it (count unused). hist*: historyScript.ts.
+ */
+export type PartKind = "scroll" | "zoom" | "drag" | "rows" | "ghosts" | "histMake" | "histOpen" | "histScroll" | "histJump";
 
 export interface ScriptPart {
   kind: PartKind;
@@ -18,6 +21,7 @@ const KINDS: Record<string, PartKind> = {
   "pr-zoom": "zoom",
   "pr-drag": "drag",
   "pr-rows": "rows",
+  "pr-ghosts": "ghosts",
   "hist-make": "histMake",
   "hist-open": "histOpen",
   "hist-scroll": "histScroll",
@@ -58,6 +62,8 @@ export interface Target {
   zoom(): number;
   /** The vertical zoom (row px at 100 %); needed only by a rows part. */
   rowPx?(): number;
+  /** Turns 「ほかのトラックも見る」 on or off; needed only by a ghosts part. */
+  ghosts?(on: boolean): void;
   /** Id of the take shown; a drag is answered when it changes. */
   shownTake(): number | null;
   /** The reading the page shows while dragging (null when no drag is going on). */
@@ -206,6 +212,16 @@ export class UiScript {
       if (!area) throw new Error("the note area is gone");
       if (part.kind === "rows") {
         await this.rows(area, part.count, rec);
+        return;
+      }
+      if (part.kind === "ghosts") {
+        if (!this.target.ghosts) throw new Error("this piano roll cannot show other tracks");
+        const atMs = this.clock.now();
+        this.target.ghosts(true);
+        await this.clock.settle();
+        rec.steps.push({ atMs, inputMs: this.clock.now() - atMs, changed: true });
+        // The takes of the other tracks are fetched now; let them come before the next part.
+        await this.clock.wait(SETTLE_MS);
         return;
       }
       if (part.kind !== "drag" && part.kind !== "scroll" && part.kind !== "zoom") throw new Error(`${part.kind} is not a piano roll part`);

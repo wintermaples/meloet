@@ -17,6 +17,7 @@ import { draggedPoint, firstPointFrom, isOnOff, lanePoints, pointTick, valueToY,
 import type { Drag } from "./drag";
 import { draggedVelocity } from "./drag";
 import { eachNoteIn, keyToY, movedFrom, noteEnd, noteStart, rowColor, rowsShown, velocityColor, writable, type RollGeom, type Shown } from "./geom";
+import { paintGhosts, type GhostPicture } from "./ghosts";
 
 /** Sizes (CSS px, with the scale applied). */
 export interface RollSizes {
@@ -54,6 +55,8 @@ export interface RollPicture {
   live: readonly LiveNote[] | null;
   drag: Drag | null;
   eraseHover: number;
+  /** Notes of other tracks (「ほかのトラックも見る」, ghosts.ts). Not drawn on drum rows. */
+  ghosts?: GhostPicture | null;
 }
 
 const FRAME: ColorName = "color.gray.7";
@@ -218,7 +221,7 @@ function gridLines(out: Batch, box: Box, p: RollPicture, X: (tick: number) => nu
   });
 }
 
-/** The note area: row backgrounds, grid lines, notes, the border of the position before aligning, the border of the original drag position. */
+/** The note area: row backgrounds, grid lines, notes of other tracks, notes, the border of the position before aligning, the border of the original drag position. */
 export function paintRoll(out: Batch, box: Box, p: RollPicture, marks: Uint8Array | null, dpr: number): void {
   if (p.g.drum) {
     paintDrumRoll(out, box, p, marks, dpr);
@@ -256,6 +259,7 @@ export function paintRoll(out: Batch, box: Box, p: RollPicture, marks: Uint8Arra
   const from = g.scrollTick;
   const to = g.scrollTick + g.width / g.ppt;
   gridLines(out, box, p, X, box.y1);
+  if (p.ghosts) paintGhosts(out, box, g, p.ghosts, noteH, dpr);
 
   const rowTop = (key: number) => Math.round(Y(key));
   const noteFrame = (x0: number, x1: number, y: number, color: ColorName) =>

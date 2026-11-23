@@ -7,7 +7,8 @@
 #
 # --script: MELOET_UI_SCRIPT, e.g. pr-scroll:100, pr-zoom:100, pr-drag:1000, or several joined
 #   with "," (ui/src/dev/script.ts). Shift + wheel, Mod + wheel, and drag-and-let-go of a note,
-#   sent as DOM events to the note area.
+#   sent as DOM events to the note area. pr-ghosts turns 「ほかのトラックも見る」 on for the parts after it
+#   (pr-ghosts,pr-scroll:100; give a --song with several key tracks).
 #   Or the history band's parts (ui/src/dev/historyScript.ts), not mixed with the pr-* ones:
 #   hist-make:5000 (makes 5000 steps by changing the tempo), hist-open:20, hist-scroll:200,
 #   hist-jump:20 (500 steps back, then forward). The piano roll is not opened for them.

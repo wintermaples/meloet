@@ -1745,6 +1745,26 @@ SCENES.scaleHighlightLocked = {
   meters: QUIET,
 };
 
+// Round 12 P2: F-WidePR (「1 ピアノ」 in the piano roll) for 「ほかのトラックも見る」, which the shot turns on (screen-only state).
+// 「3 ドラム」 is a kit and 「5 ボーカル」 sings, so the list offers 「2 ベース」 and 「4 パッド」. The bass has one more clip, bars 2–4
+// with its first bar trimmed off (take offset −1 bar): its notes line up by the offset, and those of the trimmed bar are not drawn.
+const GHOST_BASS_TAKE = 56;
+FAKE_TAKES.set(GHOST_BASS_TAKE, phrase(GHOST_BASS_TAKE, 4, 16, 11));
+SCENES.pianoRollGhost = {
+  setup(s) {
+    pianoRollWide(s);
+    const [, bass, drums, , vocal] = s.song.tracks;
+    drums!.instrument = "studioKit";
+    drums!.sound = builtinSound("studioKit");
+    vocal!.instrument = "sine";
+    vocal!.sound = builtinSound("sine");
+    vocal!.kind = { kind: "vocal", input: "mono1", inputReady: true, armed: false, monitor: false };
+    bass!.clips = [{ ...fakeClip(57, "ベース イントロ", 2, 5, 1, [GHOST_BASS_TAKE]), takeOffset: -BAR }, ...bass!.clips];
+  },
+  bands: ["pianoRoll"],
+  meters: QUIET,
+};
+
 SCENES.tracks6 = {
   setup(s) {
     bandSong(s);

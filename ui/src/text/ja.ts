@@ -1929,6 +1929,10 @@ export const texts = {
   "pr.progCircle": e("循環", "user:2026-11-23"),
   "pr.progPop": e("ポップ", "user:2026-11-23"),
   "pr.progSad": e("切ない", "user:2026-11-23"),
+  // P2 (round 12): 「ほかのトラックも見る ▾」 in the tool row; the ▾ is a button of its own (as the scale ▾). The other two are made up (docs/round12/P2.md).
+  "pr.ghost": e("ほかのトラックも見る", "user:2026-11-23"),
+  "pr.ghostTracks": e("見せるトラック", "builder:2026-11-23"),
+  "pr.ghostDrums": e("ドラムのトラックでは、ほかのトラックは見られません。", "builder:2026-11-23"),
   "pr.noteList": e("ノートの一覧", "mock:A-PianoRoll"),
   "pr.selectedNotes": e("選んだノート", "mock:A-PianoRoll"),
   "pr.ccList": e("CC の一覧", "mock:A-PianoRoll"),

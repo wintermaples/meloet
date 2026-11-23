@@ -89,7 +89,6 @@ export const enTexts: Record<TextKey, EnText> = {
   "status.recoveryOpenedNew": "A new song is open",
   "msg.cpuOverload": "The PC could not keep up and the sound broke up. A larger buffer in the sound settings makes it less likely.",
   "msg.exportPeak": "Loudest point {peak} dB · no clipping",
-  "msg.exportClipping": "The loudest point is over 0 dB. As it is, the sound will clip. Turn the master down before you export.",
   "msg.exported": "Exported: {path}",
   "msg.scaleDoesNotFit": "Does not fit this screen",
   "msg.scaleKept": "{requested} % does not fit this screen. It stays at {kept} %.",

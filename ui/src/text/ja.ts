@@ -430,10 +430,6 @@ export const texts = {
     "いちばん大きい所 {peak} dB ・ 音割れはありません",
     { peak: "−6.2" },
   ),
-  "msg.exportClipping": s6(
-    "Export would clip",
-    "いちばん大きい所が 0 dB をこえています。このままだと音が割れます。マスターを下げてから書き出すのがおすすめです。",
-  ),
   "msg.exported": s6("Export finished", "書き出しました: {path}", {
     path: "~/ミュージック/はじめての曲/はじめての曲.wav",
   }),
@@ -1045,7 +1041,7 @@ export const texts = {
   "button.dontSave": e("保存しない", "spec:6"),
   "button.chooseLocation": e("場所をえらぶ", "spec:6"),
   "button.openPrevious": e("1 つ前を開く", "spec:6"),
-  "button.exportAnyway": e("このまま書き出す", "spec:6"),
+  "button.exportAnyway": e("このまま書き出す", "spec:3"),
   "button.openFolder": e("フォルダをひらく", "spec:6"),
   "button.dontRestore": e("戻さない", "spec:6"),
   "button.openFileLocation": e("ファイルの場所をひらく", "spec:6"),

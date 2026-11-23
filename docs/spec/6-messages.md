@@ -197,6 +197,5 @@ There are three rules for the wording. Say first what happened. If the song is s
 | Song file is broken | このファイルは読めませんでした。自動で残してある 1 つ前の状態からなら開けます。 | Dialog | 1 つ前を開く / やめる |
 | Processing cannot keep up | PC の処理が追いつかず、音がとぎれました。音の設定でバッファを大きくすると、とぎれにくくなります。 | Status line | 音の設定をひらく |
 | Before export | いちばん大きい所 −6.2 dB ・ 音割れはありません | The export dialog | — |
-| Export would clip | いちばん大きい所が 0 dB をこえています。このままだと音が割れます。マスターを下げてから書き出すのがおすすめです。 | Status line, when clipping is found only after the export. In the export dialog the check row uses the 41-A texts of chapter 3 instead (user:2026-11-24) | — (status line) / このまま書き出す / やめる (the export dialog, with the 41-A texts) |
 | Export finished | 書き出しました: \~/ミュージック/はじめての曲/はじめての曲.wav | Status line | フォルダをひらく |
 | Way back to the arrange | Esc ・ ひとつ戻る。何度か押すとアレンジへ | Right end of the band tab row (when a band is open) | — |

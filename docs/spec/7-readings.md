@@ -849,3 +849,11 @@ The owner's answers to the open questions are in `docs/history/round12-answers-b
 | How the screen names a set | By its name (a song has one set of a name; the AI names them so; no ids in the file). An intent whose name is no set does nothing; one that does not fit (a name taken, no name, 64 sets) does nothing too, with no status line: the menu has the list and the numbers to prevent it. | the developers' decision |
 | `asNow` | True when a recall would change nothing: the tracks the set names that the song still has are muted and soloed as it says, and so are the returns; tracks added since do not count. The same as the AI tools' `as_now`. | the developers' decision |
 | English step names | 「ミュートのセットを保存する」 "Save a mute set", 「ミュートのセットを呼び出す」 "Recall a mute set", 「ミュートのセットを消す」 "Delete a mute set", 「ミュートのセットの名前を変える」 "Rename a mute set", 「まとめて変える（N 個）」 "Change together (N)" (the count is always 2 or more; 「まとめて変える」 is "Change together" in the clips panel already). | the developers' translation |
+
+### Decided after the answers (user:2026-11-24)
+
+| Where | Rule | Basis |
+|---|---|---|
+| The AppImage (B-98-2) | No AppImage is made or published for now; meloet ships as the deb. The trial script (`scripts/build-appimage.sh`, `packaging/appimage/`) stays in the repository, unused. The study behind it: `docs/research/2026-11-24-appimage-lgpl.md`. | user:2026-11-24 |
+| The N of 「まとめて変える（N 個）」 (B-98-37) | N is the number of operations that changed the song; a batch with one change keeps that step's own name. | the developers' decision, chosen by the owner (user:2026-11-24) |
+| Pages that cannot be reached (B-98-38) | Rules, wording and scenes only for pages narrower than 1024 or lower than 640 are removed, each after a check at 1024×640. | the lead's proposal, chosen by the owner (user:2026-11-24) |

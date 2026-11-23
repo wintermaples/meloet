@@ -1,5 +1,7 @@
 # The AppImage (a trial)
 
+> The owner decided on 2026-11-24 that no AppImage is made or published for now (spec 7, "Decided after the answers"). This page and the script are kept as the record of the trial; the licence study is `docs/research/2026-11-24-appimage-lgpl.md`.
+
 The deb is meloet's main form. The AppImage is a **trial**: one file that runs without
 installing. It was refused before (architecture 23-5) because an AppImage carries its own
 WebKitGTK, GTK and Wayland libraries, which then have to work with the PC's own graphics

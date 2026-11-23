@@ -16,13 +16,6 @@ The numbers are the B numbers of [`docs/history/design-notes.ja.md`](../history/
 
 The readings behind these are in [chapter 7](7-readings.md), A-29; how each is built is architecture chapter 25. The owner answered every item on 2026-11-24 (the listening questions after hearing the files); what was decided is in the spec body. Below are only the parts not decided yet or not yet built.
 
-### B-98-2 D2: the AppImage before any distribution
-
-- Question: the AppImage holds about 170 Ubuntu libraries under the LGPL and libfuse in its runtime; publishing it needs a source offer for them from the same place. It also holds `libwebkit2gtk-4.1.so.0` with bytes changed by linuxdeploy-plugin-gtk (`/usr` → `././`), a change to an LGPL library that has to be stated. How should these be done, and should the AppImage be published at all?
-- Now: built as a trial only (`target/appimage/`, `scripts/build-appimage.sh`); not published; the READMEs say nothing about it.
-- Researched (2026-11-24, `docs/research/2026-11-24-appimage-lgpl.md`): meloet's own code does not become LGPL or GPL by bundling LGPL libraries; the duties are on the libraries (texts, source, notice of the changed `libwebkit2gtk`). Not checked: that none of the about 170 libraries is under the plain GPL. The owner: "decide later" (user:2026-11-24); the lead advises deb / apt only for now.
-- From: architecture 23-5, 25-35; `docs/development/appimage.md`.
-
 ### B-98-6 E2: arpeggio — stop, small windows, the mixer strip
 
 - Decided: question 1 (stop does not end a held chord; spec 3, E2; user:2026-11-24).
@@ -30,18 +23,11 @@ The readings behind these are in [chapter 7](7-readings.md), A-29; how each is b
 - Question 3: on the mixer strip 「アルペジオ」 sits at the right end of the heading only while on (the track name is cut to about one character on a 108 px strip). The other way is an empty row on every strip, which moves everything below down by about 32 px. Which?
 - From: architecture 25-26; chapter 7 A-29 (E2).
 
-
 ### B-98-36 M5: a fade-out added again after the song grew
 
 - Question: when clips are added after an old fade-out and the fade-out is added again, the old fade (a line going down to −∞ in the middle of the song) lies before the new start, so it stays, and the new fade goes from −∞ to −∞: silence. Should "the lane's last line going down to −∞" be removed wherever it lies, so the new fade replaces the old one?
 - Now: points before the new start are never touched (chapter 7 A-29, M5).
 - From: the helper "fade" (2026-11-24).
-
-### B-98-37 The batch row's N
-
-- Question: 「まとめて変える（N 個）」 counts the operations that changed the song (a batch of 15 with one that changed nothing shows 14; a batch with one change keeps that step's own name), while the AI's answer says "15 operations". Right, or the number sent?
-- Now: the number that changed the song (chapter 7 A-30).
-- From: the helper "core" (2026-11-24).
 
 ### B-98-38 Rules for pages that can no longer be reached
 

@@ -520,7 +520,7 @@ fn add_track_of(
 
 /// The ids a new track takes its own from: `next_id`, or past the highest track id when that
 /// is higher.
-fn track_ids(doc: &Doc) -> Result<Ids, EditError> {
+pub(crate) fn track_ids(doc: &Doc) -> Result<Ids, EditError> {
     let highest = doc.tracks.iter().map(|t| t.id.0).max();
     Ok(Ids(match highest {
         Some(h) => doc
@@ -651,7 +651,7 @@ pub fn set_instrument(
 }
 
 /// The track with another instrument. The lanes of the old one's parameters go, unless both
-/// are the same plugin.
+/// are the same plugin; the knobs of the sound start again (round 12, E3).
 fn with_instrument(t: &Track, instrument: InstrumentRef) -> Track {
     let same_plugin = match (&t.instrument, &instrument) {
         (InstrumentRef::Plugin(a), InstrumentRef::Plugin(b)) => a.key == b.key,
@@ -659,6 +659,7 @@ fn with_instrument(t: &Track, instrument: InstrumentRef) -> Track {
     };
     let mut new = Track {
         instrument,
+        knobs: SoundKnobs::default(),
         ..Track::clone(t)
     };
     if !same_plugin {

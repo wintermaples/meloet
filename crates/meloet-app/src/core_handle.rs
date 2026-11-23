@@ -13,6 +13,9 @@ pub trait CoreHandle: Send + Sync + 'static {
     /// Applies an intent. Returns the rev after it (unchanged when nothing changed).
     fn send(&self, command: Command) -> u64;
 
+    /// Applies an intent, after those sent or posted before it. Does not wait.
+    fn post(&self, command: Command);
+
     /// What the screen the window is on can give to the inside of the window, in logical px.
     fn set_screen_space(&self, width: f32, height: f32);
 
@@ -97,6 +100,10 @@ impl CoreHandle for meloet_core::Core {
 
     fn send(&self, command: Command) -> u64 {
         meloet_core::Core::send(self, command)
+    }
+
+    fn post(&self, command: Command) {
+        meloet_core::Core::post(self, command);
     }
 
     fn set_screen_space(&self, width: f32, height: f32) {

@@ -54,6 +54,11 @@ impl Model {
             effects.push(Effect::OpenFile(path.to_path_buf()));
             return;
         }
+        // One job of the second engine at a time (round 12, A7).
+        if matches!(command, Command::OpenExport) && self.bouncing() {
+            self.notice = Some(meloet_protocol::StatusMessage::ExportWaitsForBounce);
+            return;
+        }
         let mut export = std::mem::take(&mut self.export);
         let mut asks = Vec::new();
         let artist = export.artist().to_owned();
@@ -67,6 +72,9 @@ impl Model {
     }
 
     pub(super) fn export_news(&mut self, news: ExportNews) {
+        if self.bounce_export_news(&news) {
+            return;
+        }
         if let Some(notice) = self.export.news(news) {
             self.notice = Some(notice);
         }

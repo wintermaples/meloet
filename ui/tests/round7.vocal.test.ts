@@ -427,7 +427,9 @@ describe("fake answers (protocol 23 intents)", () => {
     );
     await transport.send({ type: "selectInstrument", track: before.song.tracks[0]!.id });
     expect(state.params.selected).toMatchObject({ kind: "sound", track: before.song.tracks[0]!.id });
-    expect(state.status.message).toMatchObject({ id: "noParams" });
+    // Round 12 E3: a sound that comes with meloet has its four knobs; only an SF2 preset has no parameters.
+    expect(state.params.selected).toMatchObject({ knobs: { usable: [true, true, true, true] } });
+    expect(state.status.message?.id).not.toBe("noParams");
   });
 });
 

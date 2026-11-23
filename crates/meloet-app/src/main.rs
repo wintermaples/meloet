@@ -103,6 +103,13 @@ fn send(command: Command, core: State<'_, Core>) -> SendReply {
     }
 }
 
+/// `send` without the reply: the screen does not wait for the core (the keys of the PC
+/// keyboard, R2).
+#[tauri::command]
+fn post(command: Command, core: State<'_, Core>) {
+    core.post(command);
+}
+
 #[tauri::command]
 fn clock() -> u64 {
     clock::mono_us()
@@ -509,6 +516,7 @@ fn main() {
             subscribe,
             snapshot,
             send,
+            post,
             clock,
             #[cfg(feature = "dev-hooks")]
             measure_enabled,

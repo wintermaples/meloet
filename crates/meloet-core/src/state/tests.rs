@@ -2055,7 +2055,7 @@ fn the_commands_of_round_12_wave_2_are_taken_and_change_nothing_yet() {
         "the patterns of the shelf of a new track (P4)"
     );
     let commands = [
-        Command::TypedKeys { on: true },
+        // Played by the service; nothing for the rules.
         Command::TypedKey {
             note: 60,
             down: true,

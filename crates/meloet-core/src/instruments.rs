@@ -6,6 +6,7 @@ use std::sync::Arc;
 use meloet_engine::{Instrument, InstrumentEvent, PlaceholderSynth};
 use meloet_model::{BuiltinInstrument, InstrumentRef};
 use meloet_protocol::InstrumentKind;
+use meloet_sound::knobs::Knobbed;
 use meloet_sound::sampler::{SampleBank, Sampler};
 use meloet_sound::synth::{ElectroKit, PolySynth};
 
@@ -118,6 +119,7 @@ impl Instrument for Silent {
 /// An SF2 preset goes the same way with the samples of its file. A plugin is not made here:
 /// until it is loaded and put on the seat (`EngineOp::Plug`) its seat is silent. A plugin
 /// this PC does not have never comes here; the rules ask for the sine wave in its place.
+/// A sound that comes with meloet has its knobs (round 12, E3); an SF2 preset has none.
 pub(crate) fn make(instrument: &InstrumentRef, samples: Samples) -> Box<dyn Instrument> {
     use BuiltinInstrument as B;
     let builtin = match instrument {
@@ -132,14 +134,14 @@ pub(crate) fn make(instrument: &InstrumentRef, samples: Samples) -> Box<dyn Inst
         }
     };
     match (builtin, samples) {
-        (B::SynthLead, _) => Box::new(PolySynth::lead()),
-        (B::SynthBass, _) => Box::new(PolySynth::bass()),
-        (B::WarmPad, _) => Box::new(PolySynth::pad()),
-        (B::ElectroKit, _) => Box::new(ElectroKit::new()),
-        (B::Sine, _) => Box::new(PlaceholderSynth::new()),
-        (_, Samples::Ready(bank)) => Box::new(Sampler::new(bank)),
+        (B::SynthLead, _) => Box::new(Knobbed::new(PolySynth::lead())),
+        (B::SynthBass, _) => Box::new(Knobbed::new(PolySynth::bass())),
+        (B::WarmPad, _) => Box::new(Knobbed::new(PolySynth::pad())),
+        (B::ElectroKit, _) => Box::new(Knobbed::new(ElectroKit::new())),
+        (B::Sine, _) => Box::new(Knobbed::new(PlaceholderSynth::new())),
+        (_, Samples::Ready(bank)) => Box::new(Knobbed::new(Sampler::new(bank))),
         (_, Samples::NotRead) => Box::new(Silent),
-        (_, Samples::NotInstalled) => Box::new(PlaceholderSynth::new()),
+        (_, Samples::NotInstalled) => Box::new(Knobbed::new(PlaceholderSynth::new())),
     }
 }
 

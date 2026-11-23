@@ -160,4 +160,10 @@ pub trait Instrument: Send {
     /// `render`, a straight line from the point before. Comes before the `ask` of that
     /// `render`. An instrument without parameters passes it over.
     fn set_param_at(&mut self, _frame: u32, _id: u32, _value: f32) {}
+    /// A knob of a sound that comes with meloet set by hand (`crate::knobs`): `knob` is its
+    /// number, `place` 0..=1. It glides there over [`crate::KNOB_GLIDE_S`], or is there at
+    /// once before the first `render` after `prepare` or `reset`. Called on the audio thread,
+    /// and before `prepare` outside it. An instrument without knobs passes it over; one with
+    /// knobs takes its lanes through [`Instrument::set_param_at`] with the knob's number.
+    fn set_knob(&mut self, _knob: u32, _place: f32) {}
 }

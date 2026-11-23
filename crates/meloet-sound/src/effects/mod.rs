@@ -8,7 +8,7 @@ mod chorus;
 mod compressor;
 mod de_esser;
 mod delay;
-mod dsp;
+pub(crate) mod dsp;
 mod eq4;
 mod gate;
 mod limiter;

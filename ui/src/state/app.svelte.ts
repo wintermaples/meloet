@@ -3,6 +3,7 @@
 
 import {
   connect,
+  post as bridgePost,
   send as bridgeSend,
   type AppState,
   type Command,
@@ -82,5 +83,12 @@ export function send(command: Command): Promise<number | null> {
   return bridgeSend(command).catch((e) => {
     failure = String(e);
     return null;
+  });
+}
+
+/** Sends a command without waiting for its rev: the keys of the PC keyboard, which must not wait for one another. */
+export function post(command: Command): void {
+  bridgePost(command).catch((e) => {
+    failure = String(e);
   });
 }

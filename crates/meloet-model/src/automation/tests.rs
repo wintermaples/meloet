@@ -119,11 +119,16 @@ fn a_lane_needs_its_target() {
         add_lane(&doc, T1, gone, false).unwrap_err(),
         EditError::NoSuchInsert
     );
-    let instrument = AutoTarget::Instrument { param: 3 };
+    let knob = AutoTarget::Instrument { param: 3 };
+    assert!(
+        add_lane(&doc, T1, knob, false).is_ok(),
+        "the piano's 「ゆれ」"
+    );
+    let instrument = AutoTarget::Instrument { param: 4 };
     assert_eq!(
         add_lane(&doc, T1, instrument, false).unwrap_err(),
         EditError::NoSuchInsert,
-        "the piano is no plugin"
+        "the piano has four knobs, and is no plugin"
     );
     assert!(add_lane(&doc, TrackId(7), AutoTarget::Pan, false).is_err());
 }

@@ -3,13 +3,19 @@
 
 mod ai;
 mod audio;
+mod bounce;
 mod buttons;
 mod export;
 mod pack;
 mod recovery;
 mod songs;
+mod typed;
 mod updates;
 mod vocal;
+
+#[cfg(test)]
+pub(crate) use bounce::BOUNCE_JOBS;
+pub use bounce::BounceAsk;
 
 use std::collections::VecDeque;
 use std::path::PathBuf;
@@ -318,6 +324,10 @@ pub enum Input {
     AudioMaking(Vec<crate::maker::MakerJob>),
     /// From the export's worker and from the shell: the answers to [`Effect::Export`].
     Export(crate::export::ExportNews),
+    /// The answer to [`Effect::Bounce`] when the AI link's export runs: the job did not start.
+    BounceBusy {
+        job: u64,
+    },
     /// From the thread that fetches the sound pack: the answers to [`Effect::Pack`].
     Pack(crate::sounds::fetch::PackNews),
     /// The page subscribed and is up.
@@ -673,6 +683,19 @@ pub enum Effect {
     ClearWorkAudio,
     /// For the export's worker and its window for a place. Answer with [`Input::Export`].
     Export(crate::export::ExportAsk),
+    /// 「音のクリップにする」 (round 12, A7): render the job into a file of the work place, as
+    /// the export renders and writes a file; its news come as [`Input::Export`].
+    /// [`Input::BounceBusy`] when the AI link's export runs.
+    Bounce(bounce::BounceAsk),
+    /// 「音のクリップにする」: the thread that reads audio files in takes the file at `temp`
+    /// (the work place) for the song under the name wanted, or one like it. `taken`: names a
+    /// new file must not get. Answer with `AudioNews::Adopted`.
+    TakeBounced {
+        ticket: u64,
+        temp: PathBuf,
+        wanted: String,
+        taken: Vec<String>,
+    },
     /// For the thread that fetches the sound pack. Answers come as [`Input::Pack`].
     Pack(PackAsk),
     /// Open (`true`) or close the AI link's socket. Its thread answers with [`Input::AiPort`].
@@ -722,6 +745,8 @@ pub struct Model {
     /// The id of the keyboard played last, while it is plugged in.
     played: Option<String>,
     lost: Option<String>,
+    /// R2 「キーで弾く」 is on: the PC keyboard, as a keyboard (`state/typed.rs`).
+    typed: Option<Keyboard>,
     /// `None` until the first picture. Outputs are kept in chooser order.
     devices: Option<DevicesPicture>,
     chosen: Option<String>,
@@ -790,6 +815,8 @@ pub struct Model {
     /// 「モニター」 was turned on once in this run: the status line said how late the voice is.
     monitor_said: bool,
     audio: audio::AudioSide,
+    /// 「音のクリップにする」 (round 12, A7).
+    bounce: bounce::BounceSide,
     export: crate::export::Exporting,
     pack: pack::PackSide,
     ai: ai::AiSide,
@@ -877,6 +904,7 @@ impl Model {
             keyboards: Vec::new(),
             played: None,
             lost: None,
+            typed: None,
             devices: None,
             chosen_name: settings.output_name.filter(|_| settings.output.is_some()),
             chosen: settings.output,
@@ -919,6 +947,7 @@ impl Model {
             latency: None,
             monitor_said: false,
             audio: audio::AudioSide::default(),
+            bounce: bounce::BounceSide::default(),
             export: crate::export::Exporting::default().with_artist(settings.export_artist.clone()),
             pack: pack::PackSide::new(settings.pack_fetch),
             ai: ai::AiSide::new(settings.ai_link),
@@ -987,7 +1016,7 @@ impl Model {
                 }
             }
             Input::KeyboardPlayed { id } => {
-                if self.keyboards.iter().any(|k| k.id == id) {
+                if self.all_keyboards().any(|k| k.id == id) {
                     self.played = Some(id);
                 }
             }
@@ -1333,6 +1362,7 @@ impl Model {
             Input::Audio(news) => self.audio_news(news),
             Input::AudioMaking(jobs) => self.play.set_audio_making(jobs),
             Input::Export(news) => self.export_news(news),
+            Input::BounceBusy { job } => self.bounce_refused(job),
             Input::Pack(news) => self.pack_news(news, &mut effects),
             Input::ScreenUp => {
                 self.pack_screen_up(&mut effects);
@@ -1400,6 +1430,7 @@ impl Model {
             self.loading_said = None;
         }
         self.audio_follow(&mut effects);
+        self.bounce_follow(&mut effects);
         self.close_when_recorded(&mut effects);
         // The recovery file never holds a part of a batch.
         if !self.ai_batch_open() {
@@ -1507,10 +1538,14 @@ impl Model {
     /// Returns the node a test tone was asked on.
     fn command(&mut self, command: Command, effects: &mut Vec<Effect>) -> Option<String> {
         // A resize is not something the user does to answer a notice, and neither is the sound
-        // of the write tool, which comes and goes around the write that may give a notice.
+        // of the write tool, which comes and goes around the write that may give a notice, nor a
+        // key of the PC keyboard, which is played as a keyboard's.
         if !matches!(
             command,
-            Command::SetViewport { .. } | Command::Audition { .. } | Command::AuditionOff
+            Command::SetViewport { .. }
+                | Command::Audition { .. }
+                | Command::AuditionOff
+                | Command::TypedKey { .. }
         ) {
             self.notice = None;
             self.new_song_unsaid = false;
@@ -1521,8 +1556,9 @@ impl Model {
         let command = self.vocal_command(command, effects)?;
         match command {
             Command::KeepPlayed => self.notice = self.play.keep_played(effects),
-            // round12 stub: R2
-            Command::TypedKeys { .. } | Command::TypedKey { .. } => {}
+            Command::TypedKeys { on } => self.set_typed_keys(on),
+            // Played by the service before it comes here (`service/typed.rs`).
+            Command::TypedKey { .. } => {}
             Command::SetNoteGlow { on } if on == self.note_glow => {}
             Command::SetNoteGlow { on } => {
                 self.note_glow = on;
@@ -2414,8 +2450,13 @@ impl Model {
             // round12 stub: E2
             Command::SetArp { .. } => {}
 
-            // round12 stub: E3
-            Command::SetSoundKnob { .. } => {}
+            Command::SetSoundKnob {
+                track,
+                instrument,
+                knob,
+                value,
+                commit,
+            } => (self.play).set_sound_knob(track, instrument, knob, value, commit, effects),
 
             Command::SetSpectrum { on } if on == self.spectrum => {}
             Command::SetSpectrum { on } => {
@@ -2436,9 +2477,9 @@ impl Model {
                 self.say(|p| p.insert_space(marker, bars, effects));
             }
 
-            // round12 stub: A7
-            Command::BounceToAudio { .. } | Command::BounceTrack { .. } => {}
-            Command::CancelBounce => {}
+            Command::BounceToAudio { clips } => self.bounce_clips(&clips, effects),
+            Command::BounceTrack { track } => self.bounce_whole_track(track, effects),
+            Command::CancelBounce => self.cancel_bounce(effects),
 
             Command::AddFadeOut { bars } => {
                 self.say(|p| p.add_fade_out(bars, effects));
@@ -2889,12 +2930,12 @@ impl Model {
     fn active_keyboard(&self) -> Option<&Keyboard> {
         self.played
             .as_ref()
-            .and_then(|id| self.keyboards.iter().find(|k| &k.id == id))
-            .or_else(|| self.keyboards.last())
+            .and_then(|id| self.all_keyboards().find(|k| &k.id == id))
+            .or_else(|| self.all_keyboards().last())
     }
 
     fn chooser_shown(&self) -> bool {
-        self.chosen.is_none() && !self.keyboards.is_empty()
+        self.chosen.is_none() && self.all_keyboards().next().is_some()
     }
 
     pub fn view(&self) -> AppState {
@@ -2963,22 +3004,12 @@ impl Model {
             plugins: self.plugins.view(),
             windows: self.play.windows_view(),
             keyboards: KeyboardsView {
-                list: self
-                    .keyboards
-                    .iter()
-                    .map(|k| KeyboardView {
-                        id: k.id.clone(),
-                        name: k.name.clone(),
-                        port_name: k.port_name.clone(),
-                        address: k.address(),
-                    })
-                    .collect(),
+                list: self.keyboard_views(),
                 active: self.active_keyboard().map(|k| k.id.clone()),
                 lost: self.lost.clone(),
                 input_stopped: self.midi_restarting.is_some(),
                 velocity_fixed: self.velocity_fixed,
-                // round12 stub: R2
-                typed_keys: false,
+                typed_keys: self.typed_keys(),
             },
             outputs: OutputsView {
                 list: self.outputs().iter().map(endpoint_view).collect(),
@@ -2987,7 +3018,10 @@ impl Model {
             },
             inputs: self.inputs_view(),
             audio,
-            audio_work: self.play.audio_work_view(),
+            audio_work: meloet_protocol::AudioWorkView {
+                bounce: self.bounce_view(),
+                ..self.play.audio_work_view()
+            },
             presets: self.play.presets_view(),
             export: self.export_view(),
             sounds: self.sounds_view(),
@@ -3021,7 +3055,10 @@ impl Model {
             latency_ms: measured.or_else(|| Some(estimate_ms(self.actual_frames?, rate?))),
             latency_ms_at_requested: rate.map(|r| estimate_ms(self.sound.buffer, r)),
             output_device: self.open.as_ref().map(|o| o.node_name.clone()),
-            midi_input: self.active_keyboard().map(Keyboard::label),
+            midi_input: self
+                .active_keyboard()
+                .filter(|k| self.keyboards.contains(k))
+                .map(Keyboard::label),
             buffer_choices: BUFFER_CHOICES.to_vec(),
             requested_sample_rate: self.sound.sample_rate,
             sample_rate_choices: SAMPLE_RATE_CHOICES.to_vec(),
@@ -3172,6 +3209,10 @@ impl Model {
                 meter_den: song.timeline.meter.den(),
                 track: self.play.record_target(),
             });
+        }
+        // While on: why the one-letter keys do nothing.
+        if self.typed_keys() {
+            return Some(StatusMessage::TypedKeysOn);
         }
         let redo = self.play.redo_count();
         if redo > 0 && !self.play.busy() {
@@ -3401,6 +3442,8 @@ mod speed;
 mod tests;
 #[cfg(test)]
 mod tooloud_tests;
+#[cfg(test)]
+mod typed_tests;
 #[cfg(test)]
 mod vocal_tests;
 #[cfg(test)]

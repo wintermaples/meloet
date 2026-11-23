@@ -34,7 +34,7 @@
   import Surface from "./gl/Surface.svelte";
   import { attachKeys } from "./keys/attach";
   import Tip from "./lib/Tip.svelte";
-  import { current, send, start } from "./state/app.svelte";
+  import { current, post, send, start } from "./state/app.svelte";
 
   const state = $derived(current.state);
 
@@ -53,7 +53,7 @@
   onMount(() => {
     start();
     const stopDpr = watchDevicePixelRatio();
-    const stopKeys = attachKeys({ state: () => current.state, send });
+    const stopKeys = attachKeys({ state: () => current.state, send, post });
     window.addEventListener("resize", sendViewport);
     return () => {
       stopDpr();

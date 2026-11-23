@@ -354,7 +354,8 @@ enum Msg {
     Stop,
 }
 
-/// What the MIDI thread writes and the telemetry thread reads.
+/// What the MIDI thread and the PC keyboard (on the core thread) write, and the telemetry
+/// thread reads.
 #[derive(Default)]
 struct Held {
     keys_low: AtomicU64,
@@ -462,6 +463,9 @@ struct Shared {
     /// The open input's meters and the vocal tracks they are read for. The core thread
     /// writes it, the telemetry thread reads it.
     mics: Mutex<Option<input::MicFacts>>,
+    /// The PC keyboard was played (R2) or turned off since the MIDI thread last said which
+    /// keyboard is played: it says so at its next key, even of the same keyboard.
+    typed_played: AtomicBool,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -598,6 +602,7 @@ impl Core {
             shell: Mutex::new(None),
             fader: AtomicU16::new(NO_FADER),
             mics: Mutex::new(None),
+            typed_played: AtomicBool::new(false),
         });
         let meters = parts.handle.meters().clone();
         *lock(&shared.stream.track_seats) = model.track_seats();
@@ -710,6 +715,7 @@ impl Core {
                 ai_switch: None,
                 ai_jobs: 0,
                 held_replies: VecDeque::new(),
+                typed: typed::TypedHands::default(),
             };
             std::thread::Builder::new()
                 .name("meloet-core".into())
@@ -742,6 +748,12 @@ impl Core {
     /// nothing changed).
     pub fn send(&self, command: Command) -> u64 {
         self.input(Input::Command(command))
+    }
+
+    /// Applies an intent without waiting: for what must not keep the screen waiting, as the
+    /// keys of the PC keyboard (R2). Intents posted and sent are taken in the order they come.
+    pub fn post(&self, command: Command) {
+        let _ = self.tx.send(Msg::Input(Input::Command(command), None));
     }
 
     /// What the screen the window is on can give to the inside of the window, in logical px.
@@ -1168,7 +1180,9 @@ impl Links {
                 let event = fixed(event, shared.fixed_velocity.load(Relaxed));
                 play_key(event, t_us, &shared, &mut midi_in, &hub, &tx);
                 // Only a change of keyboard goes to the core thread.
-                if matches!(event, MidiEvent::NoteOn { .. }) && keyboard != last_played {
+                if matches!(event, MidiEvent::NoteOn { .. })
+                    && (shared.typed_played.swap(false, Relaxed) | (keyboard != last_played))
+                {
                     last_played = keyboard;
                     let id = last_played.clone();
                     let _ = tx.send(Msg::Input(Input::KeyboardPlayed { id }, None));
@@ -2039,6 +2053,7 @@ impl Audio {
             | EngineOp::PlayTarget { .. }
             | EngineOp::Strip { .. }
             | EngineOp::Sends { .. }
+            | EngineOp::Knobs { .. }
             | EngineOp::Insert { .. }
             | EngineOp::Param { .. }
             | EngineOp::Bypass { .. }
@@ -2371,6 +2386,8 @@ struct Worker {
     /// Who waits for the rev of an intent that waits for a batch of the AI link, with the
     /// intent's number among those that ever waited.
     held_replies: VecDeque<(u64, mpsc::Sender<u64>)>,
+    /// What the PC keyboard holds (R2).
+    typed: typed::TypedHands,
 }
 
 /// The threads behind the plugins. Dropped when the core ends: scanning children are killed,
@@ -2565,6 +2582,12 @@ impl Worker {
                 wait
             };
             match rx.recv_timeout(wait) {
+                Ok(Msg::Input(Input::Command(Command::TypedKey { note, down, t_us }), reply)) => {
+                    self.typed_key(note, down, t_us);
+                    if let Some(reply) = reply {
+                        let _ = reply.send(self.hub.rev());
+                    }
+                }
                 Ok(Msg::Input(input, reply)) => {
                     if input == Input::Command(Command::KeepPlayed) {
                         // The keys the engine has said nothing of yet are kept too.
@@ -3055,6 +3078,7 @@ impl Worker {
                     Effect::TestTone => self.audio.command(EngineCommand::TestTone),
                     Effect::AllNotesOff => {
                         self.shared.held.release_all();
+                        self.typed.forget();
                         self.audio.command(EngineCommand::AllNotesOff);
                     }
                     Effect::RetryAudio { after } => {
@@ -3328,6 +3352,22 @@ impl Worker {
                     // Here and now: meloet may end right after.
                     Effect::ClearWorkAudio => self.audio_store.clear_work(),
                     Effect::Export(ask) => inputs.extend(self.export_ask(ask)),
+                    Effect::Bounce(ask) => inputs.extend(self.bounce_ask(ask)),
+                    Effect::TakeBounced {
+                        ticket,
+                        temp,
+                        wanted,
+                        taken,
+                    } => match &self.keeper {
+                        Some(keeper) => keeper.adopt(ticket, temp, wanted, taken),
+                        None => {
+                            let _ = std::fs::remove_file(&temp);
+                            inputs.push_back(Input::Audio(AudioNews::Adopted {
+                                ticket,
+                                audio: None,
+                            }));
+                        }
+                    },
                     Effect::AiLink(on) => {
                         if let Some(switch) = &self.ai_switch {
                             switch(on);
@@ -3366,6 +3406,7 @@ impl Worker {
         }
         drop(told);
         self.sync_mics();
+        self.follow_typed();
         self.hub.publish(self.model.view())
     }
 
@@ -4074,6 +4115,9 @@ fn steady_load(open: bool, permille: u32, last: Option<&Telemetry>) -> u16 {
     }
 }
 
+mod bounce;
+#[cfg(test)]
+mod bounce_tests;
 mod export;
 #[cfg(test)]
 mod export_tests;
@@ -4083,6 +4127,9 @@ mod keys;
 mod plug_tests;
 #[cfg(test)]
 mod tests;
+mod typed;
+#[cfg(test)]
+mod typed_tests;
 #[cfg(test)]
 mod updates_tests;
 #[cfg(test)]

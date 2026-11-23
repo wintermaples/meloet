@@ -57,6 +57,7 @@
   import { positionText, shownTick } from "./time";
   import ZoomMenu from "./ZoomMenu.svelte";
   import { overdubClipName } from "./clipEdits";
+  import { keyboardName as nameOfKeyboard, namedKeyboard } from "./keyboardName";
 
   const app = $derived(current.state!);
   /** The piano roll shows drum rows (selected notes and sounding notes as drum piece names). */
@@ -338,7 +339,7 @@
       case "searchingKeyboard":
         return plain("status.searchingKeyboard");
       case "keyboardFound":
-        return plain("msg.keyboardFound", { keyboard: m.keyboard });
+        return plain("msg.keyboardFound", { keyboard: namedKeyboard(m.keyboard) });
       case "keyboardLost":
         return plain("msg.keyboardLost", { keyboard: m.keyboard });
       case "keyboardInputStopped":
@@ -467,6 +468,9 @@
         return plain("msg.nothingToKeep");
       case "songTooLong":
         return plain("msg.songTooLong");
+      // R2: and that the keys do not sound while the input method is on.
+      case "typedKeysOn":
+        return { parts: joined(textParts("msg.typedKeysOn", {}), textParts("msg.typedKeysIme", {})), strong: [], button: null };
       case "instrumentReplaced":
         return withLanes(
           plain("msg.instrumentReplaced", {
@@ -576,6 +580,11 @@
           s.kind === "insert" && s.insert.strip.kind === "return"
             ? textParts("status.paramSelected", { strip: slotName(s), param: m.param })
             : textParts("status.paramSelectedInsert", { strip: slotName(s), effect: spaced(m.plugin), param: m.param });
+        return { parts: joined(loop ? textParts("status.loop", { from: loop.from, to: loop.to }) : [], selected), strong: [], button: null };
+      }
+      case "soundKnobSelected": {
+        const loop = m.loopBars;
+        const selected = textParts("status.soundKnobSelected", { track: track(m.track), knob: t(`knob.${m.knob}`) });
         return { parts: joined(loop ? textParts("status.loop", { from: loop.from, to: loop.to }) : [], selected), strong: [], button: null };
       }
       case "paramClamped":
@@ -689,6 +698,20 @@
         return plain("msg.exportPictureUnreadable", { file: m.file });
       case "reverseFollowOff":
         return plain("msg.reverseFollowOff", { count: m.count });
+      case "bounced":
+        return plain("msg.bounced", { track: track(m.track) });
+      case "bounceCancelled":
+        return plain("msg.bounceCancelled");
+      case "bounceFailed":
+        return m.reason.kind === "plugin" ? plain("msg.bounceFailedPlugin", { plugin: m.reason.name }) : plain("msg.bounceFailedWrite");
+      case "bounceGone":
+        return plain("msg.bounceGone");
+      case "bounceBusy":
+        return plain("msg.bounceBusy");
+      case "nothingToBounce":
+        return plain("msg.nothingToBounce");
+      case "exportWaitsForBounce":
+        return plain("msg.exportWaitsForBounce");
       // MB is 1000 × 1000 bytes.
       case "inputLost":
         return plain("msg.inputLost", { input: t(`vocal.inputShort.${m.input}`), device: m.device });
@@ -953,6 +976,15 @@
     if (laneTrack && usual) return { parts: textParts("status.laneAddOpen", { track: track(laneTrack) }), strong: [], button: null };
     // While searching parameters (the screen does the search; mock F-ParamSearch).
     if (searching && usual) return { parts: textParts("status.paramSearching", { query: paramUi.query.trim(), count: paramUi.matches }), strong: [], button: null };
+    // While a track is turned into audio (round 12, A7): 「音にしています… 40 %」 and 「やめる」. As 「音を作っています」, the progress is
+    // audioWork; it replaces the usual summary and comes after other messages.
+    const bouncing = app.audioWork.bounce;
+    if (bouncing && usual)
+      return {
+        parts: textParts("msg.bouncing", { percent: bouncing.percent }),
+        strong: [],
+        button: { label: t("button.cancel"), command: { type: "cancelBounce" } },
+      };
     // While making the sound (spec 6 "Making the sound", mock F7-Stretch). The progress is audioWork, so the screen makes the text. It replaces the usual summary and comes after other messages.
     if (rendering && usual) return { parts: textParts("msg.audioRendering", rendering), strong: [], button: null };
     if (playingInPianoRoll && (m === null || m.id === "summary")) {
@@ -1045,9 +1077,10 @@
   });
 
   const outputName = $derived(app.outputs.list.find((o) => o.id === app.outputs.chosen)?.name ?? null);
-  const keyboardName = $derived(
-    app.keyboards.inputStopped ? null : (app.keyboards.list.find((k) => k.id === app.keyboards.active)?.name ?? null),
-  );
+  const keyboardName = $derived.by(() => {
+    const active = app.keyboards.inputStopped ? undefined : app.keyboards.list.find((k) => k.id === app.keyboards.active);
+    return active ? nameOfKeyboard(active) : null;
+  });
   const actual = $derived(app.audio.actualFrames);
   const requested = $derived(app.audio.requestedFrames);
   const scale = $derived(app.workspace.scale);

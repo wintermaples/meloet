@@ -311,7 +311,7 @@ pub struct Track {
     pub automation: Vec<Arc<Lane>>,
     /// 「アルペジオ」 (round 12, E2).
     pub arp: Arp,
-    /// The knobs of a built-in sound (round 12, E3); kept whatever the sound.
+    /// The knobs of a built-in sound (round 12, E3). Another sound starts them again.
     pub knobs: SoundKnobs,
 }
 

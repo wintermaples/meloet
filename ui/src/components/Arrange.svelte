@@ -38,6 +38,7 @@
   import { term } from "../lib/tip.svelte";
   import { openContextMenu, type MenuEntry, type MenuRow } from "./menu/contextMenu.svelte";
   import { joinable, overdubClipName, repeatCountOf, splitTick } from "./clipEdits";
+  import { bounceable } from "./arrange/bounce";
   import { clipEdit, renameCommand, startClipRename, stopClipRename } from "./clipName.svelte";
   import { current, send } from "../state/app.svelte";
   import { t } from "../text/ja";
@@ -1537,6 +1538,10 @@
           menuRow("menu.normalize", change, () => send({ type: "normalizeClips", clips: chosen() })),
         ]
       : [];
+    // At the bottom of a keys clip's menu (round 12, A7); Rust takes the keys clips among the chosen, of one track.
+    const keysRows: MenuEntry[] = keys
+      ? [{ kind: "separator" }, menuRow("menu.bounceClips", change && bounceable(song.tracks, ids), () => send({ type: "bounceToAudio", clips: chosen() }))]
+      : [];
     return [
       ...(keys ? ([menuRow("menu.openInPianoRoll", true, open, t("key.pianoRoll")), { kind: "separator" }] satisfies MenuEntry[]) : []),
       menuRow("menu.cut", change, () => send({ type: "cutClips", clips: chosen() }), modKey(t("key.cut"))),
@@ -1554,6 +1559,7 @@
       menuRow("menu.prevTake", change && clip.takes > 1, () => send({ type: "stepTake", delta: -1 }), shiftKey(t("key.take"))),
       menuRow("menu.deleteTake", change && clip.takes > 1, () => send({ type: "deleteTake", clip: clip.id })),
       ...audioRows,
+      ...keysRows,
     ];
   }
 

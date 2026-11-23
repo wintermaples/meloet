@@ -8,16 +8,18 @@
      While the sound pack hint is shown (spec 3 43-B, 44-A), only the input and the held notes on the left; the right is pack/PackBand.svelte. -->
 <script lang="ts">
   import { onMount, untrack } from "svelte";
-  import { keyIsDown, type TrackView } from "../bridge";
+  import { clockOffsetUs, keyIsDown, type TrackView } from "../bridge";
   import type { Scale } from "../design/tokens";
   import { keyboardLayout } from "../gl/keyboard";
   import { glRegion, glSlot } from "../gl/slot";
   import { term, tip, tipOf } from "../lib/tip.svelte";
-  import { current, onEvent, send } from "../state/app.svelte";
+  import { current, onEvent, post, send } from "../state/app.svelte";
+  import { octaveNote, switchTypedKeys } from "../keys/typed.svelte";
+  import { keyboardName } from "./keyboardName";
   import { findTerm, t } from "../text/ja";
   import { dbNumber, PeakHold, textParts } from "./format";
   import { CLIP_HOLD_MS } from "../gl/dims";
-  import { pad3, signed4, SUSTAIN_ON } from "./meterFormat";
+  import { noteName, pad3, signed4, SUSTAIN_ON } from "./meterFormat";
   import { metrics } from "./metrics.svelte";
   import { charCount, meterFit, nameWidthPx, sentences, type MeterFit, type NameWidth } from "./meterFit";
   import NumberField from "./NumberField.svelte";
@@ -44,10 +46,15 @@
   const keyboard = $derived(
     app?.keyboards.inputStopped ? null : (app?.keyboards.list.find((k) => k.id === app.keyboards.active) ?? null),
   );
-  const name = $derived(keyboard?.name ?? t("meter.noKeyboard"));
+  const name = $derived(keyboard ? keyboardName(keyboard) : t("meter.noKeyboard"));
   const others = $derived(keyboard ? app!.keyboards.list.length - 1 : 0);
   const more = $derived(others > 0 ? t("meter.otherKeyboards", { count: others }) : "");
-  const allNames = $derived(app?.keyboards.list.map((k) => k.name).join(" ・ ") ?? "");
+  const allNames = $derived(app?.keyboards.list.map(keyboardName).join(" ・ ") ?? "");
+  // R2 「キーで弾く」: the switch right of the name, and the octave of the A key while it is on.
+  const typedOn = $derived(app?.keyboards.typedKeys ?? false);
+  function toggleTyped(): void {
+    switchTypedKeys(!typedOn, { send, post, clockOffsetUs });
+  }
   const right = $derived.by(() => {
     if (!app) return null;
     if (app.keyboards.inputStopped) return { kind: "inputStopped" as const };
@@ -218,6 +225,7 @@
     targetLabel: true,
     sustain: true,
     sentences: Infinity,
+    typed: Infinity,
   });
   let nameNatural = $state(0);
 
@@ -234,6 +242,7 @@
     const nameW = width("name");
     const bendW = keyboard ? width("bend") + gap : 0;
     const modW = keyboard ? width("mod") + gap : 0;
+    const typedW = [width("typed") + gap, ...(typedOn ? [width("octave") + gap] : [])];
     const keyW = (n: string) => metrics.px(`mock.input-meter.key-${n}-w`);
     // The label and value are stacked, so the target width is the wider of the two.
     const labelW = width("target-label");
@@ -256,6 +265,7 @@
       targetLabel: Math.max(0, labelW - trackW),
       sustain: keyboard ? width("sustain") + gap : 0,
       sentences: message ? message.parts.map((_, i) => width(`msg-${i}`)) : undefined,
+      typed: typedW,
     });
   }
 
@@ -291,7 +301,7 @@
   });
   $effect(() => {
     // Measure again when the state changes (so it follows the rules even where there is no ResizeObserver).
-    void [slim, scale, name, more, keyboard, right, message, split, vocal];
+    void [slim, scale, name, more, keyboard, right, message, split, vocal, typedOn];
     measure();
   });
 
@@ -364,8 +374,23 @@
   {/if}
 {/snippet}
 
+{#snippet typedPart(measuring: boolean)}
+  {#if measuring}
+    <span class="switch" data-part="typed">{t("input.typedKeys")}</span>
+  {:else if fit.typed > 0}
+    <button class="switch" class:on={typedOn} aria-pressed={typedOn} data-test="typed-keys" onclick={toggleTyped}>{t("input.typedKeys")}</button>
+  {/if}
+  {#if typedOn && (measuring || fit.typed > 1)}
+    <div class="item" data-part="octave">
+      <span class="label">{t("input.octave")}</span>
+      <span class="value live" data-test="typed-octave">{noteName(octaveNote())}</span>
+    </div>
+  {/if}
+{/snippet}
+
 {#snippet body(measuring: boolean)}
   {@render who(measuring, true)}
+  {@render typedPart(measuring)}
 
   {#if measuring}
     <div class="keys"></div>
@@ -767,7 +792,8 @@
     width: var(--mock-input-meter-velocity);
   }
   /* The 「固定」 switch (same shape and height as M, S, ●; accent when on; spec 2). */
-  .fixed {
+  .fixed,
+  .switch {
     box-sizing: border-box;
     flex-shrink: 0;
     display: inline-flex;
@@ -783,15 +809,18 @@
     font: inherit;
     cursor: pointer;
   }
-  .fixed:hover {
+  .fixed:hover,
+  .switch:hover {
     border-color: var(--color-gray-8);
     color: var(--color-gray-10);
   }
-  .fixed:active {
+  .fixed:active,
+  .switch:active {
     background: var(--color-gray-2);
     border-color: var(--color-gray-8);
   }
-  .fixed.on {
+  .fixed.on,
+  .switch.on {
     border-color: var(--color-accent);
     color: var(--color-accent);
   }

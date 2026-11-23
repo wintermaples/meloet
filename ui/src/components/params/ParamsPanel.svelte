@@ -7,7 +7,8 @@
      that cannot open its window yet, or has none, a text above the list. Two lines when nothing is chosen (86-5).
      Built-in sounds and SF2 sounds (`sound` of SelectedParams; spec 3 92-1 and 19-A, mock F7-Answers92): the name and
      「最初から入っている」 (the 「SF2」 mark for SF2), 「この音色には、動かせるパラメータがありません。」, in gray.8
-     「音量とパンはミキサーで、音色を変えるには入れかえます。」, and the button 「音源を入れかえる…」.
+     「音量とパンはミキサーで、音色を変えるには入れかえます。」, and the button 「音源を入れかえる…」. From round 12 (E3) a sound that
+     comes with meloet has the four rows of its knobs in place of the two texts (SoundKnobList); the button stays under them.
      An audio clip (`clip` of SelectedParams): the chosen clip panel (ClipPanel). Two or more audio clips (`clips` of ParamsView):
      the panel that changes them together (ClipsPanel). -->
 <script lang="ts">
@@ -26,6 +27,7 @@
   import { allRows, rowCount } from "./paramRows";
   import { paramUi, stopTyping } from "./paramUi.svelte";
   import PluginList from "./PluginList.svelte";
+  import SoundKnobList from "./SoundKnobList.svelte";
   import { builtinOf, pluginAt, pluginOf, selectedInsert, windowOf } from "./selected";
 
   let { onfold }: { onfold: () => void } = $props();
@@ -152,9 +154,14 @@
         >{t("params.whereInstrument", { strip: stripName(app.song, { kind: "track", id: sound.track }, app.library) })}</span
       >
     </div>
-    <div class="nothing" data-test="params-no-sound-params">
-      <span>{t("params.noSoundParams")}</span>
-      <span class="m-lbl">{t("params.noSoundParamsHint")}</span>
+    {#if sound.knobs}
+      <SoundKnobList sel={sound} knobs={sound.knobs} />
+    {/if}
+    <div class="nothing" data-test={sound.knobs ? "params-sound-replace" : "params-no-sound-params"}>
+      {#if !sound.knobs}
+        <span>{t("params.noSoundParams")}</span>
+        <span class="m-lbl">{t("params.noSoundParamsHint")}</span>
+      {/if}
       <span
         ><Button test="params-replace-sound" disabled={busy} onclick={() => send(openShelf({ kind: "replace", track: sound.track }))}
           >{t("button.replaceSound")}</Button

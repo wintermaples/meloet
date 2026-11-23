@@ -115,6 +115,8 @@ BOARDS = {
     "tooManyTracks": None,
     "keepPlayedReady": None,
     "nothingToKeep": None,
+    "typedKeys": None,
+    "typedKeysSettings": None,
     "drumRoll": "R7-Drum",
     # About meloet.
     "about": "R7-About",
@@ -240,6 +242,10 @@ BOARDS = {
     # 「ノーマライズ」 and 「逆にする」 (round 12, A9).
     "audioNormalized": None,
     "menuAudioClip": None,
+    # 「音のクリップにする」 (round 12, A7).
+    "bouncing": None,
+    "bounced": None,
+    "menuTrackBounce": None,
     # Repeating clips (round 12, A1; the spec's mock is not a board).
     "arrangeRepeatHover": None,
     "arrangeRepeatDrag": None,
@@ -326,6 +332,9 @@ BOARDS = {
     "paramsGate": None,
     "paramsDeEsser": None,
     "paramsSaturation": None,
+    # Round 12 E3: the knobs of a built-in sound, and of a drum kit with two rows disabled (no mock).
+    "paramsSoundKnobs": None,
+    "paramsSoundDrums": None,
 }
 # Double-clicks the Vel cell of a row of the note list and types into the field (R3-Lanes: "96|" and "200").
 TYPE_KEY_FILTER = """
@@ -541,6 +550,13 @@ ev("pointermove", r.top + 10);
 ev("pointermove", r.top + 20 - r.height * 2.4);
 """
 
+# Right-clicks the header of track 1 (its menu has 「このトラックを音にする」, round 12 A7).
+CONTEXT_TRACK_HEAD = """
+const head = document.querySelectorAll('[data-test="track-head"]')[0];
+const r = head.getBoundingClientRect();
+head.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2, clientX: r.left + 120, clientY: r.top + 30 }));
+"""
+
 # Right-clicks the header of track 2 and opens 色 ▸ (R6-Tracks).
 TRACK_COLORS = """
 const head = document.querySelectorAll('[data-test="track-head"]')[1];
@@ -683,6 +699,7 @@ CLICKS = {
     "menuRecent": ("recentSongs", ('[data-menu="0"]', '[data-test="menubar-list"] [data-row="2"]')),
     "menuRecentEmpty": ("saved", ('[data-menu="0"]', '[data-test="menubar-list"] [data-row="2"]')),
     "menuAudioClip": ("audioEdit", "js:" + CONTEXT_AUDIO_CLIP),
+    "menuTrackBounce": ("muted", "js:" + CONTEXT_TRACK_HEAD),
     # Round 12 A1: the pointer on the repeat handle, the handle dragged by 2 copies of 3 bars, the box, and its answer.
     "arrangeRepeatHover": ("arrangeTrimmed", repeat_handle(0)),
     "arrangeRepeatDrag": ("arrangeTrimmed", repeat_handle(384)),
@@ -853,6 +870,9 @@ ONLY = {
     "menuRecentEmpty": [(1280, 800, 100)],
     "menuAudioClip": [(1280, 800, 100)],
     "audioNormalized": [(1280, 800, 100), (853, 448, 100)],
+    "bouncing": [(1280, 800, 100), (853, 448, 100)],
+    "bounced": [(1280, 800, 100)],
+    "menuTrackBounce": [(1280, 800, 100)],
     "arrangeRepeatHover": [(1280, 800, 100)],
     "arrangeRepeatDrag": [(1280, 800, 100)],
     "arrangeRepeatBox": [(1280, 800, 100)],
@@ -971,6 +991,8 @@ ONLY = {
     "paramsGate": [(1280, 800, 100)],
     "paramsDeEsser": [(1280, 800, 100)],
     "paramsSaturation": [(1280, 800, 100)],
+    "paramsSoundKnobs": [(1280, 800, 100), (1280, 800, 150)],
+    "paramsSoundDrums": [(1280, 800, 100)],
 }
 scenes = args[1:] or list(BOARDS)
 

@@ -757,6 +757,7 @@ fn a_fixed_velocity_reaches_the_sound_the_recording_the_meter_and_the_screen() {
         shell: Mutex::new(None),
         fader: AtomicU16::new(NO_FADER),
         mics: Mutex::new(None),
+        typed_played: AtomicBool::new(false),
     });
     shared.stream.open.store(true, Relaxed);
     let (tx, _rx) = mpsc::channel();
@@ -866,6 +867,7 @@ fn buttons_and_the_fader_never_sound_and_all_notes_off_lets_go_of_that_keyboard(
         shell: Mutex::new(None),
         fader: AtomicU16::new(NO_FADER),
         mics: Mutex::new(None),
+        typed_played: AtomicBool::new(false),
     });
     shared.stream.open.store(true, Relaxed);
     let (tx, core) = mpsc::channel();

@@ -6,7 +6,9 @@
      CancelMixPreview (cancelDrag in pianoroll/view.svelte.ts). Choosing the row and pressing Enter, or pressing the value
      twice, gives the typing box (spec 3 (86-6); ValueField). Enter sends TypeParam.
      The mark on the right writes automation (AutoMark). While a band moves it, the value is the one on the line (`auto`,
-     given by the screen; architecture 21-8). -->
+     given by the screen; architecture 21-8).
+     The same row moves a knob of a sound that comes with meloet (`knob`, round 12 E3): SetSoundKnob in place of SetParam,
+     and a value typed is sent with commit: true. A knob the sound does not use is shown disabled. -->
 <script lang="ts">
   import { onMount, untrack } from "svelte";
   import type { Command } from "../../bridge";
@@ -21,10 +23,16 @@
   import { paramUi, stopTyping } from "./paramUi.svelte";
   import ValueField from "./ValueField.svelte";
   import AutoMark from "./AutoMark.svelte";
+  import { knobSpec, knobText, typedKnob, type KnobRef } from "./knobRows";
 
   interface Props {
-    insert: InsertRef;
-    effect: EffectKind;
+    /** A parameter of an effect that comes with meloet in an insert slot… */
+    insert?: InsertRef;
+    effect?: EffectKind;
+    /** …or a knob of a sound that comes with meloet. */
+    knob?: KnobRef;
+    /** Shown in gray, and nothing moves it. */
+    disabled?: boolean;
     param: number;
     name: string;
     /** The value in the song. */
@@ -36,9 +44,15 @@
     /** The value the band moves (null if none). */
     auto?: number | null;
   }
-  let { insert, effect: kind, param, name, value, selected, onselect, mark, auto = null }: Props = $props();
+  let { insert, effect: kind, knob, disabled = false, param, name, value, selected, onselect, mark, auto = null }: Props = $props();
 
-  const spec = $derived(EFFECT_PARAMS[kind][param]!);
+  const spec = $derived(knob ? knobSpec(knob.knob) : EFFECT_PARAMS[kind!][param]!);
+  const text = (v: number) => (knob ? knobText(v) : valueText(kind!, spec, v));
+  function command(v: number, commit: boolean): Command {
+    return knob
+      ? { type: "setSoundKnob", track: knob.track, instrument: knob.instrument, knob: knob.knob, value: v, commit }
+      : { type: "setParam", insert: insert!, effect: kind!, param, value: v, commit };
+  }
 
   let bar = $state<HTMLElement>();
   let dragging = $state(false);
@@ -58,7 +72,7 @@
   });
 
   function set(v: number, commit: boolean): void {
-    const c: Command = { type: "setParam", insert, effect: kind, param, value: v, commit };
+    const c = command(v, commit);
     if (commit) forgetHand(c);
     else noteHand(c);
     send(c);
@@ -87,7 +101,7 @@
   }
 
   function ondown(ev: PointerEvent): void {
-    if (ev.button !== 0 || !bar) return;
+    if (ev.button !== 0 || !bar || disabled) return;
     ev.preventDefault();
     bar.setPointerCapture?.(ev.pointerId);
     from = value;
@@ -122,7 +136,7 @@
     stopFrame();
     dragging = false;
     held = null;
-    forgetHand({ type: "setParam", insert, effect: kind, param, value: 0, commit: false });
+    forgetHand(command(0, false));
     send({ type: "cancelMixPreview" });
     return true;
   }
@@ -146,17 +160,22 @@
     if (ev.ctrlKey || ev.metaKey || ev.altKey || ev.isComposing) return;
     ev.preventDefault();
     ev.stopPropagation();
-    if (dragging) return;
+    if (dragging || disabled) return;
     change(keyStep(spec, shown, ev.key === "ArrowRight" ? 1 : -1, ev.shiftKey));
   }
 
   const typing = $derived(paramUi.typing === param && spec.shape === "continuous");
   function startTyping(): void {
-    if (spec.shape === "continuous") paramUi.typing = param;
+    if (spec.shape === "continuous" && !disabled) paramUi.typing = param;
   }
-  function submit(text: string): void {
+  function submit(typed: string): void {
     stopTyping();
-    send({ type: "typeParam", param: { kind: "builtin", insert, effect: kind, param }, text });
+    if (!knob) {
+      send({ type: "typeParam", param: { kind: "builtin", insert: insert!, effect: kind!, param }, text: typed });
+      return;
+    }
+    const v = typedKnob(typed);
+    if (v !== null) set(v, true);
   }
 
   const fraction = $derived(fractionOf(spec, shown));
@@ -172,10 +191,11 @@
   class="row"
   class:selected
   class:moving={dragging}
+  class:disabled
   role="presentation"
   data-param={param}
   data-test="param-row"
-  onpointerdown={onselect}
+  onpointerdown={() => disabled || onselect()}
 >
   {#if findTerm(name)}
     <span class="name" use:term={name}>{name}</span>
@@ -192,7 +212,8 @@
       aria-valuemin={spec.min}
       aria-valuemax={spec.max}
       aria-valuenow={shown}
-      tabindex="0"
+      aria-disabled={disabled || undefined}
+      tabindex={disabled ? -1 : 0}
       data-test="param-slider"
       bind:this={bar}
       bind:clientWidth={barWidth}
@@ -208,14 +229,14 @@
       <div class="knob" style:transform="translateX({snapped}px)" data-test="param-knob"></div>
     </div>
   {:else if spec.shape === "steps"}
-    <div class="control" role="slider" aria-label={name} aria-valuemin={0} aria-valuemax={spec.steps.length - 1} aria-valuenow={step} aria-valuetext={valueText(kind, spec, step)} tabindex="0" {onkeydown} data-test="param-steps">
+    <div class="control" role="slider" aria-label={name} aria-valuemin={0} aria-valuemax={spec.steps.length - 1} aria-valuenow={step} aria-valuetext={text(step)} tabindex="0" {onkeydown} data-test="param-steps">
       <button class="m-plain arrow m-lbl" tabindex="-1" aria-label={name} onclick={() => change(Math.max(0, step - 1))} data-test="param-prev"
         >◂</button
       >
       <div class="squares">
         {#if spec.steps.length <= SQUARES_UP_TO}
           {#each spec.steps as id, i (id)}
-            <button class="m-plain square" class:on={i === step} tabindex="-1" aria-label={valueText(kind, spec, i)} onclick={() => change(i)}
+            <button class="m-plain square" class:on={i === step} tabindex="-1" aria-label={text(i)} onclick={() => change(i)}
             ></button>
           {/each}
         {:else}
@@ -245,7 +266,7 @@
   {/if}
   {#if !typing}
     <span class="m-num m-hi value live"
-      ><span class="in" role="presentation" data-test="param-value" ondblclick={startTyping}>{valueText(kind, spec, shown)}</span></span
+      ><span class="in" role="presentation" data-test="param-value" ondblclick={startTyping}>{text(shown)}</span></span
     >
   {/if}
   <AutoMark {...mark} />
@@ -265,6 +286,25 @@
   }
   .row:hover {
     box-shadow: inset 0 0 0 var(--line-hair) var(--color-gray-8);
+  }
+  /* A knob the sound does not use: gray, and no hover. */
+  .row.disabled {
+    color: var(--color-gray-7);
+  }
+  .row.disabled:hover {
+    box-shadow: none;
+  }
+  .row.disabled .slider {
+    cursor: default;
+  }
+  .row.disabled .knob {
+    background: var(--color-gray-7);
+  }
+  .row.disabled .fill {
+    background: var(--color-gray-6);
+  }
+  .row.disabled .value {
+    color: var(--color-gray-7);
   }
   /* Chosen or moving: background gray.4, an accent line.mark on the left. */
   .row.selected,

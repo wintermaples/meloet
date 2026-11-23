@@ -17,6 +17,7 @@ use crate::clock::{HeardPosition, Segment, TransportClock, TransportState, heard
 use crate::effect::{Effect, EffectContext};
 use crate::input::{InputFeed, MAX_INPUT_CHANNELS};
 use crate::instrument::{Instrument, InstrumentEvent};
+use crate::knobs::{KNOB_DEFAULTS, KNOBS, knob_place};
 use crate::mixer::{INSERT_SLOTS, Io, MixStrip, RAMP_S, SlotAuto, Strip};
 use crate::plugin::{PLUGIN_WAIT_SHARE, PluginBlock};
 use crate::probe::probe_wave;
@@ -28,6 +29,7 @@ use meloet_plugin::ipc::Transport as PluginTransport;
 
 const COMMAND_RING: usize = 256;
 const MIDI_RING: usize = 1024;
+const TYPED_RING: usize = 256;
 const LATENCY_RING: usize = 1024;
 const RECORDED_RING: usize = 4096;
 /// Slots of that ring left to what a recording says: the keys played outside one
@@ -101,6 +103,14 @@ pub enum EngineCommand {
         strip: MixStrip,
         from: usize,
         to: usize,
+    },
+    /// The knobs of the track's sound as the hand put them ([`Instrument::set_knob`], places
+    /// 0..=1 in the order of `crate::knobs`). Kept for the track, whatever instrument comes:
+    /// the track's own instrument takes each one that no lane plays now (not the one tried
+    /// out in its place); a knob whose lane stops playing, or is held, comes back to it.
+    SetKnobs {
+        track: usize,
+        knobs: [f32; KNOBS],
     },
     /// [`Effect::set_param`] of the effect in the slot. Does nothing on an empty slot.
     SetEffectParam {
@@ -433,7 +443,8 @@ pub struct MidiIn {
     pub t_us: u64,
 }
 
-/// The MIDI thread's end of the ring into the engine.
+/// The end of a ring of keys into the engine: the MIDI thread's, or the PC keyboard's
+/// ([`EngineHandle::typed_in`]).
 pub type MidiFeed = Producer<MidiIn>;
 
 /// When this block was called and when its first frame reaches the DAC, [`monotonic_us`] clock.
@@ -680,6 +691,8 @@ struct Track {
     due_key: Option<((usize, u32), u64, bool)>,
     auto: Option<Box<AutoSet>>,
     holds: [Option<AutoTarget>; HOLDS],
+    /// [`EngineCommand::SetKnobs`].
+    knobs: [f32; KNOBS],
     /// Fader and pan, or a send, went where automation took them, not where the hand put
     /// them.
     steered: bool,
@@ -837,11 +850,43 @@ impl Track {
             due_key: None,
             auto: None,
             holds: [None; HOLDS],
+            knobs: KNOB_DEFAULTS,
             steered: false,
             sends_steered: [false; 2],
             mute_due: u64::MAX,
             voice: None,
             clips: ClipPlayer::new(),
+        }
+    }
+
+    /// The track's own instrument (the one set aside while another is tried out) takes the
+    /// knobs the hand put, each one that no lane plays now.
+    fn apply_knobs(&mut self) {
+        let own = match self.aside.as_deref_mut() {
+            Some(own) => own,
+            None => match self.instrument.as_deref_mut() {
+                Some(own) => own,
+                None => return,
+            },
+        };
+        for (knob, &place) in self.knobs.iter().enumerate() {
+            let knob = knob as u32;
+            if !self
+                .auto
+                .as_deref()
+                .is_some_and(|set| set.plays_instrument(knob))
+            {
+                own.set_knob(knob, place);
+            }
+        }
+    }
+
+    /// Another instrument is on the seat: it takes the hand's knobs, and the lanes of its
+    /// parameters are sent again.
+    fn instrument_changed(&mut self) {
+        self.apply_knobs();
+        if let Some(set) = self.auto.as_deref_mut() {
+            set.resend_instrument();
         }
     }
 
@@ -1399,6 +1444,8 @@ pub struct Engine {
     master_strip: Strip,
     master_auto: MasterAuto,
     midi: Consumer<MidiIn>,
+    /// The keys of the PC keyboard ([`EngineHandle::typed_in`]), read with `midi` in time order.
+    typed: Consumer<MidiIn>,
     latency: Producer<LatencyRecord>,
     recorded: Producer<Recorded>,
     clock: Arc<TransportClock>,
@@ -1467,6 +1514,7 @@ impl Engine {
         let (recorded_tx, recorded_rx) = RingBuffer::new(RECORDED_RING);
         let clock = Arc::new(TransportClock::default());
         let (midi_tx, midi_rx) = RingBuffer::new(MIDI_RING);
+        let (typed_tx, typed_rx) = RingBuffer::new(TYPED_RING);
         let (latency_tx, latency_rx) = RingBuffer::new(LATENCY_RING);
         let (analysis_tap, analysis_reader) = analysis_ring(config.sample_rate);
         let buffer = || vec![0.0f32; config.max_frames].into_boxed_slice();
@@ -1500,6 +1548,7 @@ impl Engine {
             master_strip: Strip::new(),
             master_auto: MasterAuto::new(config.max_frames),
             midi: midi_rx,
+            typed: typed_rx,
             latency: latency_tx,
             recorded: recorded_tx,
             clock: clock.clone(),
@@ -1539,6 +1588,7 @@ impl Engine {
             last_map_gen: 0,
             latency: latency_rx,
             recorded: recorded_rx,
+            typed: typed_tx,
             clock,
             meters,
             max_frames: config.max_frames,
@@ -1774,6 +1824,7 @@ impl Engine {
                             if let Some(old) = slot.instrument.replace(instrument) {
                                 slot.fade_out(old, fade, &mut self.retired);
                             }
+                            slot.instrument_changed();
                         }
                         None => {
                             // Cannot fail: checked above, and this is the only producer.
@@ -1874,7 +1925,9 @@ impl Engine {
                             if let Some(new) = set.as_deref_mut() {
                                 new.follow(slot.auto.as_deref(), &slot.holds);
                             }
-                            std::mem::replace(&mut slot.auto, set)
+                            let old = std::mem::replace(&mut slot.auto, set);
+                            slot.apply_knobs();
+                            old
                         }
                         None => set,
                     };
@@ -1900,6 +1953,20 @@ impl Engine {
                     if let Some(set) = slot.auto.as_deref_mut() {
                         set.hold(target, on);
                     }
+                    if matches!(target, AutoTarget::Instrument { .. }) {
+                        slot.apply_knobs();
+                    }
+                }
+                EngineCommand::SetKnobs { track, knobs } => {
+                    let Some(slot) = self.tracks.get_mut(track) else {
+                        continue;
+                    };
+                    for (kept, place) in slot.knobs.iter_mut().zip(knobs) {
+                        if let Some(place) = knob_place(place) {
+                            *kept = place;
+                        }
+                    }
+                    slot.apply_knobs();
                 }
                 EngineCommand::SetMasterAutomation { mut set } => {
                     let master = &mut self.master_auto;
@@ -1965,11 +2032,13 @@ impl Engine {
                     }
                     if keep {
                         let _ = self.retired.push(own);
+                        slot.instrument_changed();
                     } else {
                         slot.lane.forget();
                         if let Some(tried) = slot.instrument.replace(own) {
                             slot.fade_out(tried, fade, &mut self.retired);
                         }
+                        slot.instrument_changed();
                         self.replay_lane(track);
                     }
                 }
@@ -1985,6 +2054,7 @@ impl Engine {
                     if let Some(old) = std::mem::replace(&mut slot.instrument, moved) {
                         let _ = self.retired.push(old);
                     }
+                    slot.instrument_changed();
                     if self.play_target == Some(from) {
                         self.play_target = Some(to);
                     }
@@ -1999,6 +2069,7 @@ impl Engine {
                     slot.aside_left = 0;
                     slot.fade_left = 0;
                     slot.holds = [None; HOLDS];
+                    slot.knobs = KNOB_DEFAULTS;
                     slot.steered = false;
                     slot.sends_steered = [false; 2];
                     slot.mute_due = u64::MAX;
@@ -2505,23 +2576,37 @@ impl Engine {
         }
     }
 
-    /// Keys played after `record_until` sound but are not recorded.
+    /// Keys played after `record_until` sound but are not recorded. The MIDI thread's keys and
+    /// the PC keyboard's come in the order they were played; the earlier of the two heads first.
     fn read_midi(&mut self, timing: BlockTiming, record_until: u64) {
-        while let Ok(midi) = self.midi.pop() {
+        loop {
+            let typed_first = match (self.midi.peek(), self.typed.peek()) {
+                (Ok(midi), Ok(typed)) => typed.t_us < midi.t_us,
+                (Err(_), Ok(_)) => true,
+                (_, Err(_)) => false,
+            };
+            if typed_first {
+                let Ok(midi) = self.typed.pop() else { break };
+                self.key_in(midi, timing, record_until);
+                continue;
+            }
+            let Ok(midi) = self.midi.pop() else { break };
+            // Only the MIDI keyboard's: the PC keyboard's time comes from the screen, and this
+            // is the key-to-sound latency the settings show.
+            if matches!(midi.event, InstrumentEvent::NoteOn { velocity, .. } if velocity > 0) {
+                // Every event starts at frame 0 of this block, so `playback_us` is its first sample.
+                let _ = self.latency.push(LatencyRecord {
+                    key_us: midi.t_us,
+                    callback_us: timing.callback_us,
+                    playback_us: timing.playback_us,
+                });
+            }
             self.key_in(midi, timing, record_until);
         }
     }
 
     /// One event of a keyboard: it sounds on the play target and is written down as played.
     fn key_in(&mut self, midi: MidiIn, timing: BlockTiming, record_until: u64) {
-        if matches!(midi.event, InstrumentEvent::NoteOn { velocity, .. } if velocity > 0) {
-            // Every event starts at frame 0 of this block, so `playback_us` is its first sample.
-            let _ = self.latency.push(LatencyRecord {
-                key_us: midi.t_us,
-                callback_us: timing.callback_us,
-                playback_us: timing.playback_us,
-            });
-        }
         if let Some(instrument) = self
             .play_target
             .and_then(|t| self.tracks[t].instrument.as_mut())
@@ -2787,7 +2872,10 @@ impl Engine {
                 continue;
             };
             mixing |= set.has_mix();
+            // While another instrument is tried out in its place, the lanes of the track's
+            // own are not its.
             if set.has_instrument()
+                && track.aside.is_none()
                 && let Some(instrument) = track.instrument.as_deref_mut()
             {
                 set.instrument_points(t, u64::from(track.lookahead), frames, instrument);
@@ -3287,6 +3375,7 @@ pub struct EngineHandle {
     last_map_gen: u32,
     latency: Consumer<LatencyRecord>,
     recorded: Consumer<Recorded>,
+    typed: Producer<MidiIn>,
     clock: Arc<TransportClock>,
     meters: Arc<EngineMeters>,
     max_frames: usize,
@@ -3299,6 +3388,13 @@ impl EngineHandle {
         self.commands
             .push(command)
             .map_err(|rtrb::PushError::Full(command)| command)
+    }
+
+    /// The ring of the PC keyboard (R2): its keys are played as the MIDI thread's are, and
+    /// read with them in the order of their `t_us`, which must not go back. Only the thread
+    /// that owns this handle pushes into it; [`EngineHandle::rebuild`] makes a new one.
+    pub fn typed_in(&mut self) -> &mut MidiFeed {
+        &mut self.typed
     }
 
     /// Prepares `instrument` here (this may allocate) and sends it to `track`.

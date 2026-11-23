@@ -742,7 +742,7 @@ impl Model {
         if let Some(busy) = self.ai_busy() {
             return Err(AiRefusal::Busy(busy));
         }
-        if self.export.dialog_open() {
+        if self.export.dialog_open() || self.bouncing() {
             return Err(AiRefusal::Busy(AiBusy::Exporting));
         }
         Ok(())

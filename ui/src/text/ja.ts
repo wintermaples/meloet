@@ -1434,6 +1434,8 @@ export const texts = {
   "knob.attack": e("立ち上がり", "user:2026-11-23"),
   "knob.release": e("のび", "user:2026-11-23"),
   "knob.vibrato": e("ゆれ", "user:2026-11-23"),
+  "status.soundKnobSelected": e("{track} ・ 「{knob}」をえらんでいます", "builder:2026-11-24", { track: "1 ピアノ", knob: "明るさ" }),
+  "history.soundKnob": e("{track} ・ {knob} {from} → {to} %", "builder:2026-11-24", { track: "1 ピアノ", knob: "明るさ", from: "50", to: "25" }),
   // How values are written (number and unit; the examples in the spec 3 rule on parameter names). The part after the key prefix is unit of EFFECT_PARAMS.
   "param.value.s": e("{value} s", "spec:3", { value: "2.40" }),
   "param.value.ms": e("{value} ms", "spec:3", { value: "20" }),
@@ -2112,6 +2114,13 @@ export const texts = {
   "msg.fadeOutNoClips": e("クリップがないので、フェードアウトをつけられませんでした。", "builder:2026-11-24"),
   // Velocity lock (B-66) and changing velocities together (B-67).
   "input.velocityFixed": e("固定", "user:2026-11-18"),
+  // R2 (round 12): the PC keyboard plays while 「キーで弾く」 is on. The octave is the note of the A key.
+  "input.typedKeys": e("キーで弾く", "user:2026-11-23"),
+  "input.typedKeyboard": e("パソコンのキーボード", "user:2026-11-23"),
+  "input.octave": e("オクターブ", "user:2026-11-23"),
+  "menu.typedKeys": e("キーで弾く", "user:2026-11-23"),
+  "msg.typedKeysOn": e("キーで弾く：オン。1文字のショートカットは止まっています。Z ／ X でオクターブ、Esc でやめる", "user:2026-11-23"),
+  "msg.typedKeysIme": e("日本語入力がオンだと鳴りません", "builder:2026-11-24"),
   "inspector.matchVelocity": e("そろえる", "user:2026-11-18"),
   // P3 (round 12): more rows of 「ベロシティをまとめて変える」 and 「長さをそろえる」. The marks % → ± are those of the spec's picture.
   "inspector.scaleVelocity": e("割合", "user:2026-11-23"),
@@ -2426,6 +2435,21 @@ export const texts = {
     "builder:2026-11-23",
     { count: "1" },
   ),
+  // 「音のクリップにする」 (round 12, A7): the rows of the keys clip's and the keys track head's right-click menus, and the status line.
+  "menu.bounceClips": e("音のクリップにする", "user:2026-11-23"),
+  "menu.bounceTrack": e("このトラックを音にする", "user:2026-11-23"),
+  "msg.bouncing": e("音にしています… {percent} %", "user:2026-11-23", { percent: "40" }),
+  // The spec has no text for these: made in the words of the lines around.
+  "msg.bounced": e("{track} に音のクリップを置きました。もとのトラックはミュートしました。", "builder:2026-11-23", {
+    track: "2 ピアノ（音）",
+  }),
+  "msg.bounceCancelled": e("音にするのをやめました。", "builder:2026-11-23"),
+  "msg.bounceFailedPlugin": e("音にできませんでした。{plugin} が止まりました。", "builder:2026-11-23", { plugin: "Surge XT" }),
+  "msg.bounceFailedWrite": e("音にできませんでした。作業の場所に書けません。", "builder:2026-11-23"),
+  "msg.bounceGone": e("もとのトラックがなくなったので、できた音はすてました。", "builder:2026-11-23"),
+  "msg.bounceBusy": e("書き出しか「音にする」の途中なので、終わってからもう一度ためしてください。", "builder:2026-11-23"),
+  "msg.nothingToBounce": e("このトラックにはクリップがありません。", "builder:2026-11-23"),
+  "msg.exportWaitsForBounce": e("音にしているあいだは書き出せません。終わってからひらいてください。", "builder:2026-11-23"),
   "latency.measuring": s6("Measuring the latency", "測っています {done} / {total}", { done: "3", total: "5" }),
   "latency.failed": s6("Latency cannot be measured", "音が小さくて測れませんでした。ヘッドホンの音量を上げて、もう一度測ってください。"),
   "button.useThisValue": e("この数を使う", "spec:6"),

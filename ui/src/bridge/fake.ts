@@ -16,11 +16,13 @@ import { reduceRound10 } from "./fakeRound10";
 import { reduceSections, withSections } from "./fakeSections";
 import { FAKE_PATTERNS, reduceP4 } from "./fakeP4";
 import { reduceUpdates } from "./fakeUpdates";
+import { FakeTypedKeys, typedOn } from "./fakeTyped";
 import { CLICK_VOLUME_MAX_DB, CLICK_VOLUME_MIN_DB, REPEAT_COUNT_MAX } from "./types";
 import { fakeLoudnessOf } from "./fakeLoudness";
+import { reduceA7 } from "./fakeA7";
 import { reduceA9 } from "./fakeA9";
 import { fakeUserPreset, presetOf, reducePresets } from "./fakePresets";
-import { FAKE_ARP_OFF, fakeSpectrum, reduceSpectrum } from "./fakeWave3";
+import { FAKE_ARP_OFF, fakeKnobs, fakeSetSoundKnob, fakeSpectrum, reduceSpectrum } from "./fakeWave3";
 import { fakeFadeOut } from "./fakeFade";
 import {
   CLIP_CENTS_MAX,
@@ -1813,6 +1815,23 @@ SCENES.keepPlayedReady = {
   },
   meters: QUIET,
 };
+// R2: 「キーで弾く」 on and played: 「パソコンのキーボード」 (with 「+1」) in the input meter, the octave, the status line.
+SCENES.typedKeys = {
+  setup(s) {
+    bandSong(s, BAND_TRACKS.slice(0, 4));
+    s.keyboards = typedOn(s.keyboards, true);
+    s.status.message = { id: "typedKeysOn" };
+  },
+  meters: { ...QUIET, keys: [48, 52, 55], velocity: 100 },
+};
+// R2: the sound settings while 「キーで弾く」 is on: 「パソコンのキーボード」 in the list of keyboards.
+SCENES.typedKeysSettings = {
+  setup(s) {
+    settings(s);
+    s.keyboards = typedOn(s.keyboards, false);
+  },
+  meters: QUIET,
+};
 // R1: Shift R with nothing played.
 SCENES.nothingToKeep = {
   setup(s) {
@@ -3415,6 +3434,29 @@ SCENES.paramsSound = {
   meters: QUIET,
 };
 
+// Round 12 E3: the knobs of the piano, three of them turned, 「明るさ」 chosen.
+SCENES.paramsSoundKnobs = {
+  setup(s) {
+    bandSong(s);
+    const knobs = { ...fakeKnobs("grandPiano"), values: [35, 50, 70, 25] as [number, number, number, number], row: 0 };
+    s.params.selected = { kind: "sound", track: BAND_TRACK_ID + 1, sound: { kind: "builtin", instrument: "grandPiano" }, knobs };
+  },
+  bands: ["params"],
+  after: (s) =>
+    (s.status.message = { id: "soundKnobSelected", loopBars: null, track: { number: 1, name: "ピアノ" }, knob: "brightness" }),
+  meters: QUIET,
+};
+// Round 12 E3: a drum kit uses only 「明るさ」 and 「のび」; the other two rows are disabled.
+SCENES.paramsSoundDrums = {
+  setup(s) {
+    bandSong(s);
+    const knobs = { ...fakeKnobs("studioKit"), values: [50, 50, 30, 0] as [number, number, number, number] };
+    s.params.selected = { kind: "sound", track: BAND_TRACK_ID + 3, sound: { kind: "builtin", instrument: "studioKit" }, knobs };
+  },
+  bands: ["params"],
+  meters: QUIET,
+};
+
 // ---- Protocol 24: vocal clips, audio files brought in, files that are not found (mocks F7-AudioEdit, F7-AudioDrop,
 // F7-AudioMissing, R11-Audio). The screen's parts come later; these are the states they will show. ----
 
@@ -3550,6 +3592,29 @@ SCENES.audioNormalized = {
   },
   bands: ["params"],
   after: (s) => (s.status.message = { id: "normalizeLimited", count: 1 }),
+  meters: QUIET,
+};
+
+// Round 12, A7: 「このトラックを音にする」 of 「1 ピアノ」 while it runs (「音にしています… 40 %」 with 「やめる」), and its step: 「ピアノ（音）」
+// right below with the audio, the piano muted.
+SCENES.bouncing = {
+  setup(s) {
+    SCENES.muted!.setup(s);
+    const first = s.song.tracks[0]!;
+    s.audioWork = { ...s.audioWork, bounce: { track: { number: first.number, name: first.name }, percent: 40 } };
+  },
+  meters: QUIET,
+};
+SCENES.bounced = {
+  setup(s) {
+    SCENES.muted!.setup(s);
+    const changes = reduceA7(s, { type: "bounceTrack", track: s.song.tracks[0]!.id }, FAKE_AUDIO, () => {});
+    for (const c of changes ?? []) if (c.section === "song") s.song = c.value as SongView;
+  },
+  after(s) {
+    const made = s.song.tracks[1]!;
+    s.status.message = { id: "bounced", track: { number: made.number, name: made.name } };
+  },
   meters: QUIET,
 };
 
@@ -5218,6 +5283,9 @@ export function reduceMixer(
     }
     case "cancelMixPreview":
       break;
+    case "setSoundKnob":
+      fakeSetSoundKnob(params.selected, command);
+      break;
     // A typed value of an effect that comes with meloet: the number in it, put at an end of the range (and said so); a
     // text with no number changes nothing and says so with the value as a bare number ("-24"), as core does. A plugin's is the
     // transport's (FakeParamTables).
@@ -5265,21 +5333,24 @@ export function reduceMixer(
         selectPlugin(slot, plugin);
         break;
       }
-      // 19-A: a sound that comes with meloet or of an SF2 file has no parameters; the panel says so.
+      // 19-A: a sound of an SF2 file has no parameters; the panel says so. One that comes with meloet has its knobs (E3).
       const t = song.tracks.find((x) => x.id === command.track);
       if (!t || t.kind.kind !== "keys" || t.standIn) break;
       if (t.sound.kind === "plugin") break;
       const sound = soundNameOf(t.sound);
-      // round12 stub: E3
-      params.selected = { kind: "sound", track: t.id, sound, knobs: null };
+      const was = params.selected;
+      const kept = was?.kind === "sound" && was.track === t.id && same(was.sound, sound) ? was.knobs : null;
+      const knobs = sound.kind === "builtin" ? (kept ?? fakeKnobs(sound.instrument)) : null;
+      params.selected = { kind: "sound", track: t.id, sound, knobs };
       showParams = true;
-      notice = { id: "noParams", sound };
+      if (!knobs) notice = { id: "noParams", sound };
       break;
     }
     case "selectParam": {
       const sel = params.selected;
       if (sel?.kind === "builtin") sel.row = command.param !== null && EFFECT_PARAMS[sel.effect][command.param] ? command.param : null;
       else if (sel?.kind === "plugin") sel.row = command.param;
+      else if (sel?.kind === "sound" && sel.knobs) sel.knobs.row = command.param !== null && sel.knobs.usable[command.param] ? command.param : null;
       break;
     }
     case "toggleBypass": {
@@ -5635,6 +5706,7 @@ export function createFakeTransport(initial?: AppState): Transport {
   const clipboard: FakeClipboard = { clips: [] };
   const vocalMemo: FakeVocalMemo = { monitorSaid: false };
   const tables = new FakeParamTables();
+  const typed = new FakeTypedKeys();
   // The rows of the history band: the scene's, and those of the steps the fake made since.
   const historyRows: HistoryRow[] = [...(scene?.history ?? [])];
   let rev = 1;
@@ -5681,6 +5753,12 @@ export function createFakeTransport(initial?: AppState): Transport {
       return { rev, state };
     },
     async send(command) {
+      const typedDone = typed.reduce(state, command, rest);
+      if (typedDone) {
+        land(typedDone.changes);
+        for (const event of typedDone.events) listener?.({ kind: "event", ...event });
+        return { rev };
+      }
       const round10 =
         reduceRound10(state, bands, command, FAKE_TAKES) ?? reduceP4(state, command, FAKE_TAKES, newKitTrack, nowUs()) ?? reduceSections(state, command, FAKE_TAKES);
       if (round10?.row) {
@@ -5694,6 +5772,10 @@ export function createFakeTransport(initial?: AppState): Transport {
         reduceSpectrum(state, command) ??
         reduceClips27(state, command) ??
         reduceA9(state, command, FAKE_AUDIO) ??
+        reduceA7(state, command, FAKE_AUDIO, (from, to) => {
+          const points = FAKE_LANES.get(from);
+          if (points) FAKE_LANES.set(to, { ...points, id: to });
+        }) ??
         reduceExport(state, command) ??
         reduceAudio(state, command) ??
         reduceRound7(state, command, vocalMemo) ??
@@ -5738,6 +5820,9 @@ export function createFakeTransport(initial?: AppState): Transport {
       if (state.sounds.fetch.state === "fetching") fetchTimer ??= setInterval(fetchTick, FETCH_TICK_MS);
       if (values) listener?.({ kind: "paramValues", ...values });
       return { rev };
+    },
+    async post(command) {
+      await this.send(command);
     },
     async clock() {
       return nowUs();

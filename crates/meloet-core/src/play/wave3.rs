@@ -13,6 +13,15 @@ use meloet_protocol::{
 
 use super::{Play, scale_mode};
 
+pub(crate) fn model_knob(knob: SoundKnob) -> meloet_model::SoundKnob {
+    match knob {
+        SoundKnob::Brightness => meloet_model::SoundKnob::Brightness,
+        SoundKnob::Attack => meloet_model::SoundKnob::Attack,
+        SoundKnob::Release => meloet_model::SoundKnob::Release,
+        SoundKnob::Vibrato => meloet_model::SoundKnob::Vibrato,
+    }
+}
+
 pub(crate) fn knob_view(knob: meloet_model::SoundKnob) -> SoundKnob {
     match knob {
         meloet_model::SoundKnob::Brightness => SoundKnob::Brightness,

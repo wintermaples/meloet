@@ -118,7 +118,8 @@ impl Play {
             AudioNews::Brought { .. }
             | AudioNews::Found { .. }
             | AudioNews::Measured { .. }
-            | AudioNews::Reversed { .. } => false,
+            | AudioNews::Reversed { .. }
+            | AudioNews::Adopted { .. } => false,
         }
     }
 
@@ -171,7 +172,7 @@ impl Play {
             });
         AudioWorkView {
             jobs: loading.chain(making).collect(),
-            // round12 stub: A7
+            // The rules hold 「音のクリップにする」 (`state/bounce.rs`).
             bounce: None,
         }
     }

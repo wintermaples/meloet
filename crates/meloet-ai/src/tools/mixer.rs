@@ -800,6 +800,7 @@ impl Tools {
                 }
                 AiAnswer::Refused(r) => return Ok(failed(refusal_text(&r))),
                 AiAnswer::Done(_) => return Ok(super::closing()),
+                AiAnswer::KeyNames(_) => return Ok(super::closing()),
             }
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         }

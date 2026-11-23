@@ -16,6 +16,7 @@ mod arrange;
 mod automation;
 mod batch;
 mod files;
+mod keynames;
 mod midi;
 mod mixer;
 mod notes;
@@ -458,6 +459,7 @@ impl Tools {
                 + Self::automation_router()
                 + Self::timing_router()
                 + Self::arrange_router()
+                + Self::keynames_router()
                 + Self::files_router()
                 + Self::sets_router()
                 + Self::render_router()
@@ -498,7 +500,7 @@ impl Tools {
             AiAnswer::Refused(AiRefusal::Unchanged) => Err(self.no_change().await),
             AiAnswer::Refused(AiRefusal::Unsaved) => Err(failed(UNSAVED)),
             AiAnswer::Refused(r) => Err(failed(format!("Could not {what}: {}.", refusal_text(&r)))),
-            AiAnswer::Params(_) => Err(closing()),
+            _ => Err(closing()),
         }
     }
 

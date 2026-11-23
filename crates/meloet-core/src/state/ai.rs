@@ -149,6 +149,12 @@ impl Model {
                 Ok(params) => AiAnswer::Params(params),
                 Err(refused) => AiAnswer::Refused(refused),
             },
+            AiAsk::KeyNames { track } => {
+                match self.play.ai_key_names(track, &self.catalog, effects) {
+                    Ok(names) => AiAnswer::KeyNames(names),
+                    Err(refused) => AiAnswer::Refused(refused),
+                }
+            }
             ask => match self.ai_in_turn(ask, effects) {
                 Ok(done) => AiAnswer::Done(Box::new(done)),
                 Err(refused) => AiAnswer::Refused(refused),
@@ -456,7 +462,7 @@ impl Model {
                     pending: true,
                 });
             }
-            AiAsk::PluginParams { .. } => {
+            AiAsk::PluginParams { .. } | AiAsk::KeyNames { .. } => {
                 return Err(AiRefusal::Cannot("that is a read, not a write".into()));
             }
             AiAsk::Save | AiAsk::SaveAs { .. } | AiAsk::Open { .. } | AiAsk::NewSong => {

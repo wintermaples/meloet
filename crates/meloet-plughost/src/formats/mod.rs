@@ -26,7 +26,7 @@ use std::sync::atomic::{AtomicU8, Ordering::SeqCst};
 use std::time::{Duration, Instant};
 
 use meloet_plugin::ipc::{FromPlugin, ToPlugin, Transport};
-use meloet_plugin::wire::{LoadedPlugin, ParamInfo, ParamNow};
+use meloet_plugin::wire::{KeyName, LoadedPlugin, ParamInfo, ParamNow};
 use meloet_plugin::{PluginFormat, PluginKey};
 
 /// What a plugin is made ready for.
@@ -205,6 +205,11 @@ pub trait Controller {
     fn set_param(&mut self, id: u32, value: f64);
     fn save_state(&mut self) -> Result<Vec<u8>, String>;
     fn load_state(&mut self, state: &[u8]) -> Result<(), String>;
+    /// The names the plugin gives its keys, lowest key first; `None` when it has no way to
+    /// name them. Must not reach into a plugin that may be running.
+    fn key_names(&mut self) -> Option<Vec<KeyName>> {
+        None
+    }
     /// Puts the plugin's window into the X11 window `parent`.
     fn open_editor(&mut self, parent: u32) -> Result<Opened, String>;
     /// Takes the plugin's window out again. Before `parent` goes.

@@ -664,6 +664,15 @@ impl Host {
                     Err(answer) => answer,
                 }
             }
+            Request::KeyNames { slot } => match self.controller(slot) {
+                Ok(controller) => (
+                    Reply::KeyNames {
+                        names: controller.key_names(),
+                    },
+                    Vec::new(),
+                ),
+                Err(answer) => answer,
+            },
             Request::Params { slot } => match self.controller(slot) {
                 Ok(controller) => (
                     Reply::Params {

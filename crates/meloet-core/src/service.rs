@@ -2625,7 +2625,9 @@ impl Worker {
                 }
                 Ok(Msg::Ai(ask, reply)) => {
                     self.handle(Input::Ai(ask));
-                    let answer = self.model.take_ai_answer();
+                    let answer = (self.model.take_ai_answer()).map(|a| {
+                        crate::play::keynames::heard(a, &self.audio.sounds, &self.audio.sf2)
+                    });
                     let _ = reply.send(answer.unwrap_or(AiAnswer::Refused(AiRefusal::Closing)));
                 }
                 Ok(Msg::AiMeasure { ask, news, reply }) => {
@@ -3180,6 +3182,13 @@ impl Worker {
                     say(PluginSaid::State { ask, state });
                 };
                 hosts.state(id, Box::new(done));
+            }
+            PluginAsk::KeyNames => {
+                let done = move |names: Result<_, HostError>| match names {
+                    Ok(names) => say(PluginSaid::KeyNames(names)),
+                    Err(e) => eprintln!("meloet: a plugin did not name its keys: {e}"),
+                };
+                hosts.key_names(id, Box::new(done));
             }
             PluginAsk::ReadText { param, text } => {
                 let done = move |read: Result<_, HostError>| {

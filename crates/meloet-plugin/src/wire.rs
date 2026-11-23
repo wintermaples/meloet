@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use crate::key::PluginKey;
 use crate::scan::{EditorKind, PluginInfo};
 
-pub const WIRE_VERSION: u32 = 5;
+pub const WIRE_VERSION: u32 = 6;
 
 /// No message's text is longer than this.
 pub const MAX_TEXT_LEN: usize = 16 << 20;
@@ -61,6 +61,8 @@ pub enum Request {
     GetState { slot: u32 },
     /// Puts back a state taken with `GetState` from the same plugin; it is this frame's blob.
     SetState { slot: u32 },
+    /// The names the plugin gives its keys (LV2 midnam). Answered by `KeyNames`.
+    KeyNames { slot: u32 },
     /// The list of parameters, in the plugin's order, each with its value now.
     Params { slot: u32 },
     /// One parameter's value now, with the text the plugin shows for it.
@@ -126,6 +128,10 @@ pub enum Reply {
     },
     /// The state is the frame's blob.
     State,
+    /// Lowest key first. `None`: the plugin has no way to name its keys.
+    KeyNames {
+        names: Option<Vec<KeyName>>,
+    },
     Params {
         params: Vec<ParamInfo>,
     },
@@ -156,6 +162,15 @@ pub struct ParamNow {
     /// As the plugin writes the value, with its unit. `None` with no value, or when the
     /// plugin has no text for it.
     pub text: Option<String>,
+}
+
+/// A key the plugin names (a drum kit's "Kick Drum" on 36).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KeyName {
+    /// 0..=127.
+    pub key: u8,
+    pub name: String,
 }
 
 /// What a typed text stands for.
@@ -638,6 +653,7 @@ mod tests {
             Request::Unload { slot: 1 },
             Request::GetState { slot: 1 },
             Request::SetState { slot: 1 },
+            Request::KeyNames { slot: 1 },
             Request::Params { slot: 1 },
             Request::GetParam { slot: 1, id: 2 },
             Request::Texts {
@@ -735,6 +751,13 @@ mod tests {
                 message: "x".into(),
             },
             Reply::State,
+            Reply::KeyNames {
+                names: Some(vec![KeyName {
+                    key: 36,
+                    name: "Kick Drum".into(),
+                }]),
+            },
+            Reply::KeyNames { names: None },
             Reply::Param {
                 now: ParamNow {
                     id: 2,

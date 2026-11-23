@@ -17,18 +17,21 @@
 //! - `urn:meloet:fake:mode`: an effect. 1 in every sample when it was made ready for an
 //!   export (`Activation::offline`), 0 when not.
 //! - `urn:meloet:fake:live`: as `pass`; it says it cannot run faster than it plays.
+//! - `urn:meloet:fake:drums`: as `sine`; it names two keys ([`DRUM_NAMES`]).
+//! - `urn:meloet:fake:kit`: as `sine`; it names none.
 //!
 //! To scan (by the bundle's file name without its ending):
 //! - `found`: two plugins. `empty`: none. `broken`: a bundle that cannot be read.
 //! - `segv`: one plugin; reading it crashes. `hang`: one plugin; reading it never ends.
 //! - `mixed`: `urn:meloet:fake:a`, `…:b` and `…:c`. Reading `b` crashes; `a` and `c` are read.
+//! - `drums`: `drums` and `kit`, both drum instruments.
 
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 
 use meloet_plugin::ipc::ToPlugin;
-use meloet_plugin::wire::{LoadedPlugin, ParamInfo, ParamNow, ParamShape};
+use meloet_plugin::wire::{KeyName, LoadedPlugin, ParamInfo, ParamNow, ParamShape};
 use meloet_plugin::{
     EditorKind, EffectCategory, InstrumentCategory, PluginFormat, PluginInfo, PluginKey, PluginKind,
 };
@@ -50,6 +53,8 @@ const WINDOW_SIZE: (u32, u32) = (320, 200);
 /// The moves of the person in the window of `knob`, two with every idle call.
 const KNOB_MOVES: u32 = 40;
 const KNOB_END: f64 = 0.9;
+/// The keys `drums` names.
+pub const DRUM_NAMES: [(u8, &str); 2] = [(36, "Fake Kick"), (38, "Fake Snare")];
 
 fn enabled() -> bool {
     std::env::var_os(ENV).is_some_and(|v| !v.is_empty())
@@ -66,7 +71,7 @@ pub fn load(key: &PluginKey, activation: Activation) -> Option<Result<Loaded, St
 pub fn make(name: &str, activation: Activation) -> Result<Loaded, String> {
     let level = Arc::new(AtomicU64::new(DEFAULT_LEVEL.to_bits()));
     let processor: Box<dyn Processor> = match name {
-        "sine" | "window" | "knob" | "slowwindow" => Box::new(Sine {
+        "sine" | "window" | "knob" | "slowwindow" | "drums" | "kit" => Box::new(Sine {
             sample_rate: activation.sample_rate,
             level: level.clone(),
             key: None,
@@ -89,7 +94,7 @@ pub fn make(name: &str, activation: Activation) -> Result<Loaded, String> {
         _ => return Err(format!("no fake plugin {name}")),
     };
     let window = matches!(name, "window" | "knob" | "slowwindow");
-    let instrument = name == "sine" || window;
+    let instrument = matches!(name, "sine" | "drums" | "kit") || window;
     let editor = match name {
         _ if window => EditorKind::X11,
         "notyet" => EditorKind::Unsupported,
@@ -113,6 +118,7 @@ pub fn make(name: &str, activation: Activation) -> Result<Loaded, String> {
             knob: (name == "knob").then_some(0),
             open: false,
             said: Vec::new(),
+            names: name == "drums",
         }),
         processor,
     })
@@ -270,6 +276,8 @@ struct FakeController {
     knob: Option<u32>,
     open: bool,
     said: Vec<Said>,
+    /// It names its keys.
+    names: bool,
 }
 
 impl FakeController {
@@ -400,6 +408,14 @@ impl Controller for FakeController {
         Ok(())
     }
 
+    fn key_names(&mut self) -> Option<Vec<KeyName>> {
+        let name = |(key, name): (u8, &str)| KeyName {
+            key,
+            name: name.into(),
+        };
+        self.names.then(|| DRUM_NAMES.map(name).to_vec())
+    }
+
     fn open_editor(&mut self, _parent: u32) -> Result<Opened, String> {
         if !self.window {
             return Err("this fake plugin has no window".into());
@@ -470,8 +486,10 @@ fn info(name: &str, kind: PluginKind) -> PluginInfo {
 fn contents(stem: &str) -> Option<Vec<(&'static str, PluginKind, Option<Fault>)>> {
     let synth = PluginKind::Instrument(InstrumentCategory::Synth);
     let effect = PluginKind::Effect(EffectCategory::Other);
+    let drum = PluginKind::Instrument(InstrumentCategory::Drum);
     Some(match stem {
         "found" => vec![("Sine", synth, None), ("Pass", effect, None)],
+        "drums" => vec![("Drums", drum, None), ("Kit", drum, None)],
         "empty" => vec![],
         "segv" => vec![("Segv", effect, Some(Fault::Crash))],
         "hang" => vec![("Hang", effect, Some(Fault::Hang))],

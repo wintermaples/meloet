@@ -7,8 +7,8 @@ use std::path::PathBuf;
 
 use meloet_model::effects::EffectKind;
 use meloet_model::{
-    AutoPoint, AutoTarget, BuiltinInstrument, ClipEdge, Note, NoteField, PluginPlace,
-    QuantizeSettings, Song, StripId, TickRange,
+    AutoPoint, AutoTarget, BuiltinInstrument, ClipEdge, InstrumentRef, Note, NoteField,
+    PluginPlace, QuantizeSettings, Song, StripId, TickRange,
 };
 use meloet_protocol::{Command, ExportFormat, HistoryRow, LibraryView, RecordFormat};
 
@@ -219,6 +219,11 @@ pub enum AiAsk {
         track: u32,
         instrument: AiInstrument,
     },
+    /// What each key of a track's sound is (`track` a number from 1): answered with
+    /// [`AiAnswer::KeyNames`]. Not a write.
+    KeyNames {
+        track: u32,
+    },
     /// Into the slot (from 0) of a strip: an empty one, or in place of what it holds with
     /// `replace`.
     PutEffect {
@@ -412,6 +417,7 @@ impl AiAsk {
             AiAsk::DeleteClips { .. } => "delete clips",
             AiAsk::SwitchTake { .. } => "switch the take",
             AiAsk::SetInstrument { .. } => "set the instrument",
+            AiAsk::KeyNames { .. } => "read the names of the keys",
             AiAsk::PutEffect { .. } => "put in the effect",
             AiAsk::WriteAutomation { .. } => "write automation",
             AiAsk::MoveAutomation { .. } => "move automation points",
@@ -509,6 +515,76 @@ pub enum AiParams {
     Listed(Vec<AiParam>),
 }
 
+/// What the keys of a track's sound are.
+#[derive(Debug, Clone, PartialEq)]
+pub enum AiKeyNames {
+    /// The plugin was asked; ask again in a moment.
+    Waiting,
+    Known(Box<AiKeyMap>),
+}
+
+/// Where the name of a key comes from, best first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AiKeySource {
+    /// meloet's own kit: the names of the drum piano roll's rows.
+    Builtin,
+    /// The name of the sample an SF2 zone plays there (SF2 has no names for keys).
+    Sf2SampleName,
+    /// The plugin's MIDNAM document (LV2 midnam).
+    Lv2Midnam,
+    /// The usual General MIDI drum layout, not the sound's own.
+    GeneralMidiGuess,
+    /// Nothing names the keys.
+    None,
+}
+
+/// One key that has a name or a sound.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AiKey {
+    pub key: u8,
+    pub name: Option<String>,
+    /// The id of a built-in kit's drum ("kick"), as the song's model names it.
+    pub id: Option<&'static str>,
+    /// Whether a note on it makes a sound; `None`: not known.
+    pub sounds: Option<bool>,
+    pub source: AiKeySource,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AiKeyNote {
+    /// The sound pack of this PC does not have the instrument: it plays a sine wave.
+    NotInstalled,
+    /// Its samples are not in memory yet: silent until they are.
+    NotRead,
+    /// Names are SF2 sample names.
+    SampleNames,
+    /// The SF2 file could not be read now: the names are a guess.
+    Sf2Unreadable,
+    /// No added SF2 file has the preset: it plays a sine wave.
+    Sf2Missing,
+}
+
+/// The keys of a track's sound. Whatever is not known yet is answered as well as it can be
+/// (a General MIDI guess, keys not known to sound), so every map is a whole answer.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AiKeyMap {
+    pub sound: InstrumentRef,
+    /// A drum kit, or another sound whose keys are different sounds.
+    pub kit: bool,
+    /// Where the names come from, as far as one of them does.
+    pub source: AiKeySource,
+    /// No name is a guess.
+    pub certain: bool,
+    /// Keys with a name or a sound, lowest first.
+    pub keys: Vec<AiKey>,
+    /// The lowest and the highest key that sound, when known.
+    pub range: Option<(u8, u8)>,
+    pub notes: Vec<AiKeyNote>,
+    /// The file of an SF2 `sound`, whose zones name its keys better: read off the core thread
+    /// with `crate::play::keynames::read_sf2`. Not for showing.
+    pub sf2_path: Option<PathBuf>,
+}
+
 /// What a write did.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AiDone {
@@ -533,6 +609,7 @@ pub struct AiDone {
 pub enum AiAnswer {
     Done(Box<AiDone>),
     Params(AiParams),
+    KeyNames(AiKeyNames),
     Refused(AiRefusal),
 }
 

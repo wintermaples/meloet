@@ -328,7 +328,7 @@ impl Tools {
                         refusal_text(&r)
                     )));
                 }
-                AiAnswer::Params(_) => return Ok(super::closing()),
+                _ => return Ok(super::closing()),
             };
             let changed = results.iter().any(|r| r["result"]["changed"] != false);
             let value = json!({

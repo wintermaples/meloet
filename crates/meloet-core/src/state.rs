@@ -24,7 +24,7 @@ use meloet_model::{
     TrackKind, VocalInput,
 };
 use meloet_plugin::ScanCache;
-use meloet_plugin::wire::{ParamInfo, ParamNow, TextValue};
+use meloet_plugin::wire::{KeyName, ParamInfo, ParamNow, TextValue};
 use meloet_protocol::{
     AppState, ArrangeView, AudioView, Availability, Band, ChooserView, ChosenState, Command,
     EffectRef, EndpointView, FileDropView, Friendly, Hint, HistoryRow, InstrumentKind,
@@ -343,6 +343,8 @@ pub enum PluginSaid {
         ask: StateAsk,
         state: Option<Arc<[u8]>>,
     },
+    /// The answer to [`PluginAsk::KeyNames`], lowest key first. `None`: it names no keys.
+    KeyNames(Option<Vec<KeyName>>),
     /// The answer to [`PluginAsk::ReadText`]. `None`: the text does not read as a value.
     TextRead {
         param: u32,
@@ -387,6 +389,8 @@ pub enum PluginAsk {
     SetParam { param: u32, value: f64 },
     /// Its whole state. Answer with [`PluginSaid::State`].
     State(StateAsk),
+    /// The names it gives its keys. Answer with [`PluginSaid::KeyNames`].
+    KeyNames,
     /// What value the typed text stands for. Answer with [`PluginSaid::TextRead`].
     ReadText { param: u32, text: String },
     /// The parameters panel shows the plugin now (`on`), or no longer does. While it does,

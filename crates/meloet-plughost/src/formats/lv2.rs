@@ -24,6 +24,7 @@
 //! everything the instance sends back, crosses in two rings of bytes. The audio thread fills
 //! its ring only while a window is open.
 
+mod midnam;
 mod ui;
 
 use std::cell::{Cell, RefCell, UnsafeCell};
@@ -39,7 +40,7 @@ use livi::event::{LV2AtomEventBuilder, LV2AtomSequence};
 use livi::lilv;
 use livi::{EmptyPortConnections, Features, FeaturesBuilder, PortIndex, PortType};
 use meloet_plugin::ipc::{FromPlugin, MAX_LATENCY_FRAMES, ToPlugin, Transport};
-use meloet_plugin::wire::{LoadedPlugin, ParamInfo, ParamNow, ParamShape};
+use meloet_plugin::wire::{KeyName, LoadedPlugin, ParamInfo, ParamNow, ParamShape};
 use meloet_plugin::{
     EditorKind, InstrumentCategory, PluginInfo, PluginKey, PluginKind, PluginRole,
 };
@@ -1041,6 +1042,17 @@ impl Shared {
         self.known[at].store(true, Relaxed);
     }
 
+    /// The plugin's MIDNAM document ([`midnam::document`]).
+    ///
+    /// # Safety
+    /// Nothing else may be in the plugin: inside the gate, or before the audio thread has it.
+    unsafe fn midnam(&self) -> Option<String> {
+        let interface = (self.extension_data?)(midnam::INTERFACE.as_ptr());
+        // SAFETY: the plugin's own pointer for the interface and its own handle; the caller
+        // keeps everything else out of the plugin.
+        unsafe { midnam::document(interface, self.handle) }
+    }
+
     fn now(&self, at: usize) -> ParamNow {
         let param = &self.params[at];
         let value = self.known[at].load(Relaxed).then(|| self.value(at));
@@ -1220,6 +1232,8 @@ fn load_as(
             }
         }
     }
+    // SAFETY: the processor is not on the audio thread yet.
+    let key_names = unsafe { shared.midnam() }.map(|document| midnam::key_names(&document));
     let (editor, window) = window(&lv2_world, plugin.raw());
     let plugin = LoadedPlugin {
         latency: 0,
@@ -1238,6 +1252,7 @@ fn load_as(
             told_latency: 0,
             plugin_uri: key.id().to_string(),
             window,
+            key_names,
         }),
         processor: Box::new(processor),
     })
@@ -1920,6 +1935,8 @@ struct Lv2Controller {
     plugin_uri: String,
     /// The window meloet can open, if the plugin has one.
     window: Option<UiFiles>,
+    /// What its midnam names its keys, as of its load or the last state put back.
+    key_names: Option<Vec<KeyName>>,
 }
 
 impl Lv2Controller {
@@ -2064,6 +2081,8 @@ impl Controller for Lv2Controller {
         instance
             .restore_state(&state)
             .map_err(|e| format!("state: {e:?}"))?;
+        // SAFETY: inside the gate nothing else touches the instance.
+        let document = unsafe { self.shared.midnam() };
         for (at, param) in self.shared.params.iter().enumerate() {
             match param.target {
                 Target::Port(index) => {
@@ -2092,7 +2111,13 @@ impl Controller for Lv2Controller {
         // The `patch` parameters are whatever the state made them: ask, for the plugins that
         // answer.
         self.shared.ask_all.store(true, Relaxed);
+        drop(_claim);
+        self.key_names = document.map(|document| midnam::key_names(&document));
         Ok(())
+    }
+
+    fn key_names(&mut self) -> Option<Vec<KeyName>> {
+        self.key_names.clone()
     }
 
     fn open_editor(&mut self, parent: u32) -> Result<Opened, String> {

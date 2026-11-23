@@ -169,6 +169,48 @@ impl Sf2File {
         Ok((0..=127u8).filter(|k| has[usize::from(*k)]).collect())
     }
 
+    /// Each key the preset has a playable zone on, lowest first, with a name made of the
+    /// samples that zones of at most [`NAMING_KEYS`] keys play there: a stereo half's mark
+    /// ("(L)") taken off, the same name once, at most [`KEY_NAMES`] joined with " / ". `None`
+    /// where only wider zones play. An SF2 file has no names for keys; in a drum kit the names
+    /// of its samples are the nearest thing.
+    pub fn key_names(
+        &self,
+        bank: u16,
+        program: u16,
+    ) -> Result<Vec<(u8, Option<String>)>, Sf2Error> {
+        let index = self.find(bank, program)?;
+        let mut names: Vec<Vec<String>> = vec![Vec::new(); 128];
+        let mut has = [false; 128];
+        for zone in zones::zones(&self.tables, index) {
+            if zone.key_lo > 127 || zone.vel_hi == 0 {
+                continue;
+            }
+            let (lo, hi) = (zone.key_lo, zone.key_hi.min(127));
+            let sample = &self.tables.samples[zone.sample];
+            let name = (hi - lo < NAMING_KEYS)
+                .then(|| without_half_mark(&sample.name, sample.kind))
+                .filter(|name| !name.is_empty());
+            for key in lo..=hi {
+                has[usize::from(key)] = true;
+                let list = &mut names[usize::from(key)];
+                if let Some(name) = &name
+                    && !list.contains(name)
+                    && list.len() < KEY_NAMES
+                {
+                    list.push(name.clone());
+                }
+            }
+        }
+        Ok((0..=127u8)
+            .filter(|k| has[usize::from(*k)])
+            .map(|k| {
+                let list = &names[usize::from(k)];
+                (k, (!list.is_empty()).then(|| list.join(" / ")))
+            })
+            .collect())
+    }
+
     /// Reads the samples one preset uses and builds its bank. A zone whose sample or values
     /// make no sense is left out. The left and right halves of a stereo sample are two zones
     /// with their own pan and play as two voices.
@@ -300,6 +342,33 @@ impl Sf2File {
             },
         ))
     }
+}
+
+/// Zones of at most this many keys name them ([`Sf2File::key_names`]): a drum kit plays a
+/// sample on one key, or on two or three that are the same drum.
+pub const NAMING_KEYS: u8 = 3;
+/// Different sample names kept for one key.
+pub const KEY_NAMES: usize = 3;
+
+/// 7.10 sfSampleType of the two halves of a stereo sample.
+const RIGHT_SAMPLE: u16 = 2;
+const LEFT_SAMPLE: u16 = 4;
+
+/// A sample's name without the mark of the stereo half it is: "Std Kick(L)" is "Std Kick".
+fn without_half_mark(name: &str, kind: u16) -> String {
+    let name = name.trim();
+    if !matches!(kind & !ROM_SAMPLE, LEFT_SAMPLE | RIGHT_SAMPLE) {
+        return name.to_owned();
+    }
+    let marks = [
+        "(L)", "(R)", "[L]", "[R]", "_L", "_R", "-L", "-R", ".L", ".R", " L", " R",
+    ];
+    (marks.iter())
+        .find_map(|mark| name.strip_suffix(mark))
+        .map(str::trim_end)
+        .filter(|rest| !rest.is_empty())
+        .unwrap_or(name)
+        .to_owned()
 }
 
 fn cents(amount: i32) -> f32 {

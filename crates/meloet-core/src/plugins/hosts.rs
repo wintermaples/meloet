@@ -48,7 +48,7 @@ pub use meloet_plugin::EditorKind;
 use meloet_plugin::PluginKey;
 use meloet_plugin::ipc::{EngineEnd, Geometry, Mapping};
 use meloet_plugin::launch::{self, PidFd};
-pub use meloet_plugin::wire::{EditorOpen, ParamNow, ParamShape, TextValue};
+pub use meloet_plugin::wire::{EditorOpen, KeyName, ParamNow, ParamShape, TextValue};
 use meloet_plugin::wire::{
     FromHost, LoadedPlugin, Notice, ParamInfo, Reply, Request, ToHost, WIRE_VERSION, read_frame,
     write_frame,
@@ -224,6 +224,7 @@ enum Ask {
     Unload(SlotId, Done<()>),
     State(SlotId, Done<Vec<u8>>),
     SetState(SlotId, Vec<u8>, Done<()>),
+    KeyNames(SlotId, Done<Option<Vec<KeyName>>>),
     Params(SlotId, Done<Vec<ParamInfo>>),
     Param(SlotId, u32, Done<(f64, String)>),
     SetParam(SlotId, u32, f64, Done<ParamNow>),
@@ -340,6 +341,13 @@ impl Hosts {
     /// is asked for that much later, and so is everything asked after it.
     pub fn set_state(&self, id: SlotId, state: Vec<u8>, done: Done<()>) {
         self.ask(Ask::SetState(id, state, done));
+    }
+
+    /// The names the plugin gives its keys, lowest key first (an LV2 plugin's midnam, read
+    /// when it was loaded and when a state was put back). `None`: it has no way to name them.
+    /// A stopped plugin answers `Gone`.
+    pub fn key_names(&self, id: SlotId, done: Done<Option<Vec<KeyName>>>) {
+        self.ask(Ask::KeyNames(id, done));
     }
 
     /// Every parameter a person can move, in the plugin's order: name, group (the top of a
@@ -565,6 +573,13 @@ impl Run {
                 }
                 done(set);
             }
+            Ask::KeyNames(id, done) => done(
+                self.ask_slot(id, |slot| Request::KeyNames { slot }, &[])
+                    .and_then(|answer| match answer.0 {
+                        Reply::KeyNames { names } => Ok(names),
+                        other => Err(refused(other)),
+                    }),
+            ),
             Ask::Params(id, done) => done(
                 self.ask_slot(id, |slot| Request::Params { slot }, &[])
                     .and_then(|answer| match answer.0 {

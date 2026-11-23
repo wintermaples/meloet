@@ -454,7 +454,7 @@ impl Tools {
                 "Could not {what}: {}.",
                 refused_text(map, &r)
             ))),
-            AiAnswer::Params(_) => Err(closing()),
+            _ => Err(closing()),
         }
     }
 }

@@ -24,6 +24,8 @@ use super::{EngineOp, Play, StripSeat};
 use crate::added::sound_ref;
 use crate::state::{Effect, PluginAsk, StateAsk};
 
+mod aistate;
+
 /// The sample rate of the engine before any stream told another.
 const START_RATE: u32 = 48_000;
 
@@ -102,6 +104,8 @@ pub(super) struct Plugs {
     stopped: Vec<u64>,
     /// The phrase the sample plays once its plugin is loaded.
     sample_group: InstrumentGroup,
+    /// What the AI link reads of plugins' states and puts into them.
+    ai: aistate::AiStates,
 }
 
 impl Default for Plugs {
@@ -113,6 +117,7 @@ impl Default for Plugs {
             rate: START_RATE,
             stopped: Vec::new(),
             sample_group: InstrumentGroup::Synth,
+            ai: aistate::AiStates::default(),
         }
     }
 }
@@ -568,6 +573,7 @@ impl Play {
             plug.phase = Phase::Stopped;
             self.plugs.stopped.retain(|t| *t != ticket);
             self.plugs.stopped.push(ticket);
+            self.revive_stopped(ticket, effects);
         }
     }
 
@@ -578,7 +584,10 @@ impl Play {
         for at in 0..plugs.list.len() {
             let old = plugs.list[at].clone();
             let state = match old.phase {
-                Phase::Ready if live => PlugState::Of(old.ticket),
+                // A state on its way in is not in the song yet, and its step never comes.
+                Phase::Ready if live && !plugs.ai.putting_into(old.ticket) => {
+                    PlugState::Of(old.ticket)
+                }
                 Phase::Ready | Phase::Loading if old.plugin.state.is_empty() => PlugState::Fresh,
                 Phase::Ready | Phase::Loading => PlugState::Bytes(old.plugin.state.clone()),
                 Phase::Stopped | Phase::Reloading | Phase::Failed => continue,

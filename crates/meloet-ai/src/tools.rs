@@ -16,6 +16,7 @@ mod automation;
 mod files;
 mod mixer;
 mod notes;
+mod plugstate;
 mod render;
 mod timing;
 
@@ -306,6 +307,7 @@ pub fn refusal_text(r: &AiRefusal) -> String {
         AiRefusal::PluginNotLoaded => {
             "the plugin is not loaded yet, or it stopped; try again in a moment".into()
         }
+        AiRefusal::PluginBusy => "the plugin is still taking another state; try again".into(),
         AiRefusal::HasLane => {
             "that parameter has an automation lane; write the lane (or delete it) instead".into()
         }
@@ -397,6 +399,7 @@ impl Tools {
             scratch,
             tool_router: Self::tool_router()
                 + Self::mixer_router()
+                + Self::plugstate_router()
                 + Self::notes_router()
                 + Self::automation_router()
                 + Self::timing_router()
@@ -439,6 +442,7 @@ impl Tools {
             AiAnswer::Refused(AiRefusal::Unsaved) => Err(failed(UNSAVED)),
             AiAnswer::Refused(r) => Err(failed(format!("Could not {what}: {}.", refusal_text(&r)))),
             AiAnswer::Params(_) => Err(closing()),
+            AiAnswer::State(_) => Err(closing()),
         }
     }
 

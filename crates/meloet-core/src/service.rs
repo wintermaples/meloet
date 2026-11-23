@@ -3122,6 +3122,7 @@ impl Worker {
         let Some((side, id)) = side.and_then(|side| Some((side, side.ids.get(&ticket)?.0))) else {
             return match ask {
                 PluginAsk::State(ask) => Some(PluginSaid::State { ask, state: None }),
+                PluginAsk::PutState { .. } => Some(PluginSaid::StatePut(Err(HostError::Gone))),
                 PluginAsk::OpenWindow { .. } => Some(PluginSaid::WindowFailed),
                 _ => None,
             };
@@ -3163,6 +3164,25 @@ impl Worker {
                     say(PluginSaid::State { ask, state });
                 };
                 hosts.state(id, Box::new(done));
+            }
+            PluginAsk::PutState { state } => {
+                // Answers come in order: the state is asked for once the plugin has taken it.
+                let refused = Arc::new(AtomicBool::new(false));
+                let (refusing, say) = (refused.clone(), Arc::new(say));
+                let say_set = say.clone();
+                let set = move |put: Result<(), HostError>| {
+                    if let Err(e) = put {
+                        refusing.store(true, Relaxed);
+                        say_set(PluginSaid::StatePut(Err(e)));
+                    }
+                };
+                let got = move |state: Result<Vec<u8>, HostError>| {
+                    if !refused.load(Relaxed) {
+                        say(PluginSaid::StatePut(state.map(Arc::from)));
+                    }
+                };
+                hosts.set_state(id, state.to_vec(), Box::new(set));
+                hosts.state(id, Box::new(got));
             }
             PluginAsk::ReadText { param, text } => {
                 let done = move |read: Result<_, HostError>| {

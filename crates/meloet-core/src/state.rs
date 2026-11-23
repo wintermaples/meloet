@@ -343,6 +343,10 @@ pub enum PluginSaid {
         ask: StateAsk,
         state: Option<Arc<[u8]>>,
     },
+    /// The answer to [`PluginAsk::PutState`]: it took the state, and this is its state now
+    /// (as it says it); or it refused the state, or its process is gone (it stopped while
+    /// taking it, or before).
+    StatePut(Result<Arc<[u8]>, crate::plugins::hosts::HostError>),
     /// The answer to [`PluginAsk::ReadText`]. `None`: the text does not read as a value.
     TextRead {
         param: u32,
@@ -387,6 +391,9 @@ pub enum PluginAsk {
     SetParam { param: u32, value: f64 },
     /// Its whole state. Answer with [`PluginSaid::State`].
     State(StateAsk),
+    /// Give it this whole state, then ask for its state. Answer with
+    /// [`PluginSaid::StatePut`].
+    PutState { state: Arc<[u8]> },
     /// What value the typed text stands for. Answer with [`PluginSaid::TextRead`].
     ReadText { param: u32, text: String },
     /// The parameters panel shows the plugin now (`on`), or no longer does. While it does,
@@ -401,6 +408,8 @@ pub enum StateAsk {
     /// Before anything is changed in a plugin the song has "as it starts": what undo puts
     /// back.
     Base,
+    /// For the AI link, which reads the state as it is now.
+    Ai,
     /// As the person comes into the plugin's window; the number of the visit.
     Entered(u64),
     /// As the visit ends.
@@ -1037,6 +1046,7 @@ impl Model {
                 if let Some(n) = self.play.plugin_said(ticket, said, &mut effects) {
                     self.notice = Some(n);
                 }
+                self.ai_puts_ended();
                 if let Some(n) = self.play.take_window_failed() {
                     self.notice = Some(n);
                 }

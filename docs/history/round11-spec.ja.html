@@ -1,0 +1,890 @@
+<title>meloet ラウンド11 実装仕様書</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* layout: one reading column; a summary table first, then cards by area; app mocks keep the app's own dark look */
+:root{--bg:#fafaf8;--fg:#1c1d1f;--mut:#5d6066;--line:#d9d9d4;--card:#fff;--acc:#8a5a00;--hi:#b3261e;--mid:#8a5a00;--lo:#4a6a8a}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#17181a;--fg:#e6e6e3;--mut:#a0a3a8;--line:#3a3b3e;--card:#1f2022;--acc:#ffb000;--hi:#ff8a80;--mid:#ffb000;--lo:#8fb8e0;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#17181a;--fg:#e6e6e3;--mut:#a0a3a8;--line:#3a3b3e;--card:#1f2022;--acc:#ffb000;--hi:#ff8a80;--mid:#ffb000;--lo:#8fb8e0;color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font:15px/1.7 "IBM Plex Sans JP","Noto Sans JP",system-ui,sans-serif;padding-block:24px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+main{max-width:920px;margin:0 auto}
+h1{font-size:26px;line-height:1.3;margin:0 0 4px}h2{font-size:20px;margin:40px 0 8px;border-bottom:1px solid var(--line);padding-bottom:4px}h3{font-size:16px;margin:0}
+p,ul{margin:8px 0}ul{padding-left:20px}.mut{color:var(--mut)}small{color:var(--mut)}
+a{color:var(--acc)}code{font:13px ui-monospace,monospace}
+.scroll{overflow-x:auto}table{border-collapse:collapse;font-size:13px;width:100%}th,td{border:1px solid var(--line);padding:4px 8px;text-align:left;vertical-align:top}th{white-space:nowrap}td.n{white-space:nowrap}
+.card{background:var(--card);border:1px solid var(--line);padding:16px;margin:12px 0;min-width:0}
+.card header{display:flex;flex-wrap:wrap;gap:8px;align-items:baseline}
+.id{font:600 13px ui-monospace,monospace;color:var(--mut)}
+.tag{font-size:12px;border:1px solid var(--line);padding:0 6px;white-space:nowrap}
+.p高{color:var(--hi);border-color:var(--hi);font-weight:600}.p中{color:var(--mid);border-color:var(--mid)}.p低{color:var(--lo);border-color:var(--lo)}
+dl{display:grid;grid-template-columns:auto 1fr;gap:2px 12px;margin:8px 0;font-size:13px}dt{color:var(--mut);white-space:nowrap}dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.filters{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}.filters button{font:inherit;font-size:13px;background:var(--card);color:var(--fg);border:1px solid var(--line);padding:2px 10px;cursor:pointer}.filters button[aria-pressed="true"]{border-color:var(--acc);color:var(--acc)}
+figure{margin:12px 0 0}figcaption{font-size:12px;color:var(--mut);margin-bottom:4px}
+/* app mock: fixed dark look taken from ui/src/design/tokens.ts */
+.mk{background:#1A1A1A;color:#D6D6D6;font:12px/16px "IBM Plex Sans JP",system-ui,sans-serif;border:1px solid #3C3C3C;max-width:600px;overflow-x:auto}
+.mk .r{display:flex;align-items:center;gap:8px;min-height:24px;padding:2px 8px;border-bottom:1px solid #2F2F2F;white-space:nowrap}
+.mk .b{border:1px solid #3C3C3C;background:#282828;padding:2px 8px;color:#D6D6D6}.mk .on{border-color:#FFB000;color:#FFB000}.mk .d{color:#717171}.mk .a{color:#FFB000}.mk .w{color:#F2F2F2;font-weight:600}.mk .rec{color:#FF6158}
+.mk .sp{flex:1}.mk .m{font-family:ui-monospace,monospace}
+.mk .pr{position:relative;min-width:480px;background:repeating-linear-gradient(#212121 0 12px,#1A1A1A 12px 24px);background-size:100% 24px;overflow:hidden}
+.mk .pr::before{content:"";position:absolute;inset:0;background:repeating-linear-gradient(90deg,#6B6B6B 0 1px,transparent 1px 30px,#2F2F2F 30px 31px,transparent 31px 60px,#2F2F2F 60px 61px,transparent 61px 90px,#2F2F2F 90px 91px,transparent 91px 120px)}
+.mk .pr i{position:absolute;height:10px;background:#F2F2F2;margin-top:1px}.mk .pr i.g{background:#5ABDF2;opacity:.35}.mk .pr u{position:absolute;left:0;right:0;height:12px;background:#FFB000;opacity:.10}
+.mk .clip{display:inline-block;height:36px;border-top:2px solid #69E4E4;background:#282828;padding:0 6px;vertical-align:top;box-sizing:border-box}
+.mk .clip.rep{background:#212121;border-top-style:dashed;color:#717171}
+.mk .meter{height:8px;background:#000;width:160px;position:relative}.mk .meter b{position:absolute;inset:0 auto 0 0;background:#4CD964}
+.mk .cell{display:inline-block;width:18px;height:18px;border:1px solid #3C3C3C;margin-right:2px;background:#212121}.mk .cell.x{background:#F2F2F2}.mk .cell.q{margin-left:6px}
+.mk .key{display:inline-block;width:26px;height:44px;border:1px solid #3C3C3C;background:#3C3C3C;text-align:center;line-height:70px;color:#F2F2F2;margin-right:1px;vertical-align:top}.mk .key.k{background:#000;height:28px;line-height:40px;color:#9A9A9A}
+.mk .pr i.h{background:#FFB000;box-shadow:0 0 8px #FFB000}.mk .pr s{position:absolute;top:0;bottom:0;width:1px;background:#FFB000}
+.mk .knob{display:inline-block;width:32px;height:32px;border:1px solid #9A9A9A;border-radius:50%;position:relative}.mk .knob b{position:absolute;left:15px;top:3px;width:2px;height:12px;background:#F2F2F2;transform-origin:1px 13px}
+.mk .kn{display:inline-block;text-align:center;width:64px}
+.mk .pad{display:inline-block;width:52px;height:40px;border:1px solid #3C3C3C;background:#282828;margin:0 2px 2px 0;padding:2px 4px;box-sizing:border-box;vertical-align:top;color:#9A9A9A;white-space:normal}.mk .pad.h{background:#FFB000;color:#000;box-shadow:0 0 10px #FFB000}
+
+h3{font-size:17px;margin:28px 0 6px}h4{font-size:14px;margin:14px 0 4px;color:var(--mut)}
+section{border-top:1px solid var(--line);margin-top:24px}ol{padding-left:22px;margin:6px 0}li{margin:3px 0}
+.mk .pr i.g{background:#686868;opacity:1}.mk .pr i.h{background:#69E4E4;box-shadow:none}
+</style>
+<main>
+<h1>meloet ラウンド11 実装仕様書</h1>
+<p class="mut">2026-11-23 作成 ・ 読み手：これを実装するリード（新しい会話の Claude）とヘルパー ・ 対象：32 件の実装と 1 件の調査資料（D3）</p>
+
+<h2 id="s0">0. はじめに読むこと</h2>
+<ul>
+<li>まず <code>CLAUDE.md</code>、<code>docs/progress.md</code>、<code>docs/architecture.md</code>、<code>docs/spec/README.md</code> を読みます。この仕様書は、それらの決まりの上に乗ります。食い違うときは、下の「上書きする決まり」に書いたものだけこの仕様書が勝ち、ほかは CLAUDE.md が勝ちます。</li>
+<li>行番号は 2026-11-23 の <code>fea/mcp-improvements</code> のものです。ずれているはずなので、名前で探し直してください。「（未確認）」と書いた所は、読んで確かめてから作ります。</li>
+<li>ここに載っていない機能は今回作りません。途中で「ついでに」広げないでください。</li>
+<li>図（モックアップ）は見た目の案です。<b>図と文が食い違うときは文が正</b>です。色と寸法は <code>ui/src/design/tokens.ts</code> の名前のある値だけを使い、新しいトークンは足しません（足さずに作れるよう設計してあります）。</li>
+</ul>
+
+<h3>持ち主が決めたこと（2026-11-23）</h3>
+<ul>
+<li><b>見た目と文言</b>：この仕様書の案をそのまま決定として、止まらずに実装する。文言の出どころは <code>user:2026-11-23</code>。直しはできあがりを見てから。</li>
+<li><b>ブランチ</b>：<code>main</code> から <code>fea/round11</code> を1本作り、波ごとにそこへ統合する。機能ごとにコミットは分ける。<code>main</code> への統合、push、リリース、公開はしない（持ち主が頼んだときだけ）。</li>
+<li><b>始める時</b>：<code>fea/mcp-improvements</code> が <code>main</code> に入ってから。F1 と M3 は、そのブランチで入った <code>crates/meloet-core/src/export/analysis.rs</code>（BS.1770 の LUFS）を使います。入っていなければ持ち主に聞いてください。</li>
+<li><b>MP3（F2）</b>：<code>rusty_mp3</code> で実装する。受け入れ条件を満たさなければ MP3 は出さない。</li>
+<li><b>更新（D1）</b>：アプリ内のお知らせ（入れるのは手で）と、apt リポジトリを作るスクリプトと手順書。公開は持ち主がする。</li>
+<li><b>英語（D4）</b>：英語の文言はエージェントが訳して決める。日本語が正、英語は従。</li>
+<li><b>D3</b>：実装しない。調査資料と実装方針を Fable に作らせ、<code>docs/research/</code> に置く。</li>
+</ul>
+
+<h3>上書きする決まり（前の決定や仕様と変わる所）</h3>
+<div class="scroll"><table>
+<tr><th>どこ</th><th>前</th><th>今回</th></tr>
+<tr><td>MP3 の書き出し（<code>docs/spec/7-readings.md</code> C-11、architecture 22-11）</td><td>出さない（<code>rusty_mp3</code> が新しく未検証）</td><td>F2 で入れる。条件つき</td></tr>
+<tr><td>AppImage（architecture 23-5）</td><td>作らない（Mesa / NVIDIA の違いで壊れる）</td><td>D2 で「お試し」として作る</td></tr>
+<tr><td>再生中のピアノロール（spec 3 の L71「ノートの見た目は変わらない」）</td><td>鍵盤の列だけ光る</td><td>E1 で鳴っているノートも光る（切れる）</td></tr>
+<tr><td>スケールの種類（spec 3 の L74）</td><td>メジャーとマイナーだけ</td><td>P1 で9種類。「色をつける」を足す。「一覧から選ぶと固定がオン」（L75）は変えない</td></tr>
+<tr><td>ヘルプメニュー（spec 3 の L86）</td><td>「meloet について」だけ</td><td>G1 で2行足す</td></tr>
+<tr><td>席だけあったもの（spec 3 の L41、L221、L240、L282）</td><td>MIDI エフェクト、内蔵の音のパラメータ（19-B）、逆にする／ノーマライズ、いいとこ取り</td><td>E2、E3、A9、A8 で中身を入れる。<b>その行を先に読み、書いてある場所と形に従う</b></td></tr>
+<tr><td>リターンとマスターのオートメーション（<code>docs/history/design-notes.ja.md</code> L398）</td><td>作らない</td><td>M5 でマスターの音量だけ作る</td></tr>
+<tr><td>用語集の「画面の文言は訳さない」（<code>docs/spec/glossary.md</code>）</td><td>訳さない</td><td>D4 で英語の表を足す。日本語が正</td></tr>
+</table></div>
+<p>これらは <code>docs/spec/3-bands.md</code> に「Rules added in round 11」（<code>user:2026-11-23</code>）として書き足し、<code>7-readings.md</code> の該当行を直し、architecture の該当章を直します。</p>
+
+<h2 id="s1">1. 共通の決まり</h2>
+<h3>1-1. 進め方</h3>
+<ul>
+<li>波は4つ。波ごとに「約束の形だけ」を先に1人のヘルパーが作ってコミットし（CLAUDE.md の2回に分ける決まり）、そのあと中身をレーンごとに並列で作ります。</li>
+<li><b>約束の番号</b>：波ごとに1回だけ上げます（31、32、33、34）。ヘルパーのワークツリーでは <code>PROTOCOL_VERSION</code> と <code>ui/src/bridge/generated/*</code> を触らせず、形のコミットに全部入れます。足りない形が出たら、リードがまとめブランチで足して作り直します。</li>
+<li><b>同じレーンは並列にしない</b>（下の一覧の「レーン」）。同じファイルを大きく触るからです。</li>
+<li>波の終わりごとに、実の作業ツリーの <code>target/</code> で <code>scripts/check-all.sh</code> を通し、<code>docs/progress.md</code> を書き、コミットします。枠が切れそうなら、波の境目か機能の境目で止めます。<b>半分できた機能は統合しません</b>。</li>
+<li>Fable の枠が切れたら CLAUDE.md の手順（持ち主に聞いてから <code>model: opus</code>）に従います。</li>
+</ul>
+
+<h3>1-2. 曲ファイル、設定、テレメトリ</h3>
+<ul>
+<li><b>曲ファイルは版 7 にします</b>（リードの判断。第0波で1回だけ）。版 6 は読めます（足した欄は全部 <code>#[serde(default)]</code>）。書くのは 7。理由：版 6 のままだと、古い meloet が新しい曲を開いて保存したとき、知らない欄（アルペジオ、音のつまみ、いいとこ取り、マスターのレーン）を黙って捨てるからです。古い meloet は 7 を「新しすぎる」として開きません。復旧ファイルも同じ形なので版を上げます。architecture 14 に書きます。</li>
+<li><b>設定</b>（<code>crates/meloet-core/src/settings.rs</code>、版 1 のまま）：欄を足す手順は <code>Settings</code> と <code>Default</code>、<code>OnDisk</code>（<code>#[serde(default)]</code>）、<code>load</code> で範囲に収める、<code>save</code>、<code>Model::settings()</code>、往復のテスト。</li>
+<li><b>テレメトリは版 5 にします</b>（第2波の形のコミットで1回だけ）。足す値は M2、M3、E7 の節にあります。手順：<code>crates/meloet-protocol/src/telemetry.rs</code>（構造体、<code>encode_into</code>、<code>decode</code>、<code>same_readings</code>、長さ、版）、<code>tests.rs</code> のレイアウトと往復のテスト、フィクスチャの名前（<code>telemetry-v5</code>）、<code>ui/src/bridge/telemetry.ts</code>、<code>fake.ts</code> の <code>encodeTelemetry</code>、<code>crates/meloet-core/tests/record_timing/mod.rs</code>、architecture 3-3 の表。<code>same_readings</code> に入れ忘れると、変化が画面に届きません。</li>
+</ul>
+
+<h3>1-3. 文言と仕様の文書</h3>
+<ul>
+<li>新しい文言は <code>ui/src/text/ja.ts</code> だけに、出どころ <code>user:2026-11-23</code> で足します。この仕様書の「」の中をそのまま使います。ここにない細かい文言（ツールチップ、ステータスラインの言い回し）が要るときは、今ある文言の言い回しに合わせて作り、<code>docs/spec/7-readings.md</code> に1行残します。止まって聞く必要はありません。</li>
+<li>取り消しのステップ名を足すときは6か所：モデルの <code>StepKind</code>、<code>crates/meloet-core/src/play/history.rs</code> の <code>step_text</code>、約束の <code>StepName</code> と <code>every_kind</code>、<code>ja.ts</code> の <code>stepNames</code>、<code>ui/tests/bridge.protocol21.test.ts</code> の数（今 77）、spec 3 のステップ名の一覧。</li>
+<li>用語のツールチップを足すなら、<code>ui/tests/text.test.ts</code> の「spec 5 の外の用語」の一覧にも足します。</li>
+<li>キーを足したら <code>docs/spec/4-keys.md</code>、<code>ui/src/keys/keys.ts</code>、メニューの表示、G1 の一覧（<code>keyList.ts</code>）を直します。今回足すキー：<b>Shift R</b>（さっきのを残す）、<b>Mod K</b>（キーで弾く）、<b>Mod R</b>（クリップをくり返す）。ぶつかっていたら近いキーに変えて <code>7-readings.md</code> に書きます。</li>
+<li>使う人の文書（<code>docs/user/README.ja.md</code>、<code>README.md</code>、<code>README.ja.md</code> の機能の一覧）も機能ごとに直します。</li>
+<li>作りの記録は <code>docs/architecture.md</code> に新しい章（25「Round 11」）として、機能ごとに節を書きます。</li>
+</ul>
+
+<h3>1-4. どの機能にもかかる受け入れ条件</h3>
+<ul>
+<li>曲を変える操作は1つの取り消しステップ。取り消しとやり直しで元に戻ること。カウントイン中と録音中（<code>busy()</code>）は断ること。</li>
+<li>意図は ID で指し、古い ID の意図は何もしないこと。ドラッグは画面だけ先に動き、離したとき意図を1つ。Esc で止まること。</li>
+<li>Rust のテストと画面のテスト（<code>fake.ts</code> の写しと場面）を足すこと。場面は <code>tools/design/shoot_ui.py</code> で6テーマ撮れること。</li>
+<li>音のスレッドで割り当てと待ちをしないこと。値は 20 ms でなめらかに、入れ替えは 10 ms 重ねること。NaN とデノーマルの決まり。</li>
+<li>書き出しが再生と同じ音になること（<code>tools/measure/export_app.py same</code>）。聞くだけのもの（モノで聞く、分析、メトロノーム）は書き出しに入れないこと。</li>
+<li>網羅の <code>match</code>（<code>EngineOp</code> を受ける <code>ExportEngine::tell</code> と <code>service.rs</code> の <code>Audio::op</code>、エフェクトの種類、<code>crates/meloet-ai</code> の対応表）を全部直すこと。AI 連携の新しい道具は作りません。</li>
+<li>60 Hz で変わるものを足したら <code>tools/measure/webkit-damage.sh</code> で確かめること。WebGL の領域は増やしません（<code>ui/tests/gl.surface.test.ts</code> が「最大10」を見ています）。</li>
+<li>入力と音のスレッドを触ったら、静かな PC で <code>tools/measure/latency.sh --state stopped|playing|recording</code> と <code>record-timing.sh private</code> を測り直し、前の数と並べて <code>docs/measurements/</code> に書くこと。</li>
+</ul>
+
+<h2 id="s2">2. 一覧と流す順</h2>
+<div class="scroll"><table>
+<tr><th>番号</th><th>機能</th><th>波</th><th>レーン</th><th>担当</th><th>約束</th><th>曲ファイル</th><th>ほか</th></tr>
+<tr><td><a href="#G1">G1</a></td><td>キーの一覧と使い方</td><td>1</td><td>画面だけ</td><td>impl</td><td>—</td><td>—</td><td></td></tr>
+<tr><td><a href="#A3">A3</a></td><td>トラックの複製</td><td>1</td><td>トラック</td><td>hard</td><td>○</td><td>—</td><td></td></tr>
+<tr><td><a href="#A5">A5</a></td><td>最近ひらいた曲</td><td>1</td><td>曲と設定</td><td>impl</td><td>○</td><td>—</td><td></td></tr>
+<tr><td><a href="#R3">R3</a></td><td>メトロノームの設定とタップテンポ</td><td>1</td><td>エンジン</td><td>hard</td><td>○</td><td>—</td><td>設定</td></tr>
+<tr><td><a href="#P1">P1</a></td><td>スケールの色づけと種類</td><td>1</td><td>ピアノロール描画</td><td>impl</td><td>○</td><td>○</td><td></td></tr>
+<tr><td><a href="#P3">P3</a></td><td>ベロシティと長さの道具</td><td>1</td><td>ノート</td><td>impl</td><td>○</td><td>—</td><td></td></tr>
+<tr><td><a href="#P6">P6</a></td><td>コード進行の型</td><td>1</td><td>ノート（P3 のあと）</td><td>impl</td><td>○</td><td>—</td><td></td></tr>
+<tr><td><a href="#A9">A9</a></td><td>逆にする・ノーマライズ</td><td>1</td><td>アレンジ</td><td>hard</td><td>○</td><td>—</td><td></td></tr>
+<tr><td><a href="#F1">F1</a></td><td>書き出しの音の大きさ</td><td>1</td><td>書き出し</td><td>hard</td><td>○</td><td>—</td><td>新しいクレート</td></tr>
+<tr><td><a href="#E9">E9</a></td><td>「できた」の画面</td><td>1</td><td>書き出し（F1 のあと）</td><td>impl</td><td>○</td><td>—</td><td></td></tr>
+<tr><td><a href="#D1">D1</a></td><td>更新の道</td><td>1</td><td>配布</td><td>impl</td><td>○</td><td>—</td><td>設定</td></tr>
+<tr><td><a href="#D3">D3</a></td><td>Windows / macOS の調査資料</td><td>1〜</td><td>文書だけ</td><td>very-hard＋research</td><td>—</td><td>—</td><td>コードなし</td></tr>
+<tr><td><a href="#R1">R1</a></td><td>さかのぼり録音</td><td>2</td><td>入力</td><td>very-hard</td><td>○</td><td>—</td><td></td></tr>
+<tr><td><a href="#R2">R2</a></td><td>パソコンのキーで弾く</td><td>2</td><td>入力（R1 のあと）</td><td>hard</td><td>○</td><td>—</td><td></td></tr>
+<tr><td><a href="#P2">P2</a></td><td>ほかのトラックを薄く見せる</td><td>2</td><td>ピアノロール描画</td><td>hard</td><td>—</td><td>—</td><td></td></tr>
+<tr><td><a href="#E1">E1</a></td><td>鳴っている音が光る</td><td>2</td><td>ピアノロール描画（P2 のあと）</td><td>hard</td><td>○</td><td>—</td><td>設定</td></tr>
+<tr><td><a href="#P4">P4</a></td><td>ドラムのパターン集</td><td>2</td><td>棚</td><td>impl</td><td>○</td><td>—</td><td></td></tr>
+<tr><td><a href="#A1">A1</a></td><td>クリップをくり返す</td><td>2</td><td>アレンジ</td><td>hard</td><td>○</td><td>—</td><td></td></tr>
+<tr><td><a href="#M1">M1</a></td><td>プリセット</td><td>2</td><td>エフェクト</td><td>impl</td><td>○</td><td>—</td><td>新しいファイル</td></tr>
+<tr><td><a href="#M6">M6</a></td><td>エフェクトを足す</td><td>2</td><td>エフェクト（M1 のあと）</td><td>very-hard</td><td>○</td><td>○</td><td></td></tr>
+<tr><td><a href="#M2">M2</a></td><td>「音が大きすぎます」</td><td>2</td><td>メーター</td><td>hard</td><td>○</td><td>—</td><td>テレメトリ</td></tr>
+<tr><td><a href="#F2">F2</a></td><td>MP3 と曲の情報</td><td>2</td><td>書き出し</td><td>hard</td><td>○</td><td>—</td><td>新しいクレート</td></tr>
+<tr><td><a href="#E2">E2</a></td><td>アルペジオ</td><td>3</td><td>入力（R2 のあと）</td><td>very-hard</td><td>○</td><td>○</td><td></td></tr>
+<tr><td><a href="#E3">E3</a></td><td>音のつまみ</td><td>3</td><td>音源</td><td>hard</td><td>○</td><td>○</td><td></td></tr>
+<tr><td><a href="#E7">E7</a></td><td>音に合わせて動く絵</td><td>3</td><td>メーター（M2 のあと）</td><td>hard</td><td>○</td><td>—</td><td>テレメトリ、設定</td></tr>
+<tr><td><a href="#M3">M3</a></td><td>仕上げのメーター</td><td>3</td><td>メーター（E7 のあと）</td><td>hard</td><td>○</td><td>—</td><td>テレメトリ</td></tr>
+<tr><td><a href="#A2">A2</a></td><td>区間ごと動かす</td><td>3</td><td>時間</td><td>very-hard</td><td>○</td><td>—</td><td></td></tr>
+<tr><td><a href="#A7">A7</a></td><td>キーのトラックを音にする</td><td>3</td><td>アレンジ</td><td>hard</td><td>○</td><td>—</td><td></td></tr>
+<tr><td><a href="#M5">M5</a></td><td>マスターの音量のオートメーションとフェードアウト</td><td>3</td><td>時間（A2 のあと）</td><td>very-hard</td><td>○</td><td>○</td><td></td></tr>
+<tr><td><a href="#A8">A8</a></td><td>歌のいいとこ取り</td><td>4</td><td>アレンジ</td><td>very-hard</td><td>○</td><td>○</td><td></td></tr>
+<tr><td><a href="#M7">M7</a></td><td>歌の音程を寄せる</td><td>4</td><td>ストレッチ</td><td>very-hard</td><td>○</td><td>○</td><td></td></tr>
+<tr><td><a href="#D2">D2</a></td><td>AppImage</td><td>4</td><td>配布</td><td>impl</td><td>—</td><td>—</td><td></td></tr>
+<tr><td><a href="#D4">D4</a></td><td>英語の表示</td><td>4（最後）</td><td>文言</td><td>impl＋light</td><td>○</td><td>—</td><td>設定</td></tr>
+</table></div>
+<p><b>第0波（リード）</b>：ブランチを作る。spec 3 に round 11 の節の骨組みを書く。曲ファイルを版 7 にする。<b>レーンの順</b>：入力 R1 → R2 → E2。メーター M2 → E7 → M3。ピアノロール描画 P1 → P2 → E1。書き出し F1 → E9、F2。アレンジ（<code>Arrange.svelte</code>）A9 → A1 → A7 → A8。時間 A2 → M5。エフェクト M1 → M6。D4 はほかの機能が文言を足し終えてから。</p>
+
+<h2 id="s3">3. 録る・弾く</h2>
+
+<section id="R1"><h3>R1 さかのぼり録音</h3>
+<p><b>ねらい</b>：録音を押していなくても、直前に弾いたものをクリップにできる。</p>
+<figure><figcaption>モックアップ（提案のときの図。文と食い違うときは文が正）</figcaption><div class="mk"><div class="r"><span class="b">⏮</span><span class="b">▶</span><span class="b">■</span><span class="b rec">●</span><span class="b">ループ</span><span class="b">重ねる</span><span class="b on">さっきのを残す</span><span class="sp"></span><span class="d">テンポ</span><span class="m w">96.00</span></div><div class="r"><span class="d">■ 停止中</span><span>さっき弾いた 2 小節ぶん（ノート 14）を残せます</span></div></div></figure>
+<h4>ふるまい</h4>
+<ol>
+<li><b>ためる</b>：録音中とカウントイン中でないとき、弾く先のトラックへ届いた鍵盤の出来事（ノートのオンとオフ、CC、ピッチベンド。ベロシティ固定をかけたあとのもの）を、いつも「さっきの演奏」としてためます。E2 のアルペジオがオンのトラックでは、実際に鳴ったノートをためます。</li>
+<li><b>位置は届いた時に控える</b>：エンジンの時計が覚えているのは直近 512 ブロック（0.7〜2.7 秒）だけなので、後から計算し直せません。エンジンの <code>read_midi</code> で、いつも（録音でないときも）耳に届いていた位置を控え、<code>Recorded</code> の輪に新しい種類（<code>Recent</code>）として積みます。控えるもの：出来事、<code>t_us</code>、位置（再生中）、再生中か止まっているか、ループの何周目か。再生中のループの周回は今数えていないので、エンジンで数えます。</li>
+<li><b>区切り</b>：再生と停止が切り替わったら、ためたものに「閉じた」印をつけます。閉じたあとに新しいノートオンが来たら、古い分を捨てて新しくため始めます（再生しながら弾く → 止める → 残す、ができます）。止まっているときは、鍵もペダルも離れたまま「いまのテンポで2小節ぶんの時間」が過ぎたら、次のノートオンで新しくため始めます。</li>
+<li><b>捨てる時</b>：残したあと、録音が終わったとき、弾く先のトラックが変わったとき、曲を開く・新しくするとき。上限は出来事 4096 個と 10 分。あふれたら古い方から捨てます。</li>
+<li><b>残す</b>（<code>KeepPlayed</code>）：
+ <ul><li>再生中に弾いた分：控えた位置にそのまま置きます。ループしていたら、周ごとにテイクになります（ループ録音と同じ <code>Recorder</code> の決まり）。</li>
+ <li>止まっているあいだに弾いた分：最初のノートを「再生線のある小節の頭」に置き、あとは経過時間を、再生線の位置のテンポで位置に直します（テンポの変化は見ません。テンポを当てることもしません）。</li>
+ <li>クリップは小節の頭から小節の終わりまで。押したままの鍵は、残した時刻で切ります。</li>
+ <li>トラックへの置き方は録音と同じです：<code>Recorder::new / push / finish</code> → <code>edit::add_recording</code>（重なるクリップはまとめる）。「重ねる」がオンなら <code>overdub::overdub_recording</code>。<code>Play::apply_selecting</code> で1ステップにし、できたクリップを選びます。再生は始めません。</li></ul></li>
+<li><b>断るとき</b>：カウントイン中と録音中、キーのトラックが弾く先でないとき、ノートが1つもないとき。最後の場合はステータスラインに「残せる演奏がありません」。</li>
+</ol>
+<h4>画面と文言</h4>
+<ul><li>上の帯の「重ねる」の右にボタン「さっきのを残す」。残せるものがないあいだは無効。キーは <b>Shift R</b>。メニュー「再生」に「さっきの演奏を残す」。</li>
+<li>ステップ名「さっきの演奏を残す」。</li></ul>
+<h4>約束と作り</h4>
+<ul><li>約束：<code>Command::KeepPlayed</code>、<code>TransportView.can_keep_played: bool</code>（0 個かどうかが変わったときだけ変える。60 Hz で変えない）、<code>StepName::KeepPlayed</code>。</li>
+<li>エンジン（<code>crates/meloet-engine/src/engine.rs</code> の <code>read_midi</code> と <code>stamp</code>、<code>clock.rs</code>）、コア（<code>service.rs</code> の <code>poll_engine</code> と <code>record_report</code>、<code>play.rs</code> にためる所と <code>keep_played</code>）、モデルは今ある関数を使う、画面（<code>Transport.svelte</code>、<code>keys.ts</code>、<code>menus.ts</code>）。</li></ul>
+<h4>テストと受け入れ</h4>
+<ul><li>エンジン：再生中と停止中に控えた位置が、録音のときと同じ精度であること（<code>tests/transport.rs</code> の <code>recorded_keys_get_the_position_that_was_heard</code> と同じ形）。<code>every_transport_path_stays_off_the_allocator</code> に足す。</li>
+<li>コア：区切りの決まり、ループの周がテイクになること、「重ねる」、1ステップで戻ること。</li>
+<li>自前の PipeWire のテスト（<code>record_timing_private</code> の形）で、再生中に弾いて残したノートの位置の誤差が、録音と同じ範囲であること。</li></ul>
+<h4>わな</h4>
+<ul><li>出口がひらいていないあいだの鍵はエンジンへ行かないので、ためられません（今の作り）。</li>
+<li>止まっているときはコアの見回りが 100 ms おきです。輪は 4096 なので足りますが、あふれの数え（<code>record_overflows</code>）は見ます。</li>
+<li>「クオンタイズは編集だけ」。残すときに位置をそろえません。</li></ul>
+</section>
+
+<section id="R2"><h3>R2 パソコンのキーボードで弾く</h3>
+<p><b>ねらい</b>：MIDI 鍵盤がなくても、文字のキーで音を出して録れる。</p>
+<figure><figcaption>モックアップ（提案のときの図。文と食い違うときは文が正）</figcaption><div class="mk"><div class="r"><span class="a">■</span><span class="w">パソコンのキーボード</span><span class="b on">キーで弾く</span><span class="d">オクターブ</span><span class="m">C3</span><span class="d">Z ／ X で上下 ・ Esc でやめる</span></div><div style="padding:8px"><span class="key">A</span><span class="key k">W</span><span class="key">S</span><span class="key k">E</span><span class="key">D</span><span class="key">F</span><span class="key k">T</span><span class="key">G</span><span class="key k">Y</span><span class="key">H</span><span class="key k">U</span><span class="key">J</span><span class="key">K</span></div><div class="r"><span class="d">オンの間、1文字のショートカット（A、E、M など）は止まります</span></div></div></figure>
+<h4>ふるまい</h4>
+<ol>
+<li>入力の帯のボタン「キーで弾く」か <b>Mod K</b> で入切。Esc でも切れます（Esc の順は、ドラッグの中止やメニューを閉じるより後、「ひとつ戻る」より前）。起動時は切。設定には残しません。</li>
+<li>キーは物理の位置（<code>event.code</code>）で決めます。白鍵：A S D F G H J K L ; が C D E F G A B C D E。黒鍵：W E が C# D#、T Y U が F# G# A#、O P が C# D#。Z と X でオクターブを下げる／上げる（A の音は C0〜C7、はじめは C3）。</li>
+<li>ベロシティは 100。ベロシティ固定がオンならその値（今ある <code>fixed()</code> を通るので、何もしなくてそうなります）。</li>
+<li>オンのあいだ、修飾キーなしの文字と数字のキーは、ショートカットとして働きません（鍵に割り当てていないキーも）。Mod つきのキー、Space、矢印、Delete、Home、F キー、Esc は今までどおり。</li>
+<li>文字を打っているとき（<code>isTyping</code>）は鍵になりません。長押しのくり返し（<code>ev.repeat</code>）は捨てます。<code>keyup</code> でノートオフ。ウィンドウが前でなくなったとき、切ったとき、オクターブを変えたときは、押している音を全部離します。IME の変換中のキーは今も捨てているので、日本語入力がオンだと鳴りません。ステータスラインのヒントにそう書きます。</li>
+<li><b>本物の鍵盤と同じ扱い</b>：音、入力のメーター、録音、R1、E2 のどれにも、本物と同じに効きます。鍵盤の一覧に「パソコンのキーボード」という名前の鍵盤として、オンのあいだだけ現れます（出口をえらぶ画面の「鍵盤が1台以上」の条件も、これで満たします）。</li>
+</ol>
+<h4>約束と作り</h4>
+<ul><li>約束：<code>Command::TypedKeys{on: bool}</code>（入切）、<code>Command::TypedKey{note: u8, down: bool, t_us: u64}</code>。<code>t_us</code> は画面が <code>ev.timeStamp</code> から Rust の単調時計に直した時刻（あいさつで受け取る <code>mono_us</code> の差を使う。再生線と同じやり方）。録音の位置はこの時刻で決まります。</li>
+<li>道：今の試聴（<code>Audition</code>）は録音もメーターも通らないので使いません。MIDI の輪は MIDI のスレッドだけが書けるので、<b>コアのスレッドからエンジンへの輪をもう1本</b>作り、<code>read_midi</code> で MIDI の輪と一緒に時刻順に読みます。コア側は <code>play_key</code> と同じこと（<code>Held</code> の更新、<code>Event::Note</code> を画面へ）をします。<code>Hands</code> に「パソコンのキーボード」を1台として持たせ、切るときに全部離します。</li>
+<li>画面：<code>ui/src/keys/attach.ts</code> の <code>handleKeydown</code> で、Esc の枝のあと、<code>laneDeleteCommand</code> などの前に入れます。<code>handleKeyup</code> に本物の処理を足します。<code>InputMeter.svelte</code> にボタンと「オクターブ C3」の表示。ステータスラインに「キーで弾く：オン。1文字のショートカットは止まっています。Z ／ X でオクターブ、Esc でやめる」。</li></ul>
+<h4>テストと受け入れ</h4>
+<ul><li>コア：このキーが音、テイク、メーター、画面の全部に届くこと（<code>service/tests.rs</code> の固定ベロシティのテストと同じ形）。切ったとき全部離れること。</li>
+<li>画面：割り当て、くり返しを捨てる、ショートカットが止まる、文字入力中は効かない。</li>
+<li>測る：キーを押してから音が出るまで。<code>tools/measure/remote.py</code> で偽のキーを送り、出口を録って測り、数を <code>docs/measurements/</code> に書きます。目安は MIDI 鍵盤の遅れ＋1フレーム以内。届かなくても止めず、数を報告します。</li></ul>
+<h4>わな</h4>
+<ul><li><code>Core::send</code> はコアの返事を待ちます。押すたびに画面が待たされるなら、返事を待たない送り方（急ぎの道）にします。</li>
+<li>キーを離す出来事が来ないことがあります（ウィンドウを切り替えた瞬間）。<code>blur</code> と <code>visibilitychange</code> で全部離します。</li></ul>
+</section>
+
+<section id="R3"><h3>R3 メトロノームの設定とタップテンポ</h3>
+<figure><figcaption>モックアップ（提案のときの図。文と食い違うときは文が正）</figcaption><div class="mk" style="max-width:320px"><div class="r"><span class="w">メトロノーム</span><span class="sp"></span><span class="b on">オン</span></div><div class="r"><span class="d">音量</span><span class="sp"></span><span class="meter"><b style="width:60%;background:#F2F2F2"></b></span><span class="m">−12 dB</span></div><div class="r"><span class="d">音</span><span class="sp"></span><span class="b on">ピッ</span><span class="b">カチ</span><span class="b">カウベル</span></div><div class="r"><span class="d">鳴らすとき</span><span class="sp"></span><span class="b">いつも</span><span class="b on">録音のときだけ</span></div><div class="r"><span class="d">テンポを手拍子で</span><span class="sp"></span><span class="b">タップ</span><span class="m">96.00</span></div></div></figure>
+<h4>ふるまい</h4>
+<ol>
+<li>「メトロノーム」ボタンの右の ▾ を、いつも出します。押すと小さな窓がひらき、行は：オン／オフ、音量、音、鳴らすとき、テンポを手拍子で。「カウントイン」のボタンは今のまま。</li>
+<li><b>音量</b>：−24〜+6 dB、はじめは 0 dB（今の大きさ）。ドラッグ中は聞こえ方だけ変わり、離したとき設定に書きます（1フレームに1回まで）。数字のダブルクリックで打てます。</li>
+<li><b>音</b>：「ピッ」（今の音）、「カチ」、「カウベル」。どれも自作の計算で作ります（素材は使いません）。小節の頭は、ほかの拍より高いか大きくして聞き分けられるようにします。</li>
+<li><b>鳴らすとき</b>：「いつも」（今と同じ）、「録音のときだけ」（再生中は鳴らず、録音中だけ鳴る）。カウントインはどちらでも鳴ります。</li>
+<li><b>タップ</b>：「タップ」を2回以上押すと、間隔の平均（直近8回まで、2秒あいたらやり直し）からテンポの候補を出します。1 BPM に丸め、30〜300 に収めます。候補は画面の中だけの値です。「この速さにする」で <code>SetTempo</code> を<b>1回だけ</b>送ります（1回が1ステップなので、叩くたびには送りません）。カウントイン中と録音中は無効。</li>
+<li>設定は PC に残ります（曲ではありません）。書き出しには今までどおり入りません。</li>
+</ol>
+<h4>約束と作り</h4>
+<ul><li>約束：<code>Command::SetClick{volume_db: Option&lt;f32&gt;, sound: Option&lt;ClickSound&gt;, when: Option&lt;ClickWhen&gt;, commit: bool}</code>、<code>TransportView</code> に <code>click_volume_db</code>、<code>click_sound</code>、<code>click_when</code>。</li>
+<li>エンジン（<code>transport.rs</code> の <code>Click</code>、L416-475。<code>engine.rs</code> の <code>click_audible</code>）、<code>EngineCommand</code> に設定を渡す種類を足す。値は次のクリックから効かせます（鳴っている途中で変えません）。コア（<code>play.rs</code>、<code>settings.rs</code>）、画面（<code>Transport.svelte</code> の <code>metronomeRows</code> を小さな窓に作り替え）。</li></ul>
+<h4>テストと受け入れ</h4>
+<ul><li>クリックのテストと <code>tools/measure/click-check.py</code> は「静かな 200 フレームのあとの最初の音」「最初のサンプルがいちばん大きい」を当てにしています。<b>新しい音もこの2つを守ります</b>（頭がいちばん大きく、拍のフレームぴったりに始まり、35 ms 以内、声は1つ、割り当てなし）。音量を下げても、いちばん小さい設定で検出の下限（1e-6）を上回ること。</li>
+<li><code>clicks_reach_the_dac_on_the_beat</code> を3つの音で通す。「録音のときだけ」で再生中に鳴らないこと。</li></ul>
+</section>
+
+<h2 id="s4">4. 打ち込み</h2>
+
+<section id="P1"><h3>P1 スケールの色づけと種類の追加</h3>
+<figure><figcaption>モックアップ（提案のときの図。文と食い違うときは文が正）</figcaption><div class="mk"><div class="r"><span class="b on">選ぶ 1</span><span class="b">書く 2</span><span class="sp"></span><span class="b">スケール C メジャー ▾</span><span class="b on">色をつける</span><span class="b">固定</span></div><div class="pr" style="height:144px"><u style="top:0"></u><u style="top:24px"></u><u style="top:48px"></u><u style="top:60px"></u><u style="top:84px"></u><u style="top:108px"></u><u style="top:132px"></u><i style="left:0;top:132px;width:58px"></i><i style="left:60px;top:84px;width:58px"></i><i style="left:120px;top:48px;width:58px"></i><i style="left:180px;top:36px;width:28px;background:#9A9A9A"></i><i style="left:240px;top:0;width:118px"></i></div><div class="r"><span class="d">色のついた行がスケールの中の音。固定がオフでも外の音は置けます（外の音は灰色）</span></div></div></figure>
+<h4>ふるまい</h4>
+<ol>
+<li>スケールに「色をつける」（<code>highlight</code>）を足します。はじめはオン。オンで固定がオフのとき、スケールの外の行を <code>color.row.out</code> で塗ります（網かけはなし）。外の行にもノートは置けます。固定がオンのときは今と同じ（外の行は <code>color.row.out</code> と網かけ、置けない）。オフで固定もオフなら、今の「固定オフ」と同じ見た目です。新しい色は足しません。</li>
+<li>種類を9つにします。半音の並び：メジャー <code>0 2 4 5 7 9 11</code>、マイナー <code>0 2 3 5 7 8 10</code>、ハーモニックマイナー <code>0 2 3 5 7 8 11</code>、メロディックマイナー <code>0 2 3 5 7 9 11</code>、メジャーペンタトニック <code>0 2 4 7 9</code>、マイナーペンタトニック <code>0 3 5 7 10</code>、ブルース <code>0 3 5 6 7 10</code>、ドリアン <code>0 2 3 5 7 9 10</code>、ミクソリディアン <code>0 2 4 5 7 9 10</code>。</li>
+<li>ツールバーの一覧から選ぶと固定がオンになる決まりは変えません。インスペクタから選ぶと固定はそのまま、も変えません。</li>
+<li>コード表（<code>keyChords</code>）は7音のスケールでそのまま働きます。5音と6音のスケールでは、親のスケールのコードを出します：メジャーペンタトニック → メジャー。マイナーペンタトニックとブルース → マイナー。</li>
+<li>ドラムのトラックでは、色づけも固定も今までどおり使えません。スケールは曲の「セッション」のデータのままで、取り消しのステップにも、保存していない変更にもなりません。</li>
+</ol>
+<h4>画面と文言</h4>
+<ul><li>ツールバー：スケールのボタンの右に「色」の入切（固定の「固定」と並べる）。インスペクタの「スケール」の節に行「色をつける　オン／オフ」。</li>
+<li>種類の名前は上の9つをそのまま（<code>scale.*</code>）。</li></ul>
+<h4>約束と作り</h4>
+<ul><li>モデル <code>crates/meloet-model/src/roll.rs</code>（<code>ScaleMode</code>、<code>steps()</code>、<code>MusicalScale</code> に <code>highlight</code>）、曲ファイル（<code>ScaleFile</code>、<code>ScaleModeFile</code>）、約束（<code>ScaleMode</code>、<code>MusicalScale</code>、<code>SetMusicalScale</code> に <code>highlight</code>）、コア（<code>play.rs</code> の <code>set_musical_scale</code> と <code>scale_mode</code>）、AI 連携（<code>crates/meloet-ai/src/song.rs</code> の対応）。</li>
+<li>画面：<code>geom.ts</code> の <code>SCALE_STEPS</code>（Rust と同じ表の写し。両方を同じ値で確かめるテストを足す）、<code>rowColor</code>、<code>paint.ts</code>、<code>ScaleMenu.svelte</code>、<code>Toolbar.svelte</code>、<code>NoteInspector.svelte</code>、<code>chords.ts</code>（親のスケール）、<code>format.ts</code> の <code>scaleName</code>。</li></ul>
+<h4>テストと受け入れ</h4>
+<ul><li>9種類の並び、固定の決まり（<code>the_locked_scale_keeps_the_write_tool_on_its_keys</code> を種類ごとに）、版 6 の曲を開くと色づけはオンになること、往復。6テーマで場面（色づけだけ／固定あり）を撮る。</li></ul>
+</section>
+
+<section id="P2"><h3>P2 ほかのトラックのノートを薄く見せる</h3>
+<figure><figcaption>モックアップ（提案のときの図。文と食い違うときは文が正）</figcaption><div class="mk"><div class="r"><span class="w">ピアノロール</span><span class="d">2 ベース</span><span class="sp"></span><span class="b on">ほかのトラックも見る ▾</span><span class="d">1 ピアノ</span></div><div class="pr" style="height:120px"><i class="g" style="left:0;top:12px;width:118px"></i><i class="g" style="left:0;top:36px;width:118px"></i><i class="g" style="left:0;top:60px;width:118px"></i><i class="g" style="left:120px;top:24px;width:118px"></i><i class="g" style="left:120px;top:48px;width:118px"></i><i class="g" style="left:240px;top:0;width:118px"></i><i class="g" style="left:240px;top:36px;width:118px"></i><i style="left:0;top:96px;width:44px"></i><i style="left:60px;top:96px;width:44px"></i><i style="left:120px;top:108px;width:44px"></i><i style="left:180px;top:108px;width:44px"></i><i style="left:240px;top:84px;width:104px"></i></div></div></figure>
+<h4>ふるまい</h4>
+<ol>
+<li>ピアノロールのツールバーに「ほかのトラックも見る ▾」。押すとオンになり、▾ の一覧で見せるトラックを選べます（はじめは、いまのトラック以外のドラムでないキーのトラックぜんぶ）。ドラムのトラックと歌のトラックは一覧に出ません。ドラムロールでは無効。画面だけの状態で、アプリを閉じるまで覚えます。</li>
+<li>選んだトラックの、いま見えている範囲に重なるクリップの「表示中のテイク」のノートを、曲の位置で合わせて描きます（テイクの位置 0 は <code>clip.start + clip.takeOffset</code>。クリップの範囲に始まりが入るノートだけ）。編集中のクリップの外の範囲にも描きます。</li>
+<li>色は <code>color.gray.6</code> の塗りだけ（ふちなし）。グリッドの線のあと、いまのクリップのノートの前に描くので、いまのノートが上に来ます。四角の描画に半透明はないので、色で差をつけます。図は提案時の青ですが、灰色が正です。</li>
+<li>さわれません（選べない、当たらない、鳴らない）。</li>
+</ol>
+<h4>作り</h4>
+<ul><li>約束は変えません。テイクは <code>ui/src/bridge/take.ts</code> の <code>takeNotes(id)</code> で取ります（どのクリップも表示中のテイクは捨てられない決まりなので、足りています）。取るのは見えている幅の3倍の窓に重なるクリップだけ（<code>Arrange.svelte</code> の <code>lanePicture</code> と同じ考え）。</li>
+<li>描くのは <code>pianoroll/paint.ts</code> の <code>paintRoll</code>。描き直しは「変わったとき」だけ（テイクが届いた、スクロール、ズーム、選び方）。毎フレームは描きません。四角は2万個まで。超えたら再生線から遠い方を省きます。</li>
+<li>状態は <code>view.svelte.ts</code>、部品は <code>Toolbar.svelte</code> と今ある <code>ChoiceMenu</code>。</li></ul>
+<h4>テストと受け入れ</h4>
+<ul><li>位置合わせ（オフセットが負のテイク、切ったクリップ）、選べないこと。場面 <code>pianoRollGhost</code>（<code>pianoRollWide</code> をもとに）。</li>
+<li>測る：<code>tools/measure/ui-script.sh --script pr-scroll</code> と <code>pr-zoom</code> を、オンとオフで。オンで p95 の busyMs が 2 ms より悪くならないこと。悪ければ窓を狭め、数を報告します。</li></ul>
+</section>
+
+<section id="P3"><h3>P3 ベロシティと長さの道具</h3>
+<figure><figcaption>モックアップ（提案のときの図。文と食い違うときは文が正）</figcaption><div class="mk" style="max-width:320px"><div class="r"><span class="w">▾ ベロシティをまとめて変える</span></div><div class="r"><span class="d">そろえる</span><span class="sp"></span><span class="m">80</span><span class="b">そろえる</span></div><div class="r"><span class="d">割合</span><span class="sp"></span><span class="m">120 %</span><span class="b">かける</span></div><div class="r"><span class="d">だんだん</span><span class="sp"></span><span class="m">40 → 110</span><span class="b">かける</span></div><div class="r"><span class="d">ばらつき</span><span class="sp"></span><span class="m">± 8</span><span class="b">かける</span></div><div class="r"><span class="w">▾ 長さをそろえる</span></div><div class="r"><span class="d">次の音までのばす</span><span class="sp"></span><span class="b">のばす</span></div></div></figure>
+<h4>ふるまい（どれも、選んだノートに1ステップ）</h4>
+<ol>
+<li><b>割合</b>：10〜300 %（はじめ 100）。<code>round(v × 割合 / 100)</code> を 1〜127 に収めます。</li>
+<li><b>だんだん</b>：はじめ（1〜127）と終わり（1〜127）。選んだノートのうち、いちばん早い始まりを「はじめ」、いちばん遅い始まりを「終わり」として、始まりの位置で直線に割ります。同じ始まりのノートは同じ値。全部が同じ始まりなら「はじめ」の値。</li>
+<li><b>ばらつき</b>：±1〜32（はじめ 8）。ノートごとに −n〜+n の整数を足して 1〜127 に収めます。乱数の種は画面が押すたびに作って意図に入れます。Rust は（種、ノートの番号）から決まる計算をします（モデルに乱数源はありません。<code>splitmix</code> の小さな関数をモデルに足します）。同じ意図は同じ結果になります。</li>
+<li><b>次の音までのばす</b>：選んだノートの終わりを、それより後に始まる「選んだノートのうち、いちばん近い始まり」までのばします（短くもなります）。同じ始まりのノート（和音）は同じ終わり。いちばん後ろのノートは変えません。長さは1ティック以上。</li>
+<li>変化が1つもなければステップを作りません（今の <code>EditError::Unchanged</code>）。</li>
+</ol>
+<h4>画面と文言</h4>
+<ul><li>インスペクタの「ベロシティをまとめて変える」の節に行を足します：「割合」と数字と「かける」、「だんだん」と数字2つと「かける」、「ばらつき」と数字と「かける」。「長さをそろえる」の節に行「次の音までのばす」と「のばす」。今ある <code>bulkRow</code> の形（数字の欄、Enter、Esc、↑↓、Shift で10倍）に合わせます。</li>
+<li>ステップ名：「ベロシティを割合で変える」「ベロシティをだんだん変える」「ベロシティをばらつかせる」「次の音までのばす」。</li></ul>
+<h4>約束と作り</h4>
+<ul><li>約束：<code>ScaleVelocity{take, notes, percent: u16}</code>、<code>RampVelocity{take, notes, from: u8, to: u8}</code>、<code>RandomVelocity{take, notes, amount: u8, seed: u32}</code>、<code>Legato{take, notes}</code>。</li>
+<li>モデル <code>notes.rs</code>：<code>change_each</code> はノートの番号を渡さないので、番号つきの形を足します。新しいテイクを同じ場所に置くのは今の <code>put_notes</code> の道。コア <code>play.rs</code>（<code>match_velocity</code> の隣）。画面 <code>NoteInspector.svelte</code>。<code>fake.ts</code> は <code>matchVelocity</code> と同じく知らせだけ。</li></ul>
+<h4>テスト</h4>
+<ul><li>4つの計算の表、端（1 と 127）、和音、1ステップで戻ること、選択が残ること。</li></ul>
+</section>
+
+<section id="P4"><h3>P4 ドラムのパターン集</h3>
+<figure><figcaption>モックアップ（棚。ドラッグではなく、選んで置く）</figcaption><div class="mk" style="max-width:340px"><div class="r"><span class="w">棚</span><span class="b">音源</span><span class="b">エフェクト</span><span class="b on">パターン</span></div><div class="r"><span class="d">▾ 基本</span></div><div class="r"><span>▶</span><span>8 ビート</span><span class="sp"></span><span class="d">1 小節</span></div><div class="r" style="background:#282828"><span class="a">■</span><span class="w">16 ビート</span><span class="sp"></span><span class="d">1 小節</span></div><div class="r"><span>▶</span><span>4 つ打ち</span><span class="sp"></span><span class="d">1 小節</span></div><div class="r"><span class="d">▾ フィルイン</span></div><div class="r"><span>▶</span><span>タムまわし</span><span class="sp"></span><span class="d">1 小節</span></div><div class="r"><span class="d">3 スタジオキット ・ 9 小節めに置きます</span><span class="sp"></span><span class="b w">ここに置く Enter</span></div></div></figure>
+<h4>ふるまい</h4>
+<ol>
+<li>棚の切り替え（音源／エフェクト）に「パターン」を足します。棚を「新しいトラック」の形でひらいたときだけ出ます。</li>
+<li>行を選んで ▶ を押すと、いまの曲のテンポで1回鳴ります（試聴の席で。選んでいるトラックがドラムならそのキット、ちがえばスタジオキット）。</li>
+<li>「ここに置く」（Enter）：選んでいるトラックがドラムなら、そのトラックの「再生線のある小節の頭」に、パターンの長さのクリップを作ってノートを書きます。選んでいるトラックがドラムでなければ、スタジオキットのトラックを新しく作ってそこへ置きます（トラックを足すのと置くのを合わせて1ステップ）。棚はひらいたままで、再生線はパターンの終わりへ進みます（続けて Enter で並べられます）。</li>
+<li>置く所がほかのクリップに重なるときは置かず、今ある「重なる」の知らせを出します。置く所の拍子が 4/4 でないときも置かず、「4/4 のところにだけ置けます」。トラックが 64 本のときの新規は今ある上限の知らせ。</li>
+<li>パターンはノートのデータです（音の素材は足しません）。12 個：<b>基本</b> ＝ 8 ビート、8 ビート（ハイハット開き）、16 ビート、4 つ打ち、シャッフル、ハーフタイム、ライドで 8 ビート、バラード。<b>フィルイン</b> ＝ スネアの連打、タムまわし、クラッシュで止める、小さなフィル。どれも1小節、16 分のマス（1 マス 480 ティック）かシャッフルの3連。ベロシティには強弱をつけます（頭を強く、裏を弱く）。同時に鳴らすのは人が叩ける数（手2つと足2つ）まで。</li>
+</ol>
+<h4>約束と作り</h4>
+<ul><li>データ：<code>tools/patterns/drums.json</code> を作り、<code>include_str!</code> で埋め込みます（<code>tools/sounds/catalog.json</code> と同じやり方）。1つのパターンは、id、組、長さ、ノートの並び（<code>DrumPiece</code> の名前、位置、長さ、ベロシティ）。ノート番号は <code>crates/meloet-model/src/drums.rs</code> の <code>DrumPiece</code> から引きます（3つの内蔵キットと SF2 のキットで同じ番号）。</li>
+<li>約束：<code>ShelfView</code> にパターンの組と id の一覧、<code>ShelfSelectPattern{id}</code>、<code>PlaySample</code>（今の ▶ をパターンにも使う）、<code>PlacePattern{id}</code>、<code>StepName::PlacePattern</code>「パターンを置く」。名前は <code>ja.ts</code> の <code>pattern.&lt;id&gt;</code>。</li>
+<li>コア <code>play/shelf.rs</code>（切り替えを足す）、<code>service.rs</code> の試聴（<code>PhrasePlayer</code> にパターンのノートを渡す。今は 120 固定の2小節なので、テンポを渡せるようにする）、置くのは <code>notes::write_notes(doc, WriteAt::Track(id), notes)</code> か <code>create_clip</code>。画面 <code>Shelf.svelte</code>、<code>shelfList.ts</code>。</li></ul>
+<h4>テスト</h4>
+<ul><li>どのパターンも <code>DrumPiece</code> の行だけを使い、長さに収まり、同時の数の決まりを守ること（データを読むテスト）。置くのが1ステップで戻ること。重なりと拍子の断り。</li></ul>
+</section>
+
+<section id="P6"><h3>P6 コード進行の型から並べる</h3>
+<figure><figcaption>モックアップ（提案のときの図。文と食い違うときは文が正）</figcaption><div class="mk"><div class="r"><span class="d">C メジャーのコード</span><span class="b">C</span><span class="b">Dm</span><span class="b">Em</span><span class="b">F</span><span class="b">G</span><span class="b">Am</span><span class="b">Bdim</span><span class="sp"></span><span class="b on">進行から並べる ▾</span></div><div style="margin-left:auto;width:300px;border:1px solid #3C3C3C;background:#212121"><div class="r"><span>王道</span><span class="sp"></span><span class="d m">F – G – Em – Am</span></div><div class="r" style="background:#282828"><span class="w">カノン</span><span class="sp"></span><span class="d m">C – G – Am – Em – F – C – F – G</span></div><div class="r"><span>小室</span><span class="sp"></span><span class="d m">Am – F – G – C</span></div><div class="r"><span>循環</span><span class="sp"></span><span class="d m">C – Am – F – G</span></div><div class="r"><span class="d">▶ で聞く ・ Enter で 1 小節に 1 つずつ並べる</span></div></div></div></figure>
+<h4>ふるまい</h4>
+<ol>
+<li>コード表の行（スケールを固定しているときに出る、今の行）の右端に「進行から並べる ▾」。</li>
+<li>一覧の行は、名前と、いまのスケールでのコード名。型は度数で持ちます（メジャーの度数）：王道 <code>IV V iii vi</code>、カノン <code>I V vi iii IV I IV V</code>、小室 <code>vi IV V I</code>、循環 <code>I vi IV V</code>、ポップ <code>I V vi IV</code>、切ない <code>vi V IV V</code>。マイナー系のスケールでは平行調（根音から半音3つ上のメジャー）の度数で読みます。5音と6音のスケールは P1 の「親のスケール」で読みます。</li>
+<li>行の ▶ で試聴：コードを順に、いまのテンポで1つ2拍ずつ鳴らします（今ある <code>Audition</code> を画面のタイマーで送る。窓を閉じたら止める）。</li>
+<li>行を選んで Enter（または「並べる」）：再生線がクリップの中にあればその小節から、なければクリップの最初の小節から、1小節に1コードずつ置きます。コードは基本形、根音は C3〜B3 に来る高さ、長さは小節いっぱい、ベロシティは固定がオンならその値、ちがえば 100。</li>
+<li>クリップの終わりを越える分は、貼りつけと同じ決まりでクリップをのばします（ラウンド10 の「貼りつけはクリップをのばす」。<code>PasteNotes</code> の道を読んで同じにする）。となりのクリップにぶつかる所から先は置きません。</li>
+<li>全部で1ステップ。すでにあるノートは消しません（コードスタンプと同じ）。</li>
+</ol>
+<h4>約束と作り</h4>
+<ul><li>約束：<code>AddNotesAt{take: Option&lt;u32&gt;, notes: Vec&lt;{start, length, key, velocity}&gt;}</code>（今の <code>AddNotes</code> は始まりが1つなので、まとめて置く形を足す。モデルの <code>notes::write_notes</code> は、始まりの違うノートを1ステップで受けます）。</li>
+<li>画面：<code>ChordRow.svelte</code>、<code>chords.ts</code>（型の表と度数からの計算）、小節の頭は <code>ui/src/time/bars.ts</code> の <code>barAt</code> と <code>tempoMap.ts</code> の <code>tickOfBar</code>（途中の拍子の変更も小節ごとに見る）。文言は型の名前6つと「進行から並べる」「並べる」。</li></ul>
+<h4>テスト</h4>
+<ul><li>C メジャーと A マイナーで各型のコード名、拍子の変わる曲での小節の頭、1ステップで戻ること、クリップがのびること。</li></ul>
+</section>
+
+<h2 id="s5">5. 楽しい（目と耳）</h2>
+
+<section id="E1"><h3>E1 鳴っている音が光る</h3>
+<figure><figcaption>モックアップ（提案のときの図。文と食い違うときは文が正）</figcaption><div class="mk"><div class="r"><span class="w">ピアノロール</span><span class="d">1 ピアノ ・ 再生中</span><span class="sp"></span><span class="b on">鳴っている音を光らせる</span></div><div class="pr" style="height:120px"><i style="left:0;top:96px;width:58px"></i><i style="left:0;top:48px;width:58px"></i><i style="left:60px;top:84px;width:58px"></i><i class="h" style="left:120px;top:24px;width:118px"></i><i class="h" style="left:120px;top:60px;width:118px"></i><i class="h" style="left:150px;top:96px;width:44px"></i><i style="left:240px;top:36px;width:118px"></i><i style="left:300px;top:72px;width:58px"></i><s style="left:170px"></s></div><div class="r"><span class="d">再生線が通っているノートと、弾いている鍵が光ります。アレンジのクリップの中のノートも同じ</span></div></div></figure>
+<h4>ふるまい</h4>
+<ol>
+<li>再生中（録音中も）、ピアノロールで再生線が通っているノートを、そのトラックの色（<code>color.track.N</code>）で塗ります。通り過ぎたら元の色に戻ります。鍵盤の列が光るのは今のまま。</li>
+<li>トラックがミュート、またはほかのトラックのソロで鳴っていないときは光りません。</li>
+<li>メニュー「表示」に「鳴っている音を光らせる」（チェック。はじめはオン）。PC の設定に残します。</li>
+<li>アレンジのクリップの中の小さなノートは、第2段です。ピアノロールができて測ったあと、同じ決まりを守れるときだけ作ります。守れなければ作らず、報告に書きます。</li>
+</ol>
+<h4>作り（描き直しの決まりが中心）</h4>
+<ul><li>ノートの面（<code>pianoRoll</code> 領域）は「変わったときだけ描く」大きな面です。<b>ここを毎フレーム描き直してはいけません</b>。光るノートは、今ある小さな 60 Hz の領域 <code>pianoRollLive</code> に新しい枠（スロット）を足して描きます。新しい WebGL の領域は作りません。</li>
+<li>描き直すのは「鳴っているノートの組が変わったとき」だけです（鍵盤の列の <code>setSounding</code> と同じ考え）。<code>pianoroll/sounding.ts</code> の <code>soundingKeys</code> の隣に、ノートの番号を返す関数を足します。</li>
+<li>枠の箱は、光っているノートを囲む四角にします（箱は <code>transform</code> で動かす。レイアウトを毎フレーム起こさない）。</li>
+<li>約束：設定の入切だけ（テーマの入切と同じ道。<code>SetTheme</code> を見本に）。</li></ul>
+<h4>受け入れ</h4>
+<ul><li><code>tools/measure/webkit-damage.sh</code>：再生中、ノートの面ぜんたいの描き直しが毎フレーム起きていないこと。1フレームの四角は10個以下、囲む四角の 25 % 未満。</li>
+<li><code>tools/measure/app-watch.sh</code>：場面 <code>pianoRoll10kPlay</code> にあたる曲で、オンとオフの busyMs の p95 の差が 1 ms 以内。<code>latency.sh --pattern mixed --piano-roll</code> でキー → 画面が悪くなっていないこと。</li>
+<li>守れないときは、光らせる数を絞る（同時に32個まで）などで合わせます。それでも守れなければ、はじめをオフにして報告します。</li></ul>
+</section>
+
+<section id="E2"><h3>E2 アルペジオとノートリピート</h3>
+<figure><figcaption>モックアップ（提案のときの図。文と食い違うときは文が正）</figcaption><div class="mk" style="max-width:340px"><div class="r"><span class="w">▾ アルペジオ</span><span class="sp"></span><span class="b on">オン</span></div><div class="r"><span class="d">形</span><span class="sp"></span><span class="b on">上へ</span><span class="b">下へ</span><span class="b">上下</span><span class="b">ばらばら</span></div><div class="r"><span class="d">速さ</span><span class="sp"></span><span class="b">1/8</span><span class="b on">1/16</span><span class="b">三連符</span></div><div class="r"><span class="d">オクターブ</span><span class="sp"></span><span class="b on">1</span><span class="b">2</span><span class="b">3</span></div><div class="r"><span class="d">指を離しても続ける</span><span class="sp"></span><span class="b">オフ</span></div><div class="r"><span class="d">和音を押さえるだけで、テンポに合ったフレーズになります</span></div></div></figure>
+<h4>ふるまい</h4>
+<ol>
+<li>トラックごとの設定です。入力の帯に「アルペジオ」ボタン（弾く先のトラックのオン／オフ）と ▾（設定の小さな窓）。ミキサーのストリップの「音源」の上の席（spec 3 の L41 で取ってある場所）に、オンのとき「アルペジオ」と出し、押すと入切できます。</li>
+<li>設定：<b>形</b> 上へ／下へ／上下／ばらばら。<b>速さ</b> 1/4、1/8、1/16、1/32 と「三連符」の入切。<b>オクターブ</b> 1〜3。<b>指を離しても続ける</b> オン／オフ。音の長さは1つぶんの 80 %（固定）。</li>
+<li>押さえている鍵（16 個まで）を、形の順に、速さの間隔で1つずつ鳴らします。ベロシティは、その鍵を押した強さ。鍵が1つなら連打（ノートリピート）になります。</li>
+<li>再生中は曲のグリッドに合わせます（小節の頭から数えた間隔の位置で鳴る。押した瞬間ではなく、次の位置から）。止まっているときは、最初の鍵を押した時を起点に、いまのテンポで進みます。</li>
+<li><b>かかるのは鍵盤から来た音だけ</b>です（MIDI 鍵盤と R2 のキー）。曲の中のノート、試聴、コード表の試聴にはかかりません。</li>
+<li><b>録音</b>：オンのトラックでは、押した鍵ではなく、鳴ったノートを録ります。位置はグリッドの位置そのものです。再生するときはそのノートが音源へ直接行くので、二重にかかりません。CC とペダルはそのまま通り、そのまま録ります。</li>
+<li>「続ける」で残っている音は、次のどれかで止めます：アルペジオか「続ける」を切る、弾く先を変える、CC 123 / 121、全部離したあとに新しい鍵を押す（新しい和音に入れ替わる）。</li>
+<li>設定は曲に入り、変えるたびに1ステップ（「アルペジオを変える」）。</li>
+</ol>
+<h4>約束と作り</h4>
+<ul><li>モデル：<code>Track</code> に <code>arp: Arp{on, shape, rate, triplet, octaves, hold}</code>（<code>#[serde(default)]</code>）。曲ファイルに欄。約束：<code>SetArp{track, arp}</code>、トラックの見え方に <code>arp</code>、<code>StepName::SetArp</code>。</li>
+<li>エンジン：<code>read_midi</code> で、アルペジオがオンのトラック宛ての鍵盤のノートを、音源へ渡さずにアルペジオの状態（固定長の配列。割り当てなし）へ入れます。<code>render</code> はクリックやノートの位置でブロックを切っています（<code>frames_to_next_point</code>）。そこにアルペジオの次の位置を足し、位置ぴったりのフレームで音源の <code>event</code> を呼びます。テンポは <code>Transport</code> から取ります（傾きのあるテンポでも）。</li>
+<li>録音：作ったノートを、グリッドの位置をつけて <code>Recorded</code> の輪へ積みます（押した鍵は積まない）。R1 の「さっきの演奏」にも、鳴ったノートが入ります。</li>
+<li><code>EngineOp</code> に設定を渡す種類を足し、<code>ExportEngine::tell</code> と <code>Audio::op</code> の網羅の <code>match</code> を直します。書き出しには鍵盤の出来事がないので、何も鳴りません。</li>
+<li>画面：<code>InputMeter.svelte</code>、<code>mixer/Strip.svelte</code>、文言（形4つ、設定の名前、「アルペジオ」）。</li></ul>
+<h4>テストと受け入れ</h4>
+<ul><li>エンジン：再生中、作った音の出だしがグリッドのフレームと 0 フレームの差で合うこと（クリックのテストと同じ見方）。ループの継ぎ目、テンポの傾き、三連符。割り当てなし（<code>every_transport_path_stays_off_the_allocator</code> と <code>rt-check</code>）。</li>
+<li>録ったテイクのノートがグリッドの位置にあること。再生で二重にかからないこと。弾く先を変えたとき、鳴りっぱなしの音が残らないこと。</li>
+<li>オフのとき、キー → 音の遅れが変わらないこと（<code>latency.sh</code>）。</li></ul>
+<h4>わな</h4>
+<ul><li>「耳に届いていた位置」の決まりは、押した鍵のためのものです。作ったノートは、鳴らす位置（グリッド）がそのまま曲の位置です。出口の遅れぶん後に聞こえますが、再生でも同じだけ遅れて聞こえるので、合っています。</li>
+<li>「ばらばら」の乱数は、鳴ったものをノートとして録るので、再現の決まり（architecture 22-25）にはかかりません。</li></ul>
+</section>
+
+<section id="E3"><h3>E3 音のつまみ（内蔵の音）</h3>
+<h4>ふるまい</h4>
+<ol>
+<li>内蔵の音（サンプルの音と計算で作る音）のトラックを選ぶと、右のパラメータのパネルに4つの行が出ます：「明るさ」「立ち上がり」「のび」「ゆれ」。今は「この音にはパラメータがありません」の所です。形は内蔵エフェクトの行（<code>ParamRow</code>）と同じにします（図は作りません）。</li>
+<li>値は 0〜100 %。はじめは 明るさ 50、立ち上がり 50、のび 50、ゆれ 0。<b>はじめの値のとき、音は今と1サンプルも変わらないこと</b>。</li>
+<li><b>明るさ</b>：音源の出口にかける傾きのフィルター。50 より下はローパスが閉じていき（0 で 400 Hz）、上はハイシェルフで持ち上げます（100 で 4 kHz から上を +9 dB）。50 ちょうどは素通し。</li>
+<li><b>立ち上がり</b>：50 より下は立ち上がりの時間に <code>2×値</code> をかけ（0 でいちばん速い）、上は時間を足します（100 で +400 ms）。ノートオンのときの値で決まります。</li>
+<li><b>のび</b>：離したあとの時間に <code>4^(2×値−1)</code> をかけます（0 で 1/4、100 で 4 倍）。ノートオフのときの値で決まります。</li>
+<li><b>ゆれ</b>：音の高さを 5.5 Hz でゆらします。深さは 0〜50 セント。</li>
+<li>ドラムのキット（スタジオ、エレクトロ、ブラシ）では「明るさ」と「のび」だけ使え、ほかの2行は無効で出します。サイン波は4つとも使えます。SF2 とプラグインの音には出しません（プラグインは今の一覧のまま）。</li>
+<li>ミキサーのつまみと同じ動かし方です：ドラッグ中は音だけ変わり（<code>commit: false</code>、1フレームに1回まで）、離したとき1ステップ（「音のつまみを変える」）、Esc で <code>CancelMixPreview</code>。数字はダブルクリックで打てます。オートメーションの印が使え、レーンで動かせます。</li>
+<li>音源を入れ替えたら、4つともはじめの値に戻します。</li>
+</ol>
+<h4>約束と作り</h4>
+<ul><li>モデル：<code>Track</code> に <code>knobs: SoundKnobs</code>（4つの値。<code>#[serde(default)]</code>）。曲ファイルに欄。オートメーションの的は今ある <code>AutoTarget::Instrument{param}</code> を、内蔵の音でも param 0〜3 で使えるようにします（<code>has_target</code> と <code>check_lanes</code> を直す）。</li>
+<li>約束：<code>SetSoundKnob{track, knob, value, commit}</code>、選んだ音の見え方（<code>SelectedParams::Sound</code>）に4つの値と使える／使えない、<code>StepName::SetSoundKnob</code>。</li>
+<li>エンジンと音：<code>Instrument</code> の <code>set_param_at(frame, id, v)</code> は内蔵の音では今は何もしません。ここを作ります。値は 20 ms でなめらかに。
+ <ul><li>明るさは、内蔵の音を包む共通の部品（出口のフィルター。トラックごとの状態）にします。サンプルの束は複数のトラックで共有（<code>Arc</code>）なので、状態を束に置いてはいけません。</li>
+ <li>立ち上がりとのびは、サンプルの声（<code>sampler/player.rs</code> の <code>Voice</code>。今は instrument.json の値で固定）と、計算で作る音（<code>synth/poly.rs</code> の <code>Patch</code> の ADSR）に、かけ算と足し算で入れます。</li>
+ <li>ゆれは、声ごとの LFO。<b>位相は声が始まるときに 0 から</b>。走りっぱなしの LFO は使いません。</li></ul></li>
+<li>画面：<code>params/</code> の一覧（内蔵の音のとき4行を出す）、<code>AutoMark.svelte</code>、文言。</li></ul>
+<h4>テストと受け入れ</h4>
+<ul><li>はじめの値で、今の出力と1サンプルも変わらないこと（今ある音のテストがそのまま通る）。</li>
+<li>はじめでない値でも、書き出しと再生が1サンプルまで同じこと（<code>what_is_exported_is_what_plays_sample_for_sample</code> と <code>crates/meloet-sound/tests/song_places.rs</code> に、つまみを動かした場合を足す）。曲のどこから再生しても同じ音になること。</li>
+<li>割り当てなし（<code>sampler_rt.rs</code>、<code>synth_voices.rs</code>）。NaN とデノーマル。速さ（<code>--ignored</code> の速さのテスト）が、はじめの値で悪くなっていないこと。</li></ul>
+</section>
+
+<section id="E7"><h3>E7 音に合わせて動く絵</h3>
+<figure><figcaption>モックアップ（提案のときの図。文と食い違うときは文が正）</figcaption><div class="mk"><div class="r"><span class="b">▶</span><span class="b">■</span><span class="d">小節</span><span class="m w">9. 1. 000</span><span class="sp"></span><span class="d">マスター</span><span style="display:inline-flex;align-items:flex-end;gap:2px;height:20px;background:#000;padding:1px 2px"><b style="width:5px;height:30%;background:#69E4E4"></b><b style="width:5px;height:70%;background:#69E4E4"></b><b style="width:5px;height:95%;background:#5ABDF2"></b><b style="width:5px;height:60%;background:#5ABDF2"></b><b style="width:5px;height:80%;background:#6F8BED"></b><b style="width:5px;height:45%;background:#6F8BED"></b><b style="width:5px;height:55%;background:#9561C7"></b><b style="width:5px;height:35%;background:#9561C7"></b><b style="width:5px;height:20%;background:#FFD9F1"></b><b style="width:5px;height:10%;background:#FFD9F1"></b></span><span class="m">−6.2 dB</span></div></div></figure>
+<h4>ふるまい</h4>
+<ol>
+<li>上の帯の「マスター」の左に、低い音から高い音までの量を 24 本の棒で出します。音が出ているあいだ動きます（止まっていて鍵盤を弾いているときも）。</li>
+<li>棒は左から <code>color.track.1</code>〜<code>color.track.5</code> を5本ずつ（最後は4本）。地は <code>color.meter.ground</code>。幅は 24 本 × 4 px ＝ 96 px、高さはマスターのメーターの箱に合わせます。</li>
+<li>幅が足りないとき（上の帯の中身があふれるとき）は出しません。帯を折り返したり、ほかの物を縮めたりしません。1280 × 800 で 100 % のとき出ること、150 % のとき帯が崩れないことを確かめます。</li>
+<li>メニュー「表示」に「音の動きを見せる」（チェック。はじめはオン）。PC の設定に残します。</li>
+</ol>
+<h4>作り</h4>
+<ul><li><b>分析の道</b>（M2 が先に作る土台を使います）：音のスレッドから分析のスレッドへ、マスターの出口の音（マスターのインサートのあと。テストトーン、遅れの測定音、クリックを足す前）を、割り当てのない輪で渡します。輪がいっぱいなら捨てます。分析のスレッド（ふつうの優先度）が 2048 点の FFT（Hann の窓、半分ずつ重ねる）をかけ、40 Hz〜16 kHz を対数で 24 に分け、−72〜0 dB を 0〜255 にして、落ちる速さ（1 秒に 30 dB）をつけます。</li>
+<li>FFT は、今ある自前のもの（<code>crates/meloet-core/src/export/analysis/fft.rs</code>。作るときだけ割り当てる）を使えるならそれを。計算のたびに割り当てるなら、<code>realfft</code>（MIT）の <code>process_with_scratch</code> を使います。分析のスレッドは音のスレッドではありませんが、毎回の割り当ては避けます。</li>
+<li>テレメトリ（版 5）：<code>spectrum: [u8; 24]</code>。</li>
+<li>画面：新しい領域は作りません。上の帯ぜんたいが <code>masterMeter</code> 領域なので、そこに新しい種類の枠（<code>{kind: "spectrum"}</code>）を足します（<code>ui/src/gl/slot.ts</code>、<code>engine.ts</code>。<code>Transport.svelte</code> の <code>.master</code> の箱の中）。文字は毎フレーム変えません。<code>ui/tests/gl.surface.test.ts</code> を直します。</li></ul>
+<h4>受け入れ</h4>
+<ul><li><code>webkit-damage.sh</code> と <code>webkit-layout.sh</code>：上の帯の描き直しが、今と同じ1つの四角に収まっていること。レイアウトが毎フレーム起きていないこと。</li>
+<li><code>latency.sh --state playing</code>：キー → 画面とキー → 音が悪くなっていないこと。音のスレッドの速さのテスト。輪へ書くのに割り当てと待ちがないこと。</li>
+<li>書き出しのエンジンでは分析を動かさないこと。</li></ul>
+</section>
+
+<section id="E9"><h3>E9 「できた」の画面</h3>
+<figure><figcaption>モックアップ</figcaption><div class="mk" style="max-width:420px"><div class="r"><span class="w">書き出しました</span><span class="sp"></span><span class="d">閉じる Esc</span></div><div style="padding:8px"><div class="w" style="font-size:16px;line-height:20px">はじめての曲.wav</div><div class="d">3 分 12 秒 ・ 48000 Hz ・ 24 ビット</div><div style="height:36px;margin-top:8px;background:#000;display:flex;align-items:center;gap:1px;padding:0 2px"><b style="width:6px;height:20%;background:#4CD964"></b><b style="width:6px;height:45%;background:#4CD964"></b><b style="width:6px;height:70%;background:#4CD964"></b><b style="width:6px;height:50%;background:#4CD964"></b><b style="width:6px;height:90%;background:#4CD964"></b><b style="width:6px;height:95%;background:#4CD964"></b><b style="width:6px;height:60%;background:#4CD964"></b><b style="width:6px;height:88%;background:#4CD964"></b><b style="width:6px;height:40%;background:#4CD964"></b><b style="width:6px;height:15%;background:#4CD964"></b></div><div class="d" style="margin-top:8px">大きさ −14.0 LUFS ・ トゥルーピーク −1.0 dBTP</div><div class="d">~/ミュージック/はじめての曲/</div></div><div class="r"><span class="sp"></span><span class="b">PC のプレーヤーで聞く</span><span class="b">フォルダをひらく</span><span class="b w">閉じる Enter</span></div></div></figure>
+<h4>ふるまい</h4>
+<ol>
+<li>書き出しが終わったら（<code>ExportRunView::Done</code>）、ダイアログ「書き出しました」を出します。中身：ファイルの名前、長さ（分と秒）、サンプルレートとビット（MP3 ならビットレート）、波の形（200 本）、大きさ（F1 の値。書き出したあとの値）、場所（今ある <code>place</code> の表示）。</li>
+<li>ボタン：「PC のプレーヤーで聞く」（そのファイルを PC の既定のアプリでひらく）、「フォルダをひらく」（今ある <code>ShowExported</code>）、「閉じる」。Esc でも閉じます。</li>
+<li>トラックごとの書き出しでは、名前の所を「5 つのファイル」とし、波の形と大きさは出しません。「PC のプレーヤーで聞く」は無効。</li>
+<li>やめたとき、失敗したとき、AI 連携が始めた書き出しでは出しません。ステータスラインの今の知らせは残します。</li>
+</ol>
+<h4>約束と作り</h4>
+<ul><li>約束：<code>ExportRunView::Done</code> に <code>wave: Vec&lt;u8&gt;</code>（200 個。変換のとき、区切りごとの絶対値の最大を 0〜255 に）、<code>lufs: Option&lt;f32&gt;</code>、<code>true_peak_db: Option&lt;f32&gt;</code>。<code>Command::PlayExported</code>。</li>
+<li>コア：<code>export/job.rs</code> の <code>convert()</code> で集める。ファイルをひらくのは <code>crates/meloet-app/src/pcwindow.rs</code> の <code>show_file</code> の隣に、ファイルを既定のアプリでひらく関数（<code>xdg-open</code>）を足し、<code>ShellRequest</code> に種類を足します。</li>
+<li>画面：「meloet について」のダイアログの作り（状態のモジュール、<code>movableDialog</code>、Esc の順）を写します。波の形は小さいので HTML か SVG で描きます（Canvas 2D は使いません）。色は <code>color.meter.ok</code>、地は <code>color.meter.ground</code>。</li></ul>
+<h4>テスト</h4>
+<ul><li>画面：4つの場合（1つのファイル、トラックごと、やめた、失敗）。コア：波の数と値の範囲。</li></ul>
+</section>
+
+<h2 id="s6">6. 編曲とアレンジ</h2>
+
+<section id="A1"><h3>A1 クリップをくり返す</h3>
+<figure><figcaption>モックアップ（持ち手は名前の帯の右端。その下は今までどおり長さの変更）</figcaption><div class="mk"><div class="r"><span class="d">3 スタジオキット</span></div><div style="padding:4px 8px;white-space:nowrap"><span class="clip" style="width:120px">ドラム <span class="a" style="float:right">⟳</span></span><span class="clip rep" style="width:120px"></span><span class="clip rep" style="width:120px"></span><span class="clip rep" style="width:120px;border-right:2px solid #FFB000"></span></div><div class="r"><span class="d">■</span><span>3 回くり返します</span></div></div></figure>
+<h4>ふるまい</h4>
+<ol>
+<li><b>持ち手</b>：クリップの角に空きはありません（右端は長さの変更、音のクリップは名前の帯のすぐ下にフェードの持ち手）。空いているのは「名前の帯の高さの右端」だけなので、そこを持ち手にします：幅 12 px（クリップの幅の 1/3 まで）、高さは名前の帯。その下の右端は今までどおり長さの変更です。マウスが乗ると印（⟳）が出ます。クリップが狭くて名前の帯が出ないときは持ち手もなく、メニューだけです。</li>
+<li>持ち手を右へ引くと、クリップの長さごとに、写しの枠が増えます（まるごとの写しだけ。半端は作りません）。となりのクリップの手前と曲の上限で止まります。離すと意図が1つ。Esc で止まります。</li>
+<li>メニュー：クリップの右クリックと「編集」に「くり返す…」（<b>Mod R</b>）。その場に数字の箱（はじめ 3、1〜99）。Enter で決まり、Esc でやめます。</li>
+<li>写しは、元の終わりにぴったり続けて置きます。長さが小節の倍でなくても、そのまま続けます。</li>
+<li>いくつも選んでいるときは、選んだクリップぜんたいを1かたまり（いちばん早い始まりから、いちばん遅い終わりまで）として、その長さごとに写します。今の複製（Mod D）と同じ考えです。</li>
+<li>できるのはふつうのクリップです（新しい ID。テイクは共有していて、編集すると新しいテイクになるので、あとで別々に変えられます）。オートメーションは写しません。キーのクリップでも音のクリップでも使えます。</li>
+<li>ほかのクリップに重なる回数を頼まれたら、何もせず、今ある「重なる」の知らせを出します（全部か、なしか）。全部で1ステップ（「クリップをくり返す」）。</li>
+</ol>
+<h4>約束と作り</h4>
+<ul><li>約束：<code>RepeatClips{clips, count}</code>、<code>StepName::RepeatClips</code>。モデル <code>arrange.rs</code>：<code>duplicate_clips</code> をもとに、回数ぶんを1つの <code>Edit</code> で。コア <code>play.rs</code>（<code>duplicate_clips</code> の隣、<code>apply_placed</code>）。</li>
+<li>画面：<code>arrangeDrag.ts</code> の <code>clipHit</code> に持ち手の当たりを足す（音のクリップでは <code>AudioClipHandles.svelte</code> が先に受けるので、当たりの順に注意）、<code>Arrange.svelte</code>（ドラッグ中の枠は、今の動かす絵と同じ小さな枠 <code>recordingClip</code> に）、<code>clipEdits.ts</code>、<code>menus.ts</code>、<code>keys.ts</code>。</li></ul>
+<h4>テスト</h4>
+<ul><li>モデル：1つと複数、重なりで何もしない、上限。画面：持ち手の当たり（長さの変更とフェードを壊さない）、Esc、離して1つの意図。<code>tools/measure/ui-script.sh</code> のドラッグで、フレームが悪くなっていないこと。</li></ul>
+</section>
+
+<section id="A2"><h3>A2 区間（セクション）ごと動かす</h3>
+<figure><figcaption>モックアップ（提案のときの図。文と食い違うときは文が正）</figcaption><div class="mk"><div class="r"><span class="d">マーカー</span><span style="border-left:2px solid #F2F2F2;padding-left:4px;width:90px">イントロ</span><span style="border-left:2px solid #FFB000;padding-left:4px;width:150px;background:#282828" class="a">A メロ</span><span style="border-left:2px solid #F2F2F2;padding-left:4px;width:120px">サビ</span></div><div style="margin-left:110px;width:230px;border:1px solid #3C3C3C;background:#212121"><div class="r"><span>この区間をループに</span></div><div class="r"><span class="w">この区間をすぐ後ろに複製</span></div><div class="r"><span>この区間を消して詰める</span></div><div class="r"><span>この前に空きを入れる…</span></div><div class="r"><span>名前を変える</span><span class="sp"></span><span class="d">F2</span></div></div></div></figure>
+<h4>ふるまい</h4>
+<ol>
+<li><b>区間</b>は、あるマーカーから次のマーカーの手前まで（最後のマーカーは、曲の終わりを小節に切り上げた所まで。今の <code>loop_from_marker</code> と同じ決め方）。</li>
+<li>マーカーの右クリックのメニューに3行足します：「この区間をすぐ後ろに複製」「この区間を消して詰める」「この前に空きを入れる…」。</li>
+<li><b>区間の両端が小節の頭のときだけ使えます</b>。ちがうときは無効で、ツールチップ「区間の両端が小節の頭のときに使えます」。拍子の変更は小節の番号で持っているので、小節の単位でしか動かせないからです。</li>
+<li><b>空きを入れる</b>（位置 at、n 小節。箱のはじめは 4、1〜64）：at より後ろを、at の拍子での n 小節ぶん後ろへ動かします。
+ <ul><li>クリップ：at をまたぐものは at で切り、後ろの半分を動かす。</li>
+ <li>オートメーションの点（全トラックと、M5 のマスター）：at 以後を動かす。at の直前の値の点を at に足し、空きのあいだは平らにする。</li>
+ <li>マーカー：at 以後（at ちょうども）を動かす。</li>
+ <li>テンポの点：at 以後を動かす。傾きの途中に at があるときは、at に「そのときのテンポ」の点を足し、空きのあいだは平らにし、空きの終わりから元の傾きを続ける。</li>
+ <li>拍子の変更：at の小節より後ろの番号に n を足す。</li>
+ <li>ループ：at より後ろにあれば両端を、at が中にあれば終わりだけ動かす。</li></ul></li>
+<li><b>消して詰める</b>（from〜to）：両端でクリップを切り、中のクリップ、点、マーカー（区間の頭のマーカーも）、テンポの点、拍子の変更を消し、to より後ろを前へ詰めます。詰めた継ぎ目では、to のときのオートメーションの値、テンポ、拍子が from から続くように、要る点を足します。ループがまるごと中にあれば消します。</li>
+<li><b>複製</b>（from〜to）：to に区間の長さの空きを入れ、区間の中身を写します：クリップ（両端で切ってから。新しい ID、テイクは共有）、オートメーションの点、テンポの点、拍子の変更、マーカー（頭のマーカーも同じ名前で）。写しの頭では、区間の頭と同じテンポと拍子になるよう点を足し、写しの終わりでは、元の「to から先」のテンポと拍子が続くよう点を足します。</li>
+<li>どれも1ステップ（「区間を複製」「区間を消して詰める」「空きを入れる」）。曲の上限（<code>MAX_TICK</code>）を越えるなら断ります。選択は外し、再生線は動かしません。</li>
+</ol>
+<h4>約束と作り</h4>
+<ul><li>「ある位置から後ろを全部ずらす」処理は今どこにもありません。モデルに新しいファイル <code>crates/meloet-model/src/sections.rs</code> を作り、<code>insert_time</code>、<code>remove_time</code>、<code>duplicate_range</code> を、1つの <code>Edit</code> を返す関数として作ります。</li>
+<li>曲の位置を持つもの（全部動かすこと）：<code>Clip.start/end</code>、全トラックの <code>Lane.points[*].tick</code>、<code>Doc.markers[*].tick</code>、<code>tempo_points[*].tick</code>、<code>meter_changes[*].bar</code>（小節の番号）、<code>Doc.loop_range</code>、M5 のマスターのレーン。動かさなくてよいもの：テイクの中のノートと CC（テイクからの位置）、<code>ClipTake.offset</code>、フェード、<code>AudioTake.sync</code>。</li>
+<li>約束：<code>DuplicateSection{marker}</code>、<code>DeleteSection{marker}</code>、<code>InsertSpace{marker, bars}</code>、ステップ名3つ。コア <code>play/timeline.rs</code>。画面 <code>timeline/MarkerRow.svelte</code>（メニュー L107-119 に3行と区切り）。</li></ul>
+<h4>テストと受け入れ</h4>
+<ul><li>性質のテスト：空きを入れてから同じ所を消すと元に戻る（ID を除く）。複製してから写しを消すと元に戻る。操作のあとも <code>Timeline::check()</code> が通る。区間より前の位置の時刻が変わらない。区間より後ろのノートの「前後の間隔の時間」が変わらない。</li>
+<li>傾きのあるテンポの途中、拍子の変わり目、音のクリップ（切っても音が変わらない。<code>audio_app.py same</code>）、テンポについていく音のクリップ（作り直しが走る）、ID の台帳（<code>id_book.rs</code>）。</li></ul>
+<h4>わな</h4>
+<ul><li>オートメーションを変えるとレーンの ID が新しくなります。画面の古い ID の意図は何もしません（それで正しい）。</li>
+<li>クリップを切ると、音をまたぐキーのクリップの左半分は新しいテイクになります（今の <code>split_clips</code> の決まり）。</li></ul>
+</section>
+
+<section id="A3"><h3>A3 トラックの複製</h3>
+<h4>ふるまい</h4>
+<ol>
+<li>トラックの頭の右クリックのメニューに「トラックを複製」（「名前を変える」の下）。キーは割り当てません。</li>
+<li>すぐ下に新しいトラックができます。名前は今の決まり（「ピアノ 2」）。色は元と同じ。写すもの：音源（内蔵、SF2、プラグイン）、音量、パン、インサート（内蔵とプラグイン）、センド、ミュート、クリップ（新しい ID、テイクは共有）、オートメーションのレーン、E2 のアルペジオ、E3 の音のつまみ。歌のトラックも複製できます（入力も同じ）。</li>
+<li>写さないもの：ソロ、録音待機。新しいトラックを選びます。</li>
+<li>プラグインは「いま動いている状態」から始めます（曲が覚えている状態は遅れていることがあるので）。</li>
+<li>64 本のときは今ある上限の知らせ。1ステップ（「トラックを複製」）。取り消すとトラックが消え、プラグインも降ります（今の削除の道）。</li>
+</ol>
+<h4>約束と作り</h4>
+<ul><li>約束：<code>DuplicateTrack{track}</code>、<code>StepName::DuplicateTrack</code>。モデル <code>edit.rs</code>（<code>add_track_of</code> の隣）：インサートに新しい <code>InsertId</code>、レーンに新しい <code>LaneId</code> を振り、レーンの的（<code>AutoTarget::Insert{insert}</code>）と、たたんだレーンの覚え（<code>folded_lanes</code>）を新しい ID に付け替えます。</li>
+<li>コア <code>play/tracks.rs</code>、席（<code>play/seats.rs</code>）、プラグインは <code>PlugState::Of(ticket)</code> → <code>StartState::Of(SlotId)</code>（<code>play/plugs.rs</code>、<code>plugins/hosts.rs</code>。ほかのプラグインの生きた状態から始める道が、すでにあります）。子プロセスは <code>launch::spawn</code> で1つずつ。画面 <code>trackMenu.ts</code>。</li></ul>
+<h4>テスト</h4>
+<ul><li>レーンの的が新しいインサートを指すこと、元を変えても写しが変わらないこと（とその逆）、取り消し、上限、ID の台帳。プラグインつきは <code>--ignored</code> の実物のテスト（Surge XT）で、写しが同じ音で鳴ること。</li></ul>
+</section>
+
+<section id="A5"><h3>A5 最近ひらいた曲</h3>
+<h4>ふるまい</h4>
+<ol>
+<li>メニュー「ファイル」の「ひらく…」の下に「最近ひらいた曲 ▸」。中は新しい順に 10 個まで：曲の名前と、うすい字で場所（<code>~/…</code>）。区切りのあとに「一覧を消す」。1つもないときは、無効の行「まだありません」だけ。</li>
+<li>行を押すと、その曲をひらきます。保存していない変更があるときの確かめは、「ひらく…」と同じ流れです。</li>
+<li>ファイルがなくなっていたら、今ある「読めない」の知らせを出し、一覧から外します。</li>
+</ol>
+<h4>約束と作り</h4>
+<ul><li>一覧の保存はすでにあります（<code>crates/meloet-core/src/recent.rs</code>。<code>recent-songs.json</code>、20 個、AI 連携だけが読んでいる）。約束と画面に出すだけです。</li>
+<li>約束：アプリの状態に <code>recent: Vec&lt;RecentSong{id: u32, name, place}&gt;</code>（絶対のパスは送らない。今の <code>place</code> と同じ表示の文字）、<code>OpenRecent{id}</code>、<code>ClearRecent</code>。コア <code>state/songs.rs</code> の <code>open_given(path)</code> へつなぐ。画面 <code>menus.ts</code>（<code>ListRow.sub</code> で子メニュー）。</li></ul>
+</section>
+
+<section id="A7"><h3>A7 キーのトラックを音のクリップにする</h3>
+<h4>ふるまい</h4>
+<ol>
+<li>キーのクリップの右クリックに「音のクリップにする」（選んだクリップ。同じトラックのいくつかを選んでいれば、いちばん早い始まりからいちばん遅い終わりまで）。トラックの頭の右クリックに「このトラックを音にする」（最初のクリップの始まりから最後のクリップの終わりまで）。</li>
+<li>鳴らし方：そのトラックだけを、音源とインサートを通して、フェーダー 0 dB、パンまんなか、センドなし、マスターのインサートなしで鳴らします。余韻は音が消えるまで（最大 10 秒）。</li>
+<li>できた音は、すぐ下に作る新しい歌（音）のトラックに置きます。名前は「元の名前（音）」。新しいトラックの音量、パン、センドは元のトラックから写します。インサートは写しません（もう音に入っているので）。元のトラックは消さずに<b>ミュート</b>します。トラックを足す、クリップを置く、ミュートする、を合わせて1ステップ（「音のクリップにする」）。取り消すと全部戻ります。</li>
+<li>鳴らすのは裏の仕事です。ステータスラインに「音にしています… 40 %」と「やめる」。できあがったときに元のトラックがまだあれば置き、なければ捨てて知らせます。</li>
+<li>断るとき：カウントイン中と録音中、書き出しのダイアログがひらいているとき、AI 連携の書き出しや別の「音にする」が走っているとき（裏の仕事は1つずつ）、トラックが 64 本のとき。</li>
+<li>できた音のクリップは「曲のテンポについていく」をオフで置きます。ファイルは設定の録音の形（16 / 24 / 32 ビット）、エンジンのサンプルレート。</li>
+</ol>
+<h4>約束と作り</h4>
+<ul><li>AI 連携にもう近いものがあります：<code>crates/meloet-core/src/state/ai.rs</code> の <code>ai_render_job</code> と <code>clip_doc</code>（そのトラックとそのクリップだけの <code>Doc</code> を作って書き出しの仕事に渡す）。これを「範囲」と「インサートあり、フェーダー 0 dB、マスター素通し、余韻あり」で使えるように広げます。<code>clip_doc</code> はクリップの種類を見ていないので、キーのクリップで確かめます（未確認）。</li>
+<li>書き出しの仕事（<code>export/job.rs</code>）は別のスレッドで、プラグインは書き出し用のプロセスに生きた状態で載ります（今の作り）。</li>
+<li>できたファイルは、録音や読み込みと同じ道で曲に入れます：作業の場所（<code>&lt;state&gt;/work/音/</code>）へ、<code>AudioStore</code>（<code>audiofiles.rs</code>）に知らせ、<code>AudioSource</code> を作り、ピークは keeper が作る。名前は <code>vocalrec::file_name</code> の形。保存のときに <code>音/</code> へ移ります。</li>
+<li>約束：<code>BounceToAudio{clips: Vec&lt;u32&gt;}</code>、<code>BounceTrack{track}</code>、<code>CancelBounce</code>、進み具合の見え方（<code>ExportRunView</code> と別の小さな見え方）、<code>StepName::Bounce</code>。画面 <code>Arrange.svelte</code> の <code>clipMenu</code>、<code>trackMenu.ts</code>、<code>StatusLine.svelte</code>。</li></ul>
+<h4>テストと受け入れ</h4>
+<ul><li>できた音を元の位置で鳴らしたものが、元のトラックを同じ条件で鳴らしたものと同じであること（内蔵の音で、サンプルまで）。1ステップで戻ること。途中でやめたとき、作業のファイルが残らないこと。プラグインつきは <code>--ignored</code> の実物のテスト。</li></ul>
+</section>
+
+<section id="A8"><h3>A8 歌のいいとこ取り（コンピング）</h3>
+<figure><figcaption>モックアップ（トラックの下にひらく帯。テイクの行の上を引いて選ぶ）</figcaption><div class="mk"><div class="r"><span class="w">▾ いいとこ取り</span><span class="d">歌 1 ・ テイク 3</span><span class="sp"></span><span class="b">もとに戻す</span></div><div class="r"><span style="width:56px" class="d">テイク 1</span><span style="width:120px;height:14px;background:#FFB000"></span><span style="width:160px;height:14px;background:#3C3C3C"></span><span style="width:100px;height:14px;background:#3C3C3C"></span></div><div class="r"><span style="width:56px" class="d">テイク 2</span><span style="width:120px;height:14px;background:#3C3C3C"></span><span style="width:160px;height:14px;background:#3C3C3C"></span><span style="width:100px;height:14px;background:#FFB000"></span></div><div class="r"><span style="width:56px" class="d">テイク 3</span><span style="width:120px;height:14px;background:#3C3C3C"></span><span style="width:160px;height:14px;background:#FFB000"></span><span style="width:100px;height:14px;background:#3C3C3C"></span></div></div></figure>
+<h4>ふるまい</h4>
+<ol>
+<li>歌のクリップで、テイクが2つ以上あるものが対象です。キーのクリップは今回やりません。</li>
+<li>クリップの右クリックに「いいとこ取り」。トラックの下に帯がひらきます。<b>場所と形は spec 3 の L282 のあたりに取ってある席の記述を先に読み、それに従います</b>。下は、そこに書いていない所の決まりです。</li>
+<li>帯にはテイクごとの行（波の形。新しい方から 8 行まで）。行の上を横に引くと、その範囲はそのテイクが鳴るようになります。引いているあいだは画面だけが変わり、離すと意図が1つ。端は、見えているグリッドの線に寄ります（Shift で寄せない）。選ばれている範囲は <code>color.accent</code> で示します。</li>
+<li>「もとに戻す」で、いいとこ取りを外し、クリップは「表示中のテイク」1本に戻ります。</li>
+<li>継ぎ目は 10 ms のクロスフェード。プチッと鳴らないこと。</li>
+<li>いいとこ取りがあるクリップで「次のテイク／前のテイク」（T）を押すと、いいとこ取りを外してそのテイクまるごとにします（1ステップなので戻せます）。「テイクを消す」は、いいとこ取りがあるあいだ無効。クリップを切ると、範囲も切れます。長さを変えると、範囲はクリップの中に収まります。</li>
+<li>テイクは変えません（「テイクは、できたら中身が変わらない」）。変わるのはクリップの「どの範囲でどのテイクを鳴らすか」だけ。1ステップ（「いいとこ取り」）。</li>
+</ol>
+<h4>約束と作り</h4>
+<ul><li>モデル：<code>Clip</code> に <code>comp: Vec&lt;CompPiece{from: u64（クリップの頭から）, take: usize}&gt;</code>（空ならなし。<code>#[serde(default)]</code>）。あれば、鳴らすときに <code>active</code> より優先します。歌のクリップのテイクは、同じ録音のファイルの周ごとの区切りで、形（フェード、音量、ストレッチ）はクリップに1つなので、位置はそろっています。</li>
+<li>エンジンへ：コアは今、クリップごとに1つのテイクをクリップの表（<code>EngineOp::Clips</code>、<code>play/audiosync.rs</code>）にして送っています。いいとこ取りのあるクリップは、範囲ごとの行に分けて送り、継ぎ目に 10 ms のフェードをつけます。同じトラックで行を重ねられるなら重ねて、できなければ先読み（<code>readahead.rs</code>）の入れ替えのクロスフェードの考えを使います。どちらにするかは読んで決め、architecture に書きます。</li>
+<li>書き出しは同じ道を通るので、何もしなくても同じ音になるはずです（確かめる）。ストレッチした音（「作った」ファイル）はテイクごとにあります。</li>
+<li>約束：<code>SetComp{clip, pieces}</code>、<code>ClearComp{clip}</code>、クリップの見え方に <code>comp</code>、帯をひらく／閉じるは画面の状態。画面：帯の行は、オートメーションのレーン（<code>automation/AutoLane.svelte</code>）と同じく <code>arrangeLanes</code> 領域の枠として描きます（新しい領域は作らない）。</li></ul>
+<h4>テストと受け入れ</h4>
+<ul><li>テイクをまたぐ継ぎ目で、音の飛びがしきい値より小さいこと（どのテイクも同じサイン波のとき、出力がサイン波のままであること）。書き出しと再生が同じ（<code>export_app.py same</code>）。切る、長さを変える、テイクを切り替える、取り消し。</li>
+<li><code>audio_app.py arrange</code> と <code>arrange_parts.py</code> で、帯をひらいたときのフレーム。</li></ul>
+</section>
+
+<section id="A9"><h3>A9 音のクリップを逆にする・ノーマライズ</h3>
+<h4>ふるまい</h4>
+<ol>
+<li>音のクリップの右クリックの、今は無効の2行「逆にする」「ノーマライズ」を使えるようにします（文言は今のまま。出どころ <code>spec:3</code>）。いくつも選んでいれば、それぞれにかけて1ステップ。</li>
+<li><b>ノーマライズ</b>：新しいファイルは作りません。表示中のテイクが使っている範囲のいちばん大きい音が −1.0 dBFS になるよう、クリップの音量（<code>AudioShape.gain</code>）を決めます。音量の範囲（−60〜+12 dB）に収め、収まらなかったら知らせます。無音のクリップは何もせず知らせます。クリップの音量はテイクぜんぶで共有なので、表示中のテイクで決めます。ステップ名「ノーマライズ」。</li>
+<li><b>逆にする</b>：元のファイルは変えません。表示中のテイクが使っている範囲を逆にした新しいファイルを作り、そのテイクの代わりに、新しいテイク（新しい ID）を同じ場所に置きます。ほかのテイクはそのまま。フェードと音量はそのまま。もう一度かけると、また新しいファイルができます（元に戻すのは取り消しで）。ステップ名「逆にする」。</li>
+<li>「曲のテンポについていく」がオンのクリップを逆にするとき：元の音のテンポが1つ（途中で変わらない）なら、そのまま引き継ぎます。途中で変わるものなら、ついていくのをオフにして置き、知らせます。</li>
+<li>ファイルを作るのは裏の仕事（keeper のスレッド）で、できてから1ステップにします。</li>
+</ol>
+<h4>約束と作り</h4>
+<ul><li>約束：<code>NormalizeClips{clips}</code>、<code>ReverseClips{clips}</code>、ステップ名2つ。</li>
+<li>いちばん大きい音は、ピークのファイル（<code>core/peaks.rs</code>。5段）のいちばん細かい段で足りるか確かめます。足りなければファイルを読みます。</li>
+<li>新しいファイルは、作業の場所へ書き、<code>AudioStore</code> と <code>PcmStore</code> に知らせ、ピークを作ります（A7 と同じ道）。画面 <code>Arrange.svelte</code> L1409-1411 の <code>menuRow(..., false, ...)</code> を有効に。</li></ul>
+<h4>テスト</h4>
+<ul><li>ノーマライズのあとのピークが −1.0 dBFS（±0.1）。逆を2回で元の音と同じ。元のファイルの sha256 が変わらないこと。取り消し。</li></ul>
+</section>
+
+<h2 id="s7">7. ミックス</h2>
+
+<section id="M1"><h3>M1 プリセット（内蔵エフェクト）</h3>
+<figure><figcaption>モックアップ（提案のときの図。文と食い違うときは文が正）</figcaption><div class="mk" style="max-width:340px"><div class="r"><span class="w">▾ コンプレッサー</span><span class="sp"></span><span class="b on">歌をそろえる ▾</span></div><div style="border:1px solid #3C3C3C;background:#212121;margin:0 8px 4px"><div class="r"><span class="d">はじめから入っているもの</span></div><div class="r" style="background:#282828"><span class="w">歌をそろえる</span></div><div class="r"><span>ベースをどっしり</span></div><div class="r"><span>ドラムをはっきり</span></div><div class="r"><span class="d">自分で残したもの</span></div><div class="r"><span>いつものピアノ</span></div><div class="r"><span class="a">いまの設定を残す…</span></div></div><div class="r"><span class="d">スレッショルド</span><span class="sp"></span><span class="m">−18.0 dB</span></div><div class="r"><span class="d">レシオ</span><span class="sp"></span><span class="m">3.0 : 1</span></div></div></figure>
+<h4>ふるまい</h4>
+<ol>
+<li>内蔵エフェクトのパラメータの一覧の頭に、プリセットのボタン。いまの値がどれかのプリセットと同じならその名前、ちがえば「プリセット ▾」。</li>
+<li>メニューは「はじめから入っているもの」「自分で残したもの」「いまの設定を残す…」。</li>
+<li><b>使う</b>：そのエフェクトのパラメータを全部まとめて変えます。1ステップ（「プリセットを使う」）。レーンが動かしているパラメータ（休みでないもの）は変えず、それ以外を変えて知らせます。</li>
+<li><b>残す</b>：その場に名前の箱（40 文字まで）。Enter で残します。同じ名前があれば上書きし、ステータスラインで知らせます。エフェクトの種類ごとに 100 個まで。</li>
+<li><b>消す</b>：自分で残したものの行を右クリックして「消す」。</li>
+<li><b>はじめから入っているもの</b>：EQ ＝ 歌をくっきり、こもりを取る、低い音をすっきり、ベースを太く。コンプレッサー ＝ 歌をそろえる、ドラムをはっきり、ベースをどっしり、やさしくまとめる。リバーブ ＝ 小さな部屋、ホール、歌のうしろに。ディレイ ＝ やまびこ、短いはね返り、左右にとぶ。コーラス ＝ うすく広げる、深くゆらす。リミッター ＝ 仕上げ、やさしく止める。M6 の3つにも2つずつ。値は作る人がパラメータの範囲の中で決め、内蔵の音で聞いて確かめ、表を architecture に書きます（持ち主があとで聞いて直せるように）。</li>
+<li>プラグインのエフェクトには出しません。トラックまるごとのプリセットは今回作りません。</li>
+</ol>
+<h4>約束と作り</h4>
+<ul><li>はじめから入っているもの：<code>crates/meloet-model/src/presets.rs</code>（エフェクトの種類ごとの、id と値の表）。<code>cargo test -p meloet-protocol</code> が書く生成ファイル（<code>effects.ts</code> の隣）に出し、名前は <code>ja.ts</code> の <code>preset.&lt;kind&gt;.&lt;id&gt;</code>。</li>
+<li>自分で残したもの：設定の場所（<code>settings::config_dir()</code>）に <code>presets.json</code>（版 1。エフェクトの名前 → 名前と値の並び。値はパラメータの名前で持つ。曲ファイルの <code>InsertFile.params</code> と同じ形）。一時ファイルに書いてから名前を変える、今の設定の書き方で。知らないパラメータは読み飛ばし、足りないものは変えません。</li>
+<li>約束：<code>ApplyPreset{insert, preset: Factory(id) | User(name)}</code>、<code>SavePreset{insert, name}</code>、<code>DeletePreset{effect, name}</code>、アプリの状態に自分のプリセットの名前の一覧、<code>StepName::ApplyPreset</code>。</li>
+<li>コア：全部のパラメータを1ステップで変える関数は、AI 連携用にもうあります（<code>play/params.rs</code> の <code>ai_set_effect_params</code>。1つの <code>Doc</code> の上で <code>mixer::set_param</code> をつなぐ）。これを共通にして使います（AI 用は「レーンがあれば断る」、こちらは「そこだけ飛ばす」）。画面 <code>params/BuiltinList.svelte</code>。</li></ul>
+<h4>テスト</h4>
+<ul><li>どのプリセットの値も範囲の中にあること（表を読むテスト）。使うのが1ステップで戻ること。ファイルの往復、壊れたファイルは空として読むこと。</li></ul>
+</section>
+
+<section id="M2"><h3>M2 「音が大きすぎます」のお知らせ</h3>
+<figure><figcaption>モックアップ（提案のときの図。文と食い違うときは文が正）</figcaption><div class="mk"><div class="r"><span class="w">マスター</span><span class="meter"><b style="width:100%;background:#FF6158"></b></span><span class="rec m">+2.1 dB</span></div><div class="r"><span class="rec">■</span><span>音が大きすぎます。リミッターがずっと 6 dB おさえています</span><span class="sp"></span><span class="b">全部のトラックを 6 dB 下げる</span></div></div></figure>
+<h4>ふるまい</h4>
+<ol>
+<li><b>見つけ方 A（マスターにリミッターがあるとき）</b>：再生中の直近 4 秒のうち半分以上の時間、マスターのリミッター（バイパスでないもの）が 3 dB 以上おさえている。</li>
+<li><b>見つけ方 B（リミッターがない、またはバイパスのとき）</b>：再生中の直近 4 秒に、マスターが 0 dBFS を越えたのが 3 回以上。</li>
+<li>テストトーンと遅れの測定音が鳴っているあいだ、カウントイン中、止まっているあいだは見ません。</li>
+<li>見つけたら、ステータスラインに「音が大きすぎます。リミッターがずっと 6 dB おさえています」（B では「音が大きすぎます。マスターが 2.1 dB 越えています」）と、ボタン「全部のトラックを 6 dB 下げる」と「閉じる」。数は、A はおさえている量の平均、B は越えた量の最大を、切り上げて 1〜12 に収めたもの。</li>
+<li>出すのは、同じ再生のあいだに1回まで。閉じるか下げたあとは、次に再生を始めるまで出しません。録音中は出さず、止まってから出します。</li>
+<li><b>下げる</b>：トラックのストリップ（リターンとマスターは除く）を、全部同じだけ下げます。1ステップ（「全部のトラックを下げる」）。
+ <ul><li>−∞ のフェーダーはそのまま。−60 dB より下になるものは −60 dB で止めます（無音にしない）。</li>
+ <li>音量のレーンが動かしているトラック（休みでないもの）は、フェーダーではなく、レーンの点を全部同じだけ下げます。レーンを休みにしません。</li></ul></li>
+</ol>
+<h4>約束と作り</h4>
+<ul><li><b>おさえた量を返す道がありません</b>。マスターの最後にリミッターがあるあいだ、今の「クリップした」の印はほぼ点かないので、これが要ります。<code>crates/meloet-engine/src/effect.rs</code> の <code>Effect</code> に <code>fn reduction_db(&self) -&gt; f32 { 0.0 }</code> を足し、リミッター（<code>limiter.rs</code> の <code>gain</code>）とコンプレッサー（<code>reduction_db</code>）で返します。エンジンはブロックごとに、マスターのインサートのうちバイパスでないリミッターの値を、<code>EngineMeters</code> の原子の値に <code>fetch_max</code> で書きます。</li>
+<li>テレメトリ（版 5）：<code>master_reduction: u8</code>（0.1 dB きざみ、25.5 dB まで）。判断はコアのテレメトリの見回りでします（4 秒の窓）。</li>
+<li><b>分析の道の土台もここで作ります</b>（E7 と M3 が使う）：音のスレッドから分析のスレッドへの輪と、分析のスレッド。M2 そのものは使いませんが、同じレーンの最初なので、形（輪、スレッドの立ち上げと片づけ、テレメトリ版 5 の全部の欄）をここで入れ、E7 と M3 の値は 0 のままにしておきます。足す欄：<code>master_reduction: u8</code>、<code>spectrum: [u8; 24]</code>、<code>lufs_short: i16</code>、<code>lufs_integrated: i16</code>、<code>true_peak: i16</code>（どれも 0.01 単位。ない時は最小値）。</li>
+<li>約束：<code>StatusMessage::TooLoud{by_db, limiter: bool}</code>、<code>LowerAllTracks{db}</code>、<code>DismissTooLoud</code>、<code>StepName::LowerAll</code>。</li>
+<li>コア：いくつもの音量を1ステップで変えるのは、1つの <code>Doc</code> の上で変更をつないで1つの <code>Edit</code> にします（<code>ai_set_effect_params</code> と同じやり方）。レーンの点は <code>automation.rs</code> の <code>move_points</code> の値の方を使います。画面 <code>StatusLine.svelte</code>。</li></ul>
+<h4>テスト</h4>
+<ul><li>エンジン：おさえた量が届くこと、割り当てなし（<code>effects_rt.rs</code>、<code>mixer_rt.rs</code>）。コア：A と B の見つけ方、テストトーンで出ないこと、1回だけ出ること。下げる：−∞、−60 の止め、レーンのあるトラック、1ステップで戻ること。</li></ul>
+</section>
+
+<section id="M3"><h3>M3 仕上げのメーター</h3>
+<figure><figcaption>モックアップ（提案のときの図。文と食い違うときは文が正）</figcaption><div class="mk" style="max-width:360px"><div class="r"><span class="w">仕上げのメーター</span><span class="sp"></span><span class="b">モノで聞く</span></div><div class="r"><span class="d">いまの大きさ</span><span class="sp"></span><span class="meter"><b style="width:70%"></b></span><span class="m">−13.2 LUFS</span></div><div class="r"><span class="d">曲ぜんたい</span><span class="sp"></span><span class="m w">−15.8 LUFS</span></div><div class="r"><span class="d">トゥルーピーク</span><span class="sp"></span><span class="m">−1.4 dBTP</span></div><div style="height:56px;margin:4px 8px;background:#000;display:flex;align-items:flex-end;gap:2px;padding:2px"><b style="width:14px;height:40%;background:#4CD964"></b><b style="width:14px;height:75%;background:#4CD964"></b><b style="width:14px;height:90%;background:#4CD964"></b><b style="width:14px;height:70%;background:#4CD964"></b><b style="width:14px;height:62%;background:#4CD964"></b><b style="width:14px;height:55%;background:#4CD964"></b><b style="width:14px;height:48%;background:#4CD964"></b><b style="width:14px;height:50%;background:#4CD964"></b><b style="width:14px;height:36%;background:#4CD964"></b><b style="width:14px;height:30%;background:#4CD964"></b><b style="width:14px;height:22%;background:#4CD964"></b><b style="width:14px;height:12%;background:#4CD964"></b></div><div class="r"><span class="d">低い音 ← → 高い音</span></div></div></figure>
+<h4>ふるまい</h4>
+<ol>
+<li>ミキサーの帯の、マスターのストリップの右に「仕上げのメーター」の箱（幅はストリップ2本ぶん）。ミキサーをひらいているあいだだけ出ます。</li>
+<li>中身：「いまの大きさ」（直近 3 秒の LUFS。棒と数字）、「曲ぜんたい」（再生を始めてからの LUFS。再生を始めるたびにやり直し）、「トゥルーピーク」（再生を始めてからの最大）、低い音から高い音までの 24 本の棒（E7 と同じ値。色は <code>color.meter.ok</code>）、うすい字で「公開の目安は −14 LUFS、−1 dBTP」、ボタン「モノで聞く」。</li>
+<li>数字は1秒に4回まで変えます（毎フレーム文字を変えない）。音がないときは「−∞」。</li>
+<li><b>モノで聞く</b>：オンのあいだ、出口の音を左右まぜて同じにします（20 ms でなめらかに切り替え）。聞くだけのもので、曲にも設定にも残らず、書き出しには効きません。オンのあいだボタンは点き、ステータスラインに「モノで聞いています」。アプリを閉じると切れます。</li>
+</ol>
+<h4>約束と作り</h4>
+<ul><li>分析のスレッド（M2 で作った土台）で、<code>ebur128</code>（MIT。<code>=0.1.11</code> で固定）を <code>Mode::I | S | TRUE_PEAK | HISTOGRAM</code> で作って使います。<code>HISTOGRAM</code> をつけると、長く再生しても割り当てが増えません。再生を始めたら <code>reset()</code>。テレメトリの <code>lufs_short</code>、<code>lufs_integrated</code>、<code>true_peak</code> に入れます。</li>
+<li>書き出しの LUFS（F1。自前の <code>export/analysis.rs</code>）と数字が食い違わないよう、同じ音を両方に入れて ±0.1 LU に収まることをテストで確かめます。収まらなければ、どちらかに寄せます（F1 の側を <code>ebur128</code> に替えるのが簡単）。</li>
+<li>モノ：再生のエンジンだけに <code>EngineCommand</code> を足します。マスターのインサートのあと、メーターの前。<code>Doc</code> にも、曲をひらくときに送る <code>EngineOp</code> にも入れません（入れると書き出しに入ります）。</li>
+<li>画面：<code>mixer/</code> に新しい部品。棒は <code>mixerMeters</code> 領域（30 Hz）の枠として描きます。約束：<code>SetMonoListen{on}</code>、見え方に <code>mono_listen</code>。</li></ul>
+<h4>テストと受け入れ</h4>
+<ul><li>決まった信号（1 kHz の −20 dBFS など）で LUFS とトゥルーピークが合うこと。モノがオンでも書き出しが変わらないこと（<code>export_app.py same</code>）。<code>latency.sh --mixer --song … --state playing</code> と、64 トラックのミキサーのフレームが悪くなっていないこと。</li></ul>
+</section>
+
+<section id="M5"><h3>M5 マスターの音量のオートメーションとフェードアウト</h3>
+<figure><figcaption>モックアップ（アレンジのいちばん下にマスターの行）</figcaption><div class="mk"><div class="r"><span style="width:150px">5 Surge XT 5</span><span class="clip" style="width:300px">Surge XT</span></div><div class="r" style="min-height:48px"><span style="width:150px"><span class="w">マスター</span> <span class="d">音量</span></span><span style="position:relative;width:300px;height:40px;background:#212121"><b style="position:absolute;left:0;top:8px;width:200px;height:1px;background:#F2F2F2"></b><b style="position:absolute;left:200px;top:8px;width:104px;height:1px;background:#F2F2F2;transform-origin:0 0;transform:rotate(17deg)"></b><b style="position:absolute;left:197px;top:5px;width:6px;height:6px;background:#F2F2F2"></b><b style="position:absolute;left:294px;top:34px;width:6px;height:6px;background:#F2F2F2"></b></span></div></div></figure>
+<h4>ふるまい</h4>
+<ol>
+<li>マスターの<b>音量だけ</b>に、オートメーションのレーンを持てるようにします。リターン、マスターのパン、マスターのインサートのパラメータは、今までどおり持てません。</li>
+<li>マスターのレーンがあるとき、アレンジのトラックの並びのいちばん下に「マスター」の行が出て、レーンが見えます。点の足し方、動かし方、消し方、「● 書く」、「休み」と「もどす」は、トラックの音量のレーンとまったく同じです。マスターのフェーダーを手で動かすとレーンが休みになるのも同じ（architecture 21-11 の表）。</li>
+<li>作り方は2つ：ミキサーのマスターの音量のオートメーションの印（今は無効）を使えるようにする。メニュー「編集」の「曲の終わりにフェードアウトをつける…」。</li>
+<li><b>フェードアウト</b>：その場の小さな箱で長さを小節で打ちます（はじめ 4、1〜16）。曲の終わり（最後のクリップの終わりを小節に切り上げた所）から、その小節ぶん前を始まりとして、点を2つ置きます：始まりに「いまのマスターの音量」、終わりに「いちばん下（−∞）」。あいだは直線。始まりから後ろにすでに点があれば消します。マスターのレーンがなければ作ります。全部で1ステップ（「フェードアウトをつける」）。</li>
+<li>書き出しは同じ道なので、フェードアウトがそのまま入ります。余韻は曲の終わりで無音になっているので、すぐ終わります。</li>
+</ol>
+<h4>約束と作り</h4>
+<ul><li>今はレーンをトラックにしか持てません（<code>Track.automation</code>）。レーンの意図もトラックの番号で指しています。約束で、レーンの持ち主を <code>LaneHome{Track(u32), Master}</code> にします（<code>AddLane</code>、<code>DeleteLane</code>、<code>FoldLane</code>、<code>SetLaneWrite</code>、<code>RestoreLane</code>。点の意図はレーンの ID で指しているので、そのまま）。</li>
+<li>モデル：<code>Doc</code> にマスターのレーン（<code>master_lanes: Vec&lt;Arc&lt;Lane&gt;&gt;</code>。的は <code>AutoTarget::Volume</code> だけを許す）。<code>check_lanes</code>、レーンを変える関数（今は <code>TrackId</code> で引いている）、曲ファイル。A2 の「位置を持つもの」に入れます（A2 が先なら、A2 の関数に足す）。</li>
+<li>エンジン：マスターに <code>AutoSet</code> を持たせ、マスターの <code>level</code> でトラックと同じ進め方（32 フレームごと、20 ms でなめらかに）をします。<code>Engine::automate</code> は今トラックだけ回しています。<code>EngineCommand::SetAutomation</code> と <code>HoldLane</code> にマスターを足します。</li>
+<li>コア：<code>play/</code> のオートメーションの同期（トラックごとに送っている所）にマスターを足す。約束：<code>AddFadeOut{bars}</code>、ステップ名。</li>
+<li>画面：<code>automation/</code>（<code>AutoLane.svelte</code>、<code>LaneHead.svelte</code>、<code>autoState.svelte.ts</code>）にマスターの行、<code>params/AutoMark.svelte</code> と <code>mixer/</code> のマスターの印、<code>menus.ts</code>。</li></ul>
+<h4>テストと受け入れ</h4>
+<ul><li>エンジン：マスターの音量が点のとおりに動くこと、割り当てなし（<code>tests/automation.rs</code>）、速さ（<code>automation_speed.rs</code>）。書き出しと再生が同じ。フェードアウトのあとの書き出しの終わりが無音であること。取り消し。手で動かすと休みになること。</li></ul>
+</section>
+
+<section id="M6"><h3>M6 エフェクトを足す（ゲート、ディエッサー、サチュレーション）</h3>
+<h4>3つの中身</h4>
+<div class="scroll"><table>
+<tr><th>名前（曲ファイルの名前）</th><th>パラメータ（範囲、はじめの値）</th><th>作りの決まり</th></tr>
+<tr><td>ゲート（<code>gate</code>）</td><td>しきい値 −80〜0 dB（−45）／下げる量 −60〜0 dB（−60）／戻る速さ 5〜1000 ms（120）</td><td>しきい値より小さい音を、下げる量まで下げる。開くのは 1 ms、開いたあと 30 ms は閉じない、開くと閉じるの差は 3 dB（どれも固定）。左右は同じ動き。</td></tr>
+<tr><td>ディエッサー（<code>deEsser</code>）</td><td>周波数 3000〜10000 Hz（6500）／しきい値 −60〜0 dB（−30）／下げる量 0〜18 dB（8）</td><td>周波数より上の帯だけを見て、しきい値を越えたぶんを、上の帯だけ下げる（下げる量が上限）。帯に分けて足し戻したとき、何もしていなければ元の音の大きさのままであること。</td></tr>
+<tr><td>サチュレーション（<code>saturation</code>）</td><td>ひずみ 0〜36 dB（6）／明るさ 1000〜20000 Hz（20000）／まぜる量 0〜100 %（100）／出る大きさ −24〜+6 dB（0）</td><td>なめらかに頭を丸める曲線（tanh の形）。ひずみを上げても大きくなりすぎないよう、中で大きさをそろえる。明るさはひずませたあとのローパス。</td></tr>
+</table></div>
+<ul><li><b>どれも音を遅らせないこと</b>（エフェクトの約束：<code>crates/meloet-engine/src/effect.rs</code> の L32。<code>latency()</code> は 0）。先読みも、遅れの出るオーバーサンプリングも使いません。</li>
+<li>値は 20 ms でなめらかに（<code>dsp.rs</code> の <code>Ramp</code>）。NaN と無限大が来たら状態を消して無音の1ブロック。ループの中の小さな値は <code>flush()</code>。見本は <code>limiter.rs</code>。</li></ul>
+<h4>直す所（エフェクトを1つ足すときに触る全部）</h4>
+<ul>
+<li>音：<code>crates/meloet-sound/src/effects/</code> に1つ1ファイル、<code>mod.rs</code> の <code>create</code>。</li>
+<li>モデル：<code>crates/meloet-model/src/effects.rs</code>（<code>EffectKind</code>、番号のモジュール、表、<code>ALL</code>、<code>name()</code>、<code>params()</code>）、<code>mixer.rs</code> の <code>Insert::new_on</code>。</li>
+<li>約束：<code>lib.rs</code> の <code>EffectKind</code> と <code>ALL</code>、<code>tests.rs</code> の <code>effects_ts()</code>（単位の名前の対応と TS の型）。</li>
+<li>コアと AI：<code>play/mixer.rs</code> の <code>model_effect</code> と <code>effect_kind</code>、<code>crates/meloet-ai/src/tools/mixer.rs</code> の <code>screen_effect</code>。</li>
+<li>画面：<code>ja.ts</code>（<code>effect.&lt;kind&gt;</code>、<code>param.&lt;kind&gt;.&lt;id&gt;</code>）、<code>paramRows.ts</code> の <code>decimals()</code>、<code>fake.ts</code> の <code>effectDefaults</code>。棚の一覧は <code>EFFECT_KINDS</code> を回しているので自動で出ます。</li>
+<li><b>数を決め打ちしている所</b>：<code>crates/meloet-sound/tests/effects_rt.rs</code>（<code>blocks == 2400</code> ＝ 6 × 400）、<code>tests/effects.rs</code> の <code>lively()</code>、<code>ui/tests/bridge.mixer.test.ts</code> L65、<code>ui/tests/params.shelf.test.ts</code> L150 と L175、<code>crates/meloet-core/src/play/seats/tests.rs</code> L780 の <code>rng.below(6)</code>、<code>mixer_rt.rs</code> の種類の並び、<code>model/tests/positions.rs</code>（フィクスチャを書き直す）。</li>
+</ul>
+<h4>テストと受け入れ</h4>
+<ul><li><code>EffectKind::ALL</code> を回すテストが自動でかかります（無音、余韻が消える、クリックなし、NaN、悪い値、デノーマル、作り直し、ほかのレートとブロック、割り当てなし）。それに加えて、3つそれぞれの働きのテスト（ゲート：しきい値の下が下がる。ディエッサー：7 kHz の音は下がり 500 Hz の音は変わらない。サチュレーション：ひずみ 0 でまぜる量 100 のとき大きさが変わらない）。速さ（<code>effects_speed.rs</code>）。</li></ul>
+</section>
+
+<section id="M7"><h3>M7 歌の音程を寄せる</h3>
+<h4>ふるまい</h4>
+<ol>
+<li>右のパネル「選んだクリップ」（音のクリップ）に行「音程を寄せる」：強さ 0〜100 %（はじめ 0 ＝ かけない）と、寄せる先のスケールの表示（「C メジャー」）、ボタン「いまのスケールにする」。</li>
+<li>強さを 0 より上にしたとき、そのときの曲のスケール（ピアノロールのスケール。P1 の9種類）を、クリップが覚えます。あとで曲のスケールを変えても、クリップは変わりません。「いまのスケールにする」で覚え直します。</li>
+<li>音の高さを調べ、声が出ている所を、スケールのいちばん近い音へ「ずれ × 強さ」だけ寄せます。寄せ方は 50 ms でなめらかに。声でない所（息、子音、無音）は変えません。</li>
+<li>クリップの移調（±12 半音）、セント、フォルマントを保つ、テンポについていく、と一緒に効きます。</li>
+<li>作るのは裏の仕事で、今のストレッチと同じ流れです（変えてから 300 ms 後に作り始め、できたら 10 ms 重ねて入れ替え、進み具合の表示）。離したとき1ステップ（クリップの形を変える今の道）。</li>
+<li>和音や伴奏の入った音では、結果はあてになりません。ツールチップに「ひとりの声や、音が1つずつの楽器に使えます」。</li>
+</ol>
+<h4>約束と作り</h4>
+<ul><li>モデル：<code>AudioShape</code> に <code>tune: Option&lt;Tune{root, mode, strength}&gt;</code>（<code>#[serde(default)]</code>）。約束：クリップの形を変える意図（<code>SetClipField</code>）に欄を足す。</li>
+<li>高さを調べる処理は、今どこにもありません。<code>crates/meloet-stretch</code>（か <code>meloet-sound</code>）に自作します。YIN（de Cheveigné と Kawahara、2002）か McLeod の方法（McLeod と Wyvill、2005）。クレートは使いません（古いか、ライセンスが未確認）。範囲は 70〜1000 Hz、10 ms きざみ、左右をまぜた音で。</li>
+<li>高さを動かすのは今のストレッチ（Signalsmith）です。今の <code>render</code>（<code>render.rs</code>）は1回の作りで移調が1つに決まっています。短いかたまり（256〜512 フレーム）ごとに <code>set_transpose_semitones</code> を変えられる形を足します。C++ と unsafe は <code>meloet-stretch</code> の中だけ。<code>vendor/</code> のファイルは変えません。</li>
+<li>作ったファイルの鍵（<code>made.rs</code> の <code>MadeKey</code>）に、スケール、強さ、調べ方の版を入れます。強さ 0（<code>tune</code> が None）のときは、今の道をそのまま通ります。</li></ul>
+<h4>テストと受け入れ</h4>
+<ul><li>作った信号で：スケールの音から 30 セントずれたのこぎり波の長い音 → 強さ 100 で、ずれの中央値が 10 セント未満。強さ 50 で約半分。ノイズだけの音は変わらない。強さ 0 は今の出力と同じ。</li>
+<li><code>stretch_app.py kept</code>（作り直しが起きないこと）、<code>stretch_app.py prepare</code>（作る速さ。今の数と並べる）。</li>
+<li><b>音の質は耳で決めます</b>。リードは、歌の録音（なければ、内蔵の音で作った単旋律）で、かける前と後のファイルを <code>target/</code> に書き出し、場所を持ち主に知らせます。ひどい音（ロボットの声、プツプツ）なら、行を無効で出したままにして統合し、報告します。</li></ul>
+</section>
+
+<h2 id="s8">8. 仕上げと公開</h2>
+
+<section id="F1"><h3>F1 書き出しの音の大きさ</h3>
+<figure><figcaption>モックアップ（提案のときの図。文と食い違うときは文が正）</figcaption><div class="mk" style="max-width:520px"><div class="r"><span class="w">書き出し</span><span class="sp"></span><span class="d">閉じる Esc</span></div><div class="r"><span class="d">形</span><span class="b on">wav</span><span class="b">flac</span><span class="b">mp3</span></div><div class="r"><span class="d">音の大きさ</span><span class="b">そのまま</span><span class="b on">公開先に合わせる</span><span class="m">−14 LUFS ・ −1 dBTP</span></div><div class="r"><span class="d">書き出す前のたしかめ</span></div><div class="r"><span>曲ぜんたいの大きさ <span class="m w">−18.6 LUFS</span> ・ いちばん大きい所 <span class="m">−3.2 dBTP</span></span></div><div class="r"><span class="d">合わせると 4.6 dB 大きくなります。音割れはありません</span></div><div class="r"><span class="sp"></span><span class="b">やめる Esc</span><span class="b w">書き出す Enter</span></div></div></figure>
+<h4>ふるまい</h4>
+<ol>
+<li>「書き出す前のたしかめ」に行を足します：「曲ぜんたいの大きさ −18.6 LUFS ・ トゥルーピーク −3.2 dBTP」。今の「いちばん大きい所」と音割れの行は残します。</li>
+<li>新しい行「音の大きさ」：「そのまま」（はじめ）と「公開先に合わせる」。右に「−14 LUFS ・ −1 dBTP」。</li>
+<li>「公開先に合わせる」のとき、書き出す音ぜんたいに同じ大きさをかけます：<code>かける量 = −14 − 測った LUFS</code>。ただし、トゥルーピークが −1 dBTP を越えない所まで。小さくする方向にも働きます。リミッターはかけません。</li>
+<li>たしかめの下に結果を1行：「合わせると 4.6 dB 大きくなります」。上限で止まるときは「−1 dBTP を越えないよう、−15.2 LUFS になります」。</li>
+<li>無音に近い曲（LUFS が測れない、または −70 より下）と、範囲が「トラックごと」のときは、「公開先に合わせる」は無効（トラックごとは、あとでまぜるためのものなので、大きさを変えません）。</li>
+<li>LUFS は範囲の中だけで測ります（余韻は入れない。今の測り方）。トゥルーピークは余韻も入れます。</li>
+</ol>
+<h4>約束と作り</h4>
+<ul><li>LUFS の計算はもうあります（<code>export/analysis.rs</code>。<code>job.measure</code> が立っているときだけ。今は AI 連携だけが立てる）。ダイアログの仕事でも立てます。</li>
+<li>トゥルーピークはどこにもありません。<code>ebur128</code>（MIT。<code>=0.1.11</code>）の <code>Mode::TRUE_PEAK</code> を、書き出しの仕事のスレッドで使います（チャンネルごとの最大を取り、<code>20·log10</code>）。</li>
+<li>書き出しは、押す前に全部を鳴らして一時ファイル（f32、エンジンのレート）にしてあり、「書き出す」を押したあとは変換だけです。大きさをかけるのは <code>export/job.rs</code> の <code>convert()</code> の、読んだあと、レートの変換と書く前です。</li>
+<li>約束：<code>ExportCheck::Counting / Done</code> に <code>lufs: Option&lt;f32&gt;</code> と <code>true_peak_db: Option&lt;f32&gt;</code>、<code>ExportDialogView</code> に <code>loudness: ExportLoudness{AsIs, Match}</code> と <code>loudness_result</code>（かける量と、止まったかどうか）、<code>ExportChange</code> に切り替え。選んだものは、形（wav／flac）の選び方と同じ長さだけ覚えます。</li>
+<li>画面：<code>export/ExportDialog.svelte</code>、<code>exportText.ts</code> の <code>checkLines</code>。AI 連携の書き出しの道具は「そのまま」のまま。</li>
+<li>クレートを足したら <code>node tools/licenses/inventory.mjs write</code>（<code>NOTICE</code> と「meloet について」の一覧を作り直す）と <code>node licenses/check.mjs</code>。</li></ul>
+<h4>テストと受け入れ</h4>
+<ul><li>決まった信号で、合わせたあとのファイルを測り直すと −14.0 LUFS（±0.2）、または −1.0 dBTP（±0.2）で止まっていること。レートを変えて書き出したときも ±0.3 に収まること（レートの変換でトゥルーピークが少し変わります）。</li>
+<li>「そのまま」のとき、今の出力とまったく同じであること（<code>export_app.py same</code>）。<code>export_app.py speed</code> が悪くなっていないこと。</li></ul>
+</section>
+
+<section id="F2"><h3>F2 MP3 の書き出しと曲の情報</h3>
+<h4>ふるまい</h4>
+<ol>
+<li>形に「mp3」を足します（wav、flac、mp3）。「くわしく」は、mp3 のとき「ビット」の代わりに「ビットレート」：128 / 192 / 256 / 320 kbps（はじめ 192。いつも一定のビットレート）。サンプルレートは 44100 と 48000 だけ。いつもステレオ。</li>
+<li>「くわしく」に「曲の情報」：題名（はじめは曲の名前）、作者（PC の設定に覚える）、絵（「えらぶ…」。png か jpg、5 MB まで）。wav では絵は入れられないので、絵の行は無効で出します。</li>
+<li>トラックごとの書き出しでは、題名を「曲の名前 - トラックの名前」にします。</li>
+</ol>
+<h4>約束と作り</h4>
+<ul><li><code>rusty_mp3</code>（Apache-2.0、依存なし、C なし。<code>=1.2.2</code> で固定。固定する前に、クレートの中の LICENSE を読む）。使い方：<code>Mp3Encoder::new(Mp3EncoderConfig{bitrate_kbps, vbr_quality: None})</code>、<code>push_pcm_f32(&interleaved, 2, sample_rate)</code>、最後に <code>finish()</code> してから <code>next_packet()</code> を Eof まで回す。<b>最初のフレーム（長さと頭の遅れの情報）は <code>finish()</code> のあとで確定する</b>ので、もう書いてあるなら <code>lame_tag_frame()</code> でファイルの頭を上書きします。README は <code>push_pcm_i16</code> と書いていますが、ソースは <code>push_pcm_s16</code> です。ソースを読んで確かめます。</li>
+<li><code>export/sink.rs</code> に <code>AudioSink</code> を実装した <code>Mp3Sink</code> を足し、<code>create()</code> の <code>match</code> に足します。渡す前に ±1 に収めます（このクレートは 8 倍まで通します）。ディザはかけません。</li>
+<li>約束：<code>ExportFormat::Mp3</code>（<code>ALL</code>、<code>extension()</code>、<code>bits_choices()</code> は空）、<code>ExportDialogView</code> に <code>mp3_kbps</code> と選べる値、曲の情報の3つ、<code>ExportChange</code>。ビットの型（<code>RecordFormat</code>）にビットレートの居場所はないので、別の欄にします。</li>
+<li>曲の情報：<code>lofty</code>（MIT か Apache-2.0。<code>=0.25.5</code>）。書き終えて場所へ移す前に書きます。mp3 は ID3v2、flac は Vorbis コメントと絵、wav は RIFF INFO（題名と作者だけ）。保存の関数の正確な形は、クレートの <code>examples/tag_writer.rs</code> を読みます（未確認）。絵を選ぶのは <code>pcwindow.rs</code> に絵のファイルを選ぶ種類を足します。</li>
+<li>網羅の所：<code>crates/meloet-ai/src/tools/files.rs</code> の <code>FormatArg</code>、<code>fake.ts</code>、<code>ExportDialog.svelte</code> の <code>FORMAT_NAMES</code>（鍵がないと型の検査で落ちます）。文書：architecture 22-11、<code>7-readings.md</code> の C-11 の行（今回の決定で上書き）、<code>NOTICE</code>。</li></ul>
+<h4>受け入れ条件（満たさなければ MP3 は出さない）</h4>
+<ol>
+<li>44100 と 48000 のステレオで、実際の曲の書き出しを MP3 にし、<code>symphonia</code>（もう入っている）で読み戻して、長さが元と同じ（頭の遅れと終わりの詰め物を引いて ±1152 サンプル）。</li>
+<li>読み戻した音と元の音の差が、192 kbps で元より 20 dB 以上小さい（1 kHz の音とピンクノイズで）。</li>
+<li>無音、1 サンプルだけ、10 分の曲、やめる、で落ちないし、ファイルが壊れない。</li>
+<li>リードが内蔵の音の曲を 192 kbps で書き出したファイルを <code>target/</code> に置き、持ち主が耳で確かめられるようにする。</li>
+</ol>
+<p>1〜3 のどれかが通らなければ、MP3 のコミットを統合せず、形の一覧に mp3 を出しません（spec 3 の「使えないとき mp3 は出さない」のまま）。曲の情報（<code>lofty</code>）は wav と flac のために残します。通らなかった理由を <code>7-readings.md</code> と <code>progress.md</code> に書きます。品質は LAME より少し下という作者自身の比べしかありません（独立した比べは見つかっていません）。</p>
+</section>
+
+<h2 id="s9">9. 迷わない・配布と環境</h2>
+
+<section id="G1"><h3>G1 キーの一覧と使い方へのリンク</h3>
+<figure><figcaption>モックアップ（提案のときの図。文と食い違うときは文が正）</figcaption><div class="mk" style="max-width:420px"><div class="r"><span class="w">キーの一覧</span><span class="sp"></span><span class="d">さがす…</span></div><div class="r"><span class="d">▾ 再生と録音</span></div><div class="r"><span>再生 ／ 止める</span><span class="sp"></span><span class="b m">Space</span></div><div class="r"><span>録音</span><span class="sp"></span><span class="b m">R</span></div><div class="r"><span>ループ</span><span class="sp"></span><span class="b m">L</span></div><div class="r"><span class="d">▾ ピアノロール</span></div><div class="r"><span>クオンタイズをかけなおす</span><span class="sp"></span><span class="b m">Q</span></div><div class="r"><span class="a">使い方のページをひらく</span></div></div></figure>
+<h4>ふるまい</h4>
+<ol>
+<li>メニュー「ヘルプ」を3行にします：「キーの一覧」「使い方をひらく」、区切り、「meloet について」。</li>
+<li>「キーの一覧」はダイアログ。組ごとの表（曲とファイル／再生と録音／帯／アレンジ／ピアノロール／ミキサー／表示）。上に絞り込みの箱。キーの名前は、今のメニューと同じ出し方（<code>menus.ts</code> の <code>keyNames(platform)</code>）。Esc で閉じます。</li>
+<li>「使い方をひらく」は、PC のブラウザで使い方のページをひらきます：<code>https://github.com/wintermaples/meloet/blob/main/docs/user/README.ja.md</code>（D4 で英語のときは英語の版）。</li>
+</ol>
+<h4>作り</h4>
+<ul><li>キーの表は1か所にまとまっていません（<code>keys.ts</code> は枝分かれのコード）。<code>ui/src/keys/keyList.ts</code> を作り、<code>docs/spec/4-keys.md</code> の表（約 60 行）と今回足すキーから、（組、文言の鍵、キー）の並びを手で書きます。<code>keys.ts</code> の <code>KeyAction</code> の種類をぜんぶ鍵にした型（<code>Record</code>）にして、キーを足したのに一覧に足し忘れると、型の検査で落ちるようにします。</li>
+<li>ダイアログは「meloet について」の作りを写します（<code>components/about/about.svelte.ts</code>、<code>AboutDialog.svelte</code>、<code>App.svelte</code> での置き方、<code>keys/attach.ts</code> の Esc の順、<code>status.dialogOpen</code>）。</li>
+<li>ブラウザでひらく道はありません（Tauri の opener は入っていません。入れません）。<code>pcwindow.rs</code> に URL を <code>xdg-open</code> でひらく関数を足し、<code>ShellRequest</code> に種類を足します。ひらく URL は Rust の定数で持ち、画面からは渡しません。</li>
+<li>直すテスト：<code>ui/tests/menu.test.ts</code>（ヘルプの中身を決め打ちしています）。</li></ul>
+</section>
+
+<section id="D1"><h3>D1 更新の道（アプリ内のお知らせと apt リポジトリ）</h3>
+<h4>アプリ内のお知らせ</h4>
+<ol>
+<li>起動してあいさつが済んだあと、1日に1回まで、<code>https://api.github.com/repos/wintermaples/meloet/releases/latest</code> を読みます。送るのは <code>User-Agent: meloet/&lt;版&gt;</code> だけ。5 秒で打ち切り。失敗しても何も言いません。</li>
+<li>タグ（<code>vX.Y.Z</code>）がいまの版より新しければ、止まっているときに、ステータスラインに「新しい版 0.3.0 があります」と、ボタン「ページをひらく」（リリースのページをブラウザで）と「あとで」。同じ版は、起動ごとに1回まで。カウントイン中と録音中は出さず、止まってから。</li>
+<li>「meloet について」にも1行「新しい版 0.3.0 があります」。</li>
+<li>設定に「新しい版をたしかめる」（はじめはオン）。オフなら外へ行きません。</li>
+<li>入れるのは手です（deb を落として入れる、または apt）。Tauri の updater は使いません（deb では管理者のパスワードを聞く作りで、署名の鍵の管理も要るため）。</li>
+<li>開発フックのあるビルドでは、<code>MELOET_UPDATE_URL</code> があるときだけ、そこを読みます（テスト用。ないときは外へ行かない）。</li>
+</ol>
+<ul><li>HTTP は、音のパックを取ってくる所（<code>crates/meloet-core/src/sounds/fetch.rs</code>）と同じクレートと同じやり方で。版の比べは自前で（数字3つ）。約束：見え方に <code>new_version: Option&lt;String&gt;</code>、<code>OpenReleasePage</code>、<code>DismissNewVersion</code>、設定の入切。<code>scripts/check-release.sh</code> がフックの名前を見ているので、足した名前を入れます。</li></ul>
+<h4>apt リポジトリ</h4>
+<ol>
+<li><code>scripts/make-apt-repo.sh &lt;deb&gt; &lt;出力の場所&gt;</code> を作ります。<code>reprepro</code> を Docker の中で動かし、<code>conf/distributions</code> に <code>noble</code>（24.04）と <code>resolute</code>（26.04）の2つを書き、同じ deb を両方へ <code>includedeb</code> します。署名の鍵は環境変数（<code>MELOET_APT_KEY_ID</code>）で渡します。出力は、そのまま静的に配れる木（<code>dists/</code>、<code>pool/</code>、公開鍵）。古い版は5つまで残して削ります（GitHub Pages は 1 GB まで）。</li>
+<li><code>docs/development/apt-repo.md</code>（英語）を書きます：鍵の作り方、スクリプトの使い方、GitHub Pages へ置く手順、使う人が書く設定（deb822 の <code>.sources</code> と <code>/etc/apt/keyrings/meloet.pgp</code>）、README に足す文の下書き。</li>
+<li>deb が自分で apt の設定を書き足すことはしません（postinst は足しません）。</li>
+</ol>
+<p><b>エージェントがしないこと</b>：本物の鍵を作る、公開する、push する、README に apt の入れ方を足す（公開されてから持ち主が足す）。確かめは、捨ての鍵で作った木を、コンテナの中の <code>apt-get update</code> と <code>apt-get install meloet</code>（<code>file://</code>）で、noble と resolute の両方で。</p>
+</section>
+
+<section id="D2"><h3>D2 AppImage（お試し）</h3>
+<p>前は「作らない」と決めていたものです（architecture 23-5、<code>docs/history/research/distribution-formats.md</code> の 2-2）。当時の心配はそのまま残っているので、「お試し」として作り、できたこととできなかったことを正直に書きます。</p>
+<h4>作るもの</h4>
+<ol>
+<li><code>scripts/build-appimage.sh</code>：今の deb と同じ Docker（Ubuntu 24.04）で作ります。動く下限は glibc 2.39（Ubuntu 24.04 より新しい Linux）。出力は <code>target/appimage/meloet_X.Y.Z_amd64.AppImage</code>。<code>meloet-plughost</code> と <code>meloet-mcp</code> を同じ包みに入れます（deb と同じく <code>externalBin</code> を作るときに渡す）。</li>
+<li><b>子プロセスの環境</b>：AppImage は <code>LD_LIBRARY_PATH</code> などを足します。そのまま <code>meloet-plughost</code> に渡ると、プラグインが包みの中のライブラリを読んで壊れます。<code>APPIMAGE</code> があるとき、<code>meloet_plugin::launch::spawn</code> で、AppImage が足した変数を外して渡します。<code>meloet-plughost</code> 自身が要るライブラリは、包みの中のものを <code>RUNPATH</code>（<code>$ORIGIN/../lib</code>）で見つけます。</li>
+<li><b>AI 連携</b>：使い方の文書は <code>/usr/bin/meloet-mcp</code> を教えています。AppImage では <code>meloet.AppImage --mcp</code> で橋が動くようにし（本体が隣の <code>meloet-mcp</code> に入れ替わる）、文書に書きます。</li>
+<li>音のパックは、今の「実行ファイルの隣になければ <code>$XDG_DATA_HOME/meloet/sounds</code>」でそのまま動きます。プラグインの置き場（<code>/usr/lib/vst3</code>、<code>/usr/lib/lv2</code>）は PC のものを見ます。</li>
+<li><code>.meloet</code> の関連づけとメニューへの登録は、AppImage は自分ではしません。文書に、そのことと、ファイルを引数で渡せばひらくことを書きます。</li>
+<li><code>scripts/bump-version.sh</code> と <code>bump-version</code> のスキルに、AppImage の名前を足します。README には「お試し」と書きます。</li>
+</ol>
+<h4>受け入れ（この PC、Ubuntu 26.04 で。AppImage を実行して）</h4>
+<ul><li>起動する、鍵盤が見える、出口の名前が出る、内蔵の音が鳴る、音のパックを取れる、保存してひらける、引数のファイルがひらく、閉じるとき落ちない。</li>
+<li>プラグイン：スキャンが終わる、Surge XT（VST3）と LV2 が1つずつ鳴り、窓がひらく。</li>
+<li>キー → 画面とキー → 音（<code>latency.sh</code> を AppImage で）。包みの中の WebKitGTK は、合わせ込んだ 2.52 と違う版になるので、数を deb と並べて書きます。</li>
+<li>ほかの Linux（Fedora など）では確かめられません。「未確認」と書きます。動かない所が見つかったら直さずに、分かっている限りとして文書に書きます。</li></ul>
+</section>
+
+<section id="D3"><h3>D3 Windows と macOS（調査資料と実装方針だけ）</h3>
+<p>コードは書きません。<code>meloet-very-hard</code>（Fable）が書き、事実は <code>meloet-research</code> に集めさせます。置き場所は <code>docs/research/2026-11-xx-windows-macos-port.md</code>（英語。出典と確度 A / B / C つき）。<code>docs/progress.md</code> の 7 節から指します。</p>
+<h4>入れること</h4>
+<ol>
+<li><b>Linux だけのコードの一覧</b>（下の表が出発点。読んで確かめ、足す）と、それぞれの置き換えの案。</li>
+<li><b>試作しないと分からないこと</b>：別プロセスのプラグインの窓を本体の窓に埋める（Windows の HWND、macOS の NSView）。プロセスをまたぐ待ちと起こし（futex の代わり）。WebView2 と WKWebView での WebGL の枠の数と、描画の速さ（今の合わせ込みは WebKitGTK の CPU の道が前提）。MIDI の抜き差しの検出。</li>
+<li><b>段取り</b>：段 0 ＝ <code>cfg</code> で分けて、代わりの空の実装でビルドが通る。段 1 ＝ 音と MIDI。段 2 ＝ 画面の速さ。段 3 ＝ プラグイン。段 4 ＝ 包みと署名。段ごとの重さと危なさ。</li>
+<li><b>持ち込めないもの、形が変わるもの</b>：「本当に動いているバッファを見せる」と PipeWire の名前、logind、rtkit。</li>
+<li><b>お金と手続き</b>：Apple の開発者登録（年 99 ドル）と公証、Windows の署名と SmartScreen。</li>
+<li><b>持ち主が決めること</b>の一覧。</li>
+</ol>
+<h4>分かっていること（2026-11-23 の調査。確度つき）</h4>
+<div class="scroll"><table>
+<tr><th>場所</th><th>今（Linux）</th><th>置き換えの手がかり</th></tr>
+<tr><td><code>meloet-midi</code></td><td>ALSA シーケンサ</td><td><code>midir</code>（MIT。WinMM／WinRT、CoreMIDI。A）。抜き差しの検出は文書になく、見回りが要りそう（C）</td></tr>
+<tr><td><code>meloet-devices</code></td><td>PipeWire の Route と quantum</td><td>cpal の名前と設定。WASAPI は共有モードだけで、排他モードは出していない（A）</td></tr>
+<tr><td>音の出口</td><td>cpal（PipeWire）</td><td>cpal の WASAPI と CoreAudio。ASIO は SDK が独自ライセンスか GPLv3 で、MIT／Apache のアプリでは使えない（A。GPL の読みは C）</td></tr>
+<tr><td><code>meloet-plugin</code> の <code>ipc/</code>、<code>launch.rs</code></td><td>memfd、futex、pidfd、prctl</td><td>Windows の <code>WaitOnAddress</code> は同じプロセスの中だけ（A）。名前つきのイベントかセマフォ（C）。macOS 14.4 から <code>os_sync_wait_on_address</code> の共有の旗（A）。<code>interprocess</code>（0BSD か Apache-2.0。A）</td></tr>
+<tr><td><code>meloet-plughost/src/window.rs</code></td><td>X11（x11rb）</td><td>VST3 は親の窓を HWND か NSView で渡す（B）。別プロセスからの埋め込みのやり方は見つからず、試作が要る</td></tr>
+<tr><td><code>formats/vst3.rs</code>、LV2</td><td>dlopen、lilv</td><td>VST3 SDK は 3.8.0 から MIT（A）。LV2 は Windows と macOS ではほぼ使われない（C）</td></tr>
+<tr><td><code>meloet-engine/src/priority.rs</code>、<code>meloet-plughost/src/rt.rs</code></td><td><code>sched_setscheduler</code>、rtkit</td><td>Windows は MMCSS の「Pro Audio」（A）。macOS は <code>thread_policy_set</code>（B）と音のワークグループ（C）</td></tr>
+<tr><td><code>meloet-app</code>（<code>logind.rs</code>、<code>webprocess.rs</code>、<code>pcwindow.rs</code>、<code>single.rs</code>、<code>main.rs</code> の環境変数）</td><td>logind、WebKitGTK のプロセス、GTK のファイル窓、flock とソケット、<code>JSC_*</code> と <code>WEBKIT_*</code></td><td>ここだけ <code>cfg(target_os)</code> の門がある。WebView2 は Windows 10（1803 から）と 11 に入っている（A）。WebGL の枠は Chromium も WebKit も 16（B）</td></tr>
+<tr><td><code>meloet-ai/src/port.rs</code>、<code>meloet-mcp/src/place.rs</code></td><td><code>$XDG_RUNTIME_DIR</code> のソケット、<code>/proc/self</code></td><td>名前つきパイプなど（C）</td></tr>
+<tr><td>そのほか</td><td><code>malloc_trim</code>、<code>statvfs</code>、<code>/proc/&lt;pid&gt;</code>、XDG の場所、<code>CLOCK_MONOTONIC</code></td><td><code>dirs</code> は対応している。ほかは小さな置き換え（C）</td></tr>
+<tr><td>包みと署名</td><td>deb</td><td>macOS は Developer ID と公証が要る（A）。Windows は署名なしだと SmartScreen の警告、Smart App Control では止められる（A）</td></tr>
+</table></div>
+</section>
+
+<section id="D4"><h3>D4 英語の表示</h3>
+<p><b>いちばん最後に作ります</b>（ほかの機能が文言を足し終えてから）。</p>
+<h4>ふるまい</h4>
+<ol>
+<li>設定に「ことば / Language」：日本語／English。はじめての起動では、PC のことば（<code>LC_ALL</code>、<code>LC_MESSAGES</code>、<code>LANG</code>）が <code>ja</code> で始まれば日本語、ちがえば英語。</li>
+<li>切り替えると、画面を読み込み直します（今の「つなぎ直す」の道。ウィンドウも音も曲もそのまま）。カウントイン中と録音中は切り替えられません。</li>
+<li>英語になるもの：画面の文言ぜんぶ、ステップの名前、用語のツールチップ、ファイルを選ぶ窓の題、新しい曲と新しいトラックのはじめの名前（作るときのことばで決まる。あとから変わらない）、歌のトラックのはじめの名前。</li>
+<li>変えないもの：曲のフォルダの中の名前（<code>音</code>、<code>work/音</code>。ファイルの互換のため）、もうある曲の中の名前、ログ、AI 連携が返す文。</li>
+</ol>
+<h4>作り</h4>
+<ul><li><code>t()</code> は決まった表を引くだけで、変わったことを画面に伝える仕組みがありません（90 のファイルが <code>text/ja</code> から読んでいます）。だから、<b>最初の描画の前にことばを決め、変えるときは読み込み直す</b>作りにします。</li>
+<li><code>ui/src/text/index.ts</code> を作り、<code>t()</code>、<code>fill()</code>、用語、ステップ名、つなぎの文字（<code>TERM_SEPARATOR</code>、<code>STATUS_JOIN</code>、<code>LIST_COMMA</code>）をここから出します。<code>ja.ts</code> は表（正。出どころつき）のまま。<code>en.ts</code> は同じ鍵の表（出どころなし）。読んでいる所の書き換え（<code>"../../text/ja"</code> → <code>"../../text"</code>）は機械的なので <code>meloet-light</code> に。</li>
+<li>ことばは、あいさつの返事（<code>HelloReply</code>）に足して受け取り、<code>main.ts</code> で部品を置く前に決めます。<code>index.html</code> の <code>lang</code> もそこで。設定と意図は、テーマ（<code>SetTheme</code>、<code>settings.rs</code> の <code>theme</code>）を見本に：<code>SetLanguage{language}</code> → 保存 → 画面が読み込み直す。</li>
+<li>用語のツールチップは日本語の言葉そのもので引いています（<code>use:term={"バッファ"}</code>。65 か所）。鍵は日本語のままにし、英語の表は「日本語の言葉 → 英語の言葉と説明」にします。</li>
+<li>数の入る文：英語は1つとそれ以外で形が変わります。英語の表の項目は、1つの文か、（1つのとき、それ以外）の組を持てるようにします。日本語の側は変えません。文字をつないで作っている所（<code>format.ts</code> など）は、穴のある文に直します。</li>
+<li>Rust の中の日本語：<code>pcwindow.rs</code> の窓の題、<code>meloet-model</code> の <code>song.rs</code>（「はじめての曲」「ピアノ」）、<code>audio.rs</code>（「歌」）、<code>instrument.rs</code> の <code>track_name()</code>。作るときに、ことばを引数で渡します。</li>
+<li>訳し方：<code>docs/spec/glossary.md</code> の英語の言葉に合わせる。文の頭だけ大文字。キーの名前はキーボードの刻印のとおり。日本語より長くなって入らない所は、言い換えて収める（幅を広げない）。</li>
+<li><code>tools/design/shoot_ui.py</code> に <code>--lang=en</code> を足し、全部の場面を英語で撮って、はみ出しと切れを直します。モックとの比べは日本語だけです。</li>
+<li>使い方の文書の英語の版（<code>docs/user/README.en.md</code>）を作り、G1 のリンクを英語のときそちらへ。</li></ul>
+<h4>テストと受け入れ</h4>
+<ul><li><code>ui/tests/text.test.ts</code>：英語の表に、日本語の表の鍵がぜんぶあること。穴（<code>{name}</code>）の組が同じであること。用語がぜんぶあること。</li>
+<li>日本語のときの画面が、1文字も変わっていないこと（今のテストと <code>tools/design/spec_check.py --strings</code> がそのまま通る）。</li>
+<li>英語で、全部の場面の画像を見て、切れている文字がないこと。日本語で作った曲を英語でひらいて、名前がそのままであること。</li></ul>
+</section>
+
+<h2 id="s10">10. 終わりにすること</h2>
+<ul>
+<li>波ごと：<code>scripts/check-all.sh</code>（最後の波は <code>--release</code>）。測り直しの数を <code>docs/measurements/</code> に。<code>docs/progress.md</code> に、できたこと、できなかったこと、持ち主に確かめてほしいこと（耳で聞くもの：M1 の値、M6、M7、F2、R3 の音、E3）。</li>
+<li>統合したヘルパーの <code>target/&lt;名前&gt;</code> を消す。残った待ちのループがないか見る。</li>
+<li><b>しないこと</b>：<code>main</code> への統合、push、タグ、リリース、音のパックや deb の公開、鍵を作る、PC ぜんたいの設定を変える（測るための quantum の一時的な変更は、CLAUDE.md の決まりどおりにして、戻して、知らせる）。</li>
+<li>迷って決めたことは <code>docs/spec/7-readings.md</code> に、持ち主への質問は <code>docs/spec/open-questions.md</code> に書き、案のまま先へ進みます。</li>
+</ul>
+
+<h2 id="s11">11. 出典と確度</h2>
+<p>全体の確度は <b>B</b> です。コードについての事実は、2026-11-23 に作業ツリー（<code>fea/mcp-improvements</code>）を読んだ結果で、行番号を控えてあります（一次情報。ただし作業中のブランチなので動きます）。外のクレートと配布の事実は、下の出典からです。設計の決まり（数や形）は私の案（C）で、持ち主が「案で進める」と決めたものです。</p>
+<div class="scroll"><table>
+<tr><th>確度</th><th>出典</th><th>使った所</th></tr>
+<tr><td>A</td><td><a href="https://github.com/Remade-With-Rust/remade_ffmpeg_rs">rusty_mp3 のリポジトリ</a>（ソース、Cargo.toml、CHANGELOG）、crates.io</td><td>F2。使い方、ライセンス、対応するレート。品質の比べは作者自身のものだけ（独立した一次情報なし）</td></tr>
+<tr><td>A</td><td><a href="https://docs.rs/ebur128/0.1.11/ebur128/struct.EbuR128.html">ebur128 の文書</a>とソース</td><td>F1、M3。使い方、<code>HISTOGRAM</code> で割り当てが増えないこと。依存のライセンスは未確認（C）</td></tr>
+<tr><td>A</td><td><a href="https://docs.rs/lofty/0.25.5/lofty/">lofty の文書</a></td><td>F2。対応する形。保存の関数の正確な形と、wav の絵は未確認（C）</td></tr>
+<tr><td>A</td><td><a href="https://docs.rs/realfft/latest/realfft/trait.RealToComplex.html">realfft</a>、<a href="https://docs.rs/rustfft/latest/rustfft/">rustfft</a></td><td>E7。<code>process_with_scratch</code> は割り当てない</td></tr>
+<tr><td>A</td><td><a href="https://doi.org/10.1121/1.1458024">de Cheveigné と Kawahara 2002（YIN）</a>、McLeod と Wyvill 2005</td><td>M7。高さの調べ方</td></tr>
+<tr><td>A</td><td><a href="https://support.spotify.com/us/artists/article/loudness-normalization/">Spotify の案内</a></td><td>F1、M3。−14 LUFS、−1 dBTP。YouTube は公式の数値がなく二次情報（B）</td></tr>
+<tr><td>A</td><td><a href="https://v2.tauri.app/distribute/appimage/">Tauri の AppImage</a>、<a href="https://v2.tauri.app/develop/sidecar/">sidecar</a>、updater のソースと更新履歴</td><td>D1、D2。deb の更新は <code>pkexec dpkg -i</code>。AppImage の中の置き場所は文書になく未確認（C）</td></tr>
+<tr><td>A</td><td><a href="https://manpages.debian.org/unstable/reprepro/reprepro.1.en.html">reprepro の手引き</a>、<a href="https://wiki.debian.org/DebianRepository/UseThirdParty">Debian wiki</a>、<a href="https://docs.github.com/en/pages/getting-started-with-github-pages/github-pages-limits">GitHub Pages の上限</a>、Ubuntu 26.04 の名前（resolute）の告知</td><td>D1</td></tr>
+<tr><td>A / B / C</td><td>midir と cpal の README とソース、Microsoft Learn、Apple の文書、Tauri の署名の文書、掲示板</td><td>D3 の表（行ごとに確度を書いた）</td></tr>
+</table></div>
+</main>

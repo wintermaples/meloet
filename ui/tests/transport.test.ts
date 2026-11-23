@@ -3,6 +3,7 @@ import { flushSync, mount, tick, unmount, type Component } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, StatusMessage, TransportReading } from "../src/bridge";
 import InputMeter from "../src/components/InputMeter.svelte";
+import { metrics } from "../src/components/metrics.svelte";
 import SoundHint from "../src/components/SoundHint.svelte";
 import StatusLine from "../src/components/StatusLine.svelte";
 import Transport from "../src/components/Transport.svelte";
@@ -308,6 +309,9 @@ describe("when there is not enough width (spec 1 (1), spec 2 (Song ▾, Metronom
     vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(row);
     vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockImplementation(function (this: HTMLElement) {
       if (this.classList.contains("key") || this.dataset.part?.startsWith("key-")) return 0;
+      // The group of buttons is wider by 「さっきのを残す」 while that is in it, as in a real page.
+      if (this.classList.contains("buttons") && this.querySelector('[data-test="transport-keep-played"]'))
+        return part(undefined) + part("keepPlayed") + metrics.px("space.1");
       return part(this.dataset.part);
     });
   }

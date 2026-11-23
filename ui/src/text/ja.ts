@@ -1115,6 +1115,9 @@ export const texts = {
   "transport.loop": e("ループ", "mock:Main"),
   // The overdub switch (mock P10-Overdub, option A; the owner kept the mock's words).
   "transport.overdub": e("重ねる", "user:2026-11-23"),
+  // R1 (round 12): what was played while not recording becomes a clip.
+  "transport.keepPlayed": e("さっきのを残す", "user:2026-11-23"),
+  "msg.nothingToKeep": e("残せる演奏がありません", "user:2026-11-23"),
   "transport.position": e("小節 . 拍 . ティック", "mock:Main"),
   "transport.time": e("時間", "mock:Main"),
   "transport.tempo": e("テンポ", "mock:Main"),
@@ -1998,6 +2001,7 @@ export const texts = {
   "menu.playStart": e("再生", "user:2026-11-18"),
   "menu.stop": e("停止", "user:2026-11-18"),
   "menu.record": e("録音", "user:2026-11-18"),
+  "menu.keepPlayed": e("さっきの演奏を残す", "user:2026-11-23"),
   "menu.toStart": e("先頭へ", "user:2026-11-18"),
   "menu.loop": e("ループ", "user:2026-11-18"),
   "menu.metronome": e("メトロノーム", "user:2026-11-18"),

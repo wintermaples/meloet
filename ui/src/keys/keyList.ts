@@ -38,6 +38,7 @@ export const ACTION_ROWS: Record<KeyAction["kind"], readonly KeyRow[]> = {
 
   playStop: [row("play", "keyList.playStop", () => t("key.playStop"))],
   record: [row("play", "menu.record", () => t("key.record"))],
+  keepPlayed: [row("play", "keyList.keepLast", (k) => k.shift(t("key.keepLast")))],
   toStart: [row("play", "menu.toStart", () => t("key.toStart"))],
   loop: [row("play", "menu.loop", () => t("key.loop"))],
   metronome: [row("play", "menu.metronome", () => t("key.metronome"))],
@@ -115,11 +116,10 @@ export const OTHER_ROWS: readonly KeyRow[] = [
 ];
 
 /**
- * Coming in round 12 wave 2 (R1, R2, A1). When their KeyAction kinds are added to keys.ts, move each row into
+ * Coming in round 12 wave 2 (R2, A1). When their KeyAction kinds are added to keys.ts, move each row into
  * ACTION_ROWS under its kind (the type check asks for it) and take it out of here.
  */
 export const WAVE2_ROWS: readonly KeyRow[] = [
-  row("play", "keyList.keepLast", (k) => k.shift(t("key.keepLast"))),
   row("play", "keyList.playByKeys", (k) => k.mod(t("key.playByKeys"))),
   row("arrange", "keyList.repeatClips", (k) => k.mod(t("key.repeatClips"))),
 ];

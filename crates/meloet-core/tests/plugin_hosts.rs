@@ -502,6 +502,8 @@ fn a_recording_goes_on_when_the_instrument_stops() {
     rig.block();
     rig.block();
     recorded.extend(std::iter::from_fn(|| rig.parts.handle.pop_recorded()));
+    // Only what the recording says.
+    recorded.retain(|r| !matches!(r, Recorded::Recent { .. } | Recorded::RecentEnd { .. }));
     assert!(matches!(
         recorded.first(),
         Some(Recorded::Started { from: 0, .. })

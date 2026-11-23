@@ -5,8 +5,8 @@ mod common;
 
 use meloet_engine::{
     BlockTiming, ClickSound, Engine, EngineCommand, EngineConfig, EngineParts, HeardPosition,
-    Instrument, InstrumentEvent, MidiIn, PlaceholderSynth, Recorded, Sequence, SequenceEvent,
-    TrackSet, TransportState,
+    Instrument, InstrumentEvent, MidiIn, PlaceholderSynth, RecentAt, Recorded, Sequence,
+    SequenceEvent, TrackSet, TransportState,
 };
 use rtrb::{Consumer, Producer, RingBuffer};
 
@@ -46,6 +46,8 @@ struct Rig {
     /// Keys not yet arrived, by `t_us`.
     keys: Vec<MidiIn>,
     out: Vec<f32>,
+    /// The `Recent` and `RecentEnd` items read so far ([`Rig::recent`]).
+    recent: Vec<Recorded>,
 }
 
 impl Rig {
@@ -58,6 +60,7 @@ impl Rig {
             delay_us,
             keys: Vec::new(),
             out: vec![0.0; block * 2],
+            recent: Vec::new(),
         }
     }
 
@@ -147,8 +150,20 @@ impl Rig {
         all
     }
 
+    /// What a recording says. What is played outside one is set aside for [`Rig::recent`].
     fn recorded_all(&mut self) -> Vec<Recorded> {
-        std::iter::from_fn(|| self.parts.handle.pop_recorded()).collect()
+        let (recent, recording): (Vec<_>, Vec<_>) =
+            std::iter::from_fn(|| self.parts.handle.pop_recorded())
+                .partition(|r| matches!(r, Recorded::Recent { .. } | Recorded::RecentEnd { .. }));
+        self.recent.extend(recent);
+        recording
+    }
+
+    /// The `Recent` and `RecentEnd` items since the last call, in the order they came.
+    fn recent(&mut self) -> Vec<Recorded> {
+        let recording = self.recorded_all();
+        assert!(recording.is_empty(), "{recording:?}");
+        std::mem::take(&mut self.recent)
     }
 }
 
@@ -1559,6 +1574,10 @@ fn every_transport_path_stays_off_the_allocator() {
         rig.parts.handle.drop_retired();
         rig.parts.handle.heard_now();
     }
+    let recent = |r: &&Recorded| matches!(r, Recorded::Recent { at: None, .. });
+    let placed = |r: &&Recorded| matches!(r, Recorded::Recent { at: Some(_), .. });
+    assert!(rig.recent.iter().filter(recent).count() > 100);
+    assert!(rig.recent.iter().filter(placed).count() > 100);
     assert_eq!(rig.parts.handle.meters().record_overflows(), 0);
     assert_eq!(
         common::audio_block_counts(),
@@ -1728,4 +1747,264 @@ fn the_clock_says_nothing_of_a_moment_it_no_longer_keeps() {
     let late = rig.frames - 100 * 64;
     let said = clock.kept_frame_at(rig.dac_us(late)).expect("kept");
     assert!((said - late as f64).abs() < 0.1, "{said} for {late}");
+}
+
+/// What `Recent` says of the note it carries: (note, run, place).
+fn recent_keys(items: &[Recorded]) -> Vec<(u8, u32, Option<RecentAt>)> {
+    items
+        .iter()
+        .filter_map(|r| match *r {
+            Recorded::Recent {
+                event: InstrumentEvent::NoteOn { note, .. },
+                run,
+                at,
+                ..
+            } => Some((note, run, at)),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Keys played while the song plays, with no recording, get the position that was heard, as
+/// exactly as recorded keys do; keys played while it stands still get only their time.
+#[test]
+fn keys_outside_a_recording_get_the_position_that_was_heard() {
+    for block in BLOCKS {
+        for delay_ms in [3u64, 13, 53, 120] {
+            for bpm in [9_600u32, 13_750] {
+                let label = format!("block {block}, delay {delay_ms} ms, tempo {bpm}");
+                let mut rig = Rig::new(block, delay_ms * 1000);
+                rig.tempo(bpm);
+                let t_still = rig.dac_us(rig.frames).round() as u64;
+                rig.key(t_still, on(50));
+                rig.key(t_still + 700, cc(64, 127));
+                rig.run(RATE / 2);
+                let start = rig.frames;
+                rig.send(EngineCommand::Play { from: BAR });
+                let dac =
+                    |rig: &Rig, tick: u64| rig.dac_us(start + frame_of(tick, BAR as i128, bpm));
+                let beats: Vec<u64> = (4..=8).map(|b| b * Q).collect();
+                for &tick in &beats[1..] {
+                    rig.key(dac(&rig, tick).round() as u64, on(60));
+                }
+                let late_us = 5_000.0;
+                rig.key((dac(&rig, 9 * Q) + late_us).round() as u64, on(61));
+                rig.run(frame_of(10 * Q, BAR as i128, bpm) + RATE / 5);
+                let stop_us = rig.base_us + (rig.frames as f64 * 1e6 / RATE as f64) as u64;
+                rig.send(EngineCommand::Stop { t_us: stop_us });
+                rig.key(stop_us + 2 * delay_ms * 1000 + 50_000, on(70));
+                rig.run(RATE / 2);
+
+                let got = rig.recent();
+                let keys = recent_keys(&got);
+                assert_eq!(keys.len(), 7, "{label}: {got:?}");
+                assert_eq!(keys[0], (50, 0, None), "{label}");
+                assert!(
+                    matches!(
+                        got[1],
+                        Recorded::Recent {
+                            event: InstrumentEvent::Control { .. },
+                            run: 0,
+                            at: None,
+                            t_us,
+                        } if t_us == t_still + 700
+                    ),
+                    "{label}: {got:?}"
+                );
+                for (i, &tick) in beats[1..].iter().enumerate() {
+                    let (note, run, at) = keys[1 + i];
+                    let at = at.unwrap_or_else(|| panic!("{label}: no place for {tick}"));
+                    assert_eq!((note, run, at.lap), (60, 1, 0), "{label}");
+                    assert!(
+                        (at.tick - tick as f64).abs() <= 0.5,
+                        "{label}: {} at {tick}",
+                        at.tick
+                    );
+                }
+                let late = keys[5].2.expect("placed");
+                let expected = (9 * Q) as f64 + late_us * ticks_per_us(bpm);
+                assert!((late.tick - expected).abs() <= 0.5, "{label}: {late:?}");
+                assert_eq!(keys[6], (70, 2, None), "{label}");
+
+                // Each run is closed before the first key of the next.
+                let ends: Vec<_> = got
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, r)| match *r {
+                        Recorded::RecentEnd { run, t_us, at } => Some((i, run, t_us, at)),
+                        _ => None,
+                    })
+                    .collect();
+                assert_eq!(ends.len(), 2, "{label}: {got:?}");
+                assert_eq!((ends[0].0, ends[0].1, ends[0].3), (2, 0, None), "{label}");
+                let (i, run, t_us, at) = ends[1];
+                assert_eq!((i, run, t_us), (got.len() - 2, 1, stop_us), "{label}");
+                let stopped_at = rig.parts.handle.heard_now().expect("rendered").tick;
+                let at = at.expect("the run played");
+                assert!(
+                    (at.tick - stopped_at).abs() <= 1.0 && at.lap == 0,
+                    "{label}: {at:?}, stopped at {stopped_at}"
+                );
+            }
+        }
+    }
+}
+
+/// A key played after the play was asked for but before its first frame is heard comes just
+/// before where the play starts, and a key a stop finds played after its own time belongs to
+/// the run that stands still.
+#[test]
+fn keys_around_the_start_and_the_stop_of_a_play_go_to_the_right_run() {
+    let bpm = 12_000;
+    for block in [64usize, 1024] {
+        let label = format!("block {block}");
+        let delay_us = 40_000;
+        let mut rig = Rig::new(block, delay_us);
+        rig.tempo(bpm);
+        rig.run(4 * block as u64);
+        let start = rig.frames;
+        rig.send(EngineCommand::Play { from: BAR });
+        // Read two blocks after the play began: its first frame is still on its way out.
+        let gap_us = rig.dac_us(start).round() as u64 - 30_000;
+        rig.key(gap_us, on(60));
+        rig.run(RATE / 2);
+        let now_us = rig.base_us + (rig.frames as f64 * 1e6 / RATE as f64) as u64;
+        // The stop is of 10 ms ago: one key before it, one after, both read with it.
+        rig.key(now_us - 15_000, on(61));
+        rig.key(now_us - 5_000, on(62));
+        rig.send(EngineCommand::Stop {
+            t_us: now_us - 10_000,
+        });
+        rig.run(RATE / 10);
+
+        let got = rig.recent();
+        let keys = recent_keys(&got);
+        assert_eq!(keys.len(), 3, "{label}: {got:?}");
+        let early = keys[0].2.expect("the run plays");
+        let expected = BAR as f64 - 30_000.0 * ticks_per_us(bpm);
+        assert_eq!((keys[0].0, keys[0].1), (60, 1), "{label}");
+        assert!((early.tick - expected).abs() <= 0.5, "{label}: {early:?}");
+        assert!(matches!(keys[1], (61, 1, Some(_))), "{label}: {keys:?}");
+        assert_eq!(keys[2], (62, 2, None), "{label}");
+        // The key after the stop comes before the end of the run it is not in.
+        assert!(
+            matches!(
+                got.last(),
+                Some(Recorded::RecentEnd { run: 1, t_us, at: Some(_) }) if *t_us == now_us - 10_000
+            ),
+            "{label}: {got:?}"
+        );
+    }
+}
+
+/// While the song plays round a loop, each key says which time round it was played in; a
+/// jump of the play line and a change of the loop begin another run.
+#[test]
+fn keys_played_round_a_loop_say_their_lap_and_a_jump_begins_another_run() {
+    let bpm = 9_600;
+    for block in [64usize, 2048] {
+        for delay_ms in [13u64, 120] {
+            let label = format!("block {block}, delay {delay_ms}");
+            let mut rig = Rig::new(block, delay_ms * 1000);
+            rig.tempo(bpm);
+            rig.send(EngineCommand::SetLoop {
+                start: 2 * Q,
+                end: BAR,
+                on: true,
+            });
+            rig.run(block as u64);
+            let start = rig.frames;
+            rig.send(EngineCommand::Play { from: 2 * Q });
+            let lap = frame_of(BAR, 2 * Q as i128, bpm);
+            let wrap = start + lap;
+            rig.key(rig.dac_us(wrap - 1).round() as u64, on(70));
+            rig.key(rig.dac_us(wrap).ceil() as u64, on(71));
+            rig.key(rig.dac_us(wrap + lap).round() as u64 + 1, on(72));
+            rig.run(3 * lap);
+            let got = rig.recent();
+            let keys = recent_keys(&got);
+            assert_eq!(keys.len(), 3, "{label}: {got:?}");
+            let at: Vec<RecentAt> = keys.iter().map(|k| k.2.expect("placed")).collect();
+            assert!(keys.iter().all(|k| k.1 == 1), "{label}: {keys:?}");
+            assert_eq!(at[0].lap, 0, "{label}");
+            assert!(
+                at[0].tick > (BAR - 1) as f64 && at[0].tick < BAR as f64,
+                "{label}: {at:?}"
+            );
+            assert_eq!(at[1].lap, 1, "{label}");
+            assert!(
+                at[1].tick >= (2 * Q) as f64 && at[1].tick < (2 * Q + 1) as f64,
+                "{label}: {at:?}"
+            );
+            assert_eq!(at[2].lap, 2, "{label}");
+
+            // The same loop sent again changes nothing; another loop and a jump do.
+            let mut runs = Vec::new();
+            for command in [
+                EngineCommand::SetLoop {
+                    start: 2 * Q,
+                    end: BAR,
+                    on: true,
+                },
+                EngineCommand::SetLoop {
+                    start: 2 * Q,
+                    end: BAR,
+                    on: false,
+                },
+                EngineCommand::Locate { tick: Q },
+                EngineCommand::SetMetronome { on: true },
+            ] {
+                rig.send(command);
+                rig.run(RATE / 4);
+                let now = rig.dac_us(rig.frames).round() as u64 - 1_000 * delay_ms - 2_000;
+                rig.key(now, on(80));
+                rig.run(RATE / 4);
+                let got = rig.recent();
+                let keys = recent_keys(&got);
+                assert_eq!(keys.len(), 1, "{label}: {got:?}");
+                runs.push((keys[0].1, keys[0].2.expect("placed").lap, got.len()));
+            }
+            // (run, lap, items): an end of the run comes with each new run.
+            assert_eq!(
+                runs,
+                [(1, 3, 1), (2, 0, 2), (3, 0, 2), (3, 0, 1)],
+                "{label}"
+            );
+        }
+    }
+}
+
+/// With nobody reading what the engine says, the keys played outside a recording stop coming
+/// before the ring is full: what a recording says still gets through.
+#[test]
+fn keys_outside_a_recording_leave_room_for_what_a_recording_says() {
+    let mut rig = Rig::new(256, 5_000);
+    rig.tempo(12_000);
+    for round in 0..6u64 {
+        let now = rig.base_us + (rig.frames as f64 * 1e6 / RATE as f64) as u64;
+        for k in 0..1000u64 {
+            rig.key(now + k, cc(1, (k % 128) as u8));
+        }
+        rig.run(RATE / 10);
+        assert!(round < 4 || rig.parts.handle.meters().record_overflows() > 0);
+    }
+    rig.send(EngineCommand::Record {
+        from: 0,
+        count_in_beats: 0,
+        muted: TrackSet::default(),
+    });
+    rig.run(RATE / 10);
+    let now = rig.base_us + (rig.frames as f64 * 1e6 / RATE as f64) as u64;
+    rig.send(EngineCommand::Stop { t_us: now });
+    rig.run(RATE / 10);
+    let recording = rig.recorded();
+    assert!(
+        matches!(
+            recording[..],
+            [Recorded::Started { .. }, Recorded::Stopped { .. }]
+        ),
+        "{recording:?}"
+    );
+    let kept = rig.recent.len();
+    assert!((3000..4096).contains(&kept), "{kept}");
 }

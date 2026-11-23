@@ -12,7 +12,7 @@ use meloet_model::{TICKS_PER_QUARTER, TempoMap};
 use crate::engine::monotonic_us;
 
 const SLOTS: usize = 512;
-const WORDS: usize = 10;
+const WORDS: usize = 11;
 /// How many of the newest stretches the frame of a moment is read from.
 const FRAME_VOTES: usize = 33;
 
@@ -80,6 +80,10 @@ pub(crate) struct Segment {
     pub record_from: i64,
     /// Of the metronome's clicks at `record_from`: the count-in is counted in these.
     pub ticks_per_beat: u32,
+    /// The run the stretch belongs to ([`crate::Recorded::Recent`]).
+    pub run: u32,
+    /// How often the loop went round in this run so far.
+    pub run_lap: u32,
 }
 
 impl Segment {
@@ -114,6 +118,7 @@ impl Segment {
             self.sec0.to_bits(),
             u64::from(self.map_gen),
             self.frame0,
+            u64::from(self.run) | u64::from(self.run_lap) << 32,
         ]
     }
 
@@ -132,6 +137,8 @@ impl Segment {
             sec0: f64::from_bits(w[7]),
             map_gen: w[8] as u32,
             frame0: w[9],
+            run: w[10] as u32,
+            run_lap: (w[10] >> 32) as u32,
         }
     }
 }
@@ -148,6 +155,10 @@ pub struct HeardPosition {
     pub count_in_beats_left: u32,
     /// How fast `tick` moves; 0 while stopped.
     pub ticks_per_us: f64,
+    /// The run of the transport the moment is in, and how often the loop went round in it
+    /// ([`crate::Recorded::Recent`]).
+    pub run: u32,
+    pub run_lap: u32,
 }
 
 #[derive(Default)]
@@ -339,5 +350,7 @@ pub(crate) fn heard(segment: &Segment, t_us: f64, map: Option<&TempoMap>) -> Hea
         lap: segment.lap,
         count_in_beats_left,
         ticks_per_us,
+        run: segment.run,
+        run_lap: segment.run_lap,
     }
 }

@@ -107,6 +107,8 @@ BOARDS = {
     # Round 12, A3.
     "trackDuplicated": None,
     "tooManyTracks": None,
+    "keepPlayedReady": None,
+    "nothingToKeep": None,
     "drumRoll": "R7-Drum",
     # About meloet.
     "about": "R7-About",

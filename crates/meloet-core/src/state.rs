@@ -47,7 +47,8 @@ use crate::sf2store::{self, Sf2Info, Sf2Key};
 use crate::layout::{self, Bands, BottomBand, FoldWhy, SidePanel, WindowSize};
 use crate::play::mixer::gain_view;
 use crate::play::{
-    ClipGains, Cut, EngineOp, Heard, OpenInput, Play, PlugState, RecordReport, VocalFileAsk,
+    ClipGains, Cut, EngineOp, Heard, HeardRun, HeldNow, OpenInput, Play, Played, PlugState,
+    RecordReport, VocalFileAsk,
 };
 use crate::plugins::{Plugins, ScanJob, ScanNews};
 use crate::settings::{SCALES, Settings, SoundSettings};
@@ -140,6 +141,12 @@ pub enum Input {
     MidiBack,
     /// What the engine says about a recording.
     Record(RecordReport),
+    /// What the engine says was played outside a recording, in order, and what is held on
+    /// the keyboards after it.
+    Played {
+        items: Vec<Played>,
+        held: HeldNow,
+    },
     /// A key went down while [`Model::wants_loading_key`].
     KeyWhileLoading,
     /// Nothing but the time and the heard position given with [`Model::set_now`].
@@ -948,6 +955,7 @@ impl Model {
             }
             Input::KeyboardRemoved { id } => {
                 if self.remove_keyboard(&id) {
+                    self.play.played_keys_lost();
                     effects.push(Effect::AllNotesOff);
                 }
             }
@@ -1024,6 +1032,7 @@ impl Model {
                 if self.midi_restarting.is_none() {
                     self.midi_restarting = Some(Vec::new());
                     self.play.keys_lost(&mut effects);
+                    self.play.played_keys_lost();
                     effects.push(Effect::AllNotesOff);
                 }
             }
@@ -1065,6 +1074,7 @@ impl Model {
                 self.new_song_unsaid = true;
             }
             Input::Record(report) => self.play.report(report, &mut effects),
+            Input::Played { items, held } => self.play.played(&items, held),
             Input::KeyWhileLoading => self.loading_said = self.play.target_loading(),
             Input::Tick => {
                 // The fader's step waits for the batch, as the person's intents do.
@@ -1382,6 +1392,12 @@ impl Model {
         self.play.set_now(t_us, heard);
     }
 
+    /// The run of the transport the listener is in, read with `heard`
+    /// (`meloet_engine::Recorded::Recent`).
+    pub fn set_heard_run(&mut self, run: Option<HeardRun>) {
+        self.play.set_heard_run(run);
+    }
+
     /// Whether the transport moves or a recording is under way: the engine's reports are then
     /// read often.
     pub fn is_moving(&self) -> bool {
@@ -1464,8 +1480,7 @@ impl Model {
         let can_play = self.open.is_some() && !self.measuring();
         let command = self.vocal_command(command, effects)?;
         match command {
-            // round12 stub: R1
-            Command::KeepPlayed => {}
+            Command::KeepPlayed => self.notice = self.play.keep_played(effects),
             // round12 stub: R2
             Command::TypedKeys { .. } | Command::TypedKey { .. } => {}
             // round12 stub: E1

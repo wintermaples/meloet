@@ -210,6 +210,7 @@ impl Play {
             // A keys track is selected: the keys are its own.
             None => self.song.session.last_keys = None,
         }
+        self.recent_follow_target();
     }
 
     /// The session names only tracks that are in the song.

@@ -86,7 +86,6 @@ describe("fake intents", () => {
     const before = await now();
     const insert = { strip: { kind: "master" as const }, slot: 0 };
     const commands: Command[] = [
-      { type: "keepPlayed" },
       { type: "typedKeys", on: true },
       { type: "typedKey", note: 60, down: true, tUs: 1000 },
       { type: "setNoteGlow", on: false },

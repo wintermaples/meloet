@@ -148,6 +148,30 @@ export function reduceRound10(
     case "setOverdub":
       transport.overdub = command.on;
       break;
+    // R1: the fake holds no keys. What waits to be kept is one phrase of two bars from the bar of the play line, a
+    // new clip on the keys track where nothing is in the way (Rust adds a take to a clip there).
+    case "keepPlayed": {
+      const track = song.tracks.find((t) => t.id === song.keysTarget);
+      if (busy || !track) return nothing;
+      if (!transport.canKeepPlayed) {
+        message = { id: "nothingToKeep" };
+        break;
+      }
+      const start = barHead(transport.position);
+      const end = map.tickOfBar(map.meterAt(start).bar + 2);
+      if (track.clips.some((c) => c.start < end && c.end > start)) return nothing;
+      const beat = (end - start) / 8;
+      const take = newTake(
+        end - start,
+        [60, 64, 67, 72].map((key, i) => ({ start: i * 2 * beat, length: beat, key, velocity: 96 })),
+      );
+      const clip: ClipView = { id: next++, name: track.name, start, end, take: 1, takes: 1, takeId: take.id, takeOffset: 0, noteCount: take.notes.length, audio: null };
+      track.clips = [...track.clips, clip].sort((a, b) => a.start - b.start);
+      show(clip);
+      transport.canKeepPlayed = false;
+      row = { name: { kind: "keepPlayed" }, what: { kind: "take", number: 1 }, place: { kind: "track", track: { number: track.number, name: track.name } } };
+      break;
+    }
     case "setAiLink":
       // The fake has no socket: on is 「待っています」 (the scene aiLinkConnected shows the third state).
       aiLink.on = command.on;

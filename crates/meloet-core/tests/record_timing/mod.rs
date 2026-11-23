@@ -348,6 +348,32 @@ pub fn record(
     keys: &VirtualKeyboard,
     run: Run,
 ) -> Outcome {
+    take(core, latest, keys, run, false)
+}
+
+/// As [`record`], but the song only plays while the keys are pressed, and what was played is
+/// kept afterwards (「さっきのを残す」).
+pub fn play_and_keep(
+    core: &Core,
+    latest: &Mutex<Option<Reading>>,
+    keys: &VirtualKeyboard,
+    run: Run,
+) -> Outcome {
+    take(core, latest, keys, run, true)
+}
+
+fn take(
+    core: &Core,
+    latest: &Mutex<Option<Reading>>,
+    keys: &VirtualKeyboard,
+    run: Run,
+    keep: bool,
+) -> Outcome {
+    let (start, moving) = if keep {
+        (Command::PlayStop, TransportState::Playing)
+    } else {
+        (Command::Record, TransportState::Recording)
+    };
     core.send(Command::GoToStart);
     if let Some(bpm) = run.bpm {
         core.send(Command::SetTempo { bpm });
@@ -367,14 +393,12 @@ pub fn record(
     let latency_ms = state.audio.latency_ms;
 
     let asked = monotonic_us() as f64;
-    core.send(Command::Record);
+    core.send(start.clone());
     let deadline = Instant::now() + Duration::from_secs(3);
     // Right after the last take stopped, the DAC still plays its end for one latency: wait for
     // the new recording from tick 0 to be heard.
     while !reading(latest).is_some_and(|r| {
-        r.sent_us > asked
-            && r.transport.state == TransportState::Recording
-            && r.transport.tick < TICKS_PER_BEAT
+        r.sent_us > asked && r.transport.state == moving && r.transport.tick < TICKS_PER_BEAT
     }) {
         assert!(Instant::now() < deadline, "recording did not start");
         std::thread::sleep(Duration::from_millis(2));
@@ -393,7 +417,7 @@ pub fn record(
         let beat_s = map.seconds_at(beat as f64);
         let beat_len_s = map.seconds_at(heads[at + 1] as f64) - beat_s;
         let r = reading(latest).expect("a reading");
-        assert_eq!(r.transport.state, TransportState::Recording);
+        assert_eq!(r.transport.state, moving);
         assert!(r.transport.ticks_per_us > 0.0);
         let expected_s = map.seconds_at(beat as f64 + dither(i)) + run.late_ms / 1000.0;
         let expected_tick = map.tick_at(expected_s);
@@ -441,12 +465,23 @@ pub fn record(
         std::thread::sleep(Duration::from_secs_f64(beat_len_s * 0.2));
     }
     std::thread::sleep(Duration::from_secs_f64(0.3));
-    core.send(Command::Record);
+    let steps = core.snapshot().state.song.undo_count;
+    core.send(start);
+    if keep {
+        wait_for(core, "the play stopped", Duration::from_secs(3), |s| {
+            s.transport.state == TransportState::Stopped && s.transport.can_keep_played
+        });
+        core.send(Command::KeepPlayed);
+    }
     wait_for(
         core,
         "the take is in the song",
         Duration::from_secs(3),
-        |s| s.transport.state == TransportState::Stopped && s.transport.recording.is_none(),
+        |s| {
+            s.transport.state == TransportState::Stopped
+                && s.transport.recording.is_none()
+                && s.song.undo_count > steps
+        },
     );
 
     let state = core.snapshot().state;

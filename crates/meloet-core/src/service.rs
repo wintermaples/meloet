@@ -51,7 +51,8 @@ use crate::measure::{self, KeyToSound, MemoryLog, PluginLog};
 use crate::mixbook::{self, MixBook};
 use crate::pcm::{FeedClip, PcmStore};
 use crate::play::{
-    AUDITION_SEAT, EngineOp, Heard, MAX_TRACKS, PlugState, RecordReport, Spot, VoiceSpec,
+    AUDITION_SEAT, EngineOp, Heard, HeardRun, HeldNow, MAX_TRACKS, Played, PlayedAt, PlugState,
+    RecordReport, Spot, VoiceSpec,
 };
 use crate::plugins::hosts::{
     DEFAULT_GEOMETRY, EditorKind, HostError, HostNews, HostOptions, Hosts, LoadSpec, Loaded,
@@ -360,6 +361,23 @@ struct Held {
 }
 
 impl Held {
+    fn controls(&self) -> HeldControls {
+        HeldControls {
+            sustain: self.sustain.load(Relaxed),
+            bend: self.bend.load(Relaxed),
+            modulation: self.modulation.load(Relaxed),
+        }
+    }
+
+    fn now(&self) -> HeldNow {
+        let keys = u128::from(self.keys_low.load(Relaxed))
+            | u128::from(self.keys_high.load(Relaxed)) << 64;
+        HeldNow {
+            keys,
+            controls: self.controls(),
+        }
+    }
+
     fn note(&self, event: MidiEvent) {
         let key = |note: u8| {
             let cell = if note < 64 {
@@ -2165,11 +2183,7 @@ fn record_report(r: Recorded, held: &Held, file_frame: Option<f64>) -> Option<Re
     Some(match r {
         Recorded::Started { from, .. } => RecordReport::Started {
             from,
-            held: HeldControls {
-                sustain: held.sustain.load(Relaxed),
-                bend: held.bend.load(Relaxed),
-                modulation: held.modulation.load(Relaxed),
-            },
+            held: held.controls(),
         },
         Recorded::Event {
             event,
@@ -2177,19 +2191,7 @@ fn record_report(r: Recorded, held: &Held, file_frame: Option<f64>) -> Option<Re
             tick,
             lap,
         } => RecordReport::Event {
-            kind: match event {
-                InstrumentEvent::NoteOn { note, velocity } => RecEventKind::NoteOn {
-                    key: note,
-                    velocity,
-                },
-                InstrumentEvent::NoteOff { note } => RecEventKind::NoteOff { key: note },
-                InstrumentEvent::Control { controller, value } => RecEventKind::Cc {
-                    number: controller,
-                    value,
-                },
-                InstrumentEvent::PitchBend { value } => RecEventKind::PitchBend(value),
-                InstrumentEvent::AllNotesOff => return None,
-            },
+            kind: rec_event_kind(event)?,
             t_us,
             tick,
             lap,
@@ -2207,7 +2209,51 @@ fn record_report(r: Recorded, held: &Held, file_frame: Option<f64>) -> Option<Re
         Recorded::Stopped {
             t_us, tick, lap, ..
         } => RecordReport::Stopped { t_us, tick, lap },
+        Recorded::Recent { .. } | Recorded::RecentEnd { .. } => return None,
     })
+}
+
+fn rec_event_kind(event: InstrumentEvent) -> Option<RecEventKind> {
+    Some(match event {
+        InstrumentEvent::NoteOn { note, velocity } => RecEventKind::NoteOn {
+            key: note,
+            velocity,
+        },
+        InstrumentEvent::NoteOff { note } => RecEventKind::NoteOff { key: note },
+        InstrumentEvent::Control { controller, value } => RecEventKind::Cc {
+            number: controller,
+            value,
+        },
+        InstrumentEvent::PitchBend { value } => RecEventKind::PitchBend(value),
+        InstrumentEvent::AllNotesOff => return None,
+    })
+}
+
+/// What the engine says of the keys played outside a recording (`Recorded::Recent`).
+fn played_report(r: &Recorded) -> Option<Played> {
+    let place = |at: meloet_engine::RecentAt| PlayedAt {
+        tick: at.tick,
+        lap: at.lap,
+    };
+    match *r {
+        Recorded::Recent {
+            event,
+            t_us,
+            run,
+            at,
+        } => rec_event_kind(event).map(|kind| Played::Key {
+            kind,
+            t_us,
+            run,
+            at: at.map(place),
+        }),
+        Recorded::RecentEnd { run, t_us, at } => Some(Played::RunEnded {
+            run,
+            t_us,
+            at: at.map(place),
+        }),
+        _ => None,
+    }
 }
 
 fn transport_state(s: meloet_engine::TransportState) -> TransportState {
@@ -2456,6 +2502,10 @@ impl Worker {
             };
             match rx.recv_timeout(wait) {
                 Ok(Msg::Input(input, reply)) => {
+                    if input == Input::Command(Command::KeepPlayed) {
+                        // The keys the engine has said nothing of yet are kept too.
+                        self.poll_engine();
+                    }
                     let (waited, _) = self.model.held_counts();
                     let rev = self.handle(input);
                     let (waits, served) = self.model.held_counts();
@@ -2773,11 +2823,29 @@ impl Worker {
 
     /// Takes in what the engine said about the recording, and what the listener hears now.
     fn poll_engine(&mut self) {
+        // What was played outside a recording goes in together, in its place among the rest.
+        let mut played = Vec::new();
         while let Some(r) = self.audio.handle.pop_recorded() {
+            if let Some(p) = played_report(&r) {
+                played.push(p);
+                continue;
+            }
+            if !played.is_empty() {
+                let items = std::mem::take(&mut played);
+                let held = self.shared.held.now();
+                self.handle(Input::Played { items, held });
+            }
             let file_frame = self.vocal_mark(&r);
             if let Some(report) = record_report(r, &self.shared.held, file_frame) {
                 self.handle(Input::Record(report));
             }
+        }
+        if !played.is_empty() {
+            let held = self.shared.held.now();
+            self.handle(Input::Played {
+                items: played,
+                held,
+            });
         }
         if self.model.is_moving() {
             self.handle(Input::Tick);
@@ -2785,20 +2853,27 @@ impl Worker {
         self.poll_input();
     }
 
-    fn heard(&self) -> Option<Heard> {
-        self.heard_at(monotonic_us())
-    }
-
     /// What was heard at `t_us` (`monotonic_us`): for a value moved in a plugin's own window
     /// at the time the plugin process gave it (docs/architecture.md 21-9).
     fn heard_at(&self, t_us: u64) -> Option<Heard> {
+        self.heard_with_run(t_us).map(|(heard, _)| heard)
+    }
+
+    fn heard_with_run(&self, t_us: u64) -> Option<(Heard, HeardRun)> {
         if !self.shared.stream.open.load(Relaxed) {
             return None;
         }
-        self.audio.handle.heard_at(t_us).map(|h| Heard {
-            tick: h.tick,
-            state: transport_state(h.state),
-            lap: h.lap,
+        self.audio.handle.heard_at(t_us).map(|h| {
+            let heard = Heard {
+                tick: h.tick,
+                state: transport_state(h.state),
+                lap: h.lap,
+            };
+            let at = (h.state == meloet_engine::TransportState::Playing).then_some(PlayedAt {
+                tick: h.tick,
+                lap: h.run_lap,
+            });
+            (heard, HeardRun { run: h.run, at })
         })
     }
 
@@ -2853,7 +2928,10 @@ impl Worker {
     fn handle_now(&mut self, input: Input) -> u64 {
         let mut inputs = VecDeque::from([input]);
         while let Some(input) = inputs.pop_front() {
-            self.model.set_now(monotonic_us(), self.heard());
+            let now = monotonic_us();
+            let (heard, run) = self.heard_with_run(now).unzip();
+            self.model.set_now(now, heard);
+            self.model.set_heard_run(run);
             let effects = self.model.handle(input);
             // Before anything is asked about the song's audio: where it is looked for.
             self.tell_song_dir();

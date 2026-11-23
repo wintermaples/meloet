@@ -1760,6 +1760,22 @@ SCENES.trackDuplicated = {
   },
   meters: QUIET,
 };
+// R1: something was played while stopped: 「さっきのを残す」 can be pressed.
+SCENES.keepPlayedReady = {
+  setup(s) {
+    bandSong(s, BAND_TRACKS.slice(0, 4));
+    s.transport.canKeepPlayed = true;
+  },
+  meters: QUIET,
+};
+// R1: Shift R with nothing played.
+SCENES.nothingToKeep = {
+  setup(s) {
+    bandSong(s, BAND_TRACKS.slice(0, 4));
+  },
+  after: (s) => (s.status.message = { id: "nothingToKeep" }),
+  meters: QUIET,
+};
 // A3: 「トラックを複製」 in a song of 64 tracks.
 SCENES.tooManyTracks = {
   setup(s) {
@@ -4091,6 +4107,7 @@ const NOTICES: StatusMessage["id"][] = [
   "trackAdded",
   "trackDeleted",
   "tooManyTracks",
+  "nothingToKeep",
   "instrumentReplaced",
   "paramClamped",
   "paramRejected",

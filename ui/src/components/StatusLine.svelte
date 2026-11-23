@@ -450,6 +450,8 @@
         return plain("msg.trackDeleted", { track: track(m.track), undoKey: modKey(t("key.undo")) });
       case "tooManyTracks":
         return plain("msg.tooManyTracks");
+      case "nothingToKeep":
+        return plain("msg.nothingToKeep");
       case "instrumentReplaced":
         return withLanes(
           plain("msg.instrumentReplaced", {

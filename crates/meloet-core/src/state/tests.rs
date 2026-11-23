@@ -2023,7 +2023,6 @@ fn the_commands_of_round_12_wave_2_are_taken_and_change_nothing_yet() {
         slot: 0,
     };
     let commands = [
-        Command::KeepPlayed,
         Command::TypedKeys { on: true },
         Command::TypedKey {
             note: 60,

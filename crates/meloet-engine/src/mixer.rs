@@ -353,6 +353,18 @@ impl Strip {
             .fold(0u32, |sum, effect| sum.saturating_add(effect.latency()))
     }
 
+    /// How far the limiters in slots that are not passed by hold the sound down, the most of
+    /// them, in dB; `None` when there is no such limiter. A slot on its way to another place
+    /// still counts, and the effect a slot fades out from does not.
+    pub fn limiting_db(&self) -> Option<f32> {
+        (self.slots.iter())
+            .filter(|slot| !slot.bypassed)
+            .filter_map(|slot| slot.effect.as_ref())
+            .filter(|effect| effect.is_limiter())
+            .map(|effect| effect.reduction_db())
+            .reduce(f32::max)
+    }
+
     /// `gain` is linear. `frames` 0: at once.
     pub fn set_level(&mut self, gain: f32, pan: f32, frames: u32) {
         if !gain.is_finite() {

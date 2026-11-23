@@ -57,4 +57,13 @@ pub trait Effect: Send {
         let _ = frame;
         self.set_param(index, value);
     }
+    /// How far the effect holds the sound down at the end of the last `process`, in dB (0 or
+    /// more): a limiter's or a compressor's gain reduction. Read on the audio thread.
+    fn reduction_db(&self) -> f32 {
+        0.0
+    }
+    /// A limiter: what the master's limiter holds down is read from these only (round 12, M2).
+    fn is_limiter(&self) -> bool {
+        false
+    }
 }

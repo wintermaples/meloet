@@ -47,6 +47,9 @@ fn processing_and_parameter_changes_do_not_allocate() {
                     tempo_bpm: [120.0, 30.0, 300.0][round / 50 % 3],
                 };
                 fx.process(&mut left[..frames], &mut right[..frames], &ctx);
+                let held = fx.reduction_db();
+                assert!(held.is_finite() && held >= 0.0, "{kind:?}: {held}");
+                assert_eq!(fx.is_limiter(), kind == EffectKind::Limiter);
                 blocks += 1;
             }
         }

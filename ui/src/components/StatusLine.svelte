@@ -707,6 +707,12 @@
           button: { label: t("button.openReleasePage"), command: { type: "openReleasePage" } },
           also: { label: t("button.newVersionLater"), command: { type: "dismissNewVersion" } },
         };
+      case "tooLoud":
+        return {
+          ...plain(m.limiter ? "msg.tooLoudLimiter" : "msg.tooLoudOver", { db: m.byDb.toFixed(1) }),
+          button: { label: t("button.lowerAllTracks", { db: m.lowerDb }), command: { type: "lowerAllTracks", db: m.lowerDb } },
+          also: { label: t("button.close"), command: { type: "dismissTooLoud" } },
+        };
       default:
         return null;
     }

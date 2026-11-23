@@ -39,6 +39,7 @@ use meloet_sound::sampler::{LoadError, SampleBank};
 use crate::ai::{
     AiAnswer, AiAsk, AiLevels, AiMeasure, AiRefusal, AiRender, AiRendered, AiSong, AiSwitch,
 };
+use crate::analysis::{Analysis, Readings};
 use crate::audiofiles::keeper::AudioNews;
 use crate::audiofiles::{AudioStore, Settling};
 use crate::export::{ExportAsk, ExportNews};
@@ -71,6 +72,7 @@ use crate::state::{
     Effect, Input, Model, PackAsk, PackStart, PluginAsk, PluginSaid, RecoveryStart, SaveTo,
     retry_delay,
 };
+use crate::tooloud;
 
 const TELEMETRY_TICK: Duration = Duration::from_micros(16_667);
 /// How often at most the status line is told that the microphone is too loud.
@@ -630,21 +632,23 @@ impl Core {
             },
         });
 
+        let audio = Audio::new(
+            parts.engine,
+            parts.handle,
+            options.audio,
+            library,
+            sf2,
+            model.engine_seats(),
+            wishes,
+        )
+        .with_store(audio_store.clone())
+        .with_maker(maker);
+        let readings = audio.analysis.readings().clone();
         let core = {
             let worker = Worker {
                 hub: hub.clone(),
                 shared: shared.clone(),
-                audio: Audio::new(
-                    parts.engine,
-                    parts.handle,
-                    options.audio,
-                    library,
-                    sf2,
-                    model.engine_seats(),
-                    wishes,
-                )
-                .with_store(audio_store.clone())
-                .with_maker(maker),
+                audio,
                 model,
                 input: {
                     #[cfg_attr(not(feature = "dev-hooks"), allow(unused_mut))]
@@ -691,7 +695,7 @@ impl Core {
             let (hub, shared, tx) = (hub.clone(), shared.clone(), tx.clone());
             std::thread::Builder::new()
                 .name("meloet-telemetry".into())
-                .spawn(move || telemetry_loop(&hub, &shared, &meters, &tx))
+                .spawn(move || telemetry_loop(&hub, &shared, &meters, &readings, &tx))
                 .expect("failed to start the telemetry thread")
         };
 
@@ -1360,6 +1364,7 @@ struct Audio {
     sources: Arc<Vec<Arc<meloet_model::AudioSource>>>,
     store: Arc<AudioStore>,
     readahead: ReadAhead,
+    analysis: Analysis,
     /// `EngineMeters::stream_missing` as last written to the log.
     missing_logged: u64,
     /// `AudioStore::generation` as last looked at.
@@ -1479,7 +1484,7 @@ const SEAT_COMMAND_WAIT: Duration = Duration::from_millis(100);
 impl Audio {
     fn new(
         engine: Engine,
-        handle: EngineHandle,
+        mut handle: EngineHandle,
         allowed: bool,
         sounds: Library,
         sf2: Sf2Store,
@@ -1488,6 +1493,7 @@ impl Audio {
     ) -> Audio {
         // Until `with_store` gives the core's own: a store that has no file.
         let store = Arc::new(AudioStore::new(None));
+        let analysis = Analysis::spawn(handle.take_analysis());
         let mut audio = Audio {
             handle,
             engine: Some(engine),
@@ -1505,6 +1511,7 @@ impl Audio {
             sources: Arc::default(),
             readahead: ReadAhead::spawn(store.clone()),
             store,
+            analysis,
             missing_logged: 0,
             store_seen: 0,
             timeline: None,
@@ -1904,6 +1911,9 @@ impl Audio {
             self.engine = Some(engine);
             if let Some(wants) = self.handle.take_stream_wants() {
                 self.readahead.set_wants(wants);
+            }
+            if let Some(reader) = self.handle.take_analysis() {
+                self.analysis.set_reader(reader);
             }
             for op in self.mix.ops().into_iter().chain(self.seats.ops()) {
                 self.send_seat_op(op);
@@ -3751,7 +3761,13 @@ fn key_to_sound_ms(record: LatencyRecord) -> Option<f32> {
 
 /// 60 Hz: sends the readings unless they repeat what was sent last, and tells the core thread
 /// what it sees of the stream.
-fn telemetry_loop(hub: &Hub, shared: &Shared, meters: &EngineMeters, tx: &Sender<Msg>) {
+fn telemetry_loop(
+    hub: &Hub,
+    shared: &Shared,
+    meters: &EngineMeters,
+    readings: &Readings,
+    tx: &Sender<Msg>,
+) {
     let mut seq = 0u32;
     let mut last: Option<Telemetry> = None;
     let mut bytes = Vec::new();
@@ -3761,6 +3777,9 @@ fn telemetry_loop(hub: &Hub, shared: &Shared, meters: &EngineMeters, tx: &Sender
     let mut next = Instant::now();
     let mut seat_peaks = vec![[0.0f32; 2]; meters.track_count() + 1];
     let mut said_loud = None;
+    let started = Instant::now();
+    let mut too_loud = tooloud::Watch::default();
+    let mut callbacks_seen = meters.callbacks();
 
     while !shared.stop.load(Relaxed) {
         let stream = &shared.stream;
@@ -3820,6 +3839,27 @@ fn telemetry_loop(hub: &Hub, shared: &Shared, meters: &EngineMeters, tx: &Sender
         } else {
             None
         };
+        let master_peak = meters.take_master_peak();
+        let master_reduction = meters.take_master_reduction();
+        let callbacks = meters.callbacks();
+        let found = too_loud.read(tooloud::Reading {
+            at: started.elapsed(),
+            playing: (transport.as_ref()).is_some_and(|t| {
+                matches!(t.state, TransportState::Playing | TransportState::Recording)
+            }),
+            fresh: std::mem::replace(&mut callbacks_seen, callbacks) != callbacks,
+            aside: meters.take_aside(),
+            limiter: meters.master_limited(),
+            reduction_db: master_reduction,
+            peak: master_peak[0].max(master_peak[1]),
+        });
+        if let Some(found) = found {
+            let too_loud = Input::TooLoud {
+                by_db: found.by_db,
+                limiter: found.limiter,
+            };
+            let _ = tx.send(Msg::Input(too_loud, None));
+        }
         let now = Telemetry {
             seq,
             sent_ns: monotonic_us() * 1000,
@@ -3832,7 +3872,7 @@ fn telemetry_loop(hub: &Hub, shared: &Shared, meters: &EngineMeters, tx: &Sender
             master_clipped: meters.take_clipped(),
             pitch_bend: shared.held.bend.load(Relaxed),
             load_permille: steady_load(open, meters.load_permille(), last.as_ref()),
-            master_peak: meters.take_master_peak(),
+            master_peak,
             transport,
             return_peaks: [meters.take_return_peak(0), meters.take_return_peak(1)],
             track_peaks,
@@ -3844,14 +3884,12 @@ fn telemetry_loop(hub: &Hub, shared: &Shared, meters: &EngineMeters, tx: &Sender
                 }
                 mics
             },
-            // round12 stub: M2
-            master_reduction: 0,
-            // round12 stub: E7
-            spectrum: [0; meloet_protocol::SPECTRUM_BANDS],
-            // round12 stub: M3
-            lufs_short: meloet_protocol::TELEMETRY_NO_VALUE,
-            lufs_integrated: meloet_protocol::TELEMETRY_NO_VALUE,
-            true_peak: meloet_protocol::TELEMETRY_NO_VALUE,
+            master_reduction: (master_reduction * 10.0).round().clamp(0.0, 255.0) as u8,
+            // The analysis thread's (`crate::analysis`).
+            spectrum: readings.spectrum(),
+            lufs_short: readings.lufs_short(),
+            lufs_integrated: readings.lufs_integrated(),
+            true_peak: readings.true_peak(),
         };
         let fresh = hub.take_telemetry_fresh();
         if fresh || !last.as_ref().is_some_and(|l| l.same_readings(&now)) {

@@ -3617,6 +3617,26 @@ SCENES.metronome = {
   },
   meters: QUIET,
 };
+// ---- round 12 M2: 「音が大きすぎます」 while the band plays. With the master's limiter holding the sound down (the mock),
+// and with the limiter passed by, the master going over 0 dB.
+const tooLoudScene = (limiter: boolean): SceneDef => ({
+  setup(s) {
+    bandSong(s);
+    s.transport.state = "playing";
+    const held = s.song.master.slots[0];
+    if (!limiter && held) held.bypassed = true;
+  },
+  after: (s) =>
+    (s.status.message = limiter ? { id: "tooLoud", byDb: 5.6, lowerDb: 6, limiter: true } : { id: "tooLoud", byDb: 2.1, lowerDb: 3, limiter: false }),
+  meters: {
+    ...QUIET,
+    master: limiter ? [dbfs(-0.3), dbfs(-0.5)] : [dbfs(2.1), dbfs(1.4)],
+    masterReductionDb: limiter ? 5.6 : 0,
+    position: playingAt("9.1.000"),
+  },
+});
+SCENES.tooLoudLimiter = tooLoudScene(true);
+SCENES.tooLoudOver = tooLoudScene(false);
 
 // F8-MultiClip: the two clips of 「6 歌」 and one of 「7 歌 2」 selected; their volumes differ.
 SCENES.multiClip = {
@@ -4809,6 +4829,16 @@ export function reduceMixer(
       if (strip && "pan" in strip && command.commit) strip.pan = Math.max(-100, Math.min(100, Math.round(command.pan)));
       break;
     }
+    // M2: every track's fader `db` lower, −∞ staying and none below −60 dB; refused while counting in or recording. A
+    // track whose volume lane moves keeps its fader (Rust lowers the lane's points, which the fake does not hold).
+    case "lowerAllTracks": {
+      if (!(command.db > 0) || state.transport.state === "countIn" || state.transport.state === "recording") break;
+      for (const track of song.tracks) {
+        if (track.gainDb === null || track.lanes.some((l) => l.target.kind === "volume" && !l.resting && l.points > 0)) continue;
+        track.gainDb = Math.round(Math.max(-60, track.gainDb - command.db) * 100) / 100;
+      }
+      break;
+    }
     case "setSend": {
       const track = song.tracks.find((t) => t.id === command.track);
       if (track && command.commit) track.sends[command.bus === "a" ? 0 : 1] = clampDb(command.db);
@@ -5196,6 +5226,10 @@ function reduce(state: AppState, bands: FakeBands, rest: StatusMessage | null, s
   if (JSON.stringify(plugins) !== JSON.stringify(state.plugins)) changes.push({ section: "plugins", value: plugins });
   // The fake has no song files: 「最近ひらいた曲 ▸」 opens nothing; 「一覧を消す」 empties the list.
   if (command.type === "clearRecent" && state.recent.length > 0) changes.push({ section: "recent", value: [] });
+  // M2: 「閉じる」 and 「下げる」 put 「音が大きすぎます」 away (下げる not while counting in or recording, when it is not shown).
+  const busy = state.transport.state === "countIn" || state.transport.state === "recording";
+  const tooLoudGone =
+    state.status.message?.id === "tooLoud" && (command.type === "dismissTooLoud" || (command.type === "lowerAllTracks" && !busy));
   // Scenes set the rest of the status line by hand; only the notices and the selected notes move here.
   let message =
     notice ??
@@ -5203,7 +5237,7 @@ function reduce(state: AppState, bands: FakeBands, rest: StatusMessage | null, s
     clips?.notice ??
     tracks?.notice ??
     shelfMessage(shelf, song, library) ??
-    (isNotice(state.status.message) || isShelfMessage(state.status.message) ? rest : state.status.message);
+    (tooLoudGone ? null : isNotice(state.status.message) || isShelfMessage(state.status.message) ? rest : state.status.message);
   if (message?.id === "summary") {
     const notes = noteSelection(pianoRoll);
     message = { ...message, notes, nothingSelected: notes === null && (clips?.arrange ?? state.arrange).selectedClips.length === 0 };

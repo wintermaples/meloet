@@ -2556,6 +2556,11 @@ export const texts = {
   "settings.checkUpdates": e("新しい版をたしかめる", "user:2026-11-23"),
   "settings.checkUpdatesOn": e("オン", "user:2026-11-23"),
   "settings.checkUpdatesOff": e("オフ", "user:2026-11-23"),
+  // 「音が大きすぎます」 (round 12, M2): the status line while it plays and after; {db} is the measured amount to a tenth, the
+  // button's {db} the whole dB it lowers by. 「閉じる」 is button.close.
+  "msg.tooLoudLimiter": e("音が大きすぎます。リミッターがずっと {db} dB おさえています", "user:2026-11-23", { db: "6" }),
+  "msg.tooLoudOver": e("音が大きすぎます。マスターが {db} dB 越えています", "user:2026-11-23", { db: "2.1" }),
+  "button.lowerAllTracks": e("全部のトラックを {db} dB 下げる", "user:2026-11-23", { db: "6" }),
 
   // [Menus, keys]
   // Key names written at the right of menu rows (the table in spec 4). Mod becomes key.ctrl or key.cmd.

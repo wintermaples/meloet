@@ -2058,8 +2058,6 @@ fn the_commands_of_round_12_wave_2_are_taken_and_change_nothing_yet() {
             effect: EffectKind::Limiter,
             name: "いつもの".into(),
         },
-        Command::LowerAllTracks { db: 6.0 },
-        Command::DismissTooLoud,
     ];
     for command in commands {
         assert_eq!(cmd(&mut m, command.clone()), [], "{command:?}");

@@ -97,8 +97,6 @@ describe("fake intents", () => {
       { type: "applyPreset", insert, preset: { kind: "factory", id: "finish" } },
       { type: "savePreset", insert, name: "いつもの" },
       { type: "deletePreset", effect: "limiter", name: "いつもの" },
-      { type: "lowerAllTracks", db: 6 },
-      { type: "dismissTooLoud" },
     ];
     for (const command of commands) await send(command);
     const after = await now();

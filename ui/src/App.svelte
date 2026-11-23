@@ -26,6 +26,7 @@
   import SoundHint from "./components/SoundHint.svelte";
   import StatusLine from "./components/StatusLine.svelte";
   import Transport from "./components/Transport.svelte";
+  import { palettes } from "./design/themes";
   import { writeCssVariables } from "./design/tokens";
   import Surface from "./gl/Surface.svelte";
   import { attachKeys } from "./keys/attach";
@@ -34,7 +35,10 @@
 
   const state = $derived(current.state);
 
-  $effect(() => writeCssVariables(metrics.scale, metrics.dpr));
+  // Derived first, so the variables are written again only when one of these changes, not with every state.
+  const scale = $derived(metrics.scale);
+  const theme = $derived(metrics.theme);
+  $effect(() => writeCssVariables(scale, metrics.dpr, palettes[theme]));
 
   const sendViewport = () => {
     if (current.connected) send({ type: "setViewport", width: window.innerWidth, height: window.innerHeight });

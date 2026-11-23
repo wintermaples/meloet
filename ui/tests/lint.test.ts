@@ -11,6 +11,9 @@ const RULES: [string, RegExp][] = [
   ["色の 16 進数", /#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{4}|[0-9a-fA-F]{3})\b/g],
   ["数字px", /(?<![\w-])\d+(?:\.\d+)?px\b/g],
   ["font-weight の数", /font-weight\s*[:=]\s*["'{]?\s*(?:\d+|bold(?:er)?|lighter)\b/g],
+  // Colors follow the theme, so they are not written as numbers either, nor is the scheme of the page's own parts.
+  ["色の数", /(?<![\w-])(?:rgba?|hsla?)\(/g],
+  ["color-scheme の値", /color-scheme\s*:\s*(?:dark|light|normal)\b/g],
 ];
 
 /** Returns findings in the form 「行: 決まり: 文字」. */
@@ -40,7 +43,8 @@ describe("rule watch", () => {
   .a { background: #222; width: 248px; padding: 0.5px; }
   .b { font-weight: 600; } .c { font-weight:bold; }
 </style>
-<i style:font-weight={500}></i>`;
+<i style:font-weight={500}></i>
+<style>.d { color: rgba(0, 0, 0, 0.5); color-scheme: dark; }</style>`;
     expect(violations(bad)).toEqual([
       "1: 色の 16 進数: #F2F2F2",
       "3: 色の 16 進数: #222",
@@ -49,6 +53,8 @@ describe("rule watch", () => {
       "4: font-weight の数: font-weight: 600",
       "4: font-weight の数: font-weight:bold",
       "6: font-weight の数: font-weight={500",
+      "7: 色の数: rgba(",
+      "7: color-scheme の値: color-scheme: dark",
     ]);
   });
 

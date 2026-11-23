@@ -1,7 +1,6 @@
 // Protocol 29: 「ピアノロールでひらく」 in the track head and the 「AI とつなぐ」 toggle. The shapes, fake intents and scenes.
 import { describe, expect, it } from "vitest";
 import type { AppState, Command } from "../src/bridge";
-import { PROTOCOL_VERSION } from "../src/bridge";
 import { createFakeTransport, fakeScene, fakeState } from "../src/bridge/fake";
 
 async function opened(scene = "tempoFolded") {
@@ -21,8 +20,7 @@ async function opened(scene = "tempoFolded") {
 const pianoRollOpen = (s: AppState) => s.workspace.layout.lower.some((b) => b.band === "pianoRoll");
 
 describe("shape of protocol 29", () => {
-  it("version 29. In a new song 「AI とつなぐ」 is off and the door is closed", () => {
-    expect(PROTOCOL_VERSION).toBe(29);
+  it("in a new song 「AI とつなぐ」 is off and the door is closed", () => {
     expect(fakeState().aiLink).toEqual({ on: false, port: "closed" });
   });
 });

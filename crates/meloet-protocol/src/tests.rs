@@ -255,6 +255,7 @@ pub(super) fn sample_state() -> AppState {
         workspace: WorkspaceView {
             latency_dialog: None,
             scale: 100,
+            theme: Theme::Dark,
             viewport_width: 1280.0,
             viewport_height: 800.0,
             unfit_scales: vec![150],

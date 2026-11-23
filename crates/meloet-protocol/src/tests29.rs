@@ -17,11 +17,6 @@ where
 }
 
 #[test]
-fn the_version() {
-    assert_eq!(PROTOCOL_VERSION, 29);
-}
-
-#[test]
 fn the_new_commands() {
     both_ways(
         Command::OpenPianoRoll { track: 3 },

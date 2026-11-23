@@ -7,8 +7,13 @@ import type { LayoutView } from "./LayoutView";
 import type { RecoveryView } from "./RecoveryView";
 import type { SettingsDialogView } from "./SettingsDialogView";
 import type { SongDialogView } from "./SongDialogView";
+import type { Theme } from "./Theme";
 
-export type WorkspaceView = { scale: number, viewportWidth: number, viewportHeight: number, 
+export type WorkspaceView = { scale: number, 
+/**
+ * The colors the screen paints with (`Command::SetTheme`).
+ */
+theme: Theme, viewportWidth: number, viewportHeight: number, 
 /**
  * Zooms whose smallest window does not fit the screen the window is on. Empty until the
  * screen is known; never holds 100.

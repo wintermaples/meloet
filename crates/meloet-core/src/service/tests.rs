@@ -4,7 +4,7 @@ use std::sync::mpsc::{Receiver, channel};
 use meloet_devices::{Availability, DevicesPicture, Endpoint, LinkKind};
 use meloet_engine::BlockTiming;
 use meloet_midi::Keyboard;
-use meloet_protocol::{Band, InstrumentKind, ServerMessage, ShelfMode, StatusMessage};
+use meloet_protocol::{Band, InstrumentKind, ServerMessage, ShelfMode, StatusMessage, Theme};
 
 use super::*;
 use crate::instruments::Samples;
@@ -233,6 +233,29 @@ fn a_remembered_scale_that_does_not_fit_the_screen_is_lowered_and_saved() {
     );
     core.stop();
     assert_eq!(settings::load(&dir).scale, 125);
+}
+
+#[test]
+fn the_chosen_theme_is_kept_and_read_at_the_next_start() {
+    let dir = crate::settings::temp_dir("core-theme");
+    let options = CoreOptions {
+        config_dir: Some(dir.clone()),
+        ..CoreOptions::offline()
+    };
+    let core = Core::start(options.clone());
+    assert_eq!(core.snapshot().state.workspace.theme, Theme::Dark);
+    core.send(Command::SetTheme {
+        theme: Theme::PinkLight,
+    });
+    let state = core.snapshot().state;
+    assert_eq!(state.workspace.theme, Theme::PinkLight);
+    assert_eq!(state.song.undo_count, 0, "not a step");
+    core.stop();
+    assert_eq!(settings::load(&dir).theme, Theme::PinkLight);
+
+    let core = Core::start(options);
+    assert_eq!(core.snapshot().state.workspace.theme, Theme::PinkLight);
+    core.stop();
 }
 
 #[test]

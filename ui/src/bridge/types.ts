@@ -128,6 +128,7 @@ export type { StoppedPluginView } from "./generated/StoppedPluginView";
 export type { StripName } from "./generated/StripName";
 export type { StripRef } from "./generated/StripRef";
 export type { TempoPointView } from "./generated/TempoPointView";
+export type { Theme } from "./generated/Theme";
 export type { TickSpan } from "./generated/TickSpan";
 export type { TimelineRef } from "./generated/TimelineRef";
 export type { TimelineView } from "./generated/TimelineView";

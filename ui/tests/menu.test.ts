@@ -95,6 +95,7 @@ describe("menu contents (B-59)", () => {
       "縦に拡大",
       "縦に縮小",
       "拡大率 ▸",
+      "テーマ ▸",
     ]);
     expect(keyed(3)).toEqual(["再生 Space", "停止 Space", "録音 R", "先頭へ Home", "ループ L", "メトロノーム C", "カウントイン ▸"]);
     expect(keyed(4)).toEqual(["道具 ▸", "クオンタイズ Q", "もとの位置へ戻す", "グリッド ▸", "三連符", "スケール固定 ▸"]);
@@ -499,8 +500,8 @@ describe("menu bar (mount)", () => {
     keydown("ArrowRight");
     await settle();
     expect(menuBar.open).toBe(2);
-    // View: vertical zoom in / out is disabled as the piano roll is closed. To the last row 「拡大率 ▸」.
-    for (let i = 0; i < 10; i++) keydown("ArrowDown");
+    // View: vertical zoom in / out is disabled as the piano roll is closed. To the row 「拡大率 ▸」 (before 「テーマ ▸」).
+    for (let i = 0; i < 8; i++) keydown("ArrowDown");
     expect(document.activeElement?.textContent).toContain("拡大率");
     keydown("ArrowRight");
     await settle();

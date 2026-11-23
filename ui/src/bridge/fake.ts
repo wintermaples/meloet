@@ -76,11 +76,13 @@ import {
   type ParamValues,
   type StoppedPluginView,
   type StripRef,
+  type Theme,
   type TimelineView,
   type TrackRef,
   type TrackView as WireTrack,
 } from "./types";
 import { TempoMap } from "../time/tempoMap";
+import { THEME_IDS } from "../design/themes";
 
 // The scenes and the commands below keep, next to the contract's fields, fields of their own that
 // name only what comes with meloet (the instrument of a track, the effects in its slots, the row
@@ -588,6 +590,7 @@ export function fakeState(): AppState {
     },
     workspace: {
       scale: 100,
+      theme: "dark",
       viewportWidth: 1280,
       viewportHeight: 800,
       unfitScales: [],
@@ -2131,7 +2134,8 @@ SCENES.drumRollSf2 = {
   },
 };
 
-export function fakeScene(name: string, scale?: number, viewport = { width: 1280, height: 800 }): Scene | null {
+/** `theme`: the scene in other colors (to shoot each theme); else the scene's own, which is dark. */
+export function fakeScene(name: string, scale?: number, viewport = { width: 1280, height: 800 }, theme?: Theme): Scene | null {
   const def = SCENES[name];
   if (!def) return null;
   const state = fakeState();
@@ -2147,6 +2151,7 @@ export function fakeScene(name: string, scale?: number, viewport = { width: 1280
   state.workspace.unfitScales = unfit;
   state.workspace.layout = bands.layout();
   def.after?.(state);
+  if (theme) state.workspace.theme = theme;
   state.song = settleSong(state.song);
   state.shelf = settleShelf(state.shelf);
   state.history = historyOf(state.song);
@@ -2859,7 +2864,14 @@ function sceneFromUrl(): Scene | null {
   if (!name) return null;
   const vp = typeof window === "undefined" ? undefined : { width: window.innerWidth, height: window.innerHeight };
   const scale = q.get("scale");
-  return fakeScene(name, scale === null ? undefined : Number(scale), vp);
+  return fakeScene(name, scale === null ? undefined : Number(scale), vp, themeFromUrl() ?? undefined);
+}
+
+/** `?theme=<light|pinkDark|…>` (the names of design/themes.ts): the fake starts in that theme, with a scene or without. */
+function themeFromUrl(): Theme | null {
+  if (typeof location === "undefined") return null;
+  const asked = new URLSearchParams(location.search).get("theme");
+  return THEME_IDS.find((id) => id === asked) ?? null;
 }
 
 // ---- round 7, step 2: vocal tracks, the input and the latency (protocol 23) ----
@@ -4769,6 +4781,9 @@ function reduce(state: AppState, bands: FakeBands, rest: StatusMessage | null, s
       fitWindow(percent);
       break;
     }
+    case "setTheme":
+      ws.theme = command.theme;
+      break;
     case "toggleBand": {
       const mixerWasOpen = bands.bottom.includes("mixer");
       const fold = bands.toggle(command.band);
@@ -4946,6 +4961,8 @@ const FETCH_TICK_MS = 250;
 export function createFakeTransport(initial?: AppState): Transport {
   const scene = initial ? null : sceneFromUrl();
   let state = initial ?? scene?.state ?? fakeState();
+  const urlTheme = initial || scene ? null : themeFromUrl();
+  if (urlTheme) state.workspace.theme = urlTheme;
   const bands = scene?.bands ?? new FakeBands((state.workspace.viewportHeight * 100) / state.workspace.scale);
   if (!scene) for (const l of state.workspace.layout.lower) bands.bottom.push(l.band);
   if (!scene) bands.side = [...state.workspace.layout.rightOpen];

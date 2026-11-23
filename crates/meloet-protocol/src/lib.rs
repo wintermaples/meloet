@@ -16,6 +16,7 @@ mod pack;
 mod params;
 mod take;
 mod telemetry;
+mod theme;
 mod timeline;
 mod vocal;
 
@@ -59,6 +60,7 @@ pub use telemetry::{
     Telemetry, TelemetryError, TransportReading,
 };
 
+pub use theme::Theme;
 pub use timeline::{MarkerView, MeterChangeView, TempoPointView, TimelineRef, TimelineView};
 pub use vocal::{
     KeptVocals, LATENCY_CLICKS, LatencyDialogView, LatencyFailure, LatencyMeasure, LatencySource,
@@ -66,7 +68,7 @@ pub use vocal::{
     VocalRef,
 };
 
-pub const PROTOCOL_VERSION: u32 = 29;
+pub const PROTOCOL_VERSION: u32 = 30;
 
 /// Screen → Rust. Intent only; Rust decides what the state becomes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -871,6 +873,11 @@ pub enum Command {
     /// and not a step.
     SetAiLink {
         on: bool,
+    },
+    /// 「表示 ▸ テーマ ▸」. A meloet setting (settings.json), not part of the song, and not a
+    /// step. The theme already chosen does nothing.
+    SetTheme {
+        theme: Theme,
     },
     /// Mod Shift S and the file menu (B-59). Rust shows the PC's save window, titled
     /// "名前をつけて保存", with the song's name filled in. The folder `<name>/<name>.meloet` is made
@@ -2369,6 +2376,8 @@ pub struct QuantizeSettings {
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceView {
     pub scale: u16,
+    /// The colors the screen paints with (`Command::SetTheme`).
+    pub theme: Theme,
     pub viewport_width: f32,
     pub viewport_height: f32,
     /// Zooms whose smallest window does not fit the screen the window is on. Empty until the
@@ -3603,3 +3612,5 @@ mod tests27;
 mod tests28;
 #[cfg(test)]
 mod tests29;
+#[cfg(test)]
+mod tests30;

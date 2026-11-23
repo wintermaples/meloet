@@ -17,6 +17,7 @@
   import EndpointRow from "./EndpointRow.svelte";
   import UnusableEndpoints from "./UnusableEndpoints.svelte";
   import { endpointGroups, type EndpointLook } from "./endpoint";
+  import { metrics } from "./metrics.svelte";
   import { msText } from "./format";
   import { openContextMenu, type MenuEntry } from "./menu/contextMenu.svelte";
   import PluginPlaces from "./plugins/PluginPlaces.svelte";
@@ -158,7 +159,7 @@
 {#if app && settings}
   <div class="place">
     <div class="lead"></div>
-    <div class="dialog" role="dialog" aria-label={advanced ? t("settings.advTitle") : t("settings.title")} data-test="settings-dialog" use:movableDialog>
+    <div class="dialog" role="dialog" aria-label={advanced ? t("settings.advTitle") : t("settings.title")} data-test="settings-dialog" style:color-scheme={metrics.colorScheme} use:movableDialog>
       <div class="head" data-dialog-head>
         <span class="title">{advanced ? t("settings.advTitle") : t("settings.title")}</span>
         <span class="spacer"></span>
@@ -408,7 +409,6 @@
     line-height: var(--text-s-line-height);
     font-weight: var(--text-s-weight-400);
     white-space: nowrap;
-    color-scheme: dark;
   }
   .head {
     flex-shrink: 0;

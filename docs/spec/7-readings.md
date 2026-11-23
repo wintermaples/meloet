@@ -403,3 +403,14 @@ In the "Basis" column: "spec 3" is chapter 3 of this spec; "mock Main" is a mock
 | Pasted notes that go outside the clip | Provisional, against the body (spec 3, 82 says paste stays inside the clip; asked in [B-96-4](open-questions.md)): they are kept, and the clip grows in whole bars, the same as writing outside the clip. When it cannot grow, nothing is pasted and the status line says 「ほかのクリップと重なるので、貼りつけませんでした。」. | the developers' provisional decision (the owner's report: notes could not be pasted into a clip of another track) |
 | Mod V and 「編集 ▸ 貼りつけ」 | Paste what was copied or cut last. If that was notes and the piano roll is open with a clip shown, the notes go into that clip even when the keys point at the arrange. If it was clips, clips are pasted as before. The 「貼りつけ」 of a context menu pastes the kind of the place that was pressed. | the developers' reading |
 | Where Mod V puts notes | At the play line (snapped to the grid) when the play line is inside the shown clip; otherwise at the start of that clip. | the developers' reading |
+
+## A-26 Keyboard buttons and the fader (round 10)
+
+| Where | Rule | Basis |
+|---|---|---|
+| CC 123 and CC 121 while recording | The messages themselves are not recorded, but the key-ups, pitch bend centre, modulation 0 and sustain up that they cause go the same way as played keys, so a take never keeps a note or the pedal held down. | the developers' reading |
+| The fader after the volume changed somewhere else | When the selected track's volume is changed on the screen or by undo, the fader waits again until it passes the new volume. | the developers' reading |
+| The fader when it moves on another track before resting | The step of the earlier track is made first. | the developers' reading |
+| Two keyboards with faders | Their fader values are not kept apart; picking up is shared. | the developers' provisional form |
+| Picking up on a track with automation | The fader is compared with the volume set by hand, not with the value the automation plays. | the developers' provisional form |
+| The second and later ports of a device | Every port after the lowest one is a button port, also on a sound card with two MIDI inputs: notes 86–100 there work as buttons, other notes are not used (before round 10 those ports were not read at all). | the developers' reading |

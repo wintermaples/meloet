@@ -102,7 +102,7 @@ fn opening_the_dialog_starts_the_check_and_closing_it_throws_the_job_away() {
             end: 4 * BAR
         }
     );
-    assert_eq!(dialog.formats, [ExportFormat::Wav, ExportFormat::Flac]);
+    assert_eq!(dialog.formats, ExportFormat::ALL);
     let name = m.view().song.name;
     assert_eq!(dialog.place, format!("~/音楽/{name}.wav"));
     assert_eq!(dialog.check, ExportCheck::Waiting);
@@ -369,6 +369,7 @@ fn an_export_runs_in_the_status_line_and_ends() {
                 sample_rate: 48_000,
                 bits: RecordFormat::Bits24,
                 loudness: ExportLoudness::AsIs,
+                mp3_kbps: meloet_protocol::EXPORT_MP3_DEFAULT_KBPS,
                 info: super::tags::SongInfo {
                     title: name.clone(),
                     ..Default::default()
@@ -576,6 +577,7 @@ fn a_sink_is_not_made_where_nothing_can_be_written() {
         sample_rate: 48_000,
         channels: 2,
         bits: RecordFormat::Bits24,
+        mp3_kbps: meloet_protocol::EXPORT_MP3_DEFAULT_KBPS,
     };
     let made = super::sink::create(&PathBuf::from("/nowhere/a.wav"), spec);
     assert_eq!(

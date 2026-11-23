@@ -103,8 +103,9 @@ If you forget a key, use Help ▸ Key list. Type "Loop" or "Ctrl" in the box at 
 
 ### Export
 
+- You can also export to an mp3 file. In "Details", choose the "Bitrate" from 128 / 192 / 256 / 320 kbps (192 at first). The sample rate is 44100 Hz or 48000 Hz.
 - Choose "Match for release" in the export to bring the loudness of the whole song to −14 LUFS (with the true peak up to −1 dBTP). The check before export shows the loudness of the whole song (LUFS) and the true peak (dBTP).
-- In "Details" of the export, you can write the song info (title, artist, picture) into the file (the picture with flac; png or jpg, up to 5 MB). The artist is remembered.
+- In "Details" of the export, you can write the song info (title, artist, picture) into the file (the picture with flac and mp3; png or jpg, up to 5 MB). The artist is remembered.
 - When the export is done, "Exported" shows the waveform and the loudness (LUFS and true peak). "Play in the PC's player" plays it right there.
 
 ### Files

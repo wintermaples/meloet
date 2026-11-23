@@ -32,6 +32,8 @@ import {
   EFFECT_PARAMS,
   FACTORY_PRESETS,
   EXPORT_FORMATS,
+  EXPORT_MP3_DEFAULT_KBPS,
+  EXPORT_MP3_KBPS,
   EXPORT_WAVE_BARS,
   INSTRUMENT_GROUPS,
   LATENCY_CLICKS,
@@ -3754,8 +3756,7 @@ function fakeExportDialog(song: SongView, over: Partial<ExportDialogView> = {}):
     tracks: song.tracks.length,
     span: { start: 0, end },
     format: "wav",
-    // round12 stub: F2 (mp3 is not offered: it did not meet its conditions)
-    formats: EXPORT_FORMATS.map((f) => f.format).filter((f) => f !== "mp3"),
+    formats: EXPORT_FORMATS.map((f) => f.format),
     place: `~/音楽/${song.name}.wav`,
     check: { state: "done", peakDb: -0.6, clips: false, over: 0, lufs: -12.5, truePeakDb: -0.5 },
     solo: fakeSolo({ song }),
@@ -3765,8 +3766,8 @@ function fakeExportDialog(song: SongView, over: Partial<ExportDialogView> = {}):
     sampleRateChoices: [44100, 48000, 88200, 96000],
     bits: "bits24",
     bitsChoices: [...EXPORT_FORMATS[0]!.bits],
-    mp3Kbps: 192,
-    mp3KbpsChoices: [],
+    mp3Kbps: EXPORT_MP3_DEFAULT_KBPS,
+    mp3KbpsChoices: [...EXPORT_MP3_KBPS],
     title: song.name,
     artist: "",
     picture: null,
@@ -3847,6 +3848,16 @@ SCENES.exportPictureUnreadable = {
   ...exportDialogScene({ ...songInfoFlac, picture: null }),
   after: (s) => (s.status.message = { id: "exportPictureUnreadable", file: "表紙.bmp" }),
 };
+// mp3: 「ビットレート」 in place of 「ビット」, at 44100 or 48000 Hz.
+SCENES.exportMp3 = exportDialogScene({
+  format: "mp3",
+  place: "~/音楽/はじめての曲.mp3",
+  bitsChoices: [],
+  sampleRateChoices: [44100, 48000],
+  advancedOpen: true,
+  artist: "わたし",
+  picture: "表紙.png",
+});
 
 /** The song of F7-Exporting: the band, "5 Surge XT" and 「6 歌」 with one clip; saved, the keys on 「1 ピアノ」. */
 function exportingSong(s: AppState, run: ExportRunView): void {
@@ -3905,6 +3916,20 @@ SCENES.exportDoneTracks = exportingScene({
   wave: [],
   lufs: null,
   truePeakDb: null,
+});
+// An mp3 (round 12 F2): 「3 分 2 秒 ・ 48000 Hz ・ 192 kbps」.
+SCENES.exportDoneMp3 = exportingScene({
+  state: "done",
+  file: "はじめての曲.mp3",
+  files: 1,
+  place: "~/ミュージック/はじめての曲/はじめての曲.mp3",
+  lengthS: 182,
+  sampleRate: 48000,
+  mp3Kbps: 192,
+  bits: "bits24",
+  wave: fakeExportWave(),
+  lufs: -14.0,
+  truePeakDb: -1.0,
 });
 // Spec 6 「書き出しをやめた」.
 SCENES.exportCancelled = exportingScene({ state: "cancelled" });
@@ -4138,14 +4163,16 @@ export function reduceExport(state: AppState, command: Command): Change[] | null
         const measured = c.range !== "tracks" && base.state === "done" ? base : { lufs: null, truePeakDb: null };
         if (d.check.state === "done" || d.check.state === "counting") d.check = { ...d.check, lufs: measured.lufs, truePeakDb: measured.truePeakDb };
         Object.assign(d, fakeLoudnessOf(d.check, d.range, d.loudness));
-      } else if (c.kind === "format" && c.format !== "mp3") {
-        // round12 stub: F2 (mp3 is not offered: the condition above)
+      } else if (c.kind === "format") {
         d.format = c.format;
         d.bitsChoices = [...EXPORT_FORMATS.find((f) => f.format === c.format)!.bits];
-        if (!d.bitsChoices.includes(d.bits)) d.bits = "bits24";
-        // Round 12 F2: a wav holds no picture.
+        // Round 12 F2: mp3 has no bits (the ones chosen stay) and is written at 44100 or 48000 Hz (EXPORT_MP3_SAMPLE_RATES of Rust).
+        if (c.format !== "mp3" && !d.bitsChoices.includes(d.bits)) d.bits = "bits24";
+        d.sampleRateChoices = c.format === "mp3" ? [44100, 48000] : [44100, 48000, 88200, 96000];
+        if (!d.sampleRateChoices.includes(d.sampleRate)) d.sampleRate = d.sampleRate % 11025 === 0 ? 44100 : 48000;
         d.pictureUsable = c.format !== "wav";
-      } else if (c.kind === "title") d.title = c.title;
+      } else if (c.kind === "mp3Kbps") d.mp3Kbps = d.mp3KbpsChoices.includes(c.kbps) ? c.kbps : d.mp3Kbps;
+      else if (c.kind === "title") d.title = c.title;
       else if (c.kind === "artist") d.artist = c.artist;
       else if (c.kind === "removePicture") d.picture = null;
       else if (c.kind === "advancedOpen") d.advancedOpen = c.open;

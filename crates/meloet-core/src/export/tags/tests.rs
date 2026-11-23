@@ -113,6 +113,7 @@ fn spec(format: ExportFormat) -> SinkSpec {
         sample_rate: 48_000,
         channels: 2,
         bits: RecordFormat::Bits24,
+        mp3_kbps: meloet_protocol::EXPORT_MP3_DEFAULT_KBPS,
     }
 }
 

@@ -31,6 +31,7 @@ fn target(
         sample_rate,
         bits,
         loudness: ExportLoudness::AsIs,
+        mp3_kbps: meloet_protocol::EXPORT_MP3_DEFAULT_KBPS,
         info: Default::default(),
     }
 }

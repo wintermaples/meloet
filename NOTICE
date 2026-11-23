@@ -98,7 +98,7 @@ meloet-stretch (Rust): Signalsmith Linear 0.6.4 (C++ headers stft.h and fft.h, k
   source: https://github.com/Signalsmith-Audio/linear
   license: MIT; the text is in licenses/rust/meloet-stretch/SIGNALSMITH-LINEAR-LICENSE.txt
 
-== Parts (275: 272 Rust crates, 3 npm packages)
+== Parts (276: 273 Rust crates, 3 npm packages)
 
 @tauri-apps/api 2.12.4 (npm): Apache-2.0 OR MIT
 adler2 2.0.1 (Rust): 0BSD OR MIT OR Apache-2.0
@@ -288,6 +288,7 @@ rustls-native-certs 0.8.5 (Rust): Apache-2.0 OR ISC OR MIT
 rustls-pki-types 1.16.0 (Rust): MIT OR Apache-2.0
 rustls-platform-verifier 0.7.1 (Rust): MIT OR Apache-2.0
 rustls-webpki 0.103.17 (Rust): ISC
+rusty_mp3 1.2.2 (Rust): Apache-2.0
 same-file 1.0.6 (Rust): Unlicense OR MIT
 schemars 1.2.3 (Rust): MIT
 scopeguard 1.2.0 (Rust): MIT OR Apache-2.0

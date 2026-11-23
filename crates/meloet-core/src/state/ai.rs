@@ -921,6 +921,7 @@ impl Model {
             sample_rate: ask.sample_rate.unwrap_or(scene.sample_rate),
             bits: ask.bits,
             loudness: ExportLoudness::AsIs,
+            mp3_kbps: meloet_protocol::EXPORT_MP3_DEFAULT_KBPS,
             // The AI link's files say nothing of themselves, as before 「曲の情報」.
             info: crate::export::tags::SongInfo::default(),
         };

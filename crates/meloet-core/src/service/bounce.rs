@@ -30,6 +30,7 @@ impl Worker {
             sample_rate: ask.job.sample_rate,
             bits: ask.bits,
             loudness: ExportLoudness::AsIs,
+            mp3_kbps: meloet_protocol::EXPORT_MP3_DEFAULT_KBPS,
             info: SongInfo::default(),
         };
         let mut heard: Vec<Input> = self.export_render(ask.job, None).into_iter().collect();

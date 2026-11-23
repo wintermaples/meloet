@@ -28,7 +28,9 @@ export function exportedLength(seconds: number): string {
  * bitrate here instead of the bits.
  */
 export function exportedDetails(run: ExportedDone): string {
-  return t("exported.details", { length: exportedLength(run.lengthS), rate: run.sampleRate, bits: bitsOf(run.bits) });
+  const length = exportedLength(run.lengthS);
+  if (run.mp3Kbps !== null) return t("exported.detailsMp3", { length, rate: run.sampleRate, kbps: run.mp3Kbps });
+  return t("exported.details", { length, rate: run.sampleRate, bits: bitsOf(run.bits) });
 }
 
 /** 「大きさ −14.0 LUFS ・ トゥルーピーク −1.0 dBTP」. null for 「トラックごと」 and when nothing was measured. */

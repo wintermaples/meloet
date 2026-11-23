@@ -2464,6 +2464,7 @@ dependencies = [
  "meloet-stretch",
  "rubato",
  "rustix",
+ "rusty_mp3",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -3827,6 +3828,12 @@ name = "rustversion"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
+
+[[package]]
+name = "rusty_mp3"
+version = "1.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c1741bfe603a47c4bb263f00d4f8d65a97ae4a970a26287f1c38ff00aa9a52ae"
 
 [[package]]
 name = "s1-render"

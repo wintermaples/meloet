@@ -58,6 +58,15 @@ fn set_jsc_options() {
     }
 }
 
+/// Takes the mp3 encoder's tuning knobs out of the environment, so that an exported mp3 is
+/// the same whatever the person's environment holds.
+fn clear_mp3_tuning() {
+    for name in meloet_core::export::sink::MP3_ENCODER_ENV {
+        // SAFETY: called first in main, before any thread exists.
+        unsafe { std::env::remove_var(name) };
+    }
+}
+
 #[tauri::command]
 fn hello(protocol_version: u32, core: State<'_, Core>) -> HelloReply {
     let language = core.snapshot().state.workspace.language;
@@ -502,6 +511,7 @@ fn main() {
     #[cfg(target_os = "linux")]
     mcp::become_bridge_if_asked();
     set_jsc_options();
+    clear_mp3_tuning();
     #[cfg(feature = "dev-hooks")]
     devhooks::read_env();
     #[cfg(target_os = "linux")]

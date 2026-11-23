@@ -29,14 +29,19 @@ rustix = { version = "1.1.6", default-features = false, features = ["std", "fs"]
 # The sound pack is fetched over HTTPS on a thread of its own (docs/architecture.md 23-2).
 ureq = { version = "=3.5.2", default-features = false, features = ["rustls", "platform-verifier"] }
 # Audio files brought into a song: decoded here, and brought to the rate the audio runs at.
-symphonia = { version = "=0.6.1", default-features = false, features = ["flac", "wav", "pcm", "mp3", "ogg", "vorbis"] }
+# `id3v2`: an mp3 with a tag at its head (an exported one, with its picture) is read past it;
+# without it the probe looks for the first frame in at most 1 MB.
+symphonia = { version = "=0.6.1", default-features = false, features = ["flac", "wav", "pcm", "mp3", "ogg", "vorbis", "id3v2"] }
 rubato = { version = "=5.1.0", default-features = false, features = ["fft_resampler"] }
 # The flac files of an export. Without its threads: the export has a thread of its own.
 flacenc = { version = "=0.5.1", default-features = false }
 # The true peak of an export's check (ITU-R BS.1770 4× oversampling), on the export's thread.
 ebur128 = { version = "=0.1.11", default-features = false }
-# 「曲の情報」 of an export: Vorbis comments in flac, RIFF INFO in wav. With its default feature
-# (flate2): 0.25.5 does not build without it.
+# The mp3 files of an export (pure Rust, no dependencies). It reads tuning knobs from the
+# environment: `MP3_ENCODER_ENV` in src/export/sink.rs lists them for this version.
+rusty_mp3 = { version = "=1.2.2", default-features = false }
+# 「曲の情報」 of an export: ID3v2 in mp3, Vorbis comments in flac, RIFF INFO in wav. With its
+# default feature (flate2): 0.25.5 does not build without it.
 lofty = { version = "=0.25.5" }
 
 [dev-dependencies]

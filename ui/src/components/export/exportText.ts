@@ -46,8 +46,17 @@ export function spanText(d: ExportDialogView, bars: Bars): string {
 
 /** The right of the folded 「くわしく」 row (「48000 Hz ・ 24 ビット ・ しっぽは音が消えるまで（最大 10 秒）」, plus 「 ・ 実時間」 in real time). */
 export function detailsSummary(d: ExportDialogView): string {
-  const values = { rate: d.sampleRate, bits: bitsOf(d.bits), seconds: EXPORT_TAIL_MAX_S };
-  const base = t(d.tail === "untilSilent" ? "export.detailsSummary" : "export.detailsSummaryNoTail", values);
+  const values = { rate: d.sampleRate, bits: bitsOf(d.bits), kbps: d.mp3Kbps, seconds: EXPORT_TAIL_MAX_S };
+  const tail = d.tail === "untilSilent";
+  const key: TextKey =
+    d.format === "mp3"
+      ? tail
+        ? "export.detailsSummaryMp3"
+        : "export.detailsSummaryMp3NoTail"
+      : tail
+        ? "export.detailsSummary"
+        : "export.detailsSummaryNoTail";
+  const base = t(key, values);
   return d.realtime ? `${base} ${t("export.detailsRealtime")}` : base;
 }
 
@@ -162,7 +171,9 @@ export function runShown(run: ExportRunView): RunShown {
         parts:
           run.files > 1
             ? textParts("msg.exported", { path: run.place })
-            : textParts("msg.exportedFile", { file: run.file, length: lengthText(run.lengthS), rate: run.sampleRate, bits: bitsOf(run.bits) }),
+            : run.mp3Kbps !== null
+              ? textParts("msg.exportedFileMp3", { file: run.file, length: lengthText(run.lengthS), rate: run.sampleRate, kbps: run.mp3Kbps })
+              : textParts("msg.exportedFile", { file: run.file, length: lengthText(run.lengthS), rate: run.sampleRate, bits: bitsOf(run.bits) }),
         folder: true,
       };
     case "cancelled":

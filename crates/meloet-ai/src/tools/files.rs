@@ -58,7 +58,7 @@ pub enum RangeArg {
 pub enum FormatArg {
     Wav,
     Flac,
-    /// Not available yet, as in meloet's own export.
+    /// Not for the AI link: only meloet's own export dialog writes mp3.
     Mp3,
 }
 
@@ -453,8 +453,8 @@ impl Tools {
             FormatArg::Flac => ExportFormat::Flac,
             FormatArg::Mp3 => {
                 return Ok(failed(
-                    "MP3 cannot be written yet (meloet's export does not offer it either); use \
-                     wav or flac",
+                    "the AI link writes wav or flac; MP3 is only written from meloet's own \
+                     export dialog",
                 ));
             }
         };

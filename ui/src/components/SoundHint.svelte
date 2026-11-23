@@ -8,7 +8,7 @@
   const hint = $derived(current.state?.workspace.hint ?? null);
   /**
    * Sentences after the second are shown only when the record button can be used (spec 6; spec 3 「案内の文は、いま使えない部品を押すようには言わない」).
-   * The third sentence of F-Empty (about adding tracks) only when 「＋ トラックを追加」 can be used (not recording, not counting in).
+   * The third sentence of F-Empty (about adding tracks) only when 「＋ 鍵盤のトラック」 and 「＋ 歌のトラック」 can be used (not recording, not counting in).
    */
   const recordUsable = $derived(current.state?.transport.canRecord ?? false);
   const addTrackUsable = $derived(current.state?.transport.state !== "recording" && current.state?.transport.state !== "countIn");

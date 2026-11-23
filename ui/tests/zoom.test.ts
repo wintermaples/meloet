@@ -37,11 +37,11 @@ const q = (sel: string) => document.querySelector<HTMLElement>(sel);
 const qa = (sel: string) => [...document.querySelectorAll<HTMLElement>(sel)];
 const text = (el: Element | null) => el?.textContent?.replace(/\s+/g, " ").trim() ?? null;
 
-/** Now 125 %; 150 % does not fit (same as the fake scene zoom). */
+/** Now 100 %; 125 % does not fit (same as the fake scene zoom). */
 const zoomState = (edit: (s: AppState) => void = () => {}) =>
   app.stateWith((s) => {
-    s.workspace.scale = 125;
-    s.workspace.unfitScales = [150];
+    s.workspace.scale = 100;
+    s.workspace.unfitScales = [125];
     edit(s);
   });
 
@@ -56,7 +56,7 @@ describe("the 「拡大率」 button in the status line", () => {
   it("the current scale and ▾. At the far right, pressing opens the list", () => {
     show(StatusLine, zoomState());
     const button = q('[data-test="status-scale"]')!;
-    expect(text(button)).toBe("125 %▾");
+    expect(text(button)).toBe("100 %▾");
     expect(q("footer.status")!.lastElementChild).toBe(button);
     expect(button.getAttribute("aria-expanded")).toBe("false");
     expect(q('[data-test="zoom-menu"]')).toBeNull();
@@ -75,37 +75,37 @@ describe("the 「拡大率」 button in the status line", () => {
 });
 
 describe("scale list", () => {
-  it("a heading and 3 rows. The current scale is 「えらんだ」, scales that do not fit are disabled (cannot be pressed) with 「この画面には入りません」", () => {
+  it("a heading and 2 rows. The current scale is 「えらんだ」, scales that do not fit are disabled (cannot be pressed) with 「この画面には入りません」", () => {
     show(StatusLine, zoomState());
     openMenu();
     expect(text(q('[data-test="zoom-menu"] .head'))).toBe("拡大率");
-    expect(rows().map((r) => r.querySelector(".rate")!.textContent)).toEqual(["100 %", "125 %", "150 %"]);
-    expect(rows().map((r) => r.getAttribute("aria-checked"))).toEqual(["false", "true", "false"]);
-    expect(rows().map((r) => r.querySelector(".choice")!.classList.contains("selected"))).toEqual([false, true, false]);
-    expect(rows().map((r) => (r as HTMLButtonElement).disabled)).toEqual([false, false, true]);
-    expect(rows().map((r) => text(r.querySelector('[data-test="zoom-unfit"]')))).toEqual([null, null, "この画面には入りません"]);
+    expect(rows().map((r) => r.querySelector(".rate")!.textContent)).toEqual(["100 %", "125 %"]);
+    expect(rows().map((r) => r.getAttribute("aria-checked"))).toEqual(["true", "false"]);
+    expect(rows().map((r) => r.querySelector(".choice")!.classList.contains("selected"))).toEqual([true, false]);
+    expect(rows().map((r) => (r as HTMLButtonElement).disabled)).toEqual([false, true]);
+    expect(rows().map((r) => text(r.querySelector('[data-test="zoom-unfit"]')))).toEqual([null, "この画面には入りません"]);
   });
 
   it("if every scale fits, every row can be pressed", () => {
     show(StatusLine, app.stateWith((s) => (s.workspace.unfitScales = [])));
     openMenu();
-    expect(rows().map((r) => (r as HTMLButtonElement).disabled)).toEqual([false, false, false]);
+    expect(rows().map((r) => (r as HTMLButtonElement).disabled)).toEqual([false, false]);
     expect(qa('[data-test="zoom-unfit"]')).toEqual([]);
   });
 
   it("key text: 「Ctrl Alt 1」 on Linux and Windows, 「Cmd Option 1」 on Mac (docs/history/design-notes.ja.md A-2)", () => {
     app.setState(zoomState());
-    mounted = mount(ZoomMenu, { target, props: { scale: 125, unfit: [150], platform: "other", onpick: () => {} } });
+    mounted = mount(ZoomMenu, { target, props: { scale: 100, unfit: [125], platform: "other", onpick: () => {} } });
     flushSync();
-    expect(qa('[data-test="zoom-key"]').map(text)).toEqual(["Ctrl Alt 1", "Ctrl Alt 2", "Ctrl Alt 3"]);
+    expect(qa('[data-test="zoom-key"]').map(text)).toEqual(["Ctrl Alt 1", "Ctrl Alt 2"]);
     unmount(mounted);
-    mounted = mount(ZoomMenu, { target, props: { scale: 125, unfit: [150], platform: "mac", onpick: () => {} } });
+    mounted = mount(ZoomMenu, { target, props: { scale: 100, unfit: [125], platform: "mac", onpick: () => {} } });
     flushSync();
-    expect(qa('[data-test="zoom-key"]').map(text)).toEqual(["Cmd Option 1", "Cmd Option 2", "Cmd Option 3"]);
+    expect(qa('[data-test="zoom-key"]').map(text)).toEqual(["Cmd Option 1", "Cmd Option 2"]);
   });
 
   it("pressing a row sends setScale and closes the list", () => {
-    show(StatusLine, zoomState());
+    show(StatusLine, zoomState((s) => ((s.workspace.scale = 125), (s.workspace.unfitScales = []))));
     openMenu();
     rows()[0]!.click();
     flushSync();
@@ -117,30 +117,37 @@ describe("scale list", () => {
   it("disabled rows cannot be pressed (nothing sent, stays open)", () => {
     show(StatusLine, zoomState());
     openMenu();
-    rows()[2]!.click();
+    rows()[1]!.click();
     flushSync();
     expect(app.sent).toEqual([]);
     expect(q('[data-test="zoom-menu"]')).not.toBeNull();
   });
 
   it("opening focuses the current scale row. ↑ ↓ skip disabled rows, Enter decides", async () => {
-    show(StatusLine, zoomState((s) => ((s.workspace.scale = 100), (s.workspace.unfitScales = [125]))));
-    openMenu();
-    await Promise.resolve();
-    expect(document.activeElement).toBe(rows()[0]);
     const key = (k: string) => {
       document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true }));
       flushSync();
     };
+    show(StatusLine, zoomState());
+    openMenu();
+    await Promise.resolve();
+    expect(document.activeElement).toBe(rows()[0]);
     key("ArrowDown");
-    expect(document.activeElement).toBe(rows()[2]);
-    key("ArrowDown");
-    expect(document.activeElement).toBe(rows()[2]);
+    expect(document.activeElement).toBe(rows()[0]);
+    openMenu();
+    unmount(mounted!);
+    mounted = null;
+    show(StatusLine, zoomState((s) => ((s.workspace.scale = 125), (s.workspace.unfitScales = []))));
+    openMenu();
+    await Promise.resolve();
+    expect(document.activeElement).toBe(rows()[1]);
     key("ArrowUp");
     expect(document.activeElement).toBe(rows()[0]);
     key("ArrowDown");
+    expect(document.activeElement).toBe(rows()[1]);
+    key("ArrowUp");
     key("Enter");
-    expect(app.sent).toEqual([{ type: "setScale", percent: 150 }]);
+    expect(app.sent).toEqual([{ type: "setScale", percent: 100 }]);
     expect(q('[data-test="zoom-menu"]')).toBeNull();
     expect(document.activeElement).toBe(q('[data-test="status-scale"]'));
   });
@@ -275,9 +282,9 @@ describe("how the right side of the status line hides (spec 3)", () => {
 
 describe("scale and band notices (spec 6)", () => {
   const cases: [StatusMessage, string][] = [
-    [{ id: "scaleDoesNotFit", requested: 150, kept: 125 }, "150 % は、この画面には入りません。125 % のままです。"],
+    [{ id: "scaleDoesNotFit", requested: 125, kept: 100 }, "125 % は、この画面には入りません。100 % のままです。"],
     [{ id: "scaleWindowGrown", scale: 125 }, "拡大率を 125 % にしました。窓を、いちばん小さい大きさまで広げました。"],
-    [{ id: "scaleLoweredForScreen", from: 150, to: 125 }, "画面が小さくなったので、拡大率を 150 % から 125 % にしました。"],
+    [{ id: "scaleLoweredForScreen", from: 125, to: 100 }, "画面が小さくなったので、拡大率を 125 % から 100 % にしました。"],
     [{ id: "bandFoldedWindowLow", band: "mixer" }, "窓が低くなったので、ミキサーをたたみました。帯札を押すと、またひらきます。"],
     [{ id: "bandFoldedWindowLow", band: "history" }, "窓が低くなったので、取り消しの履歴をたたみました。帯札を押すと、またひらきます。"],
     [{ id: "bandFoldedToOpen", opened: "pianoRoll", folded: "mixer" }, "ピアノロールをひらくために、ミキサーをたたみました。窓を高くすると、両方ひらけます。"],

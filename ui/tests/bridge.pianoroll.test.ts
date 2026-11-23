@@ -57,7 +57,7 @@ describe("fake piano roll", () => {
     const rec = fakeScene("pianoRollRec")!;
     expect(rec.state.transport.recording?.take).toBe(3);
     expect(rec.live.notes.filter((n) => n.length === null).map((n) => keyName(n.key))).toEqual(["C3", "E3", "G3", "C4"]);
-    expect(fakeScene("pianoRoll150")!.state.workspace.scale).toBe(150);
+    expect(fakeScene("pianoRoll125")!.state.workspace.scale).toBe(125);
     expect(fakeScene("pianoRollWide")!.state.song.tracks.map((t) => t.name)).toEqual(["ピアノ", "ベース", "ドラム", "パッド", "ボーカル"]);
   });
 

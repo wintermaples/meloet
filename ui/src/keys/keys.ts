@@ -26,7 +26,7 @@ export type KeyAction =
   | { kind: "toggleBand"; band: "pianoRoll" | "mixer" | "history" | "shelf" | "params" }
   | { kind: "back" }
   | { kind: "audioSettings" }
-  | { kind: "scale"; scale: 100 | 125 | 150 }
+  | { kind: "scale"; scale: 100 | 125 }
   | { kind: "chooserUp" }
   | { kind: "chooserDown" }
   | { kind: "chooserConfirm" }
@@ -171,7 +171,6 @@ export function keyAction(k: KeyInput, typing: boolean, platform: Platform, cont
       const d = digit(k);
       if (d === "1") return { kind: "scale", scale: 100 };
       if (d === "2") return { kind: "scale", scale: 125 };
-      if (d === "3") return { kind: "scale", scale: 150 };
     }
     return null;
   }

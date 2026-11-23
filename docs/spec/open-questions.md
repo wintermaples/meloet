@@ -4,14 +4,6 @@ This is the list of things for the owner to decide. Each item says what is asked
 
 The numbers are the B numbers of [`docs/history/design-notes.ja.md`](../history/design-notes.ja.md) (B-95 = round 8, B-94 = round 7). Code comments point to them, so keep them. Questions that already have an answer are not listed; their record is in that file (part C).
 
-## B-96: round 10 (found when the readings moved into chapter 7)
-
-### B-96-2 The third sentence of the empty arrange hint
-
-- Question: the third sentence of the F-Empty hint still says 「トラックを増やすには左下の「＋ トラックを追加」」, but spec 3 (93-1) replaced that button with 「＋ 鍵盤のトラック」 and 「＋ 歌のトラック」.
-- Now: the old sentence is shown (only while a track can be added). `ui/src/components/SoundHint.svelte`.
-- From: chapter 7, A-13.
-
 ## B-97: round 11 (the AI link)
 
 ### B-97-1 The history row of a batch
@@ -54,7 +46,7 @@ The readings behind these are in [chapter 7](7-readings.md), A-29; how each is b
 ### B-98-6 E2: arpeggio — stop, small windows, the mixer strip
 
 - Decided: question 1 (stop does not end a held chord; spec 3, E2; user:2026-11-24).
-- Question 2: at 1280 × 800 at 150 % the button 「アルペジオ ▾」 does not fit in the input meter, and there is no menu row or key, so the arpeggio cannot be turned on there. Add a way?
+- Question 2: at 1280 × 800 at 125 % (150 % is gone, user:2026-11-24; seen in the fake scenes arpOn, arpSettings and loop) the button 「アルペジオ ▾」 does not fit in the input meter, and there is no menu row or key, so the arpeggio cannot be turned on there. Add a way?
 - Question 3: on the mixer strip 「アルペジオ」 sits at the right end of the heading only while on (the track name is cut to about one character on a 108 px strip). The other way is an empty row on every strip, which moves everything below down by about 32 px. Which?
 - From: architecture 25-26; chapter 7 A-29 (E2).
 

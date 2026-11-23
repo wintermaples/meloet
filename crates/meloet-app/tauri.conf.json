@@ -13,8 +13,8 @@
         "title": "meloet",
         "width": 1280,
         "height": 800,
-        "minWidth": 853,
-        "minHeight": 448
+        "minWidth": 1024,
+        "minHeight": 640
       }
     ],
     "security": {

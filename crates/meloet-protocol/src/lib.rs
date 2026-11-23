@@ -109,7 +109,7 @@ pub enum Command {
         width: f32,
         height: f32,
     },
-    /// 100 | 125 | 150
+    /// 100 | 125
     SetScale {
         percent: u16,
     },

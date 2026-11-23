@@ -93,7 +93,7 @@ Code names: `ui/src/components/…` are files under that folder; type names come
 | こわれた | broken | | Border and text in `rec`. |
 | 止 | stopped | `StoppedPluginView` | The mark of a plugin that stopped. |
 | とばす | bypass | `bypassed` (`InsertView`) | An effect that is passed by. とばしている = bypassed. |
-| 拡大率 | scale | `SCALES`, `ZoomMenu.svelte` | 100, 125, 150 %. Different from zooming the view (拡大). |
+| 拡大率 | scale | `SCALES`, `ZoomMenu.svelte` | 100, 125 %. Different from zooming the view (拡大). |
 | 拡大 | zoom | `zoom` | Of the arrange or piano roll view. |
 | 引っこめる | hide | | Hide a part when the width is not enough. |
 | たたむ・ひらく | fold / open | | |

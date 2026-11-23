@@ -153,7 +153,7 @@ describe("mock.* (sizes only in the mock)", () => {
   it.each(mine)("the value of %s is in the mock, and the scaled value is an integer (rounded)", (_, tok) => {
     const html = readMock(tok.board);
     expect(html).toContain(`${tok.value}px`);
-    for (const s of [100, 125, 150] as const) expect(Number.isInteger(tokensAt(s, 1)[_] as number)).toBe(true);
+    for (const s of [100, 125] as const) expect(Number.isInteger(tokensAt(s, 1)[_] as number)).toBe(true);
   });
 });
 
@@ -225,12 +225,12 @@ describe("fake scenes", () => {
     expect(tall.setHeight(2000)).toBeNull();
     expect(tall.layout().lower.map((x) => x.band)).toEqual(["pianoRoll"]);
   });
-  it("scales that do not fit: on a 1200×700 screen only 150. 100 always fits", () => {
-    expect(unfitScales({ width: 1200, height: 700 })).toEqual([150]);
-    expect(unfitScales({ width: 1280, height: 672 })).toEqual([]);
-    expect(unfitScales({ width: 800, height: 400 })).toEqual([125, 150]);
+  it("scales that do not fit: on a 1200×700 screen 125. 100 always fits", () => {
+    expect(unfitScales({ width: 1200, height: 700 })).toEqual([125]);
+    expect(unfitScales({ width: 1280, height: 800 })).toEqual([]);
+    expect(unfitScales({ width: 800, height: 400 })).toEqual([125]);
     const zoom = fakeScene("zoom")!.state.workspace;
-    expect(zoom).toMatchObject({ scale: 125, unfitScales: [150] });
+    expect(zoom).toMatchObject({ scale: 100, unfitScales: [125] });
   });
   it("scene with a folded band: only the piano roll opens, and the status line tells", () => {
     const s = fakeScene("bandFolded")!.state;

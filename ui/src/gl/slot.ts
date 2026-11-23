@@ -69,7 +69,7 @@ export type MeterSource = "master" | { track: number } | { ret: "a" | "b" } | { 
 /** What a "paint" slot gets besides its box. */
 export interface PaintContext {
   dpr: number;
-  /** The app's scale (100, 125 or 150). */
+  /** The app's scale (100 or 125). */
   scale: number;
   /** Held keys, as the input meter shows them. */
   isDown: (note: number) => boolean;

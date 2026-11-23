@@ -25,10 +25,10 @@ pub const HISTORY: f64 = 248.0;
 pub const BAND_TOOLS: f64 = 32.0;
 pub const SIZE_SHELF: f64 = 320.0;
 pub const PARAMS_WIDTH: f64 = 320.0;
-/// The smallest window, in px at 100 % zoom (spec 1: at 150 % it still fits a 768 px high screen).
+/// The smallest window, in px at 100 % zoom (spec 1).
 pub const MIN_WINDOW: WindowSize = WindowSize {
-    width: 853.0,
-    height: 448.0,
+    width: 1024.0,
+    height: 640.0,
 };
 /// Bottom bands that may be open at once, besides the arrange view.
 pub const MAX_BOTTOM_OPEN: usize = 2;
@@ -329,9 +329,8 @@ mod tests {
             let w = min_window(scale);
             (w.width, w.height)
         };
-        assert_eq!(size(100), (853.0, 448.0));
-        assert_eq!(size(125), (1067.0, 560.0));
-        assert_eq!(size(150), (1280.0, 672.0));
+        assert_eq!(size(100), (1024.0, 640.0));
+        assert_eq!(size(125), (1280.0, 800.0));
     }
 
     #[test]
@@ -617,7 +616,7 @@ mod tests {
     #[test]
     fn piano_roll_note_area_matches_spec_table() {
         for (window, notes, rows) in [
-            (448.0, 92.0, 7.0),
+            (640.0, 284.0, 23.0),
             (720.0, 364.0, 30.0),
             (768.0, 412.0, 34.0),
             (800.0, 444.0, 37.0),
@@ -810,7 +809,7 @@ mod tests {
 
     #[test]
     fn overview_only_depends_on_the_arrange_height() {
-        // Nothing open in the smallest window: 448 - 24 - 48 - 52 - 24 - 24 = 276.
+        // Nothing open in a window 448 high: 448 - 24 - 48 - 52 - 24 - 24 = 276.
         assert!(!bands(448.0).layout().arrange_overview);
         // The piano roll open with tall arrange rows above it.
         let l = opened(1080.0, &[PianoRoll]).layout();
@@ -888,8 +887,8 @@ mod tests {
         assert_eq!(open_bottom(&b.layout()), [PianoRoll]);
     }
 
-    /// Spec 3 (94-92): the arrange view's 40 comes first. The smallest window at 150 %
-    /// (1280×800, 853×533 at 100 %) with the piano roll, the history and the tempo band open:
+    /// Spec 3 (94-92): the arrange view's 40 comes first. A window 533 high at 100 %
+    /// with the piano roll, the history and the tempo band open:
     /// the piano roll is folded, and the arrange view is the overview, not track rows 20 high.
     #[test]
     fn the_arrange_views_40_comes_first() {

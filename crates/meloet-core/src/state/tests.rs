@@ -1041,29 +1041,29 @@ fn bands_and_the_scale() {
 #[test]
 fn viewport_is_css_px_and_the_rules_work_at_100_percent() {
     let mut m = fresh();
-    // 1440 CSS px at 150 % is 960 at 100 %.
-    let effects = cmd(&mut m, Command::SetScale { percent: 150 });
+    // 1200 CSS px at 125 % is 960 at 100 %.
+    let effects = cmd(&mut m, Command::SetScale { percent: 125 });
     assert_eq!(
         effects,
         [Effect::SaveSettings(Box::new(Settings {
             output: None,
             output_name: None,
-            scale: 150,
+            scale: 125,
             ..Settings::default()
         }))]
     );
     cmd(
         &mut m,
         Command::SetViewport {
-            width: 1920.0,
-            height: 1440.0,
+            width: 1600.0,
+            height: 1200.0,
         },
     );
     cmd(&mut m, Command::ToggleBand { band: Band::Mixer });
     let ws = m.view().workspace;
     assert_eq!(
         (ws.scale, ws.viewport_width, ws.viewport_height),
-        (150, 1920.0, 1440.0)
+        (125, 1600.0, 1200.0)
     );
     assert_eq!(ws.layout.meter, MeterSize::Slim);
     assert_eq!(ws.layout.lower[0].height, 660.0);
@@ -1075,8 +1075,8 @@ fn viewport_is_css_px_and_the_rules_work_at_100_percent() {
     cmd(
         &mut m,
         Command::SetViewport {
-            width: 1920.0,
-            height: 1080.0,
+            width: 1600.0,
+            height: 900.0,
         },
     );
     let l = m.view().workspace.layout;
@@ -1088,25 +1088,25 @@ fn viewport_is_css_px_and_the_rules_work_at_100_percent() {
     );
 
     // Other scales and broken sizes are ignored.
-    for percent in [0, 99, 110, 200] {
+    for percent in [0, 99, 110, 150, 200] {
         assert!(cmd(&mut m, Command::SetScale { percent }).is_empty());
     }
-    assert!(cmd(&mut m, Command::SetScale { percent: 150 }).is_empty());
+    assert!(cmd(&mut m, Command::SetScale { percent: 125 }).is_empty());
     for (width, height) in [(0.0, 800.0), (1280.0, -1.0), (f32::NAN, 800.0)] {
         cmd(&mut m, Command::SetViewport { width, height });
     }
     let ws = m.view().workspace;
     assert_eq!(
         (ws.scale, ws.viewport_width, ws.viewport_height),
-        (150, 1920.0, 1080.0)
+        (125, 1600.0, 900.0)
     );
 
     assert_eq!(
-        cmd(&mut m, Command::SetScale { percent: 125 }).len(),
+        cmd(&mut m, Command::SetScale { percent: 100 }).len(),
         1,
         "saved"
     );
-    assert_eq!(m.view().workspace.scale, 125);
+    assert_eq!(m.view().workspace.scale, 100);
 }
 
 #[test]
@@ -1373,14 +1373,12 @@ fn unfit_scales_follow_the_screen() {
     assert!(m.view().workspace.unfit_scales.is_empty());
     for ((width, height), unfit) in [
         ((1920.0, 1080.0), vec![]),
-        ((1280.0, 672.0), vec![]),
-        ((1279.0, 672.0), vec![150]),
-        ((1280.0, 671.0), vec![150]),
-        ((1200.0, 700.0), vec![150]),
-        ((1067.0, 560.0), vec![150]),
-        ((1066.0, 560.0), vec![125, 150]),
+        ((1280.0, 800.0), vec![]),
+        ((1279.0, 800.0), vec![125]),
+        ((1280.0, 799.0), vec![125]),
+        ((1200.0, 700.0), vec![125]),
         // 100 is never listed.
-        ((800.0, 400.0), vec![125, 150]),
+        ((800.0, 400.0), vec![125]),
     ] {
         assert!(screen(&mut m, width, height).is_empty());
         assert_eq!(m.view().workspace.unfit_scales, unfit, "{width}x{height}");
@@ -1398,43 +1396,36 @@ fn a_scale_that_does_not_fit_is_not_taken() {
     let mut m = playing();
     screen(&mut m, 1200.0, 700.0);
     viewport(&mut m, 1100.0, 600.0);
-    assert_eq!(
-        cmd(&mut m, Command::SetScale { percent: 125 }),
-        [Effect::SaveSettings(Box::new(Settings {
-            scale: 125,
-            ..*m.settings()
-        }))]
-    );
     assert_eq!(status(&m), idle());
 
-    assert!(cmd(&mut m, Command::SetScale { percent: 150 }).is_empty());
-    assert_eq!(m.view().workspace.scale, 125);
+    assert!(cmd(&mut m, Command::SetScale { percent: 125 }).is_empty());
+    assert_eq!(m.view().workspace.scale, 100);
     assert_eq!(
         status(&m),
         Some(StatusMessage::ScaleDoesNotFit {
-            requested: 150,
-            kept: 125,
+            requested: 125,
+            kept: 100,
         })
     );
     // Choosing the zoom that is on is nothing new, but it is something the user did.
-    assert!(cmd(&mut m, Command::SetScale { percent: 125 }).is_empty());
+    assert!(cmd(&mut m, Command::SetScale { percent: 100 }).is_empty());
     assert_eq!(status(&m), idle());
 }
 
 #[test]
 fn a_new_scale_grows_a_window_that_is_too_small_for_it() {
     let mut m = playing();
-    viewport(&mut m, 900.0, 700.0);
+    viewport(&mut m, 900.0, 900.0);
     assert_eq!(cmd(&mut m, Command::SetScale { percent: 125 }).len(), 1);
     let ws = m.view().workspace;
-    // Only the width was too small: 1067x560 is the smallest window at 125 %.
-    assert_eq!((ws.viewport_width, ws.viewport_height), (1067.0, 700.0));
+    // Only the width was too small: 1280x800 is the smallest window at 125 %.
+    assert_eq!((ws.viewport_width, ws.viewport_height), (1280.0, 900.0));
     assert_eq!(
         status(&m),
         Some(StatusMessage::ScaleWindowGrown { scale: 125 })
     );
     // The screen then tells the size the window really got.
-    viewport(&mut m, 1067.0, 700.0);
+    viewport(&mut m, 1280.0, 900.0);
     assert_eq!(
         status(&m),
         Some(StatusMessage::ScaleWindowGrown { scale: 125 })
@@ -1442,7 +1433,7 @@ fn a_new_scale_grows_a_window_that_is_too_small_for_it() {
 
     // Big enough already: no notice.
     let mut m = playing();
-    assert_eq!(cmd(&mut m, Command::SetScale { percent: 150 }).len(), 1);
+    assert_eq!(cmd(&mut m, Command::SetScale { percent: 125 }).len(), 1);
     assert_eq!(status(&m), idle());
     let ws = m.view().workspace;
     assert_eq!((ws.viewport_width, ws.viewport_height), (1280.0, 800.0));
@@ -1450,19 +1441,19 @@ fn a_new_scale_grows_a_window_that_is_too_small_for_it() {
 
 #[test]
 fn a_grown_window_is_laid_out_at_its_new_size() {
-    // The smallest window at 100 % becomes the smallest window at 150 %: the same 448 px at
+    // The smallest window at 100 % becomes the smallest window at 125 %: the same 640 px at
     // 100 %, so the heights stay as they were.
     let mut m = playing();
-    viewport(&mut m, 853.0, 448.0);
+    viewport(&mut m, 1024.0, 640.0);
     toggle(&mut m, Band::History);
     let before = m.view().workspace.layout;
     assert_eq!(
         before.arrange_height,
-        448.0 - 24.0 - 48.0 - 24.0 - 248.0 - 24.0 - 24.0
+        640.0 - 24.0 - 48.0 - 24.0 - 248.0 - 24.0 - 24.0
     );
-    cmd(&mut m, Command::SetScale { percent: 150 });
+    cmd(&mut m, Command::SetScale { percent: 125 });
     let ws = m.view().workspace;
-    assert_eq!((ws.viewport_width, ws.viewport_height), (1280.0, 672.0));
+    assert_eq!((ws.viewport_width, ws.viewport_height), (1280.0, 800.0));
     assert_eq!(ws.layout, before);
 }
 
@@ -1490,7 +1481,7 @@ fn a_higher_scale_that_folds_a_band_says_the_scale_did_it() {
     toggle(&mut m, Band::PianoRoll);
     toggle(&mut m, Band::History);
     cmd(&mut m, Command::SetScale { percent: 125 });
-    assert_eq!(m.view().workspace.viewport_width, 1067.0);
+    assert_eq!(m.view().workspace.viewport_width, 1280.0);
     assert_eq!(
         status(&m),
         Some(StatusMessage::BandFoldedScale {
@@ -1510,36 +1501,24 @@ fn a_smaller_screen_lowers_the_scale_and_saves_it() {
     let mut m = Model::new(Settings {
         output: None,
         output_name: None,
-        scale: 150,
+        scale: 125,
         ..Settings::default()
     });
     // The remembered zoom fits this screen.
     assert!(screen(&mut m, 1920.0, 1040.0).is_empty());
-    assert_eq!(m.view().workspace.scale, 150);
+    assert_eq!(m.view().workspace.scale, 125);
     assert_eq!(status(&m), Some(StatusMessage::SearchingKeyboard));
 
-    assert_eq!(screen(&mut m, 1200.0, 700.0), [saved(125)]);
+    // A screen too small for 100 % still gets 100 %.
+    assert_eq!(screen(&mut m, 800.0, 400.0), [saved(100)]);
     let ws = m.view().workspace;
-    assert_eq!(ws.scale, 125);
-    assert_eq!(ws.unfit_scales, [150]);
-    let lowered = Some(StatusMessage::ScaleLoweredForScreen { from: 150, to: 125 });
+    assert_eq!(ws.scale, 100);
+    assert_eq!(ws.unfit_scales, [125]);
+    let lowered = Some(StatusMessage::ScaleLoweredForScreen { from: 125, to: 100 });
     assert_eq!(status(&m), lowered);
     // The same screen again changes nothing.
-    assert!(screen(&mut m, 1200.0, 700.0).is_empty());
+    assert!(screen(&mut m, 800.0, 400.0).is_empty());
     assert_eq!(status(&m), lowered);
-
-    // Two steps at once; a screen too small for 100 % still gets 100 %.
-    let mut m = Model::new(Settings {
-        output: None,
-        output_name: None,
-        scale: 150,
-        ..Settings::default()
-    });
-    assert_eq!(screen(&mut m, 800.0, 400.0), [saved(100)]);
-    assert_eq!(
-        status(&m),
-        Some(StatusMessage::ScaleLoweredForScreen { from: 150, to: 100 })
-    );
     assert!(screen(&mut m, 700.0, 400.0).is_empty());
 
     // A bigger screen does not raise the zoom again.

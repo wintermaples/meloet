@@ -49,9 +49,10 @@ describe("keyAction", () => {
     expect(keyAction(k(",", { ctrl: true }), false, "mac")).toBeNull();
   });
 
-  it("Mod+Alt+1/2/3 for scale. Reads code even when Option on Mac changes key", () => {
+  it("Mod+Alt+1/2 for scale. Reads code even when Option on Mac changes key", () => {
     expect(keyAction(k("1", { ctrl: true, alt: true, code: "Digit1" }), false, "other")).toEqual({ kind: "scale", scale: 100 });
-    expect(keyAction(k("3", { ctrl: true, alt: true, code: "Digit3" }), false, "other")).toEqual({ kind: "scale", scale: 150 });
+    expect(keyAction(k("2", { ctrl: true, alt: true, code: "Digit2" }), false, "other")).toEqual({ kind: "scale", scale: 125 });
+    expect(keyAction(k("3", { ctrl: true, alt: true, code: "Digit3" }), false, "other")).toBeNull();
     expect(keyAction(k("¡", { meta: true, alt: true, code: "Digit1" }), false, "mac")).toEqual({ kind: "scale", scale: 100 });
     expect(keyAction(k("4", { ctrl: true, alt: true, code: "Digit4" }), false, "other")).toBeNull();
     expect(keyAction(k("1", { ctrl: true }), false, "other")).toBeNull();

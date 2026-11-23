@@ -22,7 +22,7 @@ import { THEME_IDS, palettes } from "../src/design/themes";
 import { cellText, headers, rows, sectionTables, sectionText, specDocument, tableAfterH3 } from "./design-sources";
 
 const doc = specDocument();
-const triple = (s: string) => s.split("/").map((x) => Number(x.trim()));
+const pair = (s: string) => s.split("/").map((x) => Number(x.trim()));
 const sorted = (xs: Iterable<string>) => [...xs].sort();
 
 describe("spec 1 tables and tokens.ts", () => {
@@ -66,8 +66,8 @@ describe("spec 1 tables and tokens.ts", () => {
     for (const [name, sz, lh, weight] of rows(tableAfterH3(doc, "Text"))) {
       const tok = text[name as keyof typeof text];
       expect(tok, name).toBeDefined();
-      expect([...tok.size]).toEqual(triple(sz!));
-      expect([...tok.lineHeight]).toEqual(triple(lh!));
+      expect([...tok.size]).toEqual(pair(sz!));
+      expect([...tok.lineHeight]).toEqual(pair(lh!));
       expect(tok.weights.join(" / ")).toBe(weight);
       seen.push(name!);
     }
@@ -78,17 +78,17 @@ describe("spec 1 tables and tokens.ts", () => {
     ["Space", space],
     ["Sizes", size],
   ] as const) {
-    it(`${title}: all values at 100 / 125 / 150 % match`, () => {
+    it(`${title}: all values at 100 / 125 % match`, () => {
       const seen: string[] = [];
       for (const [name, values] of rows(tableAfterH3(doc, title))) {
-        expect([...(table as Record<string, readonly number[]>)[name!]!], name).toEqual(triple(values!));
+        expect([...(table as Record<string, readonly number[]>)[name!]!], name).toEqual(pair(values!));
         seen.push(name!);
       }
       expect(sorted(seen)).toEqual(sorted(Object.keys(table)));
     });
   }
 
-  it("lines and corners: the 100 % values, and the 125 % and 150 % values in the rule text, match", () => {
+  it("lines and corners: the 100 % values, and the 125 % values in the rule text, match", () => {
     const seen: string[] = [];
     for (const [name, value, rule] of rows(tableAfterH3(doc, "Lines and corners"))) {
       seen.push(name!);
@@ -96,9 +96,9 @@ describe("spec 1 tables and tokens.ts", () => {
         expect(line["line.hair"]).toBe(Number(value));
         expect(rule).toContain("physical 1px");
       } else if (name === "line.mark" || name === "line.track") {
-        const [a, b, c] = line[name];
+        const [a, b] = line[name];
         expect(a).toBe(Number(value));
-        expect(rule).toContain(`${b} at 125 %, ${c} at 150 %`);
+        expect(rule).toContain(`${b} at 125 %`);
       } else if (name === "radius.round") {
         expect(radius["radius.round"]).toBe(value!.replace(" ", ""));
       } else {
@@ -128,14 +128,11 @@ const ROUNDED = [
   "part.endpoint.friendly@125=187.5→188",
   "part.endpoint.link@125=7.5→8",
   "part.meter.black-key-slim-h@125=8.75→9",
-  "part.meter.black-key-slim-h@150=10.5→11",
   "part.meter.black-key-slim-w@125=6.25→6",
-  "part.meter.black-key-slim-w@150=7.5→8",
   "part.meter.clip@125=2.5→3",
   "part.meter.vertical@125=7.5→8",
   "part.note.edge@125=2.5→3",
   "part.note.height@125=13.75→14",
-  "part.note.height@150=16.5→17",
   "part.note.resize@125=7.5→8",
   "part.param.knob-w@125=7.5→8",
   "part.param.step@125=7.5→8",
@@ -212,16 +209,16 @@ describe("values per scale and CSS variables", () => {
     }
   });
 
-  it("line.mark is 2, 2, 3, line.track is 4, 5, 6, radius.1 stays 1", () => {
-    expect(SCALES.map((s) => tokensAt(s, 1)["line.mark"])).toEqual([2, 2, 3]);
-    expect(SCALES.map((s) => tokensAt(s, 1)["line.track"])).toEqual([4, 5, 6]);
-    expect(SCALES.map((s) => tokensAt(s, 1)["radius.1"])).toEqual([1, 1, 1]);
+  it("line.mark is 2, 2, line.track is 4, 5, radius.1 stays 1", () => {
+    expect(SCALES.map((s) => tokensAt(s, 1)["line.mark"])).toEqual([2, 2]);
+    expect(SCALES.map((s) => tokensAt(s, 1)["line.track"])).toEqual([4, 5]);
+    expect(SCALES.map((s) => tokensAt(s, 1)["radius.1"])).toEqual([1, 1]);
   });
 
   it("table values equal the 100 % values times the scale", () => {
     for (const tbl of [space, size] as Record<string, readonly number[]>[]) {
       for (const [k, v] of Object.entries(tbl)) {
-        expect([v[0]! * 1.25, v[0]! * 1.5], k).toEqual([v[1], v[2]]);
+        expect(v[0]! * 1.25, k).toBe(v[1]);
       }
     }
   });
@@ -260,9 +257,9 @@ describe("values per scale and CSS variables", () => {
   });
 
   it("can be written to :root", () => {
-    writeCssVariables(150, 1);
+    writeCssVariables(125, 1);
     const st = document.documentElement.style;
-    expect(st.getPropertyValue("--space-1")).toBe("6px");
+    expect(st.getPropertyValue("--space-1")).toBe("5px");
     expect(st.getPropertyValue("--color-tip-bg")).toBe("#F2F2F2");
     expect(st.getPropertyValue("--line-hair")).toBe("1px");
   });

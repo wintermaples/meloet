@@ -74,8 +74,8 @@ describe("the table (keyList.ts)", () => {
     expect(find("保存")[0]!.keys).toBe("Ctrl S");
     expect(find("保存", mac)[0]!.keys).toBe("Cmd S");
     expect(find("やりなおす")[0]!.keys).toBe("Ctrl Shift Z");
-    expect(find("拡大率")[0]!.keys).toBe("Ctrl Alt 1 ／ 2 ／ 3");
-    expect(find("拡大率", mac)[0]!.keys).toBe("Cmd Option 1 ／ 2 ／ 3");
+    expect(find("拡大率")[0]!.keys).toBe("Ctrl Alt 1 ／ 2");
+    expect(find("拡大率", mac)[0]!.keys).toBe("Cmd Option 1 ／ 2");
     expect(find("次のマーカーへ ／ 前のマーカーへ", mac)[0]!.keys).toBe("Option → ／ Option ←");
     expect(find("再生 ／ 止める")[0]).toMatchObject({ group: "play", keys: "Space" });
     expect(find("クオンタイズをかけなおす")[0]).toMatchObject({ group: "pianoRoll", keys: "Q" });

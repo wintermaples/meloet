@@ -437,7 +437,7 @@ export const texts = {
   "msg.scaleKept": s6(
     "Scale that does not fit, chosen with a key",
     "{requested} % は、この画面には入りません。{kept} % のままです。",
-    { requested: "150", kept: "125" },
+    { requested: "125", kept: "100" },
   ),
   "msg.scaleWindowGrown": s6(
     "Scale changed and the window made larger",
@@ -447,7 +447,7 @@ export const texts = {
   "msg.scaleLowered": s6(
     "Screen became smaller",
     "画面が小さくなったので、拡大率を {from} % から {to} % にしました。",
-    { from: "150", to: "125" },
+    { from: "125", to: "100" },
   ),
   "msg.bandFoldedWindowLow": s6(
     "Band folded automatically",
@@ -467,7 +467,7 @@ export const texts = {
   "msg.bandFoldedScale": s6(
     "Band folded after raising the scale",
     "拡大率を {scale} % にしたので、{band}をたたみました。帯札を押すと、またひらきます。",
-    { scale: "150", band: "ミキサー" },
+    { scale: "125", band: "ミキサー" },
   ),
   // Something that cannot be read as a number was typed in a number field. The field is value.* or note.*.
   "msg.valueRejected": s6(
@@ -1532,8 +1532,8 @@ export const texts = {
     "mock:F-Empty",
   ),
   "arrange.emptyAddTrack": e(
-    "トラックを増やすには左下の「＋ トラックを追加」",
-    "mock:F-Empty",
+    "トラックを増やすには左下の「＋ 鍵盤のトラック」か「＋ 歌のトラック」",
+    "user:2026-11-24",
   ),
   "arrange.overview": e("アレンジ 全体", "mock:A-PianoRoll"),
   "arrange.markerLoop": e("マーカー ・ ループ {range}", "mock:Main", {

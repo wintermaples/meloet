@@ -73,7 +73,7 @@
 | Move notes by a semitone / an octave | <kbd>↑</kbd> <kbd>↓</kbd> / <kbd>Shift</kbd> <kbd>↑</kbd> <kbd>↓</kbd> | <kbd>↑</kbd> <kbd>↓</kbd> / <kbd>Shift</kbd> <kbd>↑</kbd> <kbd>↓</kbd> | Does not work (used for the text in the box) |
 | Move notes by one grid step | <kbd>←</kbd> <kbd>→</kbd> | <kbd>←</kbd> <kbd>→</kbd> | Does not work (used for the text in the box) |
 | Zoom in / out horizontally | <kbd>Mod</kbd> <kbd>+</kbd> / <kbd>Mod</kbd> <kbd>−</kbd> | <kbd>Mod</kbd> <kbd>+</kbd> / <kbd>Mod</kbd> <kbd>−</kbd> | Works |
-| Screen scale 100 / 125 / 150 % | <kbd>Mod</kbd> <kbd>Alt</kbd> <kbd>1</kbd> / <kbd>2</kbd> / <kbd>3</kbd> | <kbd>Mod</kbd> <kbd>Option</kbd> <kbd>1</kbd> / <kbd>2</kbd> / <kbd>3</kbd> | Works |
+| Screen scale 100 / 125 % | <kbd>Mod</kbd> <kbd>Alt</kbd> <kbd>1</kbd> / <kbd>2</kbd> | <kbd>Mod</kbd> <kbd>Option</kbd> <kbd>1</kbd> / <kbd>2</kbd> | Works |
 | To the next part / to the previous part | <kbd>Tab</kbd> / <kbd>Shift</kbd> <kbd>Tab</kbd> | <kbd>Tab</kbd> / <kbd>Shift</kbd> <kbd>Tab</kbd> | Works |
 | Keep what was just played (「さっきのを残す」; round 12) | <kbd>Shift</kbd> <kbd>R</kbd> | <kbd>Shift</kbd> <kbd>R</kbd> | Does not work |
 | Play with the PC keyboard on / off (「キーで弾く」; round 12) | <kbd>Mod</kbd> <kbd>K</kbd> | <kbd>Mod</kbd> <kbd>K</kbd> | Works |

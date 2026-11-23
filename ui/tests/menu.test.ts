@@ -139,7 +139,7 @@ describe("menu contents (B-59)", () => {
   it("Mac uses Cmd and Option", () => {
     const menus = topMenus(withClip(), depsOf(withClip(), []), "mac");
     expect(row(menus[0]!.entries, "名前をつけて保存…").key).toBe("Cmd Shift S");
-    expect(rows(row(menus[2]!.entries, "拡大率").sub!).map((r) => r.key)).toEqual(["Cmd Option 1", "Cmd Option 2", "Cmd Option 3"]);
+    expect(rows(row(menus[2]!.entries, "拡大率").sub!).map((r) => r.key)).toEqual(["Cmd Option 1", "Cmd Option 2"]);
   });
 
   it("rows of the view bands mark open bands, the arrange has no mark. File, edit and view have 2 dividers each (mock R5-Menus)", () => {
@@ -248,8 +248,8 @@ describe("menu contents (B-59)", () => {
       prOpen(s);
       s.song.loopOn = true;
       s.transport.countInBars = 2;
-      s.workspace.scale = 125;
-      s.workspace.unfitScales = [150];
+      s.workspace.scale = 100;
+      s.workspace.unfitScales = [125];
       s.song.tracks[0]!.muted = true;
       s.pianoRoll.grid = { division: 8, triplet: true };
       s.pianoRoll.scale = { root: 9, mode: "minor", lock: true, highlight: true };
@@ -257,8 +257,8 @@ describe("menu contents (B-59)", () => {
     prView.tool = "draw";
     const menus = topMenus(s, depsOf(s, []), "other");
     const checks = (entries: ListEntry[]) => rows(entries).map((r) => `${r.label}${r.checked ? "*" : ""}${r.usable ? "" : "!"}`);
-    expect(checks(row(menus[2]!.entries, "拡大率").sub!)).toEqual(["100 %", "125 %*", "150 %!"]);
-    expect(rows(row(menus[2]!.entries, "拡大率").sub!).map((r) => r.hint ?? null)).toEqual([null, null, "この画面には入りません"]);
+    expect(checks(row(menus[2]!.entries, "拡大率").sub!)).toEqual(["100 %*", "125 %!"]);
+    expect(rows(row(menus[2]!.entries, "拡大率").sub!).map((r) => r.hint ?? null)).toEqual([null, "この画面には入りません"]);
     expect(checks(menus[3]!.entries)).toContain("ループ*");
     expect(checks(menus[3]!.entries)).toContain("メトロノーム");
     expect(checks(row(menus[3]!.entries, "カウントイン").sub!)).toEqual(["なし", "1 小節", "2 小節*"]);
@@ -348,7 +348,7 @@ describe("menu contents (B-59)", () => {
     row(menus()[5]!.entries, "ミュート").run!();
     row(menus()[5]!.entries, "録音待機").run!();
     row(row(menus()[4]!.entries, "グリッド").sub!, "1/4").run!();
-    row(row(menus()[2]!.entries, "拡大率").sub!, "150 %").run!();
+    row(row(menus()[2]!.entries, "拡大率").sub!, "125 %").run!();
     expect(sent).toEqual([
       { type: "copyClips", clips: [5] },
       { type: "copyNotes", take: 7, notes: [0] },
@@ -356,7 +356,7 @@ describe("menu contents (B-59)", () => {
       { type: "toggleMute", track: 1 },
       { type: "selectTrack", track: 1, fromArm: true },
       { type: "setGrid", division: 4, triplet: false },
-      { type: "setScale", percent: 150 },
+      { type: "setScale", percent: 125 },
     ]);
     row(menus()[2]!.entries, "縦に拡大").run!();
     expect(prView.rowPx).toBe(16);

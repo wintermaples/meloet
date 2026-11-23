@@ -215,24 +215,24 @@ fn a_remembered_scale_that_does_not_fit_the_screen_is_lowered_and_saved() {
         ..CoreOptions::offline()
     };
     let core = Core::start(options.clone());
-    core.send(Command::SetScale { percent: 150 });
+    core.send(Command::SetScale { percent: 125 });
     core.stop();
 
     let core = Core::start(options);
-    assert_eq!(core.snapshot().state.workspace.scale, 150);
+    assert_eq!(core.snapshot().state.workspace.scale, 125);
     core.set_screen_space(1200.0, 700.0);
     // `set_screen_space` does not wait; a command that changes nothing does.
     core.send(Command::DismissHint);
     let state = core.snapshot().state;
-    assert_eq!(state.workspace.scale, 125);
-    assert_eq!(state.workspace.unfit_scales, [150]);
+    assert_eq!(state.workspace.scale, 100);
+    assert_eq!(state.workspace.unfit_scales, [125]);
     // Sending a command took the notice away again.
     assert_eq!(
         state.status.message,
         Some(meloet_protocol::StatusMessage::SearchingKeyboard)
     );
     core.stop();
-    assert_eq!(settings::load(&dir).scale, 125);
+    assert_eq!(settings::load(&dir).scale, 100);
 }
 
 #[test]

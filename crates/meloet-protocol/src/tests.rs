@@ -283,7 +283,7 @@ pub(super) fn sample_state() -> AppState {
             theme: Theme::Dark,
             viewport_width: 1280.0,
             viewport_height: 800.0,
-            unfit_scales: vec![150],
+            unfit_scales: vec![125],
             layout: LayoutView {
                 meter: MeterSize::Full,
                 arrange_height: 600.0,
@@ -1566,7 +1566,7 @@ fn state_json_is_camel_case_and_round_trips() {
         json!({"on": true, "value": 100})
     );
     assert_eq!(v["state"]["workspace"]["viewportWidth"], 1280.0);
-    assert_eq!(v["state"]["workspace"]["unfitScales"], json!([150]));
+    assert_eq!(v["state"]["workspace"]["unfitScales"], json!([125]));
     assert_eq!(v["state"]["workspace"]["layout"]["rightFront"], "shelf");
     assert_eq!(v["state"]["workspace"]["settings"], json!(null));
     assert_eq!(v["state"]["song"]["file"], "changed");
@@ -1633,10 +1633,10 @@ fn status_message_json_shape() {
         ),
         (
             StatusMessage::BandFoldedScale {
-                scale: 150,
+                scale: 125,
                 band: Band::Mixer,
             },
-            json!({"id": "bandFoldedScale", "scale": 150, "band": "mixer"}),
+            json!({"id": "bandFoldedScale", "scale": 125, "band": "mixer"}),
         ),
         (
             StatusMessage::ValueRejected {
@@ -1711,18 +1711,18 @@ fn status_message_json_shape() {
         ),
         (
             StatusMessage::ScaleDoesNotFit {
-                requested: 150,
-                kept: 125,
+                requested: 125,
+                kept: 100,
             },
-            json!({"id": "scaleDoesNotFit", "requested": 150, "kept": 125}),
+            json!({"id": "scaleDoesNotFit", "requested": 125, "kept": 100}),
         ),
         (
             StatusMessage::ScaleWindowGrown { scale: 125 },
             json!({"id": "scaleWindowGrown", "scale": 125}),
         ),
         (
-            StatusMessage::ScaleLoweredForScreen { from: 150, to: 125 },
-            json!({"id": "scaleLoweredForScreen", "from": 150, "to": 125}),
+            StatusMessage::ScaleLoweredForScreen { from: 125, to: 100 },
+            json!({"id": "scaleLoweredForScreen", "from": 125, "to": 100}),
         ),
         (
             StatusMessage::AudioSystemStopped,

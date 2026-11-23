@@ -89,7 +89,7 @@ export const ACTION_ROWS: Record<KeyAction["kind"], readonly KeyRow[]> = {
   bypass: [row("mixer", "keyList.bypass", () => t("key.bypass"))],
 
   zoom: [row("view", ["menu.zoomIn", "menu.zoomOut"], (k) => or(k.mod(t("key.zoomIn")), k.mod(t("key.zoomOut"))))],
-  scale: [row("view", "menu.scale", (k) => or(k.modAlt("1"), "2", "3"))],
+  scale: [row("view", "menu.scale", (k) => or(k.modAlt("1"), "2"))],
   menuBar: [row("view", "keyList.menuBar", () => t("key.f10"))],
 };
 

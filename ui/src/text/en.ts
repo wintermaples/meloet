@@ -694,7 +694,7 @@ export const enTexts: Record<TextKey, EnText> = {
   "arrange.tempoAndSignature": "{tempo} · {signature}",
   "arrange.emptyTitle": "What you record lines up here.",
   "arrange.emptyBody": "Play the keyboard to check the sound, then press the red record button.",
-  "arrange.emptyAddTrack": "For more tracks, “+ Add track” at the bottom left",
+  "arrange.emptyAddTrack": "For more tracks, “+ Keys track” or “+ Vocal track” at the bottom left",
   "arrange.overview": "Arrange · all",
   "arrange.markerLoop": "Markers · loop {range}",
   "arrange.recordingClip": "● Recording take {take}",

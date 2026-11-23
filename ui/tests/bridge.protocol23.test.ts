@@ -222,7 +222,7 @@ describe("fake scenes (F7-VocalTrack, F7-VocalRec, F7-TwoRec, F7-Latency, F7-Set
     const fit = scene("vocalFit");
     expect(fit.meters.keys).toEqual([60, 64, 67]);
     expect(fit.meters.mics!.length).toBe(1);
-    expect(fit.state.workspace.unfitScales).toEqual([125, 150]);
+    expect(fit.state.workspace.unfitScales).toEqual([125]);
     const kept = scene("recoverVocal").state.workspace.recovery;
     expect(kept).toMatchObject({ kind: "recovered", vocals: { count: 1, until: 8 * BAR + 2 * TPQ } });
     expect(t("recovery.vocalKept", { count: 1, position: "9. 3. 0000" })).toBe("録っていた歌 1 つを、止まる直前（9. 3. 0000 ごろ）まで残しました。");

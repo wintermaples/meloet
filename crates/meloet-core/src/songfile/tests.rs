@@ -184,7 +184,7 @@ fn a_song_comes_back_as_it_was_and_shares_its_takes() {
 fn the_shape_on_disk() {
     let v: serde_json::Value = serde_json::from_slice(&encode(&rich_song("x", 1))).unwrap();
     assert_eq!(v["format"], "meloet-song");
-    assert_eq!(v["version"], 6);
+    assert_eq!(v["version"], 7);
     assert_eq!(v["song"]["tempo"], 12_345);
     assert_eq!(v["song"]["meter"], serde_json::json!([6, 8]));
     assert_eq!(
@@ -261,7 +261,8 @@ fn the_shape_on_disk() {
         v["session"],
         serde_json::json!({"playTarget": 1, "loopOn": true,
                            "grid": {"division": 8, "triplet": true},
-                           "scale": {"root": 2, "mode": "minor", "lock": true},
+                           "scale": {"root": 2, "mode": "minor", "lock": true,
+                                     "highlight": true},
                            "quantize": {"division": 32, "triplet": true, "strength": 75,
                                         "swing": 10, "align": "startAndEnd"}})
     );
@@ -282,7 +283,7 @@ fn piano_roll_settings_missing_or_not_understood_are_the_defaults() {
     assert_eq!(back.doc.loop_range, song.doc.loop_range);
 
     v["session"]["grid"] = serde_json::json!({"division": 7, "triplet": false});
-    v["session"]["scale"] = serde_json::json!({"root": 4, "mode": "dorian", "lock": true});
+    v["session"]["scale"] = serde_json::json!({"root": 4, "mode": "phrygian", "lock": true});
     v["session"]["quantize"] = serde_json::json!("later");
     let back = decode(&serde_json::to_vec(&v).unwrap()).unwrap();
     assert_eq!(back.session.roll, RollSettings::default());
@@ -432,6 +433,57 @@ fn mute_sets_that_cannot_be_are_left_out_and_cost_nothing_else() {
 }
 
 #[test]
+fn version_7_is_written_and_version_6_still_reads() {
+    let song = rich_song("x", 3);
+    let mut v: serde_json::Value = serde_json::from_slice(&encode(&song)).unwrap();
+    assert_eq!(v["version"], 7);
+    v["version"] = 6.into();
+    let back = decode(&serde_json::to_vec(&v).unwrap()).unwrap();
+    assert_eq!(back.doc.tracks, song.doc.tracks);
+    assert_eq!(back.session.roll, song.session.roll);
+}
+
+#[test]
+fn a_scale_without_highlight_is_highlighted() {
+    let mut song = rich_song("x", 3);
+    song.session.roll.scale = MusicalScale::new(9, ScaleMode::Blues, true).unwrap();
+    song.session.roll.scale.highlight = false;
+    let mut v: serde_json::Value = serde_json::from_slice(&encode(&song)).unwrap();
+    assert_eq!(
+        v["session"]["scale"],
+        serde_json::json!({"root": 9, "mode": "blues", "lock": true, "highlight": false})
+    );
+    assert_eq!(
+        decode(&serde_json::to_vec(&v).unwrap())
+            .unwrap()
+            .session
+            .roll
+            .scale,
+        song.session.roll.scale
+    );
+    // A song of version 6 has no `highlight`.
+    v["version"] = 6.into();
+    v["session"]["scale"] = serde_json::json!({"root": 2, "mode": "minor", "lock": false});
+    let scale = decode(&serde_json::to_vec(&v).unwrap())
+        .unwrap()
+        .session
+        .roll
+        .scale;
+    assert_eq!(
+        (scale.root(), scale.mode, scale.lock, scale.highlight),
+        (2, ScaleMode::Minor, false, true)
+    );
+    // Every kind round trips.
+    for mode in ScaleMode::ALL {
+        song.session.roll.scale = MusicalScale::new(4, mode, false).unwrap();
+        assert_eq!(
+            decode(&encode(&song)).unwrap().session.roll.scale.mode,
+            mode
+        );
+    }
+}
+
+#[test]
 fn newer_older_and_broken_files_do_not_read() {
     let good: serde_json::Value = serde_json::from_slice(&encode(&rich_song("x", 3))).unwrap();
     let with = |f: &dyn Fn(&mut serde_json::Value)| {
@@ -440,8 +492,8 @@ fn newer_older_and_broken_files_do_not_read() {
         decode(&serde_json::to_vec(&v).unwrap())
     };
     assert!(matches!(
-        with(&|v| v["version"] = 7.into()),
-        Err(ReadError::TooNew { version: 7 })
+        with(&|v| v["version"] = 8.into()),
+        Err(ReadError::TooNew { version: 8 })
     ));
     // Before version 6 a tick and a tempo meant something else.
     for version in 1..=5u32 {
@@ -1183,7 +1235,7 @@ fn plugins_sf2_presets_and_bypassed_inserts_come_back() {
 #[test]
 fn the_shape_of_plugins_and_presets_on_disk() {
     let v: serde_json::Value = serde_json::from_slice(&encode(&added_song())).unwrap();
-    assert_eq!(v["version"], 6);
+    assert_eq!(v["version"], 7);
     let tracks = &v["song"]["tracks"];
     let state: Vec<u8> = (0..=255u8).cycle().take(1000).collect();
     assert_eq!(
@@ -1379,7 +1431,7 @@ fn a_step_on_a_plugin_and_its_undo_are_saved_as_the_song_is() {
 fn the_shape_of_the_timeline_on_disk() {
     let song = rich_song("x", 1);
     let v: serde_json::Value = serde_json::from_slice(&encode(&song)).unwrap();
-    assert_eq!(v["version"], 6);
+    assert_eq!(v["version"], 7);
     let s = &v["song"];
     assert_eq!(s["tempo"], 12_345);
     assert_eq!(s["meter"], serde_json::json!([6, 8]));

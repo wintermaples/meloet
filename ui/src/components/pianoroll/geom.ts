@@ -1,7 +1,7 @@
 // Shape math for the piano roll (rows, grid, note area, drag amounts, reading text). Pure functions that do not know the DOM.
 // Positions are ticks in the song. x is "CSS px from the left edge of the note area", y is "CSS px from the top edge of the note area".
 
-import { CONTROL_CC, CONTROL_PITCH_BEND, NO_FROM, type Grid, type IndexRange, type MusicalScale, type TakeNotes } from "../../bridge";
+import { CONTROL_CC, CONTROL_PITCH_BEND, NO_FROM, type Grid, type IndexRange, type MusicalScale, type ScaleMode, type TakeNotes } from "../../bridge";
 import type { ColorName } from "../../design/tokens";
 import { isBlack } from "../../gl/keyboard";
 import { barsMap } from "../../time/bars";
@@ -221,7 +221,18 @@ export const floorTick = (tick: number, step: number) => Math.floor(tick / step)
 /** The list of grids (the owner's decision). 0 is one bar. */
 export const GRID_DIVISIONS = [0, 2, 4, 8, 16, 32] as const;
 
-export const SCALE_STEPS = { major: [0, 2, 4, 5, 7, 9, 11], minor: [0, 2, 3, 5, 7, 8, 10] } as const;
+/** The same table as `ScaleMode::steps` in crates/meloet-model/src/roll.rs. */
+export const SCALE_STEPS = {
+  major: [0, 2, 4, 5, 7, 9, 11],
+  minor: [0, 2, 3, 5, 7, 8, 10],
+  harmonicMinor: [0, 2, 3, 5, 7, 8, 11],
+  melodicMinor: [0, 2, 3, 5, 7, 9, 11],
+  majorPentatonic: [0, 2, 4, 7, 9],
+  minorPentatonic: [0, 3, 5, 7, 10],
+  blues: [0, 3, 5, 6, 7, 10],
+  dorian: [0, 2, 3, 5, 7, 9, 10],
+  mixolydian: [0, 2, 4, 5, 7, 9, 10],
+} as const satisfies Record<ScaleMode, readonly number[]>;
 export const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"] as const;
 
 export function inScale(key: number, s: Pick<MusicalScale, "root" | "mode">): boolean {

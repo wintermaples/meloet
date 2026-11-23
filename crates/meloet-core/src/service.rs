@@ -210,6 +210,10 @@ pub enum ShellRequest {
         name: String,
         folder_only: bool,
     },
+    /// Open this address (`https://` only) in the PC's browser (round 12, G1 and D1).
+    OpenUrl { url: String },
+    /// Open this file with the PC's own app for it (round 12, E9 「PC のプレーヤーで聞く」).
+    OpenFile { path: PathBuf },
 }
 
 /// Called on the core thread; must not wait for the main thread.

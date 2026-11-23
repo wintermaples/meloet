@@ -99,6 +99,9 @@ fn overdub_is_a_command_and_a_field_of_the_transport() {
         recording_vocals: Vec::new(),
         recording_faults: None,
         overdub: true,
+        click_volume_db: 0.0,
+        click_sound: ClickSound::Beep,
+        click_when: ClickWhen::Always,
     };
     assert_eq!(to_json(&transport)["overdub"], true);
 }

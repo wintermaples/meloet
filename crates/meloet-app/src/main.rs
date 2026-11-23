@@ -318,6 +318,14 @@ fn shell_request(
             pcwindow::show_file(path);
             return;
         }
+        ShellRequest::OpenUrl { url } => {
+            pcwindow::open_url(url);
+            return;
+        }
+        ShellRequest::OpenFile { path } => {
+            pcwindow::open_file(path);
+            return;
+        }
         ShellRequest::PickSongFile { folder } => {
             #[cfg(feature = "dev-hooks")]
             if let Some(path) = devhooks::take_open_song() {

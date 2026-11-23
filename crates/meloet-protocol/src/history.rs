@@ -166,6 +166,21 @@ pub enum StepName {
     JoinClips,
     /// An empty clip made (`Command::CreateClip`); 「（何を）」 the clip's name.
     WriteClip,
+    // Protocol 31 (round 12).
+    /// P3 `Command::ScaleVelocity`.
+    ScaleVelocity,
+    /// P3 `Command::RampVelocity`.
+    RampVelocity,
+    /// P3 `Command::RandomVelocity`.
+    RandomVelocity,
+    /// P3 `Command::Legato`.
+    Legato,
+    /// A3 `Command::DuplicateTrack`.
+    DuplicateTrack,
+    /// A9 `Command::NormalizeClips`.
+    NormalizeClips,
+    /// A9 `Command::ReverseClips`.
+    ReverseClips,
 }
 
 impl StepName {
@@ -259,6 +274,13 @@ impl StepName {
             RenameClip,
             JoinClips,
             WriteClip,
+            ScaleVelocity,
+            RampVelocity,
+            RandomVelocity,
+            Legato,
+            DuplicateTrack,
+            NormalizeClips,
+            ReverseClips,
         ];
         // A kind added to the enum and not to the list above does not build.
         for name in &all {
@@ -339,7 +361,14 @@ impl StepName {
                 | SetClipPitch
                 | RenameClip
                 | JoinClips
-                | WriteClip => {}
+                | WriteClip
+                | ScaleVelocity
+                | RampVelocity
+                | RandomVelocity
+                | Legato
+                | DuplicateTrack
+                | NormalizeClips
+                | ReverseClips => {}
             }
         }
         all

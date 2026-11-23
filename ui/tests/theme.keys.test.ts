@@ -126,7 +126,7 @@ describe("the dark themes keep their faces (user:2026-11-23)", () => {
 
 const SIZES = { noteH: 11, edge: 2, velBar: 3, velCap: 7, velFull: 64, velMid: 36, endMark: 16, drumGap: 8, hatch: 12 };
 const BOX = { x0: 0, y0: 0, x1: 696, y1: 492 };
-const LOCK = { root: 0, mode: "major", lock: true } as const;
+const LOCK = { root: 0, mode: "major", lock: true, highlight: true } as const;
 const f32 = (hex: string) => hexToRgb(hex).map(Math.fround).join();
 const colorOf = (r: number[]) => r.slice(4, 7).join();
 
@@ -166,7 +166,7 @@ describe("the hatch on rows that cannot be written", () => {
     expect(hatches.map((h) => h.slice(1, 5))).toEqual(outKeys.map((k) => [0, (72 - k) * 12, 696, (72 - k) * 12 + 11]));
     expect(hatches.every((h) => h[5] === 12)).toBe(true);
     expect(draw(picture({ scale: { ...LOCK, lock: false } })).hatches()).toEqual([]);
-    expect(draw(picture({ scale: { root: 7, mode: "minor", lock: true } })).hatches().length).toBe(outKeys.length);
+    expect(draw(picture({ scale: { root: 7, mode: "minor", lock: true, highlight: true } })).hatches().length).toBe(outKeys.length);
   });
 
   it("drawn after every row and before the lines and notes", () => {

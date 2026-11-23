@@ -25,10 +25,13 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer, Serialize};
 
 pub const FORMAT: &str = "meloet-song";
-/// The shape this meloet writes, and the only one it reads. 6: 1920 ticks to a quarter note,
-/// and the tempo is quarter notes a minute whatever the meter. The versions before it (480
-/// ticks, the tempo in beats of the meter) do not read.
-pub const VERSION: u32 = 6;
+/// The shape this meloet writes. 7 (round 12) has the fields of round 12, which a meloet of
+/// version 6 would drop without a word when it saves; it reads every field of 6 the same way.
+pub const VERSION: u32 = 7;
+/// The oldest shape this meloet reads. 6: 1920 ticks to a quarter note, and the tempo is
+/// quarter notes a minute whatever the meter. The versions before it (480 ticks, the tempo in
+/// beats of the meter) do not read.
+pub const OLDEST_VERSION: u32 = 6;
 pub const EXTENSION: &str = "meloet";
 /// Tracks the engine has room for.
 const MAX_TRACKS: usize = crate::play::MAX_TRACKS;
@@ -42,7 +45,7 @@ pub enum ReadError {
     TooNew {
         version: u32,
     },
-    /// Of a version from before [`VERSION`], whose ticks and tempos mean something else.
+    /// Of a version from before [`OLDEST_VERSION`], whose ticks and tempos mean something else.
     TooOld {
         version: u32,
     },
@@ -1036,6 +1039,9 @@ struct ScaleFile {
     root: u8,
     mode: ScaleModeFile,
     lock: bool,
+    /// Missing (version 6): on.
+    #[serde(default = "yes")]
+    highlight: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1043,6 +1049,45 @@ struct ScaleFile {
 enum ScaleModeFile {
     Major,
     Minor,
+    HarmonicMinor,
+    MelodicMinor,
+    MajorPentatonic,
+    MinorPentatonic,
+    Blues,
+    Dorian,
+    Mixolydian,
+}
+
+fn yes() -> bool {
+    true
+}
+
+fn scale_mode_file(mode: ScaleMode) -> ScaleModeFile {
+    match mode {
+        ScaleMode::Major => ScaleModeFile::Major,
+        ScaleMode::Minor => ScaleModeFile::Minor,
+        ScaleMode::HarmonicMinor => ScaleModeFile::HarmonicMinor,
+        ScaleMode::MelodicMinor => ScaleModeFile::MelodicMinor,
+        ScaleMode::MajorPentatonic => ScaleModeFile::MajorPentatonic,
+        ScaleMode::MinorPentatonic => ScaleModeFile::MinorPentatonic,
+        ScaleMode::Blues => ScaleModeFile::Blues,
+        ScaleMode::Dorian => ScaleModeFile::Dorian,
+        ScaleMode::Mixolydian => ScaleModeFile::Mixolydian,
+    }
+}
+
+fn scale_mode_of(mode: &ScaleModeFile) -> ScaleMode {
+    match mode {
+        ScaleModeFile::Major => ScaleMode::Major,
+        ScaleModeFile::Minor => ScaleMode::Minor,
+        ScaleModeFile::HarmonicMinor => ScaleMode::HarmonicMinor,
+        ScaleModeFile::MelodicMinor => ScaleMode::MelodicMinor,
+        ScaleModeFile::MajorPentatonic => ScaleMode::MajorPentatonic,
+        ScaleModeFile::MinorPentatonic => ScaleMode::MinorPentatonic,
+        ScaleModeFile::Blues => ScaleMode::Blues,
+        ScaleModeFile::Dorian => ScaleMode::Dorian,
+        ScaleModeFile::Mixolydian => ScaleMode::Mixolydian,
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1230,11 +1275,9 @@ pub fn encode(song: &Song) -> Vec<u8> {
             grid: Some(grid_file(s.roll.grid)),
             scale: Some(ScaleFile {
                 root: s.roll.scale.root(),
-                mode: match s.roll.scale.mode {
-                    ScaleMode::Major => ScaleModeFile::Major,
-                    ScaleMode::Minor => ScaleModeFile::Minor,
-                },
+                mode: scale_mode_file(s.roll.scale.mode),
                 lock: s.roll.scale.lock,
+                highlight: s.roll.scale.highlight,
             }),
             quantize: Some({
                 let q = s.roll.quantize;
@@ -1297,11 +1340,9 @@ fn roll_settings(s: &SessionFile) -> RollSettings {
             .scale
             .as_ref()
             .and_then(|sc| {
-                let mode = match sc.mode {
-                    ScaleModeFile::Major => ScaleMode::Major,
-                    ScaleModeFile::Minor => ScaleMode::Minor,
-                };
-                MusicalScale::new(sc.root, mode, sc.lock)
+                let mut scale = MusicalScale::new(sc.root, scale_mode_of(&sc.mode), sc.lock)?;
+                scale.highlight = sc.highlight;
+                Some(scale)
             })
             .unwrap_or_default(),
         quantize: s
@@ -1479,7 +1520,7 @@ pub fn decode(bytes: &[u8]) -> Result<Song, ReadError> {
     if version > VERSION {
         return Err(ReadError::TooNew { version });
     }
-    if version < VERSION {
+    if version < OLDEST_VERSION {
         return Err(ReadError::TooOld { version });
     }
     let file: SongFile = serde_json::from_slice(bytes).map_err(|_| ReadError::Broken)?;

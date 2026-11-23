@@ -397,6 +397,7 @@ fn the_chord_stamp_is_one_step_and_keeps_keys_outside_the_locked_scale() {
             root: 0,
             mode: ScaleMode::Major,
             lock: true,
+            highlight: true,
         },
     );
     // 63 is outside C major; 200 is no key; 60 twice is one note.

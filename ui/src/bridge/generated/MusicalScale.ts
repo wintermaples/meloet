@@ -3,5 +3,7 @@ import type { ScaleMode } from "./ScaleMode";
 
 /**
  * `root` 0..=11 is C..B. `lock`: "スケール固定 ・ オン", only keys of the scale can be written.
+ * `highlight`: 「色をつける」 (P1), on in a new song and in a song from before it; with
+ * `lock` off the rows outside the scale are `color.row.out` and can still be written.
  */
-export type MusicalScale = { root: number, mode: ScaleMode, lock: boolean, };
+export type MusicalScale = { root: number, mode: ScaleMode, lock: boolean, highlight: boolean, };

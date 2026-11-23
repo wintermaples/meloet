@@ -32,7 +32,8 @@ use meloet_protocol::{
     LowerBandView, MeterSize, MissingRef, MissingView, OutputsView, ParamTable, ParamValues,
     PluginRole, PluginWindowKind, QuantizeSettings, RecordFormat, RecoveryCause, ScanView,
     SettingsDialogView, ShelfMode, ShelfView, SongFile, SongView, SoundRef, StandIn, StatusMessage,
-    StatusView, Theme, TrackKindView, TrackView, Unusable, VelocityFixed, WorkspaceView,
+    StatusView, Theme, TrackKindView, TrackView, Unusable, UpdatesView, VelocityFixed,
+    WorkspaceView,
 };
 
 use crate::added;
@@ -736,6 +737,8 @@ pub struct Model {
     export: crate::export::Exporting,
     pack: pack::PackSide,
     ai: ai::AiSide,
+    /// 「新しい版をたしかめる」 (round 12, D1): a meloet setting.
+    check_updates: bool,
 }
 
 /// Audio files let go of over the window (`Model::pending_drop`).
@@ -788,7 +791,8 @@ impl Model {
         };
         Model {
             play: Play::new(settings.metronome, settings.count_in_bars)
-                .with_overdub(settings.overdub),
+                .with_overdub(settings.overdub)
+                .with_click(settings.click),
             new_song_unsaid: true,
             empty_dismissed: false,
             scale,
@@ -853,6 +857,7 @@ impl Model {
             export: crate::export::Exporting::default(),
             pack: pack::PackSide::new(settings.pack_fetch),
             ai: ai::AiSide::new(settings.ai_link),
+            check_updates: settings.check_updates,
         }
     }
 
@@ -1956,8 +1961,13 @@ impl Model {
                     .add_notes(take, (start, length), &keys, velocity, effects);
             }
             Command::SetGrid { division, triplet } => self.play.set_grid(division, triplet),
-            Command::SetMusicalScale { root, mode, lock } => {
-                self.play.set_musical_scale(root, mode, lock);
+            Command::SetMusicalScale {
+                root,
+                mode,
+                lock,
+                highlight,
+            } => {
+                self.play.set_musical_scale(root, mode, lock, highlight);
             }
             Command::SetQuantize {
                 division,
@@ -2197,6 +2207,29 @@ impl Model {
             } => self
                 .play
                 .set_plugin_param(slot, table, param, value, commit, effects),
+            // round12 stub: R3
+            Command::SetClick { .. } => {}
+            // round12 stub: P3
+            Command::ScaleVelocity { .. }
+            | Command::RampVelocity { .. }
+            | Command::RandomVelocity { .. }
+            | Command::Legato { .. } => {}
+            // round12 stub: P6
+            Command::AddNotesAt { .. } => {}
+            // round12 stub: E9
+            Command::PlayExported => {}
+            // round12 stub: A3
+            Command::DuplicateTrack { .. } => {}
+            // round12 stub: A5
+            Command::OpenRecent { .. } | Command::ClearRecent => {}
+            // round12 stub: A9
+            Command::NormalizeClips { .. } | Command::ReverseClips { .. } => {}
+            // round12 stub: G1
+            Command::OpenUserGuide => {}
+            // round12 stub: D1
+            Command::SetCheckUpdates { .. }
+            | Command::OpenReleasePage
+            | Command::DismissNewVersion => {}
         }
         None
     }
@@ -2505,11 +2538,13 @@ impl Model {
             scale: self.scale,
             theme: self.theme,
             metronome: self.play.metronome(),
+            click: self.play.click_settings(),
             count_in_bars: self.play.count_in_bars(),
             velocity_fixed: self.velocity_fixed.on,
             fixed_velocity: self.velocity_fixed.value,
             overdub: self.play.overdub(),
             ai_link: self.ai.on,
+            check_updates: self.check_updates,
             favorites: self.favorites.clone(),
             plugin_places: self.plugins.added_places().to_vec(),
             shelf: self.catalog.settings().clone(),
@@ -2725,6 +2760,13 @@ impl Model {
             export: self.export_view(),
             sounds: self.sounds_view(),
             ai_link: self.ai.view(),
+            // round12 stub: A5
+            recent: Vec::new(),
+            // round12 stub: D1
+            updates: UpdatesView {
+                check: self.check_updates,
+                new_version: None,
+            },
             status: StatusView { message: status },
         }
     }

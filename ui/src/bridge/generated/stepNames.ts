@@ -79,5 +79,12 @@ export const STEP_NAME_KINDS: readonly StepName["kind"][] = [
   "setClipPitch",
   "renameClip",
   "joinClips",
-  "writeClip"
+  "writeClip",
+  "scaleVelocity",
+  "rampVelocity",
+  "randomVelocity",
+  "legato",
+  "duplicateTrack",
+  "normalizeClips",
+  "reverseClips"
 ];

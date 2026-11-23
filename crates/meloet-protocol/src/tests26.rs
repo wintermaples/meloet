@@ -39,6 +39,8 @@ fn dialog() -> ExportDialogView {
             peak_db: Some(-0.5),
             clips: false,
             over: 0,
+            lufs: Some(-18.5),
+            true_peak_db: Some(-3.25),
         },
         solo: None,
         stopped_plugins: Vec::new(),
@@ -51,6 +53,13 @@ fn dialog() -> ExportDialogView {
         realtime: false,
         realtime_forced: false,
         can_export: true,
+        loudness: ExportLoudness::Match,
+        can_match: true,
+        loudness_result: Some(ExportLoudnessResult {
+            gain_db: 4.5,
+            limited: false,
+            lufs: -14.0,
+        }),
     }
 }
 
@@ -84,7 +93,8 @@ fn the_dialog_json_shape() {
             "format": "wav",
             "formats": ["wav", "flac"],
             "place": "~/音楽/はじめての曲.wav",
-            "check": {"state": "done", "peakDb": -0.5, "clips": false, "over": 0},
+            "check": {"state": "done", "peakDb": -0.5, "clips": false, "over": 0,
+                      "lufs": -18.5, "truePeakDb": -3.25},
             "solo": null,
             "stoppedPlugins": [],
             "advancedOpen": false,
@@ -96,6 +106,9 @@ fn the_dialog_json_shape() {
             "realtime": false,
             "realtimeForced": false,
             "canExport": true,
+            "loudness": "match",
+            "canMatch": true,
+            "loudnessResult": {"gainDb": 4.5, "limited": false, "lufs": -14.0},
         }, "run": null}),
     );
     both_ways(ExportView::default(), json!({"dialog": null, "run": null}));
@@ -118,8 +131,11 @@ fn the_check_json_shape() {
             peak_db: Some(-3.5),
             clips: false,
             over: 0,
+            lufs: Some(-20.5),
+            true_peak_db: Some(-3.0),
         },
-        json!({"state": "counting", "percent": 38, "peakDb": -3.5, "clips": false, "over": 0}),
+        json!({"state": "counting", "percent": 38, "peakDb": -3.5, "clips": false, "over": 0,
+               "lufs": -20.5, "truePeakDb": -3.0}),
     );
     // Nothing but silence so far.
     both_ways(
@@ -128,16 +144,22 @@ fn the_check_json_shape() {
             peak_db: None,
             clips: false,
             over: 0,
+            lufs: None,
+            true_peak_db: None,
         },
-        json!({"state": "counting", "percent": 0, "peakDb": null, "clips": false, "over": 0}),
+        json!({"state": "counting", "percent": 0, "peakDb": null, "clips": false, "over": 0,
+               "lufs": null, "truePeakDb": null}),
     );
     both_ways(
         ExportCheck::Done {
             peak_db: Some(1.5),
             clips: true,
             over: 3,
+            lufs: Some(-9.5),
+            true_peak_db: Some(2.0),
         },
-        json!({"state": "done", "peakDb": 1.5, "clips": true, "over": 3}),
+        json!({"state": "done", "peakDb": 1.5, "clips": true, "over": 3, "lufs": -9.5,
+               "truePeakDb": 2.0}),
     );
     both_ways(
         ExportCheck::Failed {
@@ -201,10 +223,14 @@ fn the_run_json_shape() {
             length_s: 182,
             sample_rate: 48_000,
             bits: RecordFormat::Bits24,
+            wave: vec![0, 128, 255],
+            lufs: Some(-14.0),
+            true_peak_db: Some(-1.0),
         },
         json!({"state": "done", "file": "はじめての曲.wav", "files": 1,
                "place": "~/ミュージック/はじめての曲/はじめての曲.wav", "lengthS": 182,
-               "sampleRate": 48_000, "bits": "bits24"}),
+               "sampleRate": 48_000, "bits": "bits24", "wave": [0, 128, 255],
+               "lufs": -14.0, "truePeakDb": -1.0}),
     );
     both_ways(ExportRunView::Cancelled, json!({"state": "cancelled"}));
     both_ways(

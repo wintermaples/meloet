@@ -1,7 +1,6 @@
 // Protocol 30: the color themes (「表示 ▸ テーマ ▸」). The shapes, the fake's intent and the scenes in a theme.
 import { afterEach, describe, expect, it } from "vitest";
 import type { AppState, Command, Theme } from "../src/bridge";
-import { PROTOCOL_VERSION } from "../src/bridge";
 import { createFakeTransport, fakeScene, fakeState, type FakeState } from "../src/bridge/fake";
 import { DEFAULT_THEME, THEME_IDS, type ThemeId } from "../src/design/themes";
 
@@ -22,8 +21,7 @@ async function opened(initial?: FakeState) {
 afterEach(() => history.replaceState(null, "", "/"));
 
 describe("shape of protocol 30", () => {
-  it("version 30. A new state is in the default theme, dark", () => {
-    expect(PROTOCOL_VERSION).toBe(30);
+  it("a new state is in the default theme, dark", () => {
     expect(fakeState().workspace.theme).toBe("dark");
     expect(DEFAULT_THEME).toBe("dark");
   });

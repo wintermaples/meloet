@@ -142,6 +142,9 @@ describe("shownTick (the transport numbers and the play line)", () => {
     recordingVocals: [],
     recordingFaults: null,
     overdub: false,
+    clickVolumeDb: 0,
+    clickSound: "beep",
+    clickWhen: "always",
   });
   const tel = (tick: number): Telemetry =>
     ({ sentUs: 1000, position: { tick, ticksPerUs: 0.5, state: "playing", countInBeatsLeft: 0, lap: 0 } }) as Telemetry;

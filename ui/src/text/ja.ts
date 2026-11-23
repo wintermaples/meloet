@@ -2699,6 +2699,13 @@ export const stepNames: Readonly<Record<StepName["kind"], Entry>> = {
   renameClip: e("クリップの名前を変える", "user:2026-11-23"),
   joinClips: e("クリップをつなげる", "user:2026-11-23"),
   writeClip: e("クリップを書く", "spec:3"),
+  scaleVelocity: e("ベロシティを割合で変える", "user:2026-11-23"),
+  rampVelocity: e("ベロシティをだんだん変える", "user:2026-11-23"),
+  randomVelocity: e("ベロシティをばらつかせる", "user:2026-11-23"),
+  legato: e("次の音までのばす", "user:2026-11-23"),
+  duplicateTrack: e("トラックを複製", "user:2026-11-23"),
+  normalizeClips: e("ノーマライズ", "user:2026-11-23"),
+  reverseClips: e("逆にする", "user:2026-11-23"),
 };
 
 export interface Term {

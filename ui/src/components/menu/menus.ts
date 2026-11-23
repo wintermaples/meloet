@@ -213,8 +213,8 @@ export function topMenus(state: AppState, deps: KeyDeps, platform: Platform): To
     plain("menu.scaleLock", prOpen, undefined, {
       checked: scaleOf.lock,
       sub: [
-        choice(t("inspector.on"), scaleOf.lock, prOpen, send({ type: "setMusicalScale", root: scaleOf.root, mode: scaleOf.mode, lock: true })),
-        choice(t("inspector.off"), !scaleOf.lock, prOpen, send({ type: "setMusicalScale", root: scaleOf.root, mode: scaleOf.mode, lock: false })),
+        choice(t("inspector.on"), scaleOf.lock, prOpen, send({ type: "setMusicalScale", root: scaleOf.root, mode: scaleOf.mode, lock: true, highlight: scaleOf.highlight })),
+        choice(t("inspector.off"), !scaleOf.lock, prOpen, send({ type: "setMusicalScale", root: scaleOf.root, mode: scaleOf.mode, lock: false, highlight: scaleOf.highlight })),
         { kind: "heading", label: t("scale.kind") },
         // Choosing a scale turns it on (B-65, the same as the ▾ in the tool row).
         ...(["major", "minor"] as const).map((mode) =>
@@ -222,12 +222,12 @@ export function topMenus(state: AppState, deps: KeyDeps, platform: Platform): To
             t(mode === "major" ? "scale.major" : "scale.minor"),
             scaleOf.mode === mode,
             prOpen,
-            send({ type: "setMusicalScale", root: scaleOf.root, mode, lock: true }),
+            send({ type: "setMusicalScale", root: scaleOf.root, mode, lock: true, highlight: scaleOf.highlight }),
           ),
         ),
         { kind: "heading", label: t("scale.root") },
         ...roots.map((root) =>
-          choice(pitchClassName(root), scaleOf.root === root, prOpen, send({ type: "setMusicalScale", root, mode: scaleOf.mode, lock: true })),
+          choice(pitchClassName(root), scaleOf.root === root, prOpen, send({ type: "setMusicalScale", root, mode: scaleOf.mode, lock: true, highlight: scaleOf.highlight })),
         ),
       ],
     }),

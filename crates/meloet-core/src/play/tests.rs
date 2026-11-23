@@ -898,7 +898,8 @@ fn the_piano_roll_section_follows_the_shown_take() {
             MusicalScale {
                 root: 0,
                 mode: ScaleMode::Major,
-                lock: false
+                lock: false,
+                highlight: true
             },
             QuantizeSettings {
                 division: 16,

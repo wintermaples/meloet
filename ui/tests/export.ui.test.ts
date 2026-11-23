@@ -137,12 +137,12 @@ describe("export dialog (mock F7-Export, spec 3 (34-B))", () => {
     expect([lines[1]!.classList.contains("rec"), lines[2]!.classList.contains("label")]).toEqual([true, true]);
     expect(text(q('[data-test="export-start"]'))).toBe("このまま書き出すEnter");
     unmount(mounted!);
-    show(ExportDialog, withDialog("exportDialog", { check: { state: "counting", percent: 50, peakDb: 0.4, clips: true, over: 2 } }));
+    show(ExportDialog, withDialog("exportDialog", { check: { state: "counting", percent: 50, peakDb: 0.4, clips: true, over: 2, lufs: null, truePeakDb: null } }));
     expect(qa('[data-test="export-check-line"]').map(text)).toEqual(["たしかめています 50 %", "ここまでのいちばん大きい所 +0.4 dB", over(2, "+0.4"), hint]);
     expect(text(q('[data-test="export-start"]'))).toBe("このまま書き出すEnter");
     unmount(mounted!);
     // 32-bit wav: it does not clip even with parts over (clips is false). No clipping text.
-    show(ExportDialog, withDialog("exportDialog", { check: { state: "done", peakDb: 0.4, clips: false, over: 2 } }));
+    show(ExportDialog, withDialog("exportDialog", { check: { state: "done", peakDb: 0.4, clips: false, over: 2, lufs: null, truePeakDb: null } }));
     expect(qa('[data-test="export-check-line"]').map(text)).toEqual(["いちばん大きい所 +0.4 dB ・ 音割れはありません"]);
     expect(text(q('[data-test="export-start"]'))).toBe("書き出すEnter");
   });
@@ -372,7 +372,7 @@ describe("status line (spec 2 (Export progress), spec 6, mock F7-Export, F7-Expo
     expect(app.sent).toEqual([{ type: "showExported" }]);
     unmount(mounted!);
     const s = scene("exportDone");
-    s.export.run = { state: "done", file: "ピアノ.wav", files: 4, place: "~/ミュージック/はじめての曲/", lengthS: 40, sampleRate: 48000, bits: "bits24" };
+    s.export.run = { state: "done", file: "ピアノ.wav", files: 4, place: "~/ミュージック/はじめての曲/", lengthS: 40, sampleRate: 48000, bits: "bits24", wave: [], lufs: null, truePeakDb: null };
     show(StatusLine, s);
     expect(text(q(".status .message"))).toBe("書き出しました: ~/ミュージック/はじめての曲/");
   });
@@ -426,7 +426,7 @@ describe("ExportShown (the numbers shown)", () => {
     vi.advanceTimersByTime(ms);
   };
   const counting = (percent: number, over: Partial<ExportDialogView> = {}): ExportView => ({
-    dialog: { ...scene("exportCounting").export.dialog!, check: { state: "counting", percent, peakDb: -3, clips: false, over: 0 }, ...over },
+    dialog: { ...scene("exportCounting").export.dialog!, check: { state: "counting", percent, peakDb: -3, clips: false, over: 0, lufs: null, truePeakDb: null }, ...over },
     run: null,
   });
 

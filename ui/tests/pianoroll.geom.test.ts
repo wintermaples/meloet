@@ -16,7 +16,7 @@ describe("grid and scales", () => {
   });
 
   it("scales (major, minor) and the rows that scale lock does not allow", () => {
-    const cMajor = { root: 0, mode: "major" as const, lock: true };
+    const cMajor = { root: 0, mode: "major" as const, lock: true, highlight: true };
     expect([60, 62, 64, 65, 67, 69, 71].every((k) => G.inScale(k, cMajor))).toBe(true);
     expect([61, 63, 66, 68, 70].some((k) => G.inScale(k, cMajor))).toBe(false);
     expect(G.inScale(70, { root: 9, mode: "minor" })).toBe(false);
@@ -26,11 +26,11 @@ describe("grid and scales", () => {
   });
 
   it("row background: white keys row.white, black keys row.black, rows not allowed row.out", () => {
-    const off = { root: 0, mode: "major" as const, lock: false };
+    const off = { root: 0, mode: "major" as const, lock: false, highlight: true };
     expect(G.rowColor(60, off)).toBe("color.row.white");
     expect(G.rowColor(61, off)).toBe("color.row.black");
     expect(G.rowColor(61, { ...off, lock: true })).toBe("color.row.out");
-    expect(G.rowColor(66, { root: 7, mode: "major", lock: true })).toBe("color.row.black");
+    expect(G.rowColor(66, { root: 7, mode: "major", lock: true, highlight: true })).toBe("color.row.black");
   });
 
   it("the note face is gray.8, 9, 10 by velocity", () => {

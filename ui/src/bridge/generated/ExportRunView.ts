@@ -3,7 +3,8 @@ import type { ExportFailure } from "./ExportFailure";
 import type { RecordFormat } from "./RecordFormat";
 
 /**
- * 「書き出しの進み」 (spec 2; spec 6 「書き出している」 … 「書き出しが終わった」).
+ * 「書き出しの進み」 (spec 2; spec 6 「書き出している」 … 「書き出しが終わった」). An export the
+ * AI link asks for is not shown here.
  */
 export type ExportRunView = { "state": "running", 
 /**
@@ -46,4 +47,14 @@ place: string,
 /**
  * How long the written audio is, the tail counted.
  */
-lengthS: number, sampleRate: number, bits: RecordFormat, } | { "state": "cancelled" } | { "state": "failed", reason: ExportFailure, };
+lengthS: number, sampleRate: number, bits: RecordFormat, 
+/**
+ * E9 the dialog 「書き出しました」: the file's waveform as `EXPORT_WAVE_BARS` bars, each
+ * the largest absolute sample of its part, 0..=255. Empty for several files.
+ */
+wave: Array<number>, 
+/**
+ * E9 the loudness and the true peak of the file as written (after F1's gain).
+ * `None` for several files, and for silence.
+ */
+lufs: number | null, truePeakDb: number | null, } | { "state": "cancelled" } | { "state": "failed", reason: ExportFailure, };

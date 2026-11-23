@@ -70,7 +70,7 @@
   const keysFull = $derived(summary ? selectedKeysFull(selectedKeys, drums) : null);
 
   function setScale(root: number, mode: ScaleMode, lock: boolean): void {
-    send({ type: "setMusicalScale", root, mode, lock });
+    send({ type: "setMusicalScale", root, mode, lock, highlight: pr.scale.highlight });
   }
 
   // ---- Typing in the selected notes' fields ----

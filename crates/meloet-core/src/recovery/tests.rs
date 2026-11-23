@@ -75,12 +75,24 @@ fn the_shape_on_disk_wraps_a_song_file() {
     assert_eq!(bytes.last(), Some(&b'\n'));
     let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(v["format"], "meloet-recovery");
-    assert_eq!(v["version"], 2);
+    assert_eq!(v["version"], 3);
     assert_eq!(v["writtenMs"], 5);
     assert_eq!(v["cause"], "sudden");
     assert_eq!(v["path"], serde_json::Value::Null);
     let file: serde_json::Value = serde_json::from_slice(&songfile::encode(&song)).unwrap();
     assert_eq!(v["song"], file);
+}
+
+#[test]
+fn a_file_of_version_2_with_a_song_of_version_6_still_reads() {
+    let song = song_with_notes("x", 2);
+    let mut v: serde_json::Value =
+        serde_json::from_slice(&encode(&song, None, RecoveryCause::Sudden, 5)).unwrap();
+    v["version"] = 2.into();
+    v["song"]["version"] = 6.into();
+    let back = decode(&serde_json::to_vec(&v).unwrap()).unwrap();
+    assert_eq!(back.song, song);
+    assert_eq!(back.written_ms, 5);
 }
 
 #[test]
@@ -98,7 +110,7 @@ fn a_file_that_does_not_read_still_tells_the_song_file_when_its_head_reads() {
     );
 
     // A newer one, and the one from before the ticks and tempos of song file 6.
-    for version in [3, 1] {
+    for version in [4, 1] {
         v["version"] = version.into();
         let other = serde_json::to_vec(&v).unwrap();
         assert_eq!(decode(&other).unwrap_err().path.as_deref(), Some(path));

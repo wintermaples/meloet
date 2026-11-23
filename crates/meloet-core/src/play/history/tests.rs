@@ -223,6 +223,13 @@ fn every_step_kind() -> Vec<StepKind> {
             audio: meloet_model::AudioId(31),
             clips: 2,
         },
+        ScaleVelocity { clip, count },
+        RampVelocity { clip, count },
+        RandomVelocity { clip, count },
+        Legato { clip, count },
+        DuplicateTrack { track },
+        NormalizeClips { count: 2 },
+        ReverseClips { count: 1 },
     ];
     for kind in &all {
         match kind {
@@ -312,7 +319,14 @@ fn every_step_kind() -> Vec<StepKind> {
             | SetClipsGain { .. }
             | SetClipsFollow { .. }
             | SetClipsPitch { .. }
-            | RemoveAudio { .. } => {}
+            | RemoveAudio { .. }
+            | ScaleVelocity { .. }
+            | RampVelocity { .. }
+            | RandomVelocity { .. }
+            | Legato { .. }
+            | DuplicateTrack { .. }
+            | NormalizeClips { .. }
+            | ReverseClips { .. } => {}
         }
     }
     all

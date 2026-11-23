@@ -1090,6 +1090,7 @@ fn the_locked_scale_keeps_the_write_tool_on_its_keys() {
             root: 0,
             mode: ScaleMode::Major,
             lock: true,
+            highlight: true,
         },
     );
     // The audition sounds every key (B-62); writing is what the lock keeps on its keys.
@@ -1154,6 +1155,7 @@ fn the_locked_scale_keeps_the_write_tool_on_its_keys() {
             root: 9,
             mode: ScaleMode::Minor,
             lock: true,
+            highlight: true,
         },
     );
     let take = clip_view(m).take_id;
@@ -1175,6 +1177,7 @@ fn the_locked_scale_keeps_the_write_tool_on_its_keys() {
             root: 9,
             mode: ScaleMode::Minor,
             lock: false,
+            highlight: true,
         },
     );
     cmd(
@@ -1276,6 +1279,7 @@ fn the_audition_sounds_on_the_play_target() {
             root: 0,
             mode: ScaleMode::Major,
             lock: true,
+            highlight: true,
         },
     );
     let effects = cmd(
@@ -1304,8 +1308,8 @@ fn settings_are_kept_and_out_of_range_ones_dropped() {
     let mut p = two_notes();
     p.set_grid(32, true);
     p.set_grid(12, false);
-    p.set_musical_scale(4, ScaleMode::Minor, true);
-    p.set_musical_scale(12, ScaleMode::Major, false);
+    p.set_musical_scale(4, ScaleMode::Dorian, true, false);
+    p.set_musical_scale(12, ScaleMode::Major, false, true);
     let q = |division, strength, swing| QuantizeSettings {
         division,
         triplet: false,
@@ -1328,8 +1332,9 @@ fn settings_are_kept_and_out_of_range_ones_dropped() {
         v.scale,
         MusicalScale {
             root: 4,
-            mode: ScaleMode::Minor,
-            lock: true
+            mode: ScaleMode::Dorian,
+            lock: true,
+            highlight: false
         }
     );
     assert_eq!(v.quantize, q(8, 60, 20));
@@ -1353,7 +1358,7 @@ fn edited_takes_and_settings_come_back_from_the_file() {
         e,
     );
     p.set_grid(0, false);
-    p.set_musical_scale(7, ScaleMode::Major, true);
+    p.set_musical_scale(7, ScaleMode::MinorPentatonic, true, false);
     let back = songfile::decode(&songfile::encode(p.song())).unwrap();
     assert_eq!(&back, p.song());
     let mut again = fresh(back);

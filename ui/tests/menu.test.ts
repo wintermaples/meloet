@@ -232,7 +232,7 @@ describe("menu contents (B-59)", () => {
       s.workspace.unfitScales = [150];
       s.song.tracks[0]!.muted = true;
       s.pianoRoll.grid = { division: 8, triplet: true };
-      s.pianoRoll.scale = { root: 9, mode: "minor", lock: true };
+      s.pianoRoll.scale = { root: 9, mode: "minor", lock: true, highlight: true };
     });
     prView.tool = "draw";
     const menus = topMenus(s, depsOf(s, []), "other");

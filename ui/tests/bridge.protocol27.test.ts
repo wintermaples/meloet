@@ -102,14 +102,14 @@ describe("fake scenes (mock F8-*)", () => {
 
   it("exportCheck (F8-ExportCheck): in the middle of counting, with 2 bass on solo", () => {
     const d = scene("exportCheck").export.dialog!;
-    expect(d.check).toEqual({ state: "counting", percent: 38, peakDb: -3.5, clips: false, over: 0 });
+    expect(d.check).toEqual({ state: "counting", percent: 38, peakDb: -3.5, clips: false, over: 0, lufs: null, truePeakDb: null });
     expect(d.solo).toEqual({ first: { number: 2, name: "ベース" }, others: 0 });
     expect(d.canExport).toBe(true);
   });
 
   it("exportClip (F8-ExportClip): 3 places over 0 dB, the loudest +1.2 dB. No solo", () => {
     const d = scene("exportClip").export.dialog!;
-    expect(d.check).toEqual({ state: "done", peakDb: 1.2, clips: true, over: 3 });
+    expect(d.check).toEqual({ state: "done", peakDb: 1.2, clips: true, over: 3, lufs: null, truePeakDb: null });
     expect(d.solo).toBeNull();
   });
 });

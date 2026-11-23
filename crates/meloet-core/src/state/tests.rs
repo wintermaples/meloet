@@ -1980,3 +1980,98 @@ fn a_song_with_what_this_pc_does_not_have_keeps_it_and_says_so() {
     // The song itself is as it was: saving writes the plugin and the preset back.
     assert_eq!(m.play().song().doc, song.doc);
 }
+
+/// Protocol 31 (round 12, wave 1): every new intent is taken, and until its feature is built
+/// it changes nothing, as an intent with an old id.
+#[test]
+fn the_commands_of_round_12_are_taken_and_change_nothing_yet() {
+    use meloet_protocol::{ClickSound, ClickWhen, NoteAt};
+    let mut m = fresh();
+    let before = m.view();
+    assert_eq!(
+        (
+            before.transport.click_volume_db,
+            before.transport.click_sound,
+            before.transport.click_when
+        ),
+        (0.0, ClickSound::Beep, ClickWhen::Always)
+    );
+    assert!(before.recent.is_empty());
+    assert_eq!(before.updates, UpdatesView::default());
+    let track = before.song.tracks[0].id;
+    let commands = [
+        Command::SetClick {
+            volume_db: Some(-6.0),
+            sound: Some(ClickSound::Tick),
+            when: Some(ClickWhen::RecordingOnly),
+            commit: true,
+        },
+        Command::ScaleVelocity {
+            take: 99,
+            notes: vec![0],
+            percent: 120,
+        },
+        Command::RampVelocity {
+            take: 99,
+            notes: vec![0, 1],
+            from: 40,
+            to: 110,
+        },
+        Command::RandomVelocity {
+            take: 99,
+            notes: vec![0],
+            amount: 8,
+            seed: 7,
+        },
+        Command::Legato {
+            take: 99,
+            notes: vec![0, 1],
+        },
+        Command::AddNotesAt {
+            take: None,
+            notes: vec![NoteAt {
+                start: 0,
+                length: 7680,
+                key: 53,
+                velocity: 100,
+            }],
+        },
+        Command::PlayExported,
+        Command::DuplicateTrack { track },
+        Command::OpenRecent { id: 1 },
+        Command::ClearRecent,
+        Command::NormalizeClips { clips: vec![1] },
+        Command::ReverseClips { clips: vec![1] },
+        Command::OpenUserGuide,
+        Command::SetCheckUpdates { on: false },
+        Command::OpenReleasePage,
+        Command::DismissNewVersion,
+    ];
+    for command in commands {
+        assert_eq!(cmd(&mut m, command.clone()), [], "{command:?}");
+    }
+    assert_eq!(AppState::changes_from(&before, &m.view()), []);
+
+    // The settings are read and written back as they are.
+    let settings = Settings {
+        click: crate::settings::ClickSettings {
+            volume_db: -12.0,
+            sound: ClickSound::Cowbell,
+            when: ClickWhen::RecordingOnly,
+        },
+        check_updates: false,
+        ..Settings::default()
+    };
+    let m = Model::new(settings.clone());
+    let view = m.view();
+    assert_eq!(
+        (
+            view.transport.click_volume_db,
+            view.transport.click_sound,
+            view.transport.click_when,
+            view.updates.check
+        ),
+        (-12.0, ClickSound::Cowbell, ClickWhen::RecordingOnly, false)
+    );
+    assert_eq!(m.settings(), settings);
+}

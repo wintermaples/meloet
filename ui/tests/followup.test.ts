@@ -213,7 +213,7 @@ describe("scale lock ▾ (B-65)", () => {
     rows.find((b) => text(b) === "マイナー")!.click();
     flushSync();
     const pr = fakeScene("pianoRoll")!.state.pianoRoll;
-    expect(app.sent).toEqual([{ type: "setMusicalScale", root: pr.scale.root, mode: "minor", lock: true }]);
+    expect(app.sent).toEqual([{ type: "setMusicalScale", root: pr.scale.root, mode: "minor", lock: true, highlight: pr.scale.highlight }]);
     expect(q('[data-test="scale-menu"]')).toBeNull();
   });
 });

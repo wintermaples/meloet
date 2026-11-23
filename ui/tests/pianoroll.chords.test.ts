@@ -166,7 +166,7 @@ describe("drawing chords with the draw tool (drag.ts)", () => {
       shown: () => n,
       geom: () => GEOM,
       step: () => TPQ / 4,
-      scale: () => ({ ...C_MAJOR, lock }),
+      scale: () => ({ ...C_MAJOR, lock, highlight: true }),
       meter: () => ({ num: 4, den: 4 }),
       tool: () => tool,
       selected: () => [],
@@ -285,7 +285,7 @@ describe("the ▾ in the toolbar and the row of chords of the key (mount)", () =
   }
   function keysScene(lock: boolean): AppState {
     const s = fakeScene("pianoRoll")!.state;
-    s.pianoRoll.scale = { root: 0, mode: "major", lock };
+    s.pianoRoll.scale = { root: 0, mode: "major", lock, highlight: true };
     return s;
   }
   const noClip = { clip: null, track: null, take: null };
@@ -346,7 +346,7 @@ describe("the ▾ in the toolbar and the row of chords of the key (mount)", () =
 
   it("on drums, the ▾ and the chord row are disabled. The draw tool stays at one note", async () => {
     const { s, where } = await drumScene();
-    s.pianoRoll.scale = { root: 0, mode: "major", lock: true };
+    s.pianoRoll.scale = { root: 0, mode: "major", lock: true, highlight: true };
     chordPick.pick = { kind: "shape", shape: "major" };
     show(Toolbar, s, where);
     const stub = q("[data-test=pr-chord-menu]")!;

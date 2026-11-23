@@ -26,6 +26,7 @@ use meloet_protocol::{
 };
 
 use crate::instruments::Sounds;
+use crate::settings::ClickSettings;
 use crate::state::Effect;
 
 /// Bars the loop gets when it is turned on with no range.
@@ -461,6 +462,8 @@ pub struct Play {
     /// When the play line was last sent somewhere (`now_us`).
     located_at_us: Option<u64>,
     metronome: bool,
+    /// 「メトロノーム ▾」: a meloet setting (round 12, R3).
+    click: ClickSettings,
     /// 「重ねる」: a recording on a keys track adds to the clip there. Read when a recording
     /// starts and at each pass of a loop.
     overdub: bool,
@@ -555,6 +558,7 @@ impl Play {
             homed_at_us: None,
             located_at_us: None,
             metronome,
+            click: ClickSettings::default(),
             overdub: false,
             count_in_bars: if COUNT_IN_BARS.contains(&count_in_bars) {
                 count_in_bars
@@ -1617,6 +1621,15 @@ impl Play {
         self
     }
 
+    pub fn with_click(mut self, click: ClickSettings) -> Play {
+        self.click = click;
+        self
+    }
+
+    pub fn click_settings(&self) -> ClickSettings {
+        self.click
+    }
+
     pub fn overdub(&self) -> bool {
         self.overdub
     }
@@ -2037,6 +2050,9 @@ impl Play {
             recording_vocals: self.recording_vocals_view(),
             recording_faults: self.faults,
             overdub: self.overdub,
+            click_volume_db: self.click.volume_db,
+            click_sound: self.click.sound,
+            click_when: self.click.when,
         }
     }
 
@@ -2055,6 +2071,7 @@ impl Play {
                 root: r.scale.root(),
                 mode: scale_mode(r.scale.mode),
                 lock: r.scale.lock,
+                highlight: r.scale.highlight,
             },
             quantize: QuantizeSettings {
                 division: q.grid.division(),
@@ -2632,12 +2649,9 @@ impl Play {
         }
     }
 
-    pub fn set_musical_scale(&mut self, root: u8, mode: ScaleMode, lock: bool) {
-        let mode = match mode {
-            ScaleMode::Major => roll::ScaleMode::Major,
-            ScaleMode::Minor => roll::ScaleMode::Minor,
-        };
-        if let Some(scale) = roll::MusicalScale::new(root, mode, lock) {
+    pub fn set_musical_scale(&mut self, root: u8, mode: ScaleMode, lock: bool, highlight: bool) {
+        if let Some(mut scale) = roll::MusicalScale::new(root, model_scale_mode(mode), lock) {
+            scale.highlight = highlight;
             self.song.session.roll.scale = scale;
         }
     }
@@ -2723,6 +2737,27 @@ fn scale_mode(mode: roll::ScaleMode) -> ScaleMode {
     match mode {
         roll::ScaleMode::Major => ScaleMode::Major,
         roll::ScaleMode::Minor => ScaleMode::Minor,
+        roll::ScaleMode::HarmonicMinor => ScaleMode::HarmonicMinor,
+        roll::ScaleMode::MelodicMinor => ScaleMode::MelodicMinor,
+        roll::ScaleMode::MajorPentatonic => ScaleMode::MajorPentatonic,
+        roll::ScaleMode::MinorPentatonic => ScaleMode::MinorPentatonic,
+        roll::ScaleMode::Blues => ScaleMode::Blues,
+        roll::ScaleMode::Dorian => ScaleMode::Dorian,
+        roll::ScaleMode::Mixolydian => ScaleMode::Mixolydian,
+    }
+}
+
+fn model_scale_mode(mode: ScaleMode) -> roll::ScaleMode {
+    match mode {
+        ScaleMode::Major => roll::ScaleMode::Major,
+        ScaleMode::Minor => roll::ScaleMode::Minor,
+        ScaleMode::HarmonicMinor => roll::ScaleMode::HarmonicMinor,
+        ScaleMode::MelodicMinor => roll::ScaleMode::MelodicMinor,
+        ScaleMode::MajorPentatonic => roll::ScaleMode::MajorPentatonic,
+        ScaleMode::MinorPentatonic => roll::ScaleMode::MinorPentatonic,
+        ScaleMode::Blues => roll::ScaleMode::Blues,
+        ScaleMode::Dorian => roll::ScaleMode::Dorian,
+        ScaleMode::Mixolydian => roll::ScaleMode::Mixolydian,
     }
 }
 

@@ -434,6 +434,39 @@ pub enum StepKind {
         audio: AudioId,
         clips: u32,
     },
+    /// 「割合」 of 「ベロシティをまとめて変える」 (round 12, P3).
+    ScaleVelocity {
+        clip: ClipId,
+        count: usize,
+    },
+    /// 「だんだん」.
+    RampVelocity {
+        clip: ClipId,
+        count: usize,
+    },
+    /// 「ばらつき」.
+    RandomVelocity {
+        clip: ClipId,
+        count: usize,
+    },
+    /// 「次の音までのばす」.
+    Legato {
+        clip: ClipId,
+        count: usize,
+    },
+    /// 「トラックを複製」 (round 12, A3): `track` is the copy, which the `Doc` after the step
+    /// has.
+    DuplicateTrack {
+        track: TrackId,
+    },
+    /// 「ノーマライズ」 of `count` vocal clips (round 12, A9).
+    NormalizeClips {
+        count: usize,
+    },
+    /// 「逆にする」 of `count` vocal clips.
+    ReverseClips {
+        count: usize,
+    },
 }
 
 #[derive(Debug, Clone)]

@@ -44,7 +44,7 @@ beforeEach(() => {
   sent = [];
   tool = "select";
   selected = [];
-  scale = { root: 0, mode: "major", lock: false };
+  scale = { root: 0, mode: "major", lock: false, highlight: true };
   auditionOn = false;
   drawVelocity = G.DRAW_VELOCITY;
   timers = [];
@@ -191,7 +191,7 @@ describe("draw tool", () => {
   });
 
   it("with the scale locked, rows outside the scale get the 「できない」 cursor. Pressing goes to Rust without drawing (the status line says why)", () => {
-    scale = { root: 0, mode: "major", lock: true };
+    scale = { root: 0, mode: "major", lock: true, highlight: true };
     expect(drag.hover(x((25 * TPQ) / 8), y(61), NONE).cursor).toBe("not-allowed");
     expect(drag.hover(x((25 * TPQ) / 8), y(62), NONE).cursor).toBe("pencil");
     drag.down(x((25 * TPQ) / 8), y(61), NONE);

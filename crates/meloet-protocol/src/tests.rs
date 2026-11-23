@@ -222,6 +222,9 @@ pub(super) fn sample_state() -> AppState {
                 overdub: false,
             }),
             overdub: false,
+            click_volume_db: -12.5,
+            click_sound: ClickSound::Cowbell,
+            click_when: ClickWhen::RecordingOnly,
         },
         arrange: ArrangeView {
             selected_clips: vec![4, 9],
@@ -242,6 +245,7 @@ pub(super) fn sample_state() -> AppState {
                 root: 0,
                 mode: ScaleMode::Major,
                 lock: true,
+                highlight: true,
             },
             quantize: QuantizeSettings {
                 division: 16,
@@ -479,6 +483,12 @@ pub(super) fn sample_state() -> AppState {
         export: ExportView::default(),
         sounds: SoundsView::default(),
         ai_link: AiLinkView::default(),
+        recent: vec![RecentSong {
+            id: 1,
+            name: "はじめての曲".into(),
+            place: "~/ミュージック/はじめての曲/".into(),
+        }],
+        updates: UpdatesView::default(),
         status: StatusView {
             message: Some(StatusMessage::SearchingKeyboard),
         },
@@ -1144,8 +1154,10 @@ fn piano_roll_command_json_shape() {
                 root: 9,
                 mode: ScaleMode::Minor,
                 lock: false,
+                highlight: true,
             },
-            json!({"type": "setMusicalScale", "root": 9, "mode": "minor", "lock": false}),
+            json!({"type": "setMusicalScale", "root": 9, "mode": "minor", "lock": false,
+                   "highlight": true}),
         ),
         (
             Command::Audition {
@@ -1496,7 +1508,7 @@ fn state_json_is_camel_case_and_round_trips() {
         v["state"]["pianoRoll"],
         json!({"take": 6, "selectedNotes": [{"start": 14, "end": 17}], "selectedControls": [],
                "grid": {"division": 16, "triplet": false},
-               "scale": {"root": 0, "mode": "major", "lock": true},
+               "scale": {"root": 0, "mode": "major", "lock": true, "highlight": true},
                "quantize": {"division": 16, "triplet": false, "strength": 75, "swing": 0,
                             "align": "start"},
                "clipboardNotes": 0})
@@ -3072,6 +3084,8 @@ fn change_section_names_match_state_keys() {
         Change::Export(state.export.clone()),
         Change::Sounds(state.sounds.clone()),
         Change::AiLink(state.ai_link),
+        Change::Recent(state.recent.clone()),
+        Change::Updates(state.updates.clone()),
         Change::Status(state.status.clone()),
     ];
     assert_eq!(all.len(), v.as_object().unwrap().len());
@@ -3893,7 +3907,7 @@ fn every_step_name_has_a_kind_of_its_own() {
                 .to_owned()
         })
         .collect();
-    assert_eq!(kinds.len(), 77);
+    assert_eq!(kinds.len(), 84);
     kinds.sort();
     kinds.dedup();
     assert_eq!(kinds.len(), all.len(), "a kind is listed twice");

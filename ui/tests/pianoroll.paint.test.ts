@@ -19,7 +19,7 @@ function picture(over: Partial<RollPicture> = {}): RollPicture {
   return {
     g: GEOM,
     sizes: SIZES,
-    scale: { root: 0, mode: "major", lock: false },
+    scale: { root: 0, mode: "major", lock: false, highlight: true },
     meter: { num: 4, den: 4 },
     step: TPQ / 4,
     shown: n,
@@ -63,7 +63,7 @@ describe("notes", () => {
       draw(p).find((r) => r[0] === 0 && r[1] === (72 - key) * 12 && r[2] === 696 && r[3] === (72 - key) * 12 + 11)!;
     expect(colorOf(rowAt(61, picture()))).toBe(is("color.row.black"));
     expect(colorOf(rowAt(60, picture()))).toBe(is("color.row.white"));
-    expect(colorOf(rowAt(61, picture({ scale: { root: 0, mode: "major", lock: true } })))).toBe(is("color.row.out"));
+    expect(colorOf(rowAt(61, picture({ scale: { root: 0, mode: "major", lock: true, highlight: true } })))).toBe(is("color.row.out"));
   });
 
   it("bar lines line.bar, beat lines line.beat, grid lines line.grid", () => {

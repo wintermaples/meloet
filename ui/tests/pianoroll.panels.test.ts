@@ -167,7 +167,7 @@ describe("selected notes (right panel of mock A-PianoRoll)", () => {
     expect(lock.classList.contains("on")).toBe(true);
     lock.click();
     flushSync();
-    expect(app.sent).toEqual([{ type: "setMusicalScale", root: 0, mode: "major", lock: false }]);
+    expect(app.sent).toEqual([{ type: "setMusicalScale", root: 0, mode: "major", lock: false, highlight: true }]);
     expect(text(lock)).toBe("オン");
   });
 
@@ -185,7 +185,7 @@ describe("selected notes (right panel of mock A-PianoRoll)", () => {
     const a = [...menu.querySelectorAll<HTMLButtonElement>("button")].find((b) => text(b) === "A")!;
     a.click();
     flushSync();
-    expect(app.sent).toEqual([{ type: "setMusicalScale", root: 9, mode: "major", lock: true }]);
+    expect(app.sent).toEqual([{ type: "setMusicalScale", root: 9, mode: "major", lock: true, highlight: true }]);
     expect(document.querySelector('[data-test="scale-menu"]')).toBeNull();
   });
 });

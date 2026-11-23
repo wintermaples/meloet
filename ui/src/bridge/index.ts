@@ -15,6 +15,18 @@ export type * from "./types";
 export { DRUM_ROWS, INSTRUMENT_GROUPS, LATENCY_CLICKS, PROTOCOL_VERSION, RECORD_FORMATS, STEP_NAME_KINDS, VOCAL_INPUTS } from "./types";
 export { AUDIO_EXTENSIONS, CLIP_CENTS_MAX, CLIP_GAIN_MAX_DB, CLIP_GAIN_MIN_DB, CLIP_SEMITONES_MAX, PEAK_LEVELS, SOURCE_BPM_MAX, SOURCE_BPM_MIN } from "./types";
 export { EXPORT_FORMATS, EXPORT_TAIL_MAX_S } from "./types";
+export {
+  CLICK_SOUNDS,
+  CLICK_VOLUME_MAX_DB,
+  CLICK_VOLUME_MIN_DB,
+  CLICK_WHENS,
+  EXPORT_MATCH_LUFS,
+  EXPORT_MATCH_QUIETEST_LUFS,
+  EXPORT_MATCH_TRUE_PEAK_DB,
+  EXPORT_WAVE_BARS,
+  RECENT_SHOWN,
+  SCALE_MODES,
+} from "./types";
 export { levelFor, type LevelPeaks } from "./peaks";
 export { keyIsDown, positionAt, type MicMeter, type Telemetry, type TransportReading } from "./telemetry";
 export { CONTROL_CC, CONTROL_PITCH_BEND, NO_FROM, type TakeNotes } from "./take";

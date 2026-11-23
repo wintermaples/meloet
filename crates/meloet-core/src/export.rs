@@ -28,9 +28,9 @@ use std::sync::Arc;
 
 use meloet_model::{Doc, TickRange, TrackId};
 use meloet_protocol::{
-    Command, ExportChange, ExportCheck, ExportDialogView, ExportFailure, ExportFormat, ExportRange,
-    ExportRunView, ExportSolo, ExportStoppedPlugin, ExportTail, ExportView, PluginSlotRef,
-    RecordFormat, TickSpan, TrackRef,
+    Command, ExportChange, ExportCheck, ExportDialogView, ExportFailure, ExportFormat,
+    ExportLoudness, ExportRange, ExportRunView, ExportSolo, ExportStoppedPlugin, ExportTail,
+    ExportView, PluginSlotRef, RecordFormat, TickSpan, TrackRef,
 };
 
 use crate::ai::{AiAnalysis, AiBandLayout};
@@ -391,6 +391,8 @@ impl Exporting {
             }
             ExportChange::Tail { tail } => self.tail = tail,
             ExportChange::Realtime { on } => self.realtime = on,
+            // round12 stub: F1
+            ExportChange::Loudness { .. } => {}
         }
     }
 
@@ -521,6 +523,10 @@ impl Exporting {
                     length_s: going.length_s,
                     sample_rate: target.sample_rate,
                     bits: target.bits,
+                    // round12 stub: E9
+                    wave: Vec::new(),
+                    lufs: None,
+                    true_peak_db: None,
                 };
                 let shown = files.into_iter().next();
                 self.run = Some(Run::Ended(view, shown));
@@ -618,16 +624,21 @@ impl Exporting {
                 reason: reason.clone(),
             },
             None if !job.counted => ExportCheck::Waiting,
+            // round12 stub: F1 (lufs, true_peak_db)
             None if job.done => ExportCheck::Done {
                 peak_db: job.peak_db,
                 clips,
                 over,
+                lufs: None,
+                true_peak_db: None,
             },
             None => ExportCheck::Counting {
                 percent: job.percent.min(99),
                 peak_db: job.peak_db,
                 clips,
                 over,
+                lufs: None,
+                true_peak_db: None,
             },
         }
     }
@@ -670,6 +681,10 @@ impl Exporting {
                 realtime: self.realtime || forced,
                 realtime_forced: forced,
                 can_export: self.can_export(scene),
+                // round12 stub: F1
+                loudness: ExportLoudness::AsIs,
+                can_match: false,
+                loudness_result: None,
             }
         });
         let run = self.run.as_ref().map(|run| match run {

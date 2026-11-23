@@ -17,11 +17,6 @@ where
 }
 
 #[test]
-fn the_version() {
-    assert_eq!(PROTOCOL_VERSION, 30);
-}
-
-#[test]
 fn the_theme_names_are_those_of_the_screen() {
     // ui/src/design/themes.ts `THEME_IDS`, in the same order.
     let names = [

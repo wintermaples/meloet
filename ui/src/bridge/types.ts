@@ -197,3 +197,23 @@ export type { PackFailure } from "./generated/PackFailure";
 export type { PackFetchView } from "./generated/PackFetchView";
 export type { SelectedClips } from "./generated/SelectedClips";
 export type { SoundsView } from "./generated/SoundsView";
+// Protocol 31 (round 12, wave 1): the metronome's settings, scales, notes of several starts, the loudness of an export, recent songs, new versions.
+export type { ClickSound } from "./generated/ClickSound";
+export type { ClickWhen } from "./generated/ClickWhen";
+export type { ExportLoudness } from "./generated/ExportLoudness";
+export type { ExportLoudnessResult } from "./generated/ExportLoudnessResult";
+export type { NoteAt } from "./generated/NoteAt";
+export type { RecentSong } from "./generated/RecentSong";
+export type { UpdatesView } from "./generated/UpdatesView";
+export {
+  CLICK_SOUNDS,
+  CLICK_VOLUME_MAX_DB,
+  CLICK_VOLUME_MIN_DB,
+  CLICK_WHENS,
+  EXPORT_MATCH_LUFS,
+  EXPORT_MATCH_QUIETEST_LUFS,
+  EXPORT_MATCH_TRUE_PEAK_DB,
+  EXPORT_WAVE_BARS,
+  RECENT_SHOWN,
+  SCALE_MODES,
+} from "./generated/round12";

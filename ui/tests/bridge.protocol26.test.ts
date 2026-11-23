@@ -74,14 +74,14 @@ describe("shape of protocol 26", () => {
   it("the check is not yet, counting, done, failed. The progress is exporting, finished, cancelled, failed", () => {
     const checks: ExportCheck[] = [
       { state: "waiting" },
-      { state: "counting", percent: 38, peakDb: -3.5, clips: false, over: 0 },
-      { state: "done", peakDb: null, clips: false, over: 0 },
+      { state: "counting", percent: 38, peakDb: -3.5, clips: false, over: 0, lufs: null, truePeakDb: null },
+      { state: "done", peakDb: null, clips: false, over: 0, lufs: null, truePeakDb: null },
       { state: "failed", reason: { kind: "plugin", name: "Surge XT" } },
     ];
     expect(checks.map((c) => c.state)).toEqual(["waiting", "counting", "done", "failed"]);
     const runs: ExportRunView[] = [
       { state: "running", percent: 46, file: "はじめての曲.wav", remainingS: 40, realtime: false, realtimeForced: false, lengthS: 182 },
-      { state: "done", file: "はじめての曲.wav", files: 1, place: "~/音楽/はじめての曲.wav", lengthS: 182, sampleRate: 48000, bits: "bits24" },
+      { state: "done", file: "はじめての曲.wav", files: 1, place: "~/音楽/はじめての曲.wav", lengthS: 182, sampleRate: 48000, bits: "bits24", wave: [], lufs: null, truePeakDb: null },
       { state: "cancelled" },
       { state: "failed", reason: { kind: "cannotWrite" } },
     ];
@@ -103,7 +103,7 @@ describe("fake scenes (mock F7-Export, F7-Exporting, R11-Fit)", () => {
       format: "wav",
       formats: ["wav", "flac"],
       place: "~/音楽/はじめての曲.wav",
-      check: { state: "done", peakDb: -0.6, clips: false, over: 0 },
+      check: { state: "done", peakDb: -0.6, clips: false, over: 0, lufs: null, truePeakDb: null },
       solo: null,
       stoppedPlugins: [],
       advancedOpen: false,
@@ -115,6 +115,9 @@ describe("fake scenes (mock F7-Export, F7-Exporting, R11-Fit)", () => {
       realtime: false,
       realtimeForced: false,
       canExport: true,
+      loudness: "asIs",
+      canMatch: false,
+      loudnessResult: null,
     });
     expect(s.status.message).toEqual({ id: "exportDialogOpen" });
     expect([s.song.name, s.song.file, s.song.undoCount]).toEqual(["はじめての曲", "saved", 14]);
@@ -164,6 +167,9 @@ describe("fake scenes (mock F7-Export, F7-Exporting, R11-Fit)", () => {
       lengthS: 182,
       sampleRate: 48000,
       bits: "bits24",
+      wave: [],
+      lufs: null,
+      truePeakDb: null,
     });
     expect(scene("exportCancelled").export.run).toEqual({ state: "cancelled" });
     expect(scene("exportFailed").export.run).toEqual({ state: "failed", reason: { kind: "cannotWrite" } });

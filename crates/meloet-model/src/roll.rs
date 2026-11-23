@@ -48,14 +48,42 @@ pub enum ScaleMode {
     Major,
     /// The natural minor.
     Minor,
+    HarmonicMinor,
+    MelodicMinor,
+    MajorPentatonic,
+    MinorPentatonic,
+    Blues,
+    Dorian,
+    Mixolydian,
 }
 
 impl ScaleMode {
-    /// Steps above the root, in semitones.
-    fn steps(self) -> [u8; 7] {
+    /// In the order of the list the screen shows.
+    pub const ALL: [ScaleMode; 9] = [
+        ScaleMode::Major,
+        ScaleMode::Minor,
+        ScaleMode::HarmonicMinor,
+        ScaleMode::MelodicMinor,
+        ScaleMode::MajorPentatonic,
+        ScaleMode::MinorPentatonic,
+        ScaleMode::Blues,
+        ScaleMode::Dorian,
+        ScaleMode::Mixolydian,
+    ];
+
+    /// Steps above the root, in semitones, lowest first. The screen has the same table
+    /// (`SCALE_STEPS`).
+    pub fn steps(self) -> &'static [u8] {
         match self {
-            ScaleMode::Major => [0, 2, 4, 5, 7, 9, 11],
-            ScaleMode::Minor => [0, 2, 3, 5, 7, 8, 10],
+            ScaleMode::Major => &[0, 2, 4, 5, 7, 9, 11],
+            ScaleMode::Minor => &[0, 2, 3, 5, 7, 8, 10],
+            ScaleMode::HarmonicMinor => &[0, 2, 3, 5, 7, 8, 11],
+            ScaleMode::MelodicMinor => &[0, 2, 3, 5, 7, 9, 11],
+            ScaleMode::MajorPentatonic => &[0, 2, 4, 7, 9],
+            ScaleMode::MinorPentatonic => &[0, 3, 5, 7, 10],
+            ScaleMode::Blues => &[0, 3, 5, 6, 7, 10],
+            ScaleMode::Dorian => &[0, 2, 3, 5, 7, 9, 10],
+            ScaleMode::Mixolydian => &[0, 2, 4, 5, 7, 9, 10],
         }
     }
 }
@@ -67,11 +95,19 @@ pub struct MusicalScale {
     pub mode: ScaleMode,
     /// Only keys of the scale can be written.
     pub lock: bool,
+    /// 「色をつける」: the rows outside the scale are shown apart even while it is not locked.
+    pub highlight: bool,
 }
 
 impl MusicalScale {
+    /// With `highlight` on, as a new song and a song from before it have it.
     pub fn new(root: u8, mode: ScaleMode, lock: bool) -> Option<MusicalScale> {
-        (root < 12).then_some(MusicalScale { root, mode, lock })
+        (root < 12).then_some(MusicalScale {
+            root,
+            mode,
+            lock,
+            highlight: true,
+        })
     }
 
     pub fn root(self) -> u8 {
@@ -90,6 +126,7 @@ impl Default for MusicalScale {
             root: 0,
             mode: ScaleMode::Major,
             lock: false,
+            highlight: true,
         }
     }
 }
@@ -169,6 +206,27 @@ mod tests {
         assert_eq!(keys, [1, 2, 4, 6, 7, 9, 11]);
         assert!(MusicalScale::new(12, ScaleMode::Major, false).is_none());
         assert!(d_major.contains(127) == d_major.contains(127 % 12));
+        assert!(d_major.highlight && MusicalScale::default().highlight);
+    }
+
+    #[test]
+    fn the_nine_kinds_of_scale() {
+        let c = |mode| -> Vec<u8> {
+            let scale = MusicalScale::new(0, mode, false).unwrap();
+            (0..12).filter(|&k| scale.contains(k)).collect()
+        };
+        assert_eq!(c(ScaleMode::Major), [0, 2, 4, 5, 7, 9, 11]);
+        assert_eq!(c(ScaleMode::Minor), [0, 2, 3, 5, 7, 8, 10]);
+        assert_eq!(c(ScaleMode::HarmonicMinor), [0, 2, 3, 5, 7, 8, 11]);
+        assert_eq!(c(ScaleMode::MelodicMinor), [0, 2, 3, 5, 7, 9, 11]);
+        assert_eq!(c(ScaleMode::MajorPentatonic), [0, 2, 4, 7, 9]);
+        assert_eq!(c(ScaleMode::MinorPentatonic), [0, 3, 5, 7, 10]);
+        assert_eq!(c(ScaleMode::Blues), [0, 3, 5, 6, 7, 10]);
+        assert_eq!(c(ScaleMode::Dorian), [0, 2, 3, 5, 7, 9, 10]);
+        assert_eq!(c(ScaleMode::Mixolydian), [0, 2, 4, 5, 7, 9, 10]);
+        for mode in ScaleMode::ALL {
+            assert_eq!(c(mode), mode.steps(), "{mode:?}");
+        }
     }
 
     #[test]

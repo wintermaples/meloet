@@ -8,8 +8,10 @@
 
 mod added;
 mod ai;
+mod app;
 mod audio;
 mod automation;
+mod click;
 mod export;
 mod history;
 mod pack;
@@ -29,6 +31,7 @@ pub use added::{
     Sf2PresetView, SoundName, SoundRef, SoundSampleView, SoundView, StandIn,
 };
 pub use ai::{AiLinkView, AiPort};
+pub use app::{RECENT_SHOWN, RecentSong, UpdatesView};
 pub use audio::{
     AUDIO_EXTENSIONS, AudioClipState, AudioClipView, AudioJob, AudioJobKind, AudioWorkView,
     CLIP_CENTS_MAX, CLIP_GAIN_MAX_DB, CLIP_GAIN_MIN_DB, CLIP_SEMITONES_MAX, ClipField, DropMode,
@@ -40,9 +43,12 @@ pub use automation::{
     AutoSelection, AutoTarget, AutomationView, LANE_HEADER_LEN, LANE_KIND, LANE_POINT_LEN,
     LANE_VERSION, LaneError, LaneName, LanePoint, LanePoints, LaneRef, LaneView, WritingLane,
 };
+pub use click::{CLICK_VOLUME_MAX_DB, CLICK_VOLUME_MIN_DB, ClickSound, ClickWhen};
 pub use export::{
-    EXPORT_TAIL_MAX_S, ExportChange, ExportCheck, ExportDialogView, ExportFailure, ExportFormat,
-    ExportRange, ExportRunView, ExportSolo, ExportStoppedPlugin, ExportTail, ExportView,
+    EXPORT_MATCH_LUFS, EXPORT_MATCH_QUIETEST_LUFS, EXPORT_MATCH_TRUE_PEAK_DB, EXPORT_TAIL_MAX_S,
+    EXPORT_WAVE_BARS, ExportChange, ExportCheck, ExportDialogView, ExportFailure, ExportFormat,
+    ExportLoudness, ExportLoudnessResult, ExportRange, ExportRunView, ExportSolo,
+    ExportStoppedPlugin, ExportTail, ExportView,
 };
 pub use history::{HistoryRow, HistoryView, MeterValue, StepName, StepPlace, StepWhat, StripName};
 pub use pack::{PackFailure, PackFetchView, SoundsView};
@@ -68,7 +74,7 @@ pub use vocal::{
     VocalRef,
 };
 
-pub const PROTOCOL_VERSION: u32 = 30;
+pub const PROTOCOL_VERSION: u32 = 31;
 
 /// Screen → Rust. Intent only; Rust decides what the state becomes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -692,11 +698,12 @@ pub enum Command {
         division: u16,
         triplet: bool,
     },
-    /// "スケール固定" and "音階". `root` 0..=11 is C..B.
+    /// "スケール固定", "音階" and 「色をつける」 (`highlight`). `root` 0..=11 is C..B.
     SetMusicalScale {
         root: u8,
         mode: ScaleMode,
         lock: bool,
+        highlight: bool,
     },
     /// The piano roll sounds keys on the selected track (B-62): the write tool and the keyboard
     /// column while pressed (mock R3-PRMouse), a note while it is pressed, a drag at each change
@@ -1364,6 +1371,109 @@ pub enum Command {
     /// 「やめる」 while fetching: the fetch stops (`Idle`); what came is kept and the next
     /// `FetchPack` goes on from there. Not a step.
     StopPackFetch,
+    // Protocol 31 (round 12, wave 1; docs/history/round12-spec.ja.html, which calls itself
+    // round 11). Each of them that changes the song is one step, and does nothing while
+    // counting in or recording.
+    /// R3, the small window of 「メトロノーム ▾」: the values given change, the others stay.
+    /// `volume_db` is put into `CLICK_VOLUME_MIN_DB..=CLICK_VOLUME_MAX_DB`. With
+    /// `commit: false` (a drag of the volume, at most one a frame) only the click heard
+    /// changes; with `commit: true` the values are kept with the PC's settings and
+    /// `TransportView` shows them. Not part of the song, not a step, and not in an export.
+    SetClick {
+        volume_db: Option<f32>,
+        sound: Option<ClickSound>,
+        when: Option<ClickWhen>,
+        commit: bool,
+    },
+    /// P3 「割合」 「かける」: the velocity of each note becomes `round(v × percent / 100)`,
+    /// put into 1..=127. `percent` 10..=300. One step (「ベロシティを割合で変える」).
+    ScaleVelocity {
+        take: u32,
+        notes: Vec<u32>,
+        percent: u16,
+    },
+    /// P3 「だんだん」 「かける」: from `from` at the earliest start of the notes to `to` at the
+    /// latest, in a straight line by start; notes of one start get the same value. Both
+    /// 1..=127. One step (「ベロシティをだんだん変える」).
+    RampVelocity {
+        take: u32,
+        notes: Vec<u32>,
+        from: u8,
+        to: u8,
+    },
+    /// P3 「ばらつき」 「かける」: each note gets a whole number from −`amount` to +`amount`
+    /// (1..=32) added, put into 1..=127. The number comes from (`seed`, the note's index):
+    /// the screen makes a new `seed` for each press, and the same command gives the same
+    /// result. One step (「ベロシティをばらつかせる」).
+    RandomVelocity {
+        take: u32,
+        notes: Vec<u32>,
+        amount: u8,
+        seed: u32,
+    },
+    /// P3 「次の音までのばす」: each note ends where the nearest later start among the notes
+    /// is (shorter too); notes of one start end together; the notes of the latest start stay.
+    /// At least 1 tick. One step (「次の音までのばす」).
+    Legato {
+        take: u32,
+        notes: Vec<u32>,
+    },
+    /// P6 「並べる」 of 「進行から並べる ▾」: notes of different starts, as one step named as
+    /// `AddNotes`'s (`StepName::WriteNote`). Notes already there stay. A note past the clip
+    /// makes the clip longer as pasting does; `take` as for `AddNotes`.
+    AddNotesAt {
+        take: Option<u32>,
+        notes: Vec<NoteAt>,
+    },
+    /// E9 「PC のプレーヤーで聞く」: the PC opens the file the last export wrote with its own
+    /// player. Only with `ExportRunView::Done` of one file.
+    PlayExported,
+    /// A3 「トラックを複製」 of a track header's right-click menu: a copy of the track right
+    /// below it, selected. One step (「トラックを複製」).
+    DuplicateTrack {
+        track: u32,
+    },
+    /// A5 a row of 「最近ひらいた曲 ▸」: opens that song (`RecentSong::id`) as 「ひらく…」 does,
+    /// asking first when there are unsaved changes.
+    OpenRecent {
+        id: u32,
+    },
+    /// A5 「一覧を消す」: `AppState::recent` becomes empty.
+    ClearRecent,
+    /// A9 「ノーマライズ」 of the right-click menu of vocal clips: the volume of each clip, so
+    /// that the loudest sample of its shown take is −1.0 dBFS. One step (「ノーマライズ」).
+    NormalizeClips {
+        clips: Vec<u32>,
+    },
+    /// A9 「逆にする」: the shown take of each vocal clip becomes a new take of its audio
+    /// backwards. One step (「逆にする」) once the files are made.
+    ReverseClips {
+        clips: Vec<u32>,
+    },
+    /// G1 「使い方をひらく」 of 「ヘルプ」: the PC's browser opens the user guide. Rust holds
+    /// the address.
+    OpenUserGuide,
+    /// D1 the switch 「新しい版をたしかめる」 (`UpdatesView::check`). A meloet setting
+    /// (settings.json), not part of the song, and not a step.
+    SetCheckUpdates {
+        on: bool,
+    },
+    /// D1 「ページをひらく」: the PC's browser opens the page of the new version
+    /// (`UpdatesView::new_version`).
+    OpenReleasePage,
+    /// D1 「あとで」: the status line no longer says `StatusMessage::NewVersion`.
+    DismissNewVersion,
+}
+
+/// A note of `Command::AddNotesAt`. `start` is a song position.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct NoteAt {
+    pub start: u64,
+    pub length: u64,
+    pub key: u8,
+    pub velocity: u8,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1378,12 +1488,43 @@ pub enum SelectMode {
     Toggle,
 }
 
+/// The kinds of scale, in the order of the list (P1; spec 3 「スケール」).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub enum ScaleMode {
+    /// 「メジャー」 0 2 4 5 7 9 11.
     Major,
+    /// 「マイナー」 0 2 3 5 7 8 10.
     Minor,
+    /// 「ハーモニックマイナー」 0 2 3 5 7 8 11.
+    HarmonicMinor,
+    /// 「メロディックマイナー」 0 2 3 5 7 9 11.
+    MelodicMinor,
+    /// 「メジャーペンタトニック」 0 2 4 7 9.
+    MajorPentatonic,
+    /// 「マイナーペンタトニック」 0 3 5 7 10.
+    MinorPentatonic,
+    /// 「ブルース」 0 3 5 6 7 10.
+    Blues,
+    /// 「ドリアン」 0 2 3 5 7 9 10.
+    Dorian,
+    /// 「ミクソリディアン」 0 2 4 5 7 9 10.
+    Mixolydian,
+}
+
+impl ScaleMode {
+    pub const ALL: [ScaleMode; 9] = [
+        ScaleMode::Major,
+        ScaleMode::Minor,
+        ScaleMode::HarmonicMinor,
+        ScaleMode::MelodicMinor,
+        ScaleMode::MajorPentatonic,
+        ScaleMode::MinorPentatonic,
+        ScaleMode::Blues,
+        ScaleMode::Dorian,
+        ScaleMode::Mixolydian,
+    ];
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1704,6 +1845,10 @@ pub struct AppState {
     pub export: ExportView,
     pub sounds: SoundsView,
     pub ai_link: AiLinkView,
+    /// A5: 「最近ひらいた曲 ▸」, newest first, at most `RECENT_SHOWN`. Not part of the song.
+    pub recent: Vec<RecentSong>,
+    /// D1: 「新しい版をたしかめる」 and the version it found.
+    pub updates: UpdatesView,
     pub status: StatusView,
 }
 
@@ -1774,6 +1919,12 @@ impl AppState {
         if old.ai_link != new.ai_link {
             out.push(Change::AiLink(new.ai_link));
         }
+        if old.recent != new.recent {
+            out.push(Change::Recent(new.recent.clone()));
+        }
+        if old.updates != new.updates {
+            out.push(Change::Updates(new.updates.clone()));
+        }
         if old.status != new.status {
             out.push(Change::Status(new.status.clone()));
         }
@@ -1804,6 +1955,8 @@ impl AppState {
             Change::Export(v) => self.export = v,
             Change::Sounds(v) => self.sounds = v,
             Change::AiLink(v) => self.ai_link = v,
+            Change::Recent(v) => self.recent = v,
+            Change::Updates(v) => self.updates = v,
             Change::Status(v) => self.status = v,
         }
     }
@@ -2232,7 +2385,7 @@ pub enum TransportState {
 }
 
 /// Where it moves between patches comes from the telemetry (position, count-in beats left, lap).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct TransportView {
@@ -2263,6 +2416,14 @@ pub struct TransportView {
     pub recording_faults: Option<RecordingFaults>,
     /// 「重ねる」 (`Command::SetOverdub`).
     pub overdub: bool,
+    /// R3 「音量」 of the metronome, as kept with the PC's settings
+    /// (`CLICK_VOLUME_MIN_DB..=CLICK_VOLUME_MAX_DB`; 0 is the click as it always was). The
+    /// value heard during a drag (`Command::SetClick` with `commit: false`) is not in here.
+    pub click_volume_db: f32,
+    /// R3 「音」.
+    pub click_sound: ClickSound,
+    /// R3 「鳴らすとき」. The count-in clicks either way.
+    pub click_when: ClickWhen,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2350,6 +2511,8 @@ pub struct Grid {
 }
 
 /// `root` 0..=11 is C..B. `lock`: "スケール固定 ・ オン", only keys of the scale can be written.
+/// `highlight`: 「色をつける」 (P1), on in a new song and in a song from before it; with
+/// `lock` off the rows outside the scale are `color.row.out` and can still be written.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
@@ -2357,6 +2520,7 @@ pub struct MusicalScale {
     pub root: u8,
     pub mode: ScaleMode,
     pub lock: bool,
+    pub highlight: bool,
 }
 
 /// `strength` and `swing` are percent, 0..=100.
@@ -3403,6 +3567,50 @@ pub enum StatusMessage {
     NewPack {
         bytes: u64,
     },
+    // Protocol 31 (round 12, wave 1). The sentences not in the spec follow the words of the
+    // ones above (spec 1-3 of the round's spec; docs/spec/7-readings.md).
+    /// P3 `Command::ScaleVelocity`.
+    VelocityScaled {
+        count: u32,
+        percent: u16,
+    },
+    /// P3 `Command::RampVelocity`.
+    VelocityRamped {
+        count: u32,
+        from: u8,
+        to: u8,
+    },
+    /// P3 `Command::RandomVelocity`.
+    VelocityRandomized {
+        count: u32,
+        amount: u8,
+    },
+    /// P3 `Command::Legato`.
+    NotesLegato {
+        count: u32,
+    },
+    /// A3 (and every other way of adding a track): the song has as many tracks as meloet can
+    /// hold (64), so nothing was added.
+    TooManyTracks,
+    /// A9 `Command::NormalizeClips`: the volume of `count` clips stopped at an end of
+    /// `CLIP_GAIN_MIN_DB..=CLIP_GAIN_MAX_DB` short of −1.0 dBFS.
+    NormalizeLimited {
+        count: u32,
+    },
+    /// A9 `Command::NormalizeClips`: `count` clips are silent, and nothing was done to them.
+    NormalizeSilent {
+        count: u32,
+    },
+    /// A9 `Command::ReverseClips`: the tempo of the audio of `count` clips changes along it,
+    /// so they were put in not following the song's tempo.
+    ReverseFollowOff {
+        count: u32,
+    },
+    /// D1, once a run, while stopped: "新しい版 0.3.0 があります" with 「ページをひらく」
+    /// (`Command::OpenReleasePage`) and 「あとで」 (`Command::DismissNewVersion`).
+    NewVersion {
+        version: String,
+    },
 }
 
 /// The selected notes of the piano roll, for the status line.
@@ -3480,6 +3688,8 @@ pub enum Change {
     Export(ExportView),
     Sounds(SoundsView),
     AiLink(AiLinkView),
+    Recent(Vec<RecentSong>),
+    Updates(UpdatesView),
     Status(StatusView),
 }
 
@@ -3614,3 +3824,5 @@ mod tests28;
 mod tests29;
 #[cfg(test)]
 mod tests30;
+#[cfg(test)]
+mod tests31;

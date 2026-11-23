@@ -7,7 +7,8 @@ use std::path::{Path, PathBuf};
 use meloet_model::BuiltinInstrument;
 use meloet_model::effects::EffectKind as ModelEffect;
 use meloet_protocol::{
-    DEFAULT_FIXED_VELOCITY, EffectKind, EffectRef, RecordFormat, SoundRef, Theme,
+    CLICK_VOLUME_MAX_DB, CLICK_VOLUME_MIN_DB, ClickSound, ClickWhen, DEFAULT_FIXED_VELOCITY,
+    EffectKind, EffectRef, RecordFormat, SoundRef, Theme,
 };
 use serde::{Deserialize, Serialize};
 
@@ -16,7 +17,7 @@ const VERSION: u32 = 1;
 pub const SCALES: [u16; 3] = [100, 125, 150];
 pub const DEFAULT_SCALE: u16 = 100;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Settings {
     /// The id of the chosen output.
     pub output: Option<String>,
@@ -26,6 +27,8 @@ pub struct Settings {
     /// 「表示 ▸ テーマ ▸」 (`Command::SetTheme`).
     pub theme: Theme,
     pub metronome: bool,
+    /// 「メトロノーム ▾」 (round 12, R3; `Command::SetClick`).
+    pub click: ClickSettings,
     /// 0, 1 or 2.
     pub count_in_bars: u8,
     /// "ベロシティ固定" (B-66): every key played sounds and is recorded at `fixed_velocity`.
@@ -36,6 +39,8 @@ pub struct Settings {
     pub overdub: bool,
     /// 「AI とつなぐ」 of the advanced settings (`Command::SetAiLink`).
     pub ai_link: bool,
+    /// 「新しい版をたしかめる」 (round 12, D1; `Command::SetCheckUpdates`).
+    pub check_updates: bool,
     /// The starred instruments of the shelf.
     pub favorites: Vec<BuiltinInstrument>,
     /// The places the person added to look for plugins in, in the order they were added.
@@ -45,6 +50,25 @@ pub struct Settings {
     /// 「取りにいく」 was answered for the sound pack and its fetch is not over: the next start
     /// goes on with it. 「あとで」 and 「やめる」 take it back, so the next start asks again.
     pub pack_fetch: bool,
+}
+
+/// The metronome's settings (round 12, R3). They belong to the PC, not to a song.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ClickSettings {
+    /// `CLICK_VOLUME_MIN_DB..=CLICK_VOLUME_MAX_DB`; 0 is the click as it always was.
+    pub volume_db: f32,
+    pub sound: ClickSound,
+    pub when: ClickWhen,
+}
+
+impl Default for ClickSettings {
+    fn default() -> Self {
+        ClickSettings {
+            volume_db: 0.0,
+            sound: ClickSound::default(),
+            when: ClickWhen::default(),
+        }
+    }
 }
 
 /// The advanced sound settings (spec 3, 33-A). They belong to the PC, not to a song.
@@ -152,11 +176,13 @@ impl Default for Settings {
             scale: DEFAULT_SCALE,
             theme: Theme::default(),
             metronome: false,
+            click: ClickSettings::default(),
             count_in_bars: DEFAULT_COUNT_IN_BARS,
             velocity_fixed: false,
             fixed_velocity: DEFAULT_FIXED_VELOCITY,
             overdub: false,
             ai_link: false,
+            check_updates: true,
             favorites: DEFAULT_FAVORITES.to_vec(),
             plugin_places: Vec::new(),
             shelf: ShelfSettings::default(),
@@ -179,6 +205,15 @@ struct OnDisk {
     theme: Option<String>,
     #[serde(default)]
     metronome: bool,
+    /// dB. Missing: 0; out of range: put at the nearer end.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    click_volume_db: Option<f32>,
+    /// The JSON names of the protocol (`"cowbell"`, `"recordingOnly"`). A name this meloet
+    /// does not know gives the default, as for `theme`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    click_sound: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    click_when: Option<String>,
     #[serde(default = "default_count_in_bars")]
     count_in_bars: u8,
     #[serde(default)]
@@ -189,6 +224,8 @@ struct OnDisk {
     overdub: bool,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     ai_link: bool,
+    #[serde(default = "yes")]
+    check_updates: bool,
     /// The names the song file uses. Missing (a file from before the shelf): the defaults.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     favorites: Option<Vec<String>>,
@@ -295,6 +332,26 @@ fn default_count_in_bars() -> u8 {
     DEFAULT_COUNT_IN_BARS
 }
 
+fn yes() -> bool {
+    true
+}
+
+fn click_from_disk(disk: &OnDisk) -> ClickSettings {
+    let default = ClickSettings::default();
+    ClickSettings {
+        volume_db: (disk.click_volume_db.filter(|db| db.is_finite()))
+            .map_or(default.volume_db, |db| {
+                db.clamp(CLICK_VOLUME_MIN_DB, CLICK_VOLUME_MAX_DB)
+            }),
+        sound: (disk.click_sound.as_deref())
+            .and_then(ClickSound::from_name)
+            .unwrap_or(default.sound),
+        when: (disk.click_when.as_deref())
+            .and_then(ClickWhen::from_name)
+            .unwrap_or(default.when),
+    }
+}
+
 /// `$MELOET_CONFIG_DIR`, else `$XDG_CONFIG_HOME/meloet`, else `$HOME/.config/meloet`.
 pub fn config_dir() -> Option<PathBuf> {
     config_dir_from(|name| std::env::var_os(name))
@@ -318,6 +375,7 @@ pub fn load(dir: &Path) -> Settings {
     };
     match serde_json::from_str::<OnDisk>(&text) {
         Ok(mut disk) if disk.version == VERSION => Settings {
+            click: click_from_disk(&disk),
             shelf: shelf_from_disk(&mut disk),
             sound: sound_from_disk(&mut disk),
             output_name: disk.output_name.filter(|_| disk.output.is_some()),
@@ -339,6 +397,7 @@ pub fn load(dir: &Path) -> Settings {
             velocity_fixed: disk.velocity_fixed,
             overdub: disk.overdub,
             ai_link: disk.ai_link,
+            check_updates: disk.check_updates,
             pack_fetch: disk.pack_fetch,
             fixed_velocity: if (1..=127).contains(&disk.fixed_velocity) {
                 disk.fixed_velocity
@@ -382,11 +441,15 @@ pub fn save(dir: &Path, settings: &Settings) -> std::io::Result<()> {
         scale: settings.scale,
         theme: Some(settings.theme.name().to_owned()),
         metronome: settings.metronome,
+        click_volume_db: Some(settings.click.volume_db),
+        click_sound: Some(settings.click.sound.name().to_owned()),
+        click_when: Some(settings.click.when.name().to_owned()),
         count_in_bars: settings.count_in_bars,
         velocity_fixed: settings.velocity_fixed,
         fixed_velocity: settings.fixed_velocity,
         overdub: settings.overdub,
         ai_link: settings.ai_link,
+        check_updates: settings.check_updates,
         favorites: Some(
             settings
                 .favorites
@@ -523,11 +586,17 @@ mod tests {
             scale: 125,
             theme: Theme::MintLight,
             metronome: true,
+            click: ClickSettings {
+                volume_db: -12.5,
+                sound: ClickSound::Cowbell,
+                when: ClickWhen::RecordingOnly,
+            },
             count_in_bars: 2,
             velocity_fixed: true,
             fixed_velocity: 64,
             overdub: true,
             ai_link: true,
+            check_updates: false,
             favorites: vec![BuiltinInstrument::Sine, BuiltinInstrument::Organ],
             plugin_places: vec!["/home/me/Plugins".into(), "/opt/vst3".into()],
             shelf: ShelfSettings {
@@ -599,6 +668,10 @@ mod tests {
         assert_eq!(json["fixed_velocity"], 64);
         assert_eq!(json["overdub"], true);
         assert_eq!(json["ai_link"], true);
+        assert_eq!(json["click_volume_db"], -12.5);
+        assert_eq!(json["click_sound"], "cowbell");
+        assert_eq!(json["click_when"], "recordingOnly");
+        assert_eq!(json["check_updates"], false);
         assert_eq!(json["favorites"], serde_json::json!(["sine", "organ"]));
         assert_eq!(
             json["output"],
@@ -627,11 +700,17 @@ mod tests {
                 scale: 150,
                 theme: Theme::Dark,
                 metronome: false,
+                click: ClickSettings {
+                    volume_db: 0.0,
+                    sound: ClickSound::Beep,
+                    when: ClickWhen::Always,
+                },
                 count_in_bars: 1,
                 velocity_fixed: false,
                 fixed_velocity: 100,
                 overdub: false,
                 ai_link: false,
+                check_updates: true,
                 favorites: vec![BuiltinInstrument::GrandPiano, BuiltinInstrument::StudioKit],
                 plugin_places: vec![],
                 shelf: ShelfSettings::default(),
@@ -639,6 +718,59 @@ mod tests {
                 pack_fetch: false,
             }
         );
+    }
+
+    #[test]
+    fn the_click_and_the_update_check_read_back_into_range() {
+        let dir = temp_dir("click");
+        let write = |rest: &str| {
+            std::fs::write(
+                dir.join("settings.json"),
+                format!(r#"{{"version":1,"output":null,"scale":100{rest}}}"#),
+            )
+            .unwrap();
+        };
+        write("");
+        let loaded = load(&dir);
+        assert_eq!(loaded.click, ClickSettings::default());
+        assert!(loaded.check_updates, "on until the person turns it off");
+        write(
+            r#","click_volume_db":-40.0,"click_sound":"gong","click_when":"recordingOnly","check_updates":false"#,
+        );
+        let loaded = load(&dir);
+        assert_eq!(
+            loaded.click,
+            ClickSettings {
+                volume_db: -24.0,
+                sound: ClickSound::Beep,
+                when: ClickWhen::RecordingOnly,
+            }
+        );
+        assert!(!loaded.check_updates);
+        write(r#","click_volume_db":9.5,"click_sound":"tick""#);
+        let loaded = load(&dir);
+        assert_eq!(
+            (loaded.click.volume_db, loaded.click.sound),
+            (6.0, ClickSound::Tick)
+        );
+        write(r#","click_sound":3"#);
+        assert_eq!(load(&dir), Settings::default(), "not a name: a broken file");
+        for click in [
+            ClickSettings::default(),
+            ClickSettings {
+                volume_db: CLICK_VOLUME_MIN_DB,
+                sound: ClickSound::Tick,
+                when: ClickWhen::Always,
+            },
+        ] {
+            let settings = Settings {
+                click,
+                check_updates: false,
+                ..Settings::default()
+            };
+            save(&dir, &settings).unwrap();
+            assert_eq!(load(&dir), settings);
+        }
     }
 
     #[test]

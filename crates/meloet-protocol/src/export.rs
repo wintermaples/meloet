@@ -9,6 +9,16 @@ use crate::{PluginSlotRef, RecordFormat, TickSpan, TrackRef};
 /// 「しっぽ」 is written until the sound is gone, and at most this long after the range ends.
 pub const EXPORT_TAIL_MAX_S: u32 = 10;
 
+/// F1 「公開先に合わせる」: the loudness the whole file is brought to…
+pub const EXPORT_MATCH_LUFS: f32 = -14.0;
+/// …unless its true peak would go over this.
+pub const EXPORT_MATCH_TRUE_PEAK_DB: f32 = -1.0;
+/// F1: a song quieter than this (or whose loudness cannot be measured) cannot be matched.
+pub const EXPORT_MATCH_QUIETEST_LUFS: f32 = -70.0;
+
+/// E9: how many bars `ExportRunView::Done::wave` has.
+pub const EXPORT_WAVE_BARS: usize = 200;
+
 /// `AppState::export`. Nothing of it changes 60 times a second: the numbers of the check and
 /// of the run come a few times a second at most, as `AudioWorkView` does.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
@@ -63,6 +73,42 @@ pub struct ExportDialogView {
     pub realtime_forced: bool,
     /// 「書き出す」 can be pressed.
     pub can_export: bool,
+    /// F1 「音の大きさ」. Kept as long as the format is.
+    pub loudness: ExportLoudness,
+    /// F1 「公開先に合わせる」 can be chosen: not for 「トラックごと」, nor for a song whose
+    /// loudness cannot be measured or is below `EXPORT_MATCH_QUIETEST_LUFS`. While it cannot,
+    /// what is written is as with `ExportLoudness::AsIs`.
+    pub can_match: bool,
+    /// F1 the line under the check: what 「公開先に合わせる」 does to this export. `Some` only
+    /// once the check is `Done` and `can_match`.
+    pub loudness_result: Option<ExportLoudnessResult>,
+}
+
+/// F1 「音の大きさ」.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub enum ExportLoudness {
+    /// 「そのまま」: the audio as it plays.
+    #[default]
+    AsIs,
+    /// 「公開先に合わせる」: one gain for the whole file, to `EXPORT_MATCH_LUFS`, or less so
+    /// that the true peak stays at `EXPORT_MATCH_TRUE_PEAK_DB`. No limiter.
+    Match,
+}
+
+/// F1: "合わせると 4.6 dB 大きくなります", or at the true-peak limit "−1 dBTP を越えないよう、
+/// −15.2 LUFS になります".
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct ExportLoudnessResult {
+    /// The gain, + louder, − quieter.
+    pub gain_db: f32,
+    /// The gain stopped short of `EXPORT_MATCH_LUFS` at the true-peak limit.
+    pub limited: bool,
+    /// The loudness of the file with the gain.
+    pub lufs: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -137,6 +183,9 @@ pub enum ExportCheck {
         peak_db: Option<f32>,
         clips: bool,
         over: u32,
+        /// F1, as in `Done`, of what is written so far.
+        lufs: Option<f32>,
+        true_peak_db: Option<f32>,
     },
     /// 「いちばん大きい所 −0.6 dB ・ 音割れなし」. `peak_db`: `None` for silence. `clips`: the
     /// file as it would be written with `bits` clips (spec 6 「書き出しで音が割れる」; the
@@ -150,6 +199,11 @@ pub enum ExportCheck {
         peak_db: Option<f32>,
         clips: bool,
         over: u32,
+        /// F1 「曲ぜんたいの大きさ −18.6 LUFS」: integrated loudness (ITU-R BS.1770) of the
+        /// range, the tail not counted. `None` when it cannot be measured (silence).
+        lufs: Option<f32>,
+        /// F1 「トゥルーピーク −3.2 dBTP」: the tail counted. `None` for silence.
+        true_peak_db: Option<f32>,
     },
     /// The range cannot be written: `can_export` is false.
     Failed { reason: ExportFailure },
@@ -189,8 +243,9 @@ pub enum ExportFailure {
     CannotWrite,
 }
 
-/// 「書き出しの進み」 (spec 2; spec 6 「書き出している」 … 「書き出しが終わった」).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// 「書き出しの進み」 (spec 2; spec 6 「書き出している」 … 「書き出しが終わった」). An export the
+/// AI link asks for is not shown here.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(
     tag = "state",
@@ -229,6 +284,13 @@ pub enum ExportRunView {
         length_s: u32,
         sample_rate: u32,
         bits: RecordFormat,
+        /// E9 the dialog 「書き出しました」: the file's waveform as `EXPORT_WAVE_BARS` bars, each
+        /// the largest absolute sample of its part, 0..=255. Empty for several files.
+        wave: Vec<u8>,
+        /// E9 the loudness and the true peak of the file as written (after F1's gain).
+        /// `None` for several files, and for silence.
+        lufs: Option<f32>,
+        true_peak_db: Option<f32>,
     },
     /// "書き出しをやめました。途中までのファイルは消しました。"
     Cancelled,
@@ -272,5 +334,10 @@ pub enum ExportChange {
     /// Does nothing while `ExportDialogView::realtime_forced`.
     Realtime {
         on: bool,
+    },
+    /// F1 「そのまま」 / 「公開先に合わせる」. `Match` while not `ExportDialogView::can_match`
+    /// does nothing.
+    Loudness {
+        loudness: ExportLoudness,
     },
 }

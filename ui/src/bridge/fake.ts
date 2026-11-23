@@ -577,6 +577,9 @@ export function fakeState(): AppState {
       recordingVocals: [],
       recordingFaults: null,
       overdub: false,
+      clickVolumeDb: 0,
+      clickSound: "beep",
+      clickWhen: "always",
     },
     arrange: arrangeOf(null),
     pianoRoll: {
@@ -584,7 +587,7 @@ export function fakeState(): AppState {
       selectedNotes: [],
       selectedControls: [],
       grid: { division: 16, triplet: false },
-      scale: { root: 0, mode: "major", lock: false },
+      scale: { root: 0, mode: "major", lock: false, highlight: true },
       quantize: { division: 16, triplet: false, strength: 100, swing: 0, align: "start" },
       clipboardNotes: 0,
     },
@@ -632,6 +635,8 @@ export function fakeState(): AppState {
     export: { dialog: null, run: null },
     sounds: fakeSounds(),
     aiLink: { on: false, port: "closed" },
+    recent: [],
+    updates: { check: true, newVersion: null },
     status: { message: NEW_SONG },
   };
 }
@@ -995,7 +1000,7 @@ function pianoRollView(take: number, scaleLock: boolean): PianoRollView {
     selectedNotes: [{ ...QUANTIZED }],
     selectedControls: [],
     grid: { division: 16, triplet: false },
-    scale: { root: 0, mode: "major", lock: scaleLock },
+    scale: { root: 0, mode: "major", lock: scaleLock, highlight: true },
     quantize: { division: 16, triplet: false, strength: 75, swing: 0, align: "start" },
     clipboardNotes: 0,
   };
@@ -3307,7 +3312,7 @@ function fakeExportDialog(song: SongView, over: Partial<ExportDialogView> = {}):
     format: "wav",
     formats: EXPORT_FORMATS.map((f) => f.format),
     place: `~/音楽/${song.name}.wav`,
-    check: { state: "done", peakDb: -0.6, clips: false, over: 0 },
+    check: { state: "done", peakDb: -0.6, clips: false, over: 0, lufs: null, truePeakDb: null },
     solo: fakeSolo({ song }),
     stoppedPlugins: [],
     advancedOpen: false,
@@ -3319,6 +3324,9 @@ function fakeExportDialog(song: SongView, over: Partial<ExportDialogView> = {}):
     realtime: false,
     realtimeForced: false,
     canExport: true,
+    loudness: "asIs",
+    canMatch: false,
+    loudnessResult: null,
     ...over,
   };
 }
@@ -3339,9 +3347,9 @@ SCENES.exportDialog = exportDialogScene();
 // The dialog just opened: nothing of the range is written yet.
 SCENES.exportWaiting = exportDialogScene({ check: { state: "waiting" }, canExport: false });
 // The check is on its way: the numbers of what is written so far.
-SCENES.exportCounting = exportDialogScene({ check: { state: "counting", percent: 38, peakDb: -3.5, clips: false, over: 0 } });
+SCENES.exportCounting = exportDialogScene({ check: { state: "counting", percent: 38, peakDb: -3.5, clips: false, over: 0, lufs: null, truePeakDb: null } });
 // Spec 6 「書き出しで音が割れる」: the button is 「このまま書き出す」.
-SCENES.exportClips = exportDialogScene({ check: { state: "done", peakDb: 1.4, clips: true, over: 1 } });
+SCENES.exportClips = exportDialogScene({ check: { state: "done", peakDb: 1.4, clips: true, over: 1, lufs: null, truePeakDb: null } });
 // Mock F-Export: 「Brick EQ ・ 3 ドラム」 has stopped and is passed by.
 SCENES.exportStopped = exportDialogScene({
   stoppedPlugins: [{ name: "Brick EQ", slot: { kind: "insert", insert: { strip: { kind: "track", id: BAND_TRACK_ID + 3 }, slot: 0 } } }],
@@ -3390,6 +3398,9 @@ SCENES.exportDone = exportingScene({
   lengthS: 182,
   sampleRate: 48000,
   bits: "bits24",
+  wave: [],
+  lufs: null,
+  truePeakDb: null,
 });
 // Spec 6 「書き出しをやめた」.
 SCENES.exportCancelled = exportingScene({ state: "cancelled" });
@@ -3484,9 +3495,9 @@ const checkScene = (check: ExportDialogView["check"], soloed: boolean): SceneDef
   meters: QUIET,
 });
 // F8-ExportCheck: counting, 「いま 2 ベース をソロにしています。…」
-SCENES.exportCheck = checkScene({ state: "counting", percent: 38, peakDb: -3.5, clips: false, over: 0 }, true);
+SCENES.exportCheck = checkScene({ state: "counting", percent: 38, peakDb: -3.5, clips: false, over: 0, lufs: null, truePeakDb: null }, true);
 // F8-ExportClip: 「0 dB をこえる所が 3 か所あります（いちばん大きい所 +1.2 dB）。音が割れます。」
-SCENES.exportClip = checkScene({ state: "done", peakDb: 1.2, clips: true, over: 3 }, false);
+SCENES.exportClip = checkScene({ state: "done", peakDb: 1.2, clips: true, over: 3, lufs: null, truePeakDb: null }, false);
 
 /**
  * Protocol 26, enough for pictures and tests: the dialog opens, takes its choices and closes; 「書き出す」 starts a run
@@ -3525,7 +3536,10 @@ export function reduceExport(state: AppState, command: Command): Change[] | null
       else if (c.kind === "sampleRate") d.sampleRate = d.sampleRateChoices.includes(c.hz) ? c.hz : d.sampleRate;
       else if (c.kind === "bits") d.bits = d.bitsChoices.includes(c.bits) ? c.bits : d.bits;
       else if (c.kind === "tail") d.tail = c.tail;
-      else if (!d.realtimeForced) d.realtime = c.on;
+      else if (c.kind === "realtime") {
+        if (!d.realtimeForced) d.realtime = c.on;
+      }
+      // round12 stub: F1 (`loudness` changes nothing yet)
       const folder = d.place.slice(0, d.place.lastIndexOf("/") + 1);
       d.place = d.range === "tracks" ? folder : `${folder}${state.song.name}.${d.format}`;
       break;
@@ -3963,7 +3977,7 @@ function reducePianoRoll(pr: PianoRollView, command: Command): void {
       pr.grid = { division: command.division, triplet: command.triplet };
       break;
     case "setMusicalScale":
-      pr.scale = { root: command.root, mode: command.mode, lock: command.lock };
+      pr.scale = { root: command.root, mode: command.mode, lock: command.lock, highlight: command.highlight };
       break;
     case "setQuantize": {
       const { division, triplet, strength, swing, align } = command;

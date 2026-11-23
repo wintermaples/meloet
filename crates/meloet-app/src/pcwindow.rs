@@ -216,6 +216,44 @@ fn show_items(path: &std::path::Path) -> Result<(), dbus::Error> {
 #[cfg(not(target_os = "linux"))]
 pub fn show_file(_: PathBuf) {}
 
+/// Opens `url` in the PC's browser with `xdg-open`. Only `https://`. Does not wait.
+#[cfg(target_os = "linux")]
+pub fn open_url(url: String) {
+    if !url.starts_with("https://") {
+        eprintln!("meloet: not opening {url:?}: not an https address");
+        return;
+    }
+    xdg_open("meloet-open-url", url.into());
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn open_url(_: String) {}
+
+/// Opens `path` with the PC's own app for that kind of file, with `xdg-open`. Does not wait.
+#[cfg(target_os = "linux")]
+pub fn open_file(path: PathBuf) {
+    xdg_open("meloet-open-file", path.into());
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn open_file(_: PathBuf) {}
+
+#[cfg(target_os = "linux")]
+fn xdg_open(thread: &str, what: std::ffi::OsString) {
+    let opened = std::thread::Builder::new()
+        .name(thread.into())
+        .spawn(
+            move || match std::process::Command::new("xdg-open").arg(&what).status() {
+                Ok(s) if s.success() => {}
+                Ok(s) => eprintln!("meloet: xdg-open {what:?} ended with {s}"),
+                Err(e) => eprintln!("meloet: cannot run xdg-open: {e}"),
+            },
+        );
+    if let Err(e) = opened {
+        eprintln!("meloet: cannot start xdg-open: {e}");
+    }
+}
+
 /// Main thread only. `answer` gets the paths chosen (more than one only for `Pick::Audio`
 /// with `many`), or none when the window was put away.
 pub fn pick(

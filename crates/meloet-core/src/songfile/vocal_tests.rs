@@ -142,7 +142,7 @@ fn a_vocal_track_comes_back_as_it_was_and_shares_its_takes_and_files() {
 #[test]
 fn the_shape_of_a_vocal_track_on_disk() {
     let v = vocal_json();
-    assert_eq!(v["version"], 6);
+    assert_eq!(v["version"], 7);
     let track = &v["song"]["tracks"][1];
     assert_eq!(track["kind"], "vocal");
     assert_eq!(track["input"], "stereo12");
@@ -331,7 +331,7 @@ fn the_stretching_and_the_pitch_of_a_clip_come_back() {
     assert_eq!(back.doc.next_id, 61);
 
     let v: Value = serde_json::from_slice(&bytes).unwrap();
-    assert_eq!(v["version"], 6);
+    assert_eq!(v["version"], 7);
     assert_eq!(
         v["song"]["tracks"][1]["clips"][1]["shape"],
         json!({"fadeIn": 240, "fadeOut": Q, "gainDb": -3.0, "follow": true,

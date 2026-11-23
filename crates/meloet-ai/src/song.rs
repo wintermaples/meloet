@@ -210,7 +210,17 @@ pub fn overview(read: &AiSong) -> Value {
         })),
         "scale": {
             "root": NAMES[scale.root() as usize],
-            "mode": match scale.mode { ScaleMode::Major => "major", ScaleMode::Minor => "minor" },
+            "mode": match scale.mode {
+                ScaleMode::Major => "major",
+                ScaleMode::Minor => "minor",
+                ScaleMode::HarmonicMinor => "harmonic_minor",
+                ScaleMode::MelodicMinor => "melodic_minor",
+                ScaleMode::MajorPentatonic => "major_pentatonic",
+                ScaleMode::MinorPentatonic => "minor_pentatonic",
+                ScaleMode::Blues => "blues",
+                ScaleMode::Dorian => "dorian",
+                ScaleMode::Mixolydian => "mixolydian",
+            },
             "locked": scale.lock,
         },
         "busy": read.busy.map(busy_name),

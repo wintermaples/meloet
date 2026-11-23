@@ -69,8 +69,11 @@ fn the_check_counts_places_over_0_db_and_names_the_solo() {
             peak_db: Some(1.25),
             clips: true,
             over: 3,
+            lufs: None,
+            true_peak_db: None,
         },
-        json!({"state": "done", "peakDb": 1.25, "clips": true, "over": 3}),
+        json!({"state": "done", "peakDb": 1.25, "clips": true, "over": 3, "lufs": null,
+               "truePeakDb": null}),
     );
     // 32 bits: over 0 dB, and nothing clips.
     both_ways(
@@ -79,8 +82,11 @@ fn the_check_counts_places_over_0_db_and_names_the_solo() {
             peak_db: Some(0.5),
             clips: false,
             over: 1,
+            lufs: None,
+            true_peak_db: None,
         },
-        json!({"state": "counting", "percent": 38, "peakDb": 0.5, "clips": false, "over": 1}),
+        json!({"state": "counting", "percent": 38, "peakDb": 0.5, "clips": false, "over": 1,
+               "lufs": null, "truePeakDb": null}),
     );
     // Mock F8-ExportCheck: "いま 2 ベース をソロにしています。…"
     both_ways(

@@ -455,6 +455,7 @@ fn the_scale_lock_does_not_hold_on_a_drum_track() {
             root: 0,
             mode: ScaleMode::Major,
             lock: true,
+            highlight: true,
         },
     );
     let write = |key: u8| Command::AddNote {

@@ -131,6 +131,8 @@ fn opening_the_dialog_starts_the_check_and_closing_it_throws_the_job_away() {
             peak_db: Some(-3.5),
             clips: false,
             over: 0,
+            lufs: None,
+            true_peak_db: None,
         }
     );
     assert!(dialog.can_export);
@@ -158,6 +160,8 @@ fn only_what_changes_the_audio_starts_the_check_anew() {
             peak_db: Some(0.5),
             clips: true,
             over: 1,
+            lufs: None,
+            true_peak_db: None,
         }
     );
 
@@ -177,6 +181,8 @@ fn only_what_changes_the_audio_starts_the_check_anew() {
             peak_db: Some(0.5),
             clips: false,
             over: 1,
+            lufs: None,
+            true_peak_db: None,
         }
     );
     // A flac file holds no floats: back to 24 bits, and the name follows the format.
@@ -402,6 +408,9 @@ fn an_export_runs_in_the_status_line_and_ends() {
             length_s: 10,
             sample_rate: 48_000,
             bits: RecordFormat::Bits24,
+            wave: Vec::new(),
+            lufs: None,
+            true_peak_db: None,
         }),
     };
     assert_eq!(export(&m), done);
@@ -451,6 +460,8 @@ fn an_export_is_cancelled_or_fails() {
             peak_db: None,
             clips: false,
             over: 0,
+            lufs: None,
+            true_peak_db: None,
         }
     );
     cmd(&mut m, Command::StartExport);

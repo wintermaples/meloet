@@ -815,6 +815,29 @@ pub(crate) fn step_text(row: &StepRow) -> (StepName, StepWhat, Option<StepPlace>
             named(a.before.audio(audio).map(|s| s.file.clone())),
             arrange,
         ),
+        StepKind::ScaleVelocity { clip, count: n } => (
+            StepName::ScaleVelocity,
+            a.velocity_what(clip, n),
+            piano_roll,
+        ),
+        StepKind::RampVelocity { clip, count: n } => {
+            (StepName::RampVelocity, a.velocity_what(clip, n), piano_roll)
+        }
+        StepKind::RandomVelocity { clip, count: n } => (
+            StepName::RandomVelocity,
+            a.velocity_what(clip, n),
+            piano_roll,
+        ),
+        StepKind::Legato { clip, count: n } => (StepName::Legato, notes(clip, n), piano_roll),
+        StepKind::DuplicateTrack { track } => (
+            StepName::DuplicateTrack,
+            StepWhat::Track {
+                track: a.track(track),
+            },
+            arrange,
+        ),
+        StepKind::NormalizeClips { count: n } => (StepName::NormalizeClips, clips(n), arrange),
+        StepKind::ReverseClips { count: n } => (StepName::ReverseClips, clips(n), arrange),
         StepKind::SetGain { strip } => {
             let gain = |doc: &Doc| doc.channel(strip).and_then(|c| gain_view(c.gain));
             (

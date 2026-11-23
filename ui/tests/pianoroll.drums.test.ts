@@ -192,7 +192,7 @@ describe("mouse (drag.ts)", () => {
       shown: () => n,
       geom: () => GEOM,
       step: () => TPQ / 4,
-      scale: () => ({ root: 0, mode: "major", lock: false }),
+      scale: () => ({ root: 0, mode: "major", lock: false, highlight: true }),
       meter: () => ({ num: 4, den: 4 }),
       tool: () => tool,
       selected: () => selected,
@@ -254,7 +254,7 @@ describe("picture (paint.ts)", () => {
   const picture = (over: Partial<RollPicture> = {}): RollPicture => ({
     g: GEOM,
     sizes: SIZES,
-    scale: { root: 0, mode: "major", lock: false },
+    scale: { root: 0, mode: "major", lock: false, highlight: true },
     meter: { num: 4, den: 4 },
     step: TPQ / 4,
     shown: n,
@@ -309,7 +309,7 @@ describe("picture (paint.ts)", () => {
     }
     const out = new Batch();
     out.clip(BOX.x0, BOX.y0, BOX.x1, BOX.y1);
-    paintRoll(out, BOX, picture({ scale: { root: 0, mode: "major", lock: true } }), null, 1);
+    paintRoll(out, BOX, picture({ scale: { root: 0, mode: "major", lock: true, highlight: true } }), null, 1);
     expect(out.hatches()).toEqual([]);
   });
 

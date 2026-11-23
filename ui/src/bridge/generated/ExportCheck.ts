@@ -6,4 +6,17 @@ import type { ExportFailure } from "./ExportFailure";
  * what it has seen so far; a change of the range, the tail or `realtime` starts it anew, one
  * of the format, the sample rate or the bits does not.
  */
-export type ExportCheck = { "state": "waiting" } | { "state": "counting", percent: number, peakDb: number | null, clips: boolean, over: number, } | { "state": "done", peakDb: number | null, clips: boolean, over: number, } | { "state": "failed", reason: ExportFailure, };
+export type ExportCheck = { "state": "waiting" } | { "state": "counting", percent: number, peakDb: number | null, clips: boolean, over: number, 
+/**
+ * F1, as in `Done`, of what is written so far.
+ */
+lufs: number | null, truePeakDb: number | null, } | { "state": "done", peakDb: number | null, clips: boolean, over: number, 
+/**
+ * F1 「曲ぜんたいの大きさ −18.6 LUFS」: integrated loudness (ITU-R BS.1770) of the
+ * range, the tail not counted. `None` when it cannot be measured (silence).
+ */
+lufs: number | null, 
+/**
+ * F1 「トゥルーピーク −3.2 dBTP」: the tail counted. `None` for silence.
+ */
+truePeakDb: number | null, } | { "state": "failed", reason: ExportFailure, };

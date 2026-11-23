@@ -116,11 +116,11 @@
   }
   // Choosing with the scale ▾ turns scale lock on (B-65).
   function pickScale(root: number, mode: ScaleMode): void {
-    send({ type: "setMusicalScale", root, mode, lock: true } satisfies Command);
+    send({ type: "setMusicalScale", root, mode, lock: true, highlight: pr.scale.highlight } satisfies Command);
     closeMenu();
   }
   const toggleTriplet = () => send({ type: "setGrid", division: pr.grid.division, triplet: !pr.grid.triplet });
-  const toggleLock = () => send({ type: "setMusicalScale", root: pr.scale.root, mode: pr.scale.mode, lock: !pr.scale.lock } satisfies Command);
+  const toggleLock = () => send({ type: "setMusicalScale", root: pr.scale.root, mode: pr.scale.mode, lock: !pr.scale.lock, highlight: pr.scale.highlight } satisfies Command);
   const zoom = (steps: number) => zoomBy(steps, metrics.scale);
 
   // The chord of the draw tool: its name on the draw button, and the list 「和音の形」 (not on drums).

@@ -111,7 +111,7 @@ describe("toolbar", () => {
     expect(app.sent).toEqual([
       { type: "setGrid", division: 8, triplet: false },
       { type: "setGrid", division: 16, triplet: true },
-      { type: "setMusicalScale", root: 0, mode: "major", lock: false },
+      { type: "setMusicalScale", root: 0, mode: "major", lock: false, highlight: true },
     ]);
   });
 });

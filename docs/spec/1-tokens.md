@@ -53,59 +53,59 @@ The line, hatch and meter ground names were added (user:2026-11-23, the owner's 
 
 ## Themes
 
-There are 6 themes (user:2026-11-23): 「ダーク」 `dark`, 「ライト」 `light`, 「ピンク ・ ダーク」 `pinkDark`, 「ピンク ・ ライト」 `pinkLight`, 「ミント ・ ダーク」 `mintDark`, 「ミント ・ ライト」 `mintLight`. Every theme gives a value to every color name above, and the names keep their role in every theme. In the light themes the brightness runs the other way: gray.0 is the lightest ground and gray.10 the darkest text, so gray.0 to gray.4 are still the grounds from the back to the front and gray.7 to gray.10 still the text from weak to strong. In the pink and mint themes the grays carry a light tint of their color (both grounds and text), at the same brightness as the plain grays, so they meet the same contrast.
+There are 6 themes (user:2026-11-23): 「ダーク」 `dark`, 「ライト」 `light`, 「ピンク ・ ダーク」 `pinkDark`, 「ピンク ・ ライト」 `pinkLight`, 「ミント ・ ダーク」 `mintDark`, 「ミント ・ ライト」 `mintLight`. Every theme gives a value to every color name above, and the names keep their role in every theme. In the light themes the brightness runs the other way: gray.0 is the lightest ground and gray.10 the darkest text, so gray.0 to gray.4 are still the grounds from the back to the front and gray.7 to gray.10 still the text from weak to strong. In the pink and mint themes the grays carry a light, soft tint of their color (both grounds and text), at the same brightness as the plain grays, so they meet the same contrast. The pink and mint themes are soft and pastel, and no theme uses brownish colors (user:2026-11-23, the owner's request: 「茶色っぽい色はNG(特にライトモード)」, 「ピンク、ミントに関してはもう少し彩度を抑えた、パステル色のほうがいいかも(ダークモードもライトモードも)。」; the values are the owner's choice among the candidates, user:2026-11-23).
 
-- `color.accent` follows the theme: yellow in dark, a dark amber in light (dark enough for text on the light grounds), pink in pinkDark, a dark plum pink in pinkLight, mint green in mintDark, a dark green in mintLight.
+- `color.accent` follows the theme: yellow in dark, a clear blue in light (dark enough for text on the light grounds), a pastel pink in pinkDark, a soft, dusty plum pink in pinkLight, a pastel mint in mintDark, a soft, dusty green in mintLight (user:2026-11-23). Before: light `#735000` (a dark amber, which looked brown), pinkDark `#FF7FC8`, pinkLight `#8E2879`, mintDark `#5CF0B4`, mintLight `#0B603F`.
 - `color.rec` is red in every theme. Only its brightness follows the ground.
-- Track colors: the same 5 hues, lighter or darker for the ground. Where a track color would look like the accent, it is changed for a yellow: track.5 in the pink themes, track.1 in the mint themes.
+- Track colors: the same 5 hues, lighter or darker for the ground; in the pink and mint themes softer too (pastel in pinkDark and mintDark). Where a track color would look like the accent, it is changed for another hue: track.5 is a pale yellow in pinkDark and a green in pinkLight, track.1 is a pale yellow in mintDark and an orange in mintLight (user:2026-11-23; before, pinkLight and mintLight had a dark yellow, `#8E6800` and `#8F6800`, which looked brown).
 - `color.tip.bg` is gray.10 and `color.tip.fg` is gray.0 in every theme, so the term tip is always the opposite of the screen.
 - `color.meter.ok` and `color.meter.hot` are the same in every theme (user:2026-11-23: in the light themes the darker hot looked too brown). In the light themes the meters lie on a dark ground: `color.meter.ground` and `color.meter.ground.mic` are gray.9 of the theme there (user:2026-11-23). In the dark themes they are gray.0 and gray.4, as the meters had. The marks on those grounds have names of their own too (user:2026-11-23): `color.meter.clip` (the clip mark) and `color.meter.peak` (the peak line of the mic meter) are rec and gray.10 of the theme in the dark themes, and the dark values of rec and gray.10 in the light themes.
 - Keys and rows (user:2026-11-23): in every theme a white key is lighter than a black key and a white-key row lighter than a black-key row, as on a real keyboard, and the rows that cannot be written are the darkest rows. The dark themes keep the grays these places had. In the light themes the white keys and the white-key rows are gray.0, the black keys gray.6 (the darkest gray on which a pressed key, in accent, still has 3:1), the black-key rows lie between gray.0 and gray.1, and the rows that cannot be written are gray.2 (so the beat and sub-beat lines are still seen on them).
 - Lines (user:2026-11-23): each theme gives every `color.line.*` name the weakest value, with the theme's tint, that reaches its contrast against every ground it is drawn on (see “Contrast”). `color.row.hatch` is the darkest such value that reaches 3:1 against row.out in the dark themes, and gray.7 in the light themes.
-- gray.6 (user:2026-11-23): about 2.4:1 against gray.4 in `dark` and `mintDark`. In `pinkDark` it stops at about 1.85:1, the strongest value against which accent (the on border) still has 3:1. The light themes keep their gray.6, which is already at that limit.
+- gray.6 (user:2026-11-23): about 2.4:1 against gray.4 in the dark themes, but never so strong that accent (the on border) has less than 3:1 against it. In the light themes gray.6 is at the limit the other way: the lightest value at which it still has 1.5:1 against gray.4, and the accents are dark enough to keep 3:1 against it.
 - Values are in `ui/src/design/themes.ts`; `dark` is `colors` of `ui/src/design/tokens.ts`.
 
 | Name | `dark` | `light` | `pinkDark` | `pinkLight` | `mintDark` | `mintLight` |
 |---|---|---|---|---|---|---|
 | `color.gray.0` | `#000000` | `#FFFFFF` | `#040404` | `#FBF9F9` | `#040404` | `#F8FAF9` |
-| `color.gray.1` | `#1A1A1A` | `#EAEAEA` | `#211B1E` | `#EEE0E6` | `#171F1C` | `#DBE7E3` |
-| `color.gray.2` | `#212121` | `#E1E1E1` | `#292225` | `#E8D6DE` | `#1D2723` | `#D0DFDA` |
-| `color.gray.3` | `#282828` | `#D8D8D8` | `#30282C` | `#E2CCD6` | `#232E2A` | `#C4D7D1` |
-| `color.gray.4` | `#2F2F2F` | `#CDCDCD` | `#392F33` | `#DBC1CD` | `#293531` | `#B6CEC6` |
-| `color.gray.5` | `#3C3C3C` | `#BBBBBB` | `#483B41` | `#CFADBD` | `#33423D` | `#A0BDB3` |
-| `color.gray.6` | `#686868` | `#A7A7A7` | `#65555C` | `#BF98AA` | `#5B7068` | `#89AB9F` |
-| `color.gray.7` | `#717171` | `#7A7A7A` | `#806E77` | `#866F7A` | `#637971` | `#617C73` |
-| `color.gray.8` | `#9A9A9A` | `#575757` | `#A7969E` | `#5D5056` | `#8D9E98` | `#485852` |
-| `color.gray.9` | `#D6D6D6` | `#333333` | `#DBD5D7` | `#373134` | `#D3D7D6` | `#2D3432` |
-| `color.gray.10` | `#F2F2F2` | `#111111` | `#F3F2F2` | `#121011` | `#F1F3F2` | `#0F1111` |
-| `color.accent` | `#FFB000` | `#735000` | `#FF7FC8` | `#8E2879` | `#5CF0B4` | `#0B603F` |
+| `color.gray.1` | `#1A1A1A` | `#EAEAEA` | `#1E1C1E` | `#EBE1E4` | `#1B1E1C` | `#DFE6E4` |
+| `color.gray.2` | `#212121` | `#E1E1E1` | `#262325` | `#E3D8DD` | `#212624` | `#D4DEDA` |
+| `color.gray.3` | `#282828` | `#D8D8D8` | `#2E292A` | `#DDCED5` | `#272D2B` | `#C8D6D2` |
+| `color.gray.4` | `#2F2F2F` | `#CDCDCD` | `#343131` | `#D5C3CA` | `#2D3432` | `#BDCCC6` |
+| `color.gray.5` | `#3C3C3C` | `#BBBBBB` | `#433D3F` | `#C7B0BA` | `#3B403D` | `#A8BBB4` |
+| `color.gray.6` | `#686868` | `#A7A7A7` | `#6F696B` | `#B69CA7` | `#626D69` | `#92A9A0` |
+| `color.gray.7` | `#717171` | `#7A7A7A` | `#787174` | `#817179` | `#6B7773` | `#697A75` |
+| `color.gray.8` | `#9A9A9A` | `#575757` | `#9F999C` | `#5A5155` | `#959C99` | `#4C5753` |
+| `color.gray.9` | `#D6D6D6` | `#333333` | `#D8D6D7` | `#343233` | `#D4D7D6` | `#2D3432` |
+| `color.gray.10` | `#F2F2F2` | `#111111` | `#F3F2F2` | `#121011` | `#F2F3F2` | `#0F1111` |
+| `color.accent` | `#FFB000` | `#014AD1` | `#F9B8CF` | `#853868` | `#AAEBD1` | `#205F47` |
 | `color.rec` | `#FF6158` | `#A5261F` | `#FF685F` | `#9F251E` | `#FF6A61` | `#A0251E` |
 | `color.meter.ok` | `#4CD964` | `#4CD964` | `#4CD964` | `#4CD964` | `#4CD964` | `#4CD964` |
 | `color.meter.hot` | `#FFD60A` | `#FFD60A` | `#FFD60A` | `#FFD60A` | `#FFD60A` | `#FFD60A` |
-| `color.meter.ground` | `#000000` | `#333333` | `#040404` | `#373134` | `#040404` | `#2D3432` |
-| `color.meter.ground.mic` | `#2F2F2F` | `#333333` | `#392F33` | `#373134` | `#293531` | `#2D3432` |
+| `color.meter.ground` | `#000000` | `#333333` | `#040404` | `#343233` | `#040404` | `#2D3432` |
+| `color.meter.ground.mic` | `#2F2F2F` | `#333333` | `#343131` | `#343233` | `#2D3432` | `#2D3432` |
 | `color.meter.clip` | `#FF6158` | `#FF6158` | `#FF685F` | `#FF685F` | `#FF6A61` | `#FF6A61` |
-| `color.meter.peak` | `#F2F2F2` | `#F2F2F2` | `#F3F2F2` | `#F3F2F2` | `#F1F3F2` | `#F1F3F2` |
-| `color.track.1` | `#69E4E4` | `#007F7F` | `#69E4E4` | `#007B7B` | `#FFD54A` | `#8F6800` |
-| `color.track.2` | `#5ABDF2` | `#1977B6` | `#5ABDF2` | `#1873B0` | `#5ABDF2` | `#1874B0` |
-| `color.track.3` | `#6F8BED` | `#4668E1` | `#6F8BED` | `#4164E0` | `#6F8BED` | `#4165E0` |
-| `color.track.4` | `#9561C7` | `#9551CD` | `#9664C8` | `#924CCC` | `#9765C9` | `#924DCC` |
-| `color.track.5` | `#FFD9F1` | `#C23F87` | `#FFD54A` | `#8E6800` | `#FFD9F1` | `#BD3D84` |
-| `color.tip.bg` | `#F2F2F2` | `#111111` | `#F3F2F2` | `#121011` | `#F1F3F2` | `#0F1111` |
+| `color.meter.peak` | `#F2F2F2` | `#F2F2F2` | `#F3F2F2` | `#F3F2F2` | `#F2F3F2` | `#F1F3F2` |
+| `color.track.1` | `#69E4E4` | `#007F7F` | `#A8EDEC` | `#29797A` | `#FFE9A6` | `#BB4D02` |
+| `color.track.2` | `#5ABDF2` | `#1977B6` | `#92C9EA` | `#2E73A6` | `#92C9EA` | `#2F74A6` |
+| `color.track.3` | `#6F8BED` | `#4668E1` | `#8B9FDC` | `#4668CE` | `#8B9FDC` | `#4868CF` |
+| `color.track.4` | `#9561C7` | `#9551CD` | `#9D80BD` | `#8D54BD` | `#9E81BE` | `#8C55BE` |
+| `color.track.5` | `#FFD9F1` | `#C23F87` | `#FFE9A6` | `#038031` | `#FEF1F9` | `#B24981` |
+| `color.tip.bg` | `#F2F2F2` | `#111111` | `#F3F2F2` | `#121011` | `#F2F3F2` | `#0F1111` |
 | `color.tip.fg` | `#000000` | `#FFFFFF` | `#040404` | `#FBF9F9` | `#040404` | `#F8FAF9` |
-| `color.key.white` | `#3C3C3C` | `#FFFFFF` | `#483B41` | `#FBF9F9` | `#33423D` | `#F8FAF9` |
-| `color.key.black` | `#000000` | `#A7A7A7` | `#040404` | `#BF98AA` | `#040404` | `#89AB9F` |
-| `color.key.meter.white` | `#282828` | `#FFFFFF` | `#30282C` | `#FBF9F9` | `#232E2A` | `#F8FAF9` |
-| `color.key.meter.black` | `#000000` | `#A7A7A7` | `#040404` | `#BF98AA` | `#040404` | `#89AB9F` |
-| `color.row.white` | `#212121` | `#FFFFFF` | `#292225` | `#FBF9F9` | `#1D2723` | `#F8FAF9` |
-| `color.row.black` | `#1A1A1A` | `#F6F6F6` | `#211B1E` | `#F5EEF0` | `#171F1C` | `#EBF2EF` |
-| `color.row.out` | `#000000` | `#E1E1E1` | `#040404` | `#E8D6DE` | `#040404` | `#D0DFDA` |
-| `color.row.hatch` | `#5A5A5A` | `#7A7A7A` | `#66575E` | `#866F7A` | `#4B5F57` | `#617C73` |
-| `color.line.bar` | `#6B6B6B` | `#808080` | `#7A6971` | `#8F7582` | `#5D736B` | `#668279` |
-| `color.line.beat` | `#3E3E3E` | `#B9B9B9` | `#4A3D43` | `#CDAABB` | `#35453F` | `#9DBAB0` |
-| `color.line.grid` | `#2F2F2F` | `#CECECE` | `#382F33` | `#DBC1CD` | `#293531` | `#B7CEC7` |
-| `color.line.thin` | `#4A4A4A` | `#A7A7A7` | `#56494F` | `#BF98AA` | `#3F514A` | `#8AABA0` |
-| `color.line.row` | `#353535` | `#C5C5C5` | `#3F3438` | `#D6B8C6` | `#2E3B36` | `#ACC6BE` |
+| `color.key.white` | `#3C3C3C` | `#FFFFFF` | `#433D3F` | `#FBF9F9` | `#3B403D` | `#F8FAF9` |
+| `color.key.black` | `#000000` | `#A7A7A7` | `#040404` | `#B69CA7` | `#040404` | `#92A9A0` |
+| `color.key.meter.white` | `#282828` | `#FFFFFF` | `#2E292A` | `#FBF9F9` | `#272D2B` | `#F8FAF9` |
+| `color.key.meter.black` | `#000000` | `#A7A7A7` | `#040404` | `#B69CA7` | `#040404` | `#92A9A0` |
+| `color.row.white` | `#212121` | `#FFFFFF` | `#262325` | `#FBF9F9` | `#212624` | `#F8FAF9` |
+| `color.row.black` | `#1A1A1A` | `#F6F6F6` | `#1E1C1E` | `#F4EEF0` | `#1B1E1C` | `#EDF1F0` |
+| `color.row.out` | `#000000` | `#E1E1E1` | `#040404` | `#E3D8DD` | `#040404` | `#D4DEDA` |
+| `color.row.hatch` | `#5A5A5A` | `#7A7A7A` | `#605A5C` | `#817179` | `#555D5A` | `#697A75` |
+| `color.line.bar` | `#6B6B6B` | `#808080` | `#736C6F` | `#87777F` | `#66716D` | `#6F807B` |
+| `color.line.beat` | `#3E3E3E` | `#B9B9B9` | `#453F41` | `#C4ADB7` | `#3E4340` | `#A5B8B1` |
+| `color.line.grid` | `#2F2F2F` | `#CECECE` | `#343131` | `#D5C4CB` | `#2D3432` | `#BECCC7` |
+| `color.line.thin` | `#4A4A4A` | `#A7A7A7` | `#514B4D` | `#B29DA6` | `#484F4C` | `#95A7A1` |
+| `color.line.row` | `#353535` | `#C5C5C5` | `#3A3636` | `#CFBBC3` | `#343A37` | `#B4C5BE` |
 
 ## Contrast
 

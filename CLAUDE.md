@@ -105,6 +105,7 @@ docs/
   architecture.md  the structure and the reasons
   progress.md      where things are, open work, notes for the next round
   install-check.md steps to install and try on a real PC
+  development/     for developers: setup, run, checks, the dev sound pack, development hooks, building the deb (README.md for every OS, ubuntu.md)
   screenshots/     pictures of the real app, side by side with the mocks
   user/            documents for users (README.ja.md)
   measurements/    measured numbers from round 10 on (English; make it when the first one is written)
@@ -151,7 +152,7 @@ ln -sfn ../sounds/dev target/debug/sounds                   # the development bu
 python3 -I tools/sounds/split.py target/sounds/dev --out <dir> --pack <version> [--previous <previous catalog>] [--catalog tools/sounds/catalog.json]  # the shipped form: a tar per sound and the catalog (architecture 23-1, 23-9)
 ```
 
-How to run it: [`README.md`](README.md).
+How to set up and run it: [`docs/development/`](docs/development/README.md) (per OS: [`ubuntu.md`](docs/development/ubuntu.md)). The READMEs for users: [`README.md`](README.md) (English) and [`README.ja.md`](README.ja.md) (Japanese); keep the two in step.
 
 ## Things about this PC (not about real users)
 

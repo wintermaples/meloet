@@ -7,7 +7,7 @@ Needs a screen, a MIDI keyboard plugged in, and an audio output (on the agent PC
 `source ~/.config/meloet-agent/env.sh` and `PIPEWIRE_RUNTIME_DIR=/run/user/1000`).
 Builds ui/ and the release app (CARGO_TARGET_DIR is honoured), then starts the app once per
 state, window size and scale, each time with a new config dir. It drives the app with the
-development variables (README) and with meloet-vkeys, and lets MELOET_SNAPSHOT write the PNG.
+development variables (docs/development/README.md) and with meloet-vkeys, and lets MELOET_SNAPSHOT write the PNG.
 States that start from a remembered output copy settings.json from one first run that
 confirmed the chooser.
 Every start gets its own XDG_CACHE_HOME, so that the plugin scan is the same each time: a

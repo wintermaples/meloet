@@ -12,7 +12,7 @@ The version is written in many places. Do not edit them by hand: `scripts/bump-v
 - `version = "X.Y.Z"` in every `crates/*/Cargo.toml` (all product crates carry the same version). `crates/meloet-app/tauri.conf.json` has no version: Tauri takes the app crate's version, so the deb name `meloet_X.Y.Z_amd64.deb` follows it.
 - `Cargo.lock`, workspace members only (`cargo update --workspace --offline`).
 - `NOTICE` (line 2) and `ui/src/components/about/generated/licenses.json` (shown in 「meloet について」), rebuilt with `node tools/licenses/inventory.mjs write`.
-- The deb name and the current version in `README.md`, `docs/install-check.md`, `docs/user/README.ja.md` and the versions table of `docs/progress.md`.
+- The deb name and the current version in `README.md`, `README.ja.md`, `docs/development/ubuntu.md`, `docs/install-check.md`, `docs/user/README.ja.md` and the versions table of `docs/progress.md`.
 - The app version also reaches the song files (`"app": "meloet X.Y.Z"`) and the sound pack download's user agent through `CARGO_PKG_VERSION`; nothing to edit there.
 - Left as they are on purpose: `docs/history/` (old records), the note on the first shipped version in `docs/architecture.md` 23, examples in docs, and fake data in `ui/tests/`.
 

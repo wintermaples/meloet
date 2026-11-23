@@ -1,86 +1,30 @@
 #!/usr/bin/env python3
 """Check the spec in docs/spec/ (Markdown, one file per chapter).
 
-Default: compare the text of every chapter with the old docs/spec/.
-Tags and Markdown marks are taken out and spaces are joined, so only the words
-are compared. Also checks that every table row has as many cells as its
-header, and that docs/spec/samples.css is the page style of spec.html.
+Two checks; both run when no option is given.
+
+--tables: every table row in a chapter has as many cells as its header.
 
 --strings: for every entry in ui/src/text/ja.ts whose source is spec:<n>
 (and the terms of chapter 5), check that its text is in chapter <n>. A text
 with holes ({name}) is cut at the holes; each piece must be in the chapter.
+Tags and Markdown marks are taken out and spaces are joined first.
 
 Exit code 1 if anything is wrong. Standard library only; run with python3 -I.
 """
 
 import argparse
-import difflib
 import re
 import sys
-from html.parser import HTMLParser
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC_DIR = ROOT / "docs" / "spec"
-SPEC_HTML = ROOT / "docs" / "design" / "spec.html"
 JA_TS = ROOT / "ui" / "src" / "text" / "ja.ts"
-
-BLOCK = {"h1", "h2", "h3", "p", "ul", "li", "table", "thead", "tbody", "tr", "th", "td", "div", "nav", "a", "main"}
 
 
 def squeeze(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip()
-
-
-# --- the old spec.html -------------------------------------------------------
-
-
-class SpecHtml(HTMLParser):
-    """Text of spec.html per part: "preface" (h1 and lead) and "1".."7" (from each h2)."""
-
-    def __init__(self) -> None:
-        super().__init__(convert_charrefs=True)
-        self.parts: dict[str, list[str]] = {}
-        self.part: str | None = None
-        self.skip = 0
-        self.style: list[str] = []
-        self.in_style = False
-        self.in_main = False
-
-    def handle_starttag(self, tag, attrs):
-        if tag == "style":
-            self.in_style = True
-        if tag == "main":
-            self.in_main = True
-            self.part = "preface"
-        if tag == "nav":
-            self.skip += 1
-        if tag == "h2":
-            self.part = dict(attrs)["id"].removeprefix("s")
-        if self.part and tag in BLOCK:
-            self.parts.setdefault(self.part, []).append(" ")
-
-    def handle_endtag(self, tag):
-        if tag == "style":
-            self.in_style = False
-        if tag == "nav":
-            self.skip -= 1
-        if tag == "main":
-            self.in_main = False
-        if self.part and tag in BLOCK:
-            self.parts.setdefault(self.part, []).append(" ")
-
-    def handle_data(self, data):
-        if self.in_style:
-            self.style.append(data)
-        elif self.in_main and self.part and not self.skip:
-            self.parts.setdefault(self.part, []).append(data)
-
-
-def html_parts() -> tuple[dict[str, str], str]:
-    p = SpecHtml()
-    p.feed(SPEC_HTML.read_text(encoding="utf-8"))
-    return {k: squeeze("".join(v)) for k, v in p.parts.items()}, "".join(p.style)
 
 
 # --- the Markdown ------------------------------------------------------------
@@ -153,48 +97,16 @@ def chapter_files() -> dict[str, Path]:
 
 
 def md_parts() -> dict[str, str]:
-    parts = {k: md_plain(f.read_text(encoding="utf-8")) for k, f in chapter_files().items()}
-    readme = (SPEC_DIR / "README.md").read_text(encoding="utf-8")
-    title = readme.splitlines()[0]
-    preface = readme.split("\n## Preface\n", 1)[1]
-    parts["preface"] = md_plain(title + "\n" + preface)
-    return parts
+    return {k: md_plain(f.read_text(encoding="utf-8")) for k, f in chapter_files().items()}
 
 
-def show_diff(a: str, b: str) -> list[str]:
-    out = []
-    sm = difflib.SequenceMatcher(None, a, b, autojunk=False)
-    for op, i1, i2, j1, j2 in sm.get_opcodes():
-        if op == "equal":
-            continue
-        ctx = a[max(0, i1 - 30) : i1]
-        out.append(f"  {op} after …{ctx!r}: html {a[i1:i2]!r} / md {b[j1:j2]!r}")
-    return out
-
-
-def check_text() -> int:
-    html, style = html_parts()
-    md = md_parts()
+def check_tables() -> int:
     bad = 0
-    for k in sorted(set(html) | set(md)):
-        a, b = html.get(k), md.get(k)
-        if a is None or b is None:
-            print(f"part {k}: only in {'Markdown' if a is None else 'spec.html'}")
-            bad += 1
-            continue
-        if a != b:
-            lines = show_diff(a, b)
-            print(f"part {k}: {len(lines)} differences")
-            print("\n".join(lines[:40]))
-            bad += len(lines)
-    for k, f in chapter_files().items():
+    for f in chapter_files().values():
         for e in table_shape_errors(f.name, f.read_text(encoding="utf-8")):
             print(e)
             bad += 1
-    if (SPEC_DIR / "samples.css").read_text(encoding="utf-8").strip() != style.strip():
-        print("samples.css is not the style of spec.html")
-        bad += 1
-    print(f"text: {bad} differences in {len(md)} parts")
+    print(f"tables: {bad} rows with a wrong number of cells")
     return bad
 
 
@@ -297,9 +209,15 @@ def check_strings() -> int:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--strings", action="store_true", help="check the spec: texts of ui/src/text/ja.ts instead")
+    ap.add_argument("--tables", action="store_true", help="check the cells of the tables only")
+    ap.add_argument("--strings", action="store_true", help="check the spec: texts of ui/src/text/ja.ts only")
     args = ap.parse_args()
-    bad = check_strings() if args.strings else check_text()
+    both = not (args.tables or args.strings)
+    bad = 0
+    if args.tables or both:
+        bad += check_tables()
+    if args.strings or both:
+        bad += check_strings()
     sys.exit(1 if bad else 0)
 
 

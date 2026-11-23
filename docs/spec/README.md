@@ -12,18 +12,20 @@ The mocks in [`docs/design/mock/`](../design/mock/) are sample pictures of the s
 4. [4 List of keys](4-keys.md)
 5. [5 Term tips](5-terms.md)
 6. [6 Error and hint wording](6-messages.md)
+7. [7 Readings and decisions](7-readings.md)
 
 Other files:
 
+- [`open-questions.md`](open-questions.md): the questions that have no answer yet, and what the screen does for now.
 - [`samples.css`](samples.css): the style of the original spec page. The font lists (`--sans`, `--mono`) and the sizes of the sample parts in chapter 2 are written here.
 - [`glossary.md`](glossary.md): Japanese words of the spec and the screen, and the English names used for them.
 
 Text that is shown on the screen, and the names of the values (`color.gray.4`, `space.3`, …), must stay exactly as written here. `ui/src/text/ja.ts` points to a chapter with `spec:<chapter number>`.
 
-`tools/design/spec_check.py` checks these files.
+`tools/design/spec_check.py` checks that every table row in a chapter has as many cells as its header, and that every `spec:<n>` text in `ui/src/text/ja.ts` is in chapter `<n>`.
 
 ## Preface
 
 This document is for the developers who build 「meloet」, a DAW for beginners (its working name was 「計測」). The screen mocks are on the design canvas; this document collects the values, the parts, the rules and the wording. Every value is in px at scale 100 %.
 
-Version 12 of the design spec (2026-11-22; after round 7, with the questions for round 8). The changes from version 11 are in chapter 7. The person who decides is the owner of meloet (in older versions, read 「ヤチヨさん」 as the owner). From 2026-11-23 the spec lives in this repository and changes here.
+Version 12 of the design spec (2026-11-22; after round 7, with the questions for round 8). The changes from version 11 are recorded in [`docs/history/spec-v12-changes.ja.md`](../history/spec-v12-changes.ja.md). The person who decides is the owner of meloet (in older versions, read 「ヤチヨさん」 as the owner). From 2026-11-23 the spec lives in this repository and changes here.

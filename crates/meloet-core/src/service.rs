@@ -2038,6 +2038,15 @@ impl Audio {
                 }
                 return;
             }
+            EngineOp::PlayPattern { instrument, hits } => {
+                if self.running().is_some() {
+                    let player = PhrasePlayer::hits(self.make(&instrument), hits);
+                    if self.handle.play_sample(Box::new(player)).is_err() {
+                        eprintln!("meloet: the engine did not take the sample");
+                    }
+                }
+                return;
+            }
             // The worker gives these the loaded plugin (`Worker::plug`).
             EngineOp::Plug { .. } | EngineOp::PlugSample { .. } => return,
             EngineOp::Voice { seat, voice } => {

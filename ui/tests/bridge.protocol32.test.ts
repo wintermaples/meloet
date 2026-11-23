@@ -32,13 +32,13 @@ async function opened() {
 }
 
 describe("shape of protocol 32", () => {
-  it("version 32. A new state: nothing to keep, the PC keyboard off, the glow on, no patterns or own presets yet", () => {
+  it("version 32. A new state: nothing to keep, the PC keyboard off, the glow on, the patterns of a new track's shelf, no own presets yet", () => {
     expect(PROTOCOL_VERSION).toBe(32);
     const s = fakeState();
     expect(s.transport.canKeepPlayed).toBe(false);
     expect(s.keyboards.typedKeys).toBe(false);
     expect(s.workspace.noteGlow).toBe(true);
-    expect([s.shelf.patterns, s.shelf.selectedPattern, s.shelf.patternSample]).toEqual([[], null, null]);
+    expect([s.shelf.patterns.length, s.shelf.selectedPattern, s.shelf.patternSample]).toEqual([12, null, null]);
     expect(s.presets).toEqual({ user: [] });
   });
 
@@ -89,9 +89,6 @@ describe("fake intents", () => {
       { type: "typedKeys", on: true },
       { type: "typedKey", note: 60, down: true, tUs: 1000 },
       { type: "setNoteGlow", on: false },
-      { type: "shelfSelectPattern", id: "eightBeat" },
-      { type: "playPattern", id: "eightBeat" },
-      { type: "placePattern", id: "eightBeat" },
       { type: "repeatClips", clips: [1], count: 3 },
       { type: "lowerAllTracks", db: 6 },
       { type: "dismissTooLoud" },

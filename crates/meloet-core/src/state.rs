@@ -1472,10 +1472,23 @@ impl Model {
             Command::TypedKeys { .. } | Command::TypedKey { .. } => {}
             // round12 stub: E1
             Command::SetNoteGlow { .. } => {}
-            // round12 stub: P4
-            Command::ShelfSelectPattern { .. }
-            | Command::PlayPattern { .. }
-            | Command::PlacePattern { .. } => {}
+            Command::ShelfSelectPattern { id } => {
+                if self.bands.side_is_open(SidePanel::Shelf) {
+                    self.play.select_pattern(id);
+                }
+            }
+            Command::PlayPattern { id } => {
+                if self.bands.side_is_open(SidePanel::Shelf) {
+                    let ms = self.audio_view().latency_ms.unwrap_or(0.0);
+                    let latency_us = (ms * 1000.0) as u64;
+                    self.play.play_pattern(&id, can_play, latency_us, effects);
+                }
+            }
+            Command::PlacePattern { id } => {
+                if self.bands.side_is_open(SidePanel::Shelf) {
+                    self.notice = self.play.place_pattern(&id, effects);
+                }
+            }
             // round12 stub: A1
             Command::RepeatClips { .. } => {}
             Command::ApplyPreset { insert, preset } => {

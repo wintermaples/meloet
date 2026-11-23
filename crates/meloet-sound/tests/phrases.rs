@@ -200,3 +200,43 @@ fn a_phrase_on_a_real_instrument_sounds_and_does_not_allocate() {
         "(allocations, frees) inside audio blocks"
     );
 }
+
+/// The velocity of a key on the frame it goes down, 0 on every other frame.
+#[derive(Default)]
+struct Velocities {
+    pressed: Option<u8>,
+}
+
+impl Instrument for Velocities {
+    fn prepare(&mut self, _sample_rate: f32, _max_frames: usize) {}
+    fn event(&mut self, ev: InstrumentEvent) {
+        if let InstrumentEvent::NoteOn { velocity, .. } = ev {
+            self.pressed = Some(velocity);
+        }
+    }
+    fn render(&mut self, left: &mut [f32], right: &mut [f32]) {
+        left.fill(0.0);
+        right.fill(0.0);
+        if let Some(v) = self.pressed.take() {
+            left[0] = f32::from(v);
+        }
+    }
+    fn reset(&mut self) {}
+}
+
+#[test]
+fn hits_keep_their_own_velocities() {
+    let hits = vec![
+        (0.0, 0.1, 36, 120),
+        (0.25, 0.1, 42, 60),
+        (0.5, 0.1, 38, 101),
+    ];
+    let mut player = PhrasePlayer::hits(Box::new(Velocities::default()), hits);
+    player.prepare(48_000.0, 256);
+    let (left, _) = play(&mut player, 48_000, &[256, 77]);
+    let heard: Vec<(usize, f32)> = (0..left.len())
+        .filter(|&i| left[i] > 0.0)
+        .map(|i| (i, left[i]))
+        .collect();
+    assert_eq!(heard, [(0, 120.0), (12_000, 60.0), (24_000, 101.0)]);
+}

@@ -13,6 +13,7 @@ import { FAKE_TABLES, FakeParamTables, SURGE_AUTOMATED, fakeParamCount } from ".
 import { FAKE_SONG_BPM, fakeAudioClip, fakePeaks, fakeStretch, fakeVocalClip, steadyTempo, type FakeAudio } from "./fakeAudio";
 import { advancePack, fakeClipsPanel, fakeSolo, fakeSounds, packAsking, packFailed, packFetching, reduceClips27, reducePack, withPack } from "./fakeRound8";
 import { reduceRound10 } from "./fakeRound10";
+import { FAKE_PATTERNS, reduceP4 } from "./fakeP4";
 import { reduceUpdates } from "./fakeUpdates";
 import { CLICK_VOLUME_MAX_DB, CLICK_VOLUME_MIN_DB } from "./types";
 import { fakeLoudnessOf } from "./fakeLoudness";
@@ -399,7 +400,7 @@ function closedShelf(): ShelfView {
     favoriteEffects: [builtinEffect("reverb"), builtinEffect("delay")],
     missing: [],
     notYet: [],
-    patterns: [],
+    patterns: [...FAKE_PATTERNS],
     selectedPattern: null,
     patternSample: null,
   };
@@ -498,6 +499,9 @@ function settleShelf(shelf: ShelfView): ShelfView {
         : shelf.soundSample,
     chosenEffect: shelf.selectedEffect !== null ? builtinEffect(shelf.selectedEffect) : shelf.chosenEffect?.kind === "builtin" ? null : shelf.chosenEffect,
     favoriteSounds: [...shelf.favorites.map(builtinSound), ...shelf.favoriteSounds.filter((s) => s.kind !== "builtin")],
+    patterns: shelf.mode.kind === "newTrack" ? [...FAKE_PATTERNS] : [],
+    selectedPattern: shelf.mode.kind === "newTrack" ? shelf.selectedPattern : null,
+    patternSample: shelf.sample || shelf.soundSample ? null : shelf.patternSample,
   };
 }
 
@@ -1793,6 +1797,29 @@ SCENES.tooManyTracks = {
 };
 // F4-ShelfSample without the sample: 「＋ トラックを追加」 opened the shelf, no row picked yet.
 SCENES.shelfNewTrack = { setup: (s) => shelfSong(s, {}), bands: ["shelf"], meters: QUIET };
+// P4 (round 12): 「パターン」 of the shelf (tools/design/shoot_ui.py clicks the switch, a screen-only state). 「3 ドラム」 is
+// selected and the play line is at bar 17: 「16 ビート」 is chosen and its ▶ plays.
+SCENES.shelfPatterns = {
+  setup(s) {
+    shelfSong(s, { selectedPattern: "sixteenBeat", patternSample: { id: "sixteenBeat", playing: { startedUs: 0, lengthUs: 2_000_000 } } });
+    s.song.playTarget = BAND_TRACK_ID + 3;
+    s.transport.position = 16 * BAR;
+  },
+  bands: ["shelf"],
+  meters: QUIET,
+};
+// P4: 「1 ピアノ」 is selected, so 「ここに置く」 makes a studio kit track; the play line is in a bar of 3/4, which says so.
+SCENES.shelfPatternsNewTrack = {
+  setup(s) {
+    shelfSong(s, { selectedPattern: "tomFill" });
+    s.song.playTarget = BAND_TRACK_ID + 1;
+    s.timeline.meterChanges = [{ bar: 8, meterNum: 3, meterDen: 4 }];
+    s.transport.position = 8 * BAR;
+  },
+  bands: ["shelf"],
+  after: (s) => (s.status.message = { id: "patternNeedsFourFour" }),
+  meters: QUIET,
+};
 // R8-Shelf84: the 31 instruments of the shelf (spec 3, 84). The folded groups are the screen's own
 // (tools/design/shoot_ui.py folds all but 「ピアノ ・ 鍵盤」 and 「ギター」 by clicking their headings).
 SCENES.shelf84 = { setup: (s) => shelfSong(s, {}), bands: ["shelf"], meters: QUIET };
@@ -4133,6 +4160,7 @@ const NOTICES: StatusMessage["id"][] = [
   "clipsNotDuplicated",
   "notesNotWritten",
   "notesNotResized",
+  "patternNeedsFourFour",
   "armMoved",
   "trackAdded",
   "trackDeleted",
@@ -4444,6 +4472,38 @@ const groupOf = (i: InstrumentKind) => INSTRUMENT_GROUPS.find((g) => g.instrumen
 const trackNameOf = (i: InstrumentKind) =>
   i.startsWith("organ") ? "オルガン" : i === "vibraphone" || i === "marimba" ? "マレット" : GROUP_TRACK_NAMES[groupOf(i)]!;
 const SAMPLE_US = 4_000_000;
+
+/** P4: a new studio kit track at `place`, as `shelfConfirm` makes one; the tracks after it are numbered again. */
+function newKitTrack(tracks: TrackView[], place: number): TrackView {
+  const base = trackNameOf("studioKit");
+  const names = new Set(tracks.map((t) => t.name));
+  let name = base;
+  for (let n = 2; names.has(name); n++) name = `${base} ${n}`;
+  const track: TrackView = {
+    id: Math.max(0, ...tracks.map((t) => t.id)) + 1,
+    number: place + 1,
+    name,
+    color: (place % 5) + 1,
+    instrument: "studioKit",
+    kind: { kind: "keys" },
+    sound: builtinSound("studioKit"),
+    standIn: null,
+    drumKeys: null,
+    gainDb: 0,
+    pan: 0,
+    sends: newTrackSends("studioKit"),
+    sendDefaults: newTrackSends("studioKit"),
+    inserts: noInserts(),
+    slots: builtinSlots(noInserts()),
+    muted: false,
+    soloed: false,
+    lanes: [],
+    clips: [],
+  };
+  tracks.splice(place, 0, track);
+  tracks.forEach((t, i) => (t.number = i + 1));
+  return track;
+}
 
 /** Whether the shelf has the sound: one that comes with meloet, a preset of a file that was added, or a plugin in one of its formats. */
 function inLibrary(sound: SoundRef, library: LibraryView): boolean {
@@ -5328,7 +5388,7 @@ export function createFakeTransport(initial?: AppState): Transport {
       return { rev, state };
     },
     async send(command) {
-      const round10 = reduceRound10(state, bands, command, FAKE_TAKES);
+      const round10 = reduceRound10(state, bands, command, FAKE_TAKES) ?? reduceP4(state, command, FAKE_TAKES, newKitTrack, nowUs());
       if (round10?.row) {
         historyRows.length = Math.min(historyRows.length, round10.row.index - 1);
         historyRows[round10.row.index - 1] = round10.row;

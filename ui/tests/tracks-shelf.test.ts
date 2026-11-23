@@ -311,7 +311,7 @@ describe("track head (mock R6-Tracks, R7-Arrange6)", () => {
 describe("shelf (mock F4-ShelfSample, F4-ShelfAudition, F4-ShelfReplace)", () => {
   it("heading, mode text, search box, all and favorites, groups and rows (favorite stars)", () => {
     show(RightRail, scene("shelfNewTrack"));
-    expect(text(q(".head"))).toBe("▾ 棚 音源 31 エフェクト 9 P");
+    expect(text(q(".head"))).toBe("▾ 棚 音源 31 エフェクト 9 パターン P");
     expect(text(q("[data-test=shelf-mode]"))).toBe("新しいトラックの音源をえらぶ");
     expect((q("[data-test=shelf-search]") as HTMLInputElement).placeholder).toBe("名前 ・ 種類");
     expect(text(q("[data-test=shelf-all]"))).toBe("すべて 31");
@@ -394,7 +394,7 @@ describe("shelf (mock F4-ShelfSample, F4-ShelfAudition, F4-ShelfReplace)", () =>
 
   it("shelf84 (mock R8-Shelf84): 31 instruments, 7 groups. All but piano, keys and guitar are folded", () => {
     show(RightRail, scene("shelf84"));
-    expect(text(q(".head"))).toBe("▾ 棚 音源 31 エフェクト 9 P");
+    expect(text(q(".head"))).toBe("▾ 棚 音源 31 エフェクト 9 パターン P");
     expect(text(q("[data-test=shelf-all]"))).toBe("すべて 31");
     for (const g of ["bass", "drums", "padStrings", "wind", "synth"]) q(`[data-group=${g}]`)!.click();
     flushSync();

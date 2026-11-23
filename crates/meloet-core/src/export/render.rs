@@ -284,6 +284,7 @@ impl ExportEngine {
             | EngineOp::MoveInstrument { .. }
             | EngineOp::PlugSample { .. }
             | EngineOp::PlaySample { .. }
+            | EngineOp::PlayPattern { .. }
             | EngineOp::StopSample
             | EngineOp::HoldLane { .. }
             | EngineOp::Voice { .. } => {}

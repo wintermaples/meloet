@@ -1758,7 +1758,7 @@ fn the_shelf_starts_closed_with_the_two_favorites_and_a_star_is_a_setting() {
     assert_eq!(
         shelf,
         ShelfView {
-            patterns: Vec::new(),
+            patterns: crate::patterns::all().iter().map(|p| p.view()).collect(),
             selected_pattern: None,
             pattern_sample: None,
             mode: ShelfMode::NewTrack,
@@ -2014,7 +2014,8 @@ fn the_commands_of_round_12_wave_2_are_taken_and_change_nothing_yet() {
             &before.shelf.selected_pattern,
             &before.shelf.pattern_sample
         ),
-        (0, &None, &None)
+        (12, &None, &None),
+        "the patterns of the shelf of a new track (P4)"
     );
     let commands = [
         Command::KeepPlayed,

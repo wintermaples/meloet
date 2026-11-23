@@ -64,6 +64,8 @@ pub(super) struct Shelf {
     pub(super) effect: Option<Chosen>,
     /// The plugin selected last did not load.
     pub(super) unreadable: Option<SoundRef>,
+    /// P4 the chosen row of 「パターン」.
+    pub(super) pattern: Option<String>,
 }
 
 fn builtin(instrument: &InstrumentRef) -> Option<InstrumentKind> {
@@ -157,6 +159,9 @@ impl Play {
         self.shelf.mode = mode;
         self.shelf.effect = None;
         self.shelf.unreadable = None;
+        if mode != Mode::NewTrack {
+            self.shelf.pattern = None;
+        }
         true
     }
 
@@ -389,6 +394,7 @@ impl Play {
         self.shelf.mode = Mode::NewTrack;
         self.shelf.effect = None;
         self.shelf.unreadable = None;
+        self.shelf.pattern = None;
     }
 
     /// The `Doc` changed under the shelf: a trial on a track that is gone, or whose own
@@ -450,17 +456,21 @@ impl Play {
         };
         let trial = self.shelf.trial.as_ref();
         let loading = trial.filter(|_| self.trial_loading());
-        let playing = self.shelf.sample.as_ref().map(|s| SoundSampleView {
+        let sound = self.shelf.sample.as_ref().filter(|s| s.pattern.is_none());
+        let playing = sound.map(|s| SoundSampleView {
             sound: sound_ref(&s.instrument),
             playing: Some(SamplePlaying {
                 started_us: s.started_us,
                 length_us: SAMPLE_US,
             }),
         });
-        let waiting = self.shelf.sample_waiting.as_ref().map(|w| SoundSampleView {
-            sound: sound_ref(&w.instrument),
-            playing: None,
-        });
+        let waiting = self.shelf.sample_waiting.as_ref();
+        let waiting = waiting
+            .filter(|w| w.pattern.is_none())
+            .map(|w| SoundSampleView {
+                sound: sound_ref(&w.instrument),
+                playing: None,
+            });
         let chosen_effect = self.shelf.effect.as_ref().map(|chosen| match chosen {
             Chosen::Builtin(kind) => effect_ref(effect_kind(*kind)),
             Chosen::Plugin(p) => EffectRef::Plugin {
@@ -469,10 +479,9 @@ impl Play {
         });
         let (starred_sounds, favorite_effects) = stars;
         ShelfView {
-            // round12 stub: P4
-            patterns: Vec::new(),
-            selected_pattern: None,
-            pattern_sample: None,
+            patterns: self.pattern_views(),
+            selected_pattern: self.shelf.pattern.clone(),
+            pattern_sample: self.pattern_sample_view(),
             selected_sound: trial.map(sound_ref),
             current_sound: current.map(sound_ref),
             loading_sound: loading.map(sound_ref),

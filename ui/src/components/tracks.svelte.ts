@@ -3,6 +3,7 @@
 
 import type { AppState, Command, LibraryView, ShelfMode, SoundRef } from "../bridge";
 import { headingOpen, rowIs, shelfModel, stepRow, type ShelfList, type ShelfModel, type ShelfRow } from "./shelfList";
+import { patternModel } from "./shelfPatterns";
 import { sameSound } from "./sounds";
 
 /** The id of the track whose name is being typed (`TrackView::id`). */
@@ -22,7 +23,7 @@ export const shelfUi = $state({
   searchFor: "",
   /** Whether ↑ ↓, Enter, F and Space in the shelf go to the shelf. Set when the shelf opens or is clicked; cleared when another band is clicked. */
   keys: false,
-  /** What the shelf list shows (the 「音源 N」 / 「エフェクト 6」 toggle in the heading). When the shelf mode changes, it goes back to that mode's list (Shelf.svelte). */
+  /** What the shelf list shows (the 「音源 N」 / 「エフェクト 6」 / 「パターン」 toggle in the heading). When the shelf mode changes, it goes back to that mode's list (Shelf.svelte). */
   view: "instruments" as ShelfList,
 });
 
@@ -95,8 +96,19 @@ export function pickCommand(state: AppState, row: ShelfRow): Command | null {
   return { type: "shelfSelectSound", sound: row.sound };
 }
 
+/** P4: the intent of the ▶ of a pattern: play it, or stop it when it plays. */
+export function patternSampleCommand(state: AppState, id: string): Command {
+  return state.shelf.patternSample?.id === id ? { type: "stopSample" } : { type: "playPattern", id };
+}
+
 /** ↑ ↓: choose the next row among the visible rows. Stops at the ends. */
 export function shelfStepCommand(state: AppState, delta: 1 | -1): Command | null {
+  if (shelfUi.view === "patterns") {
+    const { rows } = patternModel(state.shelf.patterns, shelfUi.open);
+    const at = rows.findIndex((p) => p.id === state.shelf.selectedPattern);
+    const next = at < 0 ? (delta > 0 ? rows[0] : rows.at(-1)) : rows[Math.max(0, Math.min(rows.length - 1, at + delta))];
+    return next && next.id !== state.shelf.selectedPattern ? { type: "shelfSelectPattern", id: next.id } : null;
+  }
   if (!shelfPicks(state)) return null;
   const { rows } = currentShelf(state);
   const picked = pickedRow(state, rows);
@@ -108,6 +120,7 @@ export function shelfStepCommand(state: AppState, delta: 1 | -1): Command | null
 export function shelfConfirmCommand(state: AppState): Command | null {
   const shelf = state.shelf;
   if (!shelfPicks(state)) return null;
+  if (shelfUi.view === "patterns") return shelf.selectedPattern === null ? null : { type: "placePattern", id: shelf.selectedPattern };
   if (shelfUi.view === "effects") return shelf.chosenEffect === null ? null : { type: "shelfConfirm" };
   return shelf.selectedSound === null || shelf.loadingSound !== null ? null : { type: "shelfConfirm" };
 }
@@ -119,6 +132,10 @@ export function sampleCommand(state: AppState, sound: SoundRef): Command {
 }
 
 export function shelfSampleCommand(state: AppState): Command | null {
+  if (shelfUi.view === "patterns") {
+    const id = state.shelf.selectedPattern;
+    return id === null || !shelfPicks(state) ? null : patternSampleCommand(state, id);
+  }
   if (shelfUi.view !== "instruments" || !shelfPicks(state)) return null;
   const sound = state.shelf.selectedSound;
   return sound === null ? null : sampleCommand(state, sound);
@@ -126,7 +143,7 @@ export function shelfSampleCommand(state: AppState): Command | null {
 
 /** F: the favorite mark of the chosen row (in the effect list too; spec 3 (86-4)). */
 export function shelfFavoriteCommand(state: AppState): Command | null {
-  if (!shelfPicks(state)) return null;
+  if (!shelfPicks(state) || shelfUi.view === "patterns") return null;
   const shelf = state.shelf;
   if (shelfUi.view === "effects") return shelf.chosenEffect === null ? null : { type: "toggleFavoriteEffect", effect: shelf.chosenEffect };
   return shelf.selectedSound === null ? null : { type: "toggleFavoriteSound", sound: shelf.selectedSound };
@@ -153,6 +170,7 @@ export function shelfStatus(state: AppState): ShelfStatus | null {
   const shelf = state.shelf;
   if (state.workspace.layout.rightFront !== "shelf" || shelf.selectedSound !== null || shelf.loadingSound !== null || shelf.soundSample !== null)
     return null;
+  if (shelfUi.view === "patterns") return null;
   const model = currentShelf(state);
   if (shelfUi.query.trim() !== "") return { kind: "search", query: shelfUi.query.trim(), count: model.shown };
   if (shelfUi.view === "effects") return { kind: "effects", count: model.shown, groups: model.open.map((o) => o.label) };

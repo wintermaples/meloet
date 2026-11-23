@@ -106,7 +106,7 @@ describe("shelf headings (mock F5-SF2Shelf, F5-PluginLoading, spec 3 83, Y12)", 
   it("plugin type headings (in the 14-A order). A row has a star, ▶, name, maker, the mark of the format used, and 「＋1」", () => {
     show(RightRail, scene("shelfPlugins"));
     // 31 + SF2 137 + plugins 34 (the mock's 182 is from when there were 11 instruments).
-    expect(text(q(".head"))).toBe("▾ 棚 音源 202 エフェクト 515 P");
+    expect(text(q(".head"))).toBe("▾ 棚 音源 202 エフェクト 515 パターン P");
     expect(headings().slice(-5)).toEqual(["▸ シンセ 21", "▸ サンプラー 6", "▸ ドラム 4", "▸ ピアノ ・ 鍵盤 2", "▸ そのほか 1"]);
     click('[data-group="c:instrument:synth"]');
     const surge = rowNamed("Surge XT");

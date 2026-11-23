@@ -29,6 +29,21 @@ pub(super) struct Sample {
     pub(super) instrument: InstrumentRef,
     /// When its first sound reaches the ear.
     pub(super) started_us: u64,
+    /// P4: it plays this drum pattern, not the phrase of its group.
+    pub(super) pattern: Option<PatternSample>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct PatternSample {
+    pub(super) id: String,
+    /// How long the pattern is at the song's tempo.
+    pub(super) length_us: u64,
+}
+
+impl Sample {
+    fn length_us(&self) -> u64 {
+        self.pattern.as_ref().map_or(SAMPLE_US, |p| p.length_us)
+    }
 }
 
 /// ▶ on an instrument that is still being read: it plays once it is.
@@ -36,6 +51,8 @@ pub(super) struct Sample {
 pub(super) struct SampleWaiting {
     pub(super) instrument: InstrumentRef,
     pub(super) latency_us: u64,
+    /// P4: the drum pattern it is to play.
+    pub(super) pattern: Option<String>,
 }
 
 fn builtin(instrument: &InstrumentRef) -> Option<BuiltinInstrument> {
@@ -349,7 +366,12 @@ impl Play {
         effects: &mut Vec<Effect>,
     ) {
         if let Some(waiting) = self.shelf.sample_waiting.take_if(|w| is(&w.instrument)) {
-            self.start_sample(waiting.instrument, waiting.latency_us, effects);
+            let SampleWaiting {
+                instrument,
+                latency_us,
+                pattern,
+            } = waiting;
+            self.start_sample(instrument, latency_us, pattern, effects);
         }
     }
 
@@ -445,16 +467,31 @@ impl Play {
                 self.shelf.sample_waiting = Some(SampleWaiting {
                     instrument,
                     latency_us,
+                    pattern: None,
                 });
             }
-        } else if self.sounds_now(&instrument, Spot::Sample) {
+        } else {
+            self.sample_when_read(instrument, latency_us, None, effects);
+        }
+    }
+
+    /// A sample of a sound of meloet or of an SF2 file: now, or once its samples are read.
+    pub(super) fn sample_when_read(
+        &mut self,
+        instrument: InstrumentRef,
+        latency_us: u64,
+        pattern: Option<String>,
+        effects: &mut Vec<Effect>,
+    ) {
+        if self.sounds_now(&instrument, Spot::Sample) {
             self.shelf.sample_waiting = None;
-            self.start_sample(instrument, latency_us, effects);
+            self.start_sample(instrument, latency_us, pattern, effects);
         } else {
             self.stop_sample(effects);
             self.shelf.sample_waiting = Some(SampleWaiting {
                 instrument,
                 latency_us,
+                pattern,
             });
         }
     }
@@ -464,15 +501,34 @@ impl Play {
         &mut self,
         instrument: InstrumentRef,
         latency_us: u64,
+        pattern: Option<String>,
         effects: &mut Vec<Effect>,
     ) {
         self.drop_plug(Spot::Sample, effects);
-        effects.push(Effect::Engine(EngineOp::PlaySample {
-            instrument: instrument.clone(),
-        }));
+        let pattern = pattern.and_then(|id| crate::patterns::find(&id));
+        let pattern = match pattern {
+            None => {
+                effects.push(Effect::Engine(EngineOp::PlaySample {
+                    instrument: instrument.clone(),
+                }));
+                None
+            }
+            Some(p) => {
+                let (hits, length_us) = self.pattern_hits(p);
+                effects.push(Effect::Engine(EngineOp::PlayPattern {
+                    instrument: instrument.clone(),
+                    hits,
+                }));
+                Some(PatternSample {
+                    id: p.id.clone(),
+                    length_us,
+                })
+            }
+        };
         self.shelf.sample = Some(Sample {
             instrument,
             started_us: self.now_us + latency_us,
+            pattern,
         });
     }
 
@@ -487,7 +543,7 @@ impl Play {
 
     /// Ends the sample when its two bars and its tail are over. After every input.
     pub fn sync_sample(&mut self, effects: &mut Vec<Effect>) {
-        let over = |s: &Sample| self.now_us >= s.started_us + SAMPLE_US + SAMPLE_TAIL_US;
+        let over = |s: &Sample| self.now_us >= s.started_us + s.length_us() + SAMPLE_TAIL_US;
         if self.shelf.sample.as_ref().is_some_and(over) {
             self.stop_sample(effects);
         }
@@ -499,8 +555,14 @@ impl Play {
     }
 
     /// The status line while a sample plays and no row is auditioned.
+    /// A drum pattern has none: its row shows that it plays.
     pub fn sample_status(&self) -> Option<StatusMessage> {
-        let playing = &self.shelf.sample.as_ref()?.instrument;
+        let playing = &self
+            .shelf
+            .sample
+            .as_ref()
+            .filter(|s| s.pattern.is_none())?
+            .instrument;
         Some(match builtin(playing) {
             Some(b) => StatusMessage::SamplePlaying {
                 instrument: instruments::kind_of(b),

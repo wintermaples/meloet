@@ -39,6 +39,10 @@ fn the_whole_mixer_never_touches_the_allocator() {
     // What sits in each slot, to give parameters that the effect has.
     let mut kinds = vec![[None; INSERT_SLOTS]; strips.len()];
     let (mut loudest, mut blocks) = (0.0f32, 0);
+    // The analysis ring is written (round 12, M2), and the limiter's reduction is read.
+    let mut analysis = song.parts.handle.take_analysis().expect("the reader");
+    let meters = song.parts.handle.meters().clone();
+    let (mut analysed, mut held) = (0, 0.0f32);
     for round in 0..1500usize {
         let at = next(strips.len());
         let strip = strips[at];
@@ -113,8 +117,20 @@ fn the_whole_mixer_never_touches_the_allocator() {
         blocks += 1;
         // The control side's job, outside the audio block: effects that came back are dropped.
         song.parts.handle.drop_retired();
+        assert!(meters.master_limited());
+        held = held.max(meters.take_master_reduction());
+        // Now and then late, so that the ring is also full at times.
+        if round % 40 == 0 {
+            analysed += analysis.read(|_| {});
+        }
     }
     assert_eq!(blocks, 1500);
+    assert!(held.is_finite() && held >= 0.0, "{held}");
+    assert!(
+        analysed > 0 && analysis.dropped() > 0,
+        "{analysed} {}",
+        analysis.dropped()
+    );
     assert!(loudest > 0.01, "the run made sound: {loudest}");
     assert!(loudest <= ceiling * 1.0001, "over the ceiling: {loudest}");
     assert_eq!(common::audio_block_counts(), (0, 0));

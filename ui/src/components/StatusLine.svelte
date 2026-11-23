@@ -715,6 +715,12 @@
         return plain("msg.presetLanesKept", { count: m.count });
       case "tooManyPresets":
         return plain("msg.tooManyPresets", { effect: t(`effect.${m.effect}`), max: PRESETS_PER_EFFECT });
+      case "tooLoud":
+        return {
+          ...plain(m.limiter ? "msg.tooLoudLimiter" : "msg.tooLoudOver", { db: m.byDb.toFixed(1) }),
+          button: { label: t("button.lowerAllTracks", { db: m.lowerDb }), command: { type: "lowerAllTracks", db: m.lowerDb } },
+          also: { label: t("button.close"), command: { type: "dismissTooLoud" } },
+        };
       default:
         return null;
     }

@@ -15,7 +15,7 @@ use std::sync::Arc;
 use crate::chunked::ChunkedVec;
 use crate::edit::{Edit, EditError, Ids, MAX_TICK, track_index};
 use crate::history::StepKind;
-use crate::mixer::{Bus, InsertId};
+use crate::mixer::{Bus, Gain, InsertId};
 use crate::song::{Doc, Track};
 use crate::{InstrumentRef, TrackId};
 
@@ -622,6 +622,19 @@ pub fn put_points(
         },
         id,
     ))
+}
+
+/// The volume lane of the track at `ti` with every point `db` lower
+/// ([`crate::mixer::Gain::lowered_place`]). `Unchanged` when no point moves.
+pub(crate) fn lower_volume_points(doc: &Doc, ti: usize, db: f64) -> Result<Doc, EditError> {
+    let li = lane_index(&doc.tracks[ti], AutoTarget::Volume).ok_or(EditError::NoSuchPoint)?;
+    let points = (doc.tracks[ti].automation[li].points.iter())
+        .map(|p| AutoPoint {
+            tick: p.tick,
+            value: Gain::lowered_place(p.value, db),
+        })
+        .collect();
+    with_points(doc, ti, li, points).map(|(new, _)| new)
 }
 
 /// Puts the lane of `target` to rest, or back to moving its target. Returns whether it

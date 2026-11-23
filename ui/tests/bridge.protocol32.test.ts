@@ -90,8 +90,6 @@ describe("fake intents", () => {
       { type: "typedKey", note: 60, down: true, tUs: 1000 },
       { type: "setNoteGlow", on: false },
       { type: "repeatClips", clips: [1], count: 3 },
-      { type: "lowerAllTracks", db: 6 },
-      { type: "dismissTooLoud" },
     ];
     for (const command of commands) await send(command);
     const after = await now();

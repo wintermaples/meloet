@@ -335,6 +335,14 @@ impl Play {
         self.cancel_plugin_drags(effects);
     }
 
+    /// M2 「全部のトラックを N dB 下げる」: one step (`mixer::lower_all_tracks`); nothing when no
+    /// track changes or `db` is not above 0.
+    pub fn lower_all_tracks(&mut self, db: f32, effects: &mut Vec<Effect>) {
+        if let Ok(e) = mixer::lower_all_tracks(self.doc(), f64::from(db)) {
+            self.apply(e, effects);
+        }
+    }
+
     pub fn toggle_return_mute(&mut self, bus: SendBus, effects: &mut Vec<Effect>) {
         let e = mixer::toggle_return_mute(self.doc(), bus_of(bus));
         self.apply(e, effects);

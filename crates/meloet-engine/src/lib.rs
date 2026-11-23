@@ -5,6 +5,7 @@
 //! The audio thread never allocates, never frees, never locks. Everything crossing the thread
 //! boundary goes through `rtrb` rings or atomics.
 
+mod analysis;
 mod automation;
 mod clipplay;
 mod clips;
@@ -23,6 +24,7 @@ mod stream;
 mod synth;
 mod transport;
 
+pub use analysis::{ANALYSIS_RING_FRAMES, AnalysisReader};
 pub use automation::{AutoLane, AutoSet, EFFECT_STEP, HOLDS, MIX_STEP, PLUGIN_POINTS, place_at};
 pub use clips::{ClipRegion, ClipTable, song_frame, song_frame_at};
 pub use clock::{HeardPosition, TransportClock, TransportState};

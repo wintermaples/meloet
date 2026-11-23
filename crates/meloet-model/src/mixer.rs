@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use crate::automation::drop_orphan_lanes;
+use crate::automation::{AutoTarget, drop_orphan_lanes, lower_volume_points};
 use crate::edit::{Edit, EditError, Ids, track_index};
 use crate::effects::{EffectKind, delay, reverb};
 use crate::history::StepKind;
@@ -80,7 +80,32 @@ impl Gain {
         }
         Self::SILENT
     }
+
+    /// `db` lower: −∞ stays, and nothing goes below −60 dB.
+    pub fn lowered(self, db: f64) -> Gain {
+        match self.db() {
+            Some(now) => Gain::from_db((now - db).max(Self::MIN_DB)),
+            None => self,
+        }
+    }
+
+    /// [`Gain::lowered`] for a place of the knob: 0 (−∞) stays, and a place that would read
+    /// −60 dB is [`LOWEST_HEARD_PLACE`], as −60 dB itself is the place 0.
+    pub fn lowered_place(place: f32, db: f64) -> f32 {
+        if place.is_nan() || place <= 0.0 {
+            return place;
+        }
+        let lower = Gain::from_position(place).lowered(db).position();
+        if lower > 0.0 {
+            lower
+        } else {
+            LOWEST_HEARD_PLACE
+        }
+    }
 }
+
+/// The lowest place of a fader's knob that is not −∞: it reads −60 dB.
+pub const LOWEST_HEARD_PLACE: f32 = 1e-5;
 
 /// The marks of the fader's scale, top down: dB and the length there in percent
 /// (`meterScale` in ui/src/design/tokens.ts).
@@ -804,6 +829,42 @@ pub fn set_plugin_state(
             PluginChange::Window => StepKind::PluginWindow { place },
             PluginChange::Param(param) => StepKind::SetPluginParam { place, param },
         },
+    })
+}
+
+/// 「全部のトラックを下げる」 (round 12, M2): every track `db` (> 0) lower, as one step. A
+/// track whose volume a lane moves (not resting) gets every point of the lane lowered and
+/// keeps its fader; the others get their fader lowered ([`Gain::lowered`]). The returns and
+/// the master stay. `Unchanged` when no track changes.
+pub fn lower_all_tracks(doc: &Doc, db: f64) -> Result<Edit, EditError> {
+    if !(db.is_finite() && db > 0.0) {
+        return Err(EditError::Unchanged);
+    }
+    let mut new = doc.clone();
+    let mut count = 0;
+    for (ti, track) in doc.tracks.iter().enumerate() {
+        let lane_moves = (track.lane(AutoTarget::Volume)).is_some_and(|lane| lane.moves());
+        if lane_moves {
+            match lower_volume_points(&new, ti, db) {
+                Ok(lowered) => new = lowered,
+                Err(EditError::Unchanged) => continue,
+                Err(e) => return Err(e),
+            }
+        } else {
+            let gain = track.channel.gain.lowered(db);
+            if gain == track.channel.gain {
+                continue;
+            }
+            Arc::make_mut(&mut new.tracks[ti]).channel.gain = gain;
+        }
+        count += 1;
+    }
+    if count == 0 {
+        return Err(EditError::Unchanged);
+    }
+    Ok(Edit {
+        doc: new,
+        step: StepKind::LowerAll { count },
     })
 }
 

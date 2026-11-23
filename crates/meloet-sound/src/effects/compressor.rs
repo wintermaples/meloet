@@ -146,4 +146,8 @@ impl Effect for Compressor {
         self.reduction_db = 0.0;
         self.fresh = true;
     }
+
+    fn reduction_db(&self) -> f32 {
+        self.reduction_db.max(0.0)
+    }
 }

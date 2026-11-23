@@ -517,6 +517,51 @@ fn limiter_leaves_quiet_sound_alone_and_recovers() {
 }
 
 #[test]
+fn limiter_and_compressor_say_how_far_they_hold_the_sound_down() {
+    // A sine 6 dB over the ceiling with a long release: the limiter sits 6 dB down.
+    let mut fx = prepared(EffectKind::Limiter);
+    assert!(fx.is_limiter());
+    fx.set_param(limiter::CEILING, -6.0);
+    fx.set_param(limiter::RELEASE, 1000.0);
+    let mut l = sine(220.0, 1.0, frames(0.5));
+    let mut r = l.clone();
+    run(fx.as_mut(), &mut l, &mut r);
+    let held = fx.reduction_db();
+    assert!((held - 6.0).abs() < 0.1, "{held}");
+    let mut l = sine(220.0, 0.1, frames(0.01));
+    let mut r = l.clone();
+    fx.reset();
+    run(fx.as_mut(), &mut l, &mut r);
+    assert_eq!(fx.reduction_db(), 0.0, "quiet sound is left alone");
+
+    let mut fx = prepared(EffectKind::Compressor);
+    assert!(!fx.is_limiter());
+    fx.set_param(compressor::THRESHOLD, -20.0);
+    fx.set_param(compressor::RATIO, 4.0);
+    fx.set_param(compressor::ATTACK, 0.1);
+    fx.set_param(compressor::RELEASE, 1000.0);
+    let mut l = sine(100.0, gain(0.0), frames(1.0));
+    let mut r = l.clone();
+    run(fx.as_mut(), &mut l, &mut r);
+    // 20 dB over at 4:1: held 15 dB down.
+    let held = fx.reduction_db();
+    assert!((held - 15.0).abs() < 0.5, "{held}");
+    for kind in [
+        EffectKind::Eq4,
+        EffectKind::Reverb,
+        EffectKind::Delay,
+        EffectKind::Chorus,
+    ] {
+        let fx = prepared(kind);
+        assert_eq!(
+            (fx.reduction_db(), fx.is_limiter()),
+            (0.0, false),
+            "{kind:?}"
+        );
+    }
+}
+
+#[test]
 fn chorus_mix_and_width() {
     let mut fx = prepared(EffectKind::Chorus);
     fx.set_param(chorus::MIX, 0.0);

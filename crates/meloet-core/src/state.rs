@@ -264,6 +264,13 @@ pub enum Input {
     AudioDelays(Option<Delays>),
     /// The input of a metered vocal track reached 0 dB.
     MicClipped,
+    /// From the telemetry thread, once a play at most: the song is too loud
+    /// ([`crate::tooloud`]). `by_db`: the limiter's mean reduction, or the largest overshoot
+    /// of 0 dBFS without one.
+    TooLoud {
+        by_db: f32,
+        limiter: bool,
+    },
     /// An answer to [`Effect::StartVocalRecording`]: the files are there, under these names
     /// (in the order asked; another name where one was taken).
     VocalsStarted {
@@ -683,6 +690,15 @@ pub struct Model {
     notice: Option<StatusMessage>,
     /// `StatusMessage::DiskTooSlow` was said since the song started to move.
     disk_slow_said: bool,
+    /// `StatusMessage::TooLoud` (round 12, M2), with the serial of the song it was found in:
+    /// said until 「閉じる」, 「下げる」, the next play or another song. A notice and a
+    /// recording come before it.
+    too_loud: Option<(u32, StatusMessage)>,
+    /// It was found in this play already: not again until the next.
+    too_loud_found: bool,
+    /// The song moved after the last input: a play that starts is told apart from one that
+    /// goes on.
+    was_moving: bool,
     /// `StatusMessage::SavingAudio`, while the save that said it goes on.
     saving_audio: Option<StatusMessage>,
     /// A key was played on the track with this instrument while it was being read: the
@@ -837,6 +853,9 @@ impl Model {
             bands: Bands::new(window(START_VIEWPORT, scale)),
             notice: None,
             disk_slow_said: false,
+            too_loud: None,
+            too_loud_found: false,
+            was_moving: false,
             saving_audio: None,
             loading_said: None,
             dialog: None,
@@ -1261,6 +1280,13 @@ impl Model {
                     self.notice = Some(StatusMessage::MicTooLoud);
                 }
             }
+            Input::TooLoud { by_db, limiter } => {
+                if !self.too_loud_found {
+                    self.too_loud_found = true;
+                    let notice = crate::tooloud::notice(by_db, limiter);
+                    self.too_loud = Some((self.play.serial(), notice));
+                }
+            }
             Input::VocalsStarted { names } => {
                 let path = self.files.path.clone();
                 self.play
@@ -1307,6 +1333,12 @@ impl Model {
         if !self.play.is_moving() {
             self.disk_slow_said = false;
         }
+        // A play that starts finds anew; what the one before found is put away.
+        if self.play.is_moving() && !self.was_moving {
+            self.too_loud = None;
+            self.too_loud_found = false;
+        }
+        self.was_moving = self.play.is_moving();
         if !self.saving() {
             self.saving_audio = None;
         }
@@ -1503,8 +1535,13 @@ impl Model {
             Command::DeletePreset { effect, name } => {
                 self.play.delete_preset(effect, &name, effects);
             }
-            // round12 stub: M2
-            Command::LowerAllTracks { .. } | Command::DismissTooLoud => {}
+            Command::LowerAllTracks { db } => {
+                if !self.play.busy() {
+                    self.play.lower_all_tracks(db, effects);
+                    self.too_loud = None;
+                }
+            }
+            Command::DismissTooLoud => self.too_loud = None,
             Command::SetViewport { width, height } => {
                 if width.is_finite() && height.is_finite() && width > 0.0 && height > 0.0 {
                     self.viewport = (width, height);
@@ -3030,6 +3067,11 @@ impl Model {
         if let Some(m) = self.play.sample_status() {
             return Some(m);
         }
+        if let Some((serial, m)) = &self.too_loud
+            && *serial == self.play.serial()
+        {
+            return Some(m.clone());
+        }
         // Before the lasting keyboard lines: 「あとで」 puts it away.
         if let Some(m) = self.new_version_status() {
             return Some(m);
@@ -3279,5 +3321,7 @@ mod plugin_tests;
 mod speed;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tooloud_tests;
 #[cfg(test)]
 mod vocal_tests;

@@ -9,6 +9,7 @@ use std::time::Instant;
 
 use rtrb::{Consumer, Producer, RingBuffer};
 
+use crate::analysis::{AnalysisReader, AnalysisTap, analysis_ring};
 use crate::automation::{AutoClock, AutoSet, HOLDS, MIX_STEP};
 use crate::clipplay::{ClipPlayer, StreamCtx, StreamNow, StreamPlace};
 use crate::clips::ClipTable;
@@ -437,6 +438,11 @@ pub struct EngineMeters {
     returns: [[AtomicU32; 2]; 2],
     master: [AtomicU32; 2],
     clipped: AtomicBool,
+    /// dB, as the peaks: the most since the last read.
+    master_reduction: AtomicU32,
+    master_limited: AtomicBool,
+    /// The test tone or the latency click sounded since the last read.
+    aside: AtomicBool,
     load_permille: AtomicU32,
     last_frames: AtomicU32,
     callbacks: AtomicU64,
@@ -471,6 +477,9 @@ impl EngineMeters {
             returns: Default::default(),
             master: [AtomicU32::new(0), AtomicU32::new(0)],
             clipped: AtomicBool::new(false),
+            master_reduction: AtomicU32::new(0),
+            master_limited: AtomicBool::new(false),
+            aside: AtomicBool::new(false),
             load_permille: AtomicU32::new(0),
             last_frames: AtomicU32::new(0),
             callbacks: AtomicU64::new(0),
@@ -519,6 +528,24 @@ impl EngineMeters {
     /// Whether the master went over 1.0 since the last call.
     pub fn take_clipped(&self) -> bool {
         self.clipped.swap(false, Relaxed)
+    }
+
+    /// How far the master's limiters that are not passed by held the sound down since the
+    /// last call, the most, in dB (0: not at all, or no such limiter;
+    /// [`EngineMeters::master_limited`]).
+    pub fn take_master_reduction(&self) -> f32 {
+        take(&self.master_reduction)
+    }
+
+    /// Whether the master had a limiter that is not passed by in the last block.
+    pub fn master_limited(&self) -> bool {
+        self.master_limited.load(Relaxed)
+    }
+
+    /// Whether the test tone or the click of the latency measurement sounded since the last
+    /// call: the master's peak then is not the song's alone.
+    pub fn take_aside(&self) -> bool {
+        self.aside.swap(false, Relaxed)
     }
 
     /// Time spent in the last block / length of that block, in thousandths.
@@ -1216,6 +1243,10 @@ impl TestTone {
         };
     }
 
+    fn sounding(&self) -> bool {
+        self.frame < self.total
+    }
+
     fn add(&mut self, left: &mut [f32], right: &mut [f32], sample_rate: f32) {
         for (l, r) in left.iter_mut().zip(right.iter_mut()) {
             if self.frame >= self.total {
@@ -1257,6 +1288,10 @@ impl Probe {
             wave,
             asked: false,
         }
+    }
+
+    fn sounding(&self) -> bool {
+        self.at < self.wave.len()
     }
 
     fn add(&mut self, left: &mut [f32], right: &mut [f32]) {
@@ -1310,6 +1345,7 @@ pub struct Engine {
     block_frame: u64,
     probe: Probe,
     probes: Producer<ProbeSent>,
+    analysis: AnalysisTap,
     /// The ticks where the steps of the fader's lanes end, in the stretch being rendered.
     auto_ticks: Box<[f64]>,
     returns: [Strip; 2],
@@ -1385,6 +1421,7 @@ impl Engine {
         let clock = Arc::new(TransportClock::default());
         let (midi_tx, midi_rx) = RingBuffer::new(MIDI_RING);
         let (latency_tx, latency_rx) = RingBuffer::new(LATENCY_RING);
+        let (analysis_tap, analysis_reader) = analysis_ring(config.sample_rate);
         let buffer = || vec![0.0f32; config.max_frames].into_boxed_slice();
         let transport = Transport::new(config.sample_rate);
         let map = transport.map.clone();
@@ -1410,6 +1447,7 @@ impl Engine {
             block_frame: 0,
             probe: Probe::new(config.sample_rate),
             probes: probes_tx,
+            analysis: analysis_tap,
             auto_ticks: vec![0.0; config.max_frames.div_ceil(MIX_STEP) + 1].into_boxed_slice(),
             returns: [Strip::new(), Strip::new()],
             master_strip: Strip::new(),
@@ -1447,6 +1485,7 @@ impl Engine {
             retired_streams: streams_rx,
             wants: Some(wants_rx),
             probes: probes_rx,
+            analysis: Some(analysis_reader),
             map,
             map_gen: 0,
             last_map_gen: 0,
@@ -1495,6 +1534,7 @@ impl Engine {
     pub fn prepare(&mut self, sample_rate: u32) {
         self.sample_rate = sample_rate.max(1) as f32;
         self.meters.sample_rate.store(sample_rate.max(1), Relaxed);
+        self.analysis.set_sample_rate(sample_rate.max(1));
         for track in self.tracks.iter_mut() {
             for instrument in track.instrument.iter_mut().chain(track.aside.iter_mut()) {
                 instrument.prepare(self.sample_rate, self.max_frames);
@@ -2708,6 +2748,15 @@ impl Engine {
         };
         self.master_strip
             .inserts(&mut io, &mut self.retired_effects, None);
+        let limited = self.master_strip.limiting_db();
+        if let Some(db) = limited {
+            raise(&self.meters.master_reduction, db);
+        }
+        self.meters.master_limited.store(limited.is_some(), Relaxed);
+        self.analysis.write(io.left, io.right);
+        if self.tone.sounding() || self.probe.sounding() {
+            self.meters.aside.store(true, Relaxed);
+        }
         // After the master's strip: the test tone tells whether the output sounds, whatever
         // the song's mixer does.
         self.tone.add(io.left, io.right, self.sample_rate);
@@ -2962,6 +3011,7 @@ pub struct EngineHandle {
     retired_streams: Consumer<Box<StreamReader>>,
     wants: Option<Consumer<StreamWant>>,
     probes: Consumer<ProbeSent>,
+    analysis: Option<AnalysisReader>,
     /// The map last sent to the engine, and its number.
     map: Arc<TempoMap>,
     map_gen: u32,
@@ -3181,6 +3231,13 @@ impl EngineHandle {
     /// engine, so this gives it once, and once more after [`EngineHandle::rebuild`].
     pub fn take_stream_wants(&mut self) -> Option<Consumer<StreamWant>> {
         self.wants.take()
+    }
+
+    /// The master's sound for an analysis thread ([`crate::AnalysisReader`]): once for the
+    /// life of the engine, and once more after [`EngineHandle::rebuild`]. The engine writes
+    /// into the ring only from now on, while the reader is not dropped.
+    pub fn take_analysis(&mut self) -> Option<AnalysisReader> {
+        self.analysis.take().map(AnalysisReader::start)
     }
 
     /// The PC's input for the voices of the vocal tracks, or none. The feed before comes

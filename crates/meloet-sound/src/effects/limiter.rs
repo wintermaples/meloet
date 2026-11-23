@@ -105,4 +105,16 @@ impl Effect for Limiter {
         self.gain = 1.0;
         self.fresh = true;
     }
+
+    fn reduction_db(&self) -> f32 {
+        if self.gain > 0.0 && self.gain < 1.0 {
+            -20.0 * self.gain.log10()
+        } else {
+            0.0
+        }
+    }
+
+    fn is_limiter(&self) -> bool {
+        true
+    }
 }

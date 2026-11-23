@@ -725,3 +725,99 @@ fn one_move_of_a_slot_is_one_insert_move() {
         }
     }
 }
+
+#[test]
+fn lowering_keeps_minus_infinity_and_stops_at_minus_60() {
+    assert_eq!(Gain::from_db(-3.0).lowered(6.0).db(), Some(-9.0));
+    assert_eq!(Gain::from_db(6.0).lowered(12.0).db(), Some(-6.0));
+    assert_eq!(Gain::from_db(-57.0).lowered(6.0).db(), Some(-60.0));
+    assert_eq!(Gain::from_db(-60.0).lowered(6.0).db(), Some(-60.0));
+    assert_eq!(Gain::SILENT.lowered(6.0), Gain::SILENT);
+
+    let place = |db: f64| Gain::from_db(db).position();
+    let lowered = |db: f64, by: f64| Gain::from_position(Gain::lowered_place(place(db), by));
+    assert_eq!(lowered(0.0, 6.0).db(), Some(-6.0));
+    assert_eq!(lowered(-12.0, 6.0).db(), Some(-18.0));
+    assert_eq!(Gain::lowered_place(0.0, 6.0), 0.0, "−∞ stays");
+    // −60 dB is the place 0 of a lane, which is −∞: a point stops just above it.
+    let floor = Gain::lowered_place(place(-57.0), 6.0);
+    assert_eq!(floor, LOWEST_HEARD_PLACE);
+    assert_eq!(Gain::from_position(floor).db(), Some(-60.0));
+}
+
+#[test]
+fn lowering_every_track_is_one_step_that_leaves_returns_and_master() {
+    use crate::automation::{AutoPoint, add_lane, put_points, set_resting};
+    let piano = || InstrumentRef::Builtin(BuiltinInstrument::GrandPiano);
+    let (e, t2) = edit::add_track(&Doc::new_default(), None, piano()).unwrap();
+    let (e, t3) = edit::add_track(&e.doc, None, piano()).unwrap();
+    let (e, t4) = edit::add_track(&e.doc, None, piano()).unwrap();
+    let t1 = TrackId(1);
+    let mut doc = e.doc;
+    doc = set_gain(&doc, StripId::Track(t2), Gain::SILENT)
+        .unwrap()
+        .doc;
+    doc = set_gain(&doc, StripId::Track(t3), Gain::from_db(-58.0))
+        .unwrap()
+        .doc;
+    // Track 4's volume moves with a lane; track 1 has a lane that rests.
+    let low = Gain::from_db(-57.0).position();
+    for (track, points) in [
+        (t4, vec![(0, 0.8), (1920, 0.0), (3840, low)]),
+        (t1, vec![(0, 0.5)]),
+    ] {
+        let (e, _) = add_lane(&doc, track, AutoTarget::Volume, false).unwrap();
+        let put: Vec<_> = (points.iter())
+            .map(|&(tick, value)| AutoPoint { tick, value })
+            .collect();
+        doc = put_points(&e.doc, track, AutoTarget::Volume, &put)
+            .unwrap()
+            .0
+            .doc;
+    }
+    doc = set_gain(&doc, StripId::Track(t4), Gain::from_db(-1.0))
+        .unwrap()
+        .doc;
+    assert!(set_resting(&mut doc, t1, AutoTarget::Volume, true));
+
+    let e = lower_all_tracks(&doc, 6.0).unwrap();
+    assert_eq!(e.step, StepKind::LowerAll { count: 3 });
+    let gain = |doc: &Doc, t: TrackId| doc.track(t).unwrap().channel.gain.db();
+    assert_eq!(gain(&e.doc, t1), Some(-6.0), "a resting lane: the fader");
+    assert_eq!(gain(&e.doc, t2), None, "−∞ stays");
+    assert_eq!(gain(&e.doc, t3), Some(-60.0), "stops at −60 dB");
+    assert_eq!(
+        gain(&e.doc, t4),
+        Some(-1.0),
+        "the lane's points, not the fader"
+    );
+    let lane = |doc: &Doc, t: TrackId| doc.track(t).unwrap().lane(AutoTarget::Volume).cloned();
+    let (before, after) = (lane(&doc, t4).unwrap(), lane(&e.doc, t4).unwrap());
+    assert_ne!(before.id, after.id, "new points, a new id");
+    assert!(!after.resting);
+    let dbs: Vec<_> = (after.points.iter())
+        .map(|p| Gain::from_position(p.value).db())
+        .collect();
+    assert_eq!(dbs, [Some(-6.0), None, Some(-60.0)]);
+    assert_eq!(lane(&doc, t1), lane(&e.doc, t1));
+    for strip in [A, B, StripId::Master] {
+        assert_eq!(doc.channel(strip), e.doc.channel(strip));
+    }
+
+    let mut h = History::new();
+    let mut now = doc.clone();
+    h.apply(&mut now, e);
+    assert!(h.undo(&mut now).is_some());
+    assert_eq!(held(&now), held(&doc));
+
+    assert_eq!(lower_all_tracks(&doc, 0.0), Err(EditError::Unchanged));
+    assert_eq!(lower_all_tracks(&doc, f64::NAN), Err(EditError::Unchanged));
+    // Every fader at −∞ and no lane: nothing to lower, no step.
+    let mut silent = doc.clone();
+    for track in &mut silent.tracks {
+        let track = Arc::make_mut(track);
+        track.channel.gain = Gain::SILENT;
+        track.automation.clear();
+    }
+    assert_eq!(lower_all_tracks(&silent, 6.0), Err(EditError::Unchanged));
+}

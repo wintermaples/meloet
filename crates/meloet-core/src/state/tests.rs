@@ -2039,8 +2039,6 @@ fn the_commands_of_round_12_wave_2_are_taken_and_change_nothing_yet() {
             clips: vec![99],
             count: 3,
         },
-        Command::LowerAllTracks { db: 6.0 },
-        Command::DismissTooLoud,
     ];
     for command in commands {
         assert_eq!(cmd(&mut m, command.clone()), [], "{command:?}");

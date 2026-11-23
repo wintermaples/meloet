@@ -7,6 +7,7 @@
 
 mod added;
 pub mod ai;
+pub mod analysis;
 pub mod audiofiles;
 mod catalog;
 pub mod export;
@@ -35,6 +36,7 @@ pub mod sf2store;
 pub mod songfile;
 mod sounds;
 pub mod state;
+pub mod tooloud;
 pub mod updates;
 pub mod vocalrec;
 

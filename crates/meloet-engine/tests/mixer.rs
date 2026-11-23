@@ -752,3 +752,157 @@ fn the_engine_says_how_much_the_masters_inserts_delay() {
     parts.engine.settle();
     assert_eq!(parts.engine.master_latency(), 64);
 }
+
+/// Passes the sound on and says it holds it down by a fixed amount.
+struct Holds {
+    db: f32,
+    limiter: bool,
+}
+
+impl Effect for Holds {
+    fn prepare(&mut self, _sample_rate: f32, _max_frames: usize) {}
+    fn set_param(&mut self, index: u32, value: f32) {
+        if index == 0 {
+            self.db = value;
+        }
+    }
+    fn process(&mut self, _left: &mut [f32], _right: &mut [f32], _ctx: &EffectContext) {}
+    fn reset(&mut self) {}
+    fn reduction_db(&self) -> f32 {
+        self.db
+    }
+    fn is_limiter(&self) -> bool {
+        self.limiter
+    }
+}
+
+fn holds(db: f32, limiter: bool) -> Option<Box<dyn Effect>> {
+    Some(Box::new(Holds { db, limiter }))
+}
+
+#[test]
+fn the_meters_say_how_far_the_masters_limiters_hold_the_sound_down() {
+    let mut rig = Rig::new();
+    let meters = rig.parts.handle.meters().clone();
+    rig.run(256);
+    assert_eq!(meters.take_master_reduction(), 0.0);
+    assert!(!meters.master_limited());
+
+    // A compressor's reduction and a limiter on a track are not the master's limiter.
+    rig.effect(MixStrip::Master, 0, holds(9.0, false));
+    rig.effect(MixStrip::Track(0), 0, holds(8.0, true));
+    rig.effect(A, 0, holds(8.0, true));
+    rig.run(256);
+    assert_eq!(meters.take_master_reduction(), 0.0);
+    assert!(!meters.master_limited());
+
+    rig.effect(MixStrip::Master, 1, holds(4.5, true));
+    rig.effect(MixStrip::Master, 3, holds(2.0, true));
+    rig.run(256);
+    assert_eq!(meters.take_master_reduction(), 4.5, "the most of them");
+    assert!(meters.master_limited());
+    assert_eq!(meters.take_master_reduction(), 0.0, "taken");
+
+    // The most since the last read, block by block.
+    rig.send(EngineCommand::SetEffectParam {
+        strip: MixStrip::Master,
+        slot: 1,
+        param: 0,
+        value: 7.0,
+    });
+    rig.run(256);
+    rig.send(EngineCommand::SetEffectParam {
+        strip: MixStrip::Master,
+        slot: 1,
+        param: 0,
+        value: 1.0,
+    });
+    rig.run(256);
+    assert_eq!(meters.take_master_reduction(), 7.0);
+
+    // A limiter passed by does not count, also while it moves to another slot.
+    rig.bypass(MixStrip::Master, 1, true);
+    rig.run(256);
+    meters.take_master_reduction();
+    rig.run(256);
+    assert_eq!(meters.take_master_reduction(), 2.0);
+    rig.move_effect(MixStrip::Master, 3, 2);
+    rig.run(64);
+    assert!(meters.master_limited(), "on its way");
+    assert_eq!(meters.take_master_reduction(), 2.0);
+    rig.bypass(MixStrip::Master, 2, true);
+    rig.run(256);
+    assert!(!meters.master_limited());
+    rig.check_rules();
+}
+
+#[test]
+fn the_meters_say_when_the_test_tone_or_the_latency_click_sounded() {
+    let mut rig = Rig::new();
+    let meters = rig.parts.handle.meters().clone();
+    rig.run(256);
+    assert!(!meters.take_aside());
+    rig.send(EngineCommand::TestTone);
+    rig.run(256);
+    assert!(meters.take_aside());
+    assert!(!meters.take_aside(), "taken");
+    rig.run(48_000);
+    meters.take_aside();
+    rig.run(256);
+    assert!(!meters.take_aside(), "the tone is over");
+    rig.send(EngineCommand::Probe);
+    rig.run(256);
+    assert!(meters.take_aside());
+    rig.check_rules();
+}
+
+#[test]
+fn the_analysis_ring_has_the_master_after_its_inserts_and_before_the_test_tone() {
+    let mut rig = Rig::new();
+    let add = rig.fx(Op::Add, 0.05);
+    rig.effect(MixStrip::Master, 0, add);
+    rig.settled();
+    // Nothing is written while the reader is in the handle.
+    let mut reader = rig.parts.handle.take_analysis().expect("once");
+    assert!(rig.parts.handle.take_analysis().is_none());
+    let mut frames = Vec::new();
+    assert_eq!(reader.read(|part| frames.extend_from_slice(part)), 0);
+
+    rig.send(EngineCommand::TestTone);
+    let (left, right) = rig.run(1000);
+    assert!(largest_step(&left) > 0.001, "the tone sounds");
+    assert_eq!(reader.read(|part| frames.extend_from_slice(part)), 1000);
+    assert!(
+        frames
+            .iter()
+            .all(|f| (f[0] - 0.15).abs() < 1e-6 && (f[1] - 0.25).abs() < 1e-6)
+    );
+    assert_ne!((left[999], right[999]), (0.15, 0.25));
+
+    // A full ring drops a piece whole, and says how much.
+    let (mut written, mut pieces) = (0, 0);
+    while written + 256 <= meloet_engine::ANALYSIS_RING_FRAMES {
+        rig.run(256);
+        written += 256;
+        pieces += 1;
+    }
+    assert_eq!(reader.dropped(), 0);
+    rig.run(256);
+    assert_eq!(reader.dropped(), 256, "after {pieces} pieces");
+    frames.clear();
+    let read = reader.read(|part| frames.extend_from_slice(part));
+    assert_eq!((read, frames.len()), (written, written));
+
+    // What is not a number goes in as silence.
+    let bad = rig.fx(Op::Scale, f32::NAN);
+    rig.effect(MixStrip::Master, 1, bad);
+    rig.run(256);
+    frames.clear();
+    reader.read(|part| frames.extend_from_slice(part));
+    assert!(frames.iter().all(|f| f[0].is_finite() && f[1].is_finite()));
+
+    // A dropped reader stops the writing.
+    drop(reader);
+    rig.run(256);
+    rig.check_rules();
+}

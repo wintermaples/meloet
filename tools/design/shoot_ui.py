@@ -283,6 +283,9 @@ BOARDS = {
     "presetsMenu": None,
     "presetsSaving": None,
     "presetsNone": None,
+    # Round 12 M2: 「音が大きすぎます」 with the limiter and without (the mock is in the same file).
+    "tooLoudLimiter": None,
+    "tooLoudOver": None,
 }
 # Double-clicks the Vel cell of a row of the note list and types into the field (R3-Lanes: "96|" and "200").
 TYPE_KEY_FILTER = """

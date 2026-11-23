@@ -646,6 +646,97 @@ fn an_empty_clip_on_an_empty_place() {
 }
 
 #[test]
+fn a_clip_with_its_end_given() {
+    let doc = Doc::new_default();
+    let (e, id) = create_clip_to(&doc, T1, BAR + 700, 9 * BAR).unwrap();
+    assert_eq!(range(&e.doc, id), (BAR, 9 * BAR));
+    assert_eq!(e.step, StepKind::CreateClip { clip: id });
+    assert_eq!(
+        create_clip_to(&doc, T1, BAR, BAR).unwrap_err(),
+        EditError::Overlap
+    );
+    assert_eq!(
+        create_clip_to(&doc, T1, BAR, MAX_TICK + 1).unwrap_err(),
+        EditError::OffTheSong
+    );
+
+    // one_clip is [BAR, 3 * BAR): from its end, and not over it.
+    let (doc, _) = one_clip(vec![note(0, 100, 60)]);
+    let (e, id) = create_clip_to(&doc, T1, 3 * BAR + 10, 4 * BAR).unwrap();
+    assert_eq!(range(&e.doc, id), (3 * BAR, 4 * BAR));
+    let (e, id) = create_clip_to(&doc, T1, 100, BAR).unwrap();
+    assert_eq!(range(&e.doc, id), (0, BAR));
+    for (tick, end) in [(100, BAR + 1), (0, 4 * BAR), (2 * BAR, 5 * BAR)] {
+        assert_eq!(
+            create_clip_to(&doc, T1, tick, end).unwrap_err(),
+            EditError::Overlap
+        );
+    }
+}
+
+#[test]
+fn a_write_tells_what_was_left_out_and_cut() {
+    let doc = Doc::new_default();
+    // A clip made for the write is 4 bars: a note at its end or later is left out, one
+    // running past it is cut.
+    let asked = [
+        note(4 * BAR, Q, 60),
+        note(100, Q, 60),
+        note(4 * BAR - 10, Q, 62),
+        note(9 * BAR, Q, 64),
+    ];
+    let (e, told) = write_notes_told(&doc, WriteAt::Track(T1), &asked).unwrap();
+    assert_eq!(
+        told,
+        WriteTold {
+            clip_made: true,
+            dropped: vec![0, 3],
+            cut: vec![NoteCut {
+                index: 2,
+                length: 10,
+                at: CutAt::ClipEnd
+            }],
+        }
+    );
+    assert_eq!(
+        notes_of(&e.edit.doc, e.clip),
+        [(100, Q, 60), (4 * BAR - 10, 10, 62)]
+    );
+    assert_eq!(e, write_notes(&doc, WriteAt::Track(T1), &asked).unwrap());
+
+    // In a clip that is there, everything is written: the clip grows.
+    let (doc, clip) = one_clip(vec![note(0, 100, 60)]);
+    let (e, told) = write_notes_told(&doc, WriteAt::Clip(clip), &asked).unwrap();
+    assert_eq!(told, WriteTold::default());
+    assert_eq!(notes_of(&e.edit.doc, clip).len(), 5);
+    assert_eq!(range(&e.edit.doc, clip), (0, 10 * BAR));
+}
+
+#[test]
+fn notes_of_one_key_that_overlap_are_all_written() {
+    let (doc, clip) = one_clip(Vec::new());
+    // An 8-tick note under the next note of its key, a note inside a longer one, and the
+    // same note twice.
+    let asked = [
+        note(BAR, 8, 60),
+        note(BAR + 4, Q, 60),
+        note(BAR + 100, 10, 60),
+        note(BAR + 4, Q, 60),
+    ];
+    let (e, told) = write_notes_told(&doc, WriteAt::Clip(clip), &asked).unwrap();
+    assert_eq!(told, WriteTold::default());
+    assert_eq!(
+        notes_of(&e.edit.doc, clip),
+        [
+            (BAR, 8, 60),
+            (BAR + 4, Q, 60),
+            (BAR + 4, Q, 60),
+            (BAR + 100, 10, 60)
+        ]
+    );
+}
+
+#[test]
 fn the_fields_of_the_note_list() {
     // The clip [BAR, 3 * BAR); the take at TAKE.
     let (doc, clip) = one_clip(vec![

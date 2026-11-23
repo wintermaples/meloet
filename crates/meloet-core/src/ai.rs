@@ -26,6 +26,92 @@ pub enum AiPlace {
     Clip(u32),
 }
 
+/// A note to put in, before it is known to fit: it may start before the song or after its
+/// end, and its key may be off the keyboard (a file brought in, a moved copy).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AiNote {
+    pub start: i64,
+    pub length: u64,
+    pub key: i32,
+    pub velocity: u8,
+}
+
+/// Which notes of a clip's shown take to copy. Only notes that sound (those that start
+/// inside the clip) are copied, as long as they sound.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AiPick {
+    All,
+    /// Indexes in the take.
+    Notes(Vec<u32>),
+    /// Notes that start in `[from, to)`.
+    Range {
+        from: u64,
+        to: u64,
+    },
+}
+
+/// How far copied notes move.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AiShift {
+    Ticks(i64),
+    /// Whole bars, counted from the bar of the earliest copied note.
+    Bars(i64),
+    /// The clip's start (the range's `from` for [`AiPick::Range`]) goes to this tick.
+    To(u64),
+}
+
+/// Why a note was not written.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AiNoteWhy {
+    /// It starts at or after the end of the clip made for the write.
+    PastClipEnd,
+    PastSongEnd,
+    BeforeSongStart,
+    KeyOutOfRange,
+    /// It does not sound in the clip it would be copied from (the clip was trimmed).
+    OutsideSourceClip,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AiNoteNot {
+    /// The note's index in the ask (for a copy: in the take copied from).
+    pub index: u32,
+    pub note: AiNote,
+    pub why: AiNoteWhy,
+}
+
+/// A note written shorter than asked.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AiNoteCut {
+    pub index: u32,
+    pub note: AiNote,
+    /// The length it got.
+    pub length: u64,
+    /// At the end of the clip made for the write; else at the end of the song.
+    pub at_clip_end: bool,
+}
+
+/// At most this many notes are listed in [`AiNotesDone::not_written`] and in `cut`.
+pub const MAX_TOLD: usize = 200;
+
+/// What a write of notes did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AiNotesDone {
+    pub clip: u32,
+    /// The clip's track, as its number from 1.
+    pub track: u32,
+    pub clip_made: bool,
+    /// The clip's start and end before the write; `None` for a clip made.
+    pub was: Option<(u64, u64)>,
+    pub now: (u64, u64),
+    pub written: u32,
+    /// The first [`MAX_TOLD`]; `not_written_count` is how many there are.
+    pub not_written: Vec<AiNoteNot>,
+    pub not_written_count: u32,
+    pub cut: Vec<AiNoteCut>,
+    pub cut_count: u32,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum AiAsk {
     /// Song positions; `from` is ignored.
@@ -42,6 +128,29 @@ pub enum AiAsk {
     CreateClip {
         track: u32,
         tick: u64,
+    },
+    /// [`AiAsk::CreateClip`] up to `end`, which is brought on to the head of a bar.
+    CreateClipTo {
+        track: u32,
+        tick: u64,
+        end: u64,
+    },
+    /// Many notes as one step. Those that cannot be written are told in the answer. Into a
+    /// track: the clip that holds the earliest start, or a new clip as long as the notes
+    /// need. Refused when a clip of the track is in the way.
+    PutNotes {
+        at: AiPlace,
+        notes: Vec<AiNote>,
+    },
+    /// Notes of the take `clip` shows into another place, as [`AiAsk::PutNotes`]. `take`:
+    /// refused when the clip shows another take now.
+    CopyNotes {
+        clip: u32,
+        take: Option<u32>,
+        pick: AiPick,
+        to: AiPlace,
+        shift: AiShift,
+        transpose: i32,
     },
     RenameClip {
         clip: u32,
@@ -257,6 +366,9 @@ impl AiAsk {
             AiAsk::WriteNotes { .. } => "write notes",
             AiAsk::DeleteNotes { .. } => "delete notes",
             AiAsk::CreateClip { .. } => "create a clip",
+            AiAsk::CreateClipTo { .. } => "create a clip",
+            AiAsk::PutNotes { .. } => "put in the notes",
+            AiAsk::CopyNotes { .. } => "copy notes",
             AiAsk::RenameClip { .. } => "rename a clip",
             AiAsk::SetTempo { .. } => "set the tempo",
             AiAsk::AddMarker { .. } => "add a marker",
@@ -334,6 +446,8 @@ pub struct AiDone {
     pub clip: Option<u32>,
     /// The take that clip shows afterwards.
     pub take: Option<u32>,
+    /// For a write of notes: where they went and which were left out.
+    pub notes: Option<Box<AiNotesDone>>,
     /// The track added, as its number from 1.
     pub track: Option<u32>,
     /// The ask goes on: its outcome comes under this ticket in [`AiSong::outcomes`].
@@ -366,6 +480,14 @@ pub enum AiRefusal {
     /// Past the end of the song meloet can hold.
     OffTheSong,
     BadNote,
+    /// This clip of the track (its start and end) is in the way.
+    OverlapsClip {
+        clip: u32,
+        start: u64,
+        end: u64,
+    },
+    /// None of the notes can be written; why the first cannot.
+    NoNoteFits(AiNoteWhy),
     BadTempo,
     /// It would leave the song as it is.
     Unchanged,

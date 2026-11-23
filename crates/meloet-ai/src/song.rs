@@ -36,8 +36,30 @@ pub fn at(map: &TempoMap, tick: u64) -> String {
     format!("{}.{}.{}", b.bar, b.beat, b.tick)
 }
 
-fn place(map: &TempoMap, tick: u64) -> Value {
+pub fn place(map: &TempoMap, tick: u64) -> Value {
     json!({ "at": at(map, tick), "tick": tick })
+}
+
+/// A place in the song: ticks from its start, or "bar.beat.tick" text like "5.1.0".
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+#[serde(untagged)]
+#[schemars(inline)]
+pub enum Place {
+    Tick(u64),
+    At(String),
+}
+
+impl Place {
+    pub fn tick(&self, map: &TempoMap) -> Result<u64, String> {
+        let tick = match self {
+            Place::Tick(tick) => *tick,
+            Place::At(text) => parse_at(map, text)?,
+        };
+        if tick > crate::MAX_TICK {
+            return Err(format!("that is past bar {}", crate::MAX_BAR));
+        }
+        Ok(tick)
+    }
 }
 
 /// "bar.beat.tick", "bar.beat" or "bar", each from 1 but the tick (from 0, less than a beat).

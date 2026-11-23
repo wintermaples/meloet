@@ -14,6 +14,7 @@ macro_rules! check {
 mod arrange;
 mod automation;
 mod files;
+mod midi;
 mod mixer;
 mod notes;
 mod render;
@@ -26,7 +27,7 @@ use std::time::{Duration, Instant};
 use meloet_core::ai::{
     AiAnswer, AiAsk, AiBusy, AiDone, AiInstrument, AiMeasure, AiOutcome, AiPlace, AiRefusal, AiSong,
 };
-use meloet_model::{BuiltinInstrument, Note, TempoMap, TickRange, Track};
+use meloet_model::{BuiltinInstrument, TempoMap, TickRange, Track};
 use meloet_protocol::Command;
 use rmcp::model::{
     CallToolResult, ContentBlock, Implementation, ProgressNotificationParam, RequestMetaObject,
@@ -153,18 +154,25 @@ pub struct NoteArgs {
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 pub struct WriteNotesArgs {
-    /// The track's number (from 1): the notes go into the clip at the earliest start, or a
-    /// new clip. Give this or `clip`.
+    /// The track's number (from 1): the notes go into the clip that holds the earliest
+    /// note's start (it grows by bars), or, when no clip is there, into a new clip from the
+    /// head of that note's bar, 4 bars long or up to the next clip. Notes that start after
+    /// the new clip's end are not written: for a longer phrase make the clip with
+    /// create_clip (`bars`) first and write into it. Give this or `clip`.
     #[serde(default)]
     #[schemars(range(min = 1, max = 64))]
     pub track: Option<u32>,
-    /// A keys clip's id: it grows when notes go past its end. Give this or `track`.
+    /// A keys clip's id: it grows by bars to hold every note. Give this or `track`.
     #[serde(default)]
     #[schemars(range(min = 1))]
     pub clip: Option<u32>,
-    /// 1 to 2000 notes.
+    /// 1 to 2000 notes, each an object or the array `[start, length, key, velocity]`.
     #[schemars(length(min = 1, max = 2000))]
-    pub notes: Vec<NoteArgs>,
+    pub notes: Vec<notes::NoteForm>,
+    /// A place every start counts from: with it the starts are ticks from that place, so
+    /// a phrase can be written once and put anywhere.
+    #[serde(default)]
+    pub origin: Option<song::Place>,
 }
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
@@ -186,6 +194,13 @@ pub struct CreateClipArgs {
     /// Where, as "bar.beat.tick": the clip starts at the head of that bar and is 4 bars long,
     /// or up to the next clip.
     pub at: String,
+    /// How many bars long the clip is. Give this or `end`, or neither for 4 bars.
+    #[serde(default)]
+    #[schemars(range(min = 1, max = 9999))]
+    pub bars: Option<u32>,
+    /// Where the clip ends, as "bar.beat.tick" (brought on to the head of a bar).
+    #[serde(default)]
+    pub end: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
@@ -291,6 +306,10 @@ pub fn refusal_text(r: &AiRefusal) -> String {
         AiRefusal::Overlap => "it would overlap another clip of the track; nothing was done".into(),
         AiRefusal::OffTheSong => "that is past the end of the song meloet can hold".into(),
         AiRefusal::BadNote => "a note is out of range".into(),
+        AiRefusal::OverlapsClip { clip, start, end } => format!(
+            "clip {clip} of the track (ticks {start} to {end}) is in the way; nothing was done"
+        ),
+        AiRefusal::NoNoteFits(_) => "none of the notes can be written".into(),
         AiRefusal::BadTempo => "the tempo must be 30 to 300".into(),
         AiRefusal::Unchanged => "that leaves the song as it is; nothing was done".into(),
         AiRefusal::TooManyTracks => "the song has as many tracks as meloet can hold".into(),
@@ -398,6 +417,7 @@ impl Tools {
             tool_router: Self::tool_router()
                 + Self::mixer_router()
                 + Self::notes_router()
+                + Self::midi_router()
                 + Self::automation_router()
                 + Self::timing_router()
                 + Self::arrange_router()
@@ -628,9 +648,10 @@ impl Tools {
         Ok(done(value.to_string(), value))
     }
 
-    /// Writes notes, as one undo step: into a track (the clip at the earliest start, or a new
-    /// 4-bar clip) or into a keys clip, which grows by bars when notes go past it. Nothing is
-    /// written when a clip would overlap another.
+    /// Writes notes as one undo step into a keys clip (it grows by bars) or a track: the
+    /// clip holding the earliest start, else a new 4-bar clip; notes starting after its end
+    /// are not written. Answers `written`, `created_clip` or `grew_to`, `not_written` and
+    /// `changed` with reasons. Refused when a clip would grow into another.
     #[tool(annotations(
         title = "Write notes",
         read_only_hint = false,
@@ -653,44 +674,18 @@ impl Tools {
         }
         let read = check!(self.read().await);
         let map = TempoMap::new(&read.song.doc.timeline);
-        let mut notes = Vec::with_capacity(args.notes.len());
-        for (i, n) in args.notes.iter().enumerate() {
-            let start = match (&n.at, n.start) {
-                (Some(at), None) => check!(place(&map, at)),
-                (None, Some(start)) => start,
-                _ => {
-                    return Ok(failed(format!(
-                        "note {i}: give `at` or `start`, one of them"
-                    )));
-                }
-            };
-            if start > crate::MAX_TICK {
-                return Ok(failed(format!("note {i}: the start is past bar {MAX_BAR}")));
-            }
-            if !(1..=MAX_LENGTH).contains(&n.length) {
-                return Ok(failed(format!(
-                    "note {i}: the length is 1 to {MAX_LENGTH} ticks"
-                )));
-            }
-            let (Ok(key), Ok(velocity)) = (u8::try_from(n.key), u8::try_from(n.velocity)) else {
-                return Ok(failed(format!(
-                    "note {i}: the key or the velocity is out of range"
-                )));
-            };
-            if key > 127 || !(1..=127).contains(&velocity) {
-                return Ok(failed(format!(
-                    "note {i}: the key is 0 to 127 and the velocity 1 to 127"
-                )));
-            }
-            notes.push(Note {
-                start,
-                length: n.length,
-                key,
-                velocity,
-                from: None,
-            });
-        }
-        Ok(self.write(AiAsk::WriteNotes { at, notes }).await)
+        let origin = match &args.origin {
+            Some(origin) => Some(check!(origin.tick(&map).map_err(failed))),
+            None => None,
+        };
+        let notes = check!(notes::notes_in(&map, &args.notes, origin));
+        let asked = notes.len();
+        let (d, value) = check!(self.put(AiAsk::WriteNotes { at, notes }, &map).await);
+        let line = notes::notes_line(&d, &value);
+        Ok(done(
+            format!("Done: write notes. Of {asked} notes, {line}\n{value}"),
+            value,
+        ))
     }
 
     /// Deletes notes of a take, by the take's id and the notes' indexes from get_notes, as one
@@ -718,8 +713,10 @@ impl Tools {
             .await)
     }
 
-    /// Makes an empty keys clip from the head of a bar, 4 bars long or up to the next clip,
-    /// named after its track, as one undo step.
+    /// Makes an empty keys clip from the head of a bar, named after its track, as one undo
+    /// step: 4 bars long or up to the next clip, or as long as `bars` or `end` say (then
+    /// refused, naming the clip, when another is in the way). Answers the clip's id, start
+    /// and end.
     #[tool(annotations(
         title = "Create clip",
         read_only_hint = false,
@@ -735,12 +732,36 @@ impl Tools {
         let read = check!(self.read().await);
         let map = TempoMap::new(&read.song.doc.timeline);
         let tick = check!(place(&map, &args.at));
-        Ok(self
-            .write(AiAsk::CreateClip {
-                track: args.track,
-                tick,
-            })
-            .await)
+        let track = args.track;
+        let ask = match (args.bars, &args.end) {
+            (None, None) => AiAsk::CreateClip { track, tick },
+            (Some(bars), None) if (1..=MAX_BAR).contains(&u64::from(bars)) => {
+                let end = map.tick_of_bar(map.meter_at(tick).bar + u64::from(bars));
+                AiAsk::CreateClipTo { track, tick, end }
+            }
+            (None, Some(end)) => {
+                let end = check!(place(&map, end));
+                if end <= map.meter_at(tick).bar_tick {
+                    return Ok(failed("`end` must be after the head of the bar of `at`"));
+                }
+                AiAsk::CreateClipTo { track, tick, end }
+            }
+            _ => {
+                return Ok(failed(format!(
+                    "give `bars` (1 to {MAX_BAR}) or `end`, not both"
+                )));
+            }
+        };
+        let (d, mut value) = check!(self.put(ask, &map).await);
+        let made = check!(self.read().await);
+        let clip = (made.song.doc.tracks.iter())
+            .flat_map(|t| t.clips.iter())
+            .find(|c| Some(c.id.0) == d.clip);
+        if let Some(c) = clip {
+            value["start"] = song::place(&map, c.start);
+            value["end"] = song::place(&map, c.end);
+        }
+        Ok(done(format!("Done: create a clip.\n{value}"), value))
     }
 
     /// Renames a clip, as one undo step.

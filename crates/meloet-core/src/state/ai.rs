@@ -190,12 +190,38 @@ impl Model {
         let before = self.play.undo_count();
         let mut ticket = None;
         let mut no_step = false;
+        let mut notes_done = None;
         let wrote = match ask {
-            AiAsk::WriteNotes { at, notes } => self.play.ai_write_notes(at, &notes, effects)?,
+            AiAsk::WriteNotes { at, notes } => {
+                let (wrote, told) = self.play.ai_write_notes(at, &notes, effects)?;
+                notes_done = Some(Box::new(told));
+                wrote
+            }
             AiAsk::DeleteNotes { take, notes } => {
                 self.play.ai_delete_notes(take, &notes, effects)?
             }
             AiAsk::CreateClip { track, tick } => self.play.ai_create_clip(track, tick, effects)?,
+            AiAsk::CreateClipTo { track, tick, end } => {
+                (self.play).ai_create_clip_to(track, tick, end, effects)?
+            }
+            AiAsk::PutNotes { at, notes } => {
+                let (wrote, told) = self.play.ai_put_notes(at, &notes, None, effects)?;
+                notes_done = Some(Box::new(told));
+                wrote
+            }
+            AiAsk::CopyNotes {
+                clip,
+                take,
+                pick,
+                to,
+                shift,
+                transpose,
+            } => {
+                let (wrote, told) =
+                    (self.play).ai_copy_notes(clip, take, &pick, to, shift, transpose, effects)?;
+                notes_done = Some(Box::new(told));
+                wrote
+            }
             AiAsk::RenameClip { clip, name } => self.play.ai_rename_clip(clip, &name, effects)?,
             AiAsk::SetTempo { tick, bpm } => self.play.ai_set_tempo(tick, bpm, effects)?,
             AiAsk::AddMarker { tick, name } => self.play.ai_add_marker(tick, &name, effects)?,
@@ -214,6 +240,7 @@ impl Model {
                     undo_count: self.play.undo_count(),
                     clip: None,
                     take: None,
+                    notes: None,
                     track: None,
                     ticket: None,
                     pending: false,
@@ -304,6 +331,7 @@ impl Model {
                     undo_count: before,
                     clip: None,
                     take: None,
+                    notes: None,
                     track: None,
                     ticket: None,
                     pending: true,
@@ -377,6 +405,7 @@ impl Model {
             undo_count,
             clip: wrote.clip.map(|c| c.0),
             take,
+            notes: notes_done,
             track,
             ticket,
             pending: false,

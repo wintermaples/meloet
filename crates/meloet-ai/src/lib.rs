@@ -4,6 +4,7 @@
 
 mod port;
 mod scratch;
+mod smf;
 mod song;
 mod tools;
 

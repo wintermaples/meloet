@@ -108,16 +108,8 @@ export function reduceRound10(
       const take = newTake(end - start, notes);
       const clip: ClipView = { ...first, end, take: 1, takes: 1, takeId: take.id, takeOffset: 0, noteCount: take.notes.length };
       const gone = new Set(joined.map((c) => c.id));
-      const shown = arrange.pianoRollClip !== null && gone.has(arrange.pianoRollClip);
       track!.clips = track!.clips.filter((c) => !gone.has(c.id) || c.id === first.id).map((c) => (c.id === first.id ? clip : c));
-      arrange.selectedClips = [clip.id];
-      arrange.selectedClip = clip.id;
-      if (shown) {
-        arrange.pianoRollClip = clip.id;
-        pianoRoll.take = take.id;
-        pianoRoll.selectedNotes = [];
-        pianoRoll.selectedControls = [];
-      }
+      show(clip);
       row = { name: { kind: "joinClips" }, what: { kind: "clips", count: joined.length }, place: ARRANGE };
       break;
     }
@@ -195,7 +187,12 @@ export function reduceRound10(
         .filter((i) => i >= 0);
       const clip: ClipView = { ...c, end, takeId: take.id, noteCount: take.notes.length };
       f.track.clips.splice(f.track.clips.indexOf(c), 1, clip);
-      show(clip, index);
+      // Into the shown take the clip selection stays; on a track the clip is selected and shown.
+      if (command.take === null) show(clip, index);
+      else {
+        pianoRoll.take = clip.takeId;
+        pianoRoll.selectedNotes = index.map((i) => ({ start: i, end: i + 1 }));
+      }
       row = {
         name: { kind: "writeNote" },
         what: keys.length === 1 ? { kind: "note", key: keys[0]! } : { kind: "notes", count: keys.length },

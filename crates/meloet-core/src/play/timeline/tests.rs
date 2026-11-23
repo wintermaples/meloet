@@ -567,6 +567,40 @@ fn the_transport_changes_the_point_in_force_and_says_which() {
 }
 
 #[test]
+fn a_marker_at_a_tick_snaps_there_and_not_at_the_play_line() {
+    let m = &mut ready();
+    cmd(m, Command::Locate { tick: 6 * BAR });
+    cmd(
+        m,
+        Command::AddMarker {
+            name: "マーカー 1".into(),
+            tick: Some(2 * BAR + Q / 2 + 10),
+        },
+    );
+    let id = tl(m).markers[0].id;
+    assert_eq!(markers(m), [(2 * BAR + Q, "マーカー 1".to_owned())]);
+    assert_eq!((tl(m).selected, tl(m).renaming), (marker(id), Some(id)));
+    assert_eq!(
+        status(m),
+        Some(StatusMessage::MarkerAdded {
+            name: "マーカー 1".into()
+        })
+    );
+    assert_eq!(steps(m), 1);
+    cmd(
+        m,
+        Command::AddMarker {
+            name: "マーカー 2".into(),
+            tick: Some(u64::MAX),
+        },
+    );
+    assert_eq!(steps(m), 2);
+    assert!(markers(m)[1].0 <= meloet_model::MAX_TICK);
+    cmd(m, Command::Undo);
+    assert_eq!(markers(m).len(), 1);
+}
+
+#[test]
 fn a_marker_and_the_name_typed_into_its_field_are_one_step() {
     let m = &mut ready();
     cmd(
@@ -741,7 +775,7 @@ fn what_ends_the_one_step_of_a_new_marker() {
     // Another song.
     let mut p = Play::new(false, 0);
     let effects = &mut Vec::new();
-    p.add_marker("マーカー 1", effects);
+    p.add_marker("マーカー 1", None, effects);
     p.set_timeline_open(true);
     let view = p.timeline_view();
     assert!(view.open && view.renaming.is_some() && view.selected.is_some());

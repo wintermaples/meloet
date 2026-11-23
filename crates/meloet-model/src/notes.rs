@@ -138,86 +138,105 @@ pub fn clipboard(clip: &Clip, indexes: &[usize]) -> Result<Vec<Note>, EditError>
 
 /// The write tool. Outside the clip given, the clip grows to hold the note.
 pub fn write_note(doc: &Doc, at: WriteAt, note: Note) -> Result<NotesEdited, EditError> {
-    if note.length == 0 || note.key > 127 || !(1..=127).contains(&note.velocity) {
+    write_notes(doc, at, &[note])
+}
+
+/// The write tool and the chord stamp: every note as one step. Outside the clip given, the
+/// clip grows to hold them; with [`WriteAt::Track`] the clip is the one that holds the
+/// earliest start, or else a new one.
+pub fn write_notes(doc: &Doc, at: WriteAt, notes: &[Note]) -> Result<NotesEdited, EditError> {
+    let bad = |n: &Note| n.length == 0 || n.key > 127 || !(1..=127).contains(&n.velocity);
+    if notes.iter().any(bad) {
         return Err(EditError::BadNote);
     }
-    let note = Note { from: None, ..note };
+    let Some(first) = notes.iter().map(|n| n.start).min() else {
+        return Err(EditError::Unchanged);
+    };
+    if notes.iter().any(|n| n.start >= MAX_TICK) {
+        return Err(EditError::OffTheSong);
+    }
+    let notes: Vec<Note> = notes.iter().map(|n| Note { from: None, ..*n }).collect();
+    let count = notes.len();
     let clip = match at {
         WriteAt::Clip(id) => id,
         WriteAt::Track(track) => {
             let t = &doc.tracks[track_index(doc, track)?];
-            match t
-                .clips
-                .iter()
-                .find(|c| c.start <= note.start && note.start < c.end)
-            {
+            match t.clips.iter().find(|c| c.start <= first && first < c.end) {
                 Some(c) => c.id,
-                None => return write_in_new_clip(doc, track, note),
+                None => return write_in_new_clip(doc, track, notes),
             }
         }
     };
     let (ti, ci) = keys_clip_index(doc, clip)?;
-    if note.start >= MAX_TICK {
-        return Err(EditError::OffTheSong);
-    }
     let (c, l) = lifted(&doc.tracks[ti].clips[ci]);
-    let note = Note {
-        start: note.start + l,
-        length: note.length.min(MAX_TICK - note.start),
-        ..note
-    };
+    let written: Vec<Note> = notes
+        .iter()
+        .map(|n| Note {
+            start: n.start + l,
+            length: n.length.min(MAX_TICK - n.start),
+            ..*n
+        })
+        .collect();
     let reach = Reach {
-        start: Some(note.start),
-        end: Some(note.end()),
+        start: written.iter().map(|n| n.start).min(),
+        end: written.iter().map(|n| n.end()).max(),
     };
-    let mut notes = unmarked(&c);
-    notes.push((note, true));
+    let mut out = unmarked(&c);
+    out.extend(written.into_iter().map(|n| (n, true)));
     put_notes(
         doc,
         (ti, ci),
-        notes,
+        out,
         StepKind::WriteNote {
             clip,
             clip_made: false,
+            count,
         },
         reach,
     )
 }
 
-/// From the bar of the note (or the end of the clip before it), `NEW_CLIP_BARS` bars long or up
-/// to the next clip, named after the track.
-fn write_in_new_clip(doc: &Doc, track: TrackId, note: Note) -> Result<NotesEdited, EditError> {
-    let ti = track_index(doc, track)?;
-    let old = &doc.tracks[ti];
-    if old.kind.is_vocal() {
-        return Err(EditError::NotKeys);
-    }
+/// Where a clip made at `tick` on the track at `ti` goes: from the head of the bar (or the end
+/// of the clip before, when later), `NEW_CLIP_BARS` bars long or up to the next clip. Only for
+/// a `tick` inside no clip of the track.
+fn new_clip_place(doc: &Doc, ti: usize, tick: u64) -> (u64, u64) {
+    let clips = &doc.tracks[ti].clips;
     let map = TempoMap::new(&doc.timeline);
-    let bar = map.meter_at(note.start);
-    let head = bar.bar_tick;
-    let start = old
-        .clips
-        .iter()
-        .filter(|c| c.end <= note.start)
+    let bar = map.meter_at(tick);
+    let start = (clips.iter())
+        .filter(|c| c.end <= tick)
         .map(|c| c.end)
-        .fold(head, u64::max);
-    let end = old
-        .clips
-        .iter()
-        .filter(|c| c.start > note.start)
+        .fold(bar.bar_tick, u64::max);
+    let end = (clips.iter())
+        .filter(|c| c.start > tick)
         .map(|c| c.start)
-        .fold(map.tick_of_bar(bar.bar + NEW_CLIP_BARS), u64::min);
+        .fold(map.tick_of_bar(bar.bar + NEW_CLIP_BARS), u64::min)
+        .min(MAX_TICK);
+    (start, end)
+}
+
+/// A new keys clip on the track at `ti` from `start` to `end`, named after the track, with one
+/// take holding `notes` (song positions inside the clip, in order of start), put in place.
+fn with_new_clip(
+    doc: &Doc,
+    ti: usize,
+    (start, end): (u64, u64),
+    notes: Vec<Note>,
+) -> Result<(Doc, ClipId), EditError> {
+    let old = &doc.tracks[ti];
     let mut ids = Ids(doc.next_id);
     let id = ClipId(ids.next()?);
     let take = Take {
         id: TakeId(ids.next()?),
         length: end - start,
-        notes: vec![Note {
-            start: note.start - start,
-            length: note.length.min(end - note.start),
-            ..note
-        }]
-        .into(),
+        notes: notes
+            .into_iter()
+            .map(|n| Note {
+                start: n.start - start,
+                ..n
+            })
+            .collect::<Vec<_>>()
+            .into(),
         controls: ChunkedVec::default(),
         origin: None,
     };
@@ -244,18 +263,71 @@ fn write_in_new_clip(doc: &Doc, track: TrackId, note: Note) -> Result<NotesEdite
         },
     );
     new.next_id = ids.0;
+    Ok((new, id))
+}
+
+/// The notes in a clip made for them, from the bar of the earliest start (see
+/// [`new_clip_place`]), named after the track. Notes running past its end are cut there.
+fn write_in_new_clip(
+    doc: &Doc,
+    track: TrackId,
+    mut notes: Vec<Note>,
+) -> Result<NotesEdited, EditError> {
+    let ti = track_index(doc, track)?;
+    if doc.tracks[ti].kind.is_vocal() {
+        return Err(EditError::NotKeys);
+    }
+    let first = notes
+        .iter()
+        .map(|n| n.start)
+        .min()
+        .expect("one note at least");
+    let (start, end) = new_clip_place(doc, ti, first);
+    notes.retain(|n| n.start < end);
+    for n in &mut notes {
+        n.length = n.length.min(end - n.start);
+    }
+    notes.sort_by_key(|n| (n.start, n.key));
+    let count = notes.len();
+    let (new, id) = with_new_clip(doc, ti, (start, end), notes)?;
     Ok(NotesEdited {
         edit: Edit {
             doc: new,
             step: StepKind::WriteNote {
                 clip: id,
                 clip_made: true,
+                count,
             },
         },
         clip: id,
-        selected: vec![0],
+        selected: (0..count).collect(),
         of_controls: false,
     })
+}
+
+/// An empty keys clip on `track` at `tick` (see [`new_clip_place`]), named after the track.
+/// `Overlap` when `tick` is inside a clip; `NotKeys` on a vocal track.
+pub fn create_clip(doc: &Doc, track: TrackId, tick: u64) -> Result<(Edit, ClipId), EditError> {
+    let ti = track_index(doc, track)?;
+    let t = &doc.tracks[ti];
+    if t.kind.is_vocal() {
+        return Err(EditError::NotKeys);
+    }
+    if tick >= MAX_TICK {
+        return Err(EditError::OffTheSong);
+    }
+    if t.clips.iter().any(|c| c.start <= tick && tick < c.end) {
+        return Err(EditError::Overlap);
+    }
+    let place = new_clip_place(doc, ti, tick);
+    let (new, clip) = with_new_clip(doc, ti, place, Vec::new())?;
+    Ok((
+        Edit {
+            doc: new,
+            step: StepKind::CreateClip { clip },
+        },
+        clip,
+    ))
 }
 
 /// Moves the notes by `ticks` and `keys`, or with `copy` adds moved copies. The notes move

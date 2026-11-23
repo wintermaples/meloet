@@ -1844,6 +1844,18 @@ export const texts = {
   "pr.keyChordMinor": e("{root}m", "user:2026-11-23", { root: "D" }),
   "pr.keyChordDim": e("{root}dim", "user:2026-11-23", { root: "B" }),
   "pr.keyChordAug": e("{root}aug", "user:2026-11-23", { root: "C" }),
+  // P6 (round 12): 「進行から並べる ▾」 at the right end of the chord row. The separator and the bottom line are those of the spec's picture.
+  "pr.progressionOpen": e("進行から並べる ▾", "user:2026-11-23"),
+  "pr.progressionPlace": e("並べる", "user:2026-11-23"),
+  "pr.progressionListen": e("聞く", "user:2026-11-23"),
+  "pr.progressionHint": e("▶ で聞く ・ Enter で 1 小節に 1 つずつ並べる", "user:2026-11-23"),
+  "pr.progSeparator": e(" – ", "user:2026-11-23"),
+  "pr.progRoyal": e("王道", "user:2026-11-23"),
+  "pr.progCanon": e("カノン", "user:2026-11-23"),
+  "pr.progKomuro": e("小室", "user:2026-11-23"),
+  "pr.progCircle": e("循環", "user:2026-11-23"),
+  "pr.progPop": e("ポップ", "user:2026-11-23"),
+  "pr.progSad": e("切ない", "user:2026-11-23"),
   "pr.noteList": e("ノートの一覧", "mock:A-PianoRoll"),
   "pr.selectedNotes": e("選んだノート", "mock:A-PianoRoll"),
   "pr.ccList": e("CC の一覧", "mock:A-PianoRoll"),
@@ -1965,6 +1977,24 @@ export const texts = {
   // Velocity lock (B-66) and changing velocities together (B-67).
   "input.velocityFixed": e("固定", "user:2026-11-18"),
   "inspector.matchVelocity": e("そろえる", "user:2026-11-18"),
+  // P3 (round 12): more rows of 「ベロシティをまとめて変える」 and 「長さをそろえる」. The marks % → ± are those of the spec's picture.
+  "inspector.scaleVelocity": e("割合", "user:2026-11-23"),
+  "inspector.rampVelocity": e("だんだん", "user:2026-11-23"),
+  "inspector.randomVelocity": e("ばらつき", "user:2026-11-23"),
+  "inspector.applyTool": e("かける", "user:2026-11-23"),
+  "inspector.percentMark": e("%", "user:2026-11-23"),
+  "inspector.rampMark": e("→", "user:2026-11-23"),
+  "inspector.spreadMark": e("±", "user:2026-11-23"),
+  "inspector.legato": e("次の音までのばす", "user:2026-11-23"),
+  "inspector.legatoApply": e("のばす", "user:2026-11-23"),
+  "msg.velocityScaled": e("{count} ノートのベロシティに {percent} % をかけました。", "builder:2026-11-23", { count: "3", percent: "120" }),
+  "msg.velocityRamped": e("{count} ノートのベロシティを {from} から {to} へだんだん変えました。", "builder:2026-11-23", {
+    count: "3",
+    from: "40",
+    to: "110",
+  }),
+  "msg.velocityRandomized": e("{count} ノートのベロシティを ± {amount} でばらつかせました。", "builder:2026-11-23", { count: "3", amount: "8" }),
+  "msg.notesLegato": e("{count} ノートを次の音までのばしました。", "builder:2026-11-23", { count: "3" }),
 
   // [Piano roll]
   // Column headings of the opened 「CC の一覧」 (the position is note.position).

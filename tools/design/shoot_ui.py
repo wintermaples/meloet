@@ -491,6 +491,8 @@ CLICKS = {
     "ccOtherMenu": ("pianoRollCc", '[data-test="pr-cc-other"]'),
     # Opens 「長さをそろえる」 and 「ベロシティをまとめて変える」 (the rows that change many notes at once).
     "inspectorBulk": ("pianoRoll", ('[data-test="inspector-same-length"]', '[data-test="inspector-velocity-all"]')),
+    # P6 (round 12): the list of 「進行から並べる ▾」.
+    "progressionMenu": ("pianoRoll", '[data-test="pr-progression-open"]'),
     # 「CC の一覧」 opened (R5-Lists).
     "ccList": ("pianoRollCc", '[data-test="pr-cc-list"]'),
     # Folds the sustain heading with a click.

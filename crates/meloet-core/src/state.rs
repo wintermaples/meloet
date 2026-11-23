@@ -2209,13 +2209,46 @@ impl Model {
                 .set_plugin_param(slot, table, param, value, commit, effects),
             // round12 stub: R3
             Command::SetClick { .. } => {}
-            // round12 stub: P3
-            Command::ScaleVelocity { .. }
-            | Command::RampVelocity { .. }
-            | Command::RandomVelocity { .. }
-            | Command::Legato { .. } => {}
-            // round12 stub: P6
-            Command::AddNotesAt { .. } => {}
+            Command::ScaleVelocity {
+                take,
+                notes,
+                percent,
+            } => {
+                if let Some(n) = self.play.scale_velocity(take, &notes, percent, effects) {
+                    self.notice = Some(n);
+                }
+            }
+            Command::RampVelocity {
+                take,
+                notes,
+                from,
+                to,
+            } => {
+                if let Some(n) = self.play.ramp_velocity(take, &notes, from, to, effects) {
+                    self.notice = Some(n);
+                }
+            }
+            Command::RandomVelocity {
+                take,
+                notes,
+                amount,
+                seed,
+            } => {
+                if let Some(n) = self
+                    .play
+                    .random_velocity(take, &notes, amount, seed, effects)
+                {
+                    self.notice = Some(n);
+                }
+            }
+            Command::Legato { take, notes } => {
+                if let Some(n) = self.play.legato(take, &notes, effects) {
+                    self.notice = Some(n);
+                }
+            }
+            Command::AddNotesAt { take, notes } => {
+                self.notice = self.play.add_notes_at(take, &notes, effects);
+            }
             // round12 stub: E9
             Command::PlayExported => {}
             // round12 stub: A3

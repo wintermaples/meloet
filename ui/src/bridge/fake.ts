@@ -4816,6 +4816,23 @@ function reduce(state: AppState, bands: FakeBands, rest: StatusMessage | null, s
     case "matchLength":
       if (command.take === pianoRoll.take && command.notes.length > 0) notice = { id: "lengthMatched", count: command.notes.length, value: Math.max(1, command.value) };
       break;
+    case "scaleVelocity":
+      if (command.take === pianoRoll.take && command.notes.length > 0)
+        notice = { id: "velocityScaled", count: command.notes.length, percent: Math.min(300, Math.max(10, command.percent)) };
+      break;
+    case "rampVelocity": {
+      const v = (x: number) => Math.min(127, Math.max(1, x));
+      if (command.take === pianoRoll.take && command.notes.length > 0)
+        notice = { id: "velocityRamped", count: command.notes.length, from: v(command.from), to: v(command.to) };
+      break;
+    }
+    case "randomVelocity":
+      if (command.take === pianoRoll.take && command.notes.length > 0)
+        notice = { id: "velocityRandomized", count: command.notes.length, amount: Math.min(32, Math.max(1, command.amount)) };
+      break;
+    case "legato":
+      if (command.take === pianoRoll.take && command.notes.length > 0) notice = { id: "notesLegato", count: command.notes.length };
+      break;
     case "setVelocityFixed":
       keyboards.velocityFixed = { on: command.on, value: Math.min(127, Math.max(1, command.value)) };
       break;

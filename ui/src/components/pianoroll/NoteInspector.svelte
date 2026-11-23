@@ -17,6 +17,7 @@
   import ChoiceMenu from "../ChoiceMenu.svelte";
   import { gridText, scaleName } from "../format";
   import { keyLabel, rollShowsDrums, selectedKeysFull, selectedKeysText } from "./drums";
+  import { newSeed, readTool, stepTool, TOOL_INPUTS, toolCommand, toolInitial, type Tool, type ToolField } from "./bulkTools";
   import { GRID_DIVISIONS, indexesOf } from "./geom";
   import NoteFieldInput from "./NoteFieldInput.svelte";
   import {
@@ -173,6 +174,59 @@
     ev.preventDefault();
     ev.stopPropagation();
   }
+
+  // ---- 「割合」 「だんだん」 「ばらつき」 and 「次の音までのばす」 (P3) ----
+
+  const toolUsable = $derived(live && selected.length > 0);
+  const toolDrafts = $state<Record<ToolField, string>>({
+    percent: toolInitial("percent"),
+    rampFrom: toolInitial("rampFrom"),
+    rampTo: toolInitial("rampTo"),
+    spread: toolInitial("spread"),
+  });
+  /** The values last used, for 「もとの … のまま」 and Esc. */
+  const toolKept: Record<ToolField, string> = {
+    percent: toolInitial("percent"),
+    rampFrom: toolInitial("rampFrom"),
+    rampTo: toolInitial("rampTo"),
+    spread: toolInitial("spread"),
+  };
+  const toolBroken = (f: ToolField) => toolDrafts[f].trim() !== "" && readTool(f, toolDrafts[f]) === null;
+
+  function applyTool(tool: Tool): void {
+    if (!toolUsable) return;
+    const fields = TOOL_INPUTS[tool];
+    const reads = fields.map((f) => readTool(f, toolDrafts[f]));
+    const bad = fields.findIndex((_, i) => reads[i] === null);
+    if (bad >= 0) {
+      // Only the velocity fields have words on the status line; the others stay red.
+      if (tool === "ramp") send({ type: "rejectValue", field: "velocity", kept: toolKept[fields[bad]!], range: null });
+      return;
+    }
+    const values = reads.map((r) => r!.value);
+    send(toolCommand(tool, take!.id, selected, values, newSeed()));
+    const clamped = reads.find((r) => r!.clamped)?.clamped;
+    if (clamped) send(clampCommand(clamped));
+    fields.forEach((f, i) => (toolDrafts[f] = toolKept[f] = String(values[i])));
+  }
+
+  function toolKey(ev: KeyboardEvent, f: ToolField, tool: Tool): void {
+    if (ev.isComposing || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+    if (ev.key === "Enter" && !ev.shiftKey) {
+      applyTool(tool);
+    } else if (ev.key === "Escape" && !ev.shiftKey) {
+      toolDrafts[f] = toolKept[f];
+      (ev.currentTarget as HTMLInputElement).blur();
+    } else if (ev.key === "ArrowUp" || ev.key === "ArrowDown") {
+      toolDrafts[f] = stepTool(f, toolDrafts[f], (ev.key === "ArrowUp" ? 1 : -1) * (ev.shiftKey ? 10 : 1));
+    } else {
+      return;
+    }
+    ev.preventDefault();
+    ev.stopPropagation();
+  }
+
+  const legato = () => toolUsable && send({ type: "legato", take: take!.id, notes: selected });
 
   // ---- Quantize ----
 
@@ -364,6 +418,43 @@
   </div>
 {/snippet}
 
+{#snippet toolInput(f: ToolField, label: string, test: string, tool: Tool)}
+  {@const broken = toolBroken(f)}
+  <input
+    class="bulk-field m-num part"
+    class:broken
+    type="text"
+    spellcheck="false"
+    autocomplete="off"
+    aria-label={label}
+    aria-invalid={broken}
+    disabled={!toolUsable}
+    data-test={test}
+    bind:value={toolDrafts[f]}
+    onkeydown={(ev) => toolKey(ev, f, tool)}
+  />
+{/snippet}
+
+{#snippet toolRow(tool: Tool, label: string, test: string)}
+  <div class="bulk-row">
+    <span class="m-lbl bulk-label" class:off={!toolUsable}>{label}</span>
+    <span class="tool-box">
+      {#if tool === "percent"}
+        {@render toolInput("percent", label, "inspector-percent-field", tool)}
+        <span class="m-lbl">{t("inspector.percentMark")}</span>
+      {:else if tool === "ramp"}
+        {@render toolInput("rampFrom", label, "inspector-ramp-from-field", tool)}
+        <span class="m-lbl">{t("inspector.rampMark")}</span>
+        {@render toolInput("rampTo", label, "inspector-ramp-to-field", tool)}
+      {:else}
+        <span class="m-lbl">{t("inspector.spreadMark")}</span>
+        {@render toolInput("spread", label, "inspector-spread-field", tool)}
+      {/if}
+    </span>
+    <button class="m-btn" aria-disabled={!toolUsable} data-test={test} onclick={() => applyTool(tool)}>{t("inspector.applyTool")}</button>
+  </div>
+{/snippet}
+
 <div class="inspector" data-testid="pr-inspector">
   <ScrollArea>
     {@render field("position", null)}
@@ -455,10 +546,17 @@
     {@render bulkHead("sameLength", t("inspector.sameLength"), "inspector-same-length")}
     {#if inspectorFolds.sameLength}
       {@render bulkRow("length", t("note.length"), null, "inspector-same-length-field", "inspector-match-length")}
+      <div class="bulk-row">
+        <span class="m-lbl grow" class:off={!toolUsable}>{t("inspector.legato")}</span>
+        <button class="m-btn" aria-disabled={!toolUsable} data-test="inspector-legato" onclick={legato}>{t("inspector.legatoApply")}</button>
+      </div>
     {/if}
     {@render bulkHead("velocityAll", t("inspector.velocityAll"), "inspector-velocity-all")}
     {#if inspectorFolds.velocityAll}
       {@render bulkRow("velocity", t("pr.velocity"), "ベロシティ", "inspector-velocity-all-field", "inspector-match-velocity")}
+      {@render toolRow("percent", t("inspector.scaleVelocity"), "inspector-scale-velocity")}
+      {@render toolRow("ramp", t("inspector.rampVelocity"), "inspector-ramp-velocity")}
+      {@render toolRow("spread", t("inspector.randomVelocity"), "inspector-random-velocity")}
     {/if}
   </ScrollArea>
 </div>
@@ -598,6 +696,24 @@
   .bulk-field:disabled {
     border-color: var(--color-gray-5);
     color: var(--color-gray-7);
+  }
+  /* The boxes of 「割合」 「だんだん」 「ばらつき」 with their marks, as wide as one input box. */
+  .tool-box {
+    width: var(--mock-inspector-bulk-field);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+  }
+  .bulk-field.part {
+    width: auto;
+    flex: 1;
+    min-width: 0;
+  }
+  /* Two boxes in the width of one: no padding, so that three digits fit. */
+  .tool-box:has(.part + * + .part) .part {
+    padding: 0;
+    text-align: center;
   }
   .bulk-field.broken {
     border-color: var(--color-rec);

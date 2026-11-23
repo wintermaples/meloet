@@ -399,6 +399,14 @@
         return plain("msg.velocityMatched", { count: m.count, value: m.value });
       case "lengthMatched":
         return plain("msg.lengthMatched", { count: m.count, value: noteLengthText(m.value, { num: app.timeline.meterNum, den: app.timeline.meterDen }) });
+      case "velocityScaled":
+        return plain("msg.velocityScaled", { count: m.count, percent: m.percent });
+      case "velocityRamped":
+        return plain("msg.velocityRamped", { count: m.count, from: m.from, to: m.to });
+      case "velocityRandomized":
+        return plain("msg.velocityRandomized", { count: m.count, amount: m.amount });
+      case "notesLegato":
+        return plain("msg.notesLegato", { count: m.count });
       case "clipsNotMoved":
         return plain("msg.clipsNotMoved");
       case "clipsNotPasted":

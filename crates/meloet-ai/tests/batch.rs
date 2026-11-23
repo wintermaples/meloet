@@ -64,6 +64,16 @@ fn a_mix_pass_over_several_tracks_is_one_step() {
     assert_eq!(done["step"]["index"], before.undo_count + 1, "{done}");
     let results = done["results"].as_array().unwrap();
     assert_eq!(results.len(), 15);
+    // 「まとめて変える（14 個）」: the pan of track 2 was 0 already, so that operation made
+    // no step.
+    assert_eq!(results[7]["result"]["changed"], false, "{done}");
+    assert_eq!(
+        done["step"]["name"],
+        json!({"kind": "batch", "count": 14}),
+        "{done}"
+    );
+    assert_eq!(done["step"]["what"], json!({"kind": "none"}));
+    assert_eq!(done["step"]["place"], Value::Null);
     assert_eq!(results[0]["tool"], "rename_track");
     assert_eq!(results[14]["result"]["changed"], true);
     assert!(results[14]["result"].get("step").is_none(), "{done}");

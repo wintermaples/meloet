@@ -264,3 +264,126 @@ fn a_mute_lane_that_moves_the_mute_rests_when_the_recall_changes_it() {
     assert!(resting(&e.doc, t2) && !resting(&e.doc, t3));
     assert_eq!(muted(&e.doc), [t2]);
 }
+
+#[test]
+fn a_rename_keeps_the_place_and_follows_the_rule_of_a_save() {
+    let doc = three_tracks();
+    let t2 = doc.tracks[1].id;
+    let doc = save_mute_set(&doc, &none(), "A", false).unwrap().doc;
+    let doc = save_mute_set(&mute(&doc, t2), &none(), "B", false)
+        .unwrap()
+        .doc;
+    let e = rename_mute_set(&doc, " A ", "  サビ ").unwrap();
+    assert_eq!(e.step, StepKind::RenameMuteSet { index: 0 });
+    let names: Vec<&str> = e.doc.mute_sets.iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(names, ["サビ", "B"], "in its place");
+    assert_eq!(
+        MuteSet {
+            name: "A".into(),
+            ..e.doc.mute_sets[0].clone()
+        },
+        doc.mute_sets[0],
+        "only the name changes"
+    );
+    assert!(Arc::ptr_eq(&e.doc.tracks[1], &doc.tracks[1]));
+
+    assert_eq!(
+        rename_mute_set(&doc, "A", "B"),
+        Err(MuteSetError::Taken),
+        "the name of another set, as a save without overwrite"
+    );
+    assert_eq!(
+        rename_mute_set(&doc, "A", " A "),
+        Err(MuteSetError::Unchanged)
+    );
+    assert_eq!(
+        rename_mute_set(&doc, "ない", "C"),
+        Err(MuteSetError::NoSuchSet)
+    );
+    let long = "あ".repeat(MAX_NAME_CHARS + 1);
+    for bad in ["", "  ", "a\nb", long.as_str()] {
+        assert_eq!(
+            rename_mute_set(&doc, "A", bad),
+            Err(MuteSetError::BadName),
+            "{bad:?}"
+        );
+        assert_eq!(
+            save_mute_set(&doc, &none(), bad, true),
+            Err(MuteSetError::BadName),
+            "{bad:?}"
+        );
+    }
+    let longest = "あ".repeat(MAX_NAME_CHARS);
+    assert!(rename_mute_set(&doc, "A", &longest).is_ok());
+
+    // Undo and redo bring the names back.
+    let mut h = History::new();
+    let mut now = doc.clone();
+    h.apply(&mut now, e);
+    h.undo(&mut now);
+    assert_eq!(now.mute_sets, doc.mute_sets);
+    h.redo(&mut now);
+    assert_eq!(now.mute_sets[0].name, "サビ");
+}
+
+/// What a recall says of the song: no step, and the solo as it is.
+fn recall_is_none(doc: &Doc, soloed: &BTreeSet<TrackId>, name: &str) -> bool {
+    let r = recall_mute_set(doc, soloed, name).unwrap();
+    r.edit.is_none() && r.soloed == *soloed
+}
+
+#[test]
+fn a_set_is_now_when_a_recall_would_change_nothing() {
+    let doc = three_tracks();
+    let [_, t2, t3] = ids(&doc)[..] else {
+        panic!("three tracks")
+    };
+    let soloed = BTreeSet::from([t3]);
+    let doc = save_mute_set(&mute(&doc, t2), &soloed, "A", false)
+        .unwrap()
+        .doc;
+    let set = doc.mute_set("A").unwrap().clone();
+    let deleted = delete_track(&doc, t3).unwrap().doc;
+    let (added, t4) = add_track(&doc, Some(t3), InstrumentRef::SINE, crate::Language::Ja).unwrap();
+    let cases: Vec<(&str, Doc, BTreeSet<TrackId>)> = vec![
+        ("as saved", doc.clone(), soloed.clone()),
+        ("the solo off", doc.clone(), none()),
+        ("another solo", doc.clone(), BTreeSet::from([T1, t3])),
+        ("a mute more", mute(&doc, T1), soloed.clone()),
+        ("a mute less", mute(&doc, t2), soloed.clone()),
+        (
+            "a return",
+            toggle_return_mute(&doc, Bus::A).doc,
+            soloed.clone(),
+        ),
+        ("a soloed track deleted", deleted.clone(), none()),
+        ("its solo left behind", deleted, soloed.clone()),
+        ("a track added", mute(&added.doc, t4), soloed.clone()),
+        (
+            "a track added, soloed",
+            added.doc.clone(),
+            BTreeSet::from([t3, t4]),
+        ),
+    ];
+    let mut now = Vec::new();
+    for (case, doc, soloed) in &cases {
+        let is_now = set.is_now(doc, soloed);
+        assert_eq!(is_now, recall_is_none(doc, soloed, "A"), "{case}");
+        now.push((*case, is_now));
+    }
+    assert_eq!(
+        now,
+        [
+            ("as saved", true),
+            ("the solo off", false),
+            ("another solo", false),
+            ("a mute more", false),
+            ("a mute less", false),
+            ("a return", false),
+            ("a soloed track deleted", true),
+            ("its solo left behind", false),
+            ("a track added", true),
+            ("a track added, soloed", true),
+        ]
+    );
+}

@@ -55,6 +55,7 @@ export {
   SOUND_KNOBS,
   TUNE_STRENGTH_MAX,
 } from "./types";
+export { MUTE_SET_NAME_MAX, MUTE_SETS_MAX } from "./types";
 export { levelFor, type LevelPeaks } from "./peaks";
 export { keyIsDown, positionAt, SPECTRUM_BANDS, type MicMeter, type Telemetry, type TransportReading } from "./telemetry";
 export { CONTROL_CC, CONTROL_PITCH_BEND, NO_FROM, type TakeNotes } from "./take";

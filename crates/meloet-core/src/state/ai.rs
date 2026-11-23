@@ -694,6 +694,10 @@ impl Model {
                 self.play.ai_recall_mute_set(&name, effects)?
             }
             AiAsk::DeleteMuteSet { name } => self.play.ai_delete_mute_set(&name, effects)?,
+            AiAsk::RenameMuteSet { name, to } => {
+                no_step = true;
+                self.play.ai_rename_mute_set(&name, &to, effects)?
+            }
             AiAsk::ImportAudio { path, track, tick } => {
                 if let Some(track) = track {
                     let t = (self.play.song().doc.track(TrackId(track)))

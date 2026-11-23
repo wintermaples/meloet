@@ -353,6 +353,7 @@ pub(crate) fn step_text(row: &StepRow) -> (StepName, StepWhat, Option<StepPlace>
     let notes = |clip: ClipId, n: usize| a.notes_what(clip, n);
     let clips = |n: usize| a.clips_what(n);
     let marker_name = |doc: &Doc, id| doc.marker(id).map(|m| m.name.clone());
+    let set_name = |doc: &Doc, index: usize| doc.mute_sets.get(index).map(|s| s.name.clone());
     let named = |name: Option<String>| match name {
         Some(name) => StepWhat::Name { name },
         None => StepWhat::None,
@@ -1036,17 +1037,35 @@ pub(crate) fn step_text(row: &StepRow) -> (StepName, StepWhat, Option<StepPlace>
             },
             mixer,
         ),
-        // Saving and deleting a set have no name of their own yet (a question for the owner):
-        // 「ミュート」 and the set's name, as for a recall.
-        StepKind::SaveMuteSet { index } | StepKind::RecallMuteSet { index } => (
-            StepName::Mute,
-            named(a.after.mute_sets.get(index).map(|s| s.name.clone())),
+        StepKind::SaveMuteSet { index } => (
+            StepName::SaveMuteSet,
+            named(set_name(a.after, index)),
+            mixer,
+        ),
+        StepKind::RecallMuteSet { index } => (
+            StepName::RecallMuteSet,
+            named(set_name(a.after, index)),
             mixer,
         ),
         StepKind::DeleteMuteSet { index } => (
-            StepName::Mute,
-            named(a.before.mute_sets.get(index).map(|s| s.name.clone())),
+            StepName::DeleteMuteSet,
+            named(set_name(a.before, index)),
             mixer,
+        ),
+        StepKind::RenameMuteSet { index } => (
+            StepName::RenameMuteSet,
+            match (set_name(a.before, index), set_name(a.after, index)) {
+                (Some(from), Some(to)) => StepWhat::Renamed { from, to },
+                (_, to) => named(to),
+            },
+            mixer,
+        ),
+        StepKind::Batch { count: steps } => (
+            StepName::Batch {
+                count: count(steps),
+            },
+            StepWhat::None,
+            None,
         ),
         StepKind::AddLane { home, target } => {
             (StepName::AddLane, a.lane(home, target, None), on_home(home))

@@ -1,6 +1,6 @@
 # The AI link's tools
 
-The MCP tools of `meloet-ai` (94 after round 11), and for each tool added or changed in round 11 its arguments and its answer. Taken from the code (`crates/meloet-ai/src/tools.rs`, `crates/meloet-ai/src/tools/*.rs`): the argument structs and the `json!` answers. How they are built: [architecture 24-12, 24-14 and 24-16](../architecture.md). The schema each tool sends (`tools/list`) is the full truth; this page is a map.
+The MCP tools of `meloet-ai` (94 after round 11; 95 with `rename_mute_set`, round 12), and for each tool added or changed in round 11 its arguments and its answer. Taken from the code (`crates/meloet-ai/src/tools.rs`, `crates/meloet-ai/src/tools/*.rs`): the argument structs and the `json!` answers. How they are built: [architecture 24-12, 24-14 and 24-16](../architecture.md). The schema each tool sends (`tools/list`) is the full truth; this page is a map.
 
 ## How every tool answers
 
@@ -19,7 +19,7 @@ The MCP tools of `meloet-ai` (94 after round 11), and for each tool added or cha
 
 - Arguments: `operations`: 1–200 of `{tool: string (1–64), arguments?: object}`, run in order; each sees what the ones before it did. In `arguments`, a value may be `{"result_of": N, "field": "clip"}`: the field (`clip`, `take`, `track`, `track_id`) of operation N's result (from 1).
 - Refused before anything runs: read tools, `batch`, `undo`, `save_song`, `save_song_as`, `open_song`, `new_song`, `import_audio`, `export_song`, `set_plugin_state`, `set_plugin_state_text`, `load_preset`, `save_preset`, `surge_set_modulation`, `surge_remove_modulation`, `surge_set_patch_params` ("Operation 2 (undo) cannot be in a batch: …. Nothing was run."). Plugin parameter changes are refused by meloet when their turn comes, and all is taken back.
-- Answer when all worked: text "Done: N operations as one undo step." (or that someone else changed the song, so it is not one step), then `{changed, step (the one row, or null), undo_steps, operations, results: [{tool, result}]}`; each `result` is that tool's answer without `step` and `undo_steps`.
+- Answer when all worked: text "Done: N operations as one undo step." (or that someone else changed the song, so it is not one step), then `{changed, step (the one row, or null), undo_steps, operations, results: [{tool, result}]}`; each `result` is that tool's answer without `step` and `undo_steps`. Since round 12 the row is `{"kind": "batch", "count": N}` (「まとめて変える（N 個）」), N the operations that made a step; a batch that made one step keeps that step's row.
 - Answer when one failed (`isError`): "Batch stopped at operation 5 of 6 (set_volume): …" and whether everything was taken back; `{changed, taken_back, failed: {operation, tool, error}, undo_steps, done_before}`. When meloet itself closed the batch (idle 2 s, too many held intents, quitting): "meloet closed the batch … took all of it back: nothing was changed. Run it again." with `{changed: false, taken_back: true}`.
 - While a batch runs, what the person does in meloet waits and is done right after it.
 
@@ -110,8 +110,9 @@ No new tool. Every track argument takes `"id:7"` too, and these answers gained i
 | `list_mute_sets` (new; read only) | `name` (only that set) | `{mute_sets: [{name, tracks, track_ids, muted, muted_ids, soloed, soloed_ids, muted_returns: ["return_a" …], deleted_track_ids, not_in_set, not_in_set_ids, as_now}]}` (tracks as numbers now) |
 | `recall_mute_set` (new) | `name` | `{changed, set, step, undo_steps, solo_changed, muted, muted_ids, muted_returns, soloed, soloed_ids, deleted_track_ids, not_in_set, not_in_set_ids, rested_lanes, rested_lanes_ids}`; as now: `changed: false` |
 | `delete_mute_set` (new; destructive) | `name` | `{deleted, step, undo_steps}` |
+| `rename_mute_set` (round 12; idempotent) | `name`, `new_name` (1–64) | `{changed, set, step, undo_steps}`; the name it has: `changed: false`, no step; the name of another set is an error |
 
-One step each. Solo comes with a set but is not part of the step. `deleted_track_ids` are plain integers.
+One step each. Solo comes with a set but is not part of the step. `deleted_track_ids` are plain integers. Since round 12 the steps are 「ミュートのセットを保存する」 / 「呼び出す」 / 「消す」 / 「ミュートのセットの名前を変える」 (`step.name.kind` `saveMuteSet`, `recallMuteSet`, `deleteMuteSet`, `renameMuteSet`), and the screen has the sets too (architecture 25-37).
 
 ## 2: plugin state
 

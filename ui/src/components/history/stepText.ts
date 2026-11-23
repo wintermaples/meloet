@@ -66,6 +66,8 @@ export function stepNameText(name: StepName): string {
         : fill(text, { effect: spaced(name.plugin), param: name.param });
     case "pluginWindow":
       return fill(text, { name: name.plugin });
+    case "batch":
+      return fill(text, { count: name.count });
     default:
       return text;
   }

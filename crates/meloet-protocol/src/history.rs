@@ -213,6 +213,20 @@ pub enum StepName {
     ClearComp,
     /// M7 `StretchChange::TuneStrength` and `StretchChange::TuneScale`.
     SetClipTune,
+    // Protocol 34 (round 12, the owner's answers of 2026-11-24).
+    /// `Command::SaveMuteSet` and the AI link's `save_mute_set`; 「（何を）」 the set's name.
+    SaveMuteSet,
+    /// `Command::RecallMuteSet`; 「（何を）」 the set's name.
+    RecallMuteSet,
+    /// `Command::DeleteMuteSet`; 「（何を）」 the set's name.
+    DeleteMuteSet,
+    /// `Command::RenameMuteSet`; 「（何を）」 the names before and after.
+    RenameMuteSet,
+    /// The AI link's `batch`: `count` steps made one (「まとめて変える（N 個）」), at least 2.
+    /// Nothing follows the name, and the row names no place.
+    Batch {
+        count: u32,
+    },
 }
 
 impl StepName {
@@ -328,6 +342,11 @@ impl StepName {
             SetComp,
             ClearComp,
             SetClipTune,
+            SaveMuteSet,
+            RecallMuteSet,
+            DeleteMuteSet,
+            RenameMuteSet,
+            Batch { count: 15 },
         ];
         // A kind added to the enum and not to the list above does not build.
         for name in &all {
@@ -430,7 +449,12 @@ impl StepName {
                 | AddFadeOut
                 | SetComp
                 | ClearComp
-                | SetClipTune => {}
+                | SetClipTune
+                | SaveMuteSet
+                | RecallMuteSet
+                | DeleteMuteSet
+                | RenameMuteSet
+                | Batch { .. } => {}
             }
         }
         all

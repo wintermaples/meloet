@@ -1658,6 +1658,11 @@ export const enStepNames: Record<StepName["kind"], string> = {
   setComp: "Comping",
   clearComp: "Undo comping",
   setClipTune: "Pull to scale",
+  saveMuteSet: "Save a mute set",
+  recallMuteSet: "Recall a mute set",
+  deleteMuteSet: "Delete a mute set",
+  renameMuteSet: "Rename a mute set",
+  batch: "Change together ({count})",
 };
 
 /** The English word and tip of each term of ja.ts, by its Japanese word. */

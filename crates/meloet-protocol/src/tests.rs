@@ -219,6 +219,10 @@ pub(super) fn sample_state() -> AppState {
             }),
             loop_on: true,
             file: SongFile::Changed,
+            mute_sets: vec![MuteSetView {
+                name: "サビ".into(),
+                as_now: true,
+            }],
         },
         timeline: sample_timeline(),
         transport: TransportView {
@@ -4009,7 +4013,7 @@ fn every_step_name_has_a_kind_of_its_own() {
                 .to_owned()
         })
         .collect();
-    assert_eq!(kinds.len(), 99);
+    assert_eq!(kinds.len(), 104);
     kinds.sort();
     kinds.dedup();
     assert_eq!(kinds.len(), all.len(), "a kind is listed twice");

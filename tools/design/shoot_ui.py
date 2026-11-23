@@ -353,6 +353,11 @@ BOARDS = {
     # Round 12 E3: the knobs of a built-in sound, and of a drum kit with two rows disabled (no mock).
     "paramsSoundKnobs": None,
     "paramsSoundDrums": None,
+    # Round 12, the owner's answers (no mock): three mute sets, as many as a song holds, and the history rows of mute
+    # sets and of a batch of the AI link.
+    "mixerMuteSets": None,
+    "mixerMuteSetsFull": None,
+    "historyMuteSets": None,
 }
 # Double-clicks the Vel cell of a row of the note list and types into the field (R3-Lanes: "96|" and "200").
 TYPE_KEY_FILTER = """
@@ -1042,6 +1047,9 @@ ONLY = {
     "paramsSaturation": [(1280, 800, 100)],
     "paramsSoundKnobs": [(1280, 800, 100), (1280, 800, 125)],
     "paramsSoundDrums": [(1280, 800, 100)],
+    "mixerMuteSets": [(1280, 800, 100)],
+    "mixerMuteSetsFull": [(1280, 800, 100)],
+    "historyMuteSets": [(1280, 800, 100)],
 }
 scenes = args[1:] or list(BOARDS)
 

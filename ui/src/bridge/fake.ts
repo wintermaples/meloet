@@ -25,6 +25,7 @@ import { fakeCompWindow, fakeTakes, reduceComp } from "./fakeComp";
 import { fakeUserPreset, presetOf, reducePresets } from "./fakePresets";
 import { FAKE_ARP_OFF, fakeKnobs, fakeSetSoundKnob, fakeSpectrum, languageFromUrl, reduceArp, reduceLanguage, reduceMonoListen, reduceSpectrum } from "./fakeWave3";
 import { fakeFadeOut } from "./fakeFade";
+import { fakeMuteSet, reduceMuteSets, withMuteSets, type FakeMuteSet } from "./fakeMuteSets";
 import {
   CLIP_CENTS_MAX,
   TUNE_STRENGTH_MAX,
@@ -37,6 +38,7 @@ import {
   EXPORT_WAVE_BARS,
   INSTRUMENT_GROUPS,
   LATENCY_CLICKS,
+  MUTE_SETS_MAX,
   PROTOCOL_VERSION,
   SOURCE_BPM_MAX,
   SOURCE_BPM_MIN,
@@ -116,6 +118,8 @@ export type FakeSong = Omit<WireSong, "tracks" | "returns" | "master"> & {
   tracks: FakeTrack[];
   returns: [WireSong["returns"][0] & OwnStrip, WireSong["returns"][1] & OwnStrip];
   master: WireSong["master"] & OwnStrip;
+  /** What the mute sets hold; `muteSets` is made from them (`withMuteSets`). */
+  muteSetsKept?: FakeMuteSet[];
 };
 export type FakeShelf = WireShelf & {
   favorites: InstrumentKind[];
@@ -578,6 +582,7 @@ export function fakeState(): AppState {
       loopRange: null,
       loopOn: false,
       file: "neverSaved",
+      muteSets: [],
     },
     timeline: {
       tempoBpm: 96,
@@ -1995,6 +2000,30 @@ const newEffectScene = (effect: EffectKind): SceneDef => ({
 SCENES.paramsGate = newEffectScene("gate");
 SCENES.paramsDeEsser = newEffectScene("deEsser");
 SCENES.paramsSaturation = newEffectScene("saturation");
+// Round 12, the owner's answers (B-97-3; no mock): the mixer band, its song with three mute sets for the menu at the
+// head of the band. 「シンセなし」 is as the song is now (「5 シンセ」 is muted); the others are not.
+function mixerWithSets(s: AppState): void {
+  mixerSong(s, { strip: RETURN_A, slot: 0 }, "reverb", null);
+  s.params = { selected: null, clips: null };
+  const [piano, , , pad, synth] = s.song.tracks.map((t) => t.id);
+  s.song.muteSetsKept = [
+    fakeMuteSet(s.song, "ドラムとベースだけ", { muted: [piano!, pad!, synth!], soloed: [] }),
+    fakeMuteSet(s.song, "シンセなし", { muted: [synth!], soloed: [] }),
+    fakeMuteSet(s.song, "ピアノだけ", { muted: [], soloed: [piano!] }),
+  ];
+  s.song.tracks[4]!.muted = true;
+}
+SCENES.mixerMuteSets = { setup: mixerWithSets, bands: ["mixer"], meters: QUIET };
+// The same with as many sets as a song holds (MUTE_SETS_MAX): no more can be saved.
+SCENES.mixerMuteSetsFull = {
+  setup(s) {
+    mixerWithSets(s);
+    const more = Array.from({ length: MUTE_SETS_MAX - 3 }, (_, i) => fakeMuteSet(s.song, `セット ${i + 4}`, { muted: [], soloed: [] }));
+    s.song.muteSetsKept = [...s.song.muteSetsKept!, ...more];
+  },
+  bands: ["mixer"],
+  meters: QUIET,
+};
 // Not from a mock: 「空き ＋」 of the second slot of 「1 ピアノ」 opened the shelf, which lists the effects; 「コンプレッサー」 is chosen.
 SCENES.shelfEffects = {
   setup(s) {
@@ -2374,7 +2403,7 @@ export function fakeScene(name: string, scale?: number, viewport = { width: 1280
   state.workspace.layout = bands.layout();
   def.after?.(state);
   if (theme) state.workspace.theme = theme;
-  state.song = settleSong(state.song);
+  state.song = withMuteSets(settleSong(state.song));
   state.shelf = settleShelf(state.shelf);
   state.history = historyOf(state.song);
   const meters = { ...def.meters, spectrum: def.meters.spectrum ?? fakeSpectrum(def.meters.master) };
@@ -3003,6 +3032,23 @@ SCENES.history5000 = {
   bands: ["history"],
   meters: QUIET,
   history: FIRST_STEPS,
+};
+// Round 12, the owner's answers (B-97-1, B-97-2; no mock): the rows of mute sets and of a batch of the AI link.
+SCENES.historyMuteSets = {
+  setup(s) {
+    bandSong(s, BAND_TRACKS.slice(0, 5));
+    Object.assign(s.song, { undoCount: 13, redoCount: 0, file: "changed" });
+  },
+  bands: ["history"],
+  meters: QUIET,
+  history: [
+    ...FIRST_STEPS,
+    row(9, { kind: "saveMuteSet" }, { kind: "name", name: "サビ" }, { kind: "mixer" }),
+    row(10, { kind: "recallMuteSet" }, { kind: "name", name: "サビ" }, { kind: "mixer" }),
+    row(11, { kind: "renameMuteSet" }, { kind: "renamed", from: "サビ", to: "大サビ" }, { kind: "mixer" }),
+    row(12, { kind: "deleteMuteSet" }, { kind: "name", name: "ドラムだけ" }, { kind: "mixer" }),
+    row(13, { kind: "batch", count: 15 }, { kind: "none" }, null),
+  ],
 };
 
 // ---- round 7, step 0-2: the answers to 92 (spec 11th edition, F7-Answers92 and R11-Answers92) ----
@@ -5862,7 +5908,8 @@ export function createFakeTransport(initial?: AppState): Transport {
       }
       const round10 =
         reduceRound10(state, bands, command, FAKE_TAKES) ?? reduceP4(state, command, FAKE_TAKES, newKitTrack, nowUs()) ?? reduceSections(state, command, FAKE_TAKES) ??
-        reduceArp(state, command);
+        reduceArp(state, command) ??
+        reduceMuteSets(state, command);
       if (round10?.row) {
         historyRows.length = Math.min(historyRows.length, round10.row.index - 1);
         historyRows[round10.row.index - 1] = round10.row;
@@ -5897,6 +5944,9 @@ export function createFakeTransport(initial?: AppState): Transport {
         if (at >= 0) changes.splice(at, 1);
         changes.push({ section: "params", value: params });
       }
+      // Whether each mute set is as the song is now follows every change of the song.
+      const songChange = changes.find((c) => c.section === "song");
+      if (songChange) songChange.value = withMuteSets(songChange.value as SongView);
       // The counts of the history band follow the song's.
       const song = changes.find((c) => c.section === "song");
       if (song && !changes.some((c) => c.section === "history")) {

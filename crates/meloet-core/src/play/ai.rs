@@ -168,8 +168,9 @@ impl Play {
     }
 
     /// Makes one step of the steps made since `mark`, when the song is at `end` still:
-    /// its row is named as the last of them, and undoing it brings back what was selected
-    /// before the first. Returns how many steps they were (0: none, or not at `end`).
+    /// its row says how many they were (「まとめて変える（N 個）」), and undoing it brings back
+    /// what was selected before the first. Returns how many steps they were (0: none, or not
+    /// at `end`).
     pub(crate) fn ai_merge(&mut self, mark: &AiMark, end: (u32, u64)) -> usize {
         if end != self.ai_place() {
             return 0;

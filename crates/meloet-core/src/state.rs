@@ -2553,6 +2553,13 @@ impl Model {
                     effects.push(Effect::SaveSettings(self.settings()));
                 }
             }
+
+            Command::SaveMuteSet { name, overwrite } => {
+                self.play.save_mute_set(&name, overwrite, effects)
+            }
+            Command::RecallMuteSet { name } => self.play.recall_mute_set(&name, effects),
+            Command::DeleteMuteSet { name } => self.play.delete_mute_set(&name, effects),
+            Command::RenameMuteSet { name, to } => self.play.rename_mute_set(&name, &to, effects),
         }
         None
     }
@@ -3430,6 +3437,7 @@ fn song_view(
         loop_range: play.loop_span(),
         loop_on: song.session.loop_on,
         file,
+        mute_sets: play.mute_sets_view(),
     }
 }
 

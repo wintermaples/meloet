@@ -455,21 +455,19 @@ fn merged_steps_are_one_step_both_ways() {
     assert_eq!(doc, after, "the song stays as it is");
     assert_ne!(h.version(), end, "another step, another number");
     let row = h.row(&doc, 1).unwrap();
-    assert!(
-        matches!(row.kind, StepKind::Tempo { .. }),
-        "named as the last"
-    );
+    let batch = StepKind::Batch { count: 3 };
+    assert_eq!(row.kind, batch, "named by how many steps it holds");
     assert_eq!(row.number, h.version());
     assert_eq!(held(row.before), held(&before));
     assert_eq!(held(row.after), held(&after));
 
     for _ in 0..3 {
-        assert!(matches!(h.undo(&mut doc), Some(StepKind::Tempo { .. })));
+        assert_eq!(h.undo(&mut doc), Some(batch));
         assert_eq!(held(&doc), held(&before));
         assert_eq!(h.version(), before_number);
         assert_eq!((h.undo_count(), h.redo_count()), (1, 1));
         assert!(doc.clip(clip).is_none());
-        assert!(matches!(h.redo(&mut doc), Some(StepKind::Tempo { .. })));
+        assert_eq!(h.redo(&mut doc), Some(batch));
         assert_eq!(held(&doc), held(&after));
         assert_eq!((h.undo_count(), h.redo_count()), (2, 0));
         // The take made inside the merged step is the same take, with its id.

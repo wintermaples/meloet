@@ -454,7 +454,7 @@ The rules are in spec 3, "Rules added in round 12"; how each is built is archite
 
 | Where | Rule | Basis |
 |---|---|---|
-| Protocol versions | The request planned one bump per wave (31, 32, 33, 34). Waves 3 and 4 share 33 (the shapes of both were made in one pass), so the round ends at protocol 33. | the developers' decision (the lead, 2026-11-24) |
+| Protocol versions | The request planned one bump per wave (31, 32, 33, 34). Waves 3 and 4 share 33 (the shapes of both were made in one pass), so the features of the round end at protocol 33; the owner's answers after them made it 34 (A-30). | the developers' decision (the lead, 2026-11-24) |
 | Documents during the round | Each feature helper wrote a notes file (`docs/round12/<ID>.md`) instead of editing the shared documents; one document helper merged them at the end (this table, spec 3, architecture 25, progress, the READMEs). The notes files were then deleted (the history has them). | the developers' decision (the lead) |
 | Measurements | Speed and latency were measured once, after the last merge, on a quiet PC, not per feature (helpers built in parallel and the PC was not quiet). Results: `docs/measurements/2026-11-24-round12.md`. Three results at the edge were accepted by the owner and stay as measured: P2's scrolling (+2.3 ms at p95 over a pass mark of 2 ms; zoom +2.0), M3's whole-window paints with the mixer open and every strip sounding (8 of 91, 1 of 90 before), and the export 0.7 to 1.0 s longer from F1's loudness check. | the developers' decision (the lead, 2026-11-24); the three results accepted by the owner (user:2026-11-24) |
 | A new control in a full row (P2, R1; also R2, E2, E7) | A control added in this round never pushes out a part the spec and the mocks already show: it takes only room that is left, and it is the first thing to hide. So at 1280 px wide the label of 「ほかのトラックも見る」 and the button 「さっきのを残す」 are hidden (the feature stays reachable: the ▾ list, Shift R and the menu). Pictures at 1280 × 800 stay as before round 12. | the developers' decision (the lead, 2026-11-24); for P2 and R1 decided by the owner as it is (user:2026-11-24) |
@@ -832,3 +832,20 @@ The rules are in spec 3, "Rules added in round 12"; how each is built is archite
 | The smallest window | 1024×640 at 100 % and 1280×800 at 125 % (1024×640 times the scale); it was 853×448 times the scale. A scale whose smallest window does not fit the screen cannot be chosen, as before. | user:2026-11-24 |
 | What must fit | Everything fits in 1280×800 at 100 % and at 125 % (a page of 1024×640), and in the smallest window 1024×640 at 100 %. | user:2026-11-24 |
 | Rules for narrower or lower pages | Rules written for pages narrower than 1024 or lower than 640 (the 853-wide forms, the 448-high piano roll) are not reached any more. They stay in the code and in the spec until it is decided whether to remove them. | the lead's request (user:2026-11-24) |
+
+## A-30 After the features: the owner's answers (2026-11-24)
+
+The owner's answers to the open questions are in `docs/history/round12-answers-brief.md`; how they are built is architecture 25-37.
+
+### Mute sets and the batch row (B-97-1, B-97-2, B-97-3, B-97-5)
+
+| Where | Rule | Basis |
+|---|---|---|
+| N of 「まとめて変える（N 個）」 | The number of steps the batch made one, which is the number of its operations that changed the song (each makes one step). An operation that changed nothing, and solo or the loop's switch (no steps, not undone), are not counted, so N can be smaller than the number of operations the AI sent. A batch that made one step keeps that step's own row. | the developers' reading of the owner's answer (Fable agreed) |
+| The rest of the batch row | Nothing follows the name (no 「（何を）」) and the right column is empty: the changes can be anywhere. | the developers' decision |
+| 「（何を）」 of a rename | Both names, 「サビ → 大サビ」, as a marker or track rename; the other three mute set steps keep the set's name. | the developers' decision |
+| A name taken by a rename | Refused, as a save that is not to write over a set is (the rule a save already had); renaming to the name it has is no change and no step. | the developers' decision (the lead: follow the rule saving uses) |
+| A set's name | The spaces at its ends are taken off; 1 to 64 characters (the AI tools' limit already); no control characters. The same for a save and a rename, from the screen and from the AI. | the developers' decision |
+| How the screen names a set | By its name (a song has one set of a name; the AI names them so; no ids in the file). An intent whose name is no set does nothing; one that does not fit (a name taken, no name, 64 sets) does nothing too, with no status line: the menu has the list and the numbers to prevent it. | the developers' decision |
+| `asNow` | True when a recall would change nothing: the tracks the set names that the song still has are muted and soloed as it says, and so are the returns; tracks added since do not count. The same as the AI tools' `as_now`. | the developers' decision |
+| English step names | 「ミュートのセットを保存する」 "Save a mute set", 「ミュートのセットを呼び出す」 "Recall a mute set", 「ミュートのセットを消す」 "Delete a mute set", 「ミュートのセットの名前を変える」 "Rename a mute set", 「まとめて変える（N 個）」 "Change together (N)" (the count is always 2 or more; 「まとめて変える」 is "Change together" in the clips panel already). | the developers' translation |

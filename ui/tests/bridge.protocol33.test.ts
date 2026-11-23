@@ -33,8 +33,8 @@ async function opened() {
 }
 
 describe("shape of protocol 33", () => {
-  it("version 33. A new state: the arpeggio off, no master lane, the spectrum shown, mono off, Japanese, nothing bounced", async () => {
-    expect(PROTOCOL_VERSION).toBe(33);
+  it("version 33 or later. A new state: the arpeggio off, no master lane, the spectrum shown, mono off, Japanese, nothing bounced", async () => {
+    expect(PROTOCOL_VERSION).toBeGreaterThanOrEqual(33);
     const s = fakeState();
     expect(s.song.tracks[0]!.arp).toEqual({ on: false, shape: "up", rate: "sixteenth", triplet: false, octaves: 1, hold: false });
     expect(s.song.master.lanes).toEqual([]);

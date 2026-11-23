@@ -101,5 +101,10 @@ export const STEP_NAME_KINDS: readonly StepName["kind"][] = [
   "addFadeOut",
   "setComp",
   "clearComp",
-  "setClipTune"
+  "setClipTune",
+  "saveMuteSet",
+  "recallMuteSet",
+  "deleteMuteSet",
+  "renameMuteSet",
+  "batch"
 ];

@@ -165,6 +165,15 @@ fn a_batch_is_one_step_and_undo_and_redo_go_over_all_of_it() {
     assert_eq!(doc(m), after, "closing changes nothing of the song");
     let row = closed.step.expect("the batch's row");
     assert_eq!(row.index, 2);
+    // 「まとめて変える（7 個）」, with nothing after it and no place.
+    assert_eq!(
+        (row.name.clone(), row.what.clone(), row.place.clone()),
+        (
+            meloet_protocol::StepName::Batch { count: 7 },
+            meloet_protocol::StepWhat::None,
+            None
+        )
+    );
     assert_eq!(m.play.history_rows(1, 9).len(), 2);
     assert_eq!(m.play.history_rows(2, 2)[0], row);
     // The screen lets go of the row it had at that place.
@@ -288,7 +297,10 @@ fn an_empty_batch_and_a_batch_of_one_step() {
     let newest = m.view().history.newest;
     let closed = done(m, AiAsk::Commit { batch: 2 });
     assert_eq!(closed.undo_count, 1);
-    assert_eq!(closed.step.map(|row| row.step), Some(newest));
+    let row = closed.step.expect("the step");
+    assert_eq!(row.step, newest);
+    // One step keeps its own name.
+    assert_eq!(row.name, meloet_protocol::StepName::SetGain);
 
     done(m, AiAsk::Begin { batch: 3 });
     assert_eq!(refused(m, screen(3, gain(t, -3.0))), AiRefusal::Unchanged);

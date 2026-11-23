@@ -263,6 +263,13 @@ impl SampleBank {
         self.regions.len()
     }
 
+    /// The keys a note starts a region on, lowest first.
+    pub fn keys(&self) -> Vec<u8> {
+        (0..=127u8)
+            .filter(|&key| !self.attack[usize::from(key)].is_empty())
+            .collect()
+    }
+
     pub fn sample_count(&self) -> usize {
         self.samples.len()
     }

@@ -641,6 +641,7 @@ impl Play {
             }
             PluginSaid::Params { ask, params } => self.params_listed(ticket, ask, params),
             PluginSaid::State { ask, state } => self.state_said(ticket, ask, state, effects),
+            PluginSaid::KeyNames(names) => self.key_names_said(ticket, names),
             PluginSaid::TextRead { param, read } => {
                 return self.text_read(ticket, param, read, effects);
             }

@@ -260,6 +260,12 @@ impl Sf2Store {
         &self.files
     }
 
+    /// Where the added file of this name is; `None` when none of that name was added.
+    pub fn path_of(&self, file: &str) -> Option<PathBuf> {
+        let dir = self.dir.as_ref()?;
+        (self.files.iter().any(|f| f.file == file)).then(|| dir.join(file))
+    }
+
     fn job(&mut self, job: Job) {
         let Some(dir) = self.dir.clone() else {
             return;

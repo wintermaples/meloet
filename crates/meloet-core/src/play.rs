@@ -516,6 +516,7 @@ pub struct Play {
     plugs: Plugs,
     wins: Windows,
     panel: Panel,
+    key_asks: keynames::KeyAsks,
     tl: timeline::Tl,
     auto: automation::Auto,
     autosync: autosync::AutoSync,
@@ -544,6 +545,7 @@ impl Play {
             wins: Windows::default(),
             autosync: autosync::AutoSync::default(),
             panel: Panel::default(),
+            key_asks: keynames::KeyAsks::default(),
             tl: timeline::Tl::default(),
             auto: automation::Auto::default(),
             song,
@@ -2747,6 +2749,7 @@ mod autosync;
 mod buttons;
 mod clips;
 mod history;
+pub mod keynames;
 mod mix;
 pub(crate) mod mixer;
 mod mixsync;

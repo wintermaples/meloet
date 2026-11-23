@@ -14,6 +14,7 @@ macro_rules! check {
 mod arrange;
 mod automation;
 mod files;
+mod keynames;
 mod mixer;
 mod notes;
 mod render;
@@ -401,6 +402,7 @@ impl Tools {
                 + Self::automation_router()
                 + Self::timing_router()
                 + Self::arrange_router()
+                + Self::keynames_router()
                 + Self::files_router()
                 + Self::render_router(),
         }
@@ -439,6 +441,7 @@ impl Tools {
             AiAnswer::Refused(AiRefusal::Unsaved) => Err(failed(UNSAVED)),
             AiAnswer::Refused(r) => Err(failed(format!("Could not {what}: {}.", refusal_text(&r)))),
             AiAnswer::Params(_) => Err(closing()),
+            AiAnswer::KeyNames(_) => Err(closing()),
         }
     }
 

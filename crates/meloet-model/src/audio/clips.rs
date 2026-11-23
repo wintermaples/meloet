@@ -4,6 +4,7 @@
 
 use std::sync::Arc;
 
+use super::comp::comp_renumbered;
 use super::{AudioId, AudioShape, AudioSource, AudioTake, ClipGain};
 use crate::edit::{Edit, EditError, Ids, MAX_TICK, add_vocal_track, clip_index, with_track};
 use crate::history::StepKind;
@@ -303,7 +304,7 @@ pub fn import_audio(
 
 /// 「曲から外す」: every clip whose takes all play the file is gone, and so is every take of
 /// it in the clips that keep other takes (the shown take then is the one before, or the
-/// first). The file leaves the audio table. `Unchanged` when the table has no such file.
+/// first; a comp with a piece of such a take goes). The file leaves the audio table. `Unchanged` when the table has no such file.
 pub fn remove_audio(doc: &Doc, audio: AudioId) -> Result<Edit, EditError> {
     if doc.audio(audio).is_none() {
         return Err(EditError::Unchanged);
@@ -336,12 +337,17 @@ pub fn remove_audio(doc: &Doc, audio: AudioId) -> Result<Edit, EditError> {
                 } else {
                     before
                 };
+                let mut places = 0..;
+                let places: Vec<Option<usize>> = (takes.iter())
+                    .map(|ct| (!plays(ct)).then(|| places.next()).flatten())
+                    .collect();
                 clips.push(Arc::new(Clip {
                     takes: ClipTakes::Vocal {
                         takes: kept,
                         shape: *shape,
                     },
                     active,
+                    comp: comp_renumbered(&c.comp, &places),
                     ..Clip::clone(c)
                 }));
             }

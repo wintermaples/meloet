@@ -229,7 +229,7 @@ pub fn add_recording(
     ))
 }
 
-/// Shows take number `index` (0-based) of `clip`.
+/// Shows take number `index` (0-based) of `clip`. A comp of the clip goes in the same step.
 pub fn switch_take(doc: &Doc, clip: ClipId, index: usize) -> Result<Edit, EditError> {
     let (ti, ci) = clip_index(doc, clip)?;
     let track = &doc.tracks[ti];
@@ -243,6 +243,8 @@ pub fn switch_take(doc: &Doc, clip: ClipId, index: usize) -> Result<Edit, EditEr
     let mut clips = track.clips.clone();
     clips[ci] = Arc::new(Clip {
         active: index,
+        // The take sounds whole (round 12, A8).
+        comp: Vec::new(),
         ..Clip::clone(old)
     });
     Ok(Edit {
@@ -263,12 +265,12 @@ pub fn switch_take(doc: &Doc, clip: ClipId, index: usize) -> Result<Edit, EditEr
 }
 
 /// Removes the take `clip` shows. The clip then shows the take before it, or the next one when
-/// it was the first. A clip keeps at least one take.
+/// it was the first. A clip keeps at least one take, and one with 「いいとこ取り」 all of them.
 pub fn delete_take(doc: &Doc, clip: ClipId) -> Result<Edit, EditError> {
     let (ti, ci) = clip_index(doc, clip)?;
     let track = &doc.tracks[ti];
     let old = &track.clips[ci];
-    if old.takes.len() < 2 {
+    if old.takes.len() < 2 || !old.comp.is_empty() {
         return Err(EditError::Unchanged);
     }
     let index = old.active;

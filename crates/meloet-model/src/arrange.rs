@@ -12,6 +12,7 @@ use std::sync::Arc;
 use crate::TrackId;
 use crate::audio::AudioShape;
 use crate::audio::clips::fit_fades;
+use crate::audio::comp::comp_window;
 use crate::edit::{Edit, EditError, Ids, MAX_TICK, clip_index, track_index, with_track};
 use crate::history::StepKind;
 use crate::song::{
@@ -316,6 +317,7 @@ fn with_edges(doc: &Doc, (ti, ci): (usize, usize), start: u64, end: u64) -> Doc 
         start,
         end,
         takes: fitted(c.takes.with_offsets(|offset| offset - shift), end - start),
+        comp: comp_window(&c.comp, shift, end - start),
         ..Clip::clone(c)
     });
     let mut new = doc.clone();
@@ -443,12 +445,14 @@ pub fn split_clips(doc: &Doc, clips: &[ClipId], at: u64) -> Result<ClipsSplit, E
             halves.push(Arc::new(Clip {
                 end: at,
                 takes: left_takes,
+                comp: comp_window(&c.comp, 0, at - c.start),
                 ..Clip::clone(c)
             }));
             halves.push(Arc::new(Clip {
                 id,
                 start: at,
                 takes: right_takes.with_offsets(|offset| offset - moved),
+                comp: comp_window(&c.comp, moved, c.end - at),
                 ..Clip::clone(c)
             }));
         }

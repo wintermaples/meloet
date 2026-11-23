@@ -271,7 +271,8 @@ export function topMenus(state: AppState, deps: KeyDeps, platform: Platform): To
     { kind: "separator" },
     act("menu.nextTake", { kind: "stepTake", delta: 1 }, t("key.take"), { usable: canStepTake }),
     act("menu.prevTake", { kind: "stepTake", delta: -1 }, k.shift(t("key.take")), { usable: canStepTake }),
-    plain("menu.deleteTake", canStepTake, () => clip && deps.send({ type: "deleteTake", clip: clip.id })),
+    // Not while the clip has 「いいとこ取り」 (round 12, A8): its pieces name the takes.
+    plain("menu.deleteTake", canStepTake && clip.comp.length === 0, () => clip && deps.send({ type: "deleteTake", clip: clip.id })),
     { kind: "separator" },
     plain("menu.addKeysTrack", !busy, () => deps.send(openShelf({ kind: "newTrack" }))),
     plain("menu.addVocalTrack", !busy, () => deps.send({ type: "addVocalTrack" })),

@@ -25,6 +25,9 @@
   import { arrangeRows, showsAddRow } from "./automation/autoGeom";
   import LaneAddRow from "./automation/LaneAddRow.svelte";
   import LaneHead from "./automation/LaneHead.svelte";
+  import { bandHeight } from "./comp/comp";
+  import CompHead from "./comp/CompHead.svelte";
+  import { openCompOf } from "./comp/compState.svelte";
   import { laneAddOpenFor, openLaneAdd } from "./automation/laneAdd.svelte";
   import { windowOf } from "./params/selected";
   import WindowMark from "./WindowMark.svelte";
@@ -103,13 +106,21 @@
   let drag = $state<{ id: number; from: number; dy: number } | null>(null);
   const trackH = $derived(metrics.px("size.track"));
   /** Track rows and the automation bands under them (the same order as the time side; automation/autoGeom.ts). */
+  /** The band 「いいとこ取り」 that is open (round 12, A8), as on the time side. */
+  const comp = $derived(openCompOf(current.state!));
+  const compRows = $derived(comp ? { track: comp.track.id, height: bandHeight({ headH: metrics.px("size.row"), rowH: metrics.px("size.lane") }, comp.takes.length) } : null);
   const rows = $derived(
-    arrangeRows(song.tracks, current.state!.automation.folded, {
-      trackH,
-      laneH: metrics.px("size.lane"),
-      rowH: metrics.px("size.row"),
-      tall: { track: current.state!.arrange.tallTrack, h: metrics.px("part.track.vocal") },
-    }),
+    arrangeRows(
+      song.tracks,
+      current.state!.automation.folded,
+      {
+        trackH,
+        laneH: metrics.px("size.lane"),
+        rowH: metrics.px("size.row"),
+        tall: { track: current.state!.arrange.tallTrack, h: metrics.px("part.track.vocal") },
+      },
+      compRows,
+    ),
   );
   const bounds = $derived([...rows.tops, rows.height]);
   const dropAt = (d: { from: number; dy: number }) => moveSlotAt(d.from, bounds, rows.tops[d.from]! + rows.heights[d.from]! / 2 + d.dy);
@@ -359,6 +370,7 @@
         ></div>
       </div>
     </div>
+    {#if comp && comp.track.id === track.id}<CompHead band={comp} />{/if}
     {#each rows.lanes.filter((l) => l.track.id === track.id) as l (JSON.stringify(l.lane.target))}
       <LaneHead {track} lane={l.lane} />
     {/each}

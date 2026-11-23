@@ -2513,8 +2513,10 @@ impl Model {
             // round12 stub: M5
             Command::AddFadeOut { .. } => {}
 
-            // round12 stub: A8
-            Command::SetComp { .. } | Command::ClearComp { .. } => {}
+            Command::SetComp { clip, span, pieces } => {
+                self.play.set_comp(clip, span, &pieces, effects);
+            }
+            Command::ClearComp { clip } => self.play.clear_comp(clip, effects),
 
             // round12 stub: D4
             Command::SetLanguage { .. } => {}

@@ -14,7 +14,7 @@ use meloet_model::song::Clip;
 use meloet_model::{Doc, TempoMap, Track};
 
 use super::{EngineOp, Play};
-use crate::pcm::{FeedClip, feed_clip};
+use crate::pcm::{FeedClip, feed_clip, feed_pieces};
 use crate::state::Effect;
 
 /// The vocal clips of a track.
@@ -37,15 +37,20 @@ pub fn clip_tables(
     (table, feeds)
 }
 
-/// As [`clip_tables`], with the clip each of the thread's clips was made of.
+/// The clip one of the read-ahead thread's clips was made of, and which of its takes.
+pub type FedTake = (Arc<Clip>, usize);
+
+/// As [`clip_tables`], with the clip each of the thread's clips was made of, and which of
+/// its takes. A clip with 「いいとこ取り」 is one clip in the table and its pieces for the
+/// thread (`pcm::feed_pieces`).
 pub fn clip_tables_of(
     map: &TempoMap,
     sample_rate: u32,
     clips: &[Arc<Clip>],
-) -> (ClipTable, Vec<FeedClip>, Vec<Arc<Clip>>) {
-    let mut both: Vec<(ClipRegion, (FeedClip, Arc<Clip>))> = (clips.iter())
+) -> (ClipTable, Vec<FeedClip>, Vec<FedTake>) {
+    let mut both: Vec<(ClipRegion, Arc<Clip>)> = (clips.iter())
         .filter_map(|clip| {
-            let feed = feed_clip(map, sample_rate, clip)?;
+            feed_clip(map, sample_rate, clip)?;
             let shape = clip.takes.shape()?;
             let region = ClipRegion::of(
                 map,
@@ -56,7 +61,7 @@ pub fn clip_tables_of(
                 shape.fade_out,
                 shape.gain.db(),
             );
-            Some((region, (feed, Arc::clone(clip))))
+            Some((region, Arc::clone(clip)))
         })
         .collect();
     both.sort_by_key(|(region, _)| region.start);
@@ -68,8 +73,13 @@ pub fn clip_tables_of(
         }
         fits
     });
-    let (regions, fed): (Vec<ClipRegion>, Vec<(FeedClip, Arc<Clip>)>) = both.into_iter().unzip();
-    let (feeds, kept) = fed.into_iter().unzip();
+    let (regions, clips): (Vec<ClipRegion>, Vec<Arc<Clip>>) = both.into_iter().unzip();
+    let (feeds, kept) = (clips.iter())
+        .flat_map(|clip| {
+            (feed_pieces(map, sample_rate, clip).into_iter())
+                .map(move |(feed, take)| (feed, (Arc::clone(clip), take)))
+        })
+        .unzip();
     (ClipTable::new(regions).unwrap_or_default(), feeds, kept)
 }
 

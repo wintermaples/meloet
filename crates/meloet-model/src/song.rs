@@ -254,6 +254,15 @@ impl Clip {
         self.takes.vocal().get(self.active)
     }
 
+    /// Whether take `index` sounds somewhere in the clip: the shown take, or with
+    /// 「いいとこ取り」 the take of a piece.
+    pub fn sounds(&self, index: usize) -> bool {
+        match self.comp.is_empty() {
+            true => index == self.active,
+            false => self.comp.iter().any(|p| p.take == index),
+        }
+    }
+
     pub fn active_take_id(&self) -> TakeId {
         self.takes.id(self.active).expect("a clip is never empty")
     }

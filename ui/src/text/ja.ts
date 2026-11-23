@@ -2416,6 +2416,15 @@ export const texts = {
   // Places for later rounds under the audio clip context menu (spec 3, while the sound is being made).
   "menu.reverse": e("逆にする", "spec:3"),
   "menu.normalize": e("ノーマライズ", "spec:3"),
+  // 「いいとこ取り」 of a vocal clip (round 12, A8): the row of the clip's menu, and the band under the track.
+  "menu.comp": e("いいとこ取り", "user:2026-11-23"),
+  "comp.title": e("いいとこ取り", "user:2026-11-23"),
+  "comp.clear": e("もとに戻す", "user:2026-11-23"),
+  "comp.clipTake": e("{clip} ・ テイク {take}", "user:2026-11-23", { clip: "歌 1", take: "3" }),
+  "comp.take": e("テイク {take}", "user:2026-11-23", { take: "1" }),
+  // Why a row of the menu is disabled (shown in the row on hover). The spec has no text for them.
+  "comp.needsTakes": e("テイクが 2 つ以上あるクリップで使えます", "builder:2026-11-24"),
+  "comp.notWhileComp": e("いいとこ取りがあるあいだは使えません", "builder:2026-11-24"),
   // What 「ノーマライズ」 and 「逆にする」 say (round 12, A9). The spec has no text for them: made in the words of the lines around.
   "msg.normalizeLimited": e(
     "{count} つのクリップは、いちばん大きい音を −1.0 dB にできませんでした（クリップの音量は −60 〜 +12 dB まで）。",

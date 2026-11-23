@@ -217,6 +217,7 @@ pub struct CompPiece {
 
 pub mod bounce;
 pub mod clips;
+pub mod comp;
 pub mod fade;
 pub mod follow;
 pub mod record;

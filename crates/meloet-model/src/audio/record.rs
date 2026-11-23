@@ -3,6 +3,7 @@
 
 use std::sync::Arc;
 
+use super::comp::comp_joined;
 use super::{AudioId, AudioShape, AudioSource, AudioTake, SourceTempo};
 use crate::TrackId;
 use crate::edit::{Edit, EditError, Ids, MAX_TICK, RecordingAdded, with_track};
@@ -101,7 +102,8 @@ fn check(recording: &VocalRecording) -> Result<(), EditError> {
 /// Puts what the vocal tracks recorded into `doc`: each file into the audio table, and its
 /// takes on its track, the last lap shown. Clips that overlap the takes are merged with
 /// them into one clip, as [`crate::edit::add_recording`] does for keys; the merged clip
-/// keeps the id, the name and the shape of the earliest of them.
+/// keeps the id, the name and the shape of the earliest of them, and when one of them has
+/// 「いいとこ取り」 it sounds as they did (the new takes are there to be chosen).
 ///
 /// The step is `step` when given (the keys recorded at the same time made it: one
 /// recording is one step), else a `StepKind::Record` of the first track here.
@@ -191,7 +193,7 @@ pub fn add_vocal_recordings(
                 shape,
             },
             active,
-            comp: Vec::new(),
+            comp: comp_joined(&hit, range.start()),
         });
         let at = clips.partition_point(|c| c.start < clip.start);
         clips.insert(at, clip);

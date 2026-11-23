@@ -2,7 +2,7 @@
 // One waveform rect per clip (where the tempo changes inside it, one per straight part). The peaks are a texture,
 // and the shader reads the peak for each x (ui/src/gl/renderer.ts). This file only decides which x reads which peak.
 
-import type { ClipView } from "../../bridge";
+import type { AudioTakeView, ClipView } from "../../bridge";
 import { levelFor } from "../../bridge/peaks";
 import type { ColorName } from "../../design/tokens";
 import { WAVE } from "../../gl/dims";
@@ -55,6 +55,47 @@ export function waveClipOf(clip: ClipView, drag: AudioDragValue | null = null): 
     gain: gainFactor(d?.gainDb ?? shifted ?? a.gainDb),
     endFrame: a.firstFrame + a.frames,
   };
+}
+
+/**
+ * Where take `take` of the clip is (`AudioClipView.takes`), as `WaveClip.timing`. The file's rate is taken to be the
+ * shown take's (the takes of a clip are laps of one recording, or recordings of one song).
+ */
+export const takeTiming = (clip: ClipView, take: AudioTakeView): WaveTiming => ({
+  start: clip.start,
+  takeOffset: take.takeOffset,
+  firstFrame: take.firstFrame,
+  sampleRate: clip.audio!.sampleRate,
+  source: cachedSourceMap(take.sourceTempo),
+});
+
+/** A part of a clip's wave: the wave of file `audio` placed as `shape` says, drawn over the ticks of `range` (all of the clip when null). */
+export interface WavePart {
+  shape: WaveClip;
+  audio: number;
+  range: { from: number; to: number } | null;
+}
+
+/**
+ * What the wave of a clip is made of: the shown take all along, or with 「いいとこ取り」 (round 12, A8) each piece from
+ * its own take, so the clip shows what it plays. A piece whose take's file is not found has no wave.
+ */
+export function waveParts(clip: ClipView, drag: AudioDragValue | null = null): WavePart[] {
+  const whole = waveClipOf(clip, drag);
+  if (whole === null) return [];
+  const a = clip.audio!;
+  if (clip.comp.length === 0) return [{ shape: whole, audio: a.audio, range: null }];
+  const out: WavePart[] = [];
+  for (const [i, piece] of clip.comp.entries()) {
+    const take = a.takes.find((x) => x.takeId === piece.take);
+    if (!take || take.state === "missing") continue;
+    out.push({
+      shape: { ...whole, timing: takeTiming(clip, take), endFrame: take.firstFrame + take.frames },
+      audio: take.audio,
+      range: { from: clip.start + piece.from, to: clip.start + (clip.comp[i + 1]?.from ?? clip.end - clip.start) },
+    });
+  }
+  return out;
 }
 
 /** Bar shape and color (CSS px). */

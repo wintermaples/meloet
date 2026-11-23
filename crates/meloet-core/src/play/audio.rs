@@ -160,9 +160,10 @@ impl Play {
         // A clip that is gone since the maker said so is not shown.
         let making = (self.audio.making.iter())
             .filter(|job| {
-                (doc.clip(ClipId(job.clip)))
-                    .and_then(|(_, c)| c.active_audio())
-                    .is_some_and(|shown| shown.take.source.id.0 == job.audio)
+                (doc.clip(ClipId(job.clip))).is_some_and(|(_, c)| {
+                    (c.takes.vocal().iter().enumerate())
+                        .any(|(i, t)| c.sounds(i) && t.take.source.id.0 == job.audio)
+                })
             })
             .map(|job| AudioJob {
                 kind: AudioJobKind::Rendering,
@@ -210,8 +211,9 @@ impl Play {
     }
 
     /// Whether 「音程を寄せる」 can be used on `clip` (`SelectedClip::tune_usable`): a vocal
-    /// clip that plays one take. A clip of 「いいとこ取り」 plays pieces of several, and the
-    /// audio made for a clip (`made::plan`) is made from one.
+    /// clip that plays one take. A clip of 「いいとこ取り」 plays pieces of several: a tune it
+    /// has already is kept and bends each of them (`made::plan_take`), but while the
+    /// comp is there it can only be taken off.
     pub fn tune_usable(&self, clip: ClipId) -> bool {
         (self.doc().clip(clip))
             .is_some_and(|(_, c)| c.active_audio().is_some() && c.comp.is_empty())

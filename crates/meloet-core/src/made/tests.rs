@@ -319,6 +319,8 @@ fn only_other_audio_in_the_same_places_is_laid_over() {
         made: made.map(|k| [k; 32]),
         file_frame,
         file_end: 1_000,
+        lead: 0,
+        tail: 0,
     };
     let old = [feed(0, None, 5), feed(200, Some(1), 0)];
     assert!(!only_audio_differs(&old, &old));

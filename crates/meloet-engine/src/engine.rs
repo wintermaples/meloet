@@ -21,7 +21,7 @@ use crate::plugin::{PLUGIN_WAIT_SHARE, PluginBlock};
 use crate::probe::probe_wave;
 use crate::rt;
 use crate::stream::{STREAM_CHANNELS, StreamReader, StreamWant, want_ring};
-use crate::transport::{Click, Lane, Sequence, TrackSet};
+use crate::transport::{Click, ClickSound, Lane, Sequence, TrackSet};
 use meloet_model::{AutoTarget, Beat, Meter, TICKS_PER_QUARTER, Tempo, TempoMap, Timeline};
 use meloet_plugin::ipc::Transport as PluginTransport;
 
@@ -253,6 +253,14 @@ pub enum EngineCommand {
     },
     SetMetronome {
         on: bool,
+    },
+    /// How the metronome sounds from its next click on; a click that sounds already is left
+    /// as it is. `gain` is linear (1.0: the click as made; at most 2.0). `recording_only`:
+    /// no clicks while playing. The count-in clicks either way.
+    SetClick {
+        sound: ClickSound,
+        gain: f32,
+        recording_only: bool,
     },
     Play {
         from: u64,
@@ -691,6 +699,8 @@ struct Transport {
     loop_end_frame: u64,
     loop_start_sec: f64,
     metronome: bool,
+    /// The metronome is quiet while playing (`EngineCommand::SetClick`).
+    click_recording_only: bool,
     /// Next beat to click, and its frame.
     next_click: Beat,
     click_frame: u64,
@@ -875,6 +885,7 @@ impl Transport {
             loop_end_frame: 0,
             loop_start_sec: 0.0,
             metronome: false,
+            click_recording_only: false,
             next_click: Beat {
                 tick: 0,
                 downbeat: true,
@@ -1137,7 +1148,8 @@ impl Transport {
     fn click_audible(&self) -> bool {
         match self.state {
             TransportState::CountIn => true,
-            TransportState::Playing | TransportState::Recording => self.metronome,
+            TransportState::Playing => self.metronome && !self.click_recording_only,
+            TransportState::Recording => self.metronome,
             TransportState::Stopped => false,
         }
     }
@@ -1309,6 +1321,9 @@ pub struct Engine {
     clock: Arc<TransportClock>,
     transport: Transport,
     click: Click,
+    /// What the next click is made of (`EngineCommand::SetClick`).
+    click_sound: ClickSound,
+    click_gain: f32,
     /// The stretch being rendered, and the frame of the device block where it began.
     segment: Segment,
     segment_from: usize,
@@ -1404,6 +1419,8 @@ impl Engine {
             clock: clock.clone(),
             transport,
             click: Click::idle(),
+            click_sound: ClickSound::default(),
+            click_gain: 1.0,
             segment: Segment::default(),
             segment_from: 0,
             meters: meters.clone(),
@@ -1940,7 +1957,9 @@ impl Engine {
                         && t.next_click.tick != beat.tick
                         && t.click_audible()
                     {
-                        self.click.start(beat.downbeat, self.sample_rate);
+                        let (sound, gain) = (self.click_sound, self.click_gain);
+                        self.click
+                            .start(beat.downbeat, self.sample_rate, sound, gain);
                     }
                     // Cannot fail: checked above, and this is the only producer.
                     let _ = self.retired_maps.push(old);
@@ -2014,6 +2033,15 @@ impl Engine {
                     }
                 }
                 EngineCommand::SetMetronome { on } => self.transport.metronome = on,
+                EngineCommand::SetClick {
+                    sound,
+                    gain,
+                    recording_only,
+                } => {
+                    self.click_sound = sound;
+                    self.click_gain = gain;
+                    self.transport.click_recording_only = recording_only;
+                }
                 EngineCommand::Play { from } => {
                     self.end_recording(timing);
                     self.silence_lanes();
@@ -2454,7 +2482,9 @@ impl Engine {
         let t = &mut self.transport;
         if t.click_frame <= t.frames {
             if t.click_audible() {
-                self.click.start(t.next_click.downbeat, self.sample_rate);
+                let (sound, gain) = (self.click_sound, self.click_gain);
+                self.click
+                    .start(t.next_click.downbeat, self.sample_rate, sound, gain);
             }
             t.advance_click();
         }

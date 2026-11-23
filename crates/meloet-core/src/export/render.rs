@@ -270,8 +270,10 @@ impl ExportEngine {
             // The files are opened from the place the song's are; it knows its table.
             EngineOp::AudioSources { .. } => {}
             // The export hears no keys and no input, tries nothing out, and starts and
-            // stops by itself: opening a song tells none of these.
-            EngineOp::Play { .. }
+            // stops by itself: opening a song tells none of these. The metronome is never
+            // in an export.
+            EngineOp::Click { .. }
+            | EngineOp::Play { .. }
             | EngineOp::Record { .. }
             | EngineOp::RecordHere { .. }
             | EngineOp::RecordMuted { .. }

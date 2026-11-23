@@ -2013,12 +2013,6 @@ fn the_commands_of_round_12_are_taken_and_change_nothing_yet() {
     assert_eq!(before.updates, UpdatesView::default());
     let track = before.song.tracks[0].id;
     let commands = [
-        Command::SetClick {
-            volume_db: Some(-6.0),
-            sound: Some(ClickSound::Tick),
-            when: Some(ClickWhen::RecordingOnly),
-            commit: true,
-        },
         Command::ScaleVelocity {
             take: 99,
             notes: vec![0],

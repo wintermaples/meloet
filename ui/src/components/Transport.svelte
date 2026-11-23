@@ -9,6 +9,7 @@
   import { current, onTelemetry, send } from "../state/app.svelte";
   import { t } from "../text/ja";
   import ChoiceMenu from "./ChoiceMenu.svelte";
+  import MetronomeWindow from "./MetronomeWindow.svelte";
   import { transportWithOverdub, type TransportParts } from "./fit";
   import { PeakHold, peakNumberText, peakText, tempoText } from "./format";
   import { metrics } from "./metrics.svelte";
@@ -87,8 +88,7 @@
         countIn: Math.max(w("countIn"), w("countInCounting")) + gap,
         positionLabels: labels,
       },
-      // The metronome ▾ sits with no gap (it cancels the gap on its left).
-      { songName: w("songStub") + gap, countIn: w("countInStub") },
+      { songName: w("songStub") + gap },
       overdub,
     );
   }
@@ -168,7 +168,7 @@
     if (transport.canPlay) send({ type: "record" });
   }
 
-  // The count-in list, the song name list and the metronome list. Only the screen holds "open"; core decides (the screen only sends intents).
+  // The count-in list, the song name list and the metronome window. Only the screen holds "open"; core decides (the screen only sends intents).
   type Menu = "countIn" | "song" | "metronome";
   let menu = $state<Menu | null>(null);
   let countInButton = $state<HTMLButtonElement>();
@@ -185,17 +185,8 @@
     { value: 1, label: t("transport.countInBars", { bars: 1 }) },
     { value: 2, label: t("transport.countInBars", { bars: 2 }) },
   ]);
-  // The metronome ▾ list (spec 2 "Metronome ▾", mock F-Menus). The count-in rows are the same as in the count-in list.
-  type MetronomeRow = "metronome" | number;
-  const metronomeRows = $derived([
-    { value: "metronome" as MetronomeRow, label: t("transport.metronome"), key: t("key.metronome"), checked: transport.metronome },
-    { heading: t("transport.countIn") },
-    ...countInRows.map((r) => ({ ...r, checked: r.value === transport.countInBars })),
-  ]);
-  function pickMetronome(v: MetronomeRow): void {
-    send(v === "metronome" ? { type: "toggleMetronome" } : { type: "setCountIn", bars: v });
-    closeMenu();
-  }
+  // The metronome ▾ (round 12 R3): always there. Its window has the count-in too while the count-in button is hidden.
+  const metronomeLabel = $derived(parts.countIn ? t("transport.metronome") : t("transport.metronomeMenu"));
   const countInValue = $derived(
     transport.countInBars === 0 ? t("transport.countInNone") : t("transport.countInBars", { bars: transport.countInBars }),
   );
@@ -269,7 +260,6 @@
   // The list closes when the count-in starts or a button is hidden or comes back. The song name list is attached to either the name or the ▾.
   $effect(() => {
     if (menu === "countIn" && (counting || !parts.countIn)) closeMenu();
-    if (menu === "metronome" && parts.countIn) closeMenu();
   });
 
   /** The command that sets the value. When an out-of-range value was clamped, also ask for it to be told in the status line (docs/history/design-notes.ja.md B-68). */
@@ -440,28 +430,27 @@
     />
   </div>
 
-  <button
-    class="m-btn"
-    class:on={transport.metronome}
-    aria-pressed={transport.metronome}
-    data-test="transport-metronome"
-    use:term={"メトロノーム"}
-    onclick={() => send({ type: "toggleMetronome" })}>{t("transport.metronome")}{@render key(4)}</button
-  >
-  {#if !parts.countIn}
+  <div class="metro">
+    <button
+      class="m-btn"
+      class:on={transport.metronome}
+      aria-pressed={transport.metronome}
+      data-test="transport-metronome"
+      use:term={"メトロノーム"}
+      onclick={() => send({ type: "toggleMetronome" })}>{t("transport.metronome")}{@render key(4)}</button
+    >
     <button
       class="m-btn metronome-stub"
       class:on={transport.metronome}
       class:open={menu === "metronome"}
-      aria-haspopup="menu"
+      aria-haspopup="dialog"
       aria-expanded={menu === "metronome"}
-      aria-label={t("transport.metronomeMenu")}
-      data-part="countInStub"
+      aria-label={metronomeLabel}
       data-test="transport-metronome-stub"
       bind:this={metronomeStub}
       onclick={() => toggle("metronome")}>▾</button
     >
-  {/if}
+  </div>
   {#if parts.countIn}
     {#if counting}
       <div class="m-btn on counting" data-part="countIn" data-test="transport-counting" use:term={"カウントイン"}>{@render countingIn()}</div>
@@ -506,7 +495,6 @@
     <div class="col end" data-part="load">{@render loadValue()}</div>
     <span class="m-btn" data-part="countIn">{@render countInLabel()}</span>
     <span class="m-btn counting" data-part="countInCounting">{@render countingIn()}</span>
-    <span class="m-btn metronome-stub" data-part="countInStub">▾</span>
     <span class="m-btn" data-part="overdub">{t("transport.overdub")}</span>
     <span class="m-lbl" data-part="label-0">{t("transport.position")}</span>
     <span class="m-readout" data-part="readout-0">{position}</span>
@@ -521,7 +509,7 @@
     {#if menu === "countIn"}
       <ChoiceMenu heading={t("transport.countIn")} rows={countInRows} selected={transport.countInBars} onpick={pickCountIn} test="count-in-menu" />
     {:else if menu === "metronome"}
-      <ChoiceMenu heading={null} label={t("transport.metronomeMenu")} rows={metronomeRows} onpick={pickMetronome} test="metronome-menu" />
+      <MetronomeWindow {transport} countIn={!parts.countIn} label={metronomeLabel} />
     {:else}
       <ChoiceMenu heading={null} label={song.name} rows={songRows} onpick={pickSong} test="song-menu" />
     {/if}
@@ -593,13 +581,14 @@
     padding: 0;
   }
   /* The metronome ▾: width 20, right of the metronome button with no gap. One line between them (the mock removes the metronome's right border). */
+  .metro {
+    display: flex;
+    flex-shrink: 0;
+  }
   .metronome-stub {
     width: calc(var(--part-metronomemenu-width) - var(--line-hair));
     padding: 0;
     border-left: 0;
-  }
-  .transport > .metronome-stub {
-    margin-left: calc(-1 * var(--space-3));
   }
 
   /* The record button (spec 2): a rec ring when stopped, filled rec while recording and during the count-in (mock F-Connect4, F-ArrangeRec). */

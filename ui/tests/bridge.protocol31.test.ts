@@ -63,7 +63,6 @@ describe("fake intents", () => {
     const { now, send } = await opened();
     const before = await now();
     const commands: Command[] = [
-      { type: "setClick", volumeDb: -6, sound: "cowbell", when: "recordingOnly", commit: true },
       { type: "scaleVelocity", take: 1, notes: [0], percent: 120 },
       { type: "rampVelocity", take: 1, notes: [0, 1], from: 40, to: 110 },
       { type: "randomVelocity", take: 1, notes: [0], amount: 8, seed: 7 },

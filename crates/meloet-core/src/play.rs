@@ -131,6 +131,11 @@ pub enum EngineOp {
     Metronome {
         on: bool,
     },
+    /// How the metronome sounds from its next click on (R3), and whether it is quiet while
+    /// playing.
+    Click {
+        settings: ClickSettings,
+    },
     /// The events of the track on this seat.
     Sequence {
         track: usize,
@@ -464,6 +469,9 @@ pub struct Play {
     metronome: bool,
     /// 「メトロノーム ▾」: a meloet setting (round 12, R3).
     click: ClickSettings,
+    /// While the volume is dragged (`SetClick` with `commit: false`): what the engine was
+    /// told, which the settings do not have yet.
+    click_heard: Option<ClickSettings>,
     /// 「重ねる」: a recording on a keys track adds to the clip there. Read when a recording
     /// starts and at each pass of a loop.
     overdub: bool,
@@ -559,6 +567,7 @@ impl Play {
             located_at_us: None,
             metronome,
             click: ClickSettings::default(),
+            click_heard: None,
             overdub: false,
             count_in_bars: if COUNT_IN_BARS.contains(&count_in_bars) {
                 count_in_bars
@@ -1366,6 +1375,9 @@ impl Play {
         effects.push(Effect::Engine(self.tempo_op()));
         self.send_loop(effects);
         effects.push(Effect::Engine(EngineOp::Metronome { on: self.metronome }));
+        effects.push(Effect::Engine(EngineOp::Click {
+            settings: self.click_heard.unwrap_or(self.click),
+        }));
         let doc = &self.song.doc;
         for t in &doc.tracks {
             if let Some(seat) = self.seats.of(t.id) {
@@ -1628,6 +1640,40 @@ impl Play {
 
     pub fn click_settings(&self) -> ClickSettings {
         self.click
+    }
+
+    /// 「メトロノーム ▾」 (`Command::SetClick`): the values given change, the others stay.
+    /// `commit: false` changes only what the engine plays (from its next click); `commit:
+    /// true` keeps the values. Not a step, and taken while busy too. Returns whether the
+    /// kept values changed (the settings are then saved).
+    pub fn set_click(
+        &mut self,
+        volume_db: Option<f32>,
+        sound: Option<meloet_protocol::ClickSound>,
+        when: Option<meloet_protocol::ClickWhen>,
+        commit: bool,
+        effects: &mut Vec<Effect>,
+    ) -> bool {
+        use meloet_protocol::{CLICK_VOLUME_MAX_DB, CLICK_VOLUME_MIN_DB};
+        let heard = self.click_heard.unwrap_or(self.click);
+        let mut next = if commit { self.click } else { heard };
+        if let Some(db) = volume_db.filter(|db| db.is_finite()) {
+            next.volume_db = db.clamp(CLICK_VOLUME_MIN_DB, CLICK_VOLUME_MAX_DB);
+        }
+        next.sound = sound.unwrap_or(next.sound);
+        next.when = when.unwrap_or(next.when);
+        let changed = commit && next != self.click;
+        if commit {
+            self.click = next;
+            self.click_heard = None;
+        } else {
+            self.click_heard = (next != self.click).then_some(next);
+        }
+        let now = self.click_heard.unwrap_or(self.click);
+        if now != heard {
+            effects.push(Effect::Engine(EngineOp::Click { settings: now }));
+        }
+        changed
     }
 
     pub fn overdub(&self) -> bool {

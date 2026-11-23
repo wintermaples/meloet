@@ -1,8 +1,8 @@
-// 偽物の場面で画面ぜんたいを組み立て、WebGL の文脈の数が予算の中にあるかを見る（gl.surface.test.ts の形）。
-// 場面ごとに、モジュールを読みなおす（橋と状態はモジュールの中にあるので、前の場面の物が残る。残ると、ピアノロールが前の場面の録っている物の帳面をつかむ）。
+// Builds the whole screen from fake scenes and checks that the number of WebGL contexts is in the budget (the form of gl.surface.test.ts).
+// Each scene loads the modules again (the bridge and state live in modules, so the previous scene's things stay. If they stay, the piano roll holds the previous scene's recording book).
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-/** にせの WebGL2 と、手で回す rAF。 */
+/** A fake WebGL2 and a rAF turned by hand. */
 function fakePage() {
   const frames: FrameRequestCallback[] = [];
   vi.stubGlobal("requestAnimationFrame", (f: FrameRequestCallback) => frames.push(f));
@@ -30,11 +30,11 @@ const settle = async (frame: () => void, flushSync: () => void) => {
   }
 };
 
-/** canvas を持つ区画の名前。 */
+/** Names of the regions that have a canvas. */
 const regions = () =>
   [...document.querySelectorAll("canvas")].map((c) => (c.parentElement as HTMLElement).dataset.glRegion).sort();
 
-describe("場面ごとの WebGL の文脈の数", () => {
+describe("number of WebGL contexts per scene", () => {
   beforeEach(() => {
     vi.resetModules();
   });
@@ -45,7 +45,7 @@ describe("場面ごとの WebGL の文脈の数", () => {
     document.body.innerHTML = "";
   });
 
-  // 最初の場面は App のモジュールをはじめて読む。ほかのファイルといっしょに回す混んだ PC では、既定の 5 秒をこえることがある。
+  // The first scene loads App's modules for the first time. On a busy PC that runs other files at the same time, it can go over the default 5 seconds.
   it.each([
     ["recording", ["arrangeLanes", "inputMeter", "masterMeter", "recordingClip", "trackMeters"]],
     ["takes", ["inputMeter", "masterMeter", "overview", "pianoRoll", "pianoRollKeys", "pianoRollLive"]],

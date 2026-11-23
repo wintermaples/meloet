@@ -1,5 +1,5 @@
-// 約束 28（第 10 回の 1 回目）: クリップの名前、ここで切る、つなげる、空のクリップを作る、そこにマーカー、重ねる、和音のスタンプ。
-// 形と、偽物の意図と、履歴の行。core の中身と画面の部品は 2 回目。
+// Protocol 28: clip names, split here, join, make an empty clip, a marker there, overdub, chord stamp.
+// Shapes, fake intents and history rows. The core and the screen parts come in the second pass.
 import { describe, expect, it } from "vitest";
 import type { AppState, Command, HistoryRow } from "../src/bridge";
 import { STEP_NAME_KINDS } from "../src/bridge";
@@ -30,12 +30,12 @@ async function opened() {
   return { t, now, send, track, newest };
 }
 
-describe("約束 28 の形", () => {
-  it("新しい曲では「重ねる」は切れている", () => {
+describe("shape of protocol 28", () => {
+  it("in a new song「重ねる」is off", () => {
     expect(fakeState().transport.overdub).toBe(false);
   });
 
-  it("新しい手の名前は 3 つ。文はオーナーさんの決めと仕様書のまま", () => {
+  it("three new step names. The text follows the owner's decision and the spec", () => {
     expect(STEP_NAME_KINDS).toEqual(expect.arrayContaining(["renameClip", "joinClips", "writeClip"]));
     expect(stepNames.renameClip).toEqual({ text: "クリップの名前を変える", source: "user:2026-11-23" });
     expect(stepNames.joinClips).toEqual({ text: "クリップをつなげる", source: "user:2026-11-23" });
@@ -43,8 +43,8 @@ describe("約束 28 の形", () => {
   });
 });
 
-describe("偽物の意図", () => {
-  it("クリップの名前を変える: まわりの空白を外し、1 手。履歴は「前 → 後」。空や同じ名前は何もしない", async () => {
+describe("fake intents", () => {
+  it("renaming a clip: trims spaces around, 1 step. History is「前 → 後」. Empty or same name does nothing", async () => {
     const { now, send, track, newest } = await opened();
     const clip = (await track("ピアノ")).clips[0]!;
     const before = (await now()).song.undoCount;
@@ -64,7 +64,7 @@ describe("偽物の意図", () => {
     expect(s.song.undoCount).toBe(before + 1);
   });
 
-  it("ここで切る: 右の半分が選ばれ、切り目をまたぐノートは左で切り目に終わる。状態行は S と同じ。端では何もしない", async () => {
+  it("split here: the right half is selected, and notes across the cut end at the cut on the left. The status line is the same as S. Nothing at the ends", async () => {
     const { t, send, track, newest } = await opened();
     const drums = await track("ドラム");
     const beat = drums.clips.find((c) => c.name === "8ビート")!;
@@ -87,7 +87,7 @@ describe("偽物の意図", () => {
     }
   });
 
-  it("つなげる: いちばん前の id と名前で 1 つに。間は何もない部分になり、テイクは 1 つ。歌、ちがうトラック、1 つだけは何もしない", async () => {
+  it("join: into one with the first id and name. The gap becomes an empty part, with one take. Audio, different tracks, or only one do nothing", async () => {
     const { t, send, track, newest } = await opened();
     const piano = await track("ピアノ");
     const [intro, chorus] = piano.clips;
@@ -105,7 +105,7 @@ describe("偽物の意図", () => {
     expect(await newest()).toMatchObject({ name: { kind: "joinClips" }, what: { kind: "clips", count: 2 } });
   });
 
-  it("ここにクリップを作る: その小節から 4 小節（次のクリップの手前まで）、名前はトラックの名前。選んで、ピアノロールをひらいて見せる", async () => {
+  it("make a clip here: 4 bars from that bar (up to before the next clip), named after the track. Selects it and opens the piano roll to show it", async () => {
     const { send, track, newest } = await opened();
     const pad = await track("パッド");
     expect((await send({ type: "createClip", track: pad.id, tick: 2 * BAR })).song.undoCount).toBe(14);
@@ -121,7 +121,7 @@ describe("偽物の意図", () => {
     expect([made.start, made.end]).toEqual([11 * BAR, 12 * BAR]);
   });
 
-  it("そこにマーカー: いちばん近い拍の頭へ寄せる（半分ならあと）。tick なしは再生の線の所。選んで名前の欄をひらく", async () => {
+  it("a marker there: snaps to the nearest beat start (half goes later). Without tick, at the play line. Selects it and opens the name field", async () => {
     const { send, newest } = await opened();
     let s = await send({ type: "addMarker", name: "マーカー 4", tick: 2 * BAR + TPQ / 2 });
     let m = s.timeline.markers.find((x) => x.name === "マーカー 4")!;
@@ -136,7 +136,7 @@ describe("偽物の意図", () => {
     expect(ticks).toEqual([...ticks].sort((a, b) => a - b));
   });
 
-  it("重ねる: 運搬の帯の切りかえ。曲の手ではない", async () => {
+  it("overdub: a toggle in the transport band. Not an undo step of the song", async () => {
     const { send } = await opened();
     let s = await send({ type: "setOverdub", on: true });
     expect(s.transport.overdub).toBe(true);
@@ -145,7 +145,7 @@ describe("偽物の意図", () => {
     expect(s.transport.overdub).toBe(false);
   });
 
-  it("和音のスタンプ: ピアノロールのテイクに、いくつもの鍵を 1 手で。同じ鍵は 1 つ。外へ書くとクリップがのびる。次のクリップにぶつかると書かない", async () => {
+  it("chord stamp: many keys in the piano roll take as 1 step. The same key once. Writing outside makes the clip longer. Not written if it hits the next clip", async () => {
     const { t, send, track, newest } = await opened();
     const pad = await track("パッド");
     let s = await send({ type: "createClip", track: pad.id, tick: 6 * BAR });
@@ -169,7 +169,7 @@ describe("偽物の意図", () => {
     expect(s.status.message).toEqual({ id: "notesNotWritten" });
   });
 
-  it("和音のスタンプ: ピアノロールにクリップがないときは、鍵盤のトラックにクリップを作って書く", async () => {
+  it("chord stamp: when the piano roll has no clip, make a clip on the keyboard track and write there", async () => {
     const { t, send } = await opened();
     const s = await send({ type: "addNotes", take: null, start: 6 * BAR, length: TPQ, keys: [57, 60, 64], velocity: 100 });
     const made = s.song.tracks[0]!.clips.find((c) => c.start === 6 * BAR)!;

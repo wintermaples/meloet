@@ -1,4 +1,4 @@
-// 測るときだけ動く、取り消しの履歴の帯を自動で動かす係（ui/src/dev/historyScript.ts）と、キーの読みかた。
+// The script that drives the undo history band, only when measuring (ui/src/dev/historyScript.ts), and reading keys.
 import { describe, expect, it } from "vitest";
 import type { HistoryView } from "../src/bridge";
 import { HistoryScript, type HistoryTarget } from "../src/dev/historyScript";
@@ -7,23 +7,23 @@ import { keyAction } from "../src/keys/keys";
 
 const k = (key: string, shift = false) => ({ key, ctrl: false, meta: false, alt: false, shift });
 
-describe("帯にフォーカスがあるときのキー（仕様書 4 章）", () => {
-  it("↑ は新しい手、↓ は古い手、Home はいまの手、Enter は戻す", () => {
+describe("keys while the band has focus (spec 4)", () => {
+  it("↑ is a newer step, ↓ an older step, Home the current step, Enter goes back", () => {
     expect(keyAction(k("ArrowUp"), false, "other", "history")).toEqual({ kind: "historyStep", delta: 1 });
     expect(keyAction(k("ArrowDown"), false, "other", "history")).toEqual({ kind: "historyStep", delta: -1 });
     expect(keyAction(k("Home"), false, "other", "history")).toEqual({ kind: "historyHome" });
     expect(keyAction(k("Enter"), false, "other", "history")).toEqual({ kind: "historyConfirm" });
     expect(keyAction(k("Escape"), false, "other", "history")).toEqual({ kind: "back" });
   });
-  it("帯の外では今までどおり", () => {
+  it("outside the band, as before", () => {
     expect(keyAction(k("Home"), false, "other")).toEqual({ kind: "toStart" });
     expect(keyAction(k("ArrowUp"), false, "other")).toEqual({ kind: "nudge", steps: 0, keys: 1 });
     expect(keyAction(k("Enter"), false, "other")).toBeNull();
   });
 });
 
-describe("MELOET_UI_SCRIPT の hist-*", () => {
-  it("読める", () => {
+describe("hist-* in MELOET_UI_SCRIPT", () => {
+  it("can be read", () => {
     const parts = parseUiScript("hist-make:5000,hist-open:3,hist-scroll,hist-jump:4")!;
     expect(parts).toEqual([
       { kind: "histMake", count: 5000 },
@@ -35,7 +35,7 @@ describe("MELOET_UI_SCRIPT の hist-*", () => {
     expect(parseUiScript("pr-scroll")!.every(isHistoryPart)).toBe(false);
   });
 
-  it("ひらく ・ スクロール ・ 500 手とぶを順に行い、画面に出るまでの時間を書く", async () => {
+  it("opens, scrolls, jumps 500 steps in order, and writes the time until it shows", async () => {
     let t = 0;
     const clock: Clock = {
       now: () => (t += 1),
@@ -53,7 +53,7 @@ describe("MELOET_UI_SCRIPT の hist-*", () => {
     row.className = "row";
     row.getBoundingClientRect = () => ({ height: 24 }) as DOMRect;
     viewport.append(row);
-    // jsdom の scrollTop は、はしで止まらない。0〜600 の間にする。
+    // jsdom scrollTop does not stop at the ends. Keep it between 0 and 600.
     let top = 0;
     Object.defineProperty(viewport, "scrollTop", { get: () => top, set: (v: number) => (top = Math.max(0, Math.min(600, v))) });
     const jumps: number[] = [];
@@ -87,7 +87,7 @@ describe("MELOET_UI_SCRIPT の hist-*", () => {
     ]);
     expect(record.parts[1]!.steps.every((s) => s.replyMs !== null)).toBe(true);
     expect(record.parts[2]!.steps.every((s) => s.changed)).toBe(true);
-    // 240 → 480 → 600（はし）→ 折りかえして 360。
+    // 240 → 480 → 600 (end) → back to 360.
     expect(top).toBe(360);
     expect(jumps).toEqual([500, 1000, 500]);
   });

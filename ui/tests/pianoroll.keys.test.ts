@@ -1,4 +1,4 @@
-// ピアノロールのキー（仕様書 4 章）: 1 ・ 2 ・ 3、↑ ↓ ・ Shift ↑ ↓、← →、Delete、Mod D、Mod A、Mod X ・ C ・ V、Esc のいちばん前の cancelDrag。
+// Piano roll keys (spec 4): 1, 2, 3, ↑ ↓, Shift ↑ ↓, ← →, Delete, Mod D, Mod A, Mod X / C / V, and cancelDrag first on Esc.
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AppState, Command } from "../src/bridge";
 import { fakeState } from "../src/bridge/fake";
@@ -12,8 +12,8 @@ import { take } from "./pianoroll-fixture";
 
 const k = (key: string, mods: Partial<KeyInput> = {}): KeyInput => ({ key, ctrl: false, meta: false, alt: false, shift: false, ...mods });
 
-describe("keyAction（ピアノロールのキー）", () => {
-  it("1 ・ 2 ・ 3 は道具。文字を打っている最中は効かない", () => {
+describe("keyAction (piano roll keys)", () => {
+  it("1, 2, 3 are tools. No effect while typing", () => {
     expect(keyAction(k("1", { code: "Digit1" }), false, "other")).toEqual({ kind: "tool", tool: "select" });
     expect(keyAction(k("2"), false, "other")).toEqual({ kind: "tool", tool: "draw" });
     expect(keyAction(k("3"), false, "other")).toEqual({ kind: "tool", tool: "erase" });
@@ -21,16 +21,16 @@ describe("keyAction（ピアノロールのキー）", () => {
     expect(keyAction(k("1"), true, "other")).toBeNull();
   });
 
-  it("↑ ↓ は半音、Shift ↑ ↓ は 1 オクターブ、← → はグリッド 1 つ", () => {
+  it("↑ ↓ is a semitone, Shift ↑ ↓ an octave, ← → one grid step", () => {
     expect(keyAction(k("ArrowUp"), false, "other")).toEqual({ kind: "nudge", steps: 0, keys: 1 });
     expect(keyAction(k("ArrowDown", { shift: true }), false, "other")).toEqual({ kind: "nudge", steps: 0, keys: -12 });
     expect(keyAction(k("ArrowLeft"), false, "other")).toEqual({ kind: "nudge", steps: -1, keys: 0 });
     expect(keyAction(k("ArrowRight", { shift: true }), false, "other")).toBeNull();
-    // 文字の枠の中の矢印は、枠の物（ノートの一覧の ↑ ↓ で 1 ずつ）
+    // Arrows inside a text box belong to the box (↑ ↓ in the note list go by 1)
     expect(keyAction(k("ArrowUp"), true, "other")).toBeNull();
   });
 
-  it("Mod A ・ D ・ X ・ C ・ V。打っている最中の A ・ X ・ C ・ V は枠の物", () => {
+  it("Mod A, D, X, C, V. A, X, C, V while typing belong to the box", () => {
     expect(keyAction(k("a", { ctrl: true }), false, "other")).toEqual({ kind: "selectAll" });
     expect(keyAction(k("d", { meta: true }), false, "mac")).toEqual({ kind: "duplicate" });
     expect(keyAction(k("x", { ctrl: true }), false, "other")).toEqual({ kind: "cut" });
@@ -41,7 +41,7 @@ describe("keyAction（ピアノロールのキー）", () => {
   });
 });
 
-describe("handleKeydown（ピアノロールに向けるキー）", () => {
+describe("handleKeydown (keys that go to the piano roll)", () => {
   const n = G.shownOf(take([[0, TPQ, 60], [TPQ, TPQ, 62], [2 * TPQ, TPQ / 2, 64]], 7), 4 * TPQ);
   let state: AppState;
   let sent: Command[];
@@ -67,7 +67,7 @@ describe("handleKeydown（ピアノロールに向けるキー）", () => {
     prView.tool = "select";
   });
 
-  it("1 ・ 2 ・ 3 は道具を変える（意図は送らない）", () => {
+  it("1, 2, 3 change the tool (no intent sent)", () => {
     expect(press("2").defaultPrevented).toBe(true);
     expect(prView.tool).toBe("draw");
     press("3");
@@ -75,7 +75,7 @@ describe("handleKeydown（ピアノロールに向けるキー）", () => {
     expect(sent).toEqual([]);
   });
 
-  it("↑ ↓ ・ ← → で選んだノートを動かす（グリッド 1 つ ＝ 1/16 の TPQ / 4）", () => {
+  it("↑ ↓ and ← → move the selected notes (one grid step = TPQ / 4 for 1/16)", () => {
     press("ArrowUp", { shiftKey: true });
     press("ArrowRight");
     expect(sent).toEqual([
@@ -84,20 +84,20 @@ describe("handleKeydown（ピアノロールに向けるキー）", () => {
     ]);
   });
 
-  it("Delete はピアノロールなら選んだノート、アレンジならクリップ", () => {
+  it("Delete: selected notes in the piano roll, clips in the arrange", () => {
     press("Delete");
     prView.focus = "arrange";
     press("Delete");
     expect(sent).toEqual([{ type: "deleteNotes", take: 7, notes: [0, 1] }, { type: "deleteSelected" }]);
   });
 
-  it("ピアノロールで選んだノートがなければ、Delete は何も消さない（クリップを消さない）", () => {
+  it("with no selected notes in the piano roll, Delete deletes nothing (not the clip)", () => {
     state.pianoRoll = { ...state.pianoRoll, selectedNotes: [] };
     press("Delete");
     expect(sent).toEqual([]);
   });
 
-  it("Mod D はすぐうしろに複製（範囲の長さをグリッドに切り上げた分）、Mod A ・ C ・ X ・ V", () => {
+  it("Mod D copies right after (the range length rounded up to the grid), Mod A, C, X, V", () => {
     press("d", { ctrlKey: true });
     press("a", { ctrlKey: true });
     press("c", { ctrlKey: true });
@@ -108,12 +108,12 @@ describe("handleKeydown（ピアノロールに向けるキー）", () => {
       { type: "selectAllNotes" },
       { type: "copyNotes", take: 7, notes: [0, 1] },
       { type: "cutNotes", take: 7, notes: [0, 1] },
-      // 再生の位置 2 * TPQ + TPQ / 12 をグリッド（TPQ / 4）に合わせて 2 * TPQ
+      // Play position 2 * TPQ + TPQ / 12 snapped to the grid (TPQ / 4) gives 2 * TPQ
       { type: "pasteNotes", at: 2 * TPQ },
     ]);
   });
 
-  it("ピアノロールがひらいていなければ、ノートのキーは何もしない", () => {
+  it("with the piano roll closed, note keys do nothing", () => {
     state.workspace.layout = { ...state.workspace.layout, lower: [] };
     press("ArrowUp");
     press("d", { ctrlKey: true });
@@ -122,7 +122,7 @@ describe("handleKeydown（ピアノロールに向けるキー）", () => {
     expect(prView.tool).toBe("select");
   });
 
-  it("Esc は、ドラッグ中ならドラッグをやめるだけ（Back を送らない）", () => {
+  it("Esc during a drag only cancels the drag (no Back sent)", () => {
     let dragging = true;
     const stop = onDragCancel(() => {
       if (!dragging) return false;

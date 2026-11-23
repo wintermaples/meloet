@@ -20,7 +20,7 @@ const move = (el: Element, buttons = 0) => el.dispatchEvent(new PointerEvent("po
 const enter = (el: Element) => el.dispatchEvent(new PointerEvent("pointerenter"));
 const leave = (el: Element) => el.dispatchEvent(new PointerEvent("pointerleave"));
 
-describe("「…」で切れた文の全部（ページに 1 つの耳）", () => {
+describe("the whole text cut with「…」(one listener per page)", () => {
   let off: () => void;
   beforeEach(() => {
     vi.useFakeTimers();
@@ -33,7 +33,7 @@ describe("「…」で切れた文の全部（ページに 1 つの耳）", () =
     vi.useRealTimers();
   });
 
-  it("切れているときだけ、0.6 秒止めると全部の文が出る", () => {
+  it("only when cut, resting 0.6 s shows the whole text", () => {
     const el = box(LONG);
     move(el);
     vi.advanceTimersByTime(TIP_DELAY_MS - 1);
@@ -42,7 +42,7 @@ describe("「…」で切れた文の全部（ページに 1 つの耳）", () =
     expect(tipView.value).toMatchObject({ term: null, body: LONG });
   });
 
-  it("中の子に乗っても、近い祖先の切れた文を出す", () => {
+  it("over an inner child, shows the cut text of the nearest ancestor", () => {
     const el = box("");
     const inner = document.createElement("b");
     inner.textContent = LONG;
@@ -52,7 +52,7 @@ describe("「…」で切れた文の全部（ページに 1 つの耳）", () =
     expect(tipView.value?.body).toBe(LONG);
   });
 
-  it("切れていなければ出ない。ellipsis でない要素も出ない", () => {
+  it("not shown when not cut. Not shown for elements without ellipsis", () => {
     move(box(LONG, { cut: false }));
     vi.advanceTimersByTime(TIP_DELAY_MS);
     expect(tipVisible()).toBe(false);
@@ -61,7 +61,7 @@ describe("「…」で切れた文の全部（ページに 1 つの耳）", () =
     expect(tipVisible()).toBe(false);
   });
 
-  it("調べるのは止まって 0.6 秒たったとき 1 回だけ（動いているあいだはレイアウトを読まない）", () => {
+  it("checks only once, when resting for 0.6 s (does not read layout while moving)", () => {
     const el = box(LONG);
     const reads = vi.fn(() => 180);
     Object.defineProperty(el, "scrollWidth", { configurable: true, get: reads });
@@ -74,7 +74,7 @@ describe("「…」で切れた文の全部（ページに 1 つの耳）", () =
     expect(reads).toHaveBeenCalledTimes(1);
   });
 
-  it("自分の用語の説明を持つ要素では、そちらだけが出る", () => {
+  it("an element with its own term tip shows only that", () => {
     const el = box("ループ");
     term(el, "ループ");
     enter(el);
@@ -87,7 +87,7 @@ describe("「…」で切れた文の全部（ページに 1 つの耳）", () =
     expect(tipView.value).toMatchObject({ term: "ループ" });
   });
 
-  it("use:tip の文は、切れた文より先", () => {
+  it("the use:tip text comes before the cut text", () => {
     const el = box("C4 E4 G4 B4 …");
     tip(el, "C4 E4 G4 B4 D5");
     enter(el);
@@ -96,7 +96,7 @@ describe("「…」で切れた文の全部（ページに 1 つの耳）", () =
     expect(tipView.value?.body).toBe("C4 E4 G4 B4 D5");
   });
 
-  it("出たあとは、要素の中を動いても消えない。離れたら消える", () => {
+  it("once shown, moving inside the element keeps it. Leaving hides it", () => {
     const el = box(LONG);
     const other = box("short", { cut: false });
     move(el);
@@ -107,7 +107,7 @@ describe("「…」で切れた文の全部（ページに 1 つの耳）", () =
     expect(tipVisible()).toBe(false);
   });
 
-  it("ページの外に出たら消える", () => {
+  it("leaving the page hides it", () => {
     const el = box(LONG);
     move(el);
     vi.advanceTimersByTime(TIP_DELAY_MS);
@@ -115,7 +115,7 @@ describe("「…」で切れた文の全部（ページに 1 つの耳）", () =
     expect(tipVisible()).toBe(false);
   });
 
-  it("押している間は出ない。押すと消える", () => {
+  it("not shown while pressing. Pressing hides it", () => {
     const el = box(LONG);
     move(el, 1);
     vi.advanceTimersByTime(TIP_DELAY_MS);
@@ -130,7 +130,7 @@ describe("「…」で切れた文の全部（ページに 1 つの耳）", () =
     expect(tipVisible()).toBe(false);
   });
 
-  it("Esc（hideTip）で消える", () => {
+  it("Esc (hideTip) hides it", () => {
     const el = box(LONG);
     move(el);
     vi.advanceTimersByTime(TIP_DELAY_MS);
@@ -138,14 +138,14 @@ describe("「…」で切れた文の全部（ページに 1 つの耳）", () =
     expect(tipVisible()).toBe(false);
   });
 
-  it("耳を外すと、もう出ない", () => {
+  it("after removing the listener, it no longer shows", () => {
     off();
     move(box(LONG));
     vi.advanceTimersByTime(TIP_DELAY_MS);
     expect(tipVisible()).toBe(false);
   });
 
-  it("頭を省いた道（cutHead の data-cut）は、道の全部", () => {
+  it("a path with the head cut off (data-cut of cutHead) shows the whole path", () => {
     const field = document.createElement("span");
     field.setAttribute("data-cut", "");
     field.innerHTML = '<span class="path"><span data-cut-text>/home/me/songs/very/long/path/song.wav</span></span>';
@@ -154,7 +154,7 @@ describe("「…」で切れた文の全部（ページに 1 つの耳）", () =
   });
 });
 
-describe("下を通す文（pointer-events: none のクリップの名前）", () => {
+describe("text that lets the pointer through (clip names with pointer-events: none)", () => {
   let off: () => void;
   beforeEach(() => {
     vi.useFakeTimers();
@@ -191,7 +191,7 @@ describe("下を通す文（pointer-events: none のクリップの名前）", (
   const moveAt = (el: Element, x: number, y: number, buttons = 0) =>
     el.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientX: x, clientY: y, buttons }));
 
-  it("印のある切れた文の上に止まると、全部の文が出る。外へ出たら消える", () => {
+  it("resting over marked cut text shows the whole text. Leaving hides it", () => {
     const { root } = lanes([
       { text: "Aメロ（ピアノのとても長い名前）", at: rect(10, 10, 40, 16), cut: true },
       { text: "Bメロ", at: rect(100, 10, 40, 16), cut: false },
@@ -205,7 +205,7 @@ describe("下を通す文（pointer-events: none のクリップの名前）", (
     expect(tipVisible()).toBe(false);
   });
 
-  it("切れていなければ出ない。上の印が切れていなければ、下の印は見ない", () => {
+  it("not shown when not cut. If the upper mark is not cut, the lower mark is not checked", () => {
     const { root } = lanes([
       { text: "下の長い名前", at: rect(10, 10, 40, 16), cut: true },
       { text: "上", at: rect(10, 10, 40, 16), cut: false },
@@ -215,14 +215,14 @@ describe("下を通す文（pointer-events: none のクリップの名前）", (
     expect(tipVisible()).toBe(false);
   });
 
-  it("どの印の上でもなければ出ない", () => {
+  it("not shown when over no mark", () => {
     const { root } = lanes([{ text: "長い名前", at: rect(10, 10, 40, 16), cut: true }]);
     moveAt(root, 200, 200);
     vi.advanceTimersByTime(TIP_DELAY_MS);
     expect(tipVisible()).toBe(false);
   });
 
-  it("入れ物の外の印の物は調べない", () => {
+  it("marked items outside the container are not checked", () => {
     const { root } = lanes([{ text: "長い名前", at: rect(10, 10, 40, 16), cut: true }]);
     const outside = document.createElement("span");
     outside.setAttribute("data-tip-through", "");
@@ -239,7 +239,7 @@ describe("下を通す文（pointer-events: none のクリップの名前）", (
     expect(outsideRead).not.toHaveBeenCalled();
   });
 
-  it("move ではレイアウトを読まない（止まって 0.6 秒で 1 回）", () => {
+  it("move does not read layout (once after resting 0.6 s)", () => {
     const { root, reads } = lanes([{ text: "長い名前", at: rect(10, 10, 40, 16), cut: true }]);
     for (let i = 0; i < 10; i++) {
       moveAt(root, 20 + i, 15);
@@ -256,7 +256,7 @@ describe("下を通す文（pointer-events: none のクリップの名前）", (
     expect(reads[0]!.mock.calls.length).toBe(n);
   });
 
-  it("押している間（クリップや再生の線のドラッグ）は出ない", () => {
+  it("not shown while pressing (dragging clips or the play line)", () => {
     const { root } = lanes([{ text: "長い名前", at: rect(10, 10, 40, 16), cut: true }]);
     root.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, buttons: 1, clientX: 20, clientY: 15 }));
     moveAt(root, 20, 15, 1);
@@ -265,8 +265,8 @@ describe("下を通す文（pointer-events: none のクリップの名前）", (
   });
 });
 
-describe("選んだノートの音（5 つ以上は「…」）", () => {
-  it("「…」で省いたときだけ、全部の名前を tip に渡す", () => {
+describe("pitches of selected notes (「…」for 5 or more)", () => {
+  it("passes all names to tip only when cut with「…」", () => {
     const keys = [60, 62, 64, 65, 67, 67];
     expect(selectedKeysText(keys, false)).toMatch(/…$/);
     const full = selectedKeysFull(keys, false)!;

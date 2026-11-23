@@ -1,4 +1,4 @@
-// 第 6 回 区切り1 の画面: テンポと拍子の変更（帯、小節の線、再生まわりの値）とマーカー（行、名前、動かす、キー、ピアノロールの目盛）。
+// Tempo and time signature changes (band, bar lines, transport values) and markers (row, names, moving, keys, piano roll ruler).
 import { flushSync, mount, unmount, type Component } from "svelte";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, TimelineView } from "../src/bridge";
@@ -23,43 +23,43 @@ vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));
 const BAR = 4 * TPQ;
 const scene = (name: string): AppState => fakeScene(name)!.state;
 
-/** 4/4 で 8 小節、9 小節目から 3/4 を 4 小節、13 小節目から 4/4（モック F6-Tempo の曲）。 */
+/** 8 bars of 4/4, 4 bars of 3/4 from bar 9, 4/4 from bar 13 (the song of mock F6-Tempo). */
 const tempoTimeline = (): TimelineView => scene("tempo").timeline;
 const THREE_FOUR = 8 * BAR;
 const FOUR_FOUR = THREE_FOUR + 4 * 3 * TPQ;
 
-describe("小節の線（テンポの地図から）", () => {
+describe("bar lines (from the tempo map)", () => {
   const map = mapOf(tempoTimeline());
 
-  it("同じ区画には同じ地図", () => {
+  it("the same map for the same section", () => {
     const tl = tempoTimeline();
     expect(mapOf(tl)).toBe(mapOf(tl));
   });
 
-  it("小節の頭は、拍子の変わった所から 3/4 の長さでならぶ", () => {
+  it("bar starts line up by the 3/4 length from where the time signature changes", () => {
     const heads: number[] = [];
     eachLine(map, 7 * BAR, FOUR_FOUR + BAR, (_, bar) => bar, (tick, kind) => kind === 0 && heads.push(tick));
     expect(heads).toEqual([7 * BAR, THREE_FOUR, THREE_FOUR + 3 * TPQ, THREE_FOUR + 6 * TPQ, THREE_FOUR + 9 * TPQ, FOUR_FOUR]);
   });
 
-  it("拍の線は、その小節の拍子の拍", () => {
+  it("beat lines follow the beats of that bar's time signature", () => {
     const kinds: string[] = [];
     eachLine(map, THREE_FOUR, THREE_FOUR + 3 * TPQ, (beat) => beat, (tick, kind) => kinds.push(`${tick - THREE_FOUR}:${kind}`));
     expect(kinds).toEqual(["0:0", `${TPQ}:1`, `${2 * TPQ}:1`]);
   });
 
-  it("吸いつき: いちばん近い拍 ・ 小節の頭（まん中なら後ろ）", () => {
+  it("snap: the nearest beat or bar start (the later one at the middle)", () => {
     expect(nearestBeatTick(map, THREE_FOUR + TPQ / 2 - 1)).toBe(THREE_FOUR);
     expect(nearestBeatTick(map, THREE_FOUR + TPQ / 2)).toBe(THREE_FOUR + TPQ);
     expect(nearestBarTick(map, THREE_FOUR + (35 * TPQ) / 24)).toBe(THREE_FOUR);
     expect(nearestBarTick(map, THREE_FOUR + (3 * TPQ) / 2)).toBe(THREE_FOUR + 3 * TPQ);
     expect(nearestBarTick(map, -5)).toBe(0);
-    // 1/16 のグリッドは、3/4 の小節でも小節の頭から。1 小節より長いきざみは小節の頭へ。
+    // A 1/16 grid starts from the bar start even in a 3/4 bar. Steps longer than 1 bar go to bar starts.
     expect(snapToStep(map, THREE_FOUR + (13 * TPQ) / 48, TPQ / 4)).toBe(THREE_FOUR + TPQ / 4);
     expect(snapToStep(map, THREE_FOUR + (25 * TPQ) / 12, Infinity)).toBe(THREE_FOUR + 3 * TPQ);
   });
 
-  it("位置の打ちこみ「10.2.0960」は 3/4 の小節で数え、拍は 1〜3 に入れる", () => {
+  it("typed position「10.2.0960」counts in 3/4 bars, and the beat goes into 1–3", () => {
     expect(tickOfPosition(map, 10, 2, TPQ / 2)).toBe(THREE_FOUR + 3 * TPQ + TPQ + TPQ / 2);
     expect(readPosition("10.2.0960", map)).toEqual({ value: THREE_FOUR + 3 * TPQ + (3 * TPQ) / 2, clamp: null });
     const r = readPosition("10.4", map)!;
@@ -67,14 +67,14 @@ describe("小節の線（テンポの地図から）", () => {
     expect(r.clamp).toEqual({ field: "beat", value: "10. 3. 0000", range: "1〜3" });
   });
 
-  it("クリップの小節の札「9–12」", () => {
+  it("the clip's bar tag「9–12」", () => {
     expect(barsText(THREE_FOUR, FOUR_FOUR, map)).toBe("9–12");
     expect(barsText(0, 4 * BAR, { num: 4, den: 4 })).toBe("1–4");
   });
 });
 
-describe("ノートのグリッド（拍子の区間の頭から数える）", () => {
-  // 4/4 を 1 小節、3/16 を 2 小節（BAR〜BAR + 3 * TPQ / 2）、そのあと 4/4。
+describe("note grid (counted from the start of the time signature section)", () => {
+  // 1 bar of 4/4, 2 bars of 3/16 (BAR to BAR + 3 * TPQ / 2), then 4/4.
   const map = mapOf({
     ...tempoTimeline(),
     tempoPoints: [],
@@ -84,7 +84,7 @@ describe("ノートのグリッド（拍子の区間の頭から数える）", (
     ],
   });
 
-  it("1/8 三連符（TPQ / 3）は BAR から数え、次の旗をこえる段は旗の小節の頭（BAR + 3 * TPQ / 2）", () => {
+  it("1/8 triplets (TPQ / 3) count from BAR, and a step over the next flag goes to the flag's bar start (BAR + 3 * TPQ / 2)", () => {
     const t3 = TPQ / 3;
     expect(gridTick(map, BAR + (3 * TPQ) / 8, t3)).toBe(BAR + t3);
     expect(gridTick(map, BAR + (35 * TPQ) / 24, t3)).toBe(BAR + (3 * TPQ) / 2);
@@ -93,24 +93,24 @@ describe("ノートのグリッド（拍子の区間の頭から数える）", (
     expect(gridTick(map, -50, t3)).toBe(0);
   });
 
-  it("1 小節のグリッドは、その所の小節の頭", () => {
+  it("a 1-bar grid is the bar start at that place", () => {
     expect(gridTick(map, BAR + (19 * TPQ) / 24, BAR, false, true)).toBe(BAR + (3 * TPQ) / 4);
     expect(gridTick(map, BAR + (19 * TPQ) / 24, BAR, true, true)).toBe(BAR + (3 * TPQ) / 4);
   });
 
-  it("方眼の線は吸いつきと同じ所", () => {
+  it("grid lines are at the same places as snapping", () => {
     const ticks: number[] = [];
     eachGridTick(map, BAR - TPQ / 24, BAR + (11 * TPQ) / 6, TPQ / 3, (tick) => ticks.push(tick));
     expect(ticks).toEqual([BAR, BAR + TPQ / 3, BAR + (2 * TPQ) / 3, BAR + TPQ, BAR + (4 * TPQ) / 3, BAR + (3 * TPQ) / 2]);
   });
 });
 
-describe("ノートの一覧 ・ 選んだノートの位置（地図から）", () => {
+describe("positions in the note list and selected notes (from the map)", () => {
   const map = mapOf(tempoTimeline());
   const take = { starts: [THREE_FOUR + 3 * TPQ + TPQ], lengths: [TPQ], keys: [60], velocities: [90] } as never;
   const clip = { start: 0, end: 20 * BAR, takeOffset: 0 };
 
-  it("位置は 3/4 の小節で数え、打ちこみも同じ", () => {
+  it("position counts in 3/4 bars, and typing does too", () => {
     const spec = noteFieldSpec("position", take, clip, [0], map)!;
     expect(spec.initial).toBe("10.2.0000");
     expect(spec.read("10.3")).toBe(THREE_FOUR + 3 * TPQ + 2 * TPQ);
@@ -119,17 +119,17 @@ describe("ノートの一覧 ・ 選んだノートの位置（地図から）",
   });
 });
 
-describe("テンポの帯の形", () => {
+describe("tempo band shape", () => {
   const tl = tempoTimeline();
   const map = mapOf(tl);
 
-  it("件数は変わる所（ティック）の数。見出しは「テンポ 96.00 ほか 3」「拍子 4/4 ほか 2」", () => {
+  it("the count is the number of change places (ticks). Headings are「テンポ 96.00 ほか 3」「拍子 4/4 ほか 2」", () => {
     expect(T.changeCount(tl, map)).toBe(3);
     expect(T.summaries(tl)).toEqual({ tempo: "テンポ 96.00 ほか 3", meter: "拍子 4/4 ほか 2" });
     expect(T.summaries(scene("empty").timeline)).toEqual({ tempo: "テンポ 96.00", meter: "拍子 4/4" });
   });
 
-  it("いちばん高いテンポが上から pad、いちばん低いテンポが下から pad", () => {
+  it("the highest tempo is pad from the top, the lowest pad from the bottom", () => {
     const s = T.tempoScale(T.tempoPoints(tl), 48, 12, 1);
     expect(T.bpmToY(s, 120)).toBe(12);
     expect(T.bpmToY(s, 96)).toBe(36);
@@ -137,7 +137,7 @@ describe("テンポの帯の形", () => {
     expect(T.bpmToY(flat, 96)).toBe(24);
   });
 
-  it("だんだんの区間と、その線（斜めは段の四角の列）", () => {
+  it("ramp sections and their lines (a slope is a row of step rectangles)", () => {
     const v = { pxPerTick: 64 / BAR, scrollX: 0, width: 1000 };
     const pts = T.tempoPoints(tl);
     expect(T.rampSpans(v, pts)).toEqual([{ tick: 4 * BAR, x0: 256, x1: 512 }]);
@@ -147,7 +147,7 @@ describe("テンポの帯の形", () => {
     expect(rects.filter((r) => r.color === "color.gray.10")).toHaveLength(3);
   });
 
-  it("ドラッグ: 横は拍の頭、上下はテンポ。曲の頭は横に動かない。同じ所の点と入れかわる", () => {
+  it("drag: sideways to beat starts, up and down for tempo. The song start does not move sideways. Swaps with a point at the same place", () => {
     const pts = T.tempoPoints(tl);
     const s = T.tempoScale(pts, 48, 12, 1);
     const v = { pxPerTick: 64 / BAR, scrollX: 0, width: 1000 };
@@ -164,32 +164,32 @@ describe("テンポの帯の形", () => {
     ]);
   });
 
-  it("2 回押した所: 下の段はその拍の頭と線の上のテンポ、上の段はその小節", () => {
+  it("double press: the lower half gives that beat start and the tempo on the line; the upper half gives that bar", () => {
     const v = { pxPerTick: 64 / BAR, scrollX: 0, width: 1000 };
     expect(T.addAt(v, map, 6 * 64 + 1, "tempo")).toEqual({ tick: 6 * BAR, bpm: 112 });
     expect(T.addAt(v, map, 512 + 60, "meter")).toEqual({ bar: 9, num: 3, den: 4 });
   });
 });
 
-describe("キー（仕様書 4 章）", () => {
+describe("keys (spec 4)", () => {
   const k = (key: string, more: Partial<{ alt: boolean; shift: boolean; ctrl: boolean }> = {}) => ({ key, ctrl: false, meta: false, alt: false, shift: false, ...more });
   const tl = scene("markerMoving").timeline;
   const plain = { typing: false, busy: false, toArrange: true };
   const typing = { ...plain, typing: true };
 
-  it("K で「マーカー 4」。文字を打っている最中は効かない", () => {
+  it("K gives「マーカー 4」. Not while typing text", () => {
     expect(timelineKeyCommand(k("k"), plain, tl)).toEqual({ type: "addMarker", name: "マーカー 4", tick: null });
     expect(timelineKeyCommand(k("k"), typing, tl)).toBeNull();
   });
-  it("Alt → ・ Alt ← は打っている最中も効く", () => {
+  it("Alt →, Alt ← work even while typing", () => {
     expect(timelineKeyCommand(k("ArrowRight", { alt: true }), typing, tl)).toEqual({ type: "stepMarker", forward: true });
     expect(timelineKeyCommand(k("ArrowLeft", { alt: true }), plain, tl)).toEqual({ type: "stepMarker", forward: false });
   });
-  it("F2 はえらんだマーカーの名前", () => {
+  it("F2 is the name of the chosen marker", () => {
     expect(timelineKeyCommand(k("F2"), plain, tl)).toEqual({ type: "openMarkerName", id: 2 });
     expect(timelineKeyCommand(k("F2"), plain, { ...tl, selected: null })).toBeNull();
   });
-  it("Delete は、クリップより後にえらんだときだけ、えらんだ物へ（曲の頭も受けて、クリップへ回さない）", () => {
+  it("Delete goes to the chosen item only when it was chosen after a clip (the song start takes it too, and it is not passed to the clip)", () => {
     pickTimeline();
     expect(timelineKeyCommand(k("Delete"), plain, tl)).toEqual({ type: "deleteTimeline", target: { kind: "marker", id: 2 } });
     const head = { kind: "tempoPoint", tick: 0 } as const;
@@ -198,14 +198,14 @@ describe("キー（仕様書 4 章）", () => {
     pickClips();
     expect(timelineKeyCommand(k("Delete"), plain, tl)).toBeNull();
   });
-  it("録音中とカウントイン中は、どれも送らない", () => {
+  it("while recording and counting in, nothing is sent", () => {
     pickTimeline();
     const busy = { ...plain, busy: true };
     for (const key of [k("k"), k("F2"), k("Delete"), k("ArrowRight", { alt: true })]) expect(timelineKeyCommand(key, busy, tl)).toBeNull();
   });
 });
 
-// ---- 部品 ----
+// ---- parts ----
 
 const WIDTH = 1000;
 const proto = HTMLElement.prototype;
@@ -240,8 +240,8 @@ function pointer(el: HTMLElement, type: string, clientX: number, clientY = 10, m
   flushSync();
 }
 
-describe("アレンジの「テンポ ・ 拍子の変更」の行（モック F6-Tempo ・ F6-AutoRec）", () => {
-  it("ひらいた行: 見出し、旗、値、だんだん。えらんだ点の値は accent", () => {
+describe("the arrange row「テンポ ・ 拍子の変更」(mock F6-Tempo, F6-AutoRec)", () => {
+  it("open row: heading, flags, values, ramps. The chosen point's value is accent", () => {
     show(scene("tempo"));
     expect(text(q('[data-test="tempo-toggle"]'))).toBe("▾ テンポ ・ 拍子の変更 3 件");
     expect(text(q('[data-test="tempo-summary"]'))).toBe("テンポ 96.00 ほか 3");
@@ -251,12 +251,12 @@ describe("アレンジの「テンポ ・ 拍子の変更」の行（モック F
     expect(qa(".value").map(text)).toEqual(["96.00", "104.00", "120.00", "96.00"]);
     expect(qa(".value.selected").map(text)).toEqual(["104.00"]);
     expect(text(q(".ramp"))).toBe("だんだん");
-    // 目盛の数字は 3/4 の小節を 48 px で。
+    // The ruler numbers use 48 px for a 3/4 bar.
     const n = qa(".bar-number").find((b) => text(b) === "10")!;
     expect(n.style.left).toBe("560px");
   });
 
-  it("線と点は arrangeLanes の区画の中（区画はふえない）", () => {
+  it("lines and points are inside the arrangeLanes section (no more sections)", () => {
     show(scene("tempo"));
     const row = q('[data-test="tempo-row"]')!;
     expect(row.dataset.glSlot).toBe("rects");
@@ -264,7 +264,7 @@ describe("アレンジの「テンポ ・ 拍子の変更」の行（モック F
     expect(qa("[data-gl-region]").map((r) => r.dataset.glRegion).sort()).toEqual(["arrangeLanes", "recordingClip", "trackMeters"]);
   });
 
-  it("たたんだ行: 件数と、再生の線がいる所のテンポと拍子。押すとひらく意図", () => {
+  it("folded row: the count, and the tempo and time signature at the play line. Pressing sends the open intent", () => {
     show(scene("tempoFolded"));
     expect(text(q('[data-test="tempo-toggle"]'))).toBe("▸ テンポ ・ 拍子の変更 1 件");
     expect(text(q('[data-test="tempo-now"]'))).toBe("96.00 ・ 4/4");
@@ -272,7 +272,7 @@ describe("アレンジの「テンポ ・ 拍子の変更」の行（モック F
     expect(app.sent.at(-1)).toEqual({ type: "setTimelineOpen", open: true });
   });
 
-  it("点を押したまま動かす: 画面だけが動き、離して 1 つ送る。Esc でやめる", () => {
+  it("holding and moving a point: only the screen moves, release sends one. Esc cancels", () => {
     show(scene("tempo"));
     const row = q('[data-test="tempo-row"]')!;
     pointer(row, "pointerdown", 512, 12);
@@ -290,7 +290,7 @@ describe("アレンジの「テンポ ・ 拍子の変更」の行（モック F
     expect(app.sent.filter((c) => c.type === "moveTempoPoint")).toHaveLength(1);
   });
 
-  it("2 回押すと点を足す。点の上なら値の枠で、Enter で 1 つ送る", () => {
+  it("double press adds a point. On a point, a value box; Enter sends one", () => {
     show(scene("tempo"));
     const row = q('[data-test="tempo-row"]')!;
     pointer(row, "dblclick", 6 * 64 + 2, 30);
@@ -304,7 +304,7 @@ describe("アレンジの「テンポ ・ 拍子の変更」の行（モック F
     expect(app.sent.at(-1)).toEqual({ type: "moveTempoPoint", tick: THREE_FOUR, toTick: THREE_FOUR, bpm: 130 });
   });
 
-  it("右クリック: 「次の点まで、だんだん」（チェック）と「消す」", () => {
+  it("right click:「次の点まで、だんだん」(check) and「消す」", () => {
     show(scene("tempo"));
     const row = q('[data-test="tempo-row"]')!;
     row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 256, clientY: 32 }));
@@ -318,7 +318,7 @@ describe("アレンジの「テンポ ・ 拍子の変更」の行（モック F
     expect(app.sent.at(-1)).toEqual({ type: "setTempoRamp", tick: 4 * BAR, on: false });
   });
 
-  it("旗を動かすと小節の頭に吸いつき、2 回押した空いた所に旗を足す", () => {
+  it("moving a flag snaps to the bar start; a double press on empty space adds a flag", () => {
     show(scene("tempo"));
     const flag = qa('[data-test="meter-flag"]')[1]!;
     pointer(flag, "pointerdown", 512);
@@ -331,8 +331,8 @@ describe("アレンジの「テンポ ・ 拍子の変更」の行（モック F
   });
 });
 
-describe("マーカーの行（モック R10-Markers）", () => {
-  it("名札と、えらんだ名札。押すとそこへ、動かすと拍に吸いつき、読み値は位置", () => {
+describe("marker row (mock R10-Markers)", () => {
+  it("tags and the chosen tag. Pressing goes there, moving snaps to beats, the reading is the position", () => {
     show(scene("markerMoving"));
     expect(qa('[data-test="marker-tag"]').map(text)).toEqual(["イントロ", "Aメロ", "サビ"]);
     const tag = qa('[data-test="marker-tag"]')[1]!;
@@ -349,7 +349,7 @@ describe("マーカーの行（モック R10-Markers）", () => {
     expect(app.sent.at(-1)).toEqual({ type: "moveMarker", id: 2, tick: 5 * BAR });
   });
 
-  it("名前の枠: Enter で RenameMarker、Esc で CloseMarkerName", () => {
+  it("name box: Enter sends RenameMarker, Esc CloseMarkerName", () => {
     show(scene("markerRenaming"));
     const field = q('[data-test="marker-name-field"]') as HTMLInputElement;
     expect(field.value).toBe("Aメロ");
@@ -361,7 +361,7 @@ describe("マーカーの行（モック R10-Markers）", () => {
     expect(app.sent.at(-1)).toEqual({ type: "closeMarkerName" });
   });
 
-  it("右クリック: ループに ・ 名前を変える F2 ・ 消す Delete", () => {
+  it("right click:「ループに」, 「名前を変える」F2, 「消す」Delete", () => {
     show(scene("markerMoving"));
     const tag = qa('[data-test="marker-tag"]')[2]!;
     tag.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
@@ -378,14 +378,14 @@ describe("マーカーの行（モック R10-Markers）", () => {
   });
 });
 
-describe("再生まわりの値（再生の線がいる所）", () => {
-  it("7 小節目はだんだんの中で 112.00、時間は地図で 00:00:14.446", () => {
+describe("transport values (where the play line is)", () => {
+  it("bar 7 is in the ramp at 112.00; time by the map is 00:00:14.446", () => {
     show(scene("tempo"), Transport);
     expect(text(q('[data-test="transport-tempo"]'))).toBe("112.00");
     expect(text(q('[data-test="transport-meter"]'))).toBe("4/4");
     expect(text(q('[data-test="transport-time"]'))).toBe("00:00:14.446");
   });
-  it("10 小節目では拍子 3/4、位置は 3/4 の小節で数える", () => {
+  it("at bar 10 the time signature is 3/4, and the position counts in 3/4 bars", () => {
     const s = scene("tempo");
     s.transport.position = THREE_FOUR + 3 * TPQ + 2 * TPQ;
     show(s, Transport);
@@ -395,8 +395,8 @@ describe("再生まわりの値（再生の線がいる所）", () => {
   });
 });
 
-describe("最後にえらんだほう（Delete の向き）と、録音中", () => {
-  it("名札や点を押すとテンポ ・ マーカーの側、クリップの場所を押すとクリップの側", () => {
+describe("the last chosen side (where Delete goes), and recording", () => {
+  it("pressing a tag or point picks the tempo and marker side; pressing the clip area picks the clip side", () => {
     show(scene("tempo"));
     pickClips();
     pointer(qa('[data-test="marker-tag"]')[0]!, "pointerdown", 0);
@@ -407,7 +407,7 @@ describe("最後にえらんだほう（Delete の向き）と、録音中", () 
     expect(lastPick.kind).toBe("timeline");
   });
 
-  it("録音中は、えらぶ ・ 行くだけ（動かさない、足さない、右クリックの行は使えない）", () => {
+  it("while recording, only choose and go (no moving, no adding, right click rows disabled)", () => {
     const s = scene("tempo");
     s.transport.state = "recording";
     show(s);

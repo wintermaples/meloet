@@ -1,5 +1,5 @@
-// 波形の WebGL の側: ピークをテクスチャに入れる形（折りかた、ふえていく時の書きたし、ためる上限）、四角と波形の順、
-// 同じ絵かどうか、録っているクリップの面とトラックの計の面の上下をそろえる事。
+// The WebGL side of the waveform: how peaks go into a texture (folding, adding while it grows, the limit kept), the order of
+// boxes and waveforms, whether a picture is the same, and lining up the recording clip's surface with the track meter's surface.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Batch, type WaveQuad } from "../src/gl/batch";
 import { rgb } from "../src/gl/color";
@@ -31,8 +31,8 @@ function peaks(count: number, channels = 1, growing = false): WavePeaks {
 }
 const source = (p: WavePeaks): WaveSource => ({ id: newWaveSourceId(), peaks: p, stamp: 0 });
 
-describe("テクスチャに入れる形", () => {
-  it("ピークは幅 2048 の行に折る: 行の残り、まるごとの行、次の行の頭", () => {
+describe("the texture layout", () => {
+  it("peaks fold into rows 2048 wide: rest of a row, whole rows, start of the next row", () => {
     expect(texWrites(0, 10)).toEqual([{ x: 0, y: 0, w: 10, h: 1, from: 0 }]);
     expect(texWrites(0, 3 * W)).toEqual([{ x: 0, y: 0, w: W, h: 3, from: 0 }]);
     expect(texWrites(W - 5, 3 * W + 7)).toEqual([
@@ -41,35 +41,35 @@ describe("テクスチャに入れる形", () => {
       { x: 0, y: 3, w: 7, h: 1, from: 3 * W },
     ]);
     expect(texWrites(100, 100)).toEqual([]);
-    // 行の途中から、同じ行の中で終わる。
+    // Starts in the middle of a row and ends in the same row.
     expect(texWrites(W + 10, W + 30)).toEqual([{ x: 10, y: 1, w: 20, h: 1, from: W + 10 }]);
   });
 
-  it("変わらないファイルは、ちょうどの行の数。ふえていく物は 2 倍ずつ先に取り、書くのは前の最後のピークから", () => {
+  it("a file that does not change gets exactly the rows it needs. A growing one reserves 2× ahead, and writing starts from the last peak before", () => {
     expect(texturePlan(null, 5000, false)).toMatchObject({ rows: 3, count: 5000 });
     expect(texturePlan(null, 5000, false).writes[0]).toMatchObject({ from: 0 });
     const first = texturePlan(null, 5000, true);
     expect(first.rows).toBe(4);
-    // 行が足りている間は、取りなおさない。最後のピーク（まだ変わる）から書く。
+    // While there are enough rows, nothing is reallocated. Writing starts from the last peak (which can still change).
     const more = texturePlan({ rows: 4, count: 5000 }, 5019, true);
     expect(more.rows).toBe(4);
     expect(more.writes).toEqual([{ x: 4999 - 2 * W, y: 2, w: 20, h: 1, from: 4999 }]);
-    // 足りなくなったら 2 倍にして、ぜんぶ書きなおす。
+    // When rows run out, double them and write everything again.
     const grown = texturePlan({ rows: 4, count: 4 * W - 1 }, 4 * W + 9, true);
     expect(grown.rows).toBe(8);
     expect(grown.writes[0]).toMatchObject({ from: 0 });
-    // 同じ数のまま（最後のピークだけ変わった）。
+    // Same count (only the last peak changed).
     expect(texturePlan({ rows: 4, count: 5000 }, 5000, true).writes).toEqual([{ x: 4999 - 2 * W, y: 2, w: 1, h: 1, from: 4999 }]);
   });
 
-  it("上限（2048 行）より長い音は、入る所まで", () => {
+  it("sound longer than the limit (2048 rows) goes in only as far as it fits", () => {
     const plan = texturePlan(null, WAVE_TEX_MAX_PEAKS + 500, true);
     expect(plan.rows).toBe(WAVE_TEX_MAX_ROWS);
     expect(plan.count).toBe(WAVE_TEX_MAX_PEAKS);
   });
 });
 
-/** 呼ばれた事を書きとめる、にせのテクスチャ。 */
+/** A fake texture that writes down what was called. */
 function fakeOps() {
   const log: string[] = [];
   let made = 0;
@@ -82,8 +82,8 @@ function fakeOps() {
   return { ops, log };
 }
 
-describe("テクスチャの帳面（WaveTextures）", () => {
-  it("同じピークは 1 回だけ入れる。ふえたら、ふえた分だけ書きたす。チャンネル 2 つは 4 つの数で 1 texel", () => {
+describe("texture book (WaveTextures)", () => {
+  it("the same peaks go in only once. When they grow, only the new part is added. 2 channels are 1 texel of 4 numbers", () => {
     const { ops, log } = fakeOps();
     const book = new WaveTextures(ops);
     const s = source(peaks(3000, 2, true));
@@ -95,12 +95,12 @@ describe("テクスチャの帳面（WaveTextures）", () => {
     s.peaks = peaks(3040, 2, true);
     s.stamp += 1;
     expect(book.use(s)).toBe(tex);
-    // 前の最後のピーク（2999）から。
+    // From the last peak before (2999).
     expect(log).toEqual([`write 1 ${2999 - W},1 41x1 @${2999 * 4} first=${-((2999 * 4) % 1000)}`]);
     expect(book.held()).toEqual({ textures: 1, bytes: 2 * W * 2 * 4 });
   });
 
-  it("ためる上限: その絵が使わなかったテクスチャは、古い順に、上限に入るまで手ばなす。使った物は上限をこえても持つ", () => {
+  it("texture limit: textures that the picture did not use are let go, oldest first, until under the limit. Used ones are kept even over the limit", () => {
     const { ops, log } = fakeOps();
     const row = W * 4;
     const book = new WaveTextures(ops, 2 * row);
@@ -113,22 +113,22 @@ describe("テクスチャの帳面（WaveTextures）", () => {
     book.endPicture();
     book.use(c);
     book.endPicture();
-    // 3 行ぶんで上限 2 行: いちばん古い a だけ手ばなす。
+    // 3 rows with a limit of 2 rows: only the oldest, a, is let go.
     expect(log.filter((l) => l.startsWith("free"))).toEqual(["free 1"]);
     expect(book.held()).toEqual({ textures: 2, bytes: 2 * row });
-    // 1 枚の絵が 3 つとも使えば、3 つとも持つ。
+    // If one picture uses all 3, all 3 are kept.
     book.use(a);
     book.use(b);
     book.use(c);
     book.endPicture();
     expect(book.held().textures).toBe(3);
-    // 次の絵が c だけなら、古い順に a ・ b のうち上限に入るまで。
+    // If the next picture uses only c, a and b are let go oldest first until under the limit.
     book.use(c);
     book.endPicture();
     expect(book.held().textures).toBe(2);
   });
 
-  it("文脈が失われたら、ぜんぶ入れなおす", () => {
+  it("when the context is lost, everything is put in again", () => {
     const { ops, log } = fakeOps();
     const book = new WaveTextures(ops);
     const s = source(peaks(10));
@@ -169,17 +169,17 @@ const quad = (s: WaveSource, more: Partial<WaveQuad> = {}): WaveQuad => ({
   ...more,
 });
 
-describe("絵の中の波形（Batch）", () => {
-  it("四角と同じ箱で切る。入れた順（その前の四角の数）をおぼえる", () => {
+describe("waveforms in a picture (Batch)", () => {
+  it("cut by the same box as the rectangles. Remembers the order they were added (the number of rectangles before)", () => {
     const b = new Batch();
     b.clip(0, 0, 50, 100);
     b.rect(0, 0, 10, 10, rgb("color.gray.4"));
     b.wave(quad(source(peaks(1000))));
     b.rect(0, 0, 10, 10, rgb("color.gray.4"));
     expect(b.waves).toHaveLength(1);
-    // 読むピークは、右のはしの棒が届く所まで（x 50 の棒は 3 px 先まで読む）。
+    // Peaks are read as far as the bar at the right edge reaches (a bar at x 50 reads 3 px further).
     expect(b.waves[0]).toMatchObject({ x0: 10, x1: 50, y0: 20, y1: 60, at: 30, mapX: 10, end: 44 });
-    // 箱の外なら、足さない。
+    // Outside the box, nothing is added.
     b.clip(0, 0, 5, 100);
     b.wave(quad(source(peaks(1000))));
     expect(b.waves).toHaveLength(1);
@@ -187,7 +187,7 @@ describe("絵の中の波形（Batch）", () => {
     expect(b.waves).toHaveLength(0);
   });
 
-  it("同じ絵か: 音量の倍率 ・ フェード ・ 場所 ・ 音がちがえば、ちがう絵", () => {
+  it("same picture: a different volume factor, fade, place or sound makes a different picture", () => {
     const s = source(peaks(1000));
     const make = (q: WaveQuad) => {
       const b = new Batch();
@@ -205,7 +205,7 @@ describe("絵の中の波形（Batch）", () => {
     expect(a.sameAs(new Batch())).toBe(false);
   });
 
-  it("ふえていく音: 見せている所が最後のピークに届いていなければ、ふえても同じ絵（大きな面を描きなおさない）", () => {
+  it("growing sound: if the shown part does not reach the last peak, growing keeps the same picture (the large surface is not redrawn)", () => {
     const s = source(peaks(1000, 1, true));
     const make = (q: WaveQuad) => {
       const b = new Batch();
@@ -213,12 +213,12 @@ describe("絵の中の波形（Batch）", () => {
       b.wave(q);
       return b;
     };
-    // x 10〜110 が読むのはピーク 0〜103 まで。
+    // x 10 to 110 reads peaks 0 to 103.
     const before = make(quad(s));
     s.peaks = peaks(1020, 1, true);
     s.stamp += 1;
     expect(before.sameAs(make(quad(s)))).toBe(true);
-    // 最後のピークまで見せている絵は、ふえたら変わる。
+    // A picture that shows up to the last peak changes when the sound grows.
     const tail = make(quad(s, { base: 950 }));
     s.peaks = peaks(1040, 1, true);
     s.stamp += 1;
@@ -251,14 +251,14 @@ const wave = (s: WaveSource, more: Partial<GlWave> = {}): GlWave => ({
   ...more,
 });
 
-describe("四角の並びの中の波形（paintRects）", () => {
+describe("waveforms in the rectangle list (paintRects)", () => {
   const box = { x0: 100, y0: 50, x1: 600, y1: 400 };
   const rects = [
     { x: 0, y: 0, w: 10, h: 10, color: "color.gray.4" as const },
     { x: 0, y: 0, w: 10, h: 10, color: "color.gray.6" as const },
   ];
 
-  it("after の数の四角のあとに描く（クリップの面の上、あとのクリップの下）", () => {
+  it("drawn after `after` rectangles (above the clip's surface, below later clips)", () => {
     const s = source(peaks(500));
     const out = new Batch();
     out.clip(0, 0, 1000, 1000);
@@ -267,7 +267,7 @@ describe("四角の並びの中の波形（paintRects）", () => {
     expect(out.waves.map((w) => w.at)).toEqual([30, 60]);
   });
 
-  it("CSS px を画素に: 場所とフェードは率をかけ、ピークの歩みは割る。棒は画素ちょうど（1 より細くしない）", () => {
+  it("CSS px to device pixels: place and fade are multiplied by the scale, the peak step is divided. Bars are whole pixels (never thinner than 1)", () => {
     const s = source(peaks(500));
     const out = new Batch();
     out.clip(0, 0, 2000, 2000);
@@ -280,14 +280,14 @@ describe("四角の並びの中の波形（paintRects）", () => {
     expect([w.pitch, w.bar, w.minH]).toEqual([5, 2, 3]);
     expect(w.gain).toBe(0.5);
     expect(w.line).toEqual(rgb("color.gray.10"));
-    // 棒は、クリップの頭から数えた所（画素ちょうど）のうち、四角のすぐ左の物から数える。
+    // Bars are counted from the clip start (whole pixels), starting from the one just left of the rectangle.
     expect((w.barsX - Math.round(104.5)) % 5).toBe(0);
     expect(w.barsX).toBeLessThanOrEqual(106);
     expect(w.barsX).toBeGreaterThan(106 - 5);
   });
 });
 
-// ---- 描く係（にせの WebGL2） ----
+// ---- renderer (fake WebGL2) ----
 
 class FakeResizeObserver {
   observe() {}
@@ -328,7 +328,7 @@ function box(rect: DOMRect, parent: HTMLElement = document.body): HTMLElement {
   return el;
 }
 
-describe("描く係と波形", () => {
+describe("renderer and waveforms", () => {
   const actions: { destroy(): void }[] = [];
   const region = (node: HTMLElement, name: RegionName) => (actions.push(glRegion(node, name)), node);
   const slot = (node: HTMLElement, s: GlSlot) => {
@@ -344,7 +344,7 @@ describe("描く係と波形", () => {
     document.body.innerHTML = "";
   });
 
-  it("四角 → 波形 → あとの四角の順に描く。ピークは 1 チャンネルなら RG16I、2 チャンネルなら RGBA16I に、1 回だけ入れる", () => {
+  it("draws rectangles -> waveforms -> later rectangles. Peaks go in once, as RG16I for 1 channel and RGBA16I for 2 channels", () => {
     const { calls, frame } = fakePage();
     const host = region(box(new DOMRect(0, 0, 400, 100)), "arrangeLanes");
     const rects = [
@@ -366,12 +366,12 @@ describe("描く係と波形", () => {
       "texSubImage2D TEXTURE_2D 0 0 0 300 1 RGBA_INTEGER SHORT",
       "drawArrays TRIANGLE_STRIP 0 4",
     ]);
-    // 音量だけ変えた絵: テクスチャはそのまま、描きなおすだけ。
+    // A picture with only the volume changed: the texture stays, it is only redrawn.
     calls.length = 0;
     s.update({ kind: "rects", rects, waves: [wave(mono, { after: 1, gain: 0.25 }), wave(stereo, { after: 2 })] });
     frame();
     expect(calls).toEqual(["drawArrays TRIANGLES 0 6", "drawArrays TRIANGLE_STRIP 0 4", "drawArrays TRIANGLES 6 6", "drawArrays TRIANGLE_STRIP 0 4"]);
-    // 同じ絵なら、出さない。
+    // The same picture is not drawn.
     calls.length = 0;
     s.update({ kind: "rects", rects, waves: [wave(mono, { after: 1, gain: 0.25 }), wave(stereo, { after: 2 })] });
     frame();
@@ -379,7 +379,7 @@ describe("描く係と波形", () => {
     engine.destroy();
   });
 
-  it("alignY: 録っているクリップの先がある間、その面とトラックの計の面は、同じ上と下（2 つを合わせた所）。なくなれば、もとの大きさ", () => {
+  it("alignY: while the recording clip's tip exists, its surface and the track meter's surface share the same top and bottom (the union of the two). When it is gone, the original size", () => {
     const { frame } = fakePage();
     const heads = region(box(new DOMRect(0, 100, 220, 400)), "trackMeters");
     slot(box(new DOMRect(12, 153, 199, 11), heads), { kind: "meter", source: { track: 1 }, gap: 1 });
@@ -390,12 +390,12 @@ describe("描く係と波形", () => {
     const meters = heads.querySelector("canvas")!;
     const rec = lanes.querySelector("canvas")!;
     expect([meters.style.top, meters.height]).toEqual(["53px", 139]);
-    // 2 行目のトラックに録っている: 先の箱は y 167〜224。
+    // Recording on the track in row 2: the tip's box is y 167 to 224.
     const tail = slot(box(new DOMRect(300, 167, 129, 57), lanes), { kind: "rects", rects: [], alignY: "trackMeters" });
     frame();
     expect([meters.style.top, meters.height]).toEqual(["53px", 139]);
     expect([rec.style.top, rec.height, rec.style.left, rec.width]).toEqual(["53px", 139, "80px", 129]);
-    // 先が計より上や下に出ても、2 つを合わせた所。
+    // Even if the tip goes above or below the meter, the union of the two.
     tail.destroy();
     const high = slot(box(new DOMRect(300, 103, 129, 57), lanes), { kind: "rects", rects: [], alignY: "trackMeters" });
     frame();
@@ -407,7 +407,7 @@ describe("描く係と波形", () => {
     engine.destroy();
   });
 
-  it("alignY のない slot（クリップのドラッグ）は、トラックの計の面を変えない", () => {
+  it("a slot without alignY (clip drag) does not change the track meter's surface", () => {
     const { frame } = fakePage();
     const heads = region(box(new DOMRect(0, 100, 220, 400)), "trackMeters");
     slot(box(new DOMRect(12, 153, 199, 11), heads), { kind: "meter", source: { track: 1 }, gap: 1 });
@@ -420,7 +420,7 @@ describe("描く係と波形", () => {
     engine.destroy();
   });
 
-  it("Renderer は、波形のない絵では前と同じ 1 回の描画", () => {
+  it("Renderer draws a picture without waveforms in one draw, as before", () => {
     const { calls } = fakePage();
     const r = new Renderer(document.createElement("canvas"), false);
     const b = new Batch();

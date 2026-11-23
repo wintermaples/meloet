@@ -1,4 +1,4 @@
-// 約束 26（第 7 回 区切り5 の 1 回目）: 書き出し。形と、偽物の場面と、偽物の意図。画面の部品は 2 回目。
+// Protocol 26: export. The shapes, the fake scenes and the fake intents. The screen parts come in the second step.
 import { flushSync, mount, unmount } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Command, ExportChange, ExportCheck, ExportRunView, ExportView, StatusMessage } from "../src/bridge";
@@ -10,14 +10,14 @@ import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 import { mockScreenText } from "./design-sources";
 import { current } from "../src/state/app.svelte";
 
-// jsdom に WebGL2 はない。
+// jsdom has no WebGL2.
 vi.mock("../src/gl/Surface.svelte", () => ({ default: () => {} }));
 
 const scene = (name: string) => fakeScene(name)!.state as FakeState;
 const BAR = 4 * TPQ;
 const squash = (s: string) => s.replace(/\s+/g, "");
 
-/** 意図を順に送り、変わった区画を入れた状態を返す。 */
+/** Sends the intents in order and returns the state with the changed regions put in. */
 function after(state: FakeState, ...commands: Command[]): FakeState {
   let s = state;
   for (const command of commands) {
@@ -30,8 +30,8 @@ function after(state: FakeState, ...commands: Command[]): FakeState {
 }
 const set = (change: ExportChange): Command => ({ type: "setExport", change });
 
-describe("約束 26 の形", () => {
-  it("版は 26。形は wav と flac（mp3 は出さない）。32 ビットは wav だけ。しっぽは最大 10 秒", () => {
+describe("shape of protocol 26", () => {
+  it("version 26. Formats are wav and flac (no mp3). 32 bit is wav only. The tail is at most 10 seconds", () => {
     expect(PROTOCOL_VERSION).toBeGreaterThanOrEqual(26);
     expect(EXPORT_FORMATS).toEqual([
       { format: "wav", bits: ["bits16", "bits24", "bits32"] },
@@ -40,11 +40,11 @@ describe("約束 26 の形", () => {
     expect(EXPORT_TAIL_MAX_S).toBe(10);
   });
 
-  it("新しい曲には、ダイアログも進みもない", () => {
+  it("a new song has no dialog and no progress", () => {
     expect(fakeState().export).toEqual({ dialog: null, run: null } satisfies ExportView);
   });
 
-  it("意図は 7 つ。どれも手ではない（曲を変えない）", () => {
+  it("7 intents. None of them is a step (they do not change the song)", () => {
     const changes: ExportChange[] = [
       { kind: "range", range: "loop" },
       { kind: "format", format: "flac" },
@@ -71,7 +71,7 @@ describe("約束 26 の形", () => {
     }
   });
 
-  it("たしかめは、まだ ・ 数えている ・ できた ・ できない。進みは、書き出している ・ 終わった ・ やめた ・ できなかった", () => {
+  it("the check is not yet, counting, done, failed. The progress is exporting, finished, cancelled, failed", () => {
     const checks: ExportCheck[] = [
       { state: "waiting" },
       { state: "counting", percent: 38, peakDb: -3.5, clips: false, over: 0 },
@@ -91,8 +91,8 @@ describe("約束 26 の形", () => {
   });
 });
 
-describe("偽物の場面（モック F7-Export ・ F7-Exporting ・ R11-Fit）", () => {
-  it("exportDialog（F7-Export）: 曲ぜんぶを wav で。たしかめはできていて −0.6 dB、音割れなし", () => {
+describe("fake scenes (mock F7-Export, F7-Exporting, R11-Fit)", () => {
+  it("exportDialog (F7-Export): the whole song as wav. The check is done, −0.6 dB, no clipping", () => {
     const s = scene("exportDialog");
     expect(s.export.run).toBeNull();
     expect(s.export.dialog).toEqual({
@@ -120,7 +120,7 @@ describe("偽物の場面（モック F7-Export ・ F7-Exporting ・ R11-Fit）"
     expect([s.song.name, s.song.file, s.song.undoCount]).toEqual(["はじめての曲", "saved", 14]);
   });
 
-  it("たしかめの途中 ・ 音割れ ・ 止まっているプラグイン ・ くわしく ・ できない", () => {
+  it("check in progress, clipping, stopped plugin, advanced, failed", () => {
     expect(scene("exportWaiting").export.dialog).toMatchObject({ check: { state: "waiting" }, canExport: false });
     expect(scene("exportCounting").export.dialog).toMatchObject({ check: { state: "counting", percent: 38, peakDb: -3.5, clips: false }, canExport: true });
     expect(scene("exportClips").export.dialog).toMatchObject({ check: { state: "done", peakDb: 1.4, clips: true }, canExport: true });
@@ -139,13 +139,13 @@ describe("偽物の場面（モック F7-Export ・ F7-Exporting ・ R11-Fit）"
     expect(scene("exportCheckFailed").export.dialog).toMatchObject({ check: { state: "failed", reason: { kind: "plugin", name: "Surge XT" } }, canExport: false });
   });
 
-  it("exportFit（R11-Fit）: いちばん小さい窓 853×448 で同じダイアログ", () => {
+  it("exportFit (R11-Fit): the same dialog in the smallest window 853×448", () => {
     const fit = fakeScene("exportFit", undefined, { width: 853, height: 448 })!.state;
     expect([fit.workspace.viewportWidth, fit.workspace.viewportHeight]).toEqual([853, 448]);
     expect(fit.export.dialog).toEqual(scene("exportDialog").export.dialog);
   });
 
-  it("exporting（F7-Exporting）: 6 本の曲を書き出している 46 %、残り 40 秒。ダイアログは閉じている", () => {
+  it("exporting (F7-Exporting): exporting a 6-track song at 46 %, 40 seconds left. The dialog is closed", () => {
     const s = scene("exporting");
     expect(s.export).toEqual({ dialog: null, run: { state: "running", percent: 46, file: "はじめての曲.wav", remainingS: 40, realtime: false, realtimeForced: false, lengthS: 182 } });
     expect(s.song.tracks.map((tr) => `${tr.number} ${tr.name}`)).toEqual(["1 ピアノ", "2 ベース", "3 ドラム", "4 パッド", "5 Surge XT", "6 歌"]);
@@ -154,7 +154,7 @@ describe("偽物の場面（モック F7-Export ・ F7-Exporting ・ R11-Fit）"
     expect(s.transport.state).toBe("stopped");
   });
 
-  it("実時間で書き出している ・ 終わった ・ やめた ・ できなかった", () => {
+  it("exporting in real time, finished, cancelled, failed", () => {
     expect(scene("exportingRealtime").export.run).toMatchObject({ state: "running", realtime: true, realtimeForced: true, lengthS: 182 });
     expect(scene("exportDone").export.run).toEqual({
       state: "done",
@@ -170,8 +170,8 @@ describe("偽物の場面（モック F7-Export ・ F7-Exporting ・ R11-Fit）"
   });
 });
 
-describe("偽物の意図", () => {
-  it("ひらく → えらぶ → 書き出す → やめる", () => {
+describe("fake intents", () => {
+  it("open → choose → export → cancel", () => {
     const start = scene("tracks6");
     expect(reduceExport(start, { type: "closeExport" })).toEqual([]);
     expect(reduceExport(start, { type: "startExport" })).toEqual([]);
@@ -180,13 +180,13 @@ describe("偽物の意図", () => {
     const open = after(start, { type: "openExport" });
     expect(open.export.dialog).toMatchObject({ range: "song", format: "wav", tracks: 6, canExport: true });
     expect(open.status.message).toEqual({ id: "exportDialogOpen" });
-    // もう一度ひらいても同じ。
+    // opening it again gives the same.
     expect(reduceExport(open, { type: "openExport" })).toEqual([]);
 
     const flac = after(open, set({ kind: "bits", bits: "bits32" }), set({ kind: "format", format: "flac" }));
     expect(flac.export.dialog).toMatchObject({ format: "flac", bits: "bits24", bitsChoices: ["bits16", "bits24"] });
     expect(flac.export.dialog!.place.endsWith(".flac")).toBe(true);
-    // flac に 32 ビットはない。一覧にないサンプルレートも入らない。
+    // flac has no 32 bit. A sample rate not in the list does not go in either.
     const same = after(flac, set({ kind: "bits", bits: "bits32" }), set({ kind: "sampleRate", hz: 12345 }));
     expect(same.export.dialog).toMatchObject({ bits: "bits24", sampleRate: 48000 });
 
@@ -199,17 +199,17 @@ describe("偽物の意図", () => {
     expect(running.export.dialog).toBeNull();
     expect(running.export.run).toMatchObject({ state: "running", realtime: true, realtimeForced: false });
     expect(running.status.message).toBeNull();
-    // 書き出している間は、ダイアログをひらけない。
+    // while exporting, the dialog cannot open.
     expect(reduceExport(running, { type: "openExport" })).toEqual([]);
 
     const cancelled = after(running, { type: "cancelExport" });
     expect(cancelled.export).toEqual({ dialog: null, run: { state: "cancelled" } });
     expect(reduceExport(cancelled, { type: "cancelExport" })).toEqual([]);
-    // 終わったあとは、またひらける。
+    // after it finishes, it can open again.
     expect(after(cancelled, { type: "openExport" }).export).toMatchObject({ run: null, dialog: { range: "song" } });
   });
 
-  it("ループのない曲ではループをえらべない。とじると、ダイアログも状態行の文もなくなる", () => {
+  it("in a song without a loop, the loop cannot be chosen. Closing removes the dialog and the status line text", () => {
     const open = after(fakeState(), { type: "openExport" });
     expect(open.export.dialog).toMatchObject({ loopRange: null, canExport: false });
     expect(reduceExport(open, set({ kind: "range", range: "loop" }))).toEqual([]);
@@ -219,8 +219,8 @@ describe("偽物の意図", () => {
   });
 });
 
-describe("文面（モックの文のまま）", () => {
-  it("F7-Export のダイアログの文", () => {
+describe("wording (as the mock writes it)", () => {
+  it("text of the F7-Export dialog", () => {
     const mock = squash(mockScreenText("F7-Export"));
     const lines = [
       t("export.title"),
@@ -243,20 +243,20 @@ describe("文面（モックの文のまま）", () => {
     expect(mock).toContain(squash(`${t("export.formatWav")} ${t("export.formatFlac")}`));
   });
 
-  it("F7-Exporting の状態行の文は、仕様書 6 章「書き出している」と同じ", () => {
+  it("the F7-Exporting status line text is the same as spec 6 「書き出している」", () => {
     const mock = squash(mockScreenText("F7-Exporting"));
     const parts = [t("export.running"), t("export.runningPercent", { percent: 46 }), t("export.runningRest", { file: "はじめての曲.wav", left: "40 秒" })];
     expect(mock).toContain(squash(parts.join("")));
     expect(squash(`${parts[0]} ${parts[1]} ・ ${parts[2]}`)).toBe(squash(t("msg.exporting", { percent: 46, file: "はじめての曲.wav", left: "40 秒" })));
   });
 
-  it("止まっているプラグインの行は F-Export のまま", () => {
+  it("the stopped plugin row is as in F-Export", () => {
     const mock = squash(mockScreenText("F-Export"));
     for (const line of [t("export.stoppedPlugins"), t("export.stoppedPlugin", { plugin: "Brick EQ", strip: "3 ドラム" }), t("export.stoppedSkipped")]) expect(mock, line).toContain(squash(line));
   });
 });
 
-describe("今の画面は、書き出しの場面でもこわれない", () => {
+describe("the current screen does not break in the export scenes either", () => {
   let mounted: Record<string, unknown> | null = null;
   afterEach(() => {
     if (mounted) unmount(mounted);

@@ -1,4 +1,4 @@
-// 上のメニューの行（docs/history/design-notes.ja.md B-59）と右クリックの一覧（B-60）、F10 と矢印、Esc の順、新しいキー、Space。
+// The menu bar (docs/history/design-notes.ja.md B-59) and the context menu (B-60), F10 and arrows, Esc order, new keys, Space.
 import { flushSync, mount, unmount } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, ClipView, Command } from "../src/bridge";
@@ -56,8 +56,8 @@ afterEach(() => {
   if (menuVisible()) closeMenu();
 });
 
-describe("メニューの中身（B-59）", () => {
-  it("7 つのメニューと行の名前、行の右のキー（Linux ・ Windows）", () => {
+describe("menu contents (B-59)", () => {
+  it("7 menus, row names, and keys on the right of rows (Linux / Windows)", () => {
     const menus = topMenus(withClip(), depsOf(withClip(), []), "other");
     expect(menus.map((m) => m.label)).toEqual(["ファイル", "編集", "表示", "再生", "ノート", "トラック", "ヘルプ"]);
     const keyed = (i: number) => rows(menus[i]!.entries).map((r) => (r.sub ? `${r.label} ▸` : r.key ? `${r.label} ${r.key}` : r.label));
@@ -98,7 +98,7 @@ describe("メニューの中身（B-59）", () => {
     ]);
     expect(keyed(3)).toEqual(["再生 Space", "停止 Space", "録音 R", "先頭へ Home", "ループ L", "メトロノーム C", "カウントイン ▸"]);
     expect(keyed(4)).toEqual(["道具 ▸", "クオンタイズ Q", "もとの位置へ戻す", "グリッド ▸", "三連符", "スケール固定 ▸"]);
-    // 仕様書 3 章の順。テイクを消す（B-82）は前のテイクのうしろ。
+    // The spec 3 order. Delete take (B-82) is after the previous take.
     expect(keyed(5)).toEqual([
       "ミュート Shift M",
       "ソロ Shift S",
@@ -117,13 +117,13 @@ describe("メニューの中身（B-59）", () => {
     expect(keyed(6)).toEqual(["meloet について"]);
   });
 
-  it("Mac は Cmd と Option", () => {
+  it("Mac uses Cmd and Option", () => {
     const menus = topMenus(withClip(), depsOf(withClip(), []), "mac");
     expect(row(menus[0]!.entries, "名前をつけて保存…").key).toBe("Cmd Shift S");
     expect(rows(row(menus[2]!.entries, "拡大率").sub!).map((r) => r.key)).toEqual(["Cmd Option 1", "Cmd Option 2", "Cmd Option 3"]);
   });
 
-  it("表示の帯の行は、ひらいている帯に印がつき、アレンジへは印なし。ファイル ・ 編集 ・ 表示に区切りが 2 本ずつ（モック R5-Menus）", () => {
+  it("rows of the view bands mark open bands, the arrange has no mark. File, edit and view have 2 dividers each (mock R5-Menus)", () => {
     const s = withClip();
     const menus = topMenus(s, depsOf(s, []), "other");
     const view = menus[2]!.entries;
@@ -133,7 +133,7 @@ describe("メニューの中身（B-59）", () => {
     for (const i of [0, 1, 2]) expect(menus[i]!.entries.filter((e) => e.kind === "separator")).toHaveLength(2);
   });
 
-  it("書き出し… は Mod Shift E と同じく openExport。鍵盤のトラックを足すは棚を「新しいトラック」でひらく。歌のトラックを足すは、そのまま足す（23-A）", () => {
+  it("「書き出し…」 is openExport, same as Mod Shift E. Adding a keyboard track opens the shelf with 「新しいトラック」. Adding a vocal track adds it at once (23-A)", () => {
     const sent: Command[] = [];
     const menus = topMenus(withClip(), depsOf(withClip(), sent), "other");
     const exportRow = row(menus[0]!.entries, "書き出し…");
@@ -144,7 +144,7 @@ describe("メニューの中身（B-59）", () => {
     expect(sent).toEqual([{ type: "openExport" }, { type: "openShelf", mode: { kind: "newTrack" } }, { type: "addVocalTrack" }]);
   });
 
-  it("トラック 1 本では、上へ ・ 下へ動かすは使えない。名前を変えるは F2 と同じく入力の枠をひらく", () => {
+  it("with 1 track, move up / down are disabled. Rename opens the input box, same as F2", () => {
     const menus = topMenus(withClip(), depsOf(withClip(), []), "other");
     const track = menus[5]!.entries;
     expect([row(track, "上へ動かす").usable, row(track, "下へ動かす").usable, row(track, "トラックを消す").usable]).toEqual([false, false, true]);
@@ -153,7 +153,7 @@ describe("メニューの中身（B-59）", () => {
     trackEdit.renaming = null;
   });
 
-  it("録音中とカウントイン中は、曲を変える行と曲の名前の一覧と同じ行が使えない", () => {
+  it("while recording and in count-in, rows that change the song, and the same rows as the song name list, are disabled", () => {
     for (const st of ["recording", "countIn"] as const) {
       const s = withClip((s) => {
         s.transport.state = st;
@@ -184,7 +184,7 @@ describe("メニューの中身（B-59）", () => {
     }
   });
 
-  it("テイクを消す: えらんだクリップの DeleteTake。テイクが 1 つ ・ クリップをえらんでいないときは使えない", () => {
+  it("delete take: DeleteTake of the chosen clip. Disabled with 1 take or no chosen clip", () => {
     const sent: Command[] = [];
     const s = withClip();
     const del = row(topMenus(s, depsOf(s, sent), "other")[5]!.entries, "テイクを消す");
@@ -198,15 +198,15 @@ describe("メニューの中身（B-59）", () => {
     expect(row(topMenus(none, depsOf(none, []), "other")[5]!.entries, "テイクを消す").usable).toBe(false);
   });
 
-  it("止まっているときは使える。取り消す手がなければ「取り消す」は使えない", () => {
+  it("usable when stopped. With no step to undo, 「取り消す」 is disabled", () => {
     const s = withClip((s) => (s.arrange.clipboardClips = 1));
     const menus = topMenus(s, depsOf(s, []), "other");
-    // クリップをつなげるは、同じトラックの鍵盤のクリップを 2 つ以上選んだときだけ。
+    // Joining clips needs 2 or more keyboard clips chosen on the same track.
     expect(Object.values(usableOf(menus[1]!.entries))).toEqual([true, false, true, true, true, true, true, true, true, false]);
     expect(usableOf(menus[3]!.entries)).toMatchObject({ 再生: true, 停止: false, 録音: true });
   });
 
-  it("ノートのメニューと縦の拡大は、ピアノロールがひらいているときだけ", () => {
+  it("the note menu and vertical zoom only when the piano roll is open", () => {
     const closed = withClip();
     let menus = topMenus(closed, depsOf(closed, []), "other");
     expect(Object.values(usableOf(menus[4]!.entries)).every((u) => !u)).toBe(true);
@@ -222,7 +222,7 @@ describe("メニューの中身（B-59）", () => {
     expect(usableOf(menus[2]!.entries)).toMatchObject({ 縦に拡大: true, 縦に縮小: true });
   });
 
-  it("オン ・ オフの行とえらぶ行は、選ぶ印でいまの状態を見せる", () => {
+  it("on / off rows and choice rows show the current state with the choice mark", () => {
     const s = withClip((s) => {
       prOpen(s);
       s.song.loopOn = true;
@@ -260,7 +260,7 @@ describe("メニューの中身（B-59）", () => {
     expect(row(menus[5]!.entries, "録音待機").checked).toBe(true);
   });
 
-  it("行を押すと、キーと同じ道を通る（編集はキーが向いている方へ）", () => {
+  it("pressing a row takes the same path as the key (edit goes where keys go)", () => {
     const sent: Command[] = [];
     const s = withClip((s) => {
       prOpen(s);
@@ -292,7 +292,7 @@ describe("メニューの中身（B-59）", () => {
     expect(prView.tool).toBe("erase");
   });
 
-  it("ノートのメニューのクオンタイズは、最後に押したのがアレンジでもピアノロールへ", () => {
+  it("quantize in the note menu goes to the piano roll even if the arrange was pressed last", () => {
     const sent: Command[] = [];
     const s = withClip((s) => {
       prOpen(s);
@@ -304,8 +304,8 @@ describe("メニューの中身（B-59）", () => {
   });
 });
 
-describe("新しいキー（4 章と B-59 ・ 70 ・ 71）", () => {
-  it("Mod Shift S、Mod Q、F10、Shift M ・ Shift S（文字を打っている最中は効かない。ヤチヨさんの決め 2026-11-18）", () => {
+describe("new keys (chapter 4 and B-59, 70, 71)", () => {
+  it("Mod Shift S, Mod Q, F10, Shift M / Shift S (no effect while typing; the owner's decision)", () => {
     expect(keyAction(k("S", { ctrl: true, shift: true }), false, "other")).toEqual({ kind: "saveSongAs" });
     expect(keyAction(k("q", { ctrl: true }), true, "other")).toEqual({ kind: "quit" });
     expect(keyAction(k("q", { meta: true }), false, "mac")).toEqual({ kind: "quit" });
@@ -324,7 +324,7 @@ describe("新しいキー（4 章と B-59 ・ 70 ・ 71）", () => {
     return ev;
   };
 
-  it("送る意図。録音中は名前をつけて保存を送らない（ミュートは送る。A-14）", () => {
+  it("sent intents. Save as is not sent while recording (mute is sent; A-14)", () => {
     const sent: Command[] = [];
     let s = withClip();
     const deps = depsOf(s, sent, { state: () => s });
@@ -341,7 +341,7 @@ describe("新しいキー（4 章と B-59 ・ 70 ・ 71）", () => {
     expect(sent).toEqual([{ type: "toggleMute", track: 1 }, { type: "toggleSolo", track: 1 }]);
   });
 
-  it("アレンジにキーが向いているとき: Mod A ・ C ・ X ・ V ・ D はクリップへ", () => {
+  it("when keys go to the arrange: Mod A, C, X, V, D go to clips", () => {
     const sent: Command[] = [];
     const s = withClip((s) => (s.arrange.clipboardClips = 2));
     const deps = depsOf(s, sent);
@@ -355,7 +355,7 @@ describe("新しいキー（4 章と B-59 ・ 70 ・ 71）", () => {
     ]);
   });
 
-  it("貼りつける物がない ・ 選んだクリップがないときは送らない", () => {
+  it("not sent when there is nothing to paste or no clip chosen", () => {
     const sent: Command[] = [];
     const s = withClip((s) => (s.arrange = { selectedClips: [], selectedClip: null, pianoRollClip: null, clipboardClips: 0, tallTrack: null }));
     const deps = depsOf(s, sent);
@@ -363,7 +363,7 @@ describe("新しいキー（4 章と B-59 ・ 70 ・ 71）", () => {
     expect(sent).toEqual([]);
   });
 
-  it("Space: フォーカスのあるボタンを押さない（keydown と keyup の両方を止める）。使えないときも", () => {
+  it("Space: does not press the focused button (stops both keydown and keyup). Also when disabled", () => {
     document.body.innerHTML = `<button>x</button><input type="text">`;
     const button = document.querySelector("button")!;
     button.focus();
@@ -375,7 +375,7 @@ describe("新しいキー（4 章と B-59 ・ 70 ・ 71）", () => {
     expect(up.defaultPrevented).toBe(true);
     expect(sent).toEqual([]);
 
-    // 文字の枠の中では、空白として入る。
+    // Inside a text box, it goes in as a space.
     document.querySelector("input")!.focus();
     expect(press(deps, " ", { code: "Space" }).defaultPrevented).toBe(false);
     const up2 = new KeyboardEvent("keyup", { key: " ", code: "Space", cancelable: true });
@@ -385,10 +385,10 @@ describe("新しいキー（4 章と B-59 ・ 70 ・ 71）", () => {
   });
 });
 
-describe("Esc の順（仕様書 3 章）", () => {
+describe("Esc order (spec 3)", () => {
   const esc = (deps: KeyDeps) => handleKeydown(new KeyboardEvent("keydown", { key: "Escape", cancelable: true }), deps);
 
-  it("ドラッグ → 上のメニュー → 右クリックの一覧 → ほかの一覧 → Rust の back", () => {
+  it("drag → menu bar → context menu → other lists → Rust back", () => {
     const sent: Command[] = [];
     const deps = depsOf(fakeState(), sent);
     let dragging = true;
@@ -417,7 +417,7 @@ describe("Esc の順（仕様書 3 章）", () => {
   });
 });
 
-describe("上のメニューの行（mount）", () => {
+describe("menu bar (mount)", () => {
   let mounted: Record<string, unknown> | null = null;
   beforeEach(() => {
     app.reset();
@@ -441,7 +441,7 @@ describe("上のメニューの行（mount）", () => {
     return ev;
   };
 
-  it("名前を押すとすぐ下にひらき、ひらいている間はほかの名前に乗ると切りかわる。もう一度押すととじる", async () => {
+  it("pressing a name opens just below; while open, hovering another name switches. Pressing again closes", async () => {
     expect(names().map((b) => b.textContent)).toEqual(["ファイル", "編集", "表示", "再生", "ノート", "トラック", "ヘルプ"]);
     names()[0]!.click();
     await settle();
@@ -456,7 +456,7 @@ describe("上のメニューの行（mount）", () => {
     expect(list()).toBeNull();
   });
 
-  it("行を押すと、とじてから行う", async () => {
+  it("pressing a row closes first, then acts", async () => {
     names()[0]!.click();
     await settle();
     listRows()[3]!.click();
@@ -465,7 +465,7 @@ describe("上のメニューの行（mount）", () => {
     expect(list()).toBeNull();
   });
 
-  it("外を押すと、とじる", async () => {
+  it("pressing outside closes", async () => {
     names()[1]!.click();
     await settle();
     document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
@@ -473,7 +473,7 @@ describe("上のメニューの行（mount）", () => {
     expect(list()).toBeNull();
   });
 
-  it("F10 で最初のメニュー。← → でとなり、↑ ↓ で行、→ で子の一覧、← で戻る、Enter で行う", async () => {
+  it("F10 opens the first menu. ← → neighbors, ↑ ↓ rows, → the child list, ← back, Enter acts", async () => {
     const deps: KeyDeps = { state: () => app.current.state, send: app.send, nav: { platform: "Linux x86_64" } };
     const off = (() => {
       const on = (ev: KeyboardEvent) => handleKeydown(ev, deps);
@@ -488,7 +488,7 @@ describe("上のメニューの行（mount）", () => {
     expect(document.activeElement?.textContent).toContain("ひらく…");
     keydown("ArrowLeft");
     await settle();
-    // いちばん右は「ヘルプ」。最初の使える行「meloet について」にフォーカス。
+    // The rightmost is 「ヘルプ」. Focus on its first usable row 「meloet について」.
     expect(menuBar.open).toBe(6);
     expect(document.activeElement?.textContent).toContain("meloet について");
     keydown("ArrowRight");
@@ -499,7 +499,7 @@ describe("上のメニューの行（mount）", () => {
     keydown("ArrowRight");
     await settle();
     expect(menuBar.open).toBe(2);
-    // 表示: 縦に拡大 ・ 縮小はピアノロールがとじているので使えない。いちばん下の「拡大率 ▸」へ。
+    // View: vertical zoom in / out is disabled as the piano roll is closed. To the last row 「拡大率 ▸」.
     for (let i = 0; i < 10; i++) keydown("ArrowDown");
     expect(document.activeElement?.textContent).toContain("拡大率");
     keydown("ArrowRight");
@@ -527,7 +527,7 @@ describe("上のメニューの行（mount）", () => {
     off();
   });
 
-  it("マウスで ▸ に乗ると子の一覧が右にひらき、ほかの行に乗るととじる", async () => {
+  it("hovering ▸ with the mouse opens the child list on the right, hovering another row closes it", async () => {
     names()[3]!.click();
     await settle();
     const countIn = listRows().find((b) => b.textContent?.includes("カウントイン"))!;
@@ -542,7 +542,7 @@ describe("上のメニューの行（mount）", () => {
   });
 });
 
-describe("右クリックの一覧（mount）", () => {
+describe("context menu (mount)", () => {
   let mounted: Record<string, unknown> | null = null;
   beforeEach(() => {
     app.reset();
@@ -558,7 +558,7 @@ describe("右クリックの一覧（mount）", () => {
   });
   const menu = () => document.querySelector<HTMLElement>('[data-test="context-menu"]');
 
-  it("押した所にひらき、行を押すと、とじてから行う。使えない行は押せない", async () => {
+  it("opens at the pressed place; pressing a row closes first, then acts. Disabled rows cannot be pressed", async () => {
     const ran: string[] = [];
     openContextMenu(30, 40, [
       { kind: "row", label: "menu.cut", key: "Ctrl X", usable: false, run: () => ran.push("cut") },
@@ -579,7 +579,7 @@ describe("右クリックの一覧（mount）", () => {
     expect(menu()).toBeNull();
   });
 
-  it("↑ ↓ と Enter", async () => {
+  it("↑ ↓ and Enter", async () => {
     const ran: string[] = [];
     openContextMenu(0, 0, [
       { kind: "row", label: "menu.cut", usable: true, run: () => ran.push("cut") },
@@ -594,7 +594,7 @@ describe("右クリックの一覧（mount）", () => {
     expect(ran).toEqual(["copy"]);
   });
 
-  it("外を押すと、とじる", async () => {
+  it("pressing outside closes", async () => {
     openContextMenu(0, 0, [{ kind: "row", label: "menu.copy", usable: true, run: () => {} }]);
     await settle();
     document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
@@ -602,7 +602,7 @@ describe("右クリックの一覧（mount）", () => {
     expect(menu()).toBeNull();
   });
 
-  it("窓からはみ出すときは、内がわへずらす", async () => {
+  it("moves inside when it would go out of the window", async () => {
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
       const left = parseFloat(this.parentElement?.style.left ?? "0") || 0;
       const top = parseFloat(this.parentElement?.style.top ?? "0") || 0;
@@ -616,7 +616,7 @@ describe("右クリックの一覧（mount）", () => {
     expect(menu()!.style.transform).toBe("translate(-120px, -38px)");
   });
 
-  it("WebKit の一覧は、どこでも出さない。文字の枠では、切り取り ・ コピー ・ 貼りつけ ・ ぜんぶ選ぶ", async () => {
+  it("the WebKit menu is never shown. Text boxes get cut, copy, paste, select all", async () => {
     const div = document.createElement("div");
     document.body.append(div);
     const ev = new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 5, clientY: 6 });
@@ -646,8 +646,8 @@ describe("右クリックの一覧（mount）", () => {
   });
 });
 
-describe("文字の枠の一覧の行", () => {
-  it("選んでいなければ切り取り ・ コピーは使えない。読むだけの枠は切り取れない", () => {
+describe("rows of the text box menu", () => {
+  it("with nothing selected, cut and copy are disabled. Read-only boxes cannot cut", () => {
     const input = document.createElement("input");
     input.value = "abc";
     document.body.append(input);

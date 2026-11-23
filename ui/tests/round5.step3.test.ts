@@ -1,4 +1,4 @@
-// 第 5 回 区切り3 の 2 回目（画面）: パラメータの欄のプラグイン、値を打ちこむ、窓、ミキサーの 86 の残り、状態行の文、ミキサーのメーター 30 Hz。
+// Screen: plugins in the params panel, typing values, windows, the rest of 86 in the mixer, status line texts, mixer meters at 30 Hz.
 import { flushSync, mount, unmount, type Component } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, Command, PluginSlotRef, StatusMessage } from "../src/bridge";
@@ -24,7 +24,7 @@ import * as app from "./fake-app.svelte";
 
 vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));
 
-// 欄は表を bridge の ParamTableBook から読む。テストでは偽物の表をそのまま渡す。
+// the panel reads tables from the bridge's ParamTableBook. The tests pass a fake table as it is.
 const book = { current: new ParamTableBook(async (table) => fakeParamTable(table)) };
 vi.mock("../src/bridge", async (importOriginal) => ({ ...(await importOriginal<object>()), paramTable: () => book.current }));
 
@@ -57,7 +57,7 @@ function show(state: AppState, component: Component<any>, props: Record<string, 
   mounted = mount(component, { target, props });
   flushSync();
 }
-/** 表が届くまで待つ（ParamTableBook は Promise で取る）。 */
+/** Waits until the table arrives (ParamTableBook gets it with a Promise). */
 async function settle(table: number | null): Promise<void> {
   book.current.show(table);
   for (let i = 0; i < 5; i++) await Promise.resolve();
@@ -80,8 +80,8 @@ function key(el: Element, k: string, more: KeyboardEventInit = {}): KeyboardEven
   return ev;
 }
 
-describe("プラグインのパラメータの一覧（pluginRows）", () => {
-  it("40 個をこえる子は、グループをたたんで始める。名前のないグループは、ほかに名前があれば「そのほか」", () => {
+describe("plugin parameter list (pluginRows)", () => {
+  it("a plugin with more than 40 starts with groups folded. A group with no name is 「そのほか」 if others have names", () => {
     const t = surge();
     expect(FOLD_OVER).toBe(40);
     const folded = foldedAtFirst(t);
@@ -94,13 +94,13 @@ describe("プラグインのパラメータの一覧（pluginRows）", () => {
       "▸ Scene B 300",
       "▸ そのほか 25",
     ]);
-    // 40 個までの子は、ぜんぶひらいて出す。グループを言わない子は見出しなしの 1 本。
+    // a plugin with up to 40 shows all of them open. A plugin that does not name groups is one list with no heading.
     const few = fakeParamTable(FAKE_TABLES.dragonfly)!;
     expect(foldedAtFirst(few).size).toBe(0);
     expect(pluginEntries(few, [], { query: "", folded: new Set(), expanded: new Set() }).every((e) => e.kind === "row")).toBe(true);
   });
 
-  it("いちばん上に「オートメーションに書いている」（たたんでいても、ひらいて）", () => {
+  it("「オートメーションに書いている」 at the top (open, even when folded)", () => {
     const t = surge();
     const entries = pluginEntries(t, [1000, 1012], { query: "", folded: foldedAtFirst(t), expanded: new Set() });
     expect(entries.slice(0, 3).map((e) => (e.kind === "heading" ? e.name : e.kind === "row" ? e.row.name : e.kind))).toEqual([
@@ -110,7 +110,7 @@ describe("プラグインのパラメータの一覧（pluginRows）", () => {
     ]);
   });
 
-  it("さがすと、合う物だけがグループごとに、1 グループ 6 個まで。残りは「… ほか N」で広げる（モック F-ParamSearch）", () => {
+  it("searching shows only matches, by group, up to 6 per group. The rest open with 「… ほか N」 (mock F-ParamSearch)", () => {
     const t = surge();
     const look = { query: "cutoff", folded: foldedAtFirst(t), expanded: new Set<string>() };
     const entries = pluginEntries(t, [1000], look);
@@ -122,7 +122,7 @@ describe("プラグインのパラメータの一覧（pluginRows）", () => {
     expect(pluginEntries(t, [], { ...look, query: "zzz" })).toEqual([]);
   });
 
-  it("値の文字: プラグインの文字のまま。わからない値は「—」。段の名前を言わない子の Enter の一覧は 1、2…（user:2026-11-19）", () => {
+  it("value text: as the plugin writes it. 「—」 for unknown values. The Enter list of a plugin that does not name its steps is 1, 2… (user:2026-11-19)", () => {
     expect(pluginValueText({ value: 0.5, text: "523.25 Hz", kind: { kind: "smooth" } })).toBe("523.25 Hz");
     expect(pluginValueText({ value: null, text: null, kind: { kind: "smooth" } })).toBe("—");
     expect(stepLabels({ kind: "steps", steps: 12, labels: [] })).toEqual(["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"]);
@@ -130,8 +130,8 @@ describe("プラグインのパラメータの一覧（pluginRows）", () => {
   });
 });
 
-describe("パラメータの欄のプラグイン（モック F-ParamFew ・ F-ParamMany ・ F-ParamNoWindow ・ F5-MixerBypass）", () => {
-  it("名前、形式の印、窓をひらく、居場所。窓がひらいていれば「窓を前に出す」。押すと OpenPluginWindow", async () => {
+describe("plugins in the params panel (mock F-ParamFew, F-ParamMany, F-ParamNoWindow, F5-MixerBypass)", () => {
+  it("name, format mark, open window, location. 「窓を前に出す」 when the window is open. Pressing sends OpenPluginWindow", async () => {
     show(scene("paramFew"), RightRail);
     await settle(FAKE_TABLES.dragonfly);
     expect(text(q("[data-test=params] .who"))).toBe("Dragonfly Reverb LV2 とばす B 窓をひらく A リバーブ ・ インサート 1");
@@ -141,7 +141,7 @@ describe("パラメータの欄のプラグイン（モック F-ParamFew ・ F-P
     expect(app.sent).toEqual([{ type: "openPluginWindow", slot: { kind: "insert", insert: { strip: { kind: "return", bus: "a" }, slot: 0 } } }]);
   });
 
-  it("Surge XT（774 個 ・ F6-ParamMany）: 見出しはたたんで始め、行は見えている所だけ作る", async () => {
+  it("Surge XT (774, F6-ParamMany): headings start folded, only visible rows are made", async () => {
     const s = scene("paramMany");
     s.workspace.layout.rightFront = "params";
     show(s, RightRail);
@@ -157,20 +157,20 @@ describe("パラメータの欄のプラグイン（モック F-ParamFew ・ F-P
       "▸ そのほか 25",
     ]);
     expect(text(q("[data-test=params-hint]"))).toBe("40 個をこえる子は、グループをたたんで始めます");
-    // 鍵盤のつまみを受けるだけの物は出さず、一覧の下で言う（仕様書 3 章 91-3）。
+    // parameters that only take keyboard knobs are not shown; they are mentioned below the list (spec 3 (91-3)).
     expect(text(q("[data-test=params-knobs]"))).toBe(
       "ほかに、鍵盤のつまみを受けるだけの 2080 個（MIDI CC 0|0 〜 15|129）は出していません。さがすと出ます。",
     );
     expect(text(q("[data-test=params-count]"))).toBe("774 / 774");
-    // 自動の行は印が accent。
+    // automated rows have an accent mark.
     expect(qa("[data-test=param-row] .automation.on")).toHaveLength(2);
-    // 300 行をひらいても、作るのは見えている所のまわりだけ。
+    // even with 300 rows open, only rows around the visible part are made.
     q('[data-group="g:3"]')!.click();
     flushSync();
     expect(qa("[data-test=param-row]").length).toBeLessThan(100);
   });
 
-  it("さがすと、鍵盤のつまみを受けるだけの物が、いちばん下のグループ「鍵盤のつまみを受ける所」に出る（合う物があるときだけ）", async () => {
+  it("searching shows parameters that only take keyboard knobs in the last group 「鍵盤のつまみを受ける所」 (only when there are matches)", async () => {
     const s = scene("paramMany6");
     s.workspace.layout.rightFront = "params";
     show(s, RightRail);
@@ -191,7 +191,7 @@ describe("パラメータの欄のプラグイン（モック F-ParamFew ・ F-P
     expect(qa("[data-test=params-group]").map(text)).toEqual(["▾ Scene A 12", "▾ Scene B 12"]);
   });
 
-  it("さがす: 合う数 / 全部、「… ほか 6」、合わないときの文と「さがす枠を空にする」。Esc で空に戻す", async () => {
+  it("search: matches / all, 「… ほか 6」, the no-match text and 「さがす枠を空にする」. Esc empties it", async () => {
     show(scene("paramFew"), RightRail);
     await settle(FAKE_TABLES.dragonfly);
     const input = q("[data-test=params-search]") as HTMLInputElement;
@@ -207,8 +207,8 @@ describe("パラメータの欄のプラグイン（モック F-ParamFew ・ F-P
     expect(paramUi.query).toBe("");
   });
 
-  it("取り消しで一覧の番号が変わっても、同じ枠の同じ子なら、さがす文字 ・ ひらいたグループ ・ 行を残す。ほかの子をえらぶと、はじめに戻す", async () => {
-    // どの番号でも Surge XT の表を返す（取り消すたびに、core は同じ子の表に新しい番号をつける）。
+  it("even if undo changes the list number, the same plugin in the same slot keeps the search text, open groups and row. Choosing another plugin resets it", async () => {
+    // returns the Surge XT table for any number (on each undo, core gives a new number to the table of the same plugin).
     book.current = new ParamTableBook(async (table) => ({ ...surge(), table }));
     const s = scene("paramMany");
     s.workspace.layout.rightFront = "params";
@@ -227,13 +227,13 @@ describe("パラメータの欄のプラグイン（モック F-ParamFew ・ F-P
     app.setState(renumbered(77));
     book.current.show(77);
     flushSync();
-    // 新しい表が届く前: 前の表の行を見せたまま（一覧が空になると、スクロールが上に戻る）。
+    // before the new table arrives: keeps showing the old table's rows (if the list became empty, the scroll would go back to the top).
     expect(qa("[data-test=param-row]")).toHaveLength(rows);
     await settle(77);
     expect(groups()[2]).toBe("▾ Global 21");
     expect(qa("[data-test=param-row]")).toHaveLength(rows);
 
-    // さがしている間も同じ。
+    // the same while searching.
     const input = q("[data-test=params-search]") as HTMLInputElement;
     input.value = "cutoff";
     input.dispatchEvent(new Event("input", { bubbles: true }));
@@ -244,32 +244,32 @@ describe("パラメータの欄のプラグイン（モック F-ParamFew ・ F-P
     expect(input.value).toBe("cutoff");
     expect(text(q("[data-test=params-count]"))).toBe("24 / 774");
 
-    // ほかの枠の子をえらぶと、さがす文字は空、グループはたたんだ形。
+    // choosing a plugin in another slot: the search text is empty and the groups are folded.
     app.setState({ ...s, params: { selected: { ...sel, slot: { kind: "instrument", track: s.song.tracks[1]!.id }, table: 79 }, clips: null } });
     await settle(79);
     expect(paramUi.query).toBe("");
     expect(groups()[2]).toBe("▸ Global 21");
   });
 
-  it("グループの並びがちがう表が来たら、たたみ方ははじめに戻す", () => {
+  it("when a table with a different group order comes, the folding resets", () => {
     const a = surge();
     expect(sameGroups(a, { ...surge(), table: 9 })).toBe(true);
     expect(sameGroups(a, { ...a, groups: a.groups.slice(1) })).toBe(false);
     expect(sameGroups(a, fakeParamTable(FAKE_TABLES.dragonfly)!)).toBe(false);
   });
 
-  it("まだ窓をひらけない子: 一覧の上に文。窓のボタンはない", async () => {
+  it("a plugin whose window cannot open yet: a text above the list. No window button", async () => {
     show(scene("paramNoWindow"), RightRail);
     await settle(FAKE_TABLES.mossy);
     expect(text(q("[data-test=params-notice]"))).toBe(
       "この子の窓は、まだひらけません。パラメータはここで動かせます。 meloet が、この型の窓にまだ対応していないためです。音は、いつもどおり鳴ります。",
     );
     expect(q("[data-test=params-window]")).toBeNull();
-    // 12 段の段階は「3 / 12」、5 段までは四角。
+    // 12 steps show as 「3 / 12」, up to 5 steps as squares.
     expect(qa("[data-test=param-steps]").map(text)).toEqual(["◂ ▸", "◂ 3 / 12 ▸"]);
   });
 
-  it("とばしている子: 見出しの「とばしている B」はえらんでいる形。押すと ToggleBypass", async () => {
+  it("a bypassed plugin: 「とばしている B」 in the heading is in the chosen form. Pressing sends ToggleBypass", async () => {
     show(scene("mixerBypass"), RightRail);
     await settle(FAKE_TABLES.mverb);
     const b = q("[data-test=params-bypass]")!;
@@ -279,7 +279,7 @@ describe("パラメータの欄のプラグイン（モック F-ParamFew ・ F-P
     expect(app.sent.at(-1)).toMatchObject({ type: "toggleBypass", insert: { slot: 0 } });
   });
 
-  it("行の棒のドラッグ: 画面が先に動き commit: false、離して commit: true。間の状態行は「… を動かしています」。Esc で CancelMixPreview", async () => {
+  it("dragging a row bar: the screen moves first with commit: false, commit: true on release. The status line meanwhile is 「… を動かしています」. Esc sends CancelMixPreview", async () => {
     vi.useFakeTimers({ toFake: ["requestAnimationFrame", "cancelAnimationFrame"] });
     const s = scene("paramFew");
     s.status.message = { id: "summary", loopBars: null, nothingSelected: true, notes: null };
@@ -317,7 +317,7 @@ describe("パラメータの欄のプラグイン（モック F-ParamFew ・ F-P
     }
   });
 
-  it("値を打ちこむ: えらんだ行で Enter か値を 2 回押すと入力の枠。Enter で TypeParam、Esc でやめる。オン ・ オフは Enter で切りかえ", async () => {
+  it("typing a value: Enter on the chosen row or pressing the value twice opens the input box. Enter sends TypeParam, Esc cancels. On/off toggles with Enter", async () => {
     const s = scene("paramNoWindow");
     const sel = s.params.selected!;
     if (sel.kind !== "plugin") throw new Error("the scene shows a plugin");
@@ -333,7 +333,7 @@ describe("パラメータの欄のプラグイン（モック F-ParamFew ・ F-P
     const slot = { kind: "insert", insert: { strip: { kind: "track", id: s.song.tracks[3]!.id }, slot: 0 } };
     expect(app.sent.at(-1)).toEqual({ type: "typeParam", param: { kind: "plugin", slot, table: FAKE_TABLES.mossy, param: 2 }, text: "40" });
     expect(q("[data-test=param-input]")).toBeNull();
-    // 値を 2 回押す → Esc でやめる（何も送らない）。
+    // press the value twice → cancel with Esc (sends nothing).
     const value = qa("[data-test=param-value]")[3]!;
     value.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
     flushSync();
@@ -341,7 +341,7 @@ describe("パラメータの欄のプラグイン（モック F-ParamFew ・ F-P
     key(q("[data-test=param-input]")!, "Escape");
     expect(q("[data-test=param-input]")).toBeNull();
     expect(app.sent).toEqual([]);
-    // オン ・ オフ（Freeze）は Enter で切りかえ。段階（Type）は Enter で段の一覧。
+    // on/off (Freeze) toggles with Enter. Steps (Type) open the step list with Enter.
     sel.row = 1;
     app.setState({ ...s, params: { selected: { ...sel }, clips: null } });
     flushSync();
@@ -362,7 +362,7 @@ describe("パラメータの欄のプラグイン（モック F-ParamFew ・ F-P
     expect(app.sent.at(-1)).toMatchObject({ type: "setPluginParam", param: 0, value: 0.5, commit: true });
   });
 
-  it("最初から入っているエフェクトも、値を 2 回押して打ちこむ（単位はうしろに）", () => {
+  it("built-in effects also take typing after pressing the value twice (unit after the number)", () => {
     show(scene("paramClamped"), RightRail);
     const ratio = qa("[data-test=param-row]")[1]!;
     ratio.querySelector("[data-test=param-value]")!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
@@ -375,7 +375,7 @@ describe("パラメータの欄のプラグイン（モック F-ParamFew ・ F-P
     expect(app.sent.at(-1)).toMatchObject({ type: "typeParam", param: { kind: "builtin", effect: "compressor", param: 1 }, text: "4" });
   });
 
-  it("何もえらんでいないときは 2 行（86-5）", () => {
+  it("two rows when nothing is chosen (86-5)", () => {
     show(scene("paramsNone"), RightRail);
     expect(text(q("[data-test=params-nothing]"))).toBe(
       "ミキサーでインサートの枠をえらぶと、ここにパラメータが出ます。 音源の枠をえらぶと、音源のパラメータが出ます。",
@@ -383,8 +383,8 @@ describe("パラメータの欄のプラグイン（モック F-ParamFew ・ F-P
   });
 });
 
-describe("偽物の答え: プラグインの値と、打ちこんだ値", () => {
-  it("SetPluginParam は ParamValues で値と文字が戻る（seq は 1 ずつ）。TypeParam のはみ出しは ParamClamped、読めない文字は ParamRejected", async () => {
+describe("fake answers: plugin values and typed values", () => {
+  it("SetPluginParam returns the value and text in ParamValues (seq goes up by 1). TypeParam out of range gives ParamClamped, unreadable text gives ParamRejected", async () => {
     const tables = new FakeParamTables();
     expect(tables.set(FAKE_TABLES.dragonfly, 0, 0.5)).toEqual({ table: FAKE_TABLES.dragonfly, seq: 1, values: [{ id: 0, value: 0.5, text: "50 %" }] });
     expect(tables.table(FAKE_TABLES.dragonfly)!.seq).toBe(1);
@@ -400,7 +400,7 @@ describe("偽物の答え: プラグインの値と、打ちこんだ値", () =>
     expect(got).toContainEqual(expect.objectContaining({ kind: "patch", changes: [{ section: "status", value: { message: { id: "paramRejected", param: expect.anything(), kept: "80 %" } } }] }));
   });
 
-  it("エフェクトの手は状態行の文になる。ミキサーをひらくと、とばした枠 ・ 止まった枠をまとめて言う", async () => {
+  it("effect steps become status line text. Opening the mixer mentions bypassed and stopped slots together", async () => {
     const s = scene("mixerBypass");
     const transport = createFakeTransport(s as FakeState);
     let last: StatusMessage | null = null;
@@ -417,7 +417,7 @@ describe("偽物の答え: プラグインの値と、打ちこんだ値", () =>
   });
 });
 
-describe("状態行の新しい文（仕様書 6 章 ・ モック）", () => {
+describe("new status line texts (spec 6, mock)", () => {
   const says = (message: StatusMessage, base = scene("mixerBypass")) => {
     base.status.message = message;
     show(base, StatusLine);
@@ -426,7 +426,7 @@ describe("状態行の新しい文（仕様書 6 章 ・ モック）", () => {
     mounted = null;
     return out;
   };
-  it("インサートの手", () => {
+  it("insert steps", () => {
     const s = scene("mixerBypass");
     const bass = { kind: "track", id: s.song.tracks[1]!.id } as const;
     const comp = { kind: "builtin", effect: "compressor" } as const;
@@ -451,7 +451,7 @@ describe("状態行の新しい文（仕様書 6 章 ・ モック）", () => {
     ).toBe("4 パッド の MVerb をとばしています ・ 3 ドラム の Brick EQ は止まっています（音は、その枠をとばして流しています）");
   });
 
-  it("名前の穴（ストリップ ・ プラグイン ・ パラメータ）は文と同じ字。等幅は数や値の穴だけ（モックの状態行）", () => {
+  it("name holes (strip, plugin, parameter) use the same font as the text. Monospace only for number and value holes (the mock's status line)", () => {
     const mono = (message: StatusMessage) => {
       const base = scene("mixerBypass");
       base.status.message = message;
@@ -473,14 +473,14 @@ describe("状態行の新しい文（仕様書 6 章 ・ モック）", () => {
     expect(mono({ id: "paramClamped", to: { kind: "plugin", name: "Mix", range: "0 %〜100 %", value: "100 %" } })).toEqual(["0 %〜100 %", "100 %"]);
   });
 
-  it("止まった知らせ: プラグインの名前のうしろに空白（A-18）", () => {
+  it("stopped notice: a space after the plugin name (A-18)", () => {
     const s = scene("mixerBypass");
     expect(says({ id: "pluginStopped", name: "Dragonfly Hall Reverb", slot: { kind: "instrument", track: s.song.tracks[0]!.id } })).toBe(
       `Dragonfly Hall Reverb が止まりました ・ 1 ${s.song.tracks[0]!.name}。曲のほかの部分は動いています。音はこの枠をとばして流しています。パラメータの値は残っています。`,
     );
   });
 
-  it("窓とパラメータ", () => {
+  it("windows and parameters", () => {
     const s = scene("paramMany");
     const piano: PluginSlotRef = { kind: "instrument", track: s.song.tracks[0]!.id };
     expect(says({ id: "pluginWindowLarge", name: "Surge XT", slot: piano, width: 1597, height: 995 }, s)).toBe(
@@ -503,8 +503,8 @@ describe("状態行の新しい文（仕様書 6 章 ・ モック）", () => {
   });
 });
 
-describe("状態行の「窓 N ▾」と一覧（モック F-WindowOpen）", () => {
-  it("窓がなければ出さない。押すと一覧（名前と居場所、ぜんぶ前に出す）。行を押すと OpenPluginWindow。Esc（メニューと同じ番）でとじる", () => {
+describe("「窓 N ▾」 in the status line and its list (mock F-WindowOpen)", () => {
+  it("not shown with no windows. Pressing gives the list (name and location, bring all to front). Pressing a row sends OpenPluginWindow. Esc (same order as menus) closes", () => {
     show(scene("paramFew"), StatusLine);
     expect(q("[data-test=status-windows]")).toBeNull();
     unmount(mounted!);
@@ -518,7 +518,7 @@ describe("状態行の「窓 N ▾」と一覧（モック F-WindowOpen）", () 
     const menu = document.querySelector<HTMLElement>("[data-test=windows-menu]")!;
     expect([...menu.querySelectorAll("[data-test=windows-row]")].map(text)).toEqual(["Surge XT 1 ピアノ ・ 音源", "Dragonfly Reverb A リバーブ ・ インサート 1"]);
     expect(text(menu.querySelector("[data-test=windows-raise-all]"))).toBe("ぜんぶ前に出す");
-    // ひらいている間は、いつものまとめに代えて「プラグインの窓が 2 つひらいています」。
+    // while open, 「プラグインの窓が 2 つひらいています」 in place of the usual summary.
     expect(text(q(".message"))).toBe("ループ 5–9 ・ プラグインの窓が 2 つひらいています");
     menu.querySelector<HTMLElement>("[data-test=windows-row]")!.click();
     flushSync();
@@ -532,8 +532,8 @@ describe("状態行の「窓 N ▾」と一覧（モック F-WindowOpen）", () 
   });
 });
 
-describe("ミキサーの 86 の残り", () => {
-  it("とばす印: 入っている枠の左。オンは on、とばすと空で名前 gray.7（bypassed）。止まった枠と空きには印なし。押すと ToggleBypass", () => {
+describe("the rest of 86 in the mixer", () => {
+  it("bypass mark: left of a filled slot. On is on; bypassed is empty with the name in gray.7 (bypassed). No mark on stopped or empty slots. Pressing sends ToggleBypass", () => {
     show(scene("mixerBypass"), MixerStrips);
     const pad = [...target.querySelectorAll<HTMLElement>('[data-strip^="track-"]')][3]!;
     const slots = [...pad.querySelectorAll<HTMLElement>("[data-test=mixer-insert]")];
@@ -544,11 +544,11 @@ describe("ミキサーの 86 の残り", () => {
     const drums = [...target.querySelectorAll<HTMLElement>('[data-strip^="track-"]')][2]!;
     expect(drums.querySelectorAll("[data-test=mixer-insert]")[1]!.querySelector("[data-test=mixer-bypass]")).toBeNull();
     slots[0]!.querySelector<HTMLElement>("[data-test=mixer-bypass]")!.click();
-    // 印を押しても、枠をえらんだことにはしない。
+    // pressing the mark does not choose the slot.
     expect(app.sent).toEqual([{ type: "toggleBypass", insert: { strip: { kind: "track", id: Number(pad.dataset.strip!.slice(6)) }, slot: 0 } }]);
   });
 
-  it("えらんでいないプラグインの枠の右クリックは、一覧を出すだけ。えらぶ意図（窓がひらく）は送らない", () => {
+  it("right-clicking a plugin slot that is not chosen only shows the list. The choose intent (which opens the window) is not sent", () => {
     show(scene("mixerBypass"), MixerStrips);
     const slots = qa("[data-test=mixer-insert].filled:not(.selected)").filter((el) => !el.classList.contains("stopped"));
     const plugin = qa("[data-test=mixer-insert].filled.stopped")[0]!;
@@ -562,14 +562,14 @@ describe("ミキサーの 86 の残り", () => {
     expect(app.sent).toEqual([]);
   });
 
-  it("窓がひらいているインサートと音源の枠に窓の印", () => {
+  it("a window mark on insert and instrument slots whose window is open", () => {
     show(scene("windowOpen"), MixerStrips);
     expect(target.querySelector('[data-strip="return-a"] [data-test=mixer-insert] [data-test=window-mark]')).not.toBeNull();
     expect(target.querySelector('[data-strip^="track-"] [data-test=mixer-frame] [data-test=window-mark]')).not.toBeNull();
     expect(target.querySelectorAll("[data-test=window-mark]")).toHaveLength(2);
   });
 
-  it("プラグインの音源の枠: 押すと SelectInstrument、右クリックは「音源を入れかえる…」（user:2026-11-19）", () => {
+  it("plugin instrument slot: pressing sends SelectInstrument, right-click gives 「音源を入れかえる…」 (user:2026-11-19)", () => {
     const s = scene("windowOpen");
     show(s, MixerStrips);
     const frame = target.querySelector<HTMLElement>('[data-strip^="track-"] [data-test=mixer-frame]')!;
@@ -582,13 +582,13 @@ describe("ミキサーの 86 の残り", () => {
     expect(app.sent).toEqual([{ type: "selectInstrument", track: id }, { type: "openShelf", mode: { kind: "replace", track: id } }]);
   });
 
-  it("戻りの名前: いちばん上がプラグインなら 14-A の種類の名前（F-WindowOpen の「A リバーブ」）", () => {
+  it("return name: when the top is a plugin, the kind name of 14-A (「A リバーブ」 in F-WindowOpen)", () => {
     const s = scene("windowOpen");
     show(s, MixerStrips);
     expect(text(target.querySelector('[data-strip="return-a"] .head'))).toBe("A リバーブ");
   });
 
-  it("並べかえのドラッグ: 押したまま上下、入る所に線、離して MoveInsert を 1 つ。Esc でやめる", () => {
+  it("reorder drag: held and moved up or down, a line where it goes in, one MoveInsert on release. Esc cancels", () => {
     const s = scene("windowOpen");
     show(s, MixerStrips);
     const piano = target.querySelector<HTMLElement>('[data-strip^="track-"]')!;
@@ -600,7 +600,7 @@ describe("ミキサーの 86 の残り", () => {
     expect(piano.querySelectorAll("[data-test=mixer-insert-line]")).toHaveLength(1);
     pointer(slots[0]!, "pointerup", 10, 40);
     expect(app.sent).toEqual([{ type: "moveInsert", insert: { strip: { kind: "track", id: s.song.tracks[0]!.id }, slot: 0 }, to: 1 }]);
-    // ドラッグのあとの click は、枠を押したことにしない。
+    // a click after a drag does not count as pressing the slot.
     slots[0]!.querySelector<HTMLElement>(".press")!.click();
     expect(app.sent).toHaveLength(1);
     pointer(slots[1]!, "pointerdown", 10, 36);
@@ -612,7 +612,7 @@ describe("ミキサーの 86 の残り", () => {
     expect(piano.querySelector(".lifted")).toBeNull();
   });
 
-  it("出口がないマスター: 「出口なし ▸」（gray.8）、押すと音の設定（86-8）", () => {
+  it("master with no output: 「出口なし ▸」 (gray.8); pressing opens the sound settings (86-8)", () => {
     show(scene("noOutput"), MixerStrips);
     const frame = target.querySelector<HTMLElement>('[data-strip="master"] [data-test=mixer-frame]')!;
     expect(text(frame)).toBe("出口なし ▸");
@@ -621,7 +621,7 @@ describe("ミキサーの 86 の残り", () => {
     expect(app.sent).toEqual([{ type: "openSettings", advanced: false }]);
   });
 
-  it("フェーダー ・ パン ・ センドのキー: ↑ ↓ 1 dB（Shift 0.1）、← → 1（Shift 10）、Home ではじめの値。キーごとに commit: false、離して 1 秒で commit: true", () => {
+  it("fader, pan and send keys: ↑ ↓ 1 dB (Shift 0.1), ← → 1 (Shift 10), Home for the first value. commit: false for each key, commit: true 1 second after release", () => {
     vi.useFakeTimers();
     const s = scene("mixer");
     show(s, MixerStrips);
@@ -640,7 +640,7 @@ describe("ミキサーの 86 の残り", () => {
     vi.advanceTimersByTime(KEY_COMMIT_MS);
     expect(app.sent.at(-1)).toEqual({ type: "setGain", strip, db: Math.round((db0 + 1.1) * 10) / 10, commit: true });
     app.sent.length = 0;
-    // Home ではじめの値。フォーカスが外れたら、すぐ 1 手。
+    // Home for the first value. When focus leaves, one step at once.
     key(fader, "Home");
     fader.dispatchEvent(new FocusEvent("blur"));
     expect(app.sent).toEqual([
@@ -654,12 +654,12 @@ describe("ミキサーの 86 の残り", () => {
     expect(app.sent.at(-1)).toEqual({ type: "setPan", strip, pan: s.song.tracks[0]!.pan - 10, commit: true });
     app.sent.length = 0;
     const send = piano.querySelector<HTMLElement>("[data-test=mixer-send]")!;
-    // はじめの量のままなら Home は何も送らない。1 dB 下げてから Home。
+    // at the first amount Home sends nothing. Lower by 1 dB, then Home.
     key(send, "ArrowDown");
     key(send, "Home");
     send.dispatchEvent(new FocusEvent("blur"));
     expect(app.sent.at(-1)).toEqual({ type: "setSend", track: strip.id, bus: "a", db: s.song.tracks[0]!.sendDefaults[0], commit: true });
-    // Enter で打ちこむ。
+    // type with Enter.
     app.sent.length = 0;
     key(fader, "Enter");
     const input = piano.querySelector<HTMLInputElement>("[data-test=param-input]")!;
@@ -668,7 +668,7 @@ describe("ミキサーの 86 の残り", () => {
     expect(app.sent).toEqual([{ type: "setGain", strip, db: -3, commit: true }]);
   });
 
-  it("dB とパンの読みかた、↑ ↓ の 1 段", () => {
+  it("reading dB and pan, one ↑ ↓ step", () => {
     expect(stepDb(null, 1, false)).toBe(-60);
     expect(stepDb(-60, -1, false)).toBeNull();
     expect(stepDb(5.5, 1, false)).toBe(6);
@@ -683,7 +683,7 @@ describe("ミキサーの 86 の残り", () => {
     expect(parsePan("x")).toBeUndefined();
   });
 
-  it("KeySteps: 押すたびに commit: false、離して 1 秒で commit: true。そのあいだに押すと数えなおす", () => {
+  it("KeySteps: commit: false for each press, commit: true 1 second after release. A press in between restarts the count", () => {
     vi.useFakeTimers();
     const sent: Command[] = [];
     const k = new KeySteps<number>((v, commit) => ({ type: "setPan", strip: { kind: "master" }, pan: v, commit }), (c) => sent.push(c));
@@ -701,8 +701,8 @@ describe("ミキサーの 86 の残り", () => {
   });
 });
 
-describe("アレンジの音源の名前（プラグイン）", () => {
-  it("押すと SelectInstrument、窓がひらいていれば名前の右に窓の印、右クリックは「音源を入れかえる…」", () => {
+describe("instrument name in the arrange (plugin)", () => {
+  it("pressing sends SelectInstrument, a window mark right of the name when the window is open, right-click gives 「音源を入れかえる…」", () => {
     const s = scene("paramMany");
     show(s, TrackHeads);
     const name = q("[data-test=track-instrument]")!;
@@ -715,12 +715,12 @@ describe("アレンジの音源の名前（プラグイン）", () => {
   });
 });
 
-describe("キー B（とばす）", () => {
-  it("B は bypass。文字を打っている最中は効かない", () => {
+describe("key B (bypass)", () => {
+  it("B is bypass. Does not work while typing", () => {
     expect(keyAction({ key: "b", ctrl: false, meta: false, alt: false, shift: false }, false, "other")).toEqual({ kind: "bypass" });
     expect(keyAction({ key: "b", ctrl: false, meta: false, alt: false, shift: false }, true, "other")).toBeNull();
   });
-  it("えらんでいるインサートがあり、ミキサーかパラメータの欄が見えているときだけ ToggleBypass", () => {
+  it("ToggleBypass only when an insert is chosen and the mixer or the params panel is visible", () => {
     const sent: Command[] = [];
     const press = (state: AppState) =>
       handleKeydown(new KeyboardEvent("keydown", { key: "b", bubbles: true, cancelable: true }), { state: () => state, send: (c) => sent.push(c), nav: { platform: "Linux" } });
@@ -731,9 +731,9 @@ describe("キー B（とばす）", () => {
   });
 });
 
-// 30 Hz の出しかた（左と右を 1 コマずつ）は gl.surface.test.ts。
-describe("ミキサーのメーターは、トラックの数によらず、いつも 30 Hz（user:2026-11-20）", () => {
-  it("mixerMeters だけ。ほかの区画（鍵 ・ 再生の線 ・ マスター）は 60 Hz のまま", () => {
+// how 30 Hz is done (left and right one frame each) is in gl.surface.test.ts.
+describe("mixer meters are always 30 Hz, whatever the number of tracks (user:2026-11-20)", () => {
+  it("only mixerMeters. Other regions (keys, play line, master) stay at 60 Hz", () => {
     expect(regionHz("mixerMeters")).toBe(30);
     expect(regionHz("masterMeter")).toBe(60);
     expect(regionHz("pianoRollKeys")).toBe(60);
@@ -741,8 +741,8 @@ describe("ミキサーのメーターは、トラックの数によらず、い�
   });
 });
 
-describe("入れかえの棚（ShelfMode::ReplaceEffect、モック R9-Inserts）", () => {
-  it("見出し、いまのエフェクト、えらぶと入れかえの文と「入れかえる Enter」「やめる Esc」", async () => {
+describe("replace shelf (ShelfMode::ReplaceEffect, mock R9-Inserts)", () => {
+  it("heading, the current effect, and after choosing, the replace text and 「入れかえる Enter」「やめる Esc」", async () => {
     const { default: Shelf } = await import("../src/components/Shelf.svelte");
     const s = scene("insertReplace");
     show(s, Shelf);

@@ -1,4 +1,4 @@
-// 入力計のベロシティ固定（docs/history/design-notes.ja.md B-66）と、棒のドラッグ中の Esc（仕様書 4 章）。
+// Fixed velocity on the input meter (docs/history/design-notes.ja.md B-66), and Esc while dragging a scroll bar (spec 4).
 import { flushSync, mount, tick, unmount, type Component } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState } from "../src/bridge";
@@ -34,8 +34,8 @@ const q = <T extends HTMLElement = HTMLElement>(sel: string) => target.querySele
 const KEYBOARD = { id: "kb", name: "鍵盤 49", portName: "鍵盤 49 MIDI 1", address: "24:0" };
 const withKeyboard = (s: AppState) => (s.keyboards = { ...s.keyboards, list: [KEYBOARD], active: "kb", lost: null, inputStopped: false });
 
-describe("ベロシティ固定（B-66）", () => {
-  it("読み値の右に「固定」。押すと setVelocityFixed（いまの値のまま、オン ・ オフ）。用語の説明つき", () => {
+describe("fixed velocity (B-66)", () => {
+  it("「固定」 right of the readout. Pressing sends setVelocityFixed (the current value, on/off). Has a term tip", () => {
     show(InputMeter, app.stateWith(withKeyboard));
     const toggle = q('[data-test="velocity-fixed"]')!;
     expect(toggle.textContent).toBe(t("input.velocityFixed"));
@@ -47,21 +47,21 @@ describe("ベロシティ固定（B-66）", () => {
     expect(tipView.value?.term).toBe("ベロシティ固定");
     toggle.dispatchEvent(new PointerEvent("pointerleave"));
     vi.useRealTimers();
-    // 読み値の右（同じ行で、読み値よりあと）。
+    // Right of the readout (same row, after the readout).
     const value = q('[data-test="velocity"] .value')!;
     expect(value.compareDocumentPosition(toggle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     toggle.click();
     expect(app.sent).toEqual([{ type: "setVelocityFixed", on: true, value: 100 }]);
   });
 
-  it("引っこめる順には入れない: 見えない写し（ruler）でいつも幅を数え、meterFit の結果には「固定」の欄がない", () => {
+  it("not in the hiding order: a hidden copy (ruler) always measures the width, and the meterFit result has no 「固定」 column", () => {
     show(InputMeter, app.stateWith(withKeyboard));
     expect(q(".ruler .fixed")?.textContent).toBe(t("input.velocityFixed"));
     expect(q(".ruler [data-part]")).not.toBeNull();
     expect(q('.ruler .fixed')!.closest("[data-part]")).toBeNull();
   });
 
-  it("オンの間: 切りかえは on（accent）、読み値は固定の値で、押すと入力の枠。範囲の外は丸めて clampValue", async () => {
+  it("while on: the toggle is on (accent), the readout is the fixed value, and pressing opens an input box. Out of range is rounded with clampValue", async () => {
     show(
       InputMeter,
       app.stateWith((s) => {
@@ -90,7 +90,7 @@ describe("ベロシティ固定（B-66）", () => {
     expect(app.sent.at(-1)).toEqual({ type: "setVelocityFixed", on: false, value: 90 });
   });
 
-  it("細いときも出す（読み値は text.s の小さい形）", () => {
+  it("shown when slim too (the readout in the small text.s form)", () => {
     show(
       InputMeter,
       app.stateWith((s) => {
@@ -103,7 +103,7 @@ describe("ベロシティ固定（B-66）", () => {
     expect(q('button[data-test="velocity-fixed-value"]')!.classList.contains("small")).toBe(true);
   });
 
-  it("鍵盤がないときも使える（書く道具のため）。オフなら読み値は出さず、オンなら固定の値", () => {
+  it("works without a keyboard (for the draw tool). When off the readout is hidden, when on it is the fixed value", () => {
     show(InputMeter, app.stateWith(() => {}));
     expect(q('[data-test="velocity-fixed"]')).not.toBeNull();
     expect(q('[data-test="velocity"] .value')).toBeNull();
@@ -113,8 +113,8 @@ describe("ベロシティ固定（B-66）", () => {
   });
 });
 
-describe("棒のドラッグ中の Esc（仕様書 4 章）", () => {
-  it("横の棒: つまみを動かしている間の Esc で、動かす前の所へ戻す", () => {
+describe("Esc while dragging a scroll bar (spec 4)", () => {
+  it("horizontal bar: Esc while moving the thumb puts it back where it was before", () => {
     const moves: number[] = [];
     show(HScrollbar, null, { total: 2000, visible: 500, offset: 100, onscroll: (x: number) => moves.push(x) });
     const thumb = q('[data-testid="hscrollbar-thumb"]')!;

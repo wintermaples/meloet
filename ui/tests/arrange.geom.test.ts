@@ -1,4 +1,4 @@
-// アレンジの形の計算（arrangeGeom.ts）。クリップの絵、札の出しかた、目盛のドラッグ → 命令、ページ送り、全体図。
+// Shape math of the arrange (arrangeGeom.ts). Clip pictures, how tags show, ruler drag → command, page turning, overview.
 import { describe, expect, it } from "vitest";
 import type { TrackView } from "../src/bridge";
 import * as G from "../src/components/arrangeGeom";
@@ -6,7 +6,7 @@ import type { GlRect } from "../src/gl/slot";
 import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 
 const BAR = 4 * TPQ;
-/** 1 小節 64 px（100 %、mock.arrange.bar）。 */
+/** 1 bar is 64 px (100 %, mock.arrange.bar). */
 const view = (scrollX = 0, width = 1000): G.View => ({
   pxPerTick: 64 / BAR,
   scrollX,
@@ -54,8 +54,8 @@ const track = (number: number, clips: ReturnType<typeof clip>[], color = number)
   clips,
 });
 
-describe("クリップの絵（仕様書 2 章「クリップ」、モック Main）", () => {
-  it("箱: 行の中で上下に inset。下の線（line.hair）の上まで", () => {
+describe("clip picture (spec 2 (Clip), mock Main)", () => {
+  it("box: inset above and below inside the row. Down to just above the bottom line (line.hair)", () => {
     expect(G.clipBox(view(), dims, 1, 4 * BAR, 8 * BAR)).toEqual({
       x0: 256,
       x1: 512,
@@ -70,7 +70,7 @@ describe("クリップの絵（仕様書 2 章「クリップ」、モック Mai
     });
   });
 
-  it("ふつう: 枠 gray.6、上辺 line.mark はトラックの色、面 gray.4", () => {
+  it("normal: border gray.6, top edge line.mark in the track color, face gray.4", () => {
     const out: GlRect[] = [];
     G.paintClip(out, view(), dims, G.clipBox(view(), dims, 0, 0, BAR), G.CLIP_PLAIN("color.track.1"), []);
     expect(out).toEqual([
@@ -80,7 +80,7 @@ describe("クリップの絵（仕様書 2 章「クリップ」、モック Mai
     ]);
   });
 
-  it("えらんだ: 枠と上辺が accent。録音中: 枠と上辺と中身が rec", () => {
+  it("selected: border and top edge accent. Recording: border, top edge and contents rec", () => {
     expect(G.CLIP_SELECTED).toEqual({
       frame: "color.accent",
       top: "color.accent",
@@ -94,7 +94,7 @@ describe("クリップの絵（仕様書 2 章「クリップ」、モック Mai
     expect(G.trackColor({ color: 7 })).toBe("color.track.2");
   });
 
-  it("ノート: 名前の行の下に、そのテイクの鍵の範囲で。高い鍵が上。長さは横に", () => {
+  it("notes: below the name line, in the key range of that take. Higher keys on top. Length across", () => {
     const out: GlRect[] = [];
     const notes = [
       { start: 0, length: TPQ, key: 60 },
@@ -103,7 +103,7 @@ describe("クリップの絵（仕様書 2 章「クリップ」、モック Mai
     ];
     G.paintClip(out, view(), dims, G.clipBox(view(), dims, 0, 0, BAR), G.CLIP_PLAIN("color.track.1"), notes);
     const drawn = out.slice(3);
-    // 上は 3 + 2 + 16 + 4 = 25、下は 60 − 1 − 4 − 2 = 53。
+    // top is 3 + 2 + 16 + 4 = 25, bottom is 60 − 1 − 4 − 2 = 53.
     expect(drawn).toEqual([
       { x: 1, y: 53, w: 15, h: 2, color: "color.gray.8" },
       { x: 32, y: 25, w: 8, h: 2, color: "color.gray.8" },
@@ -111,7 +111,7 @@ describe("クリップの絵（仕様書 2 章「クリップ」、モック Mai
     ]);
   });
 
-  it("ミュートしたトラック: 中の線だけ gray.7。枠、色の帯、地はそのまま（選んでいても）", () => {
+  it("muted track: only the inside lines gray.7. Border, color strip and background stay (even when selected)", () => {
     const notes = [{ start: 0, length: TPQ, key: 60 }];
     for (const colors of [G.CLIP_PLAIN("color.track.1"), G.CLIP_SELECTED]) {
       const plain: GlRect[] = [];
@@ -124,7 +124,7 @@ describe("クリップの絵（仕様書 2 章「クリップ」、モック Mai
     }
   });
 
-  it("見えている幅の外は描かず、外へ出たはしは枠を描かない。鍵が 1 つだけならまん中", () => {
+  it("nothing is drawn outside the visible width, and edges that go outside have no border. With only one key, the middle", () => {
     const out: GlRect[] = [];
     G.paintClip(
       out,
@@ -154,7 +154,7 @@ describe("クリップの絵（仕様書 2 章「クリップ」、モック Mai
     expect(out.slice(3)).toEqual([{ x: 128, y: 39, w: 16, h: 2, color: "color.gray.8" }]);
   });
 
-  it("テイクのノートは clip.start + takeOffset から。クリップの外は落とす", () => {
+  it("take notes start from clip.start + takeOffset. Notes outside the clip are dropped", () => {
     const take = {
       starts: [0, 2 * TPQ, 9 * TPQ],
       lengths: [TPQ, TPQ, TPQ],
@@ -164,7 +164,7 @@ describe("クリップの絵（仕様書 2 章「クリップ」、モック Mai
     expect(shapes).toEqual([{ start: BAR, length: TPQ, key: 62 }]);
   });
 
-  it("録っているノート: 押している鍵（長さ null）は今の位置まで", () => {
+  it("notes being recorded: held keys (length null) go up to the current position", () => {
     const live = [
       { lap: 0, index: 0, key: 60, velocity: 80, start: 100, length: 50 },
       { lap: 0, index: 1, key: 64, velocity: 80, start: 300, length: null },
@@ -173,30 +173,30 @@ describe("クリップの絵（仕様書 2 章「クリップ」、モック Mai
       { start: 100, length: 50, key: 60 },
       { start: 300, length: 200, key: 64 },
     ]);
-    // のびている先だけを描くとき: その前に終わったノートは形にしない。
+    // when drawing only the growing end: notes that ended before it are not made into shapes.
     expect(G.liveShapes(live, 500, 200)).toEqual([{ start: 300, length: 200, key: 64 }]);
   });
 });
 
-describe("テイクの札（仕様書 2 章「テイクの印と切りかえ」）", () => {
-  it("テイクが 1 つなら札なし。2 つ以上で「2/3」。幅 28 未満は 6×6 の四角だけ", () => {
+describe("take tag (spec 2 (Take mark and switch))", () => {
+  it("no tag with one take. 「2/3」 with two or more. Under width 28, only a 6×6 square", () => {
     expect(G.takeMark({ takes: 1 }, 10, 28)).toBe("none");
     expect(G.takeMark({ takes: 3 }, 28, 28)).toBe("tag");
     expect(G.takeMark({ takes: 3 }, 27.5, 28)).toBe("square");
   });
 });
 
-describe("目盛のドラッグ → 命令（ヤチヨさんの決め: ループは目盛のドラッグ）", () => {
+describe("ruler drag → command (the owner's decision: the loop is a ruler drag)", () => {
   const v = view();
 
-  it("小節の線の番号は、いちばん近い線。スクロールしていても", () => {
+  it("the bar line number is the nearest line. Even when scrolled", () => {
     expect(G.barLineAt(v, 250, BAR)).toBe(5);
     expect(G.barLineAt(v, 290, BAR)).toBe(6);
     expect(G.barLineAt(view(640), 10, BAR)).toBe(11);
     expect(G.barLineAt(v, -50, BAR)).toBe(1);
   });
 
-  it("新しくドラッグ: 押した所の線から、いまの線まで。逆向きも、短くても 1 小節", () => {
+  it("new drag: from the line where it was pressed to the current line. Also backwards, and at least 1 bar", () => {
     const d = G.startRulerDrag(v, 256, BAR, null, 8);
     expect(d).toEqual({ kind: "range", anchor: 5 });
     expect(G.dragRange(d, v, 512, BAR)).toEqual({ from: 5, to: 9 });
@@ -205,7 +205,7 @@ describe("目盛のドラッグ → 命令（ヤチヨさんの決め: ループ
     expect(G.dragRange(d, v, 245, BAR)).toEqual({ from: 4, to: 5 });
   });
 
-  it("範囲のはしの近くを押すと、そのはしを動かす", () => {
+  it("pressing near an edge of the range moves that edge", () => {
     const loop = { from: 5, to: 9 };
     const right = G.startRulerDrag(v, 515, BAR, loop, 8);
     expect(right).toEqual({ kind: "edge", fixed: 5 });
@@ -219,7 +219,7 @@ describe("目盛のドラッグ → 命令（ヤチヨさんの決め: ループ
     });
   });
 
-  it("離したとき: 動かしていれば setLoop、押すだけなら locate（step が null なら吸いつかない）", () => {
+  it("on release: setLoop if it moved, locate if only pressed (no snap when step is null)", () => {
     const d = G.startRulerDrag(v, 256, BAR, null, 8);
     expect(G.rulerCommand(d, v, 256, 512, BAR, 4, BAR)).toEqual({
       type: "setLoop",
@@ -236,25 +236,25 @@ describe("目盛のドラッグ → 命令（ヤチヨさんの決め: ループ
     });
   });
 
-  it("押すだけの locate は、目盛に見えている線に吸いつく（B-61）: 近いほうの小節の頭、拡大すると拍", () => {
+  it("locate on a press snaps to the lines shown on the ruler (B-61): the nearer bar start, beats when zoomed in", () => {
     const d = G.startRulerDrag(v, 256, BAR, null, 8);
-    // 300 px は 300 / 64 小節。小節きざみなら 5 小節目の頭（4 * BAR）と 6 小節目の頭（5 * BAR）の近いほう。
+    // 300 px is 300 / 64 bars. With bar steps, the nearer of the start of bar 5 (4 * BAR) and the start of bar 6 (5 * BAR).
     expect(G.rulerCommand(d, v, 300, 300, BAR, 4, BAR)).toEqual({ type: "locate", tick: 5 * BAR });
     expect(G.rulerCommand(d, v, 300, 300, BAR, 4, TPQ)).toEqual({ type: "locate", tick: 19 * TPQ });
     expect(G.rulerCommand(d, v, 300, 300, BAR, 4, 2 * BAR)).toEqual({ type: "locate", tick: 4 * BAR });
   });
 
-  it("吸いつくきざみ: ふだんは 1 小節、番号を間引けば番号おき、1 拍が番号の間より広ければ拍", () => {
+  it("snap step: usually 1 bar, every numbered bar when numbers are skipped, a beat when one beat is wider than the gap between numbers", () => {
     expect(G.rulerStep(64, BAR, TPQ, 1, 32)).toBe(BAR);
     expect(G.rulerStep(16, BAR, TPQ, 2, 32)).toBe(2 * BAR);
     expect(G.rulerStep(8, BAR, TPQ, 4, 32)).toBe(4 * BAR);
     expect(G.rulerStep(127, BAR, TPQ, 1, 32)).toBe(BAR);
     expect(G.rulerStep(128, BAR, TPQ, 1, 32)).toBe(TPQ);
-    // 6/8 は 1 拍が 8 分音符（TPQ / 2）。
+    // in 6/8 one beat is an eighth note (TPQ / 2).
     expect(G.rulerStep(192, 3 * TPQ, TPQ / 2, 1, 32)).toBe(TPQ / 2);
   });
 
-  it("拍の線を描くのは、目盛が拍に吸いつくときと同じ条件（B-61）", () => {
+  it("beat lines are drawn under the same condition as the ruler snapping to beats (B-61)", () => {
     for (const [barPx, perBar, perBeat] of [[127, BAR, TPQ], [128, BAR, TPQ], [64, BAR, TPQ], [191, 3 * TPQ, TPQ / 2], [192, 3 * TPQ, TPQ / 2]]) {
       expect(G.beatsShown(barPx, perBar, perBeat, 32)).toBe(G.rulerStep(barPx, perBar, perBeat, 1, 32) === perBeat);
     }
@@ -262,7 +262,7 @@ describe("目盛のドラッグ → 命令（ヤチヨさんの決め: ループ
     expect(G.beatsShown(128, BAR, TPQ, 32)).toBe(true);
   });
 
-  it("ループの範囲（ティック）→ 小節の線の番号", () => {
+  it("loop range (ticks) → bar line numbers", () => {
     expect(G.loopBars({ start: 4 * BAR, end: 8 * BAR }, BAR)).toEqual({
       from: 5,
       to: 9,
@@ -271,8 +271,8 @@ describe("目盛のドラッグ → 命令（ヤチヨさんの決め: ループ
   });
 });
 
-describe("横のスクロールとページ送り（ヤチヨさんの決め）", () => {
-  it("線が右はしに来たら 1 画面ぶん送る。見えていれば動かさない。後ろへ戻ったら、その画面へ", () => {
+describe("horizontal scroll and page turning (the owner's decision)", () => {
+  it("when the line reaches the right end, turn one screen. Do not move if it is visible. If it went back, go to that screen", () => {
     expect(G.followScroll(500, 0, 1000)).toBe(0);
     expect(G.followScroll(1000, 0, 1000)).toBe(1000);
     expect(G.followScroll(2500, 0, 1000)).toBe(2000);
@@ -281,7 +281,7 @@ describe("横のスクロールとページ送り（ヤチヨさんの決め）"
     expect(G.followScroll(10, 2000, 0)).toBe(2000);
   });
 
-  it("ホイール: 0 より左へは行かない。右は曲の後ろの物が画面のまん中に来るまで", () => {
+  it("wheel: never left of 0. To the right, until the last thing in the song is in the middle of the screen", () => {
     const tracks = [track(1, [clip(1, 1, 21)])];
     const max = G.scrollMax(tracks, null, 0, {
       pxPerTick: 64 / BAR,
@@ -290,14 +290,14 @@ describe("横のスクロールとページ送り（ヤチヨさんの決め）"
     expect(max).toBe(20 * 64 - 500);
     expect(G.wheelScroll(100, -300, max)).toBe(0);
     expect(G.wheelScroll(700, 300, max)).toBe(max);
-    // ページ送りで先にいれば、そこから戻すだけ。
+    // if page turning is already ahead, only go back from there.
     expect(G.wheelScroll(2000, 10, max)).toBe(2000);
   });
 });
 
-describe("押した所のクリップ", () => {
+describe("the clip that was pressed", () => {
   const tracks = [track(1, [clip(1, 1, 5), clip(3, 5, 9)]), track(2, [clip(4, 2, 3)])];
-  it("クリップの箱の中ならその id、すき間や行の外は null", () => {
+  it("its id inside a clip box, null in a gap or outside the rows", () => {
     expect(G.clipAt(view(), dims, tracks, 300, 30)).toBe(3);
     expect(G.clipAt(view(), dims, tracks, 100, 64 + 30)).toBe(4);
     expect(G.clipAt(view(), dims, tracks, 300, 1)).toBeNull();
@@ -306,13 +306,13 @@ describe("押した所のクリップ", () => {
   });
 });
 
-describe("再生の位置の線と、録っているクリップ", () => {
-  it("周の頭: 最初の周は録りはじめた所、2 周目からはループの頭", () => {
+describe("the play line and the clip being recorded", () => {
+  it("start of a pass: the first pass from where recording began, from the second pass the loop start", () => {
     expect(G.lapStart(1000, 0, { start: 2 * BAR, end: 4 * BAR })).toBe(1000);
     expect(G.lapStart(1000, 2, { start: 2 * BAR, end: 4 * BAR })).toBe(2 * BAR);
   });
 
-  it("できた小節は大きな面へ。小さな面は、その 1 小節前から今まで（2 小節より広くならない）", () => {
+  it("finished bars go to the big surface. The small surface is from 1 bar before them up to now (never wider than 2 bars)", () => {
     expect(G.recordingSplit(2 * BAR, 2 * BAR + 100, BAR)).toEqual({
       commit: 2 * BAR,
       tailFrom: 2 * BAR,
@@ -328,18 +328,18 @@ describe("再生の位置の線と、録っているクリップ", () => {
   });
 });
 
-describe("全体図（仕様書 3 章: 高さ 136 未満）", () => {
+describe("overview (spec 3: height under 136)", () => {
   const base = { overviewH: 40, lineH: 4, gap: 2, hair: 1 };
   const tracks = [track(1, [clip(1, 1, 5)]), track(2, [clip(2, 5, 9)])];
 
-  it("トラックごとに、クリップの線（トラックの色）。となりのクリップとの間に gap", () => {
+  it("for each track, clip lines (the track color). A gap between neighboring clips", () => {
     expect(G.overviewRects(view(), tracks, 40, base, null)).toEqual([
       { x: 0, y: 15, w: 254, h: 4, color: "color.track.1" },
       { x: 256, y: 21, w: 254, h: 4, color: "color.track.2" },
     ]);
   });
 
-  it("高いときは縦にのばす。行が入りきらなければ、行をちぢめる", () => {
+  it("when tall, it stretches vertically. If the rows do not fit, they get smaller", () => {
     const tall = G.overviewRects(view(), tracks, 80, base, null);
     expect(tall.map((r) => [r.y, r.h])).toEqual([
       [30, 8],
@@ -351,7 +351,7 @@ describe("全体図（仕様書 3 章: 高さ 136 未満）", () => {
     expect(squeezed.at(-1)!.y + squeezed.at(-1)!.h).toBeLessThanOrEqual(40);
   });
 
-  it("録っている所は rec の線", () => {
+  it("the part being recorded is a rec line", () => {
     const out = G.overviewRects(view(), tracks, 40, base, {
       track: 2,
       from: 9 * BAR,

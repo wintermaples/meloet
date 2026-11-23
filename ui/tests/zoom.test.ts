@@ -1,4 +1,4 @@
-// 状態行の「拡大率」と、その一覧（仕様書 2 章・3 章、モック F-Zoom）。状態行の右がわの引っこめかた。拡大率と帯の知らせ。
+// 「拡大率」 in the status line and its list (spec 2, spec 3, mock F-Zoom). How the right side of the status line hides. Scale and band notices.
 import { flushSync, mount, unmount, type Component } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, StatusMessage } from "../src/bridge";
@@ -32,12 +32,12 @@ function show(component: Component<any>, state: AppState, props: Record<string, 
   flushSync();
 }
 
-// 一覧は body に置かれるので、document から探す。
+// The list is placed in body, so search from document.
 const q = (sel: string) => document.querySelector<HTMLElement>(sel);
 const qa = (sel: string) => [...document.querySelectorAll<HTMLElement>(sel)];
 const text = (el: Element | null) => el?.textContent?.replace(/\s+/g, " ").trim() ?? null;
 
-/** いまは 125 %、150 % が入らない（偽物の場面 zoom と同じ）。 */
+/** Now 125 %; 150 % does not fit (same as the fake scene zoom). */
 const zoomState = (edit: (s: AppState) => void = () => {}) =>
   app.stateWith((s) => {
     s.workspace.scale = 125;
@@ -52,8 +52,8 @@ function openMenu(): void {
 
 const rows = () => qa('[data-test="zoom-menu"] [role="menuitemradio"]');
 
-describe("状態行の「拡大率」のボタン", () => {
-  it("いまの率と ▾。いちばん右にあり、押すと一覧がひらく", () => {
+describe("the 「拡大率」 button in the status line", () => {
+  it("the current scale and ▾. At the far right, pressing opens the list", () => {
     show(StatusLine, zoomState());
     const button = q('[data-test="status-scale"]')!;
     expect(text(button)).toBe("125 %▾");
@@ -66,7 +66,7 @@ describe("状態行の「拡大率」のボタン", () => {
     expect(q('[data-test="zoom-menu"]')).not.toBeNull();
   });
 
-  it("もう一度押すと、とじる", () => {
+  it("pressing again closes", () => {
     show(StatusLine, zoomState());
     openMenu();
     openMenu();
@@ -74,8 +74,8 @@ describe("状態行の「拡大率」のボタン", () => {
   });
 });
 
-describe("拡大率の一覧", () => {
-  it("見出しと 3 行。いまの率が「えらんだ」、入らない率は使えない（押せない）で「この画面には入りません」", () => {
+describe("scale list", () => {
+  it("a heading and 3 rows. The current scale is 「えらんだ」, scales that do not fit are disabled (cannot be pressed) with 「この画面には入りません」", () => {
     show(StatusLine, zoomState());
     openMenu();
     expect(text(q('[data-test="zoom-menu"] .head'))).toBe("拡大率");
@@ -86,14 +86,14 @@ describe("拡大率の一覧", () => {
     expect(rows().map((r) => text(r.querySelector('[data-test="zoom-unfit"]')))).toEqual([null, null, "この画面には入りません"]);
   });
 
-  it("入らない率がなければ、どの行も押せる", () => {
+  it("if every scale fits, every row can be pressed", () => {
     show(StatusLine, app.stateWith((s) => (s.workspace.unfitScales = [])));
     openMenu();
     expect(rows().map((r) => (r as HTMLButtonElement).disabled)).toEqual([false, false, false]);
     expect(qa('[data-test="zoom-unfit"]')).toEqual([]);
   });
 
-  it("キーの書きかた: Linux と Windows では「Ctrl Alt 1」、Mac では「Cmd Option 1」（docs/history/design-notes.ja.md A-2）", () => {
+  it("key text: 「Ctrl Alt 1」 on Linux and Windows, 「Cmd Option 1」 on Mac (docs/history/design-notes.ja.md A-2)", () => {
     app.setState(zoomState());
     mounted = mount(ZoomMenu, { target, props: { scale: 125, unfit: [150], platform: "other", onpick: () => {} } });
     flushSync();
@@ -104,7 +104,7 @@ describe("拡大率の一覧", () => {
     expect(qa('[data-test="zoom-key"]').map(text)).toEqual(["Cmd Option 1", "Cmd Option 2", "Cmd Option 3"]);
   });
 
-  it("行を押すと setScale を送り、一覧をとじる", () => {
+  it("pressing a row sends setScale and closes the list", () => {
     show(StatusLine, zoomState());
     openMenu();
     rows()[0]!.click();
@@ -114,7 +114,7 @@ describe("拡大率の一覧", () => {
     expect(menuVisible()).toBe(false);
   });
 
-  it("使えない行は押せない（何も送らず、ひらいたまま）", () => {
+  it("disabled rows cannot be pressed (nothing sent, stays open)", () => {
     show(StatusLine, zoomState());
     openMenu();
     rows()[2]!.click();
@@ -123,7 +123,7 @@ describe("拡大率の一覧", () => {
     expect(q('[data-test="zoom-menu"]')).not.toBeNull();
   });
 
-  it("ひらくと、いまの率の行にフォーカス。↑ ↓ は使えない行をとばし、Enter で決める", async () => {
+  it("opening focuses the current scale row. ↑ ↓ skip disabled rows, Enter decides", async () => {
     show(StatusLine, zoomState((s) => ((s.workspace.scale = 100), (s.workspace.unfitScales = [125]))));
     openMenu();
     await Promise.resolve();
@@ -145,7 +145,7 @@ describe("拡大率の一覧", () => {
     expect(document.activeElement).toBe(q('[data-test="status-scale"]'));
   });
 
-  it("Esc は、メニューをダイアログより先にとじる（core の back は送らない）", () => {
+  it("Esc closes the menu before the dialog (core back is not sent)", () => {
     show(StatusLine, zoomState((s) => (s.workspace.settings = {} as never)));
     openMenu();
     const deps = { state: () => app.current.state, send: app.send };
@@ -157,7 +157,7 @@ describe("拡大率の一覧", () => {
     expect(app.sent).toEqual([{ type: "back" }]);
   });
 
-  it("Esc の順: 文字を打っている枠 → メニュー → core の back（仕様書 3 章）", () => {
+  it("Esc order: the box being typed in → menu → core back (spec 3)", () => {
     show(StatusLine, zoomState());
     openMenu();
     const input = document.createElement("input");
@@ -179,7 +179,7 @@ describe("拡大率の一覧", () => {
     input.remove();
   });
 
-  it("一覧は body に置き、ダイアログ（30）より手前に出す", () => {
+  it("the list is placed in body and shown in front of dialogs (30)", () => {
     show(StatusLine, zoomState());
     openMenu();
     const popup = q('[data-test="zoom-menu"]')!.parentElement!;
@@ -187,7 +187,7 @@ describe("拡大率の一覧", () => {
     expect(target.contains(popup)).toBe(false);
   });
 
-  it("外を押すと、とじる。一覧の中を押してもとじない", () => {
+  it("pressing outside closes. Pressing inside the list does not", () => {
     show(StatusLine, zoomState());
     openMenu();
     q('[data-test="zoom-menu"] .head')!.dispatchEvent(new Event("pointerdown", { bubbles: true }));
@@ -199,17 +199,17 @@ describe("拡大率の一覧", () => {
   });
 });
 
-describe("状態行の右がわの引っこめかた（仕様書 3 章）", () => {
+describe("how the right side of the status line hides (spec 3)", () => {
   const right = { output: 160, inputs: 140, buffer: 80 };
   const base = { gap: 16, left: 300, right, scale: 60 };
-  // 全部: 300 + 2 × 16 + 60 + (160 + 16) + (140 + 16) + (80 + 16) = 820
+  // All: 300 + 2 × 16 + 60 + (160 + 16) + (140 + 16) + (80 + 16) = 820
   const all = 820;
 
-  it("入る: 全部出す", () => {
+  it("fits: show all", () => {
     expect(statusFit({ ...base, available: all })).toEqual({ inputs: true, output: true, buffer: true });
   });
 
-  it("入口 → 出口 → バッファ の順に引っこめる", () => {
+  it("hides input → output → buffer in that order", () => {
     expect(statusFit({ ...base, available: all - 1 })).toEqual({ inputs: false, output: true, buffer: true });
     expect(statusFit({ ...base, available: all - 156 })).toEqual({ inputs: false, output: true, buffer: true });
     expect(statusFit({ ...base, available: all - 157 })).toEqual({ inputs: false, output: false, buffer: true });
@@ -217,13 +217,13 @@ describe("状態行の右がわの引っこめかた（仕様書 3 章）", () =
     expect(statusFit({ ...base, available: 10 })).toEqual({ inputs: false, output: false, buffer: false });
   });
 
-  it("バッファが出ていない（音が動いていない）ときは、入口 → 出口", () => {
+  it("when the buffer is not shown (sound not running), input → output", () => {
     const noBuffer = { ...base, right: { output: 160, inputs: 140 } };
     expect(statusFit({ ...noBuffer, available: all - 96 })).toEqual({ inputs: true, output: true, buffer: true });
     expect(statusFit({ ...noBuffer, available: all - 97 })).toEqual({ inputs: false, output: true, buffer: true });
   });
 
-  describe("画面で（幅を測る所を差しかえる）", () => {
+  describe("on screen (with the width measuring replaced)", () => {
     const widths: Record<string, number> = { left: 300, output: 160, inputs: 140, buffer: 80, scale: 60 };
     let rowWidth = 0;
     beforeEach(() => {
@@ -233,7 +233,7 @@ describe("状態行の右がわの引っこめかた（仕様書 3 章）", () =
       vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(function (this: HTMLElement) {
         return this.matches("footer.status") ? rowWidth : 0;
       });
-      // jsdom は CSS の変数を解かないので、すきまはここで決める。
+      // jsdom does not resolve CSS variables, so the spaces are set here.
       const real = window.getComputedStyle;
       vi.spyOn(window, "getComputedStyle").mockImplementation((el, p) => {
         const style = real(el, p);
@@ -258,22 +258,22 @@ describe("状態行の右がわの引っこめかた（仕様書 3 章）", () =
       };
     };
 
-    it("広い: 全部", () => {
+    it("wide: all", () => {
       expect(status(all)).toEqual({ output: true, inputs: true, buffer: true, scale: true });
     });
-    it("少し足りない: 入口から", () => {
+    it("a little short: from the input", () => {
       expect(status(all - 1)).toEqual({ output: true, inputs: false, buffer: true, scale: true });
     });
-    it("もっと足りない: 次に出口", () => {
+    it("shorter: then the output", () => {
       expect(status(all - 157)).toEqual({ output: false, inputs: false, buffer: true, scale: true });
     });
-    it("それでも足りない: バッファも。拡大率は残り、左の文は「…」でちぢむ（CSS の min-width: 0）", () => {
+    it("still short: the buffer too. The scale stays, the left text shrinks with 「…」 (CSS min-width: 0)", () => {
       expect(status(200)).toEqual({ output: false, inputs: false, buffer: false, scale: true });
     });
   });
 });
 
-describe("拡大率と帯の知らせ（仕様書 6 章）", () => {
+describe("scale and band notices (spec 6)", () => {
   const cases: [StatusMessage, string][] = [
     [{ id: "scaleDoesNotFit", requested: 150, kept: 125 }, "150 % は、この画面には入りません。125 % のままです。"],
     [{ id: "scaleWindowGrown", scale: 125 }, "拡大率を 125 % にしました。窓を、いちばん小さい大きさまで広げました。"],

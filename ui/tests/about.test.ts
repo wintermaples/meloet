@@ -1,4 +1,4 @@
-// meloet について（仕様書 3 章、モック R7-About ・ R7-AboutLicense）と、オープンソースのライセンスの一覧。
+// About meloet (spec 3, mock R7-About, R7-AboutLicense) and the list of open source licenses.
 import { flushSync, mount, unmount } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AppState, Command } from "../src/bridge";
@@ -86,14 +86,14 @@ afterEach(() => {
   closeAbout();
 });
 
-describe("一覧の決まり", () => {
-  it("ただの OR は名前の順に 1 つの見出し。AND ・ WITH ・ かっこはそのまま", () => {
+describe("rules of the list", () => {
+  it("a plain OR is one heading, names in order. AND, WITH and brackets stay as they are", () => {
     expect(licenseGroup("MIT OR Apache-2.0")).toBe("Apache-2.0 OR MIT");
     expect(licenseGroup("Apache-2.0 OR MIT")).toBe("Apache-2.0 OR MIT");
     expect(licenseGroup("(MIT OR Apache-2.0) AND Unicode-3.0")).toBe("(MIT OR Apache-2.0) AND Unicode-3.0");
   });
 
-  it("OR は「または」（モックの書きかた）。CC のライセンスはモックの書きかた", () => {
+  it("OR is 「または」 (as the mock writes it). CC licenses are written as the mock writes them", () => {
     expect(licenseText("Apache-2.0 OR MIT")).toBe("Apache-2.0 または MIT");
     expect(licenseText("0BSD OR Apache-2.0 OR MIT")).toBe("0BSD または Apache-2.0 または MIT");
     expect(soundLicenseText("CC-BY-3.0")).toBe("CC BY 3.0");
@@ -101,7 +101,7 @@ describe("一覧の決まり", () => {
     expect(soundLicenseText("CC0-1.0")).toBe("CC0 1.0");
   });
 
-  it("ライセンスごとに、数の多い順。さがす枠は名前とライセンスでしぼる", () => {
+  it("by license, most used first. The search box filters by name and license", () => {
     expect(partGroups(LIST.parts, "").map((g) => [g.label, g.parts.map((p) => p.name)])).toEqual([
       ["Apache-2.0 または MIT", ["serde", "toml"]],
       ["BSD-3-Clause", ["alloc-stdlib"]],
@@ -112,12 +112,12 @@ describe("一覧の決まり", () => {
     expect(partGroups(LIST.parts, "または").map((g) => g.group)).toEqual(["Apache-2.0 OR MIT"]);
   });
 
-  it("全文はファイルの名前の行と本文。ない部品は null", () => {
+  it("the full text is the file name line and the body. A part without one is null", () => {
     expect(fullText(TEXTS, "serde@1.0.0")).toBe("LICENSE-MIT\n\nMIT License\n\nCopyright serde");
     expect(fullText(TEXTS, "nope@1")).toBeNull();
   });
 
-  it("全文は 1 回だけ読む。読めなければ null", async () => {
+  it("the full text is read only once. null if it cannot be read", async () => {
     forgetTexts();
     const fetcher = vi.fn(() => Promise.resolve(new Response("{}", { status: 404 })));
     expect(await loadTexts(fetcher)).toBeNull();
@@ -128,20 +128,20 @@ describe("一覧の決まり", () => {
   });
 });
 
-describe("作った一覧（generated/licenses.json）", () => {
-  it("バージョンは crates/meloet-app/Cargo.toml の版", () => {
+describe("the generated list (generated/licenses.json)", () => {
+  it("the version is the one in crates/meloet-app/Cargo.toml", () => {
     const version = /^version\s*=\s*"([^"]+)"/m.exec(readRepoFile("crates/meloet-app/Cargo.toml"))![1];
     expect(licenseList.meloet.version).toBe(version);
     expect(licenseList.meloet.license).toBe("MIT OR Apache-2.0");
   });
 
-  it("音の素材は tools/sounds/sources.json と同じ並び。どの素材にも「手を加えたこと」の文がある", () => {
+  it("sound sources are in the same order as tools/sounds/sources.json. Every source has a 「手を加えたこと」 text", () => {
     const sources = (JSON.parse(readRepoFile("tools/sounds/sources.json")) as { sources: { id: string }[] }).sources;
     expect(licenseList.sounds.map((s) => s.id)).toEqual(sources.map((s) => s.id));
     for (const s of licenseList.sounds) expect(Object.keys(texts), s.id).toContain(`about.changes.${s.id}`);
   });
 
-  it("書体は IBM Plex Sans JP と IBM Plex Mono（OFL-1.1）。部品には書体を入れない", () => {
+  it("the fonts are IBM Plex Sans JP and IBM Plex Mono (OFL-1.1). Parts do not include fonts", () => {
     expect(licenseList.fonts.map((f) => [f.name, f.license]).sort()).toEqual([
       ["IBM Plex Mono", "OFL-1.1"],
       ["IBM Plex Sans JP", "OFL-1.1"],
@@ -151,11 +151,11 @@ describe("作った一覧（generated/licenses.json）", () => {
   });
 });
 
-describe("ヘルプのメニュー", () => {
+describe("Help menu", () => {
   const deps = (s: AppState, sent: Command[]): KeyDeps => ({ state: () => s, send: (c) => sent.push(c), playTick: () => 0 });
   const aboutRow = (s: AppState) => topMenus(s, deps(s, []), "other")[6]!.entries[0] as ListRow;
 
-  it("「meloet について」でひらく。ほかのダイアログがひらいている間は使えない", () => {
+  it("opens with 「meloet について」. Disabled while another dialog is open", () => {
     const s = fakeState();
     expect(aboutRow(s).label).toBe("meloet について");
     expect(aboutRow(s).usable).toBe(true);
@@ -167,8 +167,8 @@ describe("ヘルプのメニュー", () => {
   });
 });
 
-describe("1 段目（R7-About）", () => {
-  it("名前、ひとこと、バージョン（例の字は出さない）、ライセンス、2 段目へ進む行に本当の数", () => {
+describe("first page (R7-About)", () => {
+  it("name, one line, version (not the sample text), license, and real numbers on the row to the second page", () => {
     openAbout();
     show();
     expect(words(q(".head"))).toBe("meloet について 閉じるEsc");
@@ -178,7 +178,7 @@ describe("1 段目（R7-About）", () => {
     expect(host!.textContent).not.toContain("（例）");
   });
 
-  it("閉じるでとじる", () => {
+  it("closes with Close", () => {
     openAbout();
     show();
     click(q("[data-test=about-close]"));
@@ -186,7 +186,7 @@ describe("1 段目（R7-About）", () => {
   });
 });
 
-describe("2 段目（R7-AboutLicense）", () => {
+describe("second page (R7-AboutLicense)", () => {
   async function second() {
     openAbout();
     show();
@@ -194,7 +194,7 @@ describe("2 段目（R7-AboutLicense）", () => {
     await settle();
   }
 
-  it("見出しは「◂ meloet について ・ オープンソースのライセンス」。音の素材も書体も部品も、はじめはたたんでいる", async () => {
+  it("the heading is 「◂ meloet について ・ オープンソースのライセンス」. Sound sources, fonts and parts all start folded", async () => {
     await second();
     expect(about.stage).toBe(2);
     expect(words(q(".head"))).toBe("◂ meloet について ・ オープンソースのライセンス もどるEsc");
@@ -206,7 +206,7 @@ describe("2 段目（R7-AboutLicense）", () => {
     expect(all("[data-test=about-group]").map(words)).toEqual(["▸ Apache-2.0 または MIT 2", "▸ BSD-3-Clause 1", "▸ MIT 1"]);
   });
 
-  it("音の素材と書体の見出しを押すとひらく", async () => {
+  it("pressing the sound source and font headings opens them", async () => {
     await second();
     click(q("[data-test=about-sounds]"));
     click(q("[data-test=about-fonts]"));
@@ -222,7 +222,7 @@ describe("2 段目（R7-AboutLicense）", () => {
     expect(all("[data-test=about-part]").map(words)).toEqual(["IBM Plex Sans JP OFL-1.1", "IBM Plex Mono OFL-1.1"]);
   });
 
-  it("見出しを押すとひらき、行を押すとその下に全文の枠（1 つずつ）", async () => {
+  it("pressing a heading opens it; pressing a row shows the full text box below it (one at a time)", async () => {
     await second();
     click(all("[data-test=about-group]")[0]!);
     expect(words(all("[data-test=about-group]")[0]!)).toBe("▾ Apache-2.0 または MIT 2");
@@ -241,7 +241,7 @@ describe("2 段目（R7-AboutLicense）", () => {
     expect(all("[data-test=about-text]")).toHaveLength(0);
   });
 
-  it("音の素材と書体の見出しでたためる", async () => {
+  it("the sound source and font headings can fold", async () => {
     await second();
     click(q("[data-test=about-sounds]"));
     click(q("[data-test=about-sounds]"));
@@ -249,7 +249,7 @@ describe("2 段目（R7-AboutLicense）", () => {
     expect(q("[data-test=about-sound]")).toBeNull();
   });
 
-  it("さがす枠でしぼる。合う物のある見出しはひらいて見せる", async () => {
+  it("the search box filters. Headings with a match open", async () => {
     await second();
     about.query = "tok";
     flushSync();
@@ -266,7 +266,7 @@ describe("2 段目（R7-AboutLicense）", () => {
     expect(all("[data-test=about-sound]")).toHaveLength(1);
   });
 
-  it("「◂ meloet について」で 1 段目へ", async () => {
+  it("「◂ meloet について」 goes to the first page", async () => {
     await second();
     click(q("[data-test=about-back]"));
     expect(about.stage).toBe(1);
@@ -274,10 +274,10 @@ describe("2 段目（R7-AboutLicense）", () => {
   });
 });
 
-describe("Esc（ほかのダイアログと同じ番）", () => {
+describe("Esc (same order as other dialogs)", () => {
   const esc = (deps: KeyDeps) => handleKeydown(new KeyboardEvent("keydown", { key: "Escape", cancelable: true }), deps);
 
-  it("2 段目では 1 段目へ、1 段目ではとじる。とじていれば Rust の back へ", () => {
+  it("on the second page goes to the first page, on the first page closes. If closed, goes to Rust's back", () => {
     const s = fakeState();
     const sent: Command[] = [];
     const deps: KeyDeps = { state: () => s, send: (c) => sent.push(c), nav: { platform: "Linux x86_64" }, playTick: () => 0 };
@@ -292,7 +292,7 @@ describe("Esc（ほかのダイアログと同じ番）", () => {
     expect(sent).toEqual([{ type: "back" }]);
   });
 
-  it("aboutBack はひらいていなければ何もしない", () => {
+  it("aboutBack does nothing when not open", () => {
     expect(aboutBack()).toBe(false);
   });
 });

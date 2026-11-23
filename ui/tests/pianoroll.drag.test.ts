@@ -1,4 +1,4 @@
-// ピアノロールのマウスの決まり（drag.ts）: 吸いつき、Shift、範囲で止まる、Esc で戻る、離して 1 つだけ送る、読み値の文。
+// Mouse rules of the piano roll (drag.ts): snapping, Shift, stopping at the range, going back with Esc, sending only one on release, readout text.
 import { beforeEach, describe, expect, it } from "vitest";
 import type { Command, IndexRange, MusicalScale } from "../src/bridge";
 import { Auditioner, type Timer } from "../src/components/pianoroll/audition";
@@ -12,7 +12,7 @@ const NONE: Mods = { shift: false, alt: false, mod: false };
 const SHIFT: Mods = { ...NONE, shift: true };
 const ALT: Mods = { ...NONE, alt: true };
 
-// 1 拍 40 px。ノート 0: 1.1 から 1 拍の C4、ノート 1: 1.2 から 1 拍の D4、ノート 2: 1.3 から半拍の E4。
+// 1 beat is 40 px. Note 0: C4 from 1.1 for 1 beat, note 1: D4 from 1.2 for 1 beat, note 2: E4 from 1.3 for half a beat.
 const n = G.shownOf(
   take([
     [0, TPQ, 60, 80],
@@ -29,10 +29,10 @@ let tool: Tool;
 let selected: IndexRange[];
 let scale: MusicalScale;
 let drag: RollDrag;
-/** ノートを押した ・ 動かしたときに鳴らすか（止まっているとき）。 */
+/** Whether to play the note when it is pressed or moved (when stopped). */
 let auditionOn: boolean;
 let drawVelocity: number;
-/** 時間をはかる係の偽物: 止める時間（ms）を覚えるだけ。fire で止める。 */
+/** A fake timer: only remembers the stop time (ms). fire stops it. */
 let timers: { ms: number; run: () => void }[];
 const clock: Timer = {
   set: (run, ms) => timers.push({ ms, run }),
@@ -68,8 +68,8 @@ beforeEach(() => {
   });
 });
 
-describe("選ぶ道具", () => {
-  it("押すと選ぶ。押したまま動かすと、離したときに MoveNotes を 1 つだけ送る（グリッドに吸いつく）", () => {
+describe("select tool", () => {
+  it("pressing selects. Moving while pressed sends only one MoveNotes on release (snaps to the grid)", () => {
     drag.down(x((5 * TPQ) / 24), y(60), NONE);
     expect(sent).toEqual([{ type: "selectNotes", take: 7, notes: [0], mode: "replace" }]);
     sent.length = 0;
@@ -82,13 +82,13 @@ describe("選ぶ道具", () => {
     expect(drag.drag).toBeNull();
   });
 
-  it("Shift で吸いつかない", () => {
+  it("no snapping with Shift", () => {
     drag.down(x((5 * TPQ) / 24), y(60), NONE);
     drag.move(x((5 * TPQ) / 24) + 5, y(60), SHIFT);
     expect(drag.up()).toMatchObject({ type: "moveNotes", ticks: TPQ / 8, keys: 0 });
   });
 
-  it("選んだノートを押して動かすと、選んだぜんぶが動く。動かさずに離すと、そのノートだけを選ぶ", () => {
+  it("pressing and moving a selected note moves all selected. Releasing without moving selects only that note", () => {
     selected = [{ start: 0, end: 2 }];
     drag.down(x((7 * TPQ) / 6), y(62), NONE);
     expect(sent).toEqual([]);
@@ -99,11 +99,11 @@ describe("選ぶ道具", () => {
     expect(drag.up()).toEqual({ type: "selectNotes", take: 7, notes: [1], mode: "replace" });
   });
 
-  it("曲の頭より前と、鍵の外へは出ない（範囲で止まる）", () => {
+  it("never before the start of the song or outside the keys (stops at the range)", () => {
     drag.down(x((5 * TPQ) / 24), y(60), NONE);
     drag.move(x((5 * TPQ) / 24) - 500, y(60) + 12 * 100, NONE);
     expect(drag.up()).toMatchObject({ type: "moveNotes", ticks: 0, keys: -60 });
-    // 動かしても、もとの所に戻して離したら送らない
+    // Moved, but put back to the old place and released: nothing is sent
     sent.length = 0;
     drag.down(x((5 * TPQ) / 24), y(60), NONE);
     drag.move(x((5 * TPQ) / 24) + 30, y(60), NONE);
@@ -112,14 +112,14 @@ describe("選ぶ道具", () => {
     expect(sent.filter((c) => c.type === "moveNotes")).toEqual([]);
   });
 
-  it("Alt ＋ ドラッグで複製", () => {
+  it("Alt + drag duplicates", () => {
     drag.down(x((5 * TPQ) / 24), y(60), ALT);
     drag.move(x((5 * TPQ) / 24) + 40, y(60), ALT);
     expect(drag.cursor()).toBe("copy");
     expect(drag.up()).toMatchObject({ type: "moveNotes", ticks: TPQ, copy: true });
   });
 
-  it("Esc（cancel）でドラッグの前に戻り、何も送らない", () => {
+  it("Esc (cancel) goes back to before the drag and sends nothing", () => {
     drag.down(x((5 * TPQ) / 24), y(60), NONE);
     sent.length = 0;
     drag.move(x((5 * TPQ) / 24) + 40, y(60), NONE);
@@ -130,7 +130,7 @@ describe("選ぶ道具", () => {
     expect(drag.cancel()).toBe(false);
   });
 
-  it("右はし 6px は長さ（どの道具でも）。読み値は「長さ 1.0000 → 1.0960」", () => {
+  it("the right 6px is length (with any tool). The readout is 「長さ 1.0000 → 1.0960」", () => {
     for (const t of ["select", "draw", "erase"] as Tool[]) {
       tool = t;
       sent.length = 0;
@@ -142,7 +142,7 @@ describe("選ぶ道具", () => {
     }
   });
 
-  it("空いている所から囲んでえらぶ（Shift で足す）。押しただけなら選択を外す", () => {
+  it("box select from an empty place (Shift adds). A plain press clears the selection", () => {
     drag.down(x(TPQ / 48), y(66), NONE);
     drag.move(x((25 * TPQ) / 8), y(59), NONE);
     expect(drag.reading()).toBe("3 ノート");
@@ -154,17 +154,17 @@ describe("選ぶ道具", () => {
     expect(drag.up()).toEqual({ type: "clearNoteSelection" });
   });
 
-  it("Mod ＋ 押す は切りかえ（ドラッグにならない）", () => {
+  it("Mod + press toggles (does not start a drag)", () => {
     drag.down(x((5 * TPQ) / 24), y(60), { ...NONE, mod: true });
     expect(sent).toEqual([{ type: "selectNotes", take: 7, notes: [0], mode: "toggle" }]);
     expect(drag.drag).toBeNull();
   });
 });
 
-describe("書く道具", () => {
+describe("draw tool", () => {
   beforeEach(() => (tool = "draw"));
 
-  it("押した瞬間に Audition、離して音を止めて AddNote（グリッド 1 つぶん）", () => {
+  it("Audition at the moment of the press; on release, stop the sound and AddNote (one grid step)", () => {
     drag.down(x((25 * TPQ) / 8), y(50), NONE);
     expect(sent).toEqual([{ type: "audition", keys: [50], velocity: G.DRAW_VELOCITY }]);
     expect(drag.reading()).toBe("D3 ・ 1.4.0000 ・ 長さ 0.0480");
@@ -175,7 +175,7 @@ describe("書く道具", () => {
     ]);
   });
 
-  it("押したまま右へ動かすと長さがのびる。Esc では書かずに音を止める", () => {
+  it("moving right while pressed makes it longer. Esc stops the sound without drawing", () => {
     drag.down(x((25 * TPQ) / 8), y(50), NONE);
     drag.move(x((25 * TPQ) / 8) + 30, y(50), NONE);
     expect(drag.reading()).toBe("D3 ・ 1.4.0000 ・ 長さ 1.0000");
@@ -184,13 +184,13 @@ describe("書く道具", () => {
     expect(sent.some((c) => c.type === "addNote")).toBe(false);
   });
 
-  it("ノートの上では選ぶ道具と同じ", () => {
+  it("over a note, same as the select tool", () => {
     drag.down(x((5 * TPQ) / 24), y(60), NONE);
     expect(sent).toEqual([{ type: "selectNotes", take: 7, notes: [0], mode: "replace" }]);
     expect(drag.drag?.kind).toBe("move");
   });
 
-  it("スケール固定で音階の外の行は「できない」のカーソル。押すと書かずに Rust へ（状態行で言う）", () => {
+  it("with the scale locked, rows outside the scale get the 「できない」 cursor. Pressing goes to Rust without drawing (the status line says why)", () => {
     scale = { root: 0, mode: "major", lock: true };
     expect(drag.hover(x((25 * TPQ) / 8), y(61), NONE).cursor).toBe("not-allowed");
     expect(drag.hover(x((25 * TPQ) / 8), y(62), NONE).cursor).toBe("pencil");
@@ -200,10 +200,10 @@ describe("書く道具", () => {
   });
 });
 
-describe("消す道具", () => {
+describe("erase tool", () => {
   beforeEach(() => (tool = "erase"));
 
-  it("乗せている間は、消えるノートを知らせる。なぞると通ったノートをぜんぶ、離して 1 つの DeleteNotes", () => {
+  it("while over notes, shows the notes that will go. Dragging erases all notes passed; release sends one DeleteNotes", () => {
     expect(drag.hover(x((5 * TPQ) / 24), y(60), NONE)).toEqual({ cursor: "eraser", changed: true, shadowChanged: false });
     expect(drag.eraseHover).toBe(0);
     drag.down(x((5 * TPQ) / 24), y(60), NONE);
@@ -214,8 +214,8 @@ describe("消す道具", () => {
   });
 });
 
-describe("ベロシティの帯", () => {
-  it("棒の上はしを押したまま上下。選んだノートがあればぜんぶ、離して ChangeVelocity 1 つ", () => {
+describe("velocity band", () => {
+  it("press the top of a bar and move up and down. All selected notes if any; release sends one ChangeVelocity", () => {
     selected = [{ start: 0, end: 2 }];
     const top = 71 - (100 * 64) / 127;
     drag.downVelocity(x(TPQ), top);
@@ -225,7 +225,7 @@ describe("ベロシティの帯", () => {
     expect(drag.up()).toEqual({ type: "changeVelocity", take: 7, notes: [0, 1], delta: 12 });
   });
 
-  it("選んでいなければ押した 1 本だけ。上はしから離れた所では何もしない", () => {
+  it("with nothing selected, only the one pressed. Away from the top edge, nothing happens", () => {
     drag.downVelocity(x(TPQ), 71 - 10);
     expect(drag.drag).toBeNull();
     const top = 71 - (80 * 64) / 127;

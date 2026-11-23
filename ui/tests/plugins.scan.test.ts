@@ -1,4 +1,4 @@
-// 第 5 回 区切り1: スキャンの帯、ダイアログ「スキャンで止まったプラグイン」、プラグインの場所、状態行の文、ダイアログを動かす、Esc の順。
+// The scan band, the dialog 「スキャンで止まったプラグイン」, plugin locations, status line text, moving dialogs, the Esc order.
 import { flushSync, mount, unmount, type Component } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, Command } from "../src/bridge";
@@ -51,14 +51,14 @@ const click = (el: Element | null) => {
   flushSync();
 };
 
-describe("棚の下のスキャンの帯（R9-Scan）", () => {
-  it("6 章の文を、モックの 3 つの所に分ける", () => {
+describe("scan band below the shelf (R9-Scan)", () => {
+  it("splits the chapter 6 text into the mock's 3 places", () => {
     expect(scanStripText(37, 112)).toEqual({ label: "スキャン中", count: "37 / 112", note: "調べ終えた分から、もう使えます", done: 37 / 112 });
     expect(scanStripText(0, 0).done).toBe(0);
     expect(scanStripText(5, 3).done).toBe(1);
   });
 
-  it("スキャン中だけ、棚のいちばん下に出る。進みの棒は done / total", () => {
+  it("shown at the bottom of the shelf only while scanning. The progress bar is done / total", () => {
     show(Shelf, scene("scanning"));
     const strip = q('[data-test="scan-strip"]')!;
     expect(words(strip)).toBe("スキャン中 37 / 112 調べ終えた分から、もう使えます");
@@ -66,17 +66,17 @@ describe("棚の下のスキャンの帯（R9-Scan）", () => {
     expect(parseFloat(q('[data-test="scan-strip"] .fill')!.style.width)).toBeCloseTo((37 / 112) * 100, 3);
   });
 
-  it("終わったら、帯は出さない", () => {
+  it("when done, the band is not shown", () => {
     show(Shelf, scene("scanFinished"));
     expect(q('[data-test="scan-strip"]')).toBeNull();
   });
 });
 
-describe("状態行の文（6 章）", () => {
+describe("status line text (spec 6)", () => {
   const status = () => words(q(".status .message"));
   const link = () => q(".status .link");
 
-  it("スキャンが終わった ・ 止まった物があれば「止まった 4 個を見る」で一覧をひらく", () => {
+  it("scan done with stopped plugins: 「止まった 4 個を見る」 opens the list", () => {
     show(StatusLine, scene("scanFinished"));
     expect(status()).toBe(
       "スキャンが終わりました ・ 667 個を棚に入れました。4 個は調べている途中で止まったので、入れていません。meloet と曲は無事です。",
@@ -86,7 +86,7 @@ describe("状態行の文（6 章）", () => {
     expect(app.sent).toEqual([{ type: "openScanStopped" }]);
   });
 
-  it("スキャンが終わった ・ 止まった物が 0 なら前半だけ。ボタンはない", () => {
+  it("scan done with 0 stopped: only the first half. No button", () => {
     show(StatusLine, scene("scanFinishedNone"));
     expect(status()).toBe("スキャンが終わりました ・ 667 個を棚に入れました。");
     expect(link()).toBeNull();
@@ -106,14 +106,14 @@ describe("状態行の文（6 章）", () => {
     expect(status()).toBe(text);
   });
 
-  it("インサートのプラグインが止まったときは、そのストリップの名前", () => {
+  it("when an insert plugin stops, the name of that strip", () => {
     const s = scene("pluginStopped");
     s.status.message = { id: "pluginStopped", name: "Dragonfly", slot: { kind: "insert", insert: { strip: { kind: "master" }, slot: 0 } } };
     show(StatusLine, s);
     expect(status()).toContain(`Dragonfly が止まりました ・ ${t("mixer.master")}。`);
   });
 
-  it("ダイアログをひらいている間（85）: 音の設定、meloet について", () => {
+  it("while a dialog is open (85): sound settings, about meloet", () => {
     show(StatusLine, scene("settings"));
     expect(status()).toBe("音の設定をひらいています");
     unmount(mounted!);
@@ -127,11 +127,11 @@ describe("状態行の文（6 章）", () => {
   });
 });
 
-describe("ダイアログ「スキャンで止まったプラグイン」（F5-ScanStopped）", () => {
+describe("dialog 「スキャンで止まったプラグイン」 (F5-ScanStopped)", () => {
   const rows = () => qa('[data-test="scan-stopped-row"]');
   const retries = () => qa('[data-test="scan-stopped-retry"]');
 
-  it("見出し、上の文、行（名前 ・ 形式の印 ・ わけ ・ もう一度ためす、下に場所）、下の 2 つのボタン", () => {
+  it("heading, top text, rows (name, format mark, reason, try again, location below), the 2 buttons at the bottom", () => {
     show(ScanStoppedDialog, scene("scanStopped"));
     expect(words(q("[data-dialog-head]"))).toBe("スキャンで止まったプラグイン 閉じるEsc");
     expect(words(q(".intro"))).toBe(
@@ -146,7 +146,7 @@ describe("ダイアログ「スキャンで止まったプラグイン」（F5-S
     expect(qa(".foot button").map(words)).toEqual(["プラグインの場所…", "閉じる"]);
   });
 
-  it("もう一度ためす: 行の場所と id を送る。ためしている間は「ためしています…」で、もう送らない", () => {
+  it("try again: sends the row's location and id. While trying, 「ためしています…」 and nothing more is sent", () => {
     show(ScanStoppedDialog, scene("scanStoppedRetrying"));
     expect(retries().map(words)).toEqual(["もう一度ためす", "ためしています…", "もう一度ためす", "もう一度ためす"]);
     click(retries()[1]!);
@@ -154,13 +154,13 @@ describe("ダイアログ「スキャンで止まったプラグイン」（F5-S
     expect(app.sent).toEqual([{ type: "retryStoppedPlugin", path: "/home/yachiyo/.lv2/TapeWobble.lv2", id: null }]);
   });
 
-  it("入った行は消える（約束が送ってこない）", () => {
+  it("a row that got in goes away (the protocol stops sending it)", () => {
     show(ScanStoppedDialog, scene("scanRetryAdded"));
     expect(rows().map((r) => r.querySelector(".name")!.textContent)).toEqual(["Old Chorus", "Tape Wobble", "Brick EQ 1.0"]);
     expect(words(q(".intro"))).toContain("この 3 個は");
   });
 
-  it("閉じる（見出しと下の列）、プラグインの場所…", () => {
+  it("close (heading and bottom row), plugin locations…", () => {
     show(ScanStoppedDialog, scene("scanStopped"));
     click(q('[data-test="scan-stopped-close-head"]'));
     click(q('[data-test="scan-stopped-close"]'));
@@ -169,7 +169,7 @@ describe("ダイアログ「スキャンで止まったプラグイン」（F5-S
     expect(placesReveal.pending).toBe(true);
   });
 
-  it("行が多ければ、見出しと下の列は動かさず、中身だけスクロールする", () => {
+  it("with many rows, the heading and bottom row stay and only the middle scrolls", () => {
     show(ScanStoppedDialog, scene("scanStoppedMany"));
     const body = q('[data-test="scan-stopped-body"]')!;
     expect(body.contains(q(".intro"))).toBe(true);
@@ -179,16 +179,16 @@ describe("ダイアログ「スキャンで止まったプラグイン」（F5-S
     expect(body.contains(q(".foot"))).toBe(false);
   });
 
-  it("ひらいていなければ出さない", () => {
+  it("not shown when not open", () => {
     show(ScanStoppedDialog, scene("scanFinished"));
     expect(q('[data-test="scan-stopped-dialog"]')).toBeNull();
   });
 });
 
-describe("音の設定 ▸ くわしい設定 ▸ プラグインの場所（R9-Scan）", () => {
+describe("sound settings ▸ advanced settings ▸ plugin locations (R9-Scan)", () => {
   const rows = () => qa('[data-test="plugin-place"]');
 
-  it("くわしい設定の中に出る。見出しは ▾ と数。ふつうの場所は「ふつうの場所」、足した場所だけ「外す」", () => {
+  it("shown inside the advanced settings. The heading has ▾ and a count. Default places say 「ふつうの場所」, only added places have 「外す」", () => {
     show(SettingsDialog, scene("pluginPlaces"));
     expect(words(q('[data-test="plugin-places-head"]'))).toBe("▾ プラグインの場所 8");
     expect(rows().map(words)).toEqual([
@@ -206,7 +206,7 @@ describe("音の設定 ▸ くわしい設定 ▸ プラグインの場所（R9-
     expect(rows().some((r) => r.textContent!.includes("clap"))).toBe(false);
   });
 
-  it("外す ・ 場所を足す… ・ もう一度スキャン ・ 見出しでたたむ", () => {
+  it("remove, add a place…, scan again, fold by the heading", () => {
     show(SettingsDialog, scene("pluginPlaces"));
     click(qa('[data-test="plugin-place-remove"]')[1]!);
     click(q('[data-test="plugin-place-add"]'));
@@ -222,7 +222,7 @@ describe("音の設定 ▸ くわしい設定 ▸ プラグインの場所（R9-
     expect(words(q('[data-test="plugin-place-add"]'))).toBe("場所を足す…");
   });
 
-  it("たたんでいると、「プラグインの場所」の行の「ひらく…」だけ（モック F7-SettingsAdv）。押すと、ひらく", () => {
+  it("when folded, only 「ひらく…」 on the 「プラグインの場所」 row (mock F7-SettingsAdv). Pressing opens it", () => {
     show(SettingsDialog, scene("pluginPlacesFolded"));
     expect(q('[data-test="plugin-places-head"]')).toBeNull();
     expect(rows()).toHaveLength(0);
@@ -231,12 +231,12 @@ describe("音の設定 ▸ くわしい設定 ▸ プラグインの場所（R9-
     expect(app.sent).toEqual([{ type: "togglePluginPlaces" }]);
   });
 
-  it("くわしい設定をひらいていなければ出さない", () => {
+  it("not shown when the advanced settings are not open", () => {
     show(SettingsDialog, scene("settings"));
     expect(q('[data-test="plugin-places"]')).toBeNull();
   });
 
-  it("止まった物のダイアログからひらいたときだけ、見える所へ送る", () => {
+  it("scrolled into view only when opened from the stopped-plugins dialog", () => {
     const into = vi.fn();
     HTMLElement.prototype.scrollIntoView = into;
     vi.spyOn(window, "requestAnimationFrame").mockImplementation((f) => (f(0), 0));
@@ -250,8 +250,8 @@ describe("音の設定 ▸ くわしい設定 ▸ プラグインの場所（R9-
   });
 });
 
-describe("ダイアログを動かす（82）: meloet について", () => {
-  it("見出しの行で動き、窓の外へは出ず、ひらきなおすとまん中。ドラッグ中の Esc は動かす前へ戻すだけ", () => {
+describe("moving dialogs (82): about meloet", () => {
+  it("moves by the heading row, never outside the window, back to the middle when opened again. Esc while dragging only puts it back", () => {
     vi.spyOn(window, "innerWidth", "get").mockReturnValue(1024);
     vi.spyOn(window, "innerHeight", "get").mockReturnValue(768);
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
@@ -293,7 +293,7 @@ describe("ダイアログを動かす（82）: meloet について", () => {
   });
 });
 
-it("どのダイアログも、見出しの行は「動かす」の指で、乗ると地 gray.4", () => {
+it("every dialog's heading row has the move pointer, and bg gray.4 on hover", () => {
   const sources = import.meta.glob<string>(["../src/components/**/*Dialog.svelte"], { query: "?raw", import: "default", eager: true });
   const files = Object.keys(sources).sort();
   expect(files).toEqual([
@@ -311,7 +311,7 @@ it("どのダイアログも、見出しの行は「動かす」の指で、乗�
     expect(/\.head \{[^}]*cursor: move;[^}]*\}/.exec(css), f).not.toBeNull();
     expect(/\.head:hover \{\s*background: var\(--color-gray-4\);\s*\}/.exec(css), f).not.toBeNull();
   }
-  // どのダイアログも、窓の上下のまん中（上と下に同じのびる箱）。
+  // Every dialog is in the vertical middle of the window (boxes that grow the same above and below).
   for (const f of files) {
     const css = sources[f]!;
     expect(css.match(/<div class="lead"><\/div>/g), f).toHaveLength(2);
@@ -319,7 +319,7 @@ it("どのダイアログも、見出しの行は「動かす」の指で、乗�
   }
 });
 
-describe("Esc の順（3 章）: 文字を打っている枠 → 用語の説明やメニュー → ダイアログ → 棚 → 下の帯", () => {
+describe("Esc order (spec 3): box being typed in -> term tip or menu -> dialog -> shelf -> lower band", () => {
   function esc(s: AppState, input?: HTMLElement): Command[] {
     const sent: Command[] = [];
     handleKeydown(new KeyboardEvent("keydown", { key: "Escape", cancelable: true }), {
@@ -331,14 +331,14 @@ describe("Esc の順（3 章）: 文字を打っている枠 → 用語の説明
     return sent;
   }
 
-  it("止まった物のダイアログは、ためし弾き中の棚より先に閉じる（back）", () => {
+  it("the stopped-plugins dialog closes before a shelf in try-out (back)", () => {
     const s = scene("shelfAudition");
     expect(esc(s)).toEqual([{ type: "shelfCancel" }]);
     s.plugins.stoppedOpen = true;
     expect(esc(s)).toEqual([{ type: "back" }]);
   });
 
-  it("止まった物のダイアログの Enter は、右はしの「閉じる」", () => {
+  it("Enter in the stopped-plugins dialog is 「閉じる」 at the right end", () => {
     const sent: Command[] = [];
     const s = scene("scanStopped");
     s.workspace.settings = { draftOutput: null, advancedOpen: false };
@@ -348,7 +348,7 @@ describe("Esc の順（3 章）: 文字を打っている枠 → 用語の説明
     expect(ev.defaultPrevented).toBe(true);
   });
 
-  it("文字を打っている枠が先（枠から出るだけ）", () => {
+  it("the box being typed in goes first (only leaves the box)", () => {
     const s = scene("scanStopped");
     const input = document.createElement("input");
     document.body.append(input);
@@ -357,7 +357,7 @@ describe("Esc の順（3 章）: 文字を打っている枠 → 用語の説明
     expect(document.activeElement).not.toBe(input);
   });
 
-  it("meloet について（画面だけのダイアログ）は、core のダイアログより先", () => {
+  it("about meloet (a screen-only dialog) goes before core dialogs", () => {
     const s = scene("scanStopped");
     openAbout();
     expect(esc(s)).toEqual([]);
@@ -365,7 +365,7 @@ describe("Esc の順（3 章）: 文字を打っている枠 → 用語の説明
     expect(esc(s)).toEqual([{ type: "back" }]);
   });
 
-  it("止まった物のダイアログをひらいている間は、棚のキーは効かず、「meloet について」もひらかない", () => {
+  it("while the stopped-plugins dialog is open, shelf keys do not work and 「meloet について」 does not open", () => {
     const s = scene("shelfAudition");
     shelfUi.keys = true;
     expect(shelfHasKeys(s)).toBe(true);
@@ -373,7 +373,7 @@ describe("Esc の順（3 章）: 文字を打っている枠 → 用語の説明
     expect(shelfHasKeys(s)).toBe(false);
   });
 
-  it("偽物: back で止まった物のダイアログ → 音の設定 → 帯の順に閉じる", async () => {
+  it("fake: back closes the stopped-plugins dialog -> sound settings -> band, in that order", async () => {
     const { createFakeTransport } = await import("../src/bridge/fake");
     const start = scene("scanStopped");
     start.workspace.settings = { draftOutput: null, advancedOpen: true };

@@ -1,4 +1,4 @@
-// 入力計、出口えらび、音の設定、「音が出ました」を mount して確かめる。
+// Mounts and checks the input meter, the output chooser, sound settings and「音が出ました」.
 import { flushSync, mount, unmount, type Component } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, EndpointView } from "../src/bridge";
@@ -60,8 +60,8 @@ const OUTPUTS: EndpointView[] = [
   endpoint({ id: "hdmi", name: "HDMI / DisplayPort 2", friendly: "hdmi", link: "plug", unusable: "stoppedByPc", device: "GB206 High Definition Audio Controller" }),
 ];
 
-describe("入力計", () => {
-  it("鍵盤がなく、抜けた鍵盤もない: 「鍵盤なし」と、つなぐ案内。読み値は出さない", () => {
+describe("input meter", () => {
+  it("no keyboard and none unplugged:「鍵盤なし」and the hint to connect. No reading", () => {
     show(InputMeter, app.stateWith(() => {}));
     expect(text('[data-test="keyboard-name"]')).toBe("鍵盤なし");
     expect(text('[data-test="meter-right"]')).toBe(t("msg.keyboardMissing"));
@@ -69,14 +69,14 @@ describe("入力計", () => {
     expect(q('[data-gl-slot="keyboard"]')).not.toBeNull();
   });
 
-  it("鍵盤がなく、抜けた鍵盤がある: つながりが切れた文", () => {
+  it("no keyboard, one unplugged: the text for a lost connection", () => {
     show(InputMeter, app.stateWith((s) => (s.keyboards.lost = "Keystation 49 MK3")));
     expect(text('[data-test="meter-right"]')).toBe(
       "Keystation 49 MK3 とのつながりが切れました。曲はそのままです。さしなおすと、自動で戻ります。",
     );
   });
 
-  it("鍵盤からの入力が止まった: 鍵盤が抜けたときと同じ出しかたで、止まった文", () => {
+  it("input from the keyboard stopped: shown the same way as an unplugged keyboard, with the stopped text", () => {
     show(
       InputMeter,
       app.stateWith((s) => (s.keyboards = { ...s.keyboards, list: [KEYBOARD], active: "kb", lost: null, inputStopped: true })),
@@ -86,7 +86,7 @@ describe("入力計", () => {
     expect(q('[data-test="held"]')).toBeNull();
   });
 
-  it("鍵盤があり、出口がまだ: accent の「音の出口がまだです…」", () => {
+  it("keyboard there, no output yet: accent「音の出口がまだです…」", () => {
     show(
       InputMeter,
       app.stateWith((s) => {
@@ -96,11 +96,11 @@ describe("入力計", () => {
     expect(text('[data-test="keyboard-name"]')).toBe("鍵盤 49");
     const right = q('[data-test="meter-right"]')!;
     expect(right.textContent).toBe("音の出口がまだです。下でえらんでください");
-    // 2 文目は、横が足りないときに引っこめる（仕様書 1 章「拡大率の決まり」）。
+    // The second sentence hides when there is not enough width (spec 1, Rules for the scale).
     expect([...right.querySelectorAll(".accent")].map((x) => x.textContent)).toEqual(["音の出口がまだです。", "下でえらんでください"]);
   });
 
-  it("出口がある: 弾くと鳴る先「1 ピアノ ・ グランドピアノ」", () => {
+  it("output there: the play target「1 ピアノ ・ グランドピアノ」", () => {
     show(
       InputMeter,
       app.stateWith((s) => {
@@ -109,11 +109,11 @@ describe("入力計", () => {
       }),
     );
     expect(text('[data-test="meter-right"]')).toBe("弾くと鳴る先 1 ピアノ ・ グランドピアノ");
-    // 横が足りないときは、音源の部分だけ引っこめる（仕様書 1 章「拡大率の決まり」）。
+    // With not enough width, only the instrument part hides (spec 1, Rules for the scale).
     expect(text('[data-test="meter-right"] [data-part="target-instrument"]')).toBe("・ グランドピアノ");
   });
 
-  it("細いとき: 弾くと鳴る先は「1 ピアノ」だけで、音源の名前は出さない（モック A-PianoRoll・F-History）", () => {
+  it("slim: the play target is only「1 ピアノ」, without the instrument name (mock A-PianoRoll, F-History)", () => {
     show(
       InputMeter,
       app.stateWith((s) => {
@@ -125,7 +125,7 @@ describe("入力計", () => {
     expect(text('[data-test="meter-right"]')).toBe("弾くと鳴る先 1 ピアノ");
   });
 
-  it("押している音: 計器の鍵を低い順に。鍵の on/off は計器を待たずに変わる", () => {
+  it("held notes: the meter's keys from low to high. Key on/off changes without waiting for the meter", () => {
     show(
       InputMeter,
       app.stateWith((s) => {
@@ -148,7 +148,7 @@ describe("入力計", () => {
     expect(text('[data-test="held"]')).toBe("E4 G4 C5");
   });
 
-  it("サステインは 64 から ON。細いときは ON ・ OFF だけ", () => {
+  it("sustain is ON from 64. Slim shows only ON, OFF", () => {
     show(
       InputMeter,
       app.stateWith((s) => {
@@ -166,7 +166,7 @@ describe("入力計", () => {
     expect(q('[data-gl-slot="velocity"]')).toBeNull();
   });
 
-  it("鍵盤が 2 台: 名前は最後に弾いた鍵盤、うしろに「+1」", () => {
+  it("two keyboards: the name is the last played keyboard, followed by「+1」", () => {
     const second = { ...KEYBOARD, id: "kb2", name: "microKEY2-37", address: "25:0" };
     show(
       InputMeter,
@@ -187,7 +187,7 @@ describe("入力計", () => {
     expect(q('[data-test="other-keyboards"]')).toBeNull();
   });
 
-  it("太いとき: 名前が 8 文字までは名前の欄 108、こえたら 148", () => {
+  it("full: name field 108 up to 8 letters, 148 above", () => {
     const long = { ...KEYBOARD, name: "Keystation 49 MK3" };
     show(
       InputMeter,
@@ -206,7 +206,7 @@ describe("入力計", () => {
   });
 });
 
-describe("出口えらび", () => {
+describe("output chooser", () => {
   const withChooser = () =>
     app.stateWith((s) => {
       s.keyboards = { ...s.keyboards, list: [KEYBOARD], active: "kb", lost: null, inputStopped: false };
@@ -214,12 +214,12 @@ describe("出口えらび", () => {
       s.workspace.chooser = { highlighted: "hp" };
     });
 
-  it("chooser がなければ出さない", () => {
+  it("not shown without chooser", () => {
     show(OutputChooser, app.stateWith(() => {}));
     expect(q('[data-test="output-chooser"]')).toBeNull();
   });
 
-  it("見出しと、行ごとの中身", () => {
+  it("heading and the content of each row", () => {
     show(OutputChooser, withChooser());
     expect(target.textContent).toContain("音をどこから鳴らしますか");
     expect(target.textContent).toContain("あとから「音の設定」で変えられます");
@@ -236,7 +236,7 @@ describe("出口えらび", () => {
     expect(text(".help")).toBe("↑ ↓ でえらぶ ・ ▶ でテスト音。何かささっている出口を、上にならべています");
   });
 
-  it("えらべない出口は「いまは使えない出口」の下に、たたんで始める。ひらくと理由の文。押せない", () => {
+  it("outputs that cannot be chosen start folded under「いまは使えない出口」. Opening shows the reason. Cannot be pressed", () => {
     show(OutputChooser, withChooser());
     const head = q<HTMLButtonElement>('[data-test="unusable-head"]')!;
     expect(head.textContent!.replace(/\s+/g, " ").trim()).toBe(
@@ -256,7 +256,7 @@ describe("出口えらび", () => {
     expect(q('[data-test="chooser-list"]')!.contains(head)).toBe(true);
   });
 
-  it("問いかけの行と「ここから鳴らす」の行はスクロールの外", () => {
+  it("the question row and the「ここから鳴らす」row are outside the scroll", () => {
     show(OutputChooser, withChooser());
     const list = q('[data-test="chooser-list"]')!;
     expect(list.contains(q('[data-test="play-here"]'))).toBe(false);
@@ -264,7 +264,7 @@ describe("出口えらび", () => {
     expect(qa('[data-test="endpoint-row"]').every((r) => list.contains(r))).toBe(true);
   });
 
-  it("同じ名前の出口がならぶときは、言いかえのかわりに装置の名前をそえる", () => {
+  it("when outputs with the same name line up, add the device name in place of the friendly name", () => {
     show(
       OutputChooser,
       app.stateWith((s) => {
@@ -280,7 +280,7 @@ describe("出口えらび", () => {
     expect(side).toEqual(["GB206 High Definition Audio Controller", "Radeon High Definition Audio Controller", "ヘッドホンの穴"]);
   });
 
-  it("行 → chooserSelect、▶ → testTone、ここから鳴らす → chooserConfirm", () => {
+  it("row → chooserSelect, ▶ → testTone, 「ここから鳴らす」 → chooserConfirm", () => {
     show(OutputChooser, withChooser());
     const rows = qa('[data-test="endpoint-row"]');
     rows[3]!.querySelector<HTMLButtonElement>(".pick")!.click();
@@ -294,7 +294,7 @@ describe("出口えらび", () => {
   });
 });
 
-describe("音の設定", () => {
+describe("sound settings", () => {
   const withSettings = (advancedOpen: boolean) =>
     app.stateWith((s) => {
       s.keyboards = { ...s.keyboards, list: [{ ...KEYBOARD, name: "Keystation 49 MK3" }], active: "kb", lost: null, inputStopped: false };
@@ -316,12 +316,12 @@ describe("音の設定", () => {
       s.status.message = { id: "bufferFixed", actual: 1024, requested: 256, latencyMs: 53.33, latencyMsAtRequested: 13.33 };
     });
 
-  it("settings がなければ出さない", () => {
+  it("not shown without settings", () => {
     show(SettingsDialog, app.stateWith(() => {}));
     expect(q('[data-test="settings-dialog"]')).toBeNull();
   });
 
-  it("ボタンが送るコマンド", () => {
+  it("commands the buttons send", () => {
     show(SettingsDialog, withSettings(false));
     q<HTMLButtonElement>('[data-test="settings-cancel"]')!.click();
     q<HTMLButtonElement>('[data-test="settings-apply"]')!.click();
@@ -339,10 +339,10 @@ describe("音の設定", () => {
     ]);
   });
 
-  it("おもて: えらべない出口は見出しの下（右は「meloet は…」）。歌の入口は全部使えない。遅れは約 53 ms", () => {
+  it("front: outputs that cannot be chosen under the heading (right is「meloet は…」). All vocal inputs disabled. Latency about 53 ms", () => {
     show(SettingsDialog, withSettings(false));
     const rows = qa('[data-test="endpoint-row"]');
-    // 出口 4、歌の入口は「使わない」だけ、鍵盤 1
+    // 4 outputs, vocal input only「使わない」, 1 keyboard
     expect(rows).toHaveLength(6);
     expect(rows.map((r) => r.dataset.disabled)).toEqual(["false", "false", "false", "false", "true", "false"]);
     expect(text('[data-test="unusable-head"]')).toBe("▸ いまは使えない出口 2 meloet は、PC 全体の設定を変えません");
@@ -355,7 +355,7 @@ describe("音の設定", () => {
     expect(q('[data-gl-slot="keyboard"]')).not.toBeNull();
   });
 
-  it("えらべない入口は「いまは使えない入口」の下に、たたんで始める。右の文はない。ひらくと理由の文と装置の名前", () => {
+  it("inputs that cannot be chosen start folded under「いまは使えない入口」. No text on the right. Opening shows the reason and the device name", () => {
     const state = withSettings(false);
     state.inputs.list = [
       endpoint({ id: "mic", name: "リアマイクロフォン", friendly: "rearMic" }),
@@ -364,7 +364,7 @@ describe("音の設定", () => {
     ];
     show(SettingsDialog, state);
     const rows = qa('[data-test="endpoint-row"]');
-    // 出口 4、歌の入口はリアマイクロフォンと「使わない」、鍵盤 1
+    // 4 outputs, vocal inputs 「リアマイクロフォン」 and「使わない」, 1 keyboard
     expect(rows).toHaveLength(7);
     expect(rows[4]!.textContent).toContain("うしろのマイクの穴");
     expect(rows[4]!.dataset.disabled).toBe("true");
@@ -381,7 +381,7 @@ describe("音の設定", () => {
     ]);
   });
 
-  it("ささっている入口を PC がえらんでいない（ほかの入口もささっている）ときは、「さすと…」ではなく PC の設定でえらぶ文", () => {
+  it("when the PC has not chosen a plugged-in input (other inputs are plugged in too), show the text to choose it in PC settings instead of「さすと…」", () => {
     const state = withSettings(false);
     state.inputs.list = [
       endpoint({ id: "front", name: "フロントマイクロフォン" }),
@@ -395,7 +395,7 @@ describe("音の設定", () => {
     ]);
   });
 
-  it("くわしい設定（F7-SettingsAdv）: 見出しは「音の設定」、2 段目は「◂ 音の設定 くわしい設定」。出口 ・ 鍵盤の行と「音のしくみ」はない", () => {
+  it("advanced settings (F7-SettingsAdv): the heading is「音の設定」, the second page is「◂ 音の設定 くわしい設定」. No output or keyboard rows and no「音のしくみ」", () => {
     show(SettingsDialog, withSettings(true));
     expect(text(".head .title")).toBe("音の設定");
     expect(text('[data-test="settings-advanced"]')).toBe("◂ 音の設定");
@@ -405,7 +405,7 @@ describe("音の設定", () => {
     expect(qa(".adv-body .row .name").map((n) => n.textContent!.trim())).toEqual(["入口", "バッファ", "サンプルレート", "録る形", "遅れの合わせ", "音の素材", "プラグインの場所", "AI とつなぐ"]);
   });
 
-  it("くわしい設定: 頼む数の右に動いている数。ちがえば下に「頼んだ 256 ではなく、1024 で動いています…」。固定の囲みは出さない", () => {
+  it("advanced settings: the running number to the right of the asked number. If different,「頼んだ 256 ではなく、1024 で動いています…」below. The fixed box is not shown", () => {
     show(SettingsDialog, withSettings(true));
     expect(text('[data-test="settings-buffer"]')).toBe("256▾");
     expect(text('[data-test="buffer-actual"]')).toBe("動いている 1024 ・ 21 ms");
@@ -417,7 +417,7 @@ describe("音の設定", () => {
     expect(q('[data-test="buffer-fixed"]')).toBeNull();
   });
 
-  it("くわしい設定: ▾ は一覧をひらき、行は意図を送る。遅れを測る… ・ ◂ ・ 閉じる", () => {
+  it("advanced settings: ▾ opens the list, rows send intents.「遅れを測る…」, ◂, 「閉じる」", () => {
     show(SettingsDialog, withSettings(true));
     q<HTMLButtonElement>('[data-test="settings-buffer"]')!.click();
     const rows = (contextMenu.open?.entries ?? []).filter((e): e is MenuRow => e.kind === "row");
@@ -449,7 +449,7 @@ describe("音の設定", () => {
     ]);
   });
 
-  describe("「手で決める…」（仕様書 3 章 94-19）", () => {
+  describe("「手で決める…」(spec 3 94-19)", () => {
     const typeLatency = (value: string, key: string) => {
       q<HTMLButtonElement>('[data-test="settings-manual"]')!.click();
       flushSync();
@@ -461,7 +461,7 @@ describe("音の設定", () => {
       flushSync();
     };
 
-    it("押すと、行の数がその場で「8.0」と「ms」の枠になる。Enter で決める", () => {
+    it("pressing it turns the row's number into「8.0」and「ms」boxes in place. Enter decides", () => {
       show(SettingsDialog, withSettings(true));
       expect(q<HTMLButtonElement>('[data-test="settings-manual"]')!.disabled).toBe(false);
       q<HTMLButtonElement>('[data-test="settings-manual"]')!.click();
@@ -478,7 +478,7 @@ describe("音の設定", () => {
       expect(q('[data-test="latency-used"]')).not.toBeNull();
     });
 
-    it("Esc でやめる（送らない）。読めない字は送らない。空なら手で決めた数をやめる", () => {
+    it("Esc cancels (sends nothing). Text that cannot be read is not sent. Empty drops the number set by hand", () => {
       show(SettingsDialog, withSettings(true));
       typeLatency("20", "Escape");
       typeLatency("abc", "Enter");
@@ -492,7 +492,7 @@ describe("音の設定", () => {
   });
 });
 
-describe("音の設定: 中身が長いとき（出口 9 行）", () => {
+describe("sound settings: with long content (9 output rows)", () => {
   const many = (advancedOpen: boolean) =>
     app.stateWith((s) => {
       s.keyboards = { ...s.keyboards, list: [{ ...KEYBOARD, name: "Keystation 49 MK3" }], active: "kb", lost: null, inputStopped: false };
@@ -503,7 +503,7 @@ describe("音の設定: 中身が長いとき（出口 9 行）", () => {
       s.workspace.settings = { draftOutput: "hp", advancedOpen };
     });
 
-  it.each([false, true])("見出しと下の列はスクロールの外。中身と WebGL の slot はスクロールの中（奥: %s）", (advanced) => {
+  it.each([false, true])("the heading and the bottom row are outside the scroll. The content and the WebGL slot are inside the scroll (deep part: %s)", (advanced) => {
     show(SettingsDialog, many(advanced));
     const dialog = q('[data-test="settings-dialog"]')!;
     const body = q('[data-test="settings-body"]')!;
@@ -528,8 +528,8 @@ describe("音の設定: 中身が長いとき（出口 9 行）", () => {
   });
 });
 
-describe("音が出ました", () => {
-  it("hint が soundCameOut のときだけ出す。録音ボタンが使えない今は 1 文目だけ", () => {
+describe("「音が出ました」", () => {
+  it("shown only when hint is soundCameOut. With the record button disabled for now, only the first sentence", () => {
     show(SoundHint, app.stateWith((s) => (s.workspace.hint = "emptyArrange")));
     expect(q('[data-test="sound-hint"]')).toBeNull();
     app.setState(app.stateWith((s) => (s.workspace.hint = "soundCameOut")));
@@ -538,8 +538,8 @@ describe("音が出ました", () => {
   });
 });
 
-describe("状態行", () => {
-  it("鍵盤がない: 「入口: まだ」。音が動いていない（actualFrames が null）ので、バッファは出さない", () => {
+describe("status line", () => {
+  it("no keyboard:「入口: まだ」. Sound is not running (actualFrames is null), so no buffer", () => {
     show(StatusLine, app.stateWith(() => {}));
     const s = text("footer.status")!;
     expect(s).toContain("入口: まだ");
@@ -580,7 +580,7 @@ describe("状態行", () => {
     if (message.id === "keyboardInputStopped") expect(text("footer.status")).toContain("入口: まだ");
   });
 
-  it("鍵盤があり、音が動いている: 入口は鍵盤の名前、バッファは動いている数", () => {
+  it("keyboard there, sound running: the input is the keyboard name, the buffer is the running number", () => {
     show(
       StatusLine,
       app.stateWith((s) => {

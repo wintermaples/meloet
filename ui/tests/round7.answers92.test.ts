@@ -1,4 +1,4 @@
-// 第 7 回 区切り0 の 0-2: 仕様書 第 11 版の 92 の答え（3 章「第 10 版で足した決まり」「オーナーさんがえらんだ形」、モック F7-Answers92 ・ R11-Answers92）。
+// The answers to 92 in spec version 11 (spec 3 (Rules added in version 10, What the owner chose), mock F7-Answers92, R11-Answers92).
 import { flushSync, mount, unmount, type Component } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, LanePoints } from "../src/bridge";
@@ -39,36 +39,36 @@ const points = (id: number, list: [number, number][]): LanePoints => ({
   values: Float32Array.from(list.map((p) => p[1])),
 });
 
-describe("帯の縦（仕様書 3 章 92-6 ・ 21-B）", () => {
+describe("band height (spec 3 92-6, 21-B)", () => {
   const pt = (value: number) => ({ tick: 0, value });
-  it("点のいちばん下からいちばん上まで、上下に 1 割のゆとり", () => {
+  it("from the lowest point to the highest, with 10 % room above and below", () => {
     const r = A.laneRange([pt(0.5), pt(0.7), pt(0.6)], false);
     expect(r.lo).toBeCloseTo(0.48);
     expect(r.hi).toBeCloseTo(0.72);
   });
-  it("点が 1 つか、どれも同じ値なら、その値のまわりにパラメータの幅の 1 割。はみ出す分は反対へずらす", () => {
+  it("with one point, or all at the same value, 10 % of the parameter width around that value. What sticks out moves to the other side", () => {
     const one = A.laneRange([pt(0.5)], false);
     expect([one.lo, one.hi].map((v) => +v.toFixed(3))).toEqual([0.45, 0.55]);
     const same = A.laneRange([pt(0.98), pt(0.98)], false);
     expect([same.lo, same.hi].map((v) => +v.toFixed(3))).toEqual([0.9, 1]);
   });
-  it("オン ・ オフとミュート（階段の帯）は、いつも下〜上。点がない帯も", () => {
+  it("on/off and mute (step bands) are always bottom to top. Bands with no points too", () => {
     expect(A.laneRange([pt(0.2), pt(0.3)], true)).toBe(A.FULL_RANGE);
     expect(A.laneRange([], false)).toBe(A.FULL_RANGE);
   });
-  it("範囲の下が帯の下、上が帯の上。範囲の外は帯のはしで止まる。上下の動きは範囲の幅で", () => {
+  it("the range bottom is the band bottom, the top the band top. Outside the range stops at the band edge. Up and down movement is by the range width", () => {
     const d: A.LaneDims = { h: 48, pad: 4, hair: 1, point: 6, range: { lo: 0.4, hi: 0.6 } };
     expect([A.valueToY(d, 0.6), A.valueToY(d, 0.4), A.valueToY(d, 0.9), A.valueToY(d, 0.1)]).toEqual([4, 43, 4, 43]);
     expect(A.yToValue(d, A.valueToY(d, 0.5))).toBeCloseTo(0.5, 2);
     expect(A.dyToValue(d, -39)).toBeCloseTo(0.2);
   });
-  it("右上と右下の字は、点のいちばん上と下（点が 1 つなら範囲のはし）", () => {
+  it("the text at top right and bottom right is the highest and lowest point (the range ends with one point)", () => {
     expect(A.rangeEnds([pt(0.5), pt(0.7)], { lo: 0.48, hi: 0.72 })).toEqual({ lo: 0.5, hi: 0.7 });
     expect(A.rangeEnds([pt(0.5)], { lo: 0.45, hi: 0.55 })).toEqual({ lo: 0.45, hi: 0.55 });
   });
 });
 
-// ---- 部品 ----
+// ---- parts ----
 
 let mounted: Record<string, unknown> | null = null;
 let target: HTMLElement;
@@ -113,8 +113,8 @@ const settle = async () => {
   flushSync();
 };
 
-describe("F7-Answers92: 帯の縦の字と「＋ 帯を足す ▾」", () => {
-  it("音量が −9.0〜−3.0 dB だけ動く帯は、右上に「上 −3.0 dB」、右下に「下 −9.0 dB」", async () => {
+describe("F7-Answers92: the band height text and「＋ 帯を足す ▾」", () => {
+  it("a band where gain moves only between −9.0 and −3.0 dB shows「上 −3.0 dB」at top right and「下 −9.0 dB」at bottom right", async () => {
     POINTS.set(520, points(520, [[0, 0.64], [4 * BAR, 0.64], [5 * BAR, 0.7], [6 * BAR + 2 * TPQ, 0.66], [8 * BAR, 0.5]]));
     show(Arrange, scene("laneScale"));
     await settle();
@@ -124,8 +124,8 @@ describe("F7-Answers92: 帯の縦の字と「＋ 帯を足す ▾」", () => {
   });
 });
 
-describe("書いている間の線（F6-AutoRec。core は離したときに 1 手、画面が手の値から枠の中を描く）", () => {
-  it("手の値をためて rec の枠の中に描き、core の手（新しい laneId）の点が届いたら捨てる", async () => {
+describe("the line while writing (F6-AutoRec. The core makes 1 step on release; the screen draws inside the border from the step's values)", () => {
+  it("keeps the step values and draws them inside the rec border, and drops them when the points of the core's step (new laneId) arrive", async () => {
     POINTS.set(501, points(501, [[0, 0.8], [4 * BAR, 0.64], [7 * BAR, 0.64], [8 * BAR + TPQ, 0.72], [12 * BAR, 0.6]]));
     const state = scene("autoRec");
     const piano = state.song.tracks[0]!;
@@ -134,7 +134,7 @@ describe("書いている間の線（F6-AutoRec。core は離したときに 1 �
     await settle();
     expect(q("[data-test=auto-write-line]")).toBeNull();
 
-    // フェーダーを動かした（ミキサーの「音だけ変える」意図）。
+    // Moved the fader (the mixer's preview intent).
     noteHand({ type: "setGain", strip: { kind: "track", id: piano.id }, db: -8.4, commit: false });
     expect(handAt(piano.id, { kind: "volume" })).toBeCloseTo(0.52);
     tick = from + TPQ;
@@ -148,12 +148,12 @@ describe("書いている間の線（F6-AutoRec。core は離したときに 1 �
     const line = q("[data-test=auto-write-line]");
     expect(line).not.toBeNull();
     const rects = rectsOf(line);
-    // 枠の中の帯の線をかくす地と、線（gray.9）と点（gray.10）。
+    // The background that hides the band line inside the border, the line (gray.9) and the points (gray.10).
     expect(rects[0]!.color).toBe("color.gray.2");
     expect(rects.some((r) => r.color === "color.gray.9")).toBe(true);
     expect(rects.some((r) => r.color === "color.gray.10" && r.w === r.h)).toBe(true);
 
-    // 離した: core の手で帯が新しい laneId になり、書いている帯がなくなる。点が届くまでは残す。
+    // Released: the core's step gives the band a new laneId and the writing band goes. Kept until the points arrive.
     app.setState({
       ...state,
       automation: { ...state.automation, writing: [], armed: [] },
@@ -166,7 +166,7 @@ describe("書いている間の線（F6-AutoRec。core は離したときに 1 �
     expect(q("[data-test=auto-write-line]")).toBeNull();
   });
 
-  it("やめた（同じ laneId のまま書きおわった）ら、すぐ捨てる", async () => {
+  it("cancelled (finished writing with the same laneId): dropped at once", async () => {
     POINTS.set(501, points(501, [[0, 0.8], [12 * BAR, 0.6]]));
     const state = scene("autoRec");
     const piano = state.song.tracks[0]!;
@@ -183,7 +183,7 @@ describe("書いている間の線（F6-AutoRec。core は離したときに 1 �
   });
 });
 
-describe("履歴の帯の見出し（仕様書 6 章 ・ 3 章 92-9、R11-Answers92）", () => {
+describe("history band heading (spec 6, spec 3 92-9, R11-Answers92)", () => {
   it.each([
     ["historyLatest", "14 手 ・ いまは 14 手目（いちばん新しい手）"],
     ["historyAllUndone", "14 手 ・ ぜんぶ取り消してあります ・ やりなおすには Ctrl Shift Z"],
@@ -193,7 +193,7 @@ describe("履歴の帯の見出し（仕様書 6 章 ・ 3 章 92-9、R11-Answer
     show(HistoryHead, scene(name));
     expect(text(q("[data-test=history-head]"))).toBe(head);
   });
-  it("やりなおす手がないときの Mod Shift Z は「やりなおせる手がありません。」", () => {
+  it("Mod Shift Z with no redo step gives「やりなおせる手がありません。」", () => {
     const s = scene("historyLatest");
     s.status.message = { id: "nothingToRedo" };
     show(StatusLine, s);
@@ -201,8 +201,8 @@ describe("履歴の帯の見出し（仕様書 6 章 ・ 3 章 92-9、R11-Answer
   });
 });
 
-describe("曲の頭のテンポ ・ 拍子（仕様書 3 章 92-2）", () => {
-  it("曲の頭の点と旗は「変更」と呼ばない", () => {
+describe("tempo and time signature at the song start (spec 3 92-2)", () => {
+  it("the point and flag at the song start are not called「変更」", () => {
     const s = scene("tempo");
     s.status.message = { id: "tempoPointSelected", bar: 1, beat: 1, tempoBpm: 96 };
     show(StatusLine, s);
@@ -220,14 +220,14 @@ describe("曲の頭のテンポ ・ 拍子（仕様書 3 章 92-2）", () => {
   });
 });
 
-describe("拍子の旗の右クリック（仕様書 3 章 92-17、R11-Answers92）", () => {
+describe("right click on a time signature flag (spec 3 92-17, R11-Answers92)", () => {
   const view = { pxPerTick: 64 / BAR, scrollX: 0, width: 1000 };
   function band(): void {
     const s = scene("tempo");
     show(TempoBand, s, { view, map: mapOf(s.timeline), timeline: s.timeline, now: 0, busy: false });
   }
   const labels = () => contextMenu.open!.entries.map((e) => (e.kind === "row" ? e.label : "—"));
-  it("「拍子を打ちこむ…」「消す Delete」。曲の頭の旗には「消す」がない", () => {
+  it("「拍子を打ちこむ…」「消す Delete」. The flag at the song start has no「消す」", () => {
     band();
     const flags = qa("[data-test=meter-flag]");
     flags[1]!.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
@@ -243,9 +243,9 @@ describe("拍子の旗の右クリック（仕様書 3 章 92-17、R11-Answers92
   });
 });
 
-describe("ピアノロールの目盛のマーカー（R11-Answers92）", () => {
-  it("名前は拍の数字の上に重ね、名前がかかる拍の数字は出さない（小節の頭の数字にかかるときも）", () => {
-    // モックの「いま」: 32 px ごとの拍の数字、6.1 の所に「サビ」（幅 40）。6.1 と 6.2 が消える。
+describe("markers on the piano roll ruler (R11-Answers92)", () => {
+  it("the name is laid over the beat numbers, and beat numbers the name covers are hidden (bar start numbers too)", () => {
+    // The mock's「いま」: beat numbers every 32 px,「サビ」(width 40) at 6.1. 6.1 and 6.2 go.
     const labels = ["5.4", "6.1", "6.2", "6.3"].map((text, i) => ({ tick: i, x: 99 + 32 * i, text }));
     const widths = { 0: 22, 1: 22, 2: 22, 3: 22 };
     const shown = labelsBesideMarkers(labels, [{ id: 1, x: 128 }], widths, { 1: 40 });

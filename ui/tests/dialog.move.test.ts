@@ -13,7 +13,7 @@ vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));
 
 const WIDTH = 1024;
 const HEIGHT = 768;
-/** 動かす前の箱（窓のまん中あたり）。 */
+/** The box before moving (around the middle of the window). */
 const BASE = { left: 232, top: 200, width: 560, height: 300 };
 
 let mounted: Record<string, unknown> | null = null;
@@ -25,7 +25,7 @@ beforeEach(() => {
   document.body.append(target);
   vi.spyOn(window, "innerWidth", "get").mockReturnValue(WIDTH);
   vi.spyOn(window, "innerHeight", "get").mockReturnValue(HEIGHT);
-  // jsdom は箱を並べないので、ダイアログの箱は BASE に transform の量を足した物にする。
+  // jsdom does not lay out boxes, so the dialog box is BASE plus the transform amount.
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
     const m = /translate\((-?[\d.]+)px, (-?[\d.]+)px\)/.exec(this.style.transform);
     const x = BASE.left + (m ? Number(m[1]) : 0);
@@ -67,7 +67,7 @@ function pointer(on: EventTarget, type: string, x: number, y: number): PointerEv
   return ev;
 }
 
-/** from を押し、(dx, dy) だけ動かして、離さない。 */
+/** Presses from, moves by (dx, dy), and does not release. */
 function press(from: Element, dx: number, dy: number): void {
   pointer(from, "pointerdown", 300, 210);
   pointer(from, "pointermove", 300 + dx, 210 + dy);
@@ -93,7 +93,7 @@ describe("clampOffset", () => {
     expect(clampOffset(base, x, y, WIDTH, HEIGHT)).toEqual({ x: ex, y: ey });
   });
 
-  it("窓より大きい箱は、左と上のはしを窓に入れる", () => {
+  it("a box bigger than the window keeps its left and top edges in the window", () => {
     expect(clampOffset({ left: -20, top: -10, right: 540, bottom: 290 }, 100, 100, 400, 200)).toEqual({ x: 20, y: 10 });
   });
 });
@@ -103,22 +103,22 @@ describe.each([
   ["曲のダイアログ", SongDialog as Component<any>, song],
   ["スキャンで止まったプラグイン", ScanStoppedDialog as Component<any>, scanStopped],
 ])("%s を動かす", (_name, component, state) => {
-  it("見出しの行を押したまま動かすと動く", () => {
+  it("moves when the heading row is held and moved", () => {
     show(component, state());
     dragBy(head(), 50, 40);
     expect(dialog().style.transform).toBe("translate(50px, 40px)");
-    // 離したあとの動きでは動かない。
+    // moves after release do not move it.
     pointer(head(), "pointermove", 600, 600);
     expect(dialog().style.transform).toBe("translate(50px, 40px)");
   });
 
-  it("中身や下の列を押しても動かない", () => {
+  it("does not move when the contents or the bottom row are pressed", () => {
     show(component, state());
     dragBy(q(".foot"), 50, 40);
     expect(dialog().style.transform).toBe("");
   });
 
-  it("窓の外へは出ない。窓が小さくなると中へ戻る", () => {
+  it("does not leave the window. Comes back inside when the window gets smaller", () => {
     show(component, state());
     dragBy(head(), -1000, -1000);
     expect(dialog().style.transform).toBe(`translate(${-BASE.left}px, ${-BASE.top}px)`);
@@ -133,7 +133,7 @@ describe.each([
     expect(dialog().style.transform).toBe(`translate(${right - 100}px, ${bottom - 50}px)`);
   });
 
-  it("ひらきなおすと、もとの場所から", () => {
+  it("opening again starts from the first place", () => {
     show(component, state());
     dragBy(head(), 50, 40);
     unmount(mounted!);
@@ -142,7 +142,7 @@ describe.each([
     expect(dialog().style.transform).toBe("");
   });
 
-  it("ドラッグ中の Esc は動かす前の場所へ戻すだけ。ドラッグしていない Esc は今のまま", () => {
+  it("Esc during a drag only goes back to the place before the move. Esc without a drag keeps it as it is", () => {
     const s = state();
     show(component, s);
     dragBy(head(), 50, 40);
@@ -152,7 +152,7 @@ describe.each([
     esc(s, sent);
     expect(dialog().style.transform).toBe("translate(50px, 40px)");
     expect(sent).toEqual([]);
-    // やめたあとは、離すまで動かない。
+    // after cancelling, it does not move until release.
     pointer(head(), "pointermove", 700, 700);
     pointer(head(), "pointerup", 700, 700);
     expect(dialog().style.transform).toBe("translate(50px, 40px)");
@@ -161,7 +161,7 @@ describe.each([
   });
 });
 
-it("音の設定の「とじる」を押しても動かない", () => {
+it("pressing 「とじる」 in the sound settings does not move it", () => {
   show(SettingsDialog, settings());
   const close = q('[data-test="settings-close"]');
   expect(head().contains(close)).toBe(true);
@@ -170,7 +170,7 @@ it("音の設定の「とじる」を押しても動かない", () => {
   expect(dialog().style.transform).toBe("");
 });
 
-it("見出しの行のカーソルは move", () => {
+it("the cursor on the heading row is move", () => {
   for (const file of ["SettingsDialog.svelte", "SongDialog.svelte"]) {
     const css = /\.head \{[^}]*\}/.exec(readSource(file))![0];
     expect(css).toContain("cursor: move;");

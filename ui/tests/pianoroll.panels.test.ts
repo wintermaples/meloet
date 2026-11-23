@@ -1,4 +1,4 @@
-// ピアノロールの左右の欄（ノートの一覧、選んだノート）と状態行を mount して見る。見せているテイクは偽物の場面のもの。
+// Mounts the piano roll's left and right panels (note list, selected notes) and the status line. The shown take comes from the fake scene.
 import { flushSync, mount, unmount, type Component } from "svelte";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, TakeNotes } from "../src/bridge";
@@ -20,7 +20,7 @@ vi.mock("../src/components/pianoroll/shown.svelte", () => import("./fake-shown.s
 const BAR = 4 * TPQ;
 const at = (bar: number, beat: number, tick: number) => (bar - 1) * BAR + (beat - 1) * TPQ + tick;
 
-// jsdom は大きさを測らない。一覧の見えている高さを 200（行 10 本ぶん）にする。
+// jsdom does not measure sizes. Set the list's visible height to 200 (10 rows).
 const proto = HTMLElement.prototype;
 const had = Object.getOwnPropertyDescriptor(proto, "clientHeight");
 beforeAll(() => Object.defineProperty(proto, "clientHeight", { configurable: true, get: () => 200 }));
@@ -44,7 +44,7 @@ const q = (sel: string) => target.querySelector<HTMLElement>(sel);
 const qa = (sel: string) => [...target.querySelectorAll<HTMLElement>(sel)];
 const text = (el: Element | null) => el?.textContent?.replace(/\s+/g, " ").trim() ?? null;
 
-/** 偽物の場面を状態にし、その場面の見せているテイクを shown に入れる。 */
+/** Makes the fake scene the state and puts the scene's shown take into shown. */
 async function scene(name: string, edit?: (s: AppState) => void): Promise<{ s: AppState; take: TakeNotes }> {
   const s = fakeScene(name)!.state;
   edit?.(s);
@@ -61,8 +61,8 @@ function show(component: Component): void {
   flushSync();
 }
 
-describe("ノートの一覧（モック A-PianoRoll の左の欄）", () => {
-  it("見出しの行と、ノートごとの行（位置 ・ 音 ・ 長さ ・ Vel）", async () => {
+describe("note list (left panel of mock A-PianoRoll)", () => {
+  it("the heading row and one row per note (position, pitch, length, Vel)", async () => {
     await scene("pianoRoll");
     show(NoteListPanel);
     expect(text(q(".head"))).toBe("位置 音 長さ Vel");
@@ -70,7 +70,7 @@ describe("ノートの一覧（モック A-PianoRoll の左の欄）", () => {
     expect(rows.slice(0, 5).map(text)).toEqual(["1.1.0000 C3 4.0000 70", "1.1.0000 G3 4.0000 64", "1.1.0000 E4 1.0000 87", "1.2.0000 G4 1.0000 92", "1.3.0000 C5 1.0960 101"]);
   });
 
-  it("選んだノート（D4 E4 F4）の行は selected", async () => {
+  it("rows of selected notes (D4 E4 F4) are selected", async () => {
     await scene("pianoRoll");
     show(NoteListPanel);
     const viewport = q('[data-test="note-list-rows"]')!;
@@ -81,7 +81,7 @@ describe("ノートの一覧（モック A-PianoRoll の左の欄）", () => {
     expect(picked).toEqual(["3.1.0000 D4 0.1440 80", "3.1.1440 E4 0.1440 83", "3.2.0960 F4 0.0960 77"]);
   });
 
-  it("行を押すとそのノートを選ぶ（replace）。Shift で足す（add）", async () => {
+  it("pressing a row selects that note (replace). Shift adds (add)", async () => {
     const { take } = await scene("pianoRoll");
     show(NoteListPanel);
     qa(".row")[2]!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -92,7 +92,7 @@ describe("ノートの一覧（モック A-PianoRoll の左の欄）", () => {
     ]);
   });
 
-  it("ノートが 1 万あっても、作る行は見えているぶんだけ。スクロールすると、その所の行", async () => {
+  it("even with 10,000 notes, only visible rows are made. Scrolling gives the rows there", async () => {
     await scene("pianoRoll");
     const n = 10_000;
     const big: TakeNotes = {
@@ -125,8 +125,8 @@ describe("ノートの一覧（モック A-PianoRoll の左の欄）", () => {
   });
 });
 
-describe("選んだノート（モック A-PianoRoll の右の欄）", () => {
-  it("位置「3.1.0000 〜」、音「D4 E4 F4」、長さ「ばらばら」、ベロシティ「77 – 83」", async () => {
+describe("selected notes (right panel of mock A-PianoRoll)", () => {
+  it("position「3.1.0000 〜」, pitch「D4 E4 F4」, length「ばらばら」, velocity「77 – 83」", async () => {
     await scene("pianoRoll");
     show(NoteInspector);
     expect(text(q('[data-test="inspector-position"]'))).toBe("3.1.0000 〜");
@@ -135,7 +135,7 @@ describe("選んだノート（モック A-PianoRoll の右の欄）", () => {
     expect(text(q('[data-test="inspector-velocity"]'))).toBe("77 – 83");
   });
 
-  it("1 つだけなら位置に「〜」をつけず、長さとベロシティは値", async () => {
+  it("with only one, no「〜」after the position; length and velocity are values", async () => {
     await scene("pianoRoll", (s) => (s.pianoRoll.selectedNotes = [{ start: 14, end: 15 }]));
     show(NoteInspector);
     expect(text(q('[data-test="inspector-position"]'))).toBe("3.1.0000");
@@ -143,7 +143,7 @@ describe("選んだノート（モック A-PianoRoll の右の欄）", () => {
     expect(text(q('[data-test="inspector-velocity"]'))).toBe("80");
   });
 
-  it("クオンタイズ: テイクがクオンタイズしてあれば「かけてある」。値は pianoRoll.quantize、ボタンはどちらも使える", async () => {
+  it("quantize: if the take is quantized,「かけてある」. Values are pianoRoll.quantize; both buttons can be used", async () => {
     await scene("pianoRoll");
     show(NoteInspector);
     expect(text(q('[data-test="inspector-quantized"]'))).toBe("かけてある");
@@ -159,7 +159,7 @@ describe("選んだノート（モック A-PianoRoll の右の欄）", () => {
     expect(buttons[0]!.classList.contains("hi")).toBe(true);
   });
 
-  it("固定を押すと、オン ・ オフを入れかえる意図を送る（Rust の状態を見せるだけで、自分では変えない）", async () => {
+  it("pressing lock sends an intent to toggle on/off (it only shows the Rust state and does not change it itself)", async () => {
     await scene("pianoRoll");
     show(NoteInspector);
     const lock = q('[data-test="inspector-lock"]')!;
@@ -171,7 +171,7 @@ describe("選んだノート（モック A-PianoRoll の右の欄）", () => {
     expect(text(lock)).toBe("オン");
   });
 
-  it("音階を押すと一覧: 見出し「種類」の下に メジャー ・ マイナー、「主音」の下に C 〜 B。えらぶと setMusicalScale", async () => {
+  it("pressing the scale opens a list: major and minor under the heading「種類」, C to B under「主音」. Choosing sends setMusicalScale", async () => {
     await scene("pianoRoll");
     show(NoteInspector);
     const button = q('[data-test="inspector-scale"]')!;
@@ -190,16 +190,16 @@ describe("選んだノート（モック A-PianoRoll の右の欄）", () => {
   });
 });
 
-describe("状態行（ピアノロールのまわり）", () => {
+describe("status line (around the piano roll)", () => {
   const left = () => text(q(".message"));
 
-  it("選んだノート: 「選択 3 ノート ・ D4 E4 F4 ・ クオンタイズ済み（もとの位置へ戻せます）」（モック A-PianoRoll）", async () => {
+  it("selected notes:「選択 3 ノート ・ D4 E4 F4 ・ クオンタイズ済み（もとの位置へ戻せます）」(mock A-PianoRoll)", async () => {
     await scene("pianoRoll");
     show(StatusLine);
     expect(left()).toBe("選択 3 ノート ・ D4 E4 F4 ・ クオンタイズ済み（もとの位置へ戻せます）");
   });
 
-  it("クオンタイズしていなければ、うしろは出さない。ループがオンなら前に「ループ 5–9」", async () => {
+  it("not quantized: the end part is not shown. With loop on,「ループ 5–9」in front", async () => {
     await scene("pianoRoll", (s) => {
       s.status.message = { id: "summary", loopBars: { from: 5, to: 9 }, nothingSelected: false, notes: { count: 6, keys: [60, 62, 64, 65], quantized: false, names: keyCounts([60, 62, 64, 65, 67, 69]) } };
     });
@@ -207,13 +207,13 @@ describe("状態行（ピアノロールのまわり）", () => {
     expect(left()).toBe("ループ 5–9 ・ 選択 6 ノート ・ C4 D4 E4 F4 …");
   });
 
-  it("音階の外に書こうとした（仕様書 6 章）", async () => {
+  it("tried to write outside the scale (spec 6)", async () => {
     await scene("pianoRoll", (s) => (s.status.message = { id: "outOfScale", key: 63, root: 0, mode: "major" }));
     show(StatusLine);
     expect(left()).toBe("D# は C メジャーの外の音です（スケール固定 ・ オン）");
   });
 
-  it("ドラッグしている間は、その場の読み値を左の文の代わりに", async () => {
+  it("while dragging, the reading in place replaces the left text", async () => {
     await scene("pianoRoll");
     show(StatusLine);
     dragReading.text = "+0.0960 ・ +2 半音";
@@ -224,7 +224,7 @@ describe("状態行（ピアノロールのまわり）", () => {
     expect(left()).toContain("選択 3 ノート");
   });
 
-  it("ピアノロールをひらいて再生中: 「1 ピアノ ・ Aメロ ・ テイク 2 / 3 ・ 鳴っている音 C3 E3 G3 C4」（モック F-PRPlay）", async () => {
+  it("piano roll open while playing:「1 ピアノ ・ Aメロ ・ テイク 2 / 3 ・ 鳴っている音 C3 E3 G3 C4」(mock F-PRPlay)", async () => {
     await scene("pianoRollPlay", (s) => (s.transport.position = at(4, 1, TPQ / 2)));
     show(StatusLine);
     expect(left()).toBe("1 ピアノ ・ Aメロ ・ テイク 2 / 3");
@@ -233,7 +233,7 @@ describe("状態行（ピアノロールのまわり）", () => {
     expect(left()).toBe("1 ピアノ ・ Aメロ ・ テイク 2 / 3 ・ 鳴っている音 C3 E3 G3 C4");
   });
 
-  it("ピアノロールをひらいて録音中: 「1 ピアノ へ録音 ・ テイク 3 ・ 押している音 C3 E3 G3 C4」（仕様書 6 章「録音中 ・ ピアノロール」）", async () => {
+  it("piano roll open while recording:「1 ピアノ へ録音 ・ テイク 3 ・ 押している音 C3 E3 G3 C4」(spec 6 (Recording, piano roll))", async () => {
     await scene("pianoRollRec");
     show(StatusLine);
     expect(left()).toBe("1 ピアノ へ録音 ・ テイク 3");
@@ -242,7 +242,7 @@ describe("状態行（ピアノロールのまわり）", () => {
     expect(left()).toBe("1 ピアノ へ録音 ・ テイク 3 ・ 押している音 C3 E3 G3 C4");
   });
 
-  it("押している音は入力計と同じく、鍵の on/off を計器を待たずに当てる。離せば「押している音」を出さない", async () => {
+  it("held notes, like the input meter, apply key on/off without waiting for the meter. On release「押している音」is not shown", async () => {
     await scene("pianoRollRec");
     show(StatusLine);
     app.emit({ type: "note", on: true, note: 64, velocity: 90, tUs: 0 });
@@ -255,7 +255,7 @@ describe("状態行（ピアノロールのまわり）", () => {
     expect(left()).toBe("1 ピアノ へ録音 ・ テイク 3");
   });
 
-  it("ピアノロールがひらいていなければ、仕様書 6 章「録音中」の文のまま", async () => {
+  it("with the piano roll closed, the text of spec 6 (Recording) as it is", async () => {
     await scene("pianoRollRec", (s) => (s.workspace.layout.lower = []));
     show(StatusLine);
     app.setTelemetry(app.telemetryWith({ keys: [48, 52] }));
@@ -263,7 +263,7 @@ describe("状態行（ピアノロールのまわり）", () => {
     expect(left()).toBe("1 ピアノ へ録音 ・ 止めると テイク 3 として残ります");
   });
 
-  it("5 つ以上選んだら、最初の 4 つのあとに「…」（仕様書 6 章「ノートを選んでいる」）", async () => {
+  it("with 5 or more selected,「…」after the first 4 (spec 6 (Notes selected))", async () => {
     await scene("pianoRoll", (s) => {
       s.status.message = { id: "summary", loopBars: null, nothingSelected: false, notes: { count: 7, keys: [48, 52, 55, 60], quantized: false, names: keyCounts([48, 52, 55, 60, 64, 67, 72]) } };
     });
@@ -271,7 +271,7 @@ describe("状態行（ピアノロールのまわり）", () => {
     expect(left()).toBe("選択 7 ノート ・ C3 E3 G3 C4 …");
   });
 
-  it("4 つなら「…」をそえない", async () => {
+  it("with 4, no「…」", async () => {
     await scene("pianoRoll", (s) => {
       s.status.message = { id: "summary", loopBars: null, nothingSelected: false, notes: { count: 4, keys: [48, 52, 55, 60], quantized: false, names: keyCounts([48, 52, 55, 60]) } };
     });
@@ -280,7 +280,7 @@ describe("状態行（ピアノロールのまわり）", () => {
   });
 });
 
-describe("状態行（クリップがない所のピアノロール。モック F-PREmpty）", () => {
+describe("status line (piano roll where there is no clip, mock F-PREmpty)", () => {
   const left = () => text(q(".message"));
   const empty = (edit?: (s: AppState) => void) => {
     const s = fakeScene("pianoRollEmpty")!.state;
@@ -289,38 +289,38 @@ describe("状態行（クリップがない所のピアノロール。モック 
     shown.setShown({ clip: null, track: null, take: null });
   };
 
-  it("止まっているときの左は「1 ピアノ ・ クリップなし」", () => {
+  it("the left while stopped is「1 ピアノ ・ クリップなし」", () => {
     empty();
     show(StatusLine);
     expect(left()).toBe("1 ピアノ ・ クリップなし");
   });
 
-  it("ループがオンなら前に「ループ 5–9」", () => {
+  it("with loop on,「ループ 5–9」in front", () => {
     empty((s) => (s.status.message = { id: "summary", loopBars: { from: 5, to: 9 }, nothingSelected: true, notes: null }));
     show(StatusLine);
     expect(left()).toBe("ループ 5–9 ・ 1 ピアノ ・ クリップなし");
   });
 
-  it("ほかの知らせは、そのまま", () => {
+  it("other notices stay as they are", () => {
     empty((s) => (s.status.message = { id: "clipsNotPasted" }));
     show(StatusLine);
     expect(left()).toBe("ほかのクリップと重なるので、貼りつけませんでした。");
   });
 
-  it("クリップの外に書けなかった（B-82）", () => {
+  it("could not write outside the clip (B-82)", () => {
     empty((s) => (s.status.message = { id: "notesNotWritten" }));
     show(StatusLine);
     expect(left()).toBe("ほかのクリップと重なるので、書けませんでした。");
   });
 
-  it("ピアノロールがひらいていなければ出さない", () => {
+  it("not shown when the piano roll is closed", () => {
     empty((s) => (s.workspace.layout.lower = []));
     show(StatusLine);
     expect(left()).toBe("選択なし");
   });
 });
 
-// ---- 打ちこみ（仕様書 3 章「ノートの一覧」、モック R3-Lanes） ----
+// ---- typing values (spec 3 (note list), mock R3-Lanes) ----
 
 const key = (el: Element, k: string, init: KeyboardEventInit = {}) =>
   el.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true, ...init }));
@@ -339,8 +339,8 @@ const settle = async () => {
 const double = (row: number, name: string) =>
   qa(".row")[row]!.querySelector(`[data-field="${name}"]`)!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
 
-describe("ノートの一覧で値を打ちこむ（モック R3-Lanes）", () => {
-  it("欄を 2 回押すと、その欄が入力の枠。Enter で、その行のノート 1 つへ setNotesField", async () => {
+describe("typing values in the note list (mock R3-Lanes)", () => {
+  it("pressing a field twice makes it an input box. Enter sends setNotesField to the one note of that row", async () => {
     const { take } = await scene("pianoRoll");
     show(NoteListPanel);
     double(2, "velocity");
@@ -356,7 +356,7 @@ describe("ノートの一覧で値を打ちこむ（モック R3-Lanes）", () =
     expect(document.activeElement).toBe(qa(".row")[2]);
   });
 
-  it("数字として読めない値（あ）は「こわれた」の枠のまま。Enter で rejectValue を送り、決めない", async () => {
+  it("a value not readable as a number (「あ」) keeps the broken border. Enter sends rejectValue and does not decide", async () => {
     await scene("pianoRoll");
     show(NoteListPanel);
     double(4, "velocity");
@@ -370,7 +370,7 @@ describe("ノートの一覧で値を打ちこむ（モック R3-Lanes）", () =
     expect(field()!.value).toBe("あ");
   });
 
-  it("範囲の外の値（200）は「こわれた」にせず、127 にして決め、そのあとに clampValue（B-68）", async () => {
+  it("a value out of range (200) is not broken; it becomes 127 and is decided, then clampValue (B-68)", async () => {
     const { take } = await scene("pianoRoll");
     show(NoteListPanel);
     double(4, "velocity");
@@ -385,7 +385,7 @@ describe("ノートの一覧で値を打ちこむ（モック R3-Lanes）", () =
     ]);
   });
 
-  it("位置: クリップの外はクリップの範囲の文、拍だけ外なら拍の範囲（B-68）", async () => {
+  it("position: outside the clip gives the clip range text; outside only by beats gives the beat range (B-68)", async () => {
     const { take } = await scene("pianoRoll");
     show(NoteListPanel);
     double(0, "position");
@@ -409,7 +409,7 @@ describe("ノートの一覧で値を打ちこむ（モック R3-Lanes）", () =
     ]);
   });
 
-  it("行で Enter を押すと最初の欄（位置）。Tab で右の欄へ、右はしなら次の行の最初の欄（そこで前の欄を決める）", async () => {
+  it("Enter on a row goes to the first field (position). Tab goes to the field on the right; at the right end, to the first field of the next row (deciding the field before)", async () => {
     const { take } = await scene("pianoRoll");
     show(NoteListPanel);
     const row = qa(".row")[0]!;
@@ -436,7 +436,7 @@ describe("ノートの一覧で値を打ちこむ（モック R3-Lanes）", () =
     expect(field()!.closest(".row")!.getAttribute("data-note")).toBe("0");
   });
 
-  it("↑ ↓ で 1 ずつ（Shift で 10。音は Shift で 12 半音）。音は半音、位置は表示のいちばん下のけた", async () => {
+  it("↑ ↓ by 1 (Shift by 10; pitch by 12 semitones with Shift). Pitch moves by semitones, position by the last shown digit", async () => {
     await scene("pianoRoll");
     show(NoteListPanel);
     double(2, "key");
@@ -454,7 +454,7 @@ describe("ノートの一覧で値を打ちこむ（モック R3-Lanes）", () =
     expect(field()!.value).toBe("1.1.0010");
   });
 
-  it("Esc でやめる（何も送らない）。枠の外を押しても、やめる", async () => {
+  it("Esc cancels (sends nothing). Pressing outside the box also cancels", async () => {
     await scene("pianoRoll");
     show(NoteListPanel);
     double(0, "length");
@@ -471,7 +471,7 @@ describe("ノートの一覧で値を打ちこむ（モック R3-Lanes）", () =
     expect(app.sent).toEqual([]);
   });
 
-  it("打っている最中のキー（仕様書 4 章）: 一文字のキー、Space、Delete、Backspace、↑ ↓ ← → は枠のもの。ピアノロールには効かない", async () => {
+  it("keys while typing (spec 4): one-letter keys, Space, Delete, Backspace, ↑ ↓ ← → belong to the box. They do not act on the piano roll", async () => {
     const { s } = await scene("pianoRoll");
     show(NoteListPanel);
     prView.focus = "pianoRoll";
@@ -490,8 +490,8 @@ describe("ノートの一覧で値を打ちこむ（モック R3-Lanes）", () =
   });
 });
 
-describe("選んだノートの欄を打ちこむ", () => {
-  it("押すと入力の枠。2 つ以上なら、選んだぜんぶへ（ベロシティはぜんぶ同じ値）", async () => {
+describe("typing in the selected notes fields", () => {
+  it("pressing makes an input box. With 2 or more, it goes to all selected (velocity is the same value for all)", async () => {
     const { take } = await scene("pianoRoll");
     show(NoteInspector);
     q('[data-test="inspector-velocity"]')!.click();
@@ -504,7 +504,7 @@ describe("選んだノートの欄を打ちこむ", () => {
     expect(text(q('[data-test="inspector-velocity"]'))).toBe("77 – 83");
   });
 
-  it("位置はいちばん早い位置、音はいちばん低い音、長さ「ばらばら」は、いちばん早いノートの長さを入れておく", async () => {
+  it("position puts the earliest position, pitch the lowest pitch, and length「ばらばら」the length of the earliest note", async () => {
     await scene("pianoRoll");
     show(NoteInspector);
     q('[data-test="inspector-position"]')!.click();
@@ -519,7 +519,7 @@ describe("選んだノートの欄を打ちこむ", () => {
     expect(app.sent).toEqual([]);
   });
 
-  it("使えない値: 「ばらばら」の欄は、もとの値として「ばらばら」", async () => {
+  it("unusable value: a「ばらばら」field keeps「ばらばら」as the old value", async () => {
     await scene("pianoRoll");
     show(NoteInspector);
     q('[data-test="inspector-length"]')!.click();
@@ -529,7 +529,7 @@ describe("選んだノートの欄を打ちこむ", () => {
     expect(app.sent).toEqual([{ type: "rejectValue", field: "length", kept: "ばらばら", range: "0.0001〜6.0960" }]);
   });
 
-  it("長さが範囲の外（9.0000）なら、いちばん長い 6.0960 にして決める", async () => {
+  it("a length out of range (9.0000) becomes the longest, 6.0960, and is decided", async () => {
     const { take } = await scene("pianoRoll");
     show(NoteInspector);
     q('[data-test="inspector-length"]')!.click();
@@ -544,8 +544,8 @@ describe("選んだノートの欄を打ちこむ", () => {
   });
 });
 
-describe("クオンタイズの欄", () => {
-  it("グリッドを押すと一覧（1 小節 ・ 1/2 ・ 1/4 ・ 1/8 ・ 1/16 ・ 1/32）。えらぶと setQuantize（いまの設定ぜんぶ）", async () => {
+describe("quantize fields", () => {
+  it("pressing the grid opens a list (「1 小節」, 1/2, 1/4, 1/8, 1/16, 1/32). Choosing sends setQuantize (all current settings)", async () => {
     await scene("pianoRoll");
     show(NoteInspector);
     q('[data-test="quantize-grid"]')!.click();
@@ -558,7 +558,7 @@ describe("クオンタイズの欄", () => {
     expect(document.querySelector('[data-test="quantize-grid-menu"]')).toBeNull();
   });
 
-  it("三連符は、道具の列と同じく別の切りかえ", async () => {
+  it("triplets are a separate toggle, as in the toolbar", async () => {
     await scene("pianoRoll");
     show(NoteInspector);
     const triplet = q('[data-test="quantize-triplet"]')!;
@@ -567,7 +567,7 @@ describe("クオンタイズの欄", () => {
     expect(app.sent).toEqual([{ type: "setQuantize", division: 16, triplet: true, strength: 75, swing: 0, align: "start" }]);
   });
 
-  it("そろえる所: はじまり ・ はじまりと終わり", async () => {
+  it("what to align: start, start and end", async () => {
     await scene("pianoRoll");
     show(NoteInspector);
     q('[data-test="quantize-align"]')!.click();
@@ -578,7 +578,7 @@ describe("クオンタイズの欄", () => {
     expect(app.sent).toEqual([{ type: "setQuantize", division: 16, triplet: false, strength: 75, swing: 0, align: "startAndEnd" }]);
   });
 
-  it("強さ: ドラッグしているあいだは画面だけ。離して setQuantize を 1 つ", async () => {
+  it("strength: while dragging only the screen moves. Release sends one setQuantize", async () => {
     await scene("pianoRoll");
     show(NoteInspector);
     const bar = q('[data-test="quantize-strength"]')!;
@@ -597,7 +597,7 @@ describe("クオンタイズの欄", () => {
     expect(text(q('[data-test="quantize-strength-value"]'))).toBe("70 %");
   });
 
-  it("かけなおす: 選んだノート（なければ全部）へ quantize。もとの位置へ戻す: unquantize", async () => {
+  it("quantize again: quantize on the selected notes (all if none). Back to old position: unquantize", async () => {
     const { take } = await scene("pianoRoll");
     show(NoteInspector);
     q('[data-test="quantize-apply"]')!.click();
@@ -608,7 +608,7 @@ describe("クオンタイズの欄", () => {
     ]);
   });
 
-  it("クオンタイズしていないテイクでは「もとの位置へ戻す」は使えない。「かけてある」も出ない", async () => {
+  it("a take that is not quantized cannot use「もとの位置へ戻す」.「かけてある」is not shown either", async () => {
     const { s, take } = await scene("pianoRoll");
     const plain = { ...take, origin: 0 };
     shown.setShown({ clip: shown.shown.clip, track: shown.shown.track, take: plain });
@@ -622,10 +622,10 @@ describe("クオンタイズの欄", () => {
   });
 });
 
-describe("状態行: クオンタイズをかけた ・ 使えない値を打った", () => {
+describe("status line: quantized, typed an unusable value", () => {
   const left = () => text(q(".message"));
 
-  it("「クオンタイズ 1/16（75 %）を 3 ノートに。うすい枠が、そろえる前の位置。」と「もとの位置へ戻す」（仕様書 6 章）", async () => {
+  it("「クオンタイズ 1/16（75 %）を 3 ノートに。うすい枠が、そろえる前の位置。」and「もとの位置へ戻す」(spec 6)", async () => {
     const { take } = await scene("pianoRoll", (s) => (s.status.message = { id: "quantized", division: 16, triplet: false, strength: 75, count: 3 }));
     show(StatusLine);
     expect(left()).toBe("クオンタイズ 1/16（75 %）を 3 ノートに。うすい枠が、そろえる前の位置。");
@@ -635,31 +635,31 @@ describe("状態行: クオンタイズをかけた ・ 使えない値を打っ
     expect(app.sent).toEqual([{ type: "unquantize", take: take.id, notes: [14, 15, 16] }]);
   });
 
-  it("ノートの位置の欄に読めない物を打った: 仕様書 6 章「位置として読めない」の形", async () => {
+  it("typed something unreadable in the note position field: the form of spec 6 (Not readable as a position)", async () => {
     await scene("pianoRoll", (s) => (s.status.message = { id: "valueRejected", field: "position", kept: "1.1.000", range: "1.1.000〜4.1.000" }));
     show(StatusLine);
     expect(left()).toBe("位置は「5」「5.2」「5.2.240」の形で打ちます。もとの 1.1.000 のままです。");
   });
 
-  it("ノートの長さの欄に読めない物を打った: 仕様書 6 章「数字として読めない」の形", async () => {
+  it("typed something unreadable in the note length field: the form of spec 6 (Not readable as a number)", async () => {
     await scene("pianoRoll", (s) => (s.status.message = { id: "valueRejected", field: "length", kept: "0.240", range: "0.030〜4.000" }));
     show(StatusLine);
     expect(left()).toBe("長さは数字で打ちます。もとの 0.240 のままです。");
   });
 
-  it("ノートのベロシティの欄に読めない物を打った: 仕様書 6 章の例そのまま", async () => {
+  it("typed something unreadable in the note velocity field: the spec 6 example as it is", async () => {
     await scene("pianoRoll", (s) => (s.status.message = { id: "valueRejected", field: "velocity", kept: "77", range: null }));
     show(StatusLine);
     expect(left()).toBe("ベロシティは数字で打ちます。もとの 77 のままです。");
   });
 
-  it("音の欄（音名で打つ）に読めない物を打った: 範囲の文の形のまま", async () => {
+  it("typed something unreadable in the pitch field (typed as a note name): the range text form as it is", async () => {
     await scene("pianoRoll", (s) => (s.status.message = { id: "valueRejected", field: "key", kept: "C4", range: "C-1〜G9" }));
     show(StatusLine);
     expect(left()).toBe("音は C-1〜G9 です。もとの C4 のままです。");
   });
 
-  it("再生の位置の欄に読めない物を打った（B-61。範囲の文の形を使わない）", async () => {
+  it("typed something unreadable in the play position field (B-61, does not use the range text form)", async () => {
     await scene("pianoRoll", (s) => (s.status.message = { id: "valueRejected", field: "playPosition", kept: "1. 1. 000", range: null }));
     show(StatusLine);
     expect(left()).toBe("位置は「5」「5.2」「5.2.240」の形で打ちます。もとの 1. 1. 000 のままです。");

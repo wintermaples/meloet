@@ -1,4 +1,4 @@
-// 約束 25（第 7 回 区切り4 の 1 回目）: のび縮みと音の高さ。形と、偽物の場面と、偽物の意図。画面の部品は 2 回目。
+// Protocol 25 (first part): stretch and pitch. The shape, fake scenes, fake intents. The screen parts come in the second part.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { AppState, AudioClipView, Command, StatusMessage, StepName, StretchChange, TrackView } from "../src/bridge";
@@ -13,13 +13,13 @@ const CLIP = 70;
 const vocalOf = (s: AppState): TrackView => s.song.tracks.find((tr) => tr.kind.kind === "vocal")!;
 const audioOf = (s: AppState, clip = CLIP): AudioClipView => vocalOf(s).clips.find((c) => c.id === clip)!.audio!;
 
-describe("約束 25 の形", () => {
-  it("範囲は半音 ±12、セント ±50、打ちこむテンポ 30〜300", () => {
+describe("protocol 25 shape", () => {
+  it("ranges: semitones ±12, cents ±50, typed tempo 30 to 300", () => {
     expect(PROTOCOL_VERSION).toBeGreaterThanOrEqual(25);
     expect([CLIP_SEMITONES_MAX, CLIP_CENTS_MAX, SOURCE_BPM_MIN, SOURCE_BPM_MAX]).toEqual([12, 50, 30, 300]);
   });
 
-  it("意図: のび縮みの欄の 1 行（setClipStretch）と「さがす」（findSourceTempo）。オン ・ オフは bool", () => {
+  it("intents: one row of the stretch panel (setClipStretch) and 「さがす」 (findSourceTempo). On / off is bool", () => {
     const changes: StretchChange[] = [
       { kind: "follow", on: true },
       { kind: "sourceBpm", bpm: 96.5 },
@@ -31,7 +31,7 @@ describe("約束 25 の形", () => {
     expect(commands.map((c) => c.type)).toEqual(["setClipStretch", "setClipStretch", "setClipStretch", "setClipStretch", "setClipStretch", "findSourceTempo"]);
   });
 
-  it("手の名前が 3 つふえた。状態行は、さがした ・ 見つからなかった", () => {
+  it("3 more step names. The status line says found / not found", () => {
     const names: StepName[] = [{ kind: "setClipFollow" }, { kind: "setSourceTempo" }, { kind: "setClipPitch" }];
     for (const name of names) expect(STEP_NAME_KINDS).toContain(name.kind);
     expect(STEP_NAME_KINDS.length).toBeGreaterThanOrEqual(74);
@@ -43,8 +43,8 @@ describe("約束 25 の形", () => {
   });
 });
 
-describe("偽物の場面（モック F7-Stretch、仕様書 3 章 28-A ・ Y22）", () => {
-  it("stretch: 76.80 で歌ったクリップが 96.00 の曲についていく（×1.25）、半音 +2。音はできている", () => {
+describe("fake scenes (mock F7-Stretch, spec 3 (28-A, Y22))", () => {
+  it("stretch: a clip sung at 76.80 follows a 96.00 song (×1.25), +2 semitones. The sound is ready", () => {
     const s = scene("stretch").state;
     const audio = audioOf(s);
     expect(audio.stretch).toEqual({ follow: true, sourceBpm: 76.8, ratio: 1.25, semitones: 2, cents: 0, keepFormant: true });
@@ -54,7 +54,7 @@ describe("偽物の場面（モック F7-Stretch、仕様書 3 章 28-A ・ Y22�
     expect(s.arrange.selectedClips).toEqual([CLIP]);
   });
 
-  it("stretchRendering（F7-Stretch）: 同じクリップの音を作っている 34 %。進みはクリップつきの rendering", () => {
+  it("stretchRendering (F7-Stretch): the same clip's sound at 34 %. Progress is rendering with the clip", () => {
     const s = scene("stretchRendering").state;
     expect(audioOf(s).stretch).toMatchObject({ ratio: 1.25, semitones: 2 });
     expect(audioOf(s).state).toBe("ready");
@@ -63,19 +63,19 @@ describe("偽物の場面（モック F7-Stretch、仕様書 3 章 28-A ・ Y22�
     expect([s.song.undoCount, s.song.redoCount]).toEqual([14, 0]);
   });
 
-  it("stretchPitch: 高さだけ（−1 ・ 30）。録ったままのテンポなので、比は 1（印は出さない）", () => {
+  it("stretchPitch: pitch only (−1, 30). The recorded tempo stays, so the ratio is 1 (no mark)", () => {
     const audio = audioOf(scene("stretchPitch").state);
     expect(audio.stretch).toEqual({ follow: true, sourceBpm: 96, ratio: 1, semitones: -1, cents: 30, keepFormant: false });
   });
 
-  it("stretchNoTempo: 入れたファイル。ついていかない、この音のテンポは「—」（null）、比も点の列もない", () => {
+  it("stretchNoTempo: an imported file. Does not follow, the source tempo is 「—」 (null), no ratio or point list", () => {
     const audio = audioOf(scene("stretchNoTempo").state);
     expect(audio.stretch).toEqual({ follow: false, sourceBpm: null, ratio: null, semitones: 0, cents: 0, keepFormant: true });
     expect(audio.sourceTempo).toBeNull();
     expect(audio.file).toBe("ドラム.wav");
   });
 
-  it("stretchRamp: だんだんの所の、ついていくクリップ 2 つ（地図ごと録った物と、96.00 で歌った物）", () => {
+  it("stretchRamp: 2 following clips on a ramp (one recorded with the map, one sung at 96.00)", () => {
     const s = scene("stretchRamp").state;
     expect(s.timeline.tempoPoints).toEqual([
       { tick: 4 * BAR, tempoBpm: 104, ramp: true },
@@ -83,7 +83,7 @@ describe("偽物の場面（モック F7-Stretch、仕様書 3 章 28-A ・ Y22�
     ]);
     const [recorded, sung] = vocalOf(s).clips;
     expect([recorded!.start, recorded!.end, sung!.start, sung!.end]).toEqual([2 * BAR, 5 * BAR, 5 * BAR, 9 * BAR]);
-    // 録った歌の点は、テイクの 0 ティック（3 小節目）からのティック。
+    // Points of a recorded song are ticks from tick 0 of the take (bar 3).
     expect(recorded!.audio!.sourceTempo).toEqual({
       tempoBpm: 96,
       headRamp: false,
@@ -97,7 +97,7 @@ describe("偽物の場面（モック F7-Stretch、仕様書 3 章 28-A ・ Y22�
     expect(s.params.selected).toMatchObject({ kind: "clip", clip: sung!.id });
   });
 
-  it("前からの場面: 録った歌は 96.00 で、比は 1。ついていかない物に、比と点の列はない", () => {
+  it("older scenes: a recorded song is 96.00 with ratio 1. Clips that do not follow have no ratio or point list", () => {
     const edit = scene("audioEdit").state;
     for (const clip of vocalOf(edit).clips) {
       expect(clip.audio!.stretch).toEqual({ follow: true, sourceBpm: 96, ratio: 1, semitones: 0, cents: 0, keepFormant: true });
@@ -117,7 +117,7 @@ describe("偽物の場面（モック F7-Stretch、仕様書 3 章 28-A ・ Y22�
     }
   });
 
-  it("場面の名前は 1 回ずつ", () => {
+  it("each scene name once", () => {
     const here = decodeURIComponent(new URL(import.meta.url).pathname);
     const source = new TextDecoder().decode(readFileSync(`${here.slice(0, here.lastIndexOf("/"))}/../src/bridge/fake.ts`));
     const names = [...source.matchAll(/^SCENES\.(\w+) = /gm)].map((m) => m[1]!);
@@ -127,7 +127,7 @@ describe("偽物の場面（モック F7-Stretch、仕様書 3 章 28-A ・ Y22�
   });
 });
 
-describe("偽物の意図（絵と試験に足りるだけ）", () => {
+describe("fake intents (just enough for pictures and tests)", () => {
   type S = NonNullable<ReturnType<typeof fakeScene>>["state"];
   const stretch = (s: S, change: StretchChange, clip = CLIP) => reduceAudio(s, { type: "setClipStretch", clip, change })!;
   const songOf = (changes: ReturnType<typeof stretch>, s: S): S => {
@@ -135,7 +135,7 @@ describe("偽物の意図（絵と試験に足りるだけ）", () => {
     return song ? { ...s, song: song.value as S["song"] } : s;
   };
 
-  it("半音 ・ セント: 範囲の外はまるめる、数でない値は何もしない、同じ値は手にならない。1 手ずつ", () => {
+  it("semitones / cents: out of range is clamped, non-numbers do nothing, the same value is not a step. 1 step each", () => {
     const s = scene("stretch").state;
     const up = stretch(s, { kind: "semitones", semitones: 40 });
     expect(audioOf(songOf(up, s)).stretch.semitones).toBe(12);
@@ -146,11 +146,11 @@ describe("偽物の意図（絵と試験に足りるだけ）", () => {
     expect(stretch(s, { kind: "semitones", semitones: Number.NaN })).toEqual([]);
     expect(stretch(s, { kind: "cents", cents: Number.NaN })).toEqual([]);
     expect(stretch(s, { kind: "semitones", semitones: 2 })).toEqual([]);
-    // 歌のクリップでなければ何もしない。
+    // Not an audio clip: nothing happens.
     expect(stretch(s, { kind: "semitones", semitones: 1 }, 999)).toEqual([]);
   });
 
-  it("この音のテンポ: 新しいテイク（takeId が変わる）。ついていく物は、比と点の列も変わる。クリップの長さはそのまま", () => {
+  it("source tempo: a new take (takeId changes). Following clips also change ratio and point list. The clip length stays", () => {
     const s = scene("stretch").state;
     const before = vocalOf(s).clips[0]!;
     const after = songOf(stretch(s, { kind: "sourceBpm", bpm: 120.004 }), s);
@@ -163,14 +163,14 @@ describe("偽物の意図（絵と試験に足りるだけ）", () => {
     expect(audioOf(songOf(stretch(s, { kind: "sourceBpm", bpm: 1 }), s)).stretch.sourceBpm).toBe(30);
     expect(stretch(s, { kind: "sourceBpm", bpm: Number.NaN })).toEqual([]);
     expect(stretch(s, { kind: "sourceBpm", bpm: 76.8 })).toEqual([]);
-    // ついていかないクリップは、数が入るだけ（比も点の列もないまま）。
+    // A clip that does not follow only gets the number (still no ratio or point list).
     const none = scene("stretchNoTempo").state;
     const typed = audioOf(songOf(stretch(none, { kind: "sourceBpm", bpm: 88 }), none));
     expect(typed.stretch).toMatchObject({ follow: false, sourceBpm: 88, ratio: null });
     expect(typed.sourceTempo).toBeNull();
   });
 
-  it("ついていく ・ 声の感じ: オン ・ オフ。「—」のままついていくにしても、比は出ない（ファイルの速さのまま）", () => {
+  it("follow / voice character: on / off. Even following with 「—」, there is no ratio (the file's speed)", () => {
     const s = scene("stretch").state;
     const off = audioOf(songOf(stretch(s, { kind: "follow", on: false }), s));
     expect(off.stretch).toMatchObject({ follow: false, sourceBpm: 76.8, ratio: null, semitones: 2 });
@@ -184,20 +184,20 @@ describe("偽物の意図（絵と試験に足りるだけ）", () => {
     expect(on.sourceTempo).toBeNull();
   });
 
-  it("さがす: ファイルの長さを 1 ・ 2 ・ 4 ・ 8 小節と見て、60〜180 の中の、曲のテンポに近い数。ついていくはそのまま", () => {
-    // ドラム.wav は 5 秒: 2 小節で 96.00（1 小節 48 と 4 小節 192 は外）。
+  it("search: treats the file length as 1, 2, 4, 8 bars, the number in 60 to 180 nearest the song tempo. Follow stays", () => {
+    // 「ドラム.wav」 is 5 s: 96.00 with 2 bars (48 for 1 bar and 192 for 4 bars are outside).
     const s = scene("stretchNoTempo").state;
     const found = reduceAudio(s, { type: "findSourceTempo", clip: CLIP })!;
     const after = songOf(found, s);
     expect(audioOf(after).stretch).toMatchObject({ follow: false, sourceBpm: 96, ratio: null });
     expect(after.song.undoCount).toBe(s.song.undoCount + 1);
     expect(found.find((c) => c.section === "status")!.value).toEqual({ message: { id: "sourceTempoFound", name: "ドラム", bpm: 96, bars: 2, same: false } });
-    // 見つからないとき: 何も変わらず、状態行だけ。
+    // When not found: nothing changes, only the status line.
     const long = scene("audioLoading").state;
     const none = reduceAudio(long, { type: "findSourceTempo", clip: CLIP })!;
     expect(none).toEqual([{ section: "status", value: { message: { id: "sourceTempoNotFound", name: "ドラム" } } }]);
     expect(reduceAudio(s, { type: "findSourceTempo", clip: 999 })).toEqual([]);
-    // 新しい曲では何もしない。
+    // In a new song nothing happens.
     expect(reduceAudio(fakeState(), { type: "setClipStretch", clip: 1, change: { kind: "follow", on: true } })).toEqual([]);
   });
 });

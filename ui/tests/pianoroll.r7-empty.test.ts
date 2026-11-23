@@ -1,5 +1,5 @@
-// ノートが 0 のときのピアノロール: 初めて置いたノートで見ている範囲が動かないこと（クリップのない所 ・ ノートが 0 のクリップ）、
-// ノートをぜんぶ消しても横の位置が数のままで、目盛が出て、書けること。
+// The piano roll with 0 notes: the first placed note does not move the view (where there is no clip, and a clip with 0 notes),
+// and after deleting all notes the horizontal position stays a number, the ruler shows, and drawing works.
 import { flushSync, mount, unmount } from "svelte";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, ClipView, Command, TakeNotes, TrackView } from "../src/bridge";
@@ -63,7 +63,7 @@ function show(): void {
   flushSync();
 }
 
-/** 曲（A-PianoRoll）と、そのピアノロールのクリップとトラックとテイク。 */
+/** The song (A-PianoRoll), and the clip, track and take of its piano roll. */
 async function pianoRollSong(): Promise<{ s: AppState; clip: ClipView; track: TrackView; take: TakeNotes }> {
   const s = fakeScene("pianoRoll")!.state;
   const track = s.song.tracks[0]!;
@@ -71,14 +71,14 @@ async function pianoRollSong(): Promise<{ s: AppState; clip: ClipView; track: Tr
   return { s, clip, track, take: decodeTake(await createFakeTransport(s).takeNotes(clip.takeId)) };
 }
 
-/** 状態を入れかえ、見せているクリップとテイクも合わせる（core の答え ・ 新しいテイクが来たところ）。 */
+/** Replaces the state and also the shown clip and take (a core answer, a new take arriving). */
 function arrive(s: AppState, clip: ClipView | null, track: TrackView, t: TakeNotes | null): void {
   app.setState(s);
   shown.setShown({ clip, track, take: t });
   flushSync();
 }
 
-/** 書く道具で (x, y) を押して離す。送った addNote を返す。 */
+/** Press and release at (x, y) with the draw tool. Returns the sent addNote. */
 function drawAt(x: number, y: number): Extract<Command, { type: "addNote" }> {
   prView.tool = "draw";
   const area = q(".area")!;
@@ -91,8 +91,8 @@ function drawAt(x: number, y: number): Extract<Command, { type: "addNote" }> {
 
 const viewNow = () => ({ quarterPx: prView.quarterPx, rowPx: prView.rowPx, scrollTick: prView.scrollTick, topKey: prView.topKey });
 
-describe("初めてノートを置いても、見ている範囲は変わらない", () => {
-  it("クリップのない所で書く（B-52）: できたクリップは「ひらいた」のではない", async () => {
+describe("placing the first note does not change the view", () => {
+  it("drawing where there is no clip (B-52): the new clip is not an \"opened\" one", async () => {
     const { s, track } = await pianoRollSong();
     const empty = structuredClone(s);
     empty.song.tracks[0]!.clips = [];
@@ -112,7 +112,7 @@ describe("初めてノートを置いても、見ている範囲は変わらな�
     expect(c.key).toBe(70 - 5);
     expect(Number.isFinite(c.start)).toBe(true);
 
-    // core の答え: 小節の頭から 4 小節のクリップができ、そこに 1 つ。
+    // The core answer: a 4-bar clip from the bar start, with one note in it.
     const head = Math.floor(c.start / BAR) * BAR;
     const made: ClipView = { id: 900, name: track.name, start: head, end: head + 4 * BAR, take: 1, takes: 1, takeId: 901, takeOffset: 0, noteCount: 1, audio: null };
     const next = structuredClone(empty);
@@ -125,7 +125,7 @@ describe("初めてノートを置いても、見ている範囲は変わらな�
     expect(prView.shownClip).toBe(900);
   });
 
-  it("クリップのない所から、アレンジでクリップをひらいたときは、これまでどおり合わせる", async () => {
+  it("opening a clip in the arrange from a place with no clip fits the view as before", async () => {
     const { s, clip, track, take: t } = await pianoRollSong();
     const none = structuredClone(s);
     none.arrange = { ...none.arrange, pianoRollClip: null };
@@ -139,7 +139,7 @@ describe("初めてノートを置いても、見ている範囲は変わらな�
     expect(prView.quarterPx).not.toBe(320);
   });
 
-  it("ノートが 0 のクリップに書く: 新しいテイクが来ても、縦の位置も拡大も動かない", async () => {
+  it("drawing in a clip with 0 notes: when the new take comes, the vertical position and zoom do not move", async () => {
     const { s, clip, track } = await pianoRollSong();
     const blank: ClipView = { ...clip, takeId: 500, noteCount: 0 };
     const st = structuredClone(s);
@@ -163,14 +163,14 @@ describe("初めてノートを置いても、見ている範囲は変わらな�
   });
 });
 
-describe("ノートをぜんぶ消しても、時間の位置は数のまま", () => {
+describe("after deleting all notes, the time position stays a number", () => {
   async function allDeleted(): Promise<{ clip: ClipView; back: () => void }> {
     const { s, clip, track, take: t } = await pianoRollSong();
     arrive(s, clip, track, t);
     show();
     prView.scrollTick = clip.start;
     flushSync();
-    // core の答え: 同じクリップに、ノートが 0 の新しいテイク。
+    // The core answer: a new take with 0 notes in the same clip.
     const gone: ClipView = { ...clip, takeId: 700, noteCount: 0 };
     const next = structuredClone(s);
     next.song.tracks[0]!.clips = next.song.tracks[0]!.clips.map((c) => (c.id === clip.id ? gone : c));
@@ -178,7 +178,7 @@ describe("ノートをぜんぶ消しても、時間の位置は数のまま", (
     return { clip, back: () => arrive(s, clip, track, t) };
   }
 
-  it("横の棒の長さが数で、横に送っても位置が NaN にならない。目盛も出る", async () => {
+  it("the horizontal bar length is a number, scrolling does not make the position NaN. The ruler shows", async () => {
     const { clip } = await allDeleted();
     const bar = q('[data-testid="hscrollbar"]');
     if (bar) expect(Number.isFinite(Number(bar.dataset.total))).toBe(true);
@@ -188,7 +188,7 @@ describe("ノートをぜんぶ消しても、時間の位置は数のまま", (
     expect(target.querySelectorAll(".ruler-marks .mark").length).toBeGreaterThan(0);
   });
 
-  it("棒の上でホイールを回しても NaN にならない", async () => {
+  it("turning the wheel on the bar does not give NaN", async () => {
     await allDeleted();
     const bar = q('[data-testid="hscrollbar"]')!;
     expect(bar).not.toBeNull();
@@ -197,7 +197,7 @@ describe("ノートをぜんぶ消しても、時間の位置は数のまま", (
     expect(Number.isFinite(prView.scrollTick)).toBe(true);
   });
 
-  it("取り消しでノートが戻っても、送った位置のまま", async () => {
+  it("when undo brings notes back, the scrolled position stays", async () => {
     const { clip, back } = await allDeleted();
     q(".middle")!.dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaX: 80 }));
     flushSync();
@@ -208,7 +208,7 @@ describe("ノートをぜんぶ消しても、時間の位置は数のまま", (
     expect(target.querySelectorAll(".ruler-marks .mark").length).toBeGreaterThan(0);
   });
 
-  it("書く道具で書ける（始まりが数）", async () => {
+  it("the draw tool can draw (the start is a number)", async () => {
     const { clip } = await allDeleted();
     q(".middle")!.dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaX: 40 }));
     flushSync();

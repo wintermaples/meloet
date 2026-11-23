@@ -1,5 +1,5 @@
-// 第 8 回の終わりの直し: 64 本 ・ 帯 4 本ずつのミキサーを 60 コマに。フェーダーの値の字は毎コマ（仕様書 3 章）変えるが、
-// 横に送った外のストリップ（content-visibility: auto で中を飛ばしている）には書かない（coverIf の whenSeen）。
+// The mixer with 64 strips and 4 bands each at 60 frames. The fader value text changes every frame (spec 3),
+// but strips scrolled out of view (content-visibility: auto skips their inside) are not written (whenSeen of coverIf).
 import { flushSync, mount, unmount } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LanePoints } from "../src/bridge";
@@ -18,10 +18,10 @@ vi.mock("../src/bridge", async (original) => ({
   lanePoints: (id: number) => Promise.resolve(POINTS.get(id)!),
 }));
 
-/** 0 から 1000 ティックで 0 → 1 の線。 */
+/** A line from 0 → 1 over 0 to 1000 ticks. */
 const ramp = (id: number): LanePoints => ({ id, step: false, ticks: Float64Array.from([0, 1000]), values: Float32Array.from([0, 1]) });
 
-/** 見えているかを、テストが決める IntersectionObserver。 */
+/** An IntersectionObserver where the test decides what is visible. */
 class FakeObserver {
   static all: FakeObserver[] = [];
   readonly seen = new Set<Element>();
@@ -45,7 +45,7 @@ function setSeen(node: Element, isIntersecting: boolean): void {
   flushSync();
 }
 
-describe("ミキサーの値の字は、見えているストリップにだけ毎コマ書く", () => {
+describe("mixer value text is written every frame only for visible strips", () => {
   let mounted: Record<string, unknown> | null = null;
   let target: HTMLElement;
   beforeEach(() => vi.stubGlobal("IntersectionObserver", FakeObserver));
@@ -57,7 +57,7 @@ describe("ミキサーの値の字は、見えているストリップにだけ�
     vi.unstubAllGlobals();
   });
 
-  it("見えている間は、いちばん新しい位置が変わるコマごとに字が変わる。外に出たら書かず、四角も頼まない", async () => {
+  it("while visible, the text changes on each frame where the newest position changes. Out of view, no writing and no rectangle requests", async () => {
     app.reset();
     const state = fakeScene("mixerRest")!.state;
     const track = state.song.tracks.find((x) => x.lanes.some((l) => l.target.kind === "volume" && !l.resting))!;
@@ -81,7 +81,7 @@ describe("ミキサーの値の字は、見えているストリップにだけ�
     };
     const atStart = gain();
 
-    // まだ見えていない（知らせが来ていない）: 字は、つまみの値のまま。
+    // Not visible yet (no notice has come): the text stays at the knob value.
     await frame(100);
     expect(gain()).toBe(atStart);
     expect(asked()).toBe(0);
@@ -104,7 +104,7 @@ describe("ミキサーの値の字は、見えているストリップにだけ�
     expect(gain()).toBe(out);
     expect(gain()).not.toBe(faderText(fracToDb(0.8)));
 
-    // もどれば、また毎コマ。
+    // Back in view, every frame again.
     setSeen(value, true);
     await frame(900);
     expect(gain()).toBe(faderText(fracToDb(0.9)));

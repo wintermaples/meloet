@@ -1,5 +1,5 @@
-// つまみの位置 ↔ 値の式が、Rust（crates/meloet-model の Gain ・ Pan ・ ParamSpec）と同じ答えを出すか。
-// 答えの表は `cargo test -p meloet-model --test positions` が書く（ui/tests/fixtures/automation-positions.json）。
+// Checks that the knob position <-> value formulas give the same answers as Rust (Gain, Pan, ParamSpec in crates/meloet-model).
+// The answer table is written by `cargo test -p meloet-model --test positions` (ui/tests/fixtures/automation-positions.json).
 import { describe, expect, it } from "vitest";
 import { EFFECT_PARAMS, type EffectKind } from "../src/bridge/types";
 import { panAt, panPosition, paramAt, paramPosition } from "../src/components/automation/laneValue";
@@ -14,26 +14,26 @@ interface Table {
 }
 const t = table as Table;
 
-/** 表の位置は f32。 */
+/** Positions in the table are f32. */
 const F32 = 1e-6;
-/** Rust の Gain は 0.01 dB きざみ、画面の fracToDb は 0.1 dB きざみ。 */
+/** Rust Gain is in steps of 0.01 dB, the screen's fracToDb in steps of 0.1 dB. */
 const DB_ROUNDING = 0.05 + 1e-9;
 
-describe("フェーダー ・ センドの位置（scale.ts の dbToFrac ・ fracToDb）", () => {
-  // 表の前半は dB → 位置、後半は位置 → dB（並びで分かれる）。
+describe("fader and send position (dbToFrac and fracToDb in scale.ts)", () => {
+  // The first half of the table is dB -> position, the second half position -> dB (split by order).
   const fromDb = t.fader.filter((_, i) => Object.keys(t.fader[i]!)[0] === "db");
   const fromPosition = t.fader.filter((_, i) => Object.keys(t.fader[i]!)[0] === "position");
 
-  it("表がある", () => {
+  it("the table exists", () => {
     expect(fromDb.length).toBeGreaterThan(90);
     expect(fromPosition.length).toBe(101);
   });
 
-  it("dB → 位置", () => {
+  it("dB -> position", () => {
     for (const row of fromDb) expect(Math.abs(dbToFrac(row.db) - row.position), String(row.db)).toBeLessThanOrEqual(F32);
   });
 
-  it("位置 → dB（画面は 0.1 dB に丸める）", () => {
+  it("position -> dB (the screen rounds to 0.1 dB)", () => {
     for (const row of fromPosition) {
       const got = fracToDb(row.position);
       if (row.db === null || got === null) expect(got, String(row.position)).toBe(row.db);
@@ -42,8 +42,8 @@ describe("フェーダー ・ センドの位置（scale.ts の dbToFrac ・ fra
   });
 });
 
-describe("パンの位置（laneValue.ts の panPosition ・ panAt）", () => {
-  it("パン → 位置 → パン", () => {
+describe("pan position (panPosition and panAt in laneValue.ts)", () => {
+  it("pan -> position -> pan", () => {
     expect(t.pan.length).toBe(21);
     for (const row of t.pan) {
       expect(Math.abs(panPosition(row.pan) - row.position), String(row.pan)).toBeLessThanOrEqual(F32);
@@ -52,8 +52,8 @@ describe("パンの位置（laneValue.ts の panPosition ・ panAt）", () => {
   });
 });
 
-describe("最初から入っているエフェクトのパラメータ（paramRows.ts ・ laneValue.ts の paramPosition ・ paramAt）", () => {
-  it("表にどのパラメータもある", () => {
+describe("built-in effect parameters (paramRows.ts, and paramPosition and paramAt in laneValue.ts)", () => {
+  it("every parameter is in the table", () => {
     const want = Object.entries(EFFECT_PARAMS).flatMap(([effect, params]) => params.map((_, i) => `${effect}/${i}`));
     expect(t.params.map((p) => `${p.effect}/${p.param}`).sort()).toEqual(want.sort());
   });
@@ -61,16 +61,16 @@ describe("最初から入っているエフェクトのパラメータ（paramRo
   for (const row of t.params) {
     const spec = EFFECT_PARAMS[row.effect as EffectKind][row.param]!;
     const what = `${row.effect} ${spec.id}`;
-    // 段階とオン ・ オフの値は段の番号（整数）だけ。表の間の値（0.4 など）は、画面は段に丸め、Rust はまっすぐ数える。
-    it(`${what}: 値 → 位置`, () => {
+    // Values of steps and on/off are only step numbers (integers). Between them (0.4 and so on) the screen rounds to a step and Rust counts in a straight line.
+    it(`${what}: value -> position`, () => {
       for (const [value, position] of row.values) {
         if (spec.shape !== "continuous" && !Number.isInteger(value)) continue;
         expect(Math.abs(paramPosition(spec, value!) - position!), `${value}`).toBeLessThanOrEqual(1e-5);
       }
     });
-    // Rust の value_at は丸めないので、画面と同じに見せるけたへ丸めてからくらべる。Rust（f32）の値が丸めのちょうど
-    // まん中（66.5、1.15）に落ちた所は、画面（f64）がまん中のわずかに上か下かで、となりの段になってよい。
-    it(`${what}: 位置 → 値`, () => {
+    // Rust value_at does not round, so round to the digits the screen shows before comparing. Where the Rust (f32) value lands exactly
+    // on the middle of a rounding (66.5, 1.15), the screen (f64) may be a little above or below it, so the next step is allowed.
+    it(`${what}: position -> value`, () => {
       for (const [position, value] of row.positions) {
         const got = paramAt(spec, position!);
         const want = roundTo(spec, value!);

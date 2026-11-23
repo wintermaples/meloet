@@ -1,4 +1,4 @@
-// 決まりの見はり: 部品に色の 16 進数、px、font-weight の数を直接書かない（数値は src/design/ の CSS の変数から）。
+// Rule watch: parts do not write hex colors, px, or font-weight numbers directly (values come from the CSS variables of src/design/).
 import { describe, expect, it } from "vitest";
 
 const files = import.meta.glob(["../src/**/*.svelte", "../src/**/*.css", "!../src/design/**"], {
@@ -13,7 +13,7 @@ const RULES: [string, RegExp][] = [
   ["font-weight の数", /font-weight\s*[:=]\s*["'{]?\s*(?:\d+|bold(?:er)?|lighter)\b/g],
 ];
 
-/** 見つかった物を「行: 決まり: 文字」の形で返す。 */
+/** Returns findings in the form 「行: 決まり: 文字」. */
 export function violations(source: string): string[] {
   const out: string[] = [];
   source.split("\n").forEach((lineText, i) => {
@@ -24,8 +24,8 @@ export function violations(source: string): string[] {
   return out;
 }
 
-describe("決まりの見はり", () => {
-  it("見はる物がある（.svelte を読めている）", () => {
+describe("rule watch", () => {
+  it("there is something to watch (.svelte files are read)", () => {
     expect(Object.keys(files).some((f) => f.endsWith(".svelte"))).toBe(true);
     expect(Object.keys(files).some((f) => f.includes("/design/"))).toBe(false);
   });
@@ -34,7 +34,7 @@ describe("決まりの見はり", () => {
     expect(violations(source)).toEqual([]);
   });
 
-  it("わざと書いた悪い例で落ちる", () => {
+  it("fails on bad examples written on purpose", () => {
     const bad = `<div style="color:#F2F2F2"></div>
 <style>
   .a { background: #222; width: 248px; padding: 0.5px; }
@@ -52,7 +52,7 @@ describe("決まりの見はり", () => {
     ]);
   });
 
-  it("CSS の変数や Svelte の書きかたは落ちない", () => {
+  it("CSS variables and Svelte syntax do not fail", () => {
     const ok = `{#if a}{#each xs as x}<i style:left="{x}px"></i>{/each}{/if}
 <style>.a { width: var(--part-tip-width); margin: var(--space-2); font-weight: var(--text-s-weight-600); }</style>`;
     expect(violations(ok)).toEqual([]);

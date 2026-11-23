@@ -1,4 +1,4 @@
-// 再生まわりの帯、状態行の札と知らせ、入力計の録音中の鳴る先、アレンジの上の案内を mount して確かめる。
+// Mounts and checks the transport band, the status line tag and notices, the input meter's play target while recording, and the hint above the arrange.
 import { flushSync, mount, tick, unmount, type Component } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, StatusMessage, TransportReading } from "../src/bridge";
@@ -29,7 +29,7 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-/** 前に mount した物は先に外す（1 つの試験で何度も show すると、残った物が後の試験の状態を読んで落ちる）。 */
+/** Removes the earlier mount first (if one test calls show many times, what stays reads the state of later tests and fails). */
 function show(component: Component<any>, state: AppState): void {
   if (mounted) unmount(mounted);
   mounted = null;
@@ -46,7 +46,7 @@ const disabled = (name: string) => btn(name).getAttribute("aria-disabled") === "
 const KEYBOARD = { id: "kb", name: "鍵盤 49", portName: "鍵盤 49 MIDI 1", address: "24:0" };
 const PIANO = { number: 1, name: "ピアノ" };
 
-/** 鍵盤と出口があり、ピアノが録音待機。 */
+/** With a keyboard and an output, and the piano armed. */
 const ready = (edit: (s: AppState) => void = () => {}) =>
   app.stateWith((s) => {
     s.keyboards = { ...s.keyboards, list: [KEYBOARD], active: "kb", lost: null, inputStopped: false };
@@ -67,8 +67,8 @@ const reading = (r: Partial<TransportReading>): TransportReading => ({
 
 const BAR = 4 * TPQ;
 
-describe("再生まわりのボタン", () => {
-  it("音の出口がまだ: ▶ と ● は使えない見た目で、押しても何も送らない。⏮ ■ ループ メトロノームは使える", () => {
+describe("transport buttons", () => {
+  it("no output yet: ▶ and ● look disabled and send nothing when pressed. ⏮ ■ loop and metronome work", () => {
     show(Transport, app.stateWith(() => {}));
     expect(disabled("play")).toBe(true);
     expect(disabled("record")).toBe(true);
@@ -82,7 +82,7 @@ describe("再生まわりのボタン", () => {
     expect(app.sent).toEqual([{ type: "goToStart" }, { type: "toggleLoop" }, { type: "toggleMetronome" }]);
   });
 
-  it("止まっているとき: ■ が明るく、▶ で playStop、■ は何も送らない。● は rec の輪", () => {
+  it("stopped: ■ is bright, ▶ sends playStop, ■ sends nothing. ● is a rec ring", () => {
     show(Transport, ready());
     expect(btn("stop").classList.contains("hi")).toBe(true);
     expect(btn("play").classList.contains("hi")).toBe(false);
@@ -93,7 +93,7 @@ describe("再生まわりのボタン", () => {
     expect(app.sent).toEqual([{ type: "playStop" }, { type: "record" }]);
   });
 
-  it("再生中: ▶ が明るく、■ で playStop、▶ は何も送らない", () => {
+  it("playing: ▶ is bright, ■ sends playStop, ▶ sends nothing", () => {
     show(Transport, ready((s) => (s.transport.state = "playing")));
     expect(btn("play").classList.contains("hi")).toBe(true);
     expect(btn("stop").classList.contains("hi")).toBe(false);
@@ -102,14 +102,14 @@ describe("再生まわりのボタン", () => {
     expect(app.sent).toEqual([{ type: "playStop" }]);
   });
 
-  it("録音待機のトラックがない: ● は使えない見た目だが、押すと record を送る（Rust が理由を出す）", () => {
+  it("no armed track: ● looks disabled but pressing sends record (Rust gives the reason)", () => {
     show(Transport, ready((s) => (s.transport.canRecord = false)));
     expect(disabled("record")).toBe(true);
     btn("record").click();
     expect(app.sent).toEqual([{ type: "record" }]);
   });
 
-  it("録音中とカウントイン中は ● が rec のぬり", () => {
+  it("while recording and during count-in, ● is filled with rec", () => {
     show(Transport, ready((s) => (s.transport.state = "recording")));
     expect(btn("record").classList.contains("recording")).toBe(true);
     expect(disabled("record")).toBe(false);
@@ -118,7 +118,7 @@ describe("再生まわりのボタン", () => {
     expect(btn("record").classList.contains("recording")).toBe(true);
   });
 
-  it("ループとメトロノームのオンは accent（on）", () => {
+  it("loop and metronome on are accent (on)", () => {
     show(
       Transport,
       ready((s) => {
@@ -135,14 +135,14 @@ describe("再生まわりのボタン", () => {
   });
 });
 
-describe("位置と時間", () => {
-  it("計器がなければ transport.position", () => {
+describe("position and time", () => {
+  it("transport.position with no meter values", () => {
     show(Transport, ready((s) => (s.transport.position = 4 * BAR)));
     expect(text('[data-test="transport-position"]')).toBe("5. 1. 0000");
     expect(text('[data-test="transport-time"]')).toBe("00:00:10.000");
   });
 
-  it("計器があれば、その位置（モック F-ArrangeRec の 7. 3. 240 ・ 00:00:16.562。ティックは 4 けた）", () => {
+  it("with meter values, that position (7. 3. 240, 00:00:16.562 of mock F-ArrangeRec. Ticks have 4 digits)", () => {
     show(Transport, ready((s) => (s.transport.state = "recording")));
     app.setTelemetry(app.telemetryWith({ position: reading({ tick: 6 * BAR + 2 * TPQ + TPQ / 2, state: "recording" }) }));
     flushSync();
@@ -150,7 +150,7 @@ describe("位置と時間", () => {
     expect(text('[data-test="transport-time"]')).toBe("00:00:16.562");
   });
 
-  it("カウントイン中は、録りはじめる位置のまま", () => {
+  it("during count-in, stays at the position where recording starts", () => {
     show(
       Transport,
       ready((s) => {
@@ -164,7 +164,7 @@ describe("位置と時間", () => {
     expect(text('[data-test="transport-position"]')).toBe("5. 1. 0000");
   });
 
-  it("拍子とテンポで換算する（6/8、120.00）", () => {
+  it("converts with time signature and tempo (6/8, 120.00)", () => {
     show(
       Transport,
       ready((s) => {
@@ -175,13 +175,13 @@ describe("位置と時間", () => {
       }),
     );
     expect(text('[data-test="transport-position"]')).toBe("2. 2. 0080");
-    // 3.5416… 拍（4 分音符）、テンポは 4 分音符の数なので 120 で 1.7708… 秒
+    // 3.5416… beats (quarter notes); the tempo counts quarter notes, so at 120 it is 1.7708… seconds
     expect(text('[data-test="transport-time"]')).toBe("00:00:01.770");
   });
 });
 
-describe("カウントイン", () => {
-  // jsdom には幅がないので、帯の幅を 1920 にする（カウントインが引っこまないように）。
+describe("count-in", () => {
+  // jsdom has no width, so the band is 1920 wide (so that the count-in is not hidden).
   beforeEach(() => {
     vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1920);
   });
@@ -189,7 +189,7 @@ describe("カウントイン", () => {
     vi.restoreAllMocks();
   });
 
-  it("止まっているときはボタン。小節数と「なし」", () => {
+  it("a button when stopped. Bar counts and 「なし」", () => {
     show(Transport, ready());
     expect(text('[data-test="transport-count-in"]')).toBe("カウントイン1 小節");
     app.setState(ready((s) => (s.transport.countInBars = 0)));
@@ -197,7 +197,7 @@ describe("カウントイン", () => {
     expect(text('[data-test="transport-count-in"]')).toBe("カウントインなし");
   });
 
-  it("押すと一覧がひらき、えらぶと setCountIn を送ってとじる。Esc の順の「メニュー」に入る", async () => {
+  it("pressing opens the list; choosing sends setCountIn and closes it. It joins 「メニュー」 in the Esc order", async () => {
     show(Transport, ready());
     btn("count-in").click();
     flushSync();
@@ -216,7 +216,7 @@ describe("カウントイン", () => {
     expect(menuVisible()).toBe(false);
   });
 
-  it("一覧は ↑ ↓ Enter でえらべる。Esc（closeMenu）でとじる", async () => {
+  it("the list can be chosen with ↑ ↓ Enter. Esc (closeMenu) closes it", async () => {
     show(Transport, ready());
     btn("count-in").click();
     flushSync();
@@ -237,7 +237,7 @@ describe("カウントイン", () => {
     expect(q('[data-test="count-in-menu"]')).toBeNull();
   });
 
-  it("カウントイン中は、オンのボタンに「カウントイン」と四角 ■■■□。「3 / 4」の字は出さない（仕様書 3 章、モック F-Connect4）", () => {
+  it("during count-in, the on button shows 「カウントイン」 and squares ■■■□. No 「3 / 4」 text (spec 3, mock F-Connect4)", () => {
     show(
       Transport,
       ready((s) => {
@@ -256,7 +256,7 @@ describe("カウントイン", () => {
     expect(q('[data-test="transport-count-in"]')).toBeNull();
   });
 
-  it("四角は 1 小節にメトロノームが鳴る数（22-2）: 12/8 は 4、6/8 は 2、5/8 は 5、2/2 は 2", () => {
+  it("the squares are the metronome clicks per bar (22-2): 4 for 12/8, 2 for 6/8, 5 for 5/8, 2 for 2/2", () => {
     for (const [num, den, n] of [
       [12, 8, 4],
       [6, 8, 2],
@@ -280,7 +280,7 @@ describe("カウントイン", () => {
     }
   });
 
-  it("2 小節のカウントインでも箱は 1 小節ぶん。小節ごとに数えなおす", () => {
+  it("even with a 2-bar count-in the box is one bar. It counts again each bar", () => {
     show(
       Transport,
       ready((s) => {
@@ -297,13 +297,13 @@ describe("カウントイン", () => {
   });
 });
 
-describe("横が足りないとき（仕様書 1 章 (1)、2 章「曲の ▾」「メトロノームの ▾」、モック F-Menus）", () => {
+describe("when there is not enough width (spec 1 (1), spec 2 (Song ▾, Metronome ▾), mock F-Menus)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.useRealTimers();
   });
 
-  /** jsdom には幅がないので、部品ごとの幅と帯の幅をきめる。ボタンの右はしのキーは幅 0（ボタンの幅に入っている物として）。 */
+  /** jsdom has no width, so the width of each part and of the band are set. The key at the right end of a button is width 0 (counted in the button width). */
   function widths(row: number, part: (name: string | undefined) => number): void {
     vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(row);
     vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockImplementation(function (this: HTMLElement) {
@@ -313,7 +313,7 @@ describe("横が足りないとき（仕様書 1 章 (1)、2 章「曲の ▾」
   }
   const folded = () => widths(0, () => 10);
 
-  it("曲の名前が引っこむと 28 の ▾。押すと曲の名前の一覧（印はから）", async () => {
+  it("when the song name hides, a 28-wide ▾. Pressing gives the song name list (the mark is empty)", async () => {
     folded();
     show(Transport, ready());
     expect(q('[data-test="transport-song"]')).toBeNull();
@@ -333,7 +333,7 @@ describe("横が足りないとき（仕様書 1 章 (1)、2 章「曲の ▾」
     expect(app.sent).toEqual([{ type: "saveSong" }]);
   });
 
-  it("曲の ▾ に乗せると「曲 ・ （曲の名前）」", () => {
+  it("hovering the song ▾ shows 「曲 ・ （曲の名前）」", () => {
     vi.useFakeTimers();
     folded();
     show(Transport, ready());
@@ -344,7 +344,7 @@ describe("横が足りないとき（仕様書 1 章 (1)、2 章「曲の ▾」
     expect(tipView.value?.term).toBeNull();
   });
 
-  it("細い形のマスターは「dB」をはぶき（−∞）、乗せると「マスター ・ −∞ dB」。ふつうの形は「−∞ dB」と用語の説明（仕様書 3 章）", () => {
+  it("the slim master drops 「dB」 (−∞), hover shows 「マスター ・ −∞ dB」. The normal form is 「−∞ dB」 with a term tip (spec 3)", () => {
     vi.useFakeTimers();
     folded();
     show(Transport, ready());
@@ -371,7 +371,7 @@ describe("横が足りないとき（仕様書 1 章 (1)、2 章「曲の ▾」
     expect(tipView.value?.term).toBe("dB");
   });
 
-  it("カウントインが引っこむとメトロノームの ▾。メトロノームがオンなら ▾ もオン", () => {
+  it("when the count-in hides, the metronome ▾. When the metronome is on, the ▾ is on too", () => {
     folded();
     show(Transport, ready((s) => (s.transport.metronome = true)));
     expect(q('[data-test="transport-count-in"]')).toBeNull();
@@ -384,7 +384,7 @@ describe("横が足りないとき（仕様書 1 章 (1)、2 章「曲の ▾」
     expect(btn("metronome-stub").classList.contains("on")).toBe(false);
   });
 
-  it("メトロノームの ▾ の一覧: メトロノーム（C）、見出し「カウントイン」、なし ・ 1 小節 ・ 2 小節", async () => {
+  it("the metronome ▾ list: metronome (C), heading 「カウントイン」, none, 1 bar, 2 bars", async () => {
     folded();
     show(Transport, ready((s) => (s.transport.metronome = true)));
     btn("metronome-stub").click();
@@ -414,12 +414,12 @@ describe("横が足りないとき（仕様書 1 章 (1)、2 章「曲の ▾」
     expect(app.sent.at(-1)).toEqual({ type: "toggleMetronome" });
   });
 
-  it("一覧が窓からはみ出すときは、窓の中に入るまで左と上へずらす", async () => {
+  it("a list that goes outside the window moves left and up until it fits", async () => {
     folded();
     vi.spyOn(window, "innerWidth", "get").mockReturnValue(1280);
     vi.spyOn(window, "innerHeight", "get").mockReturnValue(800);
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
-      // 一覧はボタンの下、右はしは窓の外（1200 + 220）、下も窓の外（700 + 150）。
+      // the list is below the button; its right end is outside the window (1200 + 220), and its bottom too (700 + 150).
       const rect = this.classList.contains("menu") ? { left: 1200, top: 700, width: 220, height: 150 } : { left: 0, top: 0, width: 0, height: 0 };
       return { ...rect, right: rect.left + rect.width, bottom: rect.top + rect.height, x: rect.left, y: rect.top, toJSON: () => ({}) } as DOMRect;
     });
@@ -431,7 +431,7 @@ describe("横が足りないとき（仕様書 1 章 (1)、2 章「曲の ▾」
     expect(q<HTMLElement>('[data-test="metronome-menu"]')!.style.transform).toBe("translate(-140px, -50px)");
   });
 
-  it("窓に入る一覧はずらさない", async () => {
+  it("a list that fits in the window does not move", async () => {
     folded();
     vi.spyOn(window, "innerWidth", "get").mockReturnValue(1280);
     vi.spyOn(window, "innerHeight", "get").mockReturnValue(800);
@@ -443,7 +443,7 @@ describe("横が足りないとき（仕様書 1 章 (1)、2 章「曲の ▾」
     expect(q<HTMLElement>('[data-test="song-menu"]')!.style.transform).toBe("");
   });
 
-  it("カウントインが始まっても、引っこむ物は変わらない（カウントインの幅は、ふだんとカウントイン中の大きいほう）", () => {
+  it("what hides does not change when the count-in starts (the count-in width is the bigger of normal and during count-in)", () => {
     const shown = () =>
       ["transport-song", "transport-song-stub", "transport-metronome-stub"].map((t) => q(`[data-test="${t}"]`) !== null).join();
     const seen = new Set<string>();
@@ -468,7 +468,7 @@ describe("横が足りないとき（仕様書 1 章 (1)、2 章「曲の ▾」
   });
 });
 
-describe("テンポと拍子の打ちこみ", () => {
+describe("typing tempo and time signature", () => {
   const field = (name: "tempo" | "meter") => q<HTMLInputElement>(`input[data-test="transport-${name}"]`);
   const press = (el: HTMLElement, key: string, more: KeyboardEventInit = {}) => {
     const ev = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...more });
@@ -488,7 +488,7 @@ describe("テンポと拍子の打ちこみ", () => {
     return field(name)!;
   };
 
-  it("押すと入力の枠になり、いまの値が入ってえらばれている。Enter で setTempo", async () => {
+  it("pressing turns it into an input box with the current value selected. Enter sends setTempo", async () => {
     show(Transport, ready());
     expect(field("tempo")).toBeNull();
     const input = await open("tempo");
@@ -501,7 +501,7 @@ describe("テンポと拍子の打ちこみ", () => {
     expect(field("tempo")).toBeNull();
   });
 
-  it("Esc でやめる（何も送らない）", async () => {
+  it("Esc cancels (sends nothing)", async () => {
     show(Transport, ready());
     const input = await open("tempo");
     type(input, "120");
@@ -511,7 +511,7 @@ describe("テンポと拍子の打ちこみ", () => {
     expect(app.sent).toEqual([]);
   });
 
-  it("数字として読めない値は「こわれた」の枠で、Enter でも決めない。状態行で言うように頼む（もとの値）", async () => {
+  it("a value that cannot be read as a number gets the broken border and is not set even with Enter. Asks the status line to say so (the original value)", async () => {
     show(Transport, ready());
     const input = await open("tempo");
     for (const bad of ["abc", "", "1e2", "12a"]) {
@@ -526,7 +526,7 @@ describe("テンポと拍子の打ちこみ", () => {
     expect(input.classList.contains("broken")).toBe(false);
   });
 
-  it("範囲の外の数は近いはしにして決め、そのあと clampValue（B-68）。小数は第 2 位までに四捨五入", async () => {
+  it("a number outside the range is set to the nearest end, then clampValue (B-68). Decimals are rounded to 2 places", async () => {
     show(Transport, ready());
     for (const [typed, bpm, said] of [
       ["29.99", 30, "30.00"],
@@ -546,7 +546,7 @@ describe("テンポと拍子の打ちこみ", () => {
     }
   });
 
-  it("↑ ↓ で 1 ずつ、Shift で 10。範囲の外へは出ない", async () => {
+  it("↑ ↓ by 1, Shift by 10. Does not go outside the range", async () => {
     show(Transport, ready());
     const input = await open("tempo");
     press(input, "ArrowUp");
@@ -559,7 +559,7 @@ describe("テンポと拍子の打ちこみ", () => {
     expect(app.sent).toEqual([]);
   });
 
-  it("拍子: Enter で setMeter、↑ ↓ は上の数、読めない値は決めない", async () => {
+  it("time signature: Enter sends setMeter, ↑ ↓ change the top number, unreadable values are not set", async () => {
     show(Transport, ready());
     const input = await open("meter");
     expect(input.value).toBe("4/4");
@@ -579,7 +579,7 @@ describe("テンポと拍子の打ちこみ", () => {
     expect(app.sent.at(-1)).toEqual({ type: "setMeter", num: 6, den: 8 });
   });
 
-  it("拍子の範囲の外: 上は 1〜12、下はいちばん近い 2 ・ 4 ・ 8 ・ 16（B-68）", async () => {
+  it("time signature outside the range: top 1 to 12, bottom the nearest of 2, 4, 8, 16 (B-68)", async () => {
     show(Transport, ready());
     for (const [typed, num, den, said] of [
       ["13/4", 12, 4, { field: "meterNum", value: "12" }],
@@ -602,7 +602,7 @@ describe("テンポと拍子の打ちこみ", () => {
     }
   });
 
-  it("位置「1. 1. 0000」も入力の枠（B-61）。「5」「5.2」「5.2.0960」で locate、↑ ↓ は使わない、Esc でやめる", async () => {
+  it("position 「1. 1. 0000」 is an input box too (B-61). 「5」「5.2」「5.2.0960」 send locate, ↑ ↓ are not used, Esc cancels", async () => {
     show(Transport, ready());
     const openPos = async () => {
       q<HTMLButtonElement>(`button[data-test="transport-position"]`)!.click();
@@ -637,7 +637,7 @@ describe("テンポと拍子の打ちこみ", () => {
     expect(app.sent.at(-1)).toEqual({ type: "rejectValue", field: "playPosition", kept: "1. 1. 0000", range: null });
   });
 
-  it("位置の範囲の外: 小節 ・ 拍 ・ ティックをそれぞれ丸め、いちばん大きい単位のことだけ言う（B-68）", async () => {
+  it("position outside the range: bar, beat and tick are each rounded, and only the biggest unit is mentioned (B-68)", async () => {
     show(Transport, ready());
     for (const [typed, tick_, said] of [
       ["3.7", 2 * BAR + 3 * TPQ, { field: "beat", value: "3. 4. 0000", range: "1〜4" }],
@@ -657,7 +657,7 @@ describe("テンポと拍子の打ちこみ", () => {
     }
   });
 
-  it("枠の外へ出たら、やめる", async () => {
+  it("leaving the box cancels", async () => {
     show(Transport, ready());
     const input = await open("meter");
     type(input, "3/4");
@@ -668,7 +668,7 @@ describe("テンポと拍子の打ちこみ", () => {
   });
 });
 
-describe("状態行の札と知らせ", () => {
+describe("status line tag and notices", () => {
   const badge = () => q('[data-test="status-badge"]')!;
   const left = () => text("footer.status")!;
 
@@ -748,7 +748,7 @@ describe("状態行の札と知らせ", () => {
     expect(left()).toContain(`■ 停止中 ${expected}`);
   });
 
-  it("ミュートしたトラックは、ほかに言うことがなくても出す。動いているときと、ほかの知らせの間は出さない", () => {
+  it("a muted track is shown even with nothing else to say. Not shown while moving or during other notices", () => {
     const mutePiano = (s: AppState) => (s.song.tracks[0]!.muted = true);
     show(StatusLine, msg({ id: "summary", loopBars: null, nothingSelected: false, notes: null }, mutePiano));
     expect(left()).toContain("■ 停止中 1 ピアノ はミュート");
@@ -768,12 +768,12 @@ describe("状態行の札と知らせ", () => {
     expect(left()).not.toContain("ミュート");
   });
 
-  it("summary で何もないときは、札だけ", () => {
+  it("with nothing in summary, only the tag", () => {
     show(StatusLine, msg({ id: "summary", loopBars: null, nothingSelected: false, notes: null }));
     expect(text(".status .message")).toBeNull();
   });
 
-  it("カウントイン中: 札と合わせて仕様書の文。残りの拍は計器から", () => {
+  it("during count-in: the spec text with the tag. The beats left come from the meter values", () => {
     show(StatusLine, msg({ id: "countingIn", beats: 4 }, (s) => (s.transport.state = "countIn")));
     expect(left()).toContain("● カウントイン中 あと 4 拍で録音が始まります。止めるには Space");
     app.setTelemetry(app.telemetryWith({ position: reading({ state: "countIn", countInBeatsLeft: 2 }) }));
@@ -782,13 +782,13 @@ describe("状態行の札と知らせ", () => {
   });
 });
 
-describe("入力計の右（弾くと鳴る先）", () => {
-  it("止まっているときは「1 ピアノ ・ グランドピアノ」", () => {
+describe("right of the input meter (play target)", () => {
+  it("when stopped, 「1 ピアノ ・ グランドピアノ」", () => {
     show(InputMeter, ready());
     expect(text('[data-test="meter-target"]')).toBe("1 ピアノ ・ グランドピアノ");
   });
 
-  it("カウントイン中と録音中は「1 ピアノ ● テイク 1」。● から後ろが rec", () => {
+  it("during count-in and recording, 「1 ピアノ ● テイク 1」. From ● on is rec", () => {
     show(
       InputMeter,
       ready((s) => {
@@ -800,7 +800,7 @@ describe("入力計の右（弾くと鳴る先）", () => {
     expect(q('[data-test="meter-target"] .rec')!.textContent).toBe("● テイク 1");
   });
 
-  it("テイクの番号は recording.take そのまま（計器の周は足さない）", () => {
+  it("the take number is recording.take as it is (the meter's pass is not added)", () => {
     show(
       InputMeter,
       ready((s) => {
@@ -814,8 +814,8 @@ describe("入力計の右（弾くと鳴る先）", () => {
   });
 });
 
-describe("アレンジの上の案内", () => {
-  it("音が出ました: 録音ボタンが使えるときだけ 2 文目とキー（モック F-Connect3）", () => {
+describe("hint above the arrange", () => {
+  it("sound came out: the second sentence and key only when the record button can be used (mock F-Connect3)", () => {
     show(SoundHint, ready((s) => (s.workspace.hint = "soundCameOut")));
     expect(text('[data-test="sound-hint"]')).toBe(
       "音が出ました。 赤い丸の録音ボタンを押すと、カウントインのあとに録りはじめます。 録音 R ・ 再生と停止 Space",
@@ -830,7 +830,7 @@ describe("アレンジの上の案内", () => {
     expect(text('[data-test="sound-hint"]')).toBe("音が出ました。");
   });
 
-  it("からっぽのアレンジ: 3 文（モック F-Empty）。3 文目は「＋ トラックを追加」が使えるときだけ", () => {
+  it("empty arrange: 3 sentences (mock F-Empty). The third only when 「＋ トラックを追加」 can be used", () => {
     show(SoundHint, ready((s) => (s.workspace.hint = "emptyArrange")));
     expect(text('[data-test="empty-hint"]')).toBe(
       "ここに、録った音がならびます。 鍵盤を弾いて音を確かめたら、赤い丸の録音ボタンへ。 トラックを増やすには左下の「＋ トラックを追加」",

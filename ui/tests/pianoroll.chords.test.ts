@@ -52,8 +52,8 @@ const C_MAJOR = { root: 0, mode: "major" } as const;
 const name = (k: number) => G.noteName(k);
 const names = (keys: readonly number[]) => keys.map(name).join(" ");
 
-describe("和音の形（モック P10-ChordStamp）", () => {
-  it("一覧の名前と、根音が C のときの音はモックの文のまま", () => {
+describe("chord shapes (mock P10-ChordStamp)", () => {
+  it("list names and the notes for root C are as the mock writes them", () => {
     const stamp = proposal("P10-ChordStamp");
     const rows = CHORD_SHAPES.map((s) => [shapeName(s), shapeOnC(s)]);
     expect(rows).toEqual([
@@ -71,7 +71,7 @@ describe("和音の形（モック P10-ChordStamp）", () => {
     for (const key of ["pr.chordShapes", "pr.chordRootC"] as const) expect(stamp).toContain(t(key));
   });
 
-  it("形の音は、根音が C のときの音と同じ高さ（♭ と ♯ は同じ鍵）", () => {
+  it("the shape's notes are at the same pitch as the notes for root C (♭ and ♯ are the same key)", () => {
     const flat: Record<string, number> = { C: 0, "E♭": 3, E: 4, F: 5, "G♭": 6, G: 7, "G♯": 8, "B♭": 10, B: 11 };
     for (const shape of CHORD_SHAPES) {
       const onC = shapeOnC(shape).split(" ").map((n) => flat[n]);
@@ -79,7 +79,7 @@ describe("和音の形（モック P10-ChordStamp）", () => {
     }
   });
 
-  it("押した行が根音。127 より上の音は書かない", () => {
+  it("the pressed row is the root. Notes above 127 are not written", () => {
     const major: ChordPick = { kind: "shape", shape: "major" };
     expect(names(stampKeys(major, 60))).toBe("C4 E4 G4");
     expect(names(stampKeys({ kind: "shape", shape: "minorSeventh" }, 62))).toBe("D4 F4 A4 C5");
@@ -87,7 +87,7 @@ describe("和音の形（モック P10-ChordStamp）", () => {
     expect(stampKeys(SINGLE, 61)).toEqual([61]);
   });
 
-  it("書くのボタンの名前と状態行（モックの文）", () => {
+  it("draw button name and status line (mock text)", () => {
     const major: ChordPick = { kind: "shape", shape: "major" };
     expect(pickName(SINGLE)).toBeNull();
     expect(pickName(major)).toBe("メジャー");
@@ -97,19 +97,19 @@ describe("和音の形（モック P10-ChordStamp）", () => {
   });
 });
 
-describe("調の和音（モック P10-ChordTable A）", () => {
+describe("chords of the key (mock P10-ChordTable A)", () => {
   const list = (scale: Parameters<typeof keyChords>[0]) => keyChords(scale).map((c) => triadName(c.root, c.triad));
 
-  it("メジャーの調: C ・ Dm ・ Em ・ F ・ G ・ Am ・ Bdim。ほかの主音もずらすだけ", () => {
+  it("major key: C, Dm, Em, F, G, Am, Bdim. Other tonics only shift", () => {
     expect(list(C_MAJOR)).toEqual(["C", "Dm", "Em", "F", "G", "Am", "Bdim"]);
     expect(list({ root: 7, mode: "major" })).toEqual(["G", "Am", "Bm", "C", "D", "Em", "F#dim"]);
   });
 
-  it("マイナーの調は主音から: Am ・ Bdim ・ C ・ Dm ・ Em ・ F ・ G", () => {
+  it("a minor key starts from the tonic: Am, Bdim, C, Dm, Em, F, G", () => {
     expect(list({ root: 9, mode: "minor" })).toEqual(["Am", "Bdim", "C", "Dm", "Em", "F", "G"]);
   });
 
-  it("7 音でない音階も 1 つおきに重ね、名前のない形は入れない", () => {
+  it("scales that are not 7 notes are also stacked every other note, and shapes with no name are left out", () => {
     // Harmonic minor: the third chord is aug.
     expect(chordsOfSteps(9, [0, 2, 3, 5, 7, 8, 11]).map((c) => triadName(c.root, c.triad))).toEqual(["Am", "Bdim", "Caug", "Dm", "E", "F", "G#dim"]);
     // Major pentatonic: no stack of every other note is a named triad.
@@ -119,7 +119,7 @@ describe("調の和音（モック P10-ChordTable A）", () => {
     expect(chordsOfSteps(0, [0, 7])).toEqual([]);
   });
 
-  it("押した行にいちばん近い根音（同じ近さなら下）。0〜127 の中", () => {
+  it("the root nearest the pressed row (the lower one when equally near). Within 0 to 127", () => {
     expect(nearestRoot(60, 2)).toBe(62);
     expect(nearestRoot(71, 2)).toBe(74);
     expect(nearestRoot(66, 0)).toBe(60);
@@ -133,7 +133,7 @@ describe("調の和音（モック P10-ChordTable A）", () => {
     expect(pickName(dm)).toBe("Dm");
   });
 
-  it("用語の説明はモックの文のまま（user:2026-11-23）", () => {
+  it("term tips are as the mock writes them (user:2026-11-23)", () => {
     for (const [word, board] of [
       ["和音のスタンプ", "P10-ChordStamp"],
       ["根音", "P10-ChordStamp"],
@@ -147,7 +147,7 @@ describe("調の和音（モック P10-ChordTable A）", () => {
   });
 });
 
-describe("書く道具で和音を書く（drag.ts）", () => {
+describe("drawing chords with the draw tool (drag.ts)", () => {
   const NONE: Mods = { shift: false, alt: false, mod: false };
   const n = G.shownOf(take([[0, TPQ, 60, 80]]), 0);
   const y = (key: number) => (GEOM.topKey - key) * GEOM.rowH + 5;
@@ -183,7 +183,7 @@ describe("書く道具で和音を書く（drag.ts）", () => {
     });
   });
 
-  it("鍵の上では、書かれる所に影。ノートの上や選ぶ道具、1 音では出さない", () => {
+  it("over the keys, a shadow where it will be written. Not over a note, with the select tool, or for one note", () => {
     const h = drag.hover(x(2 * TPQ + 10), y(62), NONE);
     expect(h).toMatchObject({ cursor: "pencil", shadowChanged: true });
     expect(drag.shadow).toEqual({ start: 2 * TPQ, length: TPQ / 4, keys: [62, 66, 69], key: 62 });
@@ -199,7 +199,7 @@ describe("書く道具で和音を書く（drag.ts）", () => {
     expect(drag.shadow).toBeNull();
   });
 
-  it("押して離すと addNotes を 1 つ。押したまま右へ動かすと、そろってのびる。ベロシティは書く道具と同じ", () => {
+  it("press and release sends one addNotes. Held and moved right, they all grow together. Velocity is the same as the draw tool", () => {
     drag.down(x(2 * TPQ + 10), y(60), NONE);
     expect(sent).toEqual([{ type: "audition", keys: [60, 64, 67], velocity: 90 }]);
     sent.length = 0;
@@ -210,13 +210,13 @@ describe("書く道具で和音を書く（drag.ts）", () => {
     expect(sent).toEqual([{ type: "audition", keys: [], velocity: 0 }, c]);
   });
 
-  it("調の和音は、押した行にいちばん近い根音で置く", () => {
+  it("chords of the key are placed with the root nearest the pressed row", () => {
     pick = { kind: "key", root: 2, triad: "minor" };
     drag.down(x(2 * TPQ), y(60), NONE);
     expect(drag.up()).toMatchObject({ type: "addNotes", keys: [62, 65, 69] });
   });
 
-  it("スケール固定でも、音階の外の音もそのまま書く（オーナーさんの決め）", () => {
+  it("even with scale lock, notes outside the scale are written as they are (the owner's decision)", () => {
     lock = true;
     pick = { kind: "shape", shape: "major" };
     expect(drag.hover(x(2 * TPQ), y(61), NONE).cursor).toBe("pencil");
@@ -224,7 +224,7 @@ describe("書く道具で和音を書く（drag.ts）", () => {
     expect(drag.up()).toMatchObject({ type: "addNotes", keys: [62, 66, 69] });
   });
 
-  it("Esc でやめると、何も送らない", () => {
+  it("cancelling with Esc sends nothing", () => {
     drag.down(x(2 * TPQ), y(60), NONE);
     sent.length = 0;
     expect(drag.cancel()).toBe(true);
@@ -232,15 +232,15 @@ describe("書く道具で和音を書く（drag.ts）", () => {
     expect(drag.up()).toBeNull();
   });
 
-  it("1 音のときは、いままでどおり addNote", () => {
+  it("for one note, addNote as before", () => {
     pick = SINGLE;
     drag.down(x(2 * TPQ), y(60), NONE);
     expect(drag.up()).toEqual({ type: "addNote", take: 7, start: 2 * TPQ, length: TPQ / 4, key: 60, velocity: 90 });
   });
 });
 
-describe("影の絵（paint.ts の paintLive）", () => {
-  it("書かれる所に、ノートと同じ大きさの accent の 1px の枠だけ（中はぬらない）", () => {
+describe("shadow picture (paintLive in paint.ts)", () => {
+  it("where it will be written, only a 1px accent border the same size as a note (inside not filled)", () => {
     const out = new Batch();
     const sizes = { noteH: 11, edge: 2, velBar: 3, velCap: 7, velFull: 64, velMid: 36, endMark: 16, drumGap: 8 };
     const box = { x0: 0, y0: 0, x1: 41, y1: 12 };
@@ -257,7 +257,7 @@ describe("影の絵（paint.ts の paintLive）", () => {
   });
 });
 
-describe("道具の列の ▾ と、調の和音の列（mount）", () => {
+describe("the ▾ in the toolbar and the row of chords of the key (mount)", () => {
   let mounted: Record<string, unknown> | null = null;
   let target: HTMLElement;
   beforeEach(() => {
@@ -297,7 +297,7 @@ describe("道具の列の ▾ と、調の和音の列（mount）", () => {
     return { s, where: { clip, track, take: tk } };
   }
 
-  it("▾ で一覧「和音の形」。えらぶと書く道具になり「書く メジャー 2」、▾ は accent。道具をかえても形は残る", () => {
+  it("▾ gives the 「和音の形」 list. Choosing one switches to the draw tool, 「書く メジャー 2」, and ▾ is accent. The shape stays when the tool changes", () => {
     show(Toolbar, keysScene(false), noClip);
     q("[data-test=pr-chord-menu]")!.click();
     flushSync();
@@ -318,7 +318,7 @@ describe("道具の列の ▾ と、調の和音の列（mount）", () => {
     expect(app.sent).toEqual([]);
   });
 
-  it("スケール固定がオフなら、案内の文。オンなら調の和音のボタン", () => {
+  it("a hint text when scale lock is off. Chord buttons of the key when on", () => {
     show(ChordRow, keysScene(false), noClip);
     expect(text(q("[data-test=pr-chord-row]"))).toBe("調の和音 スケール固定をオンにすると、その調の和音がここにならびます。");
     expect(qa("[data-test=pr-key-chord]")).toEqual([]);
@@ -328,7 +328,7 @@ describe("道具の列の ▾ と、調の和音の列（mount）", () => {
     expect(qa("[data-test=pr-key-chord]").map(text)).toEqual(["C", "Dm", "Em", "F", "G", "Am", "Bdim"]);
   });
 
-  it("和音を押すと、押している間だけ鳴り、書く道具の形になる（スタンプの形とどちらか 1 つ）", () => {
+  it("pressing a chord plays only while held and sets the draw tool shape (either this or the stamp shape)", () => {
     show(ChordRow, keysScene(true), noClip);
     const dm = qa("[data-test=pr-key-chord]")[1]!;
     dm.dispatchEvent(new PointerEvent("pointerdown", { button: 0, bubbles: true }));
@@ -344,7 +344,7 @@ describe("道具の列の ▾ と、調の和音の列（mount）", () => {
     expect(dm.classList.contains("on")).toBe(false);
   });
 
-  it("ドラムでは ▾ と調の和音の列は「使えない」。書く道具は 1 音のまま", async () => {
+  it("on drums, the ▾ and the chord row are disabled. The draw tool stays at one note", async () => {
     const { s, where } = await drumScene();
     s.pianoRoll.scale = { root: 0, mode: "major", lock: true };
     chordPick.pick = { kind: "shape", shape: "major" };

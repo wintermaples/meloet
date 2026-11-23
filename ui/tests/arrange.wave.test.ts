@@ -1,6 +1,6 @@
-// 歌のクリップの波形の、アレンジの側（仕様書 3 章「波形」「クリップの音量」「切る ・ フェード ・ 重なり」「音のファイルが見つからないとき」、
-// モック F7-AudioEdit ・ R11-Audio）: 段のえらび、波形の場所、音量の倍率、フェード、見つからない ・ 読みこみ中、ピークの帳面、
-// Arrange を mount したときの絵。
+// The arrange side of audio clip waveforms (spec 3 (Waveform, Clip gain, cutting / fades / overlaps, When an audio file is missing),
+// mocks F7-AudioEdit / R11-Audio): level choice, waveform place, gain factor, fades, missing / loading, the peak book,
+// and the picture when Arrange is mounted.
 import { flushSync, mount, unmount } from "svelte";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, ClipView } from "../src/bridge";
@@ -25,7 +25,7 @@ import * as app from "./fake-app.svelte";
 
 vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));
 
-// 橋のピーク: 偽物の音のファイル（fakeAudio.ts）から、本物の `PeakStore` で。
+// Bridge peaks: from fake audio files (fakeAudio.ts), with the real `PeakStore`.
 const store = vi.hoisted(() => ({ current: null as null | { get: (a: number, l: number) => Promise<unknown>; more: (a: number, l: number) => Promise<unknown>; peek: (a: number, l: number) => unknown } }));
 vi.mock("../src/bridge", async (original) => ({
   ...(await original<typeof import("../src/bridge")>()),
@@ -36,10 +36,10 @@ vi.mock("../src/bridge", async (original) => ({
 
 const BAR = 4 * TPQ;
 const steady = new TempoMap({ tempoBpm: 120, meterNum: 4, meterDen: 4, headRamp: false, tempoPoints: [], meterChanges: [] });
-/** 3 小節目の頭で 120 → 60。 */
+/** 120 → 60 at the start of bar 3. */
 const slower = new TempoMap({ tempoBpm: 120, meterNum: 4, meterDen: 4, headRamp: false, tempoPoints: [{ tick: 2 * BAR, tempoBpm: 60, ramp: false }], meterChanges: [] });
 
-// 1 小節 64 px、行の高さ 64（拡大率 100 %）。
+// 1 bar is 64 px, row height 64 (scale 100 %).
 const view: G.View = { pxPerTick: 64 / BAR, scrollX: 0, width: 1000 };
 const dims: G.LaneDims = { trackH: 64, inset: 3, hair: 1, mark: 2, nameH: 16, pad: 4, noteH: 2 };
 const sizes = { pitch: 3, bar: 1, minH: 2 };
@@ -47,45 +47,45 @@ const look = W.waveLook(sizes, "color.gray.8", false);
 
 const TAKE: FakeAudio = { id: 7, file: "歌.wav", sampleRate: 48000, bits: 24, channels: 1, frames: 8 * 48000 };
 const sourceOf = (count: number, growing = false): WaveSource => ({ id: 1, stamp: 0, peaks: { channels: 1, count, growing, values: new Int16Array(count * 2) } });
-/** ファイルの速さのまま鳴るクリップ（「この音のテンポ」が「—」）。ついていく物は `more` に `fakeStretch` で。 */
+/** A clip that plays at the file's speed (「この音のテンポ」 is 「—」). Following clips get `fakeStretch` in `more`. */
 const vocal = (start: number, end: number, more: Parameters<typeof fakeAudioClip>[1] = {}, takeOffset = 0): ClipView =>
   fakeVocalClip(1, "歌", start, end, fakeAudioClip(TAKE, { ...fakeStretch(null, 120), ...more }), takeOffset);
 
-// docs/ は ui/ の外なので、screen.test.ts と同じく Node の fs で読む。
+// docs/ is outside ui/, so read it with Node fs, as in screen.test.ts.
 const fs = (globalThis as unknown as { process: { getBuiltinModule(id: "node:fs"): { readFileSync(p: URL, e: "utf8"): string } } }).process.getBuiltinModule("node:fs");
 const here = import.meta.url;
 const readMock = (board: string) => fs.readFileSync(new URL(`../../docs/design/mock/${board}.dc.html`, here), "utf8");
 
-describe("寸法（モック F7-AudioEdit）", () => {
+describe("sizes (mock F7-AudioEdit)", () => {
   it.each(Object.entries(mock).filter(([k]) => k.startsWith("mock.wave.")))("%s の値はモックに書いてあり、率をかけた値は整数", (name, tok) => {
     expect(readMock(tok.board)).toContain(`${tok.value}px`);
     for (const s of [100, 125, 150] as const) expect(Number.isInteger(tokensAt(s, 1)[name as keyof typeof mock] as number)).toBe(true);
   });
 });
 
-describe("波形の場所（どの x が、ファイルのどこか）", () => {
-  it("frameAtTick は、クリップでは fileFrameAt と同じ答え（テンポが変わる曲、頭をつめたクリップでも）", () => {
+describe("waveform place (which x is which part of the file)", () => {
+  it("frameAtTick gives the same answer as fileFrameAt for clips (also with tempo changes and trimmed heads)", () => {
     const clip = vocal(2 * BAR, 6 * BAR, { firstFrame: 1200 }, -BAR);
     const shape = W.waveClipOf(clip)!;
     for (const map of [steady, slower]) {
       for (const tick of [0, BAR, 2 * BAR, 2.5 * BAR, 5 * BAR]) expect(W.frameAtTick(map, shape.timing, tick)).toBeCloseTo(fileFrameAt(map, clip, tick), 6);
     }
-    // 鍵盤のクリップには波形がない。
+    // Keyboard clips have no waveform.
     expect(W.waveClipOf({ ...clip, audio: null })).toBeNull();
   });
 
-  it("クリップ 1 つに四角 1 つ: 名前の行の下から下の枠の上まで。左はしのピークと、1 px のピークの数", () => {
+  it("one rect per clip: from below the name row to above the bottom border. The left edge peak, and peaks per 1 px", () => {
     const clip = vocal(4 * BAR, 6 * BAR);
     const box = G.clipBox(view, dims, 0, clip.start, clip.end);
     const area = waveArea(dims, box);
     const out: GlWave[] = [];
-    // テンポ 120 ・ 48 kHz: 1 小節 2 秒 = 96000 こま = 64 px。段 1024 こまなら 1 px に 1500 / 1024 個。
+    // Tempo 120, 48 kHz: 1 bar is 2 s = 96000 frames = 64 px. With level 1024, 1 px is 1500 / 1024 items.
     W.clipWaves(out, 3, steady, view, area, W.waveClipOf(clip)!, sourceOf(1000), 1024, look);
     expect(out).toHaveLength(1);
     const w = out[0]!;
     expect([w.x, w.y, w.w, w.h]).toEqual([257, 3 + 2 + 16, 126, 57 - 2 - 16 - 1]);
     expect(w.after).toBe(3);
-    // クリップの頭（x 256）がこま 0。四角は 1 px 右から。
+    // The clip start (x 256) is frame 0. The rect starts 1 px to the right.
     expect(w.peak).toBeCloseTo(1500 / 1024, 9);
     expect(w.peaksPerPx).toBeCloseTo(1500 / 1024, 9);
     expect(w.first).toBe(0);
@@ -94,15 +94,15 @@ describe("波形の場所（どの x が、ファイルのどこか）", () => {
     expect([w.pitch, w.bar, w.minH, w.color, w.mid]).toEqual([3, 1, 2, "color.gray.8", null]);
   });
 
-  it("頭をつめたクリップと、同じテイクの続きのクリップは、ファイルの続きから", () => {
+  it("a trimmed clip, and a clip that continues the same take, start from the rest of the file", () => {
     const clip = vocal(6 * BAR, 8 * BAR, { firstFrame: 500 }, -2 * BAR);
     const out: GlWave[] = [];
     W.clipWaves(out, 0, steady, view, waveArea(dims, G.clipBox(view, dims, 0, clip.start, clip.end)), W.waveClipOf(clip)!, sourceOf(1000), 256, look);
-    // テイクの 0 ティックは 2 小節前: クリップの頭は 500 + 2 × 96000 こま。
+    // Tick 0 of the take is 2 bars earlier: the clip starts at 500 + 2 × 96000 frames.
     expect(out[0]!.peak).toBeCloseTo((500 + 2 * 96000 + 1500) / 256, 6);
   });
 
-  it("見えている幅の外は描かない。横に送っても、四角はクリップ 1 つに 1 つのまま", () => {
+  it("nothing outside the visible width is drawn. After scrolling, still one rect per clip", () => {
     const clip = vocal(0, 400 * BAR);
     const area = (v: G.View) => waveArea(dims, G.clipBox(v, dims, 0, clip.start, clip.end));
     const one = (v: G.View) => {
@@ -116,11 +116,11 @@ describe("波形の場所（どの x が、ファイルのどこか）", () => {
     expect(w.x).toBe(-3);
     expect(w.x + w.w).toBe(1003);
     expect(w.peak).toBeCloseTo((4997 * 1500) / 1024, 6);
-    // 見えていないクリップ。
+    // A clip that is not visible.
     expect(one({ ...view, scrollX: 400 * 64 + 10 })).toEqual([]);
   });
 
-  it("テンポが途中で変わるクリップは、まっすぐな所ごとに分ける（どの切れ目でも、こまは地図どおり）", () => {
+  it("a clip with a tempo change inside is split into straight parts (at every cut, frames follow the map)", () => {
     const clip = vocal(0, 6 * BAR);
     const out: GlWave[] = [];
     W.clipWaves(out, 0, slower, view, waveArea(dims, G.clipBox(view, dims, 0, clip.start, clip.end)), W.waveClipOf(clip)!, sourceOf(4000), 256, look);
@@ -128,7 +128,7 @@ describe("波形の場所（どの x が、ファイルのどこか）", () => {
     expect(out.length).toBeLessThanOrEqual(64);
     const shape = W.waveClipOf(clip)!;
     for (const w of out) {
-      // 四角の中のどの px でも、まっすぐに読んだこまと地図のこまの差は 1 px ぶんより小さい。
+      // At any px in the rect, the straight frame and the map frame differ by less than 1 px.
       for (const part of [0, 0.3, 0.7, 1]) {
         const x = w.x + w.w * part;
         const drawn = (w.peak + (x - w.x) * w.peaksPerPx) * 256;
@@ -136,18 +136,18 @@ describe("波形の場所（どの x が、ファイルのどこか）", () => {
         expect(Math.abs(drawn - real)).toBeLessThan(3000);
       }
     }
-    // となりどうしは、すきまなくつながる。
+    // Neighbors join with no gap.
     for (let i = 1; i < out.length; i++) expect(out[i]!.x).toBeCloseTo(out[i - 1]!.x + out[i - 1]!.w, 9);
-    // 3 小節目から先は半分の速さ: 1 px のこまも半分…ではなく倍（同じ px に 2 倍の秒）。
+    // From bar 3 the speed is half: frames per 1 px are not half but double (twice the seconds in the same px).
     expect(out.at(-1)!.peaksPerPx).toBeCloseTo(2 * out[0]!.peaksPerPx, 6);
   });
 
-  it("曲のテンポについていくクリップは「この音のテンポ」の地図で置く（曲のテンポが変わっても、同じティックに同じこま）", () => {
-    // 96.00 で歌った歌。曲が 120 でも、3 小節目から 60 でも、1 小節（4 拍）は 2.5 秒 = 120000 こま。
+  it("a clip that follows the song tempo is placed by the 「この音のテンポ」 map (same tick, same frame, even when the song tempo changes)", () => {
+    // A song sung at 96.00. Whether the song is 120, or 60 from bar 3, 1 bar (4 beats) is 2.5 s = 120000 frames.
     const clip = vocal(0, 6 * BAR, fakeStretch(steadyTempo(96), 120));
     const shape = W.waveClipOf(clip)!;
     expect(shape.timing.source).not.toBeNull();
-    // 同じ SourceTempoView からは、同じ地図（クリップごとに 1 回だけ作る）。
+    // The same SourceTempoView gives the same map (made only once per clip).
     expect(W.waveClipOf(clip)!.timing.source).toBe(shape.timing.source);
     for (const map of [steady, slower]) {
       for (const tick of [0, BAR, 2.5 * BAR, 5 * BAR]) {
@@ -155,14 +155,14 @@ describe("波形の場所（どの x が、ファイルのどこか）", () => {
         expect(fileFrameAt(map, clip, tick)).toBeCloseTo((tick / BAR) * 120000, 6);
       }
     }
-    // 曲のテンポが変わる所でも、ついていくクリップは分けない（こまはティックにまっすぐ）。
+    // A following clip is not split where the song tempo changes (frames are straight in ticks).
     const out: GlWave[] = [];
     W.clipWaves(out, 0, slower, view, waveArea(dims, G.clipBox(view, dims, 0, clip.start, clip.end)), shape, sourceOf(4000), 256, look);
     expect(out.length).toBe(1);
     expect(out[0]!.peaksPerPx).toBeCloseTo(120000 / 64 / 256, 9);
   });
 
-  it("straightParts: まっすぐなら分けない。だんだん変わる所は半分ずつ、64 個まで", () => {
+  it("straightParts: no split when straight. Ramps are split in halves, up to 64", () => {
     expect(W.straightParts((t) => 3 * t + 1, 0, 100, 0.01)).toEqual([0, 100]);
     const bent = W.straightParts((t) => t * t, 0, 100, 1);
     expect(bent.length).toBeGreaterThan(3);
@@ -172,7 +172,7 @@ describe("波形の場所（どの x が、ファイルのどこか）", () => {
     expect(W.straightParts((t) => t, 5, 5, 1)).toEqual([5]);
   });
 
-  it("録っているクリップ: [from, to] の中だけ。こま 0 は録りはじめ、長さはまだ決まっていない", () => {
+  it("a clip being recorded: only inside [from, to]. Frame 0 is the start of recording, the length is not fixed yet", () => {
     const out: GlWave[] = [];
     const box = G.clipBox(view, dims, 0, 5 * BAR, 6.5 * BAR);
     const shape: W.WaveClip = { timing: { start: 4 * BAR, takeOffset: 0, firstFrame: 0, sampleRate: 48000, source: null }, start: 4 * BAR, end: 6.5 * BAR, fadeIn: 0, fadeOut: 0, gain: 1, endFrame: Infinity };
@@ -186,43 +186,43 @@ describe("波形の場所（どの x が、ファイルのどこか）", () => {
   });
 });
 
-describe("段のえらび", () => {
-  it("棒 1 本（3 px）の幅より細かい段のうち、いちばん粗い物", () => {
-    // 1 px 100 こま → 棒 1 本 300 こま → 256 の段。
+describe("level choice", () => {
+  it("the coarsest level that is finer than one bar (3 px)", () => {
+    // 100 frames per 1 px → 300 frames per bar → level 256.
     expect(W.waveLevel(100, 3)).toBe(0);
     expect(W.waveLevel(1500, 3)).toBe(2);
     expect(W.waveLevel(1e7, 3)).toBe(PEAK_LEVELS.length - 1);
-    // いちばん細かい段より拡大したら、その段のまま（同じピークを横にのばす）。
+    // Zoomed in past the finest level, it stays at that level (the same peaks are stretched).
     expect(W.waveLevel(2, 3)).toBe(0);
   });
 
-  it("1 px のこまは、見えている所のテンポで数える", () => {
+  it("frames per 1 px are counted at the tempo of the visible part", () => {
     const clip = vocal(0, 6 * BAR);
     const t = W.waveClipOf(clip)!.timing;
     expect(W.framesPerPx(steady, view, t, 0, 6 * BAR)).toBeCloseTo(1500, 6);
-    // 3 小節目から先だけ見えている: 半分の速さなので、1 px のこまは倍。
+    // Only bar 3 and later is visible: half speed, so frames per 1 px are doubled.
     expect(W.framesPerPx(slower, { ...view, scrollX: 3 * 64 }, t, 0, 6 * BAR)).toBeCloseTo(3000, 6);
-    // 見えていないクリップでも、数は出る。
+    // A clip that is not visible still gets a number.
     expect(W.framesPerPx(steady, { ...view, scrollX: 1e6 }, t, 0, 6 * BAR)).toBeCloseTo(1500, 6);
   });
 });
 
-describe("音量の倍率とフェード", () => {
-  it("クリップの音量は倍率で渡す（テクスチャは同じ）。ドラッグしている間は audioDrag の値", () => {
+describe("gain factor and fades", () => {
+  it("clip gain is passed as a factor (same texture). During a drag, the audioDrag value", () => {
     const clip = vocal(0, 2 * BAR, { gainDb: -6 });
     expect(W.waveClipOf(clip)!.gain).toBeCloseTo(gainFactor(-6), 12);
     expect(W.waveClipOf(clip, { clip: 1, gainDb: 6 })!.gain).toBeCloseTo(gainFactor(6), 12);
-    // ほかのクリップのドラッグは効かない。
+    // A drag on another clip has no effect.
     expect(W.waveClipOf(clip, { clip: 2, gainDb: 6 })!.gain).toBeCloseTo(gainFactor(-6), 12);
-    // 範囲の外は −60〜+12 に入れる。
+    // Out of range is clamped to −60 to +12.
     expect(W.waveClipOf(clip, { clip: 1, gainDb: 40 })!.gain).toBeCloseTo(gainFactor(12), 12);
-    // いくつもの線をいっしょに動かしている間（39-B）: ずらすクリップは、自分の音量 ＋ byDb（−60〜+12 で止まる）。
+    // While many lines move together (39-B): a moved clip gets its own gain + byDb (stops at −60 to +12).
     expect(W.waveClipOf(clip, { clip: 2, gainDb: 0, shift: { clips: [1], byDb: 3 } })!.gain).toBeCloseTo(gainFactor(-3), 12);
     expect(W.waveClipOf(clip, { clip: 2, gainDb: 0, shift: { clips: [1], byDb: -80 } })!.gain).toBeCloseTo(gainFactor(-60), 12);
     expect(W.waveClipOf(clip, { clip: 2, gainDb: 0, shift: { clips: [3], byDb: 3 } })!.gain).toBeCloseTo(gainFactor(-6), 12);
   });
 
-  it("フェードは px で渡し、線（gray.10）はフェードのあるクリップにだけ。ドラッグ中の長さも", () => {
+  it("fades are passed in px, and the line (gray.10) only for clips with fades. Also the length during a drag", () => {
     const clip = vocal(4 * BAR, 6 * BAR, { fadeIn: TPQ, fadeOut: 2 * TPQ });
     const area = waveArea(dims, G.clipBox(view, dims, 0, clip.start, clip.end));
     const draw = (shape: W.WaveClip) => {
@@ -237,12 +237,12 @@ describe("音量の倍率とフェード", () => {
     expect([dragged.fadeIn, dragged.fadeOut]).toEqual([32, 32]);
   });
 
-  it("シェーダーに渡す形（クリップのはしと px の長さ）は、fade.ts の clipFadeGain と同じ大きさになる", () => {
+  it("the form passed to the shader (clip edges and px lengths) gives the same size as clipFadeGain in fade.ts", () => {
     const clip = vocal(4 * BAR, 6 * BAR, { fadeIn: TPQ, fadeOut: 2 * TPQ });
     const out: GlWave[] = [];
     W.clipWaves(out, 0, steady, view, waveArea(dims, G.clipBox(view, dims, 0, clip.start, clip.end)), W.waveClipOf(clip)!, sourceOf(1000), 1024, look);
     const w = out[0]!;
-    // シェーダーの fadeAt（renderer.ts）を同じ式で。
+    // The shader's fadeAt (renderer.ts), with the same formula.
     const rise = (t: number) => (t >= 1 ? 1 : t > 0 ? Math.sin((t * Math.PI) / 2) : 0);
     const shader = (x: number) => (w.fadeIn > 0 ? rise((x - w.clipX0) / w.fadeIn) : 1) * (w.fadeOut > 0 ? rise((w.clipX1 - x) / w.fadeOut) : 1);
     for (const x of [257, 260, 272, 300, 352, 370, 383]) {
@@ -251,12 +251,12 @@ describe("音量の倍率とフェード", () => {
     }
   });
 
-  it("160 の行は、まん中に gray.5 の線。棒の色は、クリップの中の線の色", () => {
+  it("a 160 row has a gray.5 center line. The bar color is the color of the lines in the clip", () => {
     expect(W.waveLook(sizes, "color.gray.8", true).mid).toBe("color.gray.5");
     expect(W.waveLook(sizes, "color.gray.7", false)).toEqual({ ...sizes, color: "color.gray.7", mid: null });
   });
 
-  it("shiftWaves: 小さな区画の箱の左上から数えなおす", () => {
+  it("shiftWaves: counts again from the top left of the small slot box", () => {
     const clip = vocal(4 * BAR, 6 * BAR);
     const out: GlWave[] = [];
     W.clipWaves(out, 0, steady, view, waveArea(dims, G.clipBox(view, dims, 0, clip.start, clip.end)), W.waveClipOf(clip)!, sourceOf(1000), 1024, look);
@@ -265,7 +265,7 @@ describe("音量の倍率とフェード", () => {
   });
 });
 
-// ---- ピークの帳面 ----
+// ---- the peak book ----
 
 function fakeFetch() {
   const have = new Map<string, LevelPeaks>();
@@ -296,7 +296,7 @@ function fakeFetch() {
   return { fetch, have, asked, arrive, fail, peaksOf, key };
 }
 
-describe("ピークの帳面（WaveBook）", () => {
+describe("peak book (WaveBook)", () => {
   let book: WaveBook;
   let now = 0;
   const make = (f: WaveFetch) => (book = new WaveBook(f, () => now));
@@ -309,7 +309,7 @@ describe("ピークの帳面（WaveBook）", () => {
     vi.useRealTimers();
   });
 
-  it("まだない段は 1 回だけ頼み、来たら version を上げる。来るまでは、いまある近い段で描く", async () => {
+  it("a missing level is asked for once, and version goes up when it comes. Until then, draw with the nearest level there is", async () => {
     const f = fakeFetch();
     make(f.fetch);
     expect(book.sourceFor(1, 7, 2)).toBeNull();
@@ -320,7 +320,7 @@ describe("ピークの帳面（WaveBook）", () => {
     const found = book.sourceFor(1, 7, 2)!;
     expect(found.framesPerPeak).toBe(4096);
     expect(found.source.peaks.count).toBe(100);
-    // 拡大した: 段 0 を頼み、来るまでは段 2 のまま。
+    // Zoomed in: ask for level 0, keep level 2 until it comes.
     const meanwhile = book.sourceFor(1, 7, 0)!;
     expect(meanwhile.source).toBe(found.source);
     expect(f.asked).toEqual(["get 7/2", "get 7/0"]);
@@ -330,7 +330,7 @@ describe("ピークの帳面（WaveBook）", () => {
     expect(book.sourceFor(1, 7, 0)!.source.id).not.toBe(found.source.id);
   });
 
-  it("ふえていく音: 使われている間、1 秒に 10 回ほど続きを取りにいく。番号は同じまま、印（stamp）だけ進む", async () => {
+  it("growing audio: while used, fetch the rest about 10 times a second. The number stays, only the stamp moves", async () => {
     const f = fakeFetch();
     make(f.fetch);
     await f.arrive(9, 0, 50, true);
@@ -340,12 +340,12 @@ describe("ピークの帳面（WaveBook）", () => {
     vi.advanceTimersByTime(WAVE_POLL_MS);
     expect(f.asked).toEqual(["more 9/0"]);
     await f.arrive(9, 0, 70, true);
-    // 曲のクリップが使った物は、ふえたら描きなおす。
+    // What song clips use is drawn again when it grows.
     expect(book.version).toBe(1);
     const grown = book.sourceFor(1, 9, 0)!;
     expect([grown.source.id, grown.source.stamp, grown.source.peaks.count]).toEqual([id, 1, 70]);
     expect(grown.source).toBe(first.source);
-    // 録っているクリップの先（毎コマ読む）だけが使った物は、ふえても version を上げない。
+    // What only the head of the clip being recorded uses (read every frame) does not raise version when it grows.
     book.sourceFor(1, 9, 0, true);
     now += WAVE_POLL_MS;
     vi.advanceTimersByTime(WAVE_POLL_MS);
@@ -355,17 +355,17 @@ describe("ピークの帳面（WaveBook）", () => {
     await f.arrive(9, 0, 90, true);
     expect(book.version).toBe(1);
     expect(book.sourceFor(1, 9, 0, true)!.source.stamp).toBe(2);
-    // 使われなくなったら、取りにいかない。
+    // When no longer used, it is not fetched.
     const before = f.asked.length;
     now += 5000;
     vi.advanceTimersByTime(10 * WAVE_POLL_MS);
     expect(f.asked.length).toBe(before);
-    // ふえおわった。
+    // Done growing.
     await f.arrive(9, 0, 95, false);
     expect(book.sourceFor(1, 9, 0)!.source.peaks.growing).toBe(false);
   });
 
-  it("ほかの曲の同じ番号の音は、別の物（番号は曲ごとに 0 から）", async () => {
+  it("audio with the same number in another song is a different thing (numbers start at 0 per song)", async () => {
     const f = fakeFetch();
     make(f.fetch);
     await f.arrive(3, 1, 40);
@@ -375,17 +375,17 @@ describe("ピークの帳面（WaveBook）", () => {
     expect(b.id).not.toBe(a.id);
   });
 
-  it("まだできていないピーク（読みこみが始まったばかり）は、間をあけて頼みなおす: 0.5 秒、1 秒、2 秒…", async () => {
+  it("peaks not ready yet (loading just started) are asked for again with gaps: 0.5 s, 1 s, 2 s…", async () => {
     const f = fakeFetch();
     make(f.fetch);
     expect(book.sourceFor(1, 5, 0)).toBeNull();
     await f.fail(5, 0);
-    // 待っている間は頼まない。
+    // No asking while waiting.
     now = 300;
     vi.advanceTimersByTime(300);
     book.sourceFor(1, 5, 0);
     expect(f.asked).toEqual(["get 5/0"]);
-    // 0.5 秒たったら、描く所を回して、もう一度。
+    // After 0.5 s, run the draw and ask again.
     now = 600;
     vi.advanceTimersByTime(300);
     expect(book.version).toBe(1);
@@ -403,7 +403,7 @@ describe("ピークの帳面（WaveBook）", () => {
     expect(book.sourceFor(1, 5, 0)!.source.peaks.count).toBe(10);
   });
 
-  it("ためる上限は橋のまま: 橋が手ばなしたピークと、ほかの曲の物は、帳面も手ばなす", async () => {
+  it("the keep limit is the bridge's: peaks the bridge let go, and those of other songs, the book lets go too", async () => {
     const f = fakeFetch();
     make(f.fetch);
     await f.arrive(1, 0, 10);
@@ -419,14 +419,14 @@ describe("ピークの帳面（WaveBook）", () => {
   });
 });
 
-// ---- Arrange を mount して ----
+// ---- with Arrange mounted ----
 
 const proto = HTMLElement.prototype;
 const had = Object.getOwnPropertyDescriptor(proto, "clientWidth");
 beforeAll(() => Object.defineProperty(proto, "clientWidth", { configurable: true, get: () => 1000 }));
 afterAll(() => had && Object.defineProperty(proto, "clientWidth", had));
 
-describe("Arrange の歌のクリップ", () => {
+describe("audio clips in Arrange", () => {
   let mounted: Record<string, unknown> | null = null;
   let target: HTMLElement;
   const slots = new Map<HTMLElement, GlSlot>();
@@ -458,7 +458,7 @@ describe("Arrange の歌のクリップ", () => {
     app.setState(state);
     mounted = mount(Arrange, { target });
     flushSync();
-    // ピークが届くまで。
+    // Until the peaks arrive.
     for (let i = 0; i < 20; i++) {
       await new Promise((r) => setTimeout(r, 0));
       flushSync();
@@ -468,7 +468,7 @@ describe("Arrange の歌のクリップ", () => {
   const lane = () => slots.get(target.querySelector<HTMLElement>(".lanes > .fill")!) as Rects;
   const vocalClips = (s: AppState) => s.song.tracks.find((t) => t.kind.kind === "vocal")!.clips;
 
-  it("audioEdit: クリップ 2 つに波形 2 つ。右は −3.0 dB の倍率とフェードイン、左はフェードアウト。同じファイルは 1 つのピーク", async () => {
+  it("audioEdit: 2 clips, 2 waveforms. The right one has a −3.0 dB factor and a fade in, the left a fade out. One file gives one peak", async () => {
     const s = scene("audioEdit");
     await show(s);
     const waves = lane().waves!;
@@ -481,20 +481,20 @@ describe("Arrange の歌のクリップ", () => {
     expect([left.fadeIn, left.fadeOut > 0, left.line]).toEqual([0, true, "color.gray.10"]);
     expect([right.fadeIn > 0, right.fadeOut, right.line]).toEqual([true, 0, "color.gray.10"]);
     expect([left.color, left.mid]).toEqual(["color.gray.8", null]);
-    // 右のクリップは、同じテイクの続き。
+    // The right clip continues the same take.
     expect(right.peak).toBeGreaterThan(left.peak);
-    // 波形は、そのクリップの面（gray.4）のすぐ上、次のクリップの四角より下。
+    // The waveform is just above the clip face (gray.4), below the rect of the next clip.
     const rects = lane().rects;
     expect(rects[left.after - 1]!.color).toBe("color.gray.4");
     expect(left.after).toBeLessThan(right.after);
     expect(right.after).toBeLessThanOrEqual(rects.length);
-    // フェードの取っ手（クリップ 1 つに 2 つ）は、どのクリップと波形よりも上: 絵の最後の四角。
+    // Fade handles (2 per clip) are above every clip and waveform: the last rects in the picture.
     const handles = rects.slice(-4);
     expect(handles.map((r) => [r.w, r.h, r.color])).toEqual(Array(4).fill([6, 6, "color.gray.10"]));
     expect(rects.length - 4).toBeGreaterThanOrEqual(right.after);
   });
 
-  it("のび縮みの印（×1.25 ・ +2 ・ −1 ・ +30）は名前の札の中: 札の数はクリップの数のまま。音を作っている間は下に「音を作っています 34 %」", async () => {
+  it("stretch marks (×1.25, +2, −1, +30) are in the name tag: as many tags as clips. While the sound is made, 「音を作っています 34 %」 below", async () => {
     const labels = () => [...target.querySelectorAll<HTMLElement>(".labels > .clip-label")];
     const marks = () => labels().map((l) => [...l.querySelectorAll(".clip-mark")].map((m) => m.textContent));
     const clipCount = (s: AppState) => s.song.tracks.reduce((n, t) => n + t.clips.length, 0);
@@ -509,12 +509,12 @@ describe("Arrange の歌のクリップ", () => {
     expect(marks().filter((m) => m.length > 0)).toEqual([["−1 ・ +30"]]);
     unmount(mounted!);
     mounted = null;
-    // だんだんの中: 地図ごと録った物は比 1（印なし）、96.00 で歌った物は頭で ×1.13。
+    // Inside a ramp: one recorded with the map has ratio 1 (no mark), one sung at 96.00 gets ×1.13 at the start.
     await show(scene("stretchRamp"));
     expect(marks().filter((m) => m.length > 0)).toEqual([["×1.13"]]);
   });
 
-  it("歌のクリップの右クリックの一覧の下に「逆にする」「ノーマライズ」（あとの回の席、使えない）", async () => {
+  it("under the audio clip context menu, 「逆にする」「ノーマライズ」 (places for a later round, disabled)", async () => {
     await show(scene("stretch"));
     const label = [...target.querySelectorAll<HTMLElement>(".labels > .clip-label")].find((l) => l.textContent?.includes("歌 テイク 1"))!;
     const x = parseFloat(label.style.left) + 4;
@@ -526,12 +526,12 @@ describe("Arrange の歌のクリップ", () => {
     contextMenu.open = null;
   });
 
-  it("audioTall: 160 の行のトラックは、まん中に gray.5 の線", async () => {
+  it("audioTall: a track with a 160 row has a gray.5 center line", async () => {
     await show(scene("audioTall"));
     expect(lane().waves!.map((w) => w.mid)).toEqual(["color.gray.5", "color.gray.5"]);
   });
 
-  it("audioMissing: 見つからない音のクリップは、地 gray.2、上の線 gray.7、波形なし（ピークも頼まない）", async () => {
+  it("audioMissing: a clip with missing audio has background gray.2, top line gray.7, no waveform (and asks for no peaks)", async () => {
     const s = scene("audioMissing");
     const get = vi.spyOn(store.current!, "get");
     await show(s);
@@ -539,27 +539,27 @@ describe("Arrange の歌のクリップ", () => {
     expect(get).not.toHaveBeenCalled();
     const grounds = lane().rects.filter((r) => r.color === "color.gray.2");
     expect(grounds).toHaveLength(2);
-    // えらんでいないほう（ハモり）の上の線は gray.7。
+    // The top line of the one not chosen (the harmony) is gray.7.
     const second = G.clipBox({ pxPerTick: 64 / BAR, scrollX: 0, width: 1000 }, dims, 0, vocalClips(s)[1]!.start, vocalClips(s)[1]!.end);
-    // 大きな面の四角は、窓の左はしから（shiftX ぶん左に描く）。
+    // Rects of the large surface start from the window's left edge (drawn shiftX to the left).
     const shift = lane().shiftX ?? 0;
     expect(lane().rects.some((r) => r.color === "color.gray.7" && Math.abs(r.x - shift - second.x0) < 1e-9 && r.h === 2)).toBe(true);
   });
 
-  it("audioLoading: 読みこんでいる途中は、ある所まで（ふえていくピーク）", async () => {
+  it("audioLoading: while loading, up to where it has read (growing peaks)", async () => {
     const s = scene("audioLoading");
     await show(s);
     const waves = lane().waves!;
     expect(waves).toHaveLength(1);
     const w = waves[0]!;
     expect(w.source.peaks.growing).toBe(true);
-    // ファイルは 180 秒、読めたのは 72 秒: ピークは 72 秒ぶんだけ。描いてよいのは、ファイルの終わりまで。
+    // The file is 180 s, 72 s has been read: peaks for 72 s only. It may draw up to the end of the file.
     expect(w.source.peaks.count).toBeGreaterThan(0);
     expect(w.source.peaks.count).toBeLessThan(w.end);
     expect(w.source.peaks.count / w.end).toBeCloseTo(72 / 180, 2);
   });
 
-  it("音量の線 ・ 取っ手のドラッグ（audioDrag）: 大きな面はそのまま、そのクリップだけを小さな区画に、ドラッグの値で描く", async () => {
+  it("dragging the gain line or a handle (audioDrag): the large surface stays, only that clip is drawn in a small slot with the drag value", async () => {
     const s = scene("audioEdit");
     await show(s);
     const big = lane();
@@ -572,13 +572,13 @@ describe("Arrange の歌のクリップ", () => {
     const live = slots.get(node) as Rects;
     expect(live.waves).toHaveLength(1);
     expect(live.waves![0]!.gain).toBeCloseTo(gainFactor(6), 12);
-    // 箱はクリップの箱。中の絵は、箱の左上から。
+    // The box is the clip box. The picture inside starts from the box's top left.
     expect([node.style.left, node.style.width]).toEqual(["384px", "128px"]);
     expect(live.waves![0]!.x).toBe(1);
     expect(live.rects[0]).toMatchObject({ x: 0, y: 0, w: 128 });
-    // 大きな面は、同じ絵のまま（作りなおしていない）。
+    // The large surface keeps the same picture (not made again).
     expect(lane()).toBe(big);
-    // フェードの取っ手。
+    // Fade handles.
     audioDrag.now = { clip: right.id, fadeIn: TPQ };
     flushSync();
     const faded = slots.get(target.querySelector<HTMLElement>('[data-test="audio-live"]')!) as Rects;
@@ -587,7 +587,7 @@ describe("Arrange の歌のクリップ", () => {
     expect(lane()).toBe(big);
   });
 
-  it("いくつもの線をいっしょに動かしている間（39-B）: ずらすクリップも、囲む 1 つの区画に、ずらした音量で描く。大きな面はそのまま", async () => {
+  it("while many lines move together (39-B): moved clips are drawn in one slot around them, with the shifted gain. The large surface stays", async () => {
     const s = scene("multiClip");
     await show(s);
     const big = lane();
@@ -600,13 +600,13 @@ describe("Arrange の歌のクリップ", () => {
     expect(nodes).toHaveLength(1);
     const live = slots.get(nodes[0]!) as Rects;
     expect(live.waves!.map((w) => w.gain).sort()).toEqual([grabbed!, ...others].map((c) => gainFactor(c.audio!.gainDb + 2)).sort());
-    // 区画は 3 つのクリップを囲む箱（2 本の行にまたがる）。
+    // The slot is a box around the 3 clips (across 2 rows).
     const rowH = 64;
     expect(parseFloat(nodes[0]!.style.height)).toBeGreaterThan(rowH);
     expect(lane()).toBe(big);
   });
 
-  it("録っている歌のクリップの先（vocalRec）: 区画の上下をトラックの計の面とそろえる印（alignY）がつく", async () => {
+  it("the head of an audio clip being recorded (vocalRec): gets the mark (alignY) that lines up the slot top and bottom with the track meter face", async () => {
     await show(scene("vocalRec"));
     const tail = slots.get(target.querySelector<HTMLElement>('[data-test="vocal-rec-tail"]')!) as Rects;
     expect(tail.alignY).toBe("trackMeters");

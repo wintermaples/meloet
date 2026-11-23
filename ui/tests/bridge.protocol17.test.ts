@@ -1,4 +1,4 @@
-// 約束 17: 棚の「あとから入れたもの」（SF2 とプラグイン）、プラグインの音源とエフェクト、見つからない物。
+// Protocol 17: 「あとから入れたもの」 on the shelf (SF2 and plugins), plugin instruments and effects, missing things.
 import { describe, expect, it } from "vitest";
 import { SCENES, createFakeTransport, fakeScene, fakeState, keyCounts, type FakeState } from "../src/bridge/fake";
 import { FLUID, fakePluginRows, fluidFile, lv2Key } from "../src/bridge/fakeLibrary";
@@ -17,14 +17,14 @@ import {
 import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 import { mockScreenText as mockText, specDocument } from "./design-sources";
 
-/** モックも仕様書も、部品の境目に空白があったりなかったりするので、空白をぜんぶ取ってくらべる。 */
+/** Mocks and the spec put spaces at part borders or not, so compare with all spaces removed. */
 const squash = (s: string) => s.replace(/\s+/g, "");
 const mockScreenText = (board: string) => squash(mockText(board));
-/** 仕様書の英語の文の中の、画面の名前の列: 「a」, 「b」, … */
+/** Screen names in the spec's English text: 「a」, 「b」, … */
 const quotedList = (names: string[]) => squash(names.map((n) => `「${n}」`).join(", "));
 
 let spec: string | null = null;
-/** 仕様書ぜんぶの文。 */
+/** All text of the spec. */
 const specText = () => (spec ??= squash(specDocument().body.textContent ?? ""));
 
 const state = (scene: string) => fakeScene(scene)!.state;
@@ -46,8 +46,8 @@ async function open(scene: string) {
 
 const SURGE: SoundRef = { kind: "plugin", key: lv2Key("Surge XT") };
 
-describe("約束 17 の形", () => {
-  it("版は 23（22 より後）。新しい曲では、あとから入れたものは空で、見つからない物もない", () => {
+describe("protocol 17 shape", () => {
+  it("version is 23 (after 22). In a new song, 「あとから入れたもの」 is empty and nothing is missing", () => {
     expect(PROTOCOL_VERSION).toBeGreaterThanOrEqual(26);
     const s = fakeState();
     expect(s.library).toEqual({ sf2: [], plugins: [], openedSf2: null, packMissing: false });
@@ -64,21 +64,21 @@ describe("約束 17 の形", () => {
     expect(s.song.master.slots[0]).toEqual({ id: 3, effect: { kind: "builtin", effect: "limiter" }, bypassed: false });
   });
 
-  it("見出しの並びは仕様書 3 章のとおり（SF2 の 16 の仲間 ＋ ドラムのキット、14-A の種類）", () => {
+  it("heading order follows spec 3 (16 SF2 families + drum kits, the kinds of 14-A)", () => {
     expect(GM_FAMILIES).toHaveLength(17);
     expect(GM_FAMILIES.at(-1)).toBe("drumKit");
     expect(PLUGIN_EFFECT_CATEGORIES).toEqual(["eq", "dynamics", "reverb", "delay", "modulation", "distortion", "filter", "pitch", "spatial", "analysis", "other"]);
     expect(PLUGIN_INSTRUMENT_CATEGORIES).toEqual(["synth", "sampler", "drum", "keys", "other"]);
     expect(PLUGIN_FORMATS).toEqual(["vst3", "lv2"]);
     expect(SF2_DRUM_BANK).toBe(128);
-    // 仕様書の見出しの数と同じだけある（名前は画面の文面）。
+    // As many as the headings in the spec (names are screen wording).
     const spec = specText();
     expect(spec).toContain(quotedList(["ピアノ", "マレット", "オルガン", "ギター", "ベース", "弦", "アンサンブル", "金管", "木管", "笛", "シンセリード", "シンセパッド", "シンセの効果", "民族楽器", "打楽器", "効果音", "ドラムのキット"]));
     expect(spec).toContain(quotedList(["EQ", "ダイナミクス", "リバーブ", "ディレイ", "モジュレーション", "ひずみ", "フィルター", "ピッチ", "空間", "分析", "そのほか"]));
     expect(spec).toContain(quotedList(["シンセ", "サンプラー", "ドラム", "ピアノ ・ 鍵盤", "そのほか"]));
   });
 
-  it("同じ音をまとめる数（85）: 低い音から、5 つまで", () => {
+  it("count for grouping the same sound (85): from the low notes, up to 5", () => {
     expect(keyCounts([38, 36, 38, 36, 36, 36])).toEqual([
       { key: 36, count: 4 },
       { key: 38, count: 2 },
@@ -89,8 +89,8 @@ describe("約束 17 の形", () => {
   });
 });
 
-describe("偽物の中身（モックの数）", () => {
-  it("FluidR3_GM.sf2 は音色 137（128 ＋ ドラムのキット 9）。仲間ごとに 8 つ、GM の番号の順", () => {
+describe("fake contents (the mock's numbers)", () => {
+  it("FluidR3_GM.sf2 has 137 sounds (128 + 9 drum kits). 8 per family, in GM number order", () => {
     const file = fluidFile();
     expect(file.file).toBe("FluidR3_GM.sf2");
     expect(file.presets).toHaveLength(137);
@@ -117,7 +117,7 @@ describe("偽物の中身（モックの数）", () => {
     );
   });
 
-  it("プラグインは F5-ShelfFx のエフェクト 506 と F5-PluginLoading の音源 34。名前の順", () => {
+  it("plugins are the 506 effects of F5-ShelfFx and the 34 instruments of F5-PluginLoading. In name order", () => {
     const rows = fakePluginRows();
     const effects = rows.filter((r) => r.kind.role === "effect");
     const instruments = rows.filter((r) => r.kind.role === "instrument");
@@ -130,11 +130,11 @@ describe("偽物の中身（モックの数）", () => {
     expect(mockScreenText("F5-PluginLoading")).toContain(squash("シンセ 21"));
     const names = rows.map((r) => r.name.toLowerCase());
     expect(names).toEqual([...names].sort());
-    // どの行も、使う形式の鍵が formats の中にあり、鍵は行ごとにちがう。
+    // Every row has the key of the format it uses in formats, and keys differ per row.
     for (const r of rows) expect(r.formats.map((f) => f.key)).toContain(r.key);
     const keys = rows.flatMap((r) => r.formats.map((f) => f.key));
     expect(new Set(keys).size).toBe(keys.length);
-    // モックの行。＋数は、CLAP を入れない分 1 つ少ない。
+    // Mock rows. The + counts are 1 less, as CLAP is not included.
     const dragonfly = rows.find((r) => r.name === "Dragonfly Hall Reverb")!;
     expect([dragonfly.vendor, dragonfly.kind, dragonfly.formats.map((f) => f.format)]).toEqual(["Michael Willis", { role: "effect", category: "reverb" }, ["vst3", "lv2"]]);
     expect(dragonfly.key).toBe(lv2Key("Dragonfly Hall Reverb"));
@@ -145,8 +145,8 @@ describe("偽物の中身（モックの数）", () => {
   });
 });
 
-describe("約束 17 の偽物の場面", () => {
-  it("どの場面も、曲と棚の新しい欄が古い欄と合っている", () => {
+describe("protocol 17 fake scenes", () => {
+  it("in every scene, the new song and shelf fields match the old ones", () => {
     for (const name of Object.keys(SCENES)) {
       const s = state(name);
       const strips = [...s.song.tracks, ...s.song.returns, s.song.master];
@@ -168,7 +168,7 @@ describe("約束 17 の偽物の場面", () => {
     }
   });
 
-  it("sf2Shelf（モック F5-SF2Shelf）: 足したファイルの見出しがひらき、Clean Guitar をためし弾き", () => {
+  it("sf2Shelf (mock F5-SF2Shelf): the added file's heading opens, auditioning Clean Guitar", () => {
     const s = state("sf2Shelf");
     expect(s.library.sf2.map((f) => [f.file, f.presets.length])).toEqual([[FLUID, 137]]);
     expect(s.library.openedSf2).toBe(FLUID);
@@ -184,7 +184,7 @@ describe("約束 17 の偽物の場面", () => {
     expect(state("sf2Unreadable").library.sf2).toEqual([]);
   });
 
-  it("sf2DropAddable ・ sf2DropNotAddable（モック F5-SF2Drop）: 足せる ・ 足せない。Esc でやめる", async () => {
+  it("sf2DropAddable / sf2DropNotAddable (mock F5-SF2Drop): can add / cannot add. Esc cancels", async () => {
     const s = state("sf2DropAddable");
     expect(s.workspace.fileDrop).toEqual({ name: FLUID, addable: true, files: 1, sf2: 1, audio: 0 });
     expect(s.status.message).toEqual({ id: "sf2Dragging" });
@@ -201,7 +201,7 @@ describe("約束 17 の偽物の場面", () => {
     expect(held.s.workspace.fileDrop).toBeNull();
   });
 
-  it("shelfFx（モック F5-ShelfFx）: プラグインの入ったインサート、止まった枠、えらんだエフェクト", () => {
+  it("shelfFx (mock F5-ShelfFx): inserts with plugins, a stopped slot, the chosen effect", () => {
     const s = state("shelfFx");
     const surge = s.song.tracks[4]!;
     expect([surge.number, surge.name, surge.instrument]).toEqual([5, "Surge XT", "sine"]);
@@ -219,7 +219,7 @@ describe("約束 17 の偽物の場面", () => {
     const mock = mockScreenText("F5-ShelfFx");
     for (const text of ["5 Surge XT にエフェクトを入れる", "Brick EQ 止", "5 Surge XT のインサート 2 に入れます。", "エフェクト 512"]) expect(mock).toContain(squash(text));
     expect(s.library.plugins.filter((r) => r.kind.role === "effect").length + 6).toBe(512);
-    // F5-ShelfSearch は同じ棚。さがす文字は画面が持つ。
+    // F5-ShelfSearch is the same shelf. The search text is held by the screen.
     const search = state("shelfSearch");
     expect(search.shelf.chosenEffect).toBeNull();
     expect(search.library).toEqual(s.library);
@@ -227,7 +227,7 @@ describe("約束 17 の偽物の場面", () => {
     expect(mockScreenText("F5-ShelfSearch")).toContain(squash("さがす「Dragonfly」・ 合う物 4 個"));
   });
 
-  it("pluginLoading ・ pluginAudition ・ pluginUnreadable（モック F5-PluginLoading ・ F5-PluginAudition）", () => {
+  it("pluginLoading / pluginAudition / pluginUnreadable (mocks F5-PluginLoading / F5-PluginAudition)", () => {
     const loading = state("pluginLoading");
     expect([loading.shelf.selectedSound, loading.shelf.loadingSound]).toEqual([SURGE, SURGE]);
     expect(loading.status.message).toEqual({ id: "pluginLoading", name: "Surge XT" });
@@ -244,7 +244,7 @@ describe("約束 17 の偽物の場面", () => {
     expect(specText()).toContain(squash("Surge XT を読みこめませんでした。"));
   });
 
-  it("pluginTrack（モック F5-PluginTrack）: 名前はプラグインの名前、えらんだトラック、2 手取り消してある", () => {
+  it("pluginTrack (mock F5-PluginTrack): the name is the plugin name, the chosen track, 2 steps undone", () => {
     const s = state("pluginTrack");
     const surge = s.song.tracks[4]!;
     expect(s.song.playTarget).toBe(surge.id);
@@ -254,7 +254,7 @@ describe("約束 17 の偽物の場面", () => {
     expect(mockScreenText("F5-PluginTrack")).toContain(squash("5 Surge XT"));
   });
 
-  it("missingPack（モック R8-Missing）: 名前はそのまま、サイン波で代わり、棚はサイン波だけ", () => {
+  it("missingPack (mock R8-Missing): the name stays, sine stand-in, the shelf has only the sine", () => {
     const s = state("missingPack");
     expect(s.library.packMissing).toBe(true);
     expect(s.shelf.available).toEqual(["sine"]);
@@ -270,7 +270,7 @@ describe("約束 17 の偽物の場面", () => {
     expect(mock).toContain(squash("サイン波で代わり"));
   });
 
-  it("missingSf2 ・ missingPlugin: 知らせとボタン。「曲から外す」でサイン波になり、知らせが消える", async () => {
+  it("missingSf2 / missingPlugin: notice and buttons. 「曲から外す」 turns it into a sine and the notice goes away", async () => {
     const sf2 = state("missingSf2");
     expect(sf2.shelf.missing).toEqual([{ kind: "sf2", file: FLUID, tracks: 2 }]);
     expect(sf2.song.tracks.filter((t) => t.standIn === "sf2Missing").map((t) => t.sound.kind)).toEqual(["sf2", "sf2"]);
@@ -303,7 +303,7 @@ describe("約束 17 の偽物の場面", () => {
     expect(b.held.s.song.tracks[4]!.standIn).toBe("pluginMissing");
   });
 
-  it("drumPlay（モック R8-DrumPlay）と drumRollSf2: 再生中の位置、SF2 のキットの行", () => {
+  it("drumPlay (mock R8-DrumPlay) and drumRollSf2: the position while playing, the SF2 kit rows", () => {
     const play = fakeScene("drumPlay")!;
     expect(play.state.transport.state).toBe("playing");
     expect(play.meters.position).toMatchObject({ tick: 4 * TPQ + TPQ, state: "playing" });
@@ -318,8 +318,8 @@ describe("約束 17 の偽物の場面", () => {
   });
 });
 
-describe("約束 17 の意図（偽物）", () => {
-  it("shelfSelectSound: 最初から入っている音色は shelfSelect と同じ。SF2 とプラグインは棚にある物だけ", async () => {
+describe("protocol 17 intents (fake)", () => {
+  it("shelfSelectSound: built-in sounds are the same as shelfSelect. SF2 and plugins only if on the shelf", async () => {
     const { held, send } = await open("shelfPlugins");
     await send({ type: "shelfSelectSound", sound: { kind: "builtin", instrument: "synthBass" } });
     expect([held.s.shelf.selected, held.s.shelf.selectedSound]).toEqual(["synthBass", { kind: "builtin", instrument: "synthBass" }]);
@@ -332,7 +332,7 @@ describe("約束 17 の意図（偽物）", () => {
     await send({ type: "shelfSelectSound", sound: guitar });
     expect(held.s.shelf.selectedSound).toEqual(guitar);
     expect(held.s.status.message).toEqual({ id: "auditionNewTrackSound", sound: { kind: "sf2", name: "Clean Guitar", file: FLUID } });
-    // 棚にない物（エフェクトのプラグイン、ないプリセット）は、やめるのと同じ。
+    // Things not on the shelf (an effect plugin, a missing preset) are the same as canceling.
     await send({ type: "shelfSelectSound", sound: { kind: "plugin", key: lv2Key("MVerb") } });
     expect(held.s.shelf.selectedSound).toBeNull();
     await send({ type: "shelfSelectSound", sound: guitar });
@@ -340,7 +340,7 @@ describe("約束 17 の意図（偽物）", () => {
     expect(held.s.shelf.selectedSound).toBeNull();
     expect(held.s.transport.canRecord).toBe(true);
     expect(held.s.status.message?.id).toBe("summary");
-    // 棚をとじると、ためし弾きは終わる。星は残る。
+    // Closing the shelf ends the audition. The stars stay.
     await send({ type: "toggleFavoriteSound", sound: SURGE });
     await send({ type: "shelfSelectSound", sound: SURGE });
     await send({ type: "toggleBand", band: "shelf" });
@@ -348,7 +348,7 @@ describe("約束 17 の意図（偽物）", () => {
     expect(held.s.shelf.favoriteSounds).toContainEqual(SURGE);
   });
 
-  it("お気に入り: 音源（どれでも）とエフェクト（86-4）。形式を変えても星は行に残る", async () => {
+  it("favorites: instruments (any) and effects (86-4). The star stays on the row when the format changes", async () => {
     const { held, send } = await open("shelfPlugins");
     await send({ type: "toggleFavoriteSound", sound: { kind: "builtin", instrument: "organ" } });
     expect(held.s.shelf.favorites).toEqual(["grandPiano", "organ", "studioKit"]);
@@ -373,7 +373,7 @@ describe("約束 17 の意図（偽物）", () => {
     expect(held.s.shelf.favoriteEffects).toHaveLength(2);
   });
 
-  it("shelfChooseEffect: エフェクトの一覧のときだけ。最初から入っているエフェクトは shelfSelectEffect と同じ", async () => {
+  it("shelfChooseEffect: only for the effect list. Built-in effects are the same as shelfSelectEffect", async () => {
     const { held, send } = await open("shelfFx");
     await send({ type: "shelfChooseEffect", effect: { kind: "builtin", effect: "chorus" } });
     expect([held.s.shelf.selectedEffect, held.s.shelf.chosenEffect]).toEqual(["chorus", { kind: "builtin", effect: "chorus" }]);
@@ -381,7 +381,7 @@ describe("約束 17 の意図（偽物）", () => {
     await send({ type: "shelfChooseEffect", effect: mverb });
     expect([held.s.shelf.selectedEffect, held.s.shelf.chosenEffect]).toEqual([null, mverb]);
     await send({ type: "shelfChooseEffect", effect: { kind: "plugin", key: lv2Key("Surge XT") } });
-    expect(held.s.shelf.chosenEffect, "音源は、エフェクトの一覧にない").toBeNull();
+    expect(held.s.shelf.chosenEffect, "an instrument is not in the effect list").toBeNull();
     await send({ type: "shelfChooseEffect", effect: mverb });
     await send({ type: "shelfChooseEffect", effect: null });
     expect(held.s.shelf.chosenEffect).toBeNull();
@@ -390,7 +390,7 @@ describe("約束 17 の意図（偽物）", () => {
     expect(other.held.s.shelf.chosenEffect).toBeNull();
   });
 
-  it("まだ中身のない意図は、何も変えない", async () => {
+  it("intents with no content yet change nothing", async () => {
     const { held, send } = await open("pluginAudition");
     const before = structuredClone(held.s);
     for (const command of [{ type: "openPluginWindow", slot: null }, { type: "addSf2" }, { type: "playSampleOf", sound: SURGE }] satisfies Command[]) {

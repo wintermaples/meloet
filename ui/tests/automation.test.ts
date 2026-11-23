@@ -1,5 +1,5 @@
-// 第 6 回 区切り2: オートメーションの帯の画面（仕様書 2 章「オートメーションの点」「帯の見出し ・ 書く ・ 休み」「オートメーションで動くつまみ」、
-// 3 章 Y16、モック F6-AutoRec ・ F6-AutoRest ・ F6-MixerAuto ・ F6-MixerRest ・ R10-AutoEdit）。
+// The automation band screen (spec 2 (Automation point, Automation band heading, write, resting, Handle moved by automation),
+// spec 3 (Y16), mocks F6-AutoRec / F6-AutoRest / F6-MixerAuto / F6-MixerRest / R10-AutoEdit).
 import { flushSync, mount, unmount, type Component } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, AutomationView, LaneView, TrackView } from "../src/bridge";
@@ -25,23 +25,23 @@ const BAR = 4 * TPQ;
 const scene = (name: string) => fakeScene(name)!.state;
 const lane = (ticks: number[], values: number[], step = false) => ({ id: 1, step, ticks: Float64Array.from(ticks), values: Float32Array.from(values) });
 
-describe("線の上の値（21-5）", () => {
+describe("value on the line (21-5)", () => {
   const p = lane([BAR, 3 * BAR, 5 * BAR], [0.2, 0.6, 0.4]);
-  it("まっすぐ、端は最初と最後の点、点がなければ null", () => {
+  it("straight; at the ends, the first and last points; null with no points", () => {
     expect(valueAt(p, 0)).toBeCloseTo(0.2);
     expect(valueAt(p, 2 * BAR)).toBeCloseTo(0.4);
     expect(valueAt(p, 4 * BAR)).toBeCloseTo(0.5);
     expect(valueAt(p, 9 * BAR)).toBeCloseTo(0.4);
     expect(valueAt(lane([], []), 0)).toBeNull();
   });
-  it("階段は、その位置か前のいちばん近い点", () => {
+  it("a staircase uses the nearest point at or before the position", () => {
     const s = lane([BAR, 3 * BAR], [0, 1], true);
     expect([valueAt(s, 3 * BAR - 1), valueAt(s, 3 * BAR), valueAt(s, 0)]).toEqual([0, 1, 0]);
   });
 });
 
-describe("位置の文", () => {
-  it("音量 ・ センドは仕様書 2 章の目盛、パンは (pan + 100) / 200、ミュートはオン ・ オフ", () => {
+describe("position text", () => {
+  it("gain and sends use the spec 2 scale marks, pan is (pan + 100) / 200, mute is on / off", () => {
     expect(positionText({ kind: "volume" }, 0.8)).toBe("0.0 dB");
     expect(positionText({ kind: "volume" }, 0.64)).toBe("−4.8 dB");
     expect(positionText({ kind: "send", bus: "a" }, 0)).toBe("−∞ dB");
@@ -50,7 +50,7 @@ describe("位置の文", () => {
     expect(positionText({ kind: "plugin", plugin: "Surge XT", param: "A" }, 0.5)).toBeNull();
     expect(bareText({ kind: "volume" }, 0.64)).toBe("−4.8");
   });
-  it("最初から入っているエフェクトは、パラメータの欄の棒の位置。段階は n /（段の数 − 1）", () => {
+  it("built-in effects use the bar position in the params panel. Steps are n / (steps − 1)", () => {
     const threshold = EFFECT_PARAMS.compressor[0]!;
     expect(paramPosition(threshold, paramAt(threshold, 0.25))).toBeCloseTo(0.25, 2);
     const steps = EFFECT_PARAMS.delay.find((x) => x.shape === "steps")!;
@@ -59,7 +59,7 @@ describe("位置の文", () => {
     const text = positionText({ kind: "builtin", effect: "compressor", param: 0 }, 0.5)!;
     expect(bareText({ kind: "builtin", effect: "compressor", param: 0 }, 0.5)).toBe(text.replace(/ dB$/, ""));
   });
-  it("手で置いた値の位置", () => {
+  it("position of a value set by hand", () => {
     const t = { gainDb: 0, pan: -20, sends: [null, 0], muted: true, slots: [null, null, null, null] } as unknown as TrackView;
     expect(handPosition(t, { kind: "volume" }, null)).toBeCloseTo(0.8);
     expect(handPosition(t, { kind: "pan" }, null)).toBeCloseTo(0.4);
@@ -69,34 +69,34 @@ describe("位置の文", () => {
   });
 });
 
-describe("トラックの行と帯の並び", () => {
+describe("track rows and band order", () => {
   const view = (target: LaneView["target"]): LaneView => ({ target, name: { kind: "volume" }, laneId: 1, points: 0, step: false, resting: false });
   const tracks = [
     { id: 1, lanes: [view({ kind: "volume" }), view({ kind: "pan" })] },
     { id: 2, lanes: [] },
   ] as unknown as TrackView[];
   const d = { trackH: 64, laneH: 48, rowH: 24 };
-  it("ひらいた帯は 1 本 48、たたんだ帯は「▸」の行（24）にまとまる。帯のないトラックには行がない", () => {
+  it("an open band is 48 each, folded bands share the 「▸」 row (24). A track with no bands has no row", () => {
     const r = A.arrangeRows(tracks, [{ track: 1, target: { kind: "pan" } }], d);
     expect(r.tops).toEqual([0, 64 + 48 + 24]);
     expect(r.lanes.map((l) => l.top)).toEqual([64]);
     expect(r.rows.map((x) => x.top)).toEqual([112]);
     expect(r.height).toBe(136 + 64);
   });
-  it("クリップの箱、押した所の行、かたまり", () => {
+  it("clip boxes, the row under the press, and groups", () => {
     const dims: ClipDims = { tops: [0, 136], trackH: 64, inset: 2, hair: 1, mark: 2, nameH: 16, pad: 4, noteH: 2 };
     expect(rowTop(dims, 1)).toBe(136);
     expect(clipBox({ pxPerTick: 1, scrollX: 0, width: 100 }, dims, 1, 0, 10).y0).toBe(138);
     expect([trackRowAt(dims, 10), trackRowAt(dims, 80), trackRowAt(dims, 140), trackRowAt(dims, 300)]).toEqual([0, -1, 1, -1]);
     expect([blockAt(dims, 80), blockAt(dims, 140), blockAt(dims, 900)]).toEqual([0, 1, 1]);
   });
-  it("トラックの並べかえは、行の境のいちばん近い所", () => {
+  it("track reorder goes to the nearest row border", () => {
     expect(moveSlotAt(0, [0, 136, 200], 64 / 2 + 150)).toEqual({ slot: 2, to: 1 });
     expect(moveSlotAt(1, [0, 136, 200], 168 - 150)).toEqual({ slot: 0, to: 0 });
   });
 });
 
-describe("帯の中の点", () => {
+describe("points in the band", () => {
   const d: A.LaneDims = { h: 48, pad: 4, hair: 1, point: 6 };
   const v = { pxPerTick: 48 / BAR, scrollX: 0, width: 400 };
   const map = mapOf({ tempoBpm: 120, meterNum: 4, meterDen: 4, headRamp: false, tempoPoints: [], meterChanges: [] } as never);
@@ -105,11 +105,11 @@ describe("帯の中の点", () => {
     { tick: 2 * BAR, value: 0.8 },
     { tick: 4 * BAR, value: 0.2 },
   ];
-  it("値と高さ: 1 が上、0 が下（上下に pad）", () => {
+  it("value and height: 1 is top, 0 is bottom (pad above and below)", () => {
     expect([A.valueToY(d, 1), A.valueToY(d, 0)]).toEqual([4, 43]);
     expect(A.yToValue(d, A.valueToY(d, 0.5))).toBeCloseTo(0.5, 1);
   });
-  it("点を動かす: 横は拍の頭、上下は位置。Shift ならティック。いちばん前の点は曲の頭で止まる", () => {
+  it("moving a point: sideways to beat starts, up and down for value. Shift gives ticks. The first point stops at the song start", () => {
     const start: A.PointDrag = { points: [1], grab: 1, downX: 96, downY: 10, moved: false, dTick: 0, dValue: 0 };
     const moved = A.dragPoints(start, pts, v, d, map, 96 + 13, 10 - 10, 4, false);
     expect(moved.dTick).toBe(TPQ);
@@ -118,13 +118,13 @@ describe("帯の中の点", () => {
     const first: A.PointDrag = { ...start, points: [0, 1], grab: 1 };
     expect(A.dragPoints(first, pts, v, d, map, 0, 10, 4, false).dTick).toBe(0);
   });
-  it("動かした点がほかの点と同じティックに来たら、そこの点と入れかわる", () => {
+  it("a point moved onto the tick of another point swaps with it", () => {
     const drag: A.PointDrag = { points: [1], grab: 1, downX: 0, downY: 0, moved: true, dTick: 2 * BAR, dValue: 0 };
     const shown = A.draggedPoints(pts, drag);
     expect(shown.pts.map((p) => p.tick)).toEqual([0, 4 * BAR]);
     expect(shown.moving).toEqual([false, true]);
   });
-  it("線は gray.9、休みは gray.7。書く前の点は accent の枠だけ、えらんだ点は accent", () => {
+  it("the line is gray.9, resting is gray.7. Points before writing have only an accent border, chosen points are accent", () => {
     const look: A.LaneLook = { resting: false, armed: false, selected: (i) => i === 2, hovered: -1, from: [], flat: null };
     const rects = A.laneRects(v, pts, false, d, look);
     expect(rects.some((r) => r.color === "color.gray.9")).toBe(true);
@@ -133,23 +133,23 @@ describe("帯の中の点", () => {
     expect(A.laneRects(v, pts, false, d, { ...look, armed: true, selected: () => false }).some((r) => r.w === 6 && r.h === 6)).toBe(false);
     expect(A.laneRects(v, [], false, d, { ...look, flat: 0.5 })).toHaveLength(1);
   });
-  it("押した点、囲んだ点、足す所", () => {
+  it("pressed point, boxed points, place to add", () => {
     expect(A.pointAt(v, pts, d, 96 + 2, A.valueToY(d, 0.8) + 1, 6)).toBe(1);
     expect(A.pointAt(v, pts, d, 50, 20, 6)).toBe(-1);
     expect(A.pointsInBox(v, pts, d, 90, 0, 200, 48)).toEqual([1, 2]);
     expect(A.addTick(v, map, 48 * 4 + 25, false)).toBe(4 * BAR + 2 * TPQ);
   });
-  it("読み値の位置の差（モック R10-AutoEdit「+0. 1. 000」の形。ティックは 4 けた）", () => {
+  it("position difference in the reading (the 「+0. 1. 000」 form of mock R10-AutoEdit; ticks have 4 digits)", () => {
     expect(A.deltaText(TPQ, BAR, TPQ)).toBe("+0. 1. 0000");
     expect(A.deltaText(-(BAR + TPQ / 2), BAR, TPQ)).toBe("−1. 0. 0960");
   });
 });
 
-describe("Delete（最後にえらんだのがオートメーションの点のとき）", () => {
+describe("Delete (when the last thing chosen is an automation point)", () => {
   const auto: AutomationView = { folded: [], armed: [], writing: [], held: [], selected: { laneId: 510, points: [{ start: 1, end: 4 }] } };
   const key = { key: "Delete", ctrl: false, meta: false, alt: false, shift: false };
   const c = { typing: false, busy: false, toArrange: true };
-  it("えらんだ点を消す。クリップを最後にえらんだら、クリップへ回す", () => {
+  it("deletes the chosen points. If a clip was chosen last, it goes to the clip", () => {
     pickLane();
     expect(laneDeleteCommand(key, c, auto)).toEqual({ type: "deleteAutoPoints", lane: 510, points: [1, 2, 3] });
     expect(laneDeleteCommand(key, { ...c, typing: true }, auto)).toBeNull();
@@ -159,7 +159,7 @@ describe("Delete（最後にえらんだのがオートメーションの点の�
   });
 });
 
-// ---- 部品 ----
+// ---- parts ----
 
 let mounted: Record<string, unknown> | null = null;
 let target: HTMLElement;
@@ -183,8 +183,8 @@ const q = (sel: string) => target.querySelector<HTMLElement>(sel);
 const qa = (sel: string) => [...target.querySelectorAll<HTMLElement>(sel)];
 const text = (el: Element | null) => el?.textContent?.replace(/\s+/g, " ").trim() ?? null;
 
-describe("アレンジの帯（モック F6-AutoRec ・ F6-AutoRest）", () => {
-  it("見出しは 2 段。書いている間は「● 書く」がオンで「書いています」。下に「＋ 帯を足す ▾」とたたんだ数", () => {
+describe("arrange bands (mocks F6-AutoRec / F6-AutoRest)", () => {
+  it("the heading has 2 lines. While writing, 「● 書く」 is on with 「書いています」. Below, 「＋ 帯を足す ▾」 and the folded count", () => {
     show(Arrange, scene("autoRec"));
     expect(qa("[data-test=lane-head]")).toHaveLength(1);
     expect(text(q("[data-test=lane-fold]"))).toBe("▾ オートメーション ・ 音量");
@@ -194,14 +194,14 @@ describe("アレンジの帯（モック F6-AutoRec ・ F6-AutoRest）", () => {
     expect(qa("[data-test=auto-lane]")).toHaveLength(1);
     expect(q("[data-test=auto-writing]")).not.toBeNull();
   });
-  it("休みは「もどす」と「休み ・ （いまの値）」。押すと RestoreLane。▾ でたたむ、「＋ 帯を足す ▾」の一覧のパンで帯を足す", () => {
+  it("resting shows 「もどす」 and 「休み ・ （いまの値）」. Pressing sends RestoreLane. ▾ folds, pan in the 「＋ 帯を足す ▾」 list adds a band", () => {
     show(Arrange, scene("autoRest"));
     expect(text(q("[data-test=lane-state]"))).toBe("休み ・ −12.0 dB");
     q("[data-test=lane-restore]")!.click();
     q("[data-test=lane-fold]")!.click();
     q("[data-test=lane-add]")!.click();
     const menu = contextMenu.open!.entries;
-    // 仕様書 3 章 92-5: 音量 ・ パン ・ ミュート ・ センド A ・ センド B ／ エフェクトのパラメータ…。足してある帯（音量）に選ぶ印。
+    // spec 3 (92-5): gain / pan / mute / send A / send B, then effect parameters…. The added band (gain) has the choice mark.
     expect(menu.map((e) => (e.kind === "row" ? [e.text ?? t(e.label), e.checked ?? false] : "—"))).toEqual([
       ["音量", true],
       ["パン", true],
@@ -220,13 +220,13 @@ describe("アレンジの帯（モック F6-AutoRec ・ F6-AutoRest）", () => {
       { type: "addLane", track, target: { kind: "pan" } },
     ]);
   });
-  it("帯のあるトラックの下は、行の間があく（クリップの名前の位置も）", () => {
+  it("under a track with bands, the rows move down (clip name positions too)", () => {
     show(Arrange, scene("autoRec"));
     const tops = qa(".clip-label").map((el) => parseFloat(el.style.top));
-    // トラック 2 のクリップは 64 + 48 + 24 の下。
+    // The clip of track 2 is below 64 + 48 + 24.
     expect(tops.some((y) => y >= 136)).toBe(true);
   });
-  it("帯の右クリックは「帯を消す」", () => {
+  it("the band context menu has 「帯を消す」", () => {
     show(Arrange, scene("autoRec"));
     q("[data-test=auto-lane]")!.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 5, clientY: 5 }));
     flushSync();
@@ -235,8 +235,8 @@ describe("アレンジの帯（モック F6-AutoRec ・ F6-AutoRest）", () => {
   });
 });
 
-describe("ミキサー（モック F6-MixerAuto ・ F6-MixerRest）", () => {
-  it("動かしているフェーダーは枠が accent で、下に「オートメーション」。休みは「休み」と「もどす」。ほかのストリップも行の高さをそろえる", () => {
+describe("mixer (mocks F6-MixerAuto / F6-MixerRest)", () => {
+  it("a fader being moved has an accent border and 「オートメーション」 below. Resting shows 「休み」 and 「もどす」. Other strips keep the same row height", () => {
     show(MixerStrips, scene("mixerRest"));
     const rows = qa("[data-test=mixer-auto]");
     expect(rows.length).toBe(qa("[data-test=mixer-strip]").length);
@@ -247,7 +247,7 @@ describe("ミキサー（モック F6-MixerAuto ・ F6-MixerRest）", () => {
     q("[data-test=mixer-auto-restore]")!.click();
     expect(app.sent).toEqual([{ type: "restoreLane", track: scene("mixerRest").song.tracks[3]!.id, target: { kind: "volume" } }]);
   });
-  it("帯がなければ、値の下の行は出さない", () => {
+  it("with no bands, the row under the value is not shown", () => {
     show(MixerStrips, scene("mixer"));
     expect(qa("[data-test=mixer-auto]")).toHaveLength(0);
   });

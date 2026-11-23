@@ -1,4 +1,4 @@
-// Round 9: a double click on a number opens the same typing field that Enter (or the existing way) opens.
+// A double click on a number opens the same typing field that Enter (or the existing way) opens.
 import { flushSync, mount, unmount, type Component } from "svelte";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState } from "../src/bridge";
@@ -146,7 +146,7 @@ describe("Sound settings: a double click on the latency number opens the same fi
   });
 });
 
-describe("Tempo band: a double click on a point's number opens the point's value field (spec: 値は 2 回押して打ちこむ)", () => {
+describe("Tempo band: a double click on a point's number opens the point's value field (spec: 「値は 2 回押して打ちこむ」)", () => {
   const WIDTH = 1000;
   const proto = HTMLElement.prototype;
   const had = Object.getOwnPropertyDescriptor(proto, "clientWidth");

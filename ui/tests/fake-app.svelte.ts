@@ -1,5 +1,5 @@
-// 部品のテスト用の src/state/app.svelte の代わり。状態を外から入れ、送ったコマンドを記録する。
-// 使いかた: vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));
+// Stands in for src/state/app.svelte in component tests. Sets the state from outside and records the commands sent.
+// Use: vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));
 import type { AppState, Command, Event, Telemetry } from "../src/bridge";
 import { fakeState } from "../src/bridge/fake";
 
@@ -43,7 +43,7 @@ export function onTelemetry(): () => void {
 
 export async function start(): Promise<void> {}
 
-// ここから下はテストだけが使う。
+// Everything below is used only by tests.
 
 export function setState(next: AppState | null): void {
   state = next;
@@ -64,14 +64,14 @@ export function reset(): void {
   listeners.clear();
 }
 
-/** fakeState() を元に、一部を書きかえた状態。 */
+/** A state made from fakeState() with some parts changed. */
 export function stateWith(edit: (s: AppState) => void): AppState {
   const s = fakeState();
   edit(s);
   return s;
 }
 
-/** 計器の値。keys は押している鍵の番号。 */
+/** Meter values. keys are the numbers of the held keys. */
 export function telemetryWith(t: Partial<Omit<Telemetry, "keys">> & { keys?: number[] }): Telemetry {
   const keys = new Uint32Array(4);
   for (const n of t.keys ?? []) keys[n >>> 5]! |= 1 << (n & 31);

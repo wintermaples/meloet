@@ -1,4 +1,4 @@
-// 約束 18: プラグインの窓、パラメータの欄のプラグイン、ミキサーの 86 の残り。偽物の場面と、偽物の答え。
+// Protocol 18: plugin windows, plugins in the params panel, the rest of 86 in the mixer. Fake scenes and fake answers.
 import { describe, expect, it } from "vitest";
 import { createFakeTransport, fakeScene, fakeState, reduceMixer, type FakeState } from "../src/bridge/fake";
 import { FAKE_TABLES, SURGE_AUTOMATED, fakeParamTable } from "../src/bridge/fakeParams";
@@ -11,8 +11,8 @@ const scene = (name: string) => fakeScene(name)!.state;
 const run = (s: FakeState, command: Command) => reduceMixer(s, s.shelf, s.song, command)!;
 const rows = (table: ParamTable) => table.groups.flatMap((g) => g.params);
 
-describe("約束 18 の形", () => {
-  it("版は 23（22 より後）。新しい曲では、窓はなく、何もえらんでいない。古い欄は、もう約束にない", () => {
+describe("shape of protocol 18", () => {
+  it("version is 23 (after 22). A new song has no windows and nothing chosen. The old panel is no longer in the protocol", () => {
     expect(PROTOCOL_VERSION).toBeGreaterThanOrEqual(26);
     const s = fakeState();
     expect(s.windows).toEqual({ list: [] });
@@ -21,15 +21,15 @@ describe("約束 18 の形", () => {
     expect(s.song.tracks[0]!.sendDefaults).toEqual([-15, null]);
   });
 
-  it("どの場面も読みこめる", () => {
+  it("every scene loads", () => {
     for (const name of ["windowOpen", "paramFew", "paramMany", "paramSearch", "paramNoWindow", "mixerBypass", "insertReplace", "mixerFx", "paramsNone", "noOutput", "paramClamped", "windowUndo"]) {
       expect(fakeScene(name), name).not.toBeNull();
     }
   });
 });
 
-describe("偽物の場面（モックの中身）", () => {
-  it("F-WindowOpen: 窓が 2 つ（1 ピアノの音源の Surge XT、戻り A の Dragonfly Reverb）。たたんだ欄は「Surge XT 774」（91-3 の読みかえ）", () => {
+describe("fake scenes (the mock content)", () => {
+  it("F-WindowOpen: two windows (Surge XT as the instrument of 1 piano, Dragonfly Reverb on return A). The folded panel is「Surge XT 774」(the reading of 91-3)", () => {
     const s = scene("windowOpen");
     expect(s.windows.list.map((w) => w.name)).toEqual(["Surge XT", "Dragonfly Reverb"]);
     const surge: PluginSlotRef = { kind: "instrument", track: s.song.tracks[0]!.id };
@@ -50,7 +50,7 @@ describe("偽物の場面（モックの中身）", () => {
     expect(s.song.tracks[2]!.slots[1]?.effect).toMatchObject({ kind: "plugin", name: "Brick EQ", state: "stopped" });
   });
 
-  it("F-ParamFew: Dragonfly Reverb は 18 個、グループなし。窓はひらいていない", () => {
+  it("F-ParamFew: Dragonfly Reverb has 18, no groups. No window open", () => {
     const s = scene("paramFew");
     const sel = pluginOf(s.params)!;
     expect(selectedInsert(s.params)).toEqual({ strip: { kind: "return", bus: "a" }, slot: 0 });
@@ -63,7 +63,7 @@ describe("偽物の場面（モックの中身）", () => {
     expect(s.workspace.layout.rightFront).toBe("params");
   });
 
-  it("F6-ParamMany ・ F-ParamSearch: Surge XT は 774 個、6 つのグループと、鍵盤のつまみを受けるだけの 2080 個。「cutoff」は Scene A と Scene B に 12 個ずつ", () => {
+  it("F6-ParamMany, F-ParamSearch: Surge XT has 774, 6 groups, and 2080 that only take keyboard controls.「cutoff」has 12 each in Scene A and Scene B", () => {
     const s = scene("paramMany6");
     const sel = pluginOf(s.params)!;
     const table = fakeParamTable(sel.table!)!;
@@ -84,7 +84,7 @@ describe("偽物の場面（モックの中身）", () => {
     expect(scene("paramSearch").status.message).toMatchObject({ id: "summary" });
   });
 
-  it("F-ParamNoWindow: Mossy Verb は窓をまだひらけない。段階とオン ・ オフのパラメータがある", () => {
+  it("F-ParamNoWindow: Mossy Verb cannot open a window yet. It has stepped and on/off parameters", () => {
     const s = scene("paramNoWindow");
     const sel = pluginOf(s.params)!;
     expect(sel.window).toBe("notYet");
@@ -97,7 +97,7 @@ describe("偽物の場面（モックの中身）", () => {
     expect(Math.round(shape.value! * 11) + 1).toBe(3);
   });
 
-  it("F5-MixerBypass: 4 パッドの MVerb はとばしていて、えらんでいる。3 ドラムの Brick EQ は止まっている", () => {
+  it("F5-MixerBypass: MVerb on 4 pads is bypassed and chosen. Brick EQ on 3 drums is stopped", () => {
     const s = scene("mixerBypass");
     const insert = selectedInsert(s.params)!;
     expect(insert).toEqual({ strip: { kind: "track", id: s.song.tracks[3]!.id }, slot: 0 });
@@ -105,7 +105,7 @@ describe("偽物の場面（モックの中身）", () => {
     expect(fakeParamTable(FAKE_TABLES.mverb)!.groups[0]!.params).toHaveLength(9);
   });
 
-  it("R9-Inserts ・ R8-MixerFx ・ R9-Params ・ Opt5-Undo", () => {
+  it("R9-Inserts, R8-MixerFx, R9-Params, Opt5-Undo", () => {
     const replace = scene("insertReplace");
     const bass = { kind: "track", id: replace.song.tracks[1]!.id } as const;
     expect(replace.shelf).toMatchObject({
@@ -126,8 +126,8 @@ describe("偽物の場面（モックの中身）", () => {
   });
 });
 
-describe("偽物の答え（約束 18 の意図）", () => {
-  it("toggleBypass: とばす ・ もどす。止まったプラグインと空きの枠は何もしない", () => {
+describe("fake answers (protocol 18 intents)", () => {
+  it("toggleBypass: bypass and back. A stopped plugin and an empty slot do nothing", () => {
     const s = scene("mixerBypass");
     const at = (track: number, slot: number): InsertRef => ({ strip: { kind: "track", id: s.song.tracks[track]!.id }, slot });
     expect(run(s, { type: "toggleBypass", insert: at(3, 0) }).song.tracks[3]!.slots[0]!.bypassed).toBe(false);
@@ -136,7 +136,7 @@ describe("偽物の答え（約束 18 の意図）", () => {
     expect(run(s, { type: "toggleBypass", insert: at(0, 3) }).song).toEqual(s.song);
   });
 
-  it("moveInsert: 間の枠が 1 つずつずれる。えらんだ枠と窓は、中身について行く", () => {
+  it("moveInsert: the slots between move by one. The chosen slot and the window follow their content", () => {
     const s = scene("windowOpen");
     const piano = { kind: "track", id: s.song.tracks[0]!.id } as const;
     const down = run(s, { type: "moveInsert", insert: { strip: piano, slot: 0 }, to: 3 });
@@ -150,7 +150,7 @@ describe("偽物の答え（約束 18 の意図）", () => {
     expect(moved.song.returns[0].slots[2]?.effect).toMatchObject({ name: "Dragonfly Reverb" });
   });
 
-  it("selectInsert ・ selectInstrument: 窓をひらける子は窓がひらき、欄は出ない。まだひらけない子は欄が前に出る", () => {
+  it("selectInsert, selectInstrument: a plugin that can open a window opens it and the panel is not shown. One that cannot yet brings the panel forward", () => {
     const s = scene("paramFew");
     const a: InsertRef = { strip: { kind: "return", bus: "a" }, slot: 0 };
     const none = { ...s, params: { selected: null, clips: null } };
@@ -165,12 +165,12 @@ describe("偽物の答え（約束 18 の意図）", () => {
     const surge = scene("paramMany");
     const track = surge.song.tracks[0]!.id;
     expect(selectedInstrument(run({ ...surge, params: { selected: null, clips: null } }, { type: "selectInstrument", track }).params)).toBe(track);
-    // 最初から入っている音色は、パラメータがないことを欄で言う（19-A）。
+    // A built-in sound says in the panel that it has no parameters (19-A).
     expect(run(surge, { type: "selectInstrument", track: surge.song.tracks[1]!.id }).params.selected).toMatchObject({ kind: "sound", track: surge.song.tracks[1]!.id });
     expect(pluginOf(run(surge, { type: "selectParam", param: 1012 }).params)?.row).toBe(1012);
   });
 
-  it("入れかえる: 棚が replaceEffect でひらき、Enter で入れかわる。いまと同じ物は何もしない", async () => {
+  it("replace: the shelf opens with replaceEffect and Enter replaces. The same one as now does nothing", async () => {
     const start = scene("mixer");
     const transport = createFakeTransport(structuredClone(start));
     let state = (await transport.snapshot()).state;
@@ -198,7 +198,7 @@ describe("偽物の答え（約束 18 の意図）", () => {
   });
 });
 
-describe("パラメータの一覧をためる係（ParamTableBook）", () => {
+describe("parameter list store (ParamTableBook)", () => {
   const table = (id: number, seq = 0): ParamTable => ({
     table: id,
     seq,
@@ -208,7 +208,7 @@ describe("パラメータの一覧をためる係（ParamTableBook）", () => {
   const values = (id: number, seq: number, value: number, param = 1): ParamValues => ({ table: id, seq, values: [{ id: param, value, text: `${value}` }] });
   const settle = () => new Promise((r) => setTimeout(r, 0));
 
-  it("一覧は table が変わったときに 1 回だけ取りにいく。値は seq の順に当て、古い物とほかの一覧の物は捨てる", async () => {
+  it("fetches the list only once when the table changes. Values are applied in seq order; old ones and ones for other lists are dropped", async () => {
     const fetched: number[] = [];
     const told: (readonly number[] | null)[] = [];
     const book = new ParamTableBook(async (id) => (fetched.push(id), table(id)));
@@ -230,7 +230,7 @@ describe("パラメータの一覧をためる係（ParamTableBook）", () => {
     expect(fetched).toEqual([7]);
   });
 
-  it("番号が飛んだら取りなおす。取りにいっている間に届いた値は、届いた一覧に当てる", async () => {
+  it("a gap in the numbers fetches again. Values that arrive while fetching are applied to the list they belong to", async () => {
     let seq = 0;
     let fetches = 0;
     const book = new ParamTableBook(async (id) => (fetches++, table(id, seq)));
@@ -246,7 +246,7 @@ describe("パラメータの一覧をためる係（ParamTableBook）", () => {
     expect(book.row(1)!.value).toBe(1);
   });
 
-  it("えらぶ子が変わったら、前の一覧の答えは使わない。Rust が「もうない」と言ったら待つ", async () => {
+  it("when the chosen plugin changes, answers for the old list are not used. When Rust says「もうない」, wait", async () => {
     const waiting = new Map<number, (t: ParamTable | null) => void>();
     const book = new ParamTableBook((id) => new Promise((done) => waiting.set(id, done)));
     book.show(1);

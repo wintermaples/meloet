@@ -1,4 +1,4 @@
-// 区切り2の画面: 曲の名前の一覧、曲の名前の下の文、曲のダイアログ、取り消しの帯札と状態行、Mod のキー。
+// Screen: song name list, the text under the song name, song dialogs, the undo band tab and status line, Mod keys.
 import { flushSync, mount, tick, unmount, type Component } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, Command, SongDialogView } from "../src/bridge";
@@ -39,7 +39,7 @@ function show(component: Component<any>, state: AppState): void {
 const q = <T extends HTMLElement = HTMLElement>(sel: string) => document.querySelector<T>(sel);
 const text = (sel: string) => q(sel)?.textContent?.replace(/\s+/g, " ").trim() ?? null;
 
-describe("曲の名前の下の文", () => {
+describe("text under the song name", () => {
   it.each([
     ["neverSaved", 0, 0, "新しい曲 ・ 取り消し 0 / 0"],
     ["saved", 14, 0, "保存済み ・ 取り消し 14 / 14"],
@@ -58,7 +58,7 @@ describe("曲の名前の下の文", () => {
   });
 });
 
-describe("曲の名前の一覧", () => {
+describe("song name list", () => {
   const openMenu = async () => {
     q<HTMLButtonElement>('[data-test="transport-song"]')!.click();
     flushSync();
@@ -67,7 +67,7 @@ describe("曲の名前の一覧", () => {
   };
   const rows = (menu: HTMLElement) => [...menu.querySelectorAll<HTMLButtonElement>("button")];
 
-  it("押すとひらく。行は 新しい曲 Ctrl N ・ ひらく… Ctrl O ・ 保存 Ctrl S。押すと意図を送ってとじる", async () => {
+  it("pressing opens it. Rows are 「新しい曲」 Ctrl N, 「ひらく…」 Ctrl O, 「保存」 Ctrl S. Pressing sends the intent and closes", async () => {
     show(Transport, app.stateWith(() => {}));
     const menu = await openMenu();
     expect(menuVisible()).toBe(true);
@@ -80,7 +80,7 @@ describe("曲の名前の一覧", () => {
     expect(q('[data-test="song-menu"]')).toBeNull();
   });
 
-  it("↑ ↓ Enter でえらぶ。Esc（closeMenu）でとじる", async () => {
+  it("choose with ↑ ↓ Enter. Esc (closeMenu) closes", async () => {
     show(Transport, app.stateWith(() => {}));
     let menu = await openMenu();
     menu.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
@@ -93,7 +93,7 @@ describe("曲の名前の一覧", () => {
     expect(q('[data-test="song-menu"]')).toBeNull();
   });
 
-  it.each(["recording", "countIn"] as const)("%s のあいだは 3 行とも使えない", async (state) => {
+  it.each(["recording", "countIn"] as const)("during %s all 3 rows are disabled", async (state) => {
     show(Transport, app.stateWith((s) => (s.transport.state = state)));
     const menu = await openMenu();
     expect(rows(menu).every((r) => r.disabled && r.classList.contains("unusable"))).toBe(true);
@@ -102,7 +102,7 @@ describe("曲の名前の一覧", () => {
   });
 });
 
-describe("曲のダイアログ", () => {
+describe("song dialog", () => {
   const dialog = (d: Partial<SongDialogView>) =>
     app.stateWith((s) => (s.workspace.songDialog = { id: 7, kind: "unsaved", title: "はじめての曲", previous: false, ...d }));
   const buttons = () => [...document.querySelectorAll<HTMLButtonElement>('[data-test="song-dialog"] .foot button')];
@@ -132,7 +132,7 @@ describe("曲のダイアログ", () => {
     expect(app.sent).toEqual(answers.map((answer) => ({ type: "answerSongDialog", dialog: 7, answer })));
   });
 
-  it("Enter は右はしの明るいボタン、Esc は back", () => {
+  it("Enter is the bright button at the right end, Esc is back", () => {
     let state = dialog({ kind: "unsaved" });
     const sent: Command[] = [];
     const deps = { state: () => state, send: (c: Command) => void sent.push(c), nav: { platform: "Linux x86_64" } };
@@ -148,8 +148,8 @@ describe("曲のダイアログ", () => {
   });
 });
 
-describe("取り消し", () => {
-  it("帯札: いつも「取り消せる手 / 全部の手」（「0 / 0」「14 / 14」「12 / 14」）", () => {
+describe("undo", () => {
+  it("band tab: always 「undo steps / all steps」 (「0 / 0」「14 / 14」「12 / 14」)", () => {
     show(BandRow, app.stateWith((s) => (s.song.undoCount = 0)));
     expect(text("nav.row")).toContain("0 / 0");
     app.setState(app.stateWith((s) => (s.song.undoCount = 14)));
@@ -166,17 +166,17 @@ describe("取り消し", () => {
     expect(text("nav.row")).toContain("12 / 14");
   });
 
-  it("状態行: 取り消してある手がある", async () => {
+  it("status line: there are undone steps", async () => {
     show(StatusLine, app.stateWith((s) => (s.status.message = { id: "undoPending", count: 2 })));
     await tick();
     expect(text("footer.status")).toContain("2 手ぶん取り消してあります。新しく何かすると、その 2 手はやりなおせなくなります。");
   });
 });
 
-describe("Mod のキー", () => {
+describe("Mod keys", () => {
   const k = (key: string, mods: Partial<KeyInput> = {}): KeyInput => ({ key, ctrl: false, meta: false, alt: false, shift: false, ...mods });
 
-  it("Mod N・O・S・Z・Shift Z。文字を打っている最中も効く。Mac は Cmd", () => {
+  it("Mod N, O, S, Z, Shift Z. Work while typing too. Cmd on Mac", () => {
     for (const typing of [false, true]) {
       expect(keyAction(k("n", { ctrl: true }), typing, "other")).toEqual({ kind: "newSong" });
       expect(keyAction(k("o", { ctrl: true }), typing, "other")).toEqual({ kind: "openSong" });
@@ -189,7 +189,7 @@ describe("Mod のキー", () => {
     expect(keyAction(k("N", { ctrl: true, shift: true }), false, "other")).toBeNull();
   });
 
-  it("送る意図。録音中とカウントイン中は、新しい曲・ひらく・保存を送らない（ブラウザにも渡さない）", () => {
+  it("intents sent. While recording and during count-in, new song, open and save are not sent (and not passed to the browser)", () => {
     let state = app.stateWith(() => {});
     const sent: Command[] = [];
     const deps = { state: () => state, send: (c: Command) => void sent.push(c), nav: { platform: "Linux x86_64" } };

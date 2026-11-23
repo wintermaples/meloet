@@ -1,5 +1,5 @@
-// 取り消しの履歴の帯（第 6 回 区切り3、仕様書 2 章 ・ 3 章 Y19 ・ 4 章、モック F-History ・ R10-History）:
-// 行をためる係（bridge/historyRows.ts）、行の形、えらぶ ・ とぶ、キー、5000 手の場面で作る行の数と時間。
+// The undo history band (spec 2, spec 3 (Y19), spec 4, mocks F-History / R10-History):
+// the row store (bridge/historyRows.ts), row form, choose / jump, keys, and the number of rows and time in a 5000-step scene.
 import { flushSync, mount, unmount } from "svelte";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import App from "../src/App.svelte";
@@ -18,7 +18,7 @@ const settle = async () => {
 const made = (index: number, step = index): HistoryRow => ({ index, step, name: { kind: "moveNotes" }, what: { kind: "notes", count: 1 }, place: { kind: "pianoRoll" } });
 const view = (total: number, current: number, newest: number): HistoryView => ({ total, redo: total - current, current, newest });
 
-/** 答えを手で返す取りにいく係。 */
+/** A fetcher whose answers are returned by hand. */
 function fetcher() {
   const calls: { from: number; to: number; answer: (rows: HistoryRow[]) => Promise<void> }[] = [];
   const fetch = (from: number, to: number) =>
@@ -28,8 +28,8 @@ function fetcher() {
   return { calls, fetch };
 }
 
-describe("行をためる係（HistoryRowStore）", () => {
-  it("見えている所だけ、64 行のかたまりで取りにいき、とどいた行は取りなおさない", async () => {
+describe("row store (HistoryRowStore)", () => {
+  it("fetches only the visible part, in blocks of 64 rows, and does not fetch arrived rows again", async () => {
     const f = fetcher();
     const book = new HistoryRowStore(f.fetch);
     book.follow(view(5000, 5000, 5000));
@@ -44,7 +44,7 @@ describe("行をためる係（HistoryRowStore）", () => {
     expect(HISTORY_BLOCK).toBe(64);
   });
 
-  it("取り消し ・ やりなおし ・ とびでは行を捨てない", async () => {
+  it("undo, redo and jump do not drop rows", async () => {
     const f = fetcher();
     const book = new HistoryRowStore(f.fetch);
     book.follow(view(10, 10, 10));
@@ -56,7 +56,7 @@ describe("行をためる係（HistoryRowStore）", () => {
     expect(book.held()).toBe(10);
   });
 
-  it("3 手取り消して新しい手: いまより上の行を捨て、最後の行だけ取りなおす", async () => {
+  it("a new step after 3 undos: drops the rows above the current one, fetches only the last row again", async () => {
     const f = fetcher();
     const book = new HistoryRowStore(f.fetch);
     book.follow(view(10, 10, 10));
@@ -72,7 +72,7 @@ describe("行をためる係（HistoryRowStore）", () => {
     expect(book.row(8)?.step).toBe(11);
   });
 
-  it("新しい手がふたつ一度に来ても、前のいまより上を捨てる", async () => {
+  it("even if two new steps come at once, drops above the old current", async () => {
     const f = fetcher();
     const book = new HistoryRowStore(f.fetch);
     book.follow(view(10, 5, 10));
@@ -82,19 +82,19 @@ describe("行をためる係（HistoryRowStore）", () => {
     expect([book.held(), book.row(6)]).toEqual([5, undefined]);
   });
 
-  it("取りにいっている間に変わった行は、遅れた答えから入れない", async () => {
+  it("rows that changed while fetching are not taken from the late answer", async () => {
     const f = fetcher();
     const book = new HistoryRowStore(f.fetch);
     book.follow(view(10, 7, 10));
     book.want(1, 10);
     book.follow(view(8, 8, 11));
-    // 古い答え（新しい手の前）。8 行目は古い手。
+    // An old answer (before the new step). Row 8 is an old step.
     await f.calls[0]!.answer(Array.from({ length: 10 }, (_, i) => made(i + 1)));
     expect(book.held()).toBe(7);
     expect(book.row(8)).toBeUndefined();
   });
 
-  it("いちばん新しい行は newest と同じ手のときだけ入れる（答えが状態より先に来た）", async () => {
+  it("the newest row is taken only when it is the same step as newest (the answer came before the state)", async () => {
     const f = fetcher();
     const book = new HistoryRowStore(f.fetch);
     book.follow(view(5, 5, 5));
@@ -103,7 +103,7 @@ describe("行をためる係（HistoryRowStore）", () => {
     expect([book.held(), book.row(5)]).toEqual([4, undefined]);
   });
 
-  it("曲が入れかわったら（clear）、行も、とちゅうの答えも捨てる", async () => {
+  it("when the song changes (clear), rows and answers on the way are dropped", async () => {
     const f = fetcher();
     const book = new HistoryRowStore(f.fetch);
     let calls = 0;
@@ -117,7 +117,7 @@ describe("行をためる係（HistoryRowStore）", () => {
   });
 });
 
-/** jsdom は大きさを測らない。行の箱だけ、帯の 8 行ぶんの高さにする。 */
+/** jsdom does not measure sizes. Only the row box gets the height of 8 band rows. */
 function giveRowsHeight(px: number): () => void {
   const was = Object.getOwnPropertyDescriptor(Element.prototype, "clientHeight")!;
   Object.defineProperty(HTMLElement.prototype, "clientHeight", {
@@ -154,17 +154,17 @@ function openScene(scene: string) {
   });
 }
 
-describe("R10-History: 16 手、3 手取り消してある", () => {
+describe("R10-History: 16 steps, 3 undone", () => {
   openScene("historyUndone3");
   afterEach(() => (document.activeElement as HTMLElement | null)?.blur());
 
-  it("見出しの行: 手の数、いまの手、取り消す ・ やりなおす", () => {
+  it("heading row: step count, current step, undo / redo", () => {
     expect(text(document.querySelector("[data-test=history-head]"))).toBe("16 手 ・ いまは 13 手目。上の 3 手は取り消してあり、やりなおせます");
     expect(text(document.querySelector("[data-test=history-undo]"))).toBe("取り消す Ctrl Z");
     expect(text(document.querySelector("[data-test=history-redo]"))).toBe("やりなおす Ctrl Shift Z");
   });
 
-  it("新しい手が上。8 行と、いちばん下の「… より前は、下へスクロール」", () => {
+  it("newer steps on top. 8 rows, and 「… より前は、下へスクロール」 at the bottom", () => {
     expect(rows().map((r) => Number(r.dataset.index))).toEqual([16, 15, 14, 13, 12, 11, 10, 9, 8]);
     expect(text(rowOf(16))).toBe("16 「ノートを動かす」・ 3 ノート ピアノロール やりなおせます");
     expect(rowOf(16)!.classList.contains("undone")).toBe(true);
@@ -174,7 +174,7 @@ describe("R10-History: 16 手、3 手取り消してある", () => {
     expect(text(document.querySelector("[data-test=history-more]"))).toBe("… 8 手目より前は、下へスクロール");
   });
 
-  it("行を押すとえらぶ（地 gray.4 と「ここまで戻す Enter」）。フォーカスの枠はキーでえらんだときだけ", async () => {
+  it("pressing a row chooses it (background gray.4 and 「ここまで戻す Enter」). The focus border only when chosen by keys", async () => {
     rowOf(11)!.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 }));
     list().focus();
     await settle();
@@ -183,7 +183,7 @@ describe("R10-History: 16 手、3 手取り消してある", () => {
     expect(text(rowOf(11))).toBe("11 「マーカーを足す」・ サビ アレンジ ここまで戻す Enter");
   });
 
-  it("↑ ↓ でえらび（枠 gray.10）、Home でいまの手へ", async () => {
+  it("↑ ↓ choose (border gray.10), Home goes to the current step", async () => {
     list().focus();
     key("ArrowUp");
     await settle();
@@ -196,11 +196,11 @@ describe("R10-History: 16 手、3 手取り消してある", () => {
     key("Home");
     await settle();
     expect(historyUi.selected).toBe(13);
-    // いまの手には「ここまで戻す」を出さない。
+    // The current step does not show 「ここまで戻す」.
     expect(rowOf(13)!.querySelector("[data-test=history-jump]")).toBeNull();
   });
 
-  it("Enter で、えらんだ手まで戻す（HistoryJump）。いまより上ならやりなおす", async () => {
+  it("Enter goes back to the chosen step (HistoryJump). Above the current one, it redoes", async () => {
     list().focus();
     key("ArrowDown");
     key("ArrowDown");
@@ -218,14 +218,14 @@ describe("R10-History: 16 手、3 手取り消してある", () => {
     expect(current.state!.status.message).toMatchObject({ id: "historyJumped", index: 15, forward: true });
   });
 
-  it("帯にフォーカスがないときの ↑ ↓ は帯のものではない", async () => {
+  it("↑ ↓ without focus on the band do not belong to the band", async () => {
     const was = historyUi.selected;
     key("ArrowUp", document.body);
     await settle();
     expect(historyUi.selected).toBe(was);
   });
 
-  it("Esc で帯をたたむ", async () => {
+  it("Esc folds the band", async () => {
     list().focus();
     key("Escape");
     await settle();
@@ -233,17 +233,17 @@ describe("R10-History: 16 手、3 手取り消してある", () => {
   });
 });
 
-describe("5000 手の曲", () => {
+describe("a song with 5000 steps", () => {
   openScene("history5000");
 
-  it("ひらいても、作る行は見えている所だけ。取りにいくのは 1 かたまり", () => {
+  it("opening makes only the visible rows. Fetches 1 block", () => {
     expect(rows().length).toBeLessThanOrEqual(10);
     expect(rowOf(5000)).not.toBeNull();
     expect(text(rowOf(5000))).toContain("いまここ");
     expect(text(document.querySelector("[data-test=history-more]"))).toBe("… 4992 手目より前は、下へスクロール");
   });
 
-  it("スクロールした所の行を取りにいって描き、500 手とぶ（画面だけの時間を出す）", async () => {
+  it("fetches and draws the rows at the scrolled place, jumps 500 steps (prints the screen-only time)", async () => {
     const viewport = document.querySelector<HTMLElement>("[data-test=history-rows]")!;
     const times: number[] = [];
     for (let i = 1; i <= 20; i++) {
@@ -272,7 +272,7 @@ describe("5000 手の曲", () => {
     const jumpMs = performance.now() - t1;
     expect(current.state!.history.current).toBe(4500);
     expect(text(rowOf(4500))).toContain("いまここ");
-    // jsdom の時間（本物の WebKit とはちがう。目安）。
+    // jsdom time (not the same as real WebKit; a rough guide).
     console.log(
       `history5000 (jsdom): scroll 20 steps median ${times.sort((a, b) => a - b)[10]!.toFixed(1)} ms, max ${times[19]!.toFixed(1)} ms; ` +
         `500 × ↓ ${stepMs.toFixed(1)} ms; jump 500 ${jumpMs.toFixed(1)} ms`,

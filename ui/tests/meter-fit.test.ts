@@ -15,8 +15,8 @@ const base: MeterFitInput = {
   modulation: 110,
 };
 
-describe("入力計の名前の欄（仕様書 1 章 size.meter.name、3 章）", () => {
-  it("太いとき: 8 文字までは 108、8 文字をこえたら 148", () => {
+describe("name column of the input meter (spec 1 (size.meter.name), spec 3)", () => {
+  it("full: 108 up to 8 characters, 148 over 8 characters", () => {
     expect(meterFit({ ...base, nameChars: 8 }).nameWidth).toBe("size.meter.name");
     expect(meterFit({ ...base, nameChars: 9 }).nameWidth).toBe("part.meter.name.long");
     expect(nameWidthPx("size.meter.name", 100)).toBe(108);
@@ -25,7 +25,7 @@ describe("入力計の名前の欄（仕様書 1 章 size.meter.name、3 章）"
     expect(charCount("鍵盤 49")).toBe(5);
   });
 
-  it("細いとき: 176 まで。横が足りなければ 128 まで", () => {
+  it("slim: up to 176. Down to 128 if the width is not enough", () => {
     expect(meterFit({ ...base, meter: "slim", name: 300 }).nameWidth).toBe("size.meter.name.slim");
     expect(nameWidthPx("size.meter.name.slim", 100)).toBe(176);
     expect(nameWidthPx("part.meter.name.slim-narrow", 100)).toBe(128);
@@ -33,9 +33,9 @@ describe("入力計の名前の欄（仕様書 1 章 size.meter.name、3 章）"
     expect(nameWidthPx("part.meter.name.slim-narrow", 150)).toBe(192);
   });
 
-  it("ちぢめる前に、モジュレーション、ピッチベンドの順に引っこめる", () => {
+  it("before narrowing, hide modulation, then pitch bend", () => {
     const slim = { ...base, meter: "slim" as const, name: 200, rest: 500 };
-    // 全部: 500 + 176 + 90 + 110 = 876
+    // All: 500 + 176 + 90 + 110 = 876
     expect(meterFit({ ...slim, available: 876 })).toEqual({
       nameWidth: "size.meter.name.slim",
       pitchBend: true,
@@ -62,18 +62,18 @@ describe("入力計の名前の欄（仕様書 1 章 size.meter.name、3 章）"
     });
   });
 
-  it("細いとき、短い名前は自分の幅だけで数える", () => {
+  it("slim: a short name counts only its own width", () => {
     const slim = { ...base, meter: "slim" as const, name: 60, rest: 500 };
     expect(meterFit({ ...slim, available: 760 }).modulation).toBe(true);
   });
 
-  it("太いときは名前の欄の幅を変えず、読み値だけ引っこめる", () => {
+  it("full: the name column keeps its width, only the readouts are hidden", () => {
     const fit = meterFit({ ...base, nameChars: 17, available: 100 });
     expect(fit).toMatchObject({ nameWidth: "part.meter.name.long", pitchBend: false, modulation: false });
   });
 
-  it("150 % では 150 % の幅でくらべる（F-MeterLongName の 853px の例）", () => {
-    // 853 × 1.5 ≒ 1280 CSS px。1050 + 230 は入らず、1050 + 192 なら入る。
+  it("at 150 %, compare with the 150 % width (the 853px example in F-MeterLongName)", () => {
+    // 853 × 1.5 ≒ 1280 CSS px. 1050 + 230 does not fit, 1050 + 192 does.
     const fit = meterFit({
       meter: "slim",
       scale: 150,
@@ -88,12 +88,12 @@ describe("入力計の名前の欄（仕様書 1 章 size.meter.name、3 章）"
   });
 });
 
-describe("太い入力計で横が足りないとき（仕様書 1 章「拡大率の決まり」）", () => {
-  // 全部: 800 + 108 + 90 + 110 = 1108。浮く幅: 鍵 100、音源の名前 60、ラベル 40、サステイン 70。
+describe("full input meter without enough width (spec 1 (Rules for the scale))", () => {
+  // All: 800 + 108 + 90 + 110 = 1108. Width saved: keys 100, instrument name 60, label 40, sustain 70.
   const full = { ...base, narrowKeys: 100, instrument: 60, targetLabel: 40, sustain: 70 };
   const at = (available: number) => meterFit({ ...full, available });
 
-  it("弾くと鳴る先: モジュレーション → ピッチベンド → 鍵盤を細い鍵に → 音源の名前 → ラベル → サステインの順", () => {
+  it("what plays when you play: modulation -> pitch bend -> narrow keys -> instrument name -> label -> sustain, in that order", () => {
     expect(at(1108)).toMatchObject({ modulation: true, pitchBend: true, narrowKeys: false, instrument: true, targetLabel: true, sustain: true });
     expect(at(1107)).toMatchObject({ modulation: false, pitchBend: true, narrowKeys: false });
     expect(at(997)).toMatchObject({ modulation: false, pitchBend: false, narrowKeys: false });
@@ -104,11 +104,11 @@ describe("太い入力計で横が足りないとき（仕様書 1 章「拡大�
     expect(at(10)).toMatchObject({ narrowKeys: true, instrument: false, targetLabel: false, sustain: false, nameWidth: "size.meter.name" });
   });
 
-  // 案内の文 3 つ（100、80、60）は rest の 800 に入っている。
+  // The 3 hint sentences (100, 80, 60) are inside rest's 800.
   const message = { ...base, narrowKeys: 100, sustain: 70, sentences: [100, 80, 60] };
   const msgAt = (available: number) => meterFit({ ...message, available });
 
-  it("案内の文: モジュレーション → ピッチベンド → 鍵盤を細い鍵に → 2 文目から先（うしろから）→ サステインの順", () => {
+  it("hint text: modulation -> pitch bend -> narrow keys -> from the 2nd sentence on (from the end) -> sustain, in that order", () => {
     expect(msgAt(1108)).toMatchObject({ modulation: true, sentences: 3, sustain: true });
     expect(msgAt(907)).toMatchObject({ pitchBend: false, narrowKeys: true, sentences: 3 });
     expect(msgAt(808)).toMatchObject({ narrowKeys: true, sentences: 3 });
@@ -120,13 +120,13 @@ describe("太い入力計で横が足りないとき（仕様書 1 章「拡大�
     expect(msgAt(10)).toMatchObject({ sentences: 1, sustain: false, instrument: true, targetLabel: true });
   });
 
-  it("細いときは鍵盤、音源の名前、ラベル、サステインを引っこめない", () => {
+  it("slim: keys, instrument name, label and sustain are not hidden", () => {
     expect(meterFit({ ...full, meter: "slim", available: 10 })).toMatchObject(ALL);
   });
 });
 
-describe("入力計の右はしの案内の文", () => {
-  it("文に分ける", () => {
+describe("hint text at the right end of the input meter", () => {
+  it("split into sentences", () => {
     expect(sentences("鍵盤を USB でつなぐと、ここに出ます。つながなくても、マウスで音を書けます。")).toEqual([
       "鍵盤を USB でつなぐと、ここに出ます。",
       "つながなくても、マウスで音を書けます。",
@@ -134,8 +134,8 @@ describe("入力計の右はしの案内の文", () => {
     expect(sentences("音の出口がまだです。下でえらんでください")).toEqual(["音の出口がまだです。", "下でえらんでください"]);
   });
 
-  it("細いとき: 読み値と名前の欄のあとで、うしろの文から引っこめ、1 文目は残す", () => {
-    // 500 + 176 + 90 + 110 = 876（文 100、80、60 は rest の 500 に入っている）
+  it("slim: after the readouts and the name column, hide sentences from the end and keep the first", () => {
+    // 500 + 176 + 90 + 110 = 876 (sentences 100, 80, 60 are inside rest's 500)
     const slim = { ...base, meter: "slim" as const, name: 200, rest: 500, sentences: [100, 80, 60] };
     expect(meterFit({ ...slim, available: 876 })).toMatchObject({ modulation: true, sentences: 3 });
     expect(meterFit({ ...slim, available: 676 })).toMatchObject({ pitchBend: false, nameWidth: "size.meter.name.slim", sentences: 3 });
@@ -146,8 +146,8 @@ describe("入力計の右はしの案内の文", () => {
   });
 });
 
-describe("入力計の数の書きかた", () => {
-  it("音名: C4 = 60、低い順", () => {
+describe("how the input meter writes numbers", () => {
+  it("note names: C4 = 60, low to high", () => {
     expect(noteName(60)).toBe("C4");
     expect(noteName(36)).toBe("C2");
     expect(noteName(84)).toBe("C6");
@@ -155,7 +155,7 @@ describe("入力計の数の書きかた", () => {
     expect(heldText([67, 60, 64])).toBe("C4 E4 G4");
   });
 
-  it("3 けた、符号つき 4 けた", () => {
+  it("3 digits, and 4 digits with a sign", () => {
     expect(pad3(12)).toBe("012");
     expect(pad3(0)).toBe("000");
     expect(signed4(0)).toBe("+0000");

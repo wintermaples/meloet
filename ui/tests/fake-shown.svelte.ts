@@ -1,5 +1,5 @@
-// 部品のテスト用の src/components/pianoroll/shown.svelte の代わり。見せているクリップとテイクを外から入れる。
-// 使いかた: vi.mock("../src/components/pianoroll/shown.svelte", () => import("./fake-shown.svelte"));
+// Stands in for src/components/pianoroll/shown.svelte in part tests. The shown clip and take are set from outside.
+// Use: vi.mock("../src/components/pianoroll/shown.svelte", () => import("./fake-shown.svelte"));
 import type { ClipView, TakeNotes, TrackView } from "../src/bridge";
 
 let clip = $state.raw<ClipView | null>(null);

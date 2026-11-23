@@ -1,5 +1,5 @@
-// 約束 23（第 7 回 区切り2 の 1 回目）: 歌のトラック、入口、モニター、音の設定の奥、遅れを測る、マイクの計、
-// 92 の残り（19-A ・ 92-3 ・ 92-19）。形と、偽物の場面と、（何を）の文。画面の部品は 2 回目。
+// Protocol 23: vocal tracks, inputs, monitor, the deep part of the sound settings, measuring latency, the mic meter,
+// the rest of 92 (19-A, 92-3, 92-19). The shapes, the fake scenes, and the (what) texts. The screen parts come in the second step.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { AppState, Command, SelectedParams, StatusMessage, StepName, StepWhat, TrackView } from "../src/bridge";
@@ -21,8 +21,8 @@ const kindOf = (s: AppState) => {
   return kind;
 };
 
-describe("約束 23 の形", () => {
-  it("版は 24。新しい曲は鍵盤のトラック 1 本で、鍵はそこで鳴る。入口はひらいていない", () => {
+describe("shape of protocol 23", () => {
+  it("version 24. A new song has one keyboard track, and keys play there. No input is open", () => {
     expect(PROTOCOL_VERSION).toBeGreaterThanOrEqual(26);
     const s = fakeState();
     expect(s.song.tracks.map((tr) => tr.kind)).toEqual([{ kind: "keys" }]);
@@ -36,7 +36,7 @@ describe("約束 23 の形", () => {
     expect(s.audio.sampleRateChoices).toContain(s.audio.requestedSampleRate);
   });
 
-  it("一覧: 入口は 3 つ（仕様書 3 章の順）、録る形は 16 ・ 24 ・ 32、カチッという音は 5 回", () => {
+  it("lists: 3 inputs (in spec 3 order), recording formats 16, 24, 32, and 5 click sounds", () => {
     expect(VOCAL_INPUTS).toEqual(["mono1", "mono2", "stereo12"]);
     expect(VOCAL_INPUTS.map((i) => t(`vocal.input.${i}`))).toEqual(["入口 1 ・ モノ", "入口 2 ・ モノ", "入口 1 ・ 2 ・ ステレオ"]);
     expect(RECORD_FORMATS).toEqual([
@@ -47,7 +47,7 @@ describe("約束 23 の形", () => {
     expect(LATENCY_CLICKS).toBe(5);
   });
 
-  it("意図: 歌のトラック、入口、●、モニター、音の設定の奥、遅れを測る", () => {
+  it("intents: vocal track, input, ●, monitor, deep part of the sound settings, measuring latency", () => {
     const commands: Command[] = [
       { type: "addVocalTrack" },
       { type: "setVocalInput", track: VOCAL, input: "stereo12" },
@@ -69,7 +69,7 @@ describe("約束 23 の形", () => {
     expect(new Set(commands.map((c) => c.type)).size).toBe(14);
   });
 
-  it("状態行の文の種類と、いっしょに消えた帯の本数", () => {
+  it("kinds of status line text, and the number of tracks removed with it", () => {
     const track = { number: 6, name: "歌" };
     const messages: StatusMessage[] = [
       { id: "noParams", sound: { kind: "builtin", instrument: "grandPiano" } },
@@ -87,12 +87,12 @@ describe("約束 23 の形", () => {
       { id: "instrumentReplacedSound", track, sound: { kind: "plugin", name: "Surge XT" }, lanesRemoved: 3 },
     ];
     expect(new Set(messages.map((m) => m.id)).size).toBe(12);
-    // 文は第 7 回の区切り0 で入れてある（仕様書 6 章）。
+    // the text is already in ja.ts (spec 6).
     expect(t("msg.lanesAlsoGone", { count: 2 })).toBe("（そのパラメータの帯 2 本も消えました）");
     expect(t("msg.noSoundParams", { name: "グランドピアノ" })).toBe("グランドピアノには、動かせるパラメータがありません");
   });
 
-  it("パラメータの欄: 動かせるパラメータのない音色（19-A）", () => {
+  it("params panel: a sound with no parameters to move (19-A)", () => {
     const builtin: SelectedParams = { kind: "sound", track: 11, sound: { kind: "builtin", instrument: "grandPiano" } };
     const sf2: SelectedParams = { kind: "sound", track: 12, sound: { kind: "sf2", name: "Clean Guitar", file: "FluidR3_GM.sf2" } };
     expect([builtin.kind, sf2.kind]).toEqual(["sound", "sound"]);
@@ -103,8 +103,8 @@ describe("約束 23 の形", () => {
   });
 });
 
-describe("計器のバイナリ（版 4）: マイクの計", () => {
-  it("トラックのあとに、歌のトラックごとの 16 バイト。偽物が書いて、画面が読む", () => {
+describe("meter binary (version 4): mic meter", () => {
+  it("after the tracks, 16 bytes per vocal track. The fake writes it and the screen reads it", () => {
     expect(TELEMETRY_VERSION).toBe(4);
     expect([TELEMETRY_HEADER_LEN, TELEMETRY_MIC_LEN]).toEqual([92, 16]);
     const mics = [
@@ -116,13 +116,13 @@ describe("計器のバイナリ（版 4）: マイクの計", () => {
     const read = decodeTelemetry(bytes);
     expect(read.mics).toEqual(mics);
     expect(Array.from(read.trackPeaks)).toEqual([0.5, 0.125]);
-    // 歌のトラックのない曲は、頭の 92 バイトとトラックだけ。
+    // a song with no vocal tracks has only the 92-byte head and the tracks.
     expect(decodeTelemetry(encodeTelemetry({}, 1, 0, 2)).mics).toEqual([]);
   });
 });
 
-describe("偽物の場面（F7-VocalTrack ・ F7-VocalRec ・ F7-TwoRec ・ F7-Latency ・ F7-SettingsAdv ・ R11-Fit）", () => {
-  // この回に足した場面。前の回の場面と同じ名前にすると、あとの定義が前の場面を上書きする。
+describe("fake scenes (F7-VocalTrack, F7-VocalRec, F7-TwoRec, F7-Latency, F7-SettingsAdv, R11-Fit)", () => {
+  // scenes added here. A scene with the same name as an earlier scene overwrites it, because the later definition wins.
   const ROUND_7 = [
     "vocalTrack",
     "vocalNoInput",
@@ -140,7 +140,7 @@ describe("偽物の場面（F7-VocalTrack ・ F7-VocalRec ・ F7-TwoRec ・ F7-L
     "paramsSound",
   ];
 
-  it("この回の場面の名前は、どれも 1 回だけ（前の場面を上書きしない）", () => {
+  it("the names of these scenes each appear only once (they do not overwrite earlier scenes)", () => {
     const here = decodeURIComponent(new URL(import.meta.url).pathname);
     const source = new TextDecoder().decode(readFileSync(`${here.slice(0, here.lastIndexOf("/"))}/../src/bridge/fake.ts`));
     const start = source.indexOf("export const SCENES");
@@ -152,7 +152,7 @@ describe("偽物の場面（F7-VocalTrack ・ F7-VocalRec ・ F7-TwoRec ・ F7-L
     for (const name of ROUND_7) expect(names.filter((n) => n === name), name).toEqual([name]);
   });
 
-  it("F7-VocalTrack: 6 歌 を足した。選んでいて ● がつき、鍵は 1 ピアノ のまま（B-94-1）。入口はひらいて、計が来る", () => {
+  it("F7-VocalTrack: added 「6 歌」. Selected with ●, keys still play on 「1 ピアノ」 (B-94-1). The input is open and the meter comes", () => {
     const { state: s, meters } = scene("vocalTrack");
     const vocal = vocalOf(s);
     expect([vocal.id, vocal.number, vocal.name]).toEqual([VOCAL, 6, "歌"]);
@@ -165,7 +165,7 @@ describe("偽物の場面（F7-VocalTrack ・ F7-VocalRec ・ F7-TwoRec ・ F7-L
     expect(meters.mics).toEqual([{ track: VOCAL, peak: [expect.closeTo(10 ** (-32 / 20)), expect.closeTo(10 ** (-32 / 20))], clipped: false, stereo: false }]);
   });
 
-  it("入口がない ・ はじめてのモニター ・ 0 dB に届いた ・ ピアノロールはない", () => {
+  it("no input, first monitor, reached 0 dB, no piano roll", () => {
     const none = scene("vocalNoInput").state;
     expect(kindOf(none).inputReady).toBe(false);
     expect([none.inputs.chosen, none.inputs.open]).toEqual([null, false]);
@@ -179,7 +179,7 @@ describe("偽物の場面（F7-VocalTrack ・ F7-VocalRec ・ F7-TwoRec ・ F7-L
     expect(scene("vocalNoPianoRoll").state.status.message).toEqual({ id: "vocalHasNoPianoRoll" });
   });
 
-  it("F7-VocalRec: 歌だけを録っている。鍵盤の録音はなく、歌のトラックが 1 つ", () => {
+  it("F7-VocalRec: recording only vocals. No keyboard recording, one vocal track", () => {
     const { state: s, meters } = scene("vocalRec");
     expect(s.transport.state).toBe("recording");
     expect(s.transport.recording).toBeNull();
@@ -188,7 +188,7 @@ describe("偽物の場面（F7-VocalTrack ・ F7-VocalRec ・ F7-TwoRec ・ F7-L
     expect(meters.position).toMatchObject({ tick: 6 * BAR + TPQ, state: "recording" });
   });
 
-  it("F7-TwoRec: 1 ピアノ を選んだまま、● のついた 6 歌 にも録る。カウントインも録音の番号も 1 つ", () => {
+  it("F7-TwoRec: with 「1 ピアノ」 selected, also records to 「6 歌」 which has ●. One count-in and one recording number", () => {
     const { state: s, live } = scene("twoRec");
     expect([s.song.playTarget, s.song.keysTarget]).toEqual([11, 11]);
     expect(kindOf(s)).toMatchObject({ armed: true, monitor: true });
@@ -198,7 +198,7 @@ describe("偽物の場面（F7-VocalTrack ・ F7-VocalRec ・ F7-TwoRec ・ F7-L
     expect(s.status.message).toMatchObject({ id: "recordingVocals", keys: { number: 1, name: "ピアノ" } });
   });
 
-  it("F7-SettingsAdv: 頼んだ 128 ではなく 256 で動いている。遅れは PC が言う数", () => {
+  it("F7-SettingsAdv: running at 256, not the 128 that was asked for. The latency is the number the PC says", () => {
     const s = scene("settingsAdv7").state;
     expect(s.workspace.settings).toEqual({ draftOutput: "out-headphones", advancedOpen: true });
     expect([s.audio.requestedFrames, s.audio.actualFrames]).toEqual([128, 256]);
@@ -208,7 +208,7 @@ describe("偽物の場面（F7-VocalTrack ・ F7-VocalRec ・ F7-TwoRec ・ F7-L
     expect(t("settings.notAsRequested", { requested: 128, actual: 256 })).toContain("頼んだ 128 ではなく、256 で動いています");
   });
 
-  it("F7-Latency: 3 / 5 まで測った。測りおわると「この数を使う」、小さすぎると「もう一度」", () => {
+  it("F7-Latency: measured up to 3 / 5. When done 「この数を使う」, when too small 「もう一度」", () => {
     const s = scene("latency").state;
     expect(s.workspace.latencyDialog).toEqual({ measure: { state: "measuring", done: 3, of: LATENCY_CLICKS, meanMs: 12.4 } });
     expect(s.transport.canRecord).toBe(false);
@@ -218,7 +218,7 @@ describe("偽物の場面（F7-VocalTrack ・ F7-VocalRec ・ F7-TwoRec ・ F7-L
     expect(scene("latencyFailed").state.workspace.latencyDialog).toEqual({ measure: { state: "failed", reason: "tooQuiet" } });
   });
 
-  it("R11-Fit: せまい窓で、鍵盤とマイクの計が同時に来る。なおすためのファイルの案内に、残した歌の行", () => {
+  it("R11-Fit: in a narrow window, the keyboard and mic meters come at the same time. A vocal row left in the recovery file hint", () => {
     const fit = scene("vocalFit");
     expect(fit.meters.keys).toEqual([60, 64, 67]);
     expect(fit.meters.mics!.length).toBe(1);
@@ -229,12 +229,12 @@ describe("偽物の場面（F7-VocalTrack ・ F7-VocalRec ・ F7-TwoRec ・ F7-L
   });
 });
 
-describe("履歴の行の「（何を）」（仕様書 3 章 92-3）", () => {
+describe("「（何を）」 in history rows (spec 3 (92-3))", () => {
   const ctx = { song: fakeState().song, library: fakeState().library };
   const pad = { number: 4, name: "パッド" };
   const says = (name: StepName["kind"], what: StepWhat) => stepWhatText({ kind: name } as StepName, what, ctx);
 
-  it("1 ノートは音名、クオンタイズはグリッド、ベロシティは前後、CC は名前、色、音源の前後", () => {
+  it("1 note is the note name, quantize is the grid, velocity is before and after, CC is the name, color, instrument before and after", () => {
     expect(says("writeNote", { kind: "note", key: 60 })).toBe("C4");
     expect(says("quantize", { kind: "quantized", division: 16, triplet: false, count: 12 })).toBe("1/16 ・ 12 ノート");
     expect(says("changeVelocity", { kind: "velocity", count: 3, from: 96, to: 110 })).toBe("3 ノート ・ 96 → 110");
@@ -252,7 +252,7 @@ describe("履歴の行の「（何を）」（仕様書 3 章 92-3）", () => {
     ).toBe("1 ピアノ ・ グランドピアノ → パイプオルガン");
   });
 
-  it("歌の入口を変える手（名前は仮: builder:2026-11-21）", () => {
+  it("step that changes the vocal input (name not final: builder:2026-11-21)", () => {
     expect(stepNameText({ kind: "setVocalInput" })).toBe("歌の入口を変える");
     expect(says("setVocalInput", { kind: "vocalInput", track: { number: 6, name: "歌" }, from: "mono1", to: "stereo12" })).toBe(
       "6 歌 ・ 入口 1 ・ モノ → 入口 1 ・ 2 ・ ステレオ",

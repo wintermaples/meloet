@@ -1,4 +1,4 @@
-// 第 8 回 区切り2（画面）: 見出しの「帯」（36-B）、いちばん小さい窓の入力計（37-A）、マイクの計（38-B）、オートメーションの値の字（92 の残り）。
+// Screen: 「帯」 in the head (36-B), the input meter in the smallest window (37-A), the mic meter (38-B), automation value text (the rest of 92).
 import { flushSync, mount, unmount, type Component } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState } from "../src/bridge";
@@ -53,8 +53,8 @@ const text = (el: Element | null) => el?.textContent?.replace(/\s+/g, " ").trim(
 const scene = (name: string) => fakeScene(name)!.state as FakeState;
 const menuRows = () => (contextMenu.open?.entries ?? []).filter((e): e is MenuRow => e.kind === "row");
 
-describe("見出しの「帯」のボタン（仕様書 2 章、3 章 94-9 ・ 36-B、モック F8-FirstLane）", () => {
-  it("どの見出しにも、1 段目の M の左に「帯」。押すと「＋ 帯を足す ▾」と同じ一覧。ひらいている間は accent と状態行の文", () => {
+describe("the 「帯」 button in the head (spec 2, spec 3 (94-9, 36-B), mock F8-FirstLane)", () => {
+  it("every head has 「帯」 left of M on the first line. Pressing gives the same list as 「＋ 帯を足す ▾」. While open, accent and the status line text", () => {
     const s = scene("tracks6");
     s.status.message = null;
     show(Arrange, s);
@@ -84,7 +84,7 @@ describe("見出しの「帯」のボタン（仕様書 2 章、3 章 94-9 ・ 3
     expect(text(target)).not.toContain(t("status.laneAddOpen", { track: "" }).slice(1, 12));
   });
 
-  it("録音中は使えない（押しても一覧は出ない）", () => {
+  it("disabled while recording (pressing shows no list)", () => {
     const s = scene("tracks6");
     s.transport.state = "recording";
     show(Arrange, s);
@@ -95,7 +95,7 @@ describe("見出しの「帯」のボタン（仕様書 2 章、3 章 94-9 ・ 3
   });
 });
 
-describe("マイクの計（仕様書 3 章 94-17 ・ 38-B、「マイクの計の地と線」）", () => {
+describe("mic meter (spec 3 (94-17, 38-B), mic meter background and line)", () => {
   const hex = (name: keyof typeof colors) => [...hexToRgb(colors[name])];
   const ofColor = (b: Batch, name: keyof typeof colors) =>
     b
@@ -103,12 +103,12 @@ describe("マイクの計（仕様書 3 章 94-17 ・ 38-B、「マイクの計�
       .filter((r) => r.slice(4).every((v, i) => Math.abs(v - hex(name)[i]!) < 1e-6))
       .map((r) => r.slice(0, 4));
 
-  it("目盛: −60〜−12 が左半分、−12〜0 が右半分（どちらも dB でまっすぐ）。−∞ と −60 より下は 0、0 dB より上は 1", () => {
+  it("scale: −60 to −12 is the left half, −12 to 0 the right half (both linear in dB). −∞ and below −60 are 0, above 0 dB is 1", () => {
     expect(MIC_MID_DB).toBe(-12);
     expect([-Infinity, -70, -60, -36, -12, -6, 0, 3].map(micDbToLength)).toEqual([0, 0, 0, 0.25, 0.5, 0.75, 1, 1]);
   });
 
-  it("地は gray.4。ok と hot の境はマスターと同じ −3 dB。白い縦の線は 1 秒のピークの所に 1 画素、2 本にまたがる", () => {
+  it("background gray.4. The ok/hot border is −3 dB, the same as the master. The white vertical line is 1 pixel at the 1-second peak, across 2 lines", () => {
     const b = new Batch();
     b.clip(0, 0, 4000, 4000);
     const at = (db: number) => ({ length: micDbToLength(db), clipped: false });
@@ -118,7 +118,7 @@ describe("マイクの計（仕様書 3 章 94-17 ・ 38-B、「マイクの計�
       [0, 6, 200, 10],
     ]);
     expect(ofColor(b, "color.gray.0")).toEqual([]);
-    // −3 dB は 0.875（175）。
+    // −3 dB is 0.875 (175).
     expect(ofColor(b, "color.meter.ok")).toEqual([
       [0, 0, 150, 4],
       [0, 6, 175, 10],
@@ -127,7 +127,7 @@ describe("マイクの計（仕様書 3 章 94-17 ・ 38-B、「マイクの計�
     expect(ofColor(b, "color.gray.10")).toEqual([[100, 0, 101, 10]]);
   });
 
-  it("ピークがない（−∞）ときは線を描かない。0 dB の線は右はしの 1 画素", () => {
+  it("no line when there is no peak (−∞). The 0 dB line is the 1 pixel at the right end", () => {
     const silent = { length: 0, clipped: false };
     const none = new Batch();
     none.clip(0, 0, 4000, 4000);
@@ -139,7 +139,7 @@ describe("マイクの計（仕様書 3 章 94-17 ・ 38-B、「マイクの計�
     expect(ofColor(top, "color.gray.10")).toEqual([[199, 0, 200, 10]]);
   });
 
-  it("入力計のマイクの計の slot は、dB の字と同じ数（整数の 1 秒のピーク）を線に渡す。目盛の字は −60 ・ −12 ・ 0", () => {
+  it("the input meter's mic meter slot passes the same number as the dB text (the whole-number 1-second peak) to the line. Scale text is −60, −12, 0", () => {
     const s = scene("vocalTrack");
     show(InputMeter, s);
     const id = s.song.tracks.find((x) => x.kind.kind === "vocal")!.id;
@@ -151,8 +151,8 @@ describe("マイクの計（仕様書 3 章 94-17 ・ 38-B、「マイクの計�
   });
 });
 
-describe("いちばん小さい窓の、左右に分けた入力計（仕様書 3 章 94-16 ・ 37-A、モック R12-Meters ・ Opt8-NarrowMeter）", () => {
-  // ruler（見えない写し）の幅と、半分の箱の幅をにせる。
+describe("input meter split left and right in the smallest window (spec 3 (94-16, 37-A), mock R12-Meters, Opt8-NarrowMeter)", () => {
+  // fakes the width of ruler (the hidden copy) and of the half box.
   function withWidths(parts: Record<string, number>, boxes: { left: number; right: number }, run: () => void): void {
     const proto = HTMLElement.prototype;
     const offset = Object.getOwnPropertyDescriptor(proto, "offsetWidth");
@@ -180,7 +180,7 @@ describe("いちばん小さい窓の、左右に分けた入力計（仕様書 
     }
   }
   const PARTS = { left: 500, right: 400, who: 100, keys: 200, target: 80, monitor: 60 };
-  // 見えている半分（見えない写しの中の物は数えない）。
+  // the visible half (things inside the hidden copy are not counted).
   const L = '.meter.split:not(.ruler) > [data-test="meter-keys-half"]';
   const R = '.meter.split:not(.ruler) > [data-test="meter-mic-half"]';
   const shown = () => ({

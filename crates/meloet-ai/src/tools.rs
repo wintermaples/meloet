@@ -24,6 +24,7 @@ mod params;
 mod plugstate;
 mod render;
 mod sets;
+mod surge;
 mod timing;
 
 use std::path::{Component, Path, PathBuf};
@@ -466,6 +467,7 @@ impl Tools {
                 + Self::batch_router()
                 + Self::mixer_router()
                 + Self::plugstate_router()
+                + Self::surge_router()
                 + Self::params_router()
                 + Self::notes_router()
                 + Self::midi_router()

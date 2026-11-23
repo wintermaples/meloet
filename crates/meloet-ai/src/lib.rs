@@ -8,8 +8,7 @@ mod presets;
 mod scratch;
 mod smf;
 mod song;
-#[allow(dead_code)]
-mod surge;
+pub mod surge;
 mod tools;
 
 use std::path::PathBuf;

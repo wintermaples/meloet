@@ -10,8 +10,8 @@
 use std::sync::mpsc::Receiver;
 
 use meloet_engine::BlockTiming;
-use meloet_model::Song;
 use meloet_model::song::Doc;
+use meloet_model::{Song, StripId, edit, mixer};
 use meloet_protocol::ExportTail;
 
 use super::*;
@@ -400,4 +400,157 @@ fn a_fade_out_is_exported_as_it_plays_and_ends_in_silence() {
     let run = place.start(place.setup(place.job(5, &rested, span, ExportTail::Off)));
     run.rendered();
     assert_eq!(first_difference(&run.pass(0), &whole), None);
+}
+
+/// A song with one vocal clip over bars 2 and 3 with three takes, each of a file of its
+/// own: the first two hold the same sine, the third another one, a quarter of a turn ahead.
+/// The master has no limiter.
+fn three_takes(place: &Place) -> (Doc, meloet_model::ClipId) {
+    use meloet_model::{NewAudio, NewAudioTake, VocalRecording, add_vocal_recordings};
+
+    let doc = Doc::new_default();
+    let doc = (mixer::remove_effect(&doc, StripId::Master, 0).unwrap()).doc;
+    let (e, vocals) = edit::add_vocal_track(&doc, None).unwrap();
+    let mut doc = e.doc;
+    let mut clip = None;
+    for n in 1..=3u8 {
+        let recording = VocalRecording {
+            track: vocals,
+            audio: NewAudio {
+                uid: [n; 16],
+                file: format!("歌 {n}.wav"),
+                frames: 6 * u64::from(RATE),
+                sample_rate: RATE,
+                channels: 1,
+                bits: None,
+            },
+            takes: vec![NewAudioTake {
+                origin: BAR,
+                length: 2 * BAR,
+                first_frame: 2_400,
+                frames: 5 * u64::from(RATE),
+            }],
+        };
+        let (e, added) = add_vocal_recordings(&doc, vec![recording], None).unwrap();
+        doc = e.doc;
+        clip = Some(added[0].clip);
+    }
+    let work = place.store.work_dir().unwrap();
+    for (n, source) in doc.audio.iter().enumerate() {
+        let samples: Vec<f32> = (0..source.frames)
+            .map(|i| {
+                let turns = |hz: f64| (i as f64 * hz / f64::from(RATE)).fract();
+                let value = match n {
+                    2 => (turns(330.0) * std::f64::consts::TAU).cos(),
+                    _ => (turns(220.0) * std::f64::consts::TAU).sin(),
+                };
+                (value * 0.3) as f32
+            })
+            .collect();
+        let path = work.join(&source.file);
+        let mut wav = crate::audiofiles::wav::CacheWav::create(&path, RATE, 1).unwrap();
+        wav.write(&samples).unwrap();
+        wav.finish().unwrap();
+    }
+    (place.store).set_sources(doc.audio.iter().map(|s| (s.uid, s.file.clone())).collect());
+    (doc, clip.unwrap())
+}
+
+/// The largest step from one frame to the next, on the left.
+fn largest_step(audio: &[f32]) -> f32 {
+    (audio.as_chunks::<2>().0.windows(2))
+        .map(|w| (w[1][0] - w[0][0]).abs())
+        .fold(0.0, f32::max)
+}
+
+/// How far apart two renderings are at most, between two places.
+fn apart(a: &[f32], b: &[f32], from: usize, to: usize) -> f32 {
+    (a[from..to].iter().zip(&b[from..to]))
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0, f32::max)
+}
+
+#[test]
+fn a_comp_has_no_click_at_its_seams_and_is_exported_as_it_plays() {
+    use meloet_model::{CompPiece, set_comp};
+
+    let place = Place::new("export-comp");
+    let (doc, clip) = three_takes(&place);
+    let export = |id: u64, doc: &Doc| {
+        let job = place.job(id, doc, (0, 4 * BAR), ExportTail::Off);
+        let run = place.start(place.setup(job));
+        run.rendered();
+        run.pass(0)
+    };
+    // The first take whole; then the first, the second (the same audio), the third (other
+    // audio, far from the first at both of its seams) and the first again.
+    let plain = edit::switch_take(&doc, clip, 0).unwrap().doc;
+    let pieces: Vec<CompPiece> = [(0, 0), (BAR / 2, 1), (BAR, 2), (3 * BAR / 2, 0)]
+        .map(|(from, take)| CompPiece { from, take })
+        .to_vec();
+    let comped = set_comp(&doc, clip, (BAR, 3 * BAR), &pieces).unwrap().doc;
+    let ms = 2 * RATE as usize / 1_000;
+
+    let whole = export(1, &plain);
+    let heard = export(2, &comped);
+    assert_eq!(whole.len(), heard.len());
+    let at = |tick: u64| 2 * frames_of(&comped, 0, tick);
+    let sine = largest_step(&whole);
+    assert!(sine > 0.001, "the take sounds");
+    // Where the first two takes sound, their seam in the middle, it is the take whole.
+    let same = apart(&whole, &heard, at(BAR), at(2 * BAR) - 6 * ms);
+    assert!(same < 1e-6, "the same audio over a seam: {same}");
+    // The third take does sound, and is not the first.
+    let other = apart(
+        &whole,
+        &heard,
+        at(2 * BAR) + 6 * ms,
+        at(5 * BAR / 2) - 6 * ms,
+    );
+    assert!(other > 0.05, "the third take: {other}");
+    // A cut from one take to the other would be a step of ten times the sine's largest;
+    // the seams add next to nothing to the steeper of the two waves.
+    let step = largest_step(&heard);
+    assert!(step < 1.8 * sine, "a click: {step} against {sine}");
+
+    // What plays is what was exported, sample for sample.
+    let mut playing = Playing::new(&place);
+    playing.open(&comped, 0);
+    let frames = frames_of(&comped, 0, 4 * BAR);
+    playing.play(0, frames);
+    playing.quiet();
+    let played = playing.play(0, frames);
+    assert_eq!(first_difference(&heard, &played), None);
+    playing.quiet();
+
+    // The song gets slower: every take that sounds is stretched by itself, for the whole
+    // clip, and the pieces are still in their places.
+    let slow = |doc: &Doc| {
+        let tempo = meloet_model::Tempo::from_centi(10_000).unwrap();
+        meloet_model::timeline::set_tempo(doc, tempo).unwrap().doc
+    };
+    let (plain, comped) = (slow(&plain), slow(&comped));
+    let stretch = place.root.join("cache").join(crate::audiofiles::CACHE_MADE);
+    let made = || std::fs::read_dir(&stretch).map_or(0, |d| d.count());
+    let whole = export(3, &plain);
+    assert_eq!(made(), 1);
+    let heard = export(4, &comped);
+    assert_eq!(made(), 3, "one for each take that sounds");
+    let at = |tick: u64| 2 * frames_of(&comped, 0, tick);
+    let same = apart(&whole, &heard, at(BAR), at(2 * BAR) - 6 * ms);
+    assert!(same < 1e-6, "the same stretched audio over a seam: {same}");
+    let other = apart(
+        &whole,
+        &heard,
+        at(2 * BAR) + 6 * ms,
+        at(5 * BAR / 2) - 6 * ms,
+    );
+    assert!(other > 0.05, "the third take, stretched: {other}");
+
+    playing.open(&comped, 3);
+    let frames = frames_of(&comped, 0, 4 * BAR);
+    playing.play(0, frames);
+    playing.quiet();
+    let played = playing.play(0, frames);
+    assert_eq!(first_difference(&heard, &played), None);
 }

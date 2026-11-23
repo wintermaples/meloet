@@ -28,6 +28,9 @@
   import { laneMenu } from "./automation/laneMenu";
   import { masterHome, masterOwner } from "./automation/laneValue";
   import { laneNameText } from "./history/stepText";
+  import { bandHeight } from "./comp/comp";
+  import CompHead from "./comp/CompHead.svelte";
+  import { openCompOf } from "./comp/compState.svelte";
   import { laneAddOpenFor, openLaneAdd } from "./automation/laneAdd.svelte";
   import { windowOf } from "./params/selected";
   import WindowMark from "./WindowMark.svelte";
@@ -108,6 +111,9 @@
   /** The master standing in as the owner of its lane (round 12 M5); null while it has none. */
   const master = $derived(song.master.lanes.length > 0 ? masterOwner(song.master) : null);
   /** Track rows and the automation bands under them (the same order as the time side; automation/autoGeom.ts). */
+  /** The band 「いいとこ取り」 that is open (round 12, A8), as on the time side. */
+  const comp = $derived(openCompOf(current.state!));
+  const compRows = $derived(comp ? { track: comp.track.id, height: bandHeight({ headH: metrics.px("size.row"), rowH: metrics.px("size.lane") }, comp.takes.length) } : null);
   const rows = $derived(
     arrangeRows(
       song.tracks,
@@ -119,6 +125,7 @@
         tall: { track: current.state!.arrange.tallTrack, h: metrics.px("part.track.vocal") },
       },
       master,
+      compRows,
     ),
   );
   const bounds = $derived([...rows.tops, rows.tracksHeight]);
@@ -369,6 +376,7 @@
         ></div>
       </div>
     </div>
+    {#if comp && comp.track.id === track.id}<CompHead band={comp} />{/if}
     {#each rows.lanes.filter((l) => l.track.id === track.id) as l (JSON.stringify(l.lane.target))}
       <LaneHead {track} lane={l.lane} />
     {/each}

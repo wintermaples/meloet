@@ -18,7 +18,7 @@ use meloet_stretch::{
 };
 use sha2::{Digest, Sha256};
 
-use crate::pcm::FeedClip;
+use crate::pcm::{FeedClip, feed_take};
 use crate::play::clip_tables_of;
 
 /// The name audio made for a clip is kept under: a digest of everything it is made from.
@@ -150,9 +150,24 @@ pub fn plan(
     clip: &Clip,
     feed: &FeedClip,
 ) -> Option<MadePlan> {
-    let take = &clip.active_audio()?.take;
+    plan_take(timeline, map, sample_rate, clip, clip.active, feed)
+}
+
+/// As [`plan`], for take `index` of the clip sounding all along it, as `feed`
+/// (`pcm::feed_take`). The audio of a take of 「いいとこ取り」 is made for the whole clip:
+/// moving a seam makes nothing again.
+pub fn plan_take(
+    timeline: &Timeline,
+    map: &Arc<TempoMap>,
+    sample_rate: u32,
+    clip: &Clip,
+    index: usize,
+    feed: &FeedClip,
+) -> Option<MadePlan> {
+    let shown = clip.takes.vocal().get(index)?;
+    let take = &shown.take;
     let shape = clip.takes.shape()?;
-    let zero = clip.active_zero();
+    let zero = clip.zero(shown);
     let pitched = shape.semitones != 0 || shape.cents != 0;
     let tune = shape.tune.map(|tune| {
         let mut scale = [false; 12];
@@ -274,15 +289,25 @@ pub fn seat_audio(
     ready: &HashSet<MadeKey>,
 ) -> SeatAudio {
     let (table, mut feeds, kept) = clip_tables_of(map, sample_rate, clips);
-    let mut plans = Vec::new();
-    for (feed, clip) in feeds.iter_mut().zip(&kept) {
-        let Some(plan) = timeline.and_then(|t| plan(t, map, sample_rate, clip, feed)) else {
+    let mut plans: Vec<MadePlan> = Vec::new();
+    for (feed, (clip, take)) in feeds.iter_mut().zip(&kept) {
+        // A piece of 「いいとこ取り」 plays what is made for its take over the whole clip.
+        let whole = match clip.comp.is_empty() {
+            true => Some(*feed),
+            false => feed_take(map, sample_rate, clip, *take),
+        };
+        let plan = (timeline.zip(whole.as_ref()))
+            .and_then(|(t, whole)| plan_take(t, map, sample_rate, clip, *take, whole));
+        let (Some(plan), Some(whole)) = (plan, whole) else {
             continue;
         };
         if ready.contains(&plan.key) {
-            *feed = made_feed(feed, &plan);
+            *feed = made_piece(feed, &whole, &plan);
         }
-        plans.push(plan);
+        // Two pieces of one take share what is made.
+        if !(plans.iter()).any(|p| p.key == plan.key && p.clip == plan.clip) {
+            plans.push(plan);
+        }
     }
     SeatAudio {
         table,
@@ -304,9 +329,15 @@ pub fn only_audio_differs(old: &[FeedClip], new: &[FeedClip]) -> bool {
 /// The clip as the read-ahead thread plays it once the audio of `plan` is there: the made
 /// file from its first frame.
 pub fn made_feed(feed: &FeedClip, plan: &MadePlan) -> FeedClip {
+    made_piece(feed, feed, plan)
+}
+
+/// As [`made_feed`] for a piece of the clip that `whole` is: the made file from where the
+/// piece starts in the clip.
+fn made_piece(feed: &FeedClip, whole: &FeedClip, plan: &MadePlan) -> FeedClip {
     FeedClip {
         made: Some(plan.key),
-        file_frame: 0,
+        file_frame: feed.start.saturating_sub(whole.start) as i64,
         file_end: plan.frames as i64,
         ..*feed
     }

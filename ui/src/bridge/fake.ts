@@ -21,6 +21,7 @@ import { CLICK_VOLUME_MAX_DB, CLICK_VOLUME_MIN_DB, REPEAT_COUNT_MAX } from "./ty
 import { fakeLoudnessOf } from "./fakeLoudness";
 import { reduceA7 } from "./fakeA7";
 import { reduceA9 } from "./fakeA9";
+import { fakeCompWindow, fakeTakes, reduceComp } from "./fakeComp";
 import { fakeUserPreset, presetOf, reducePresets } from "./fakePresets";
 import { FAKE_ARP_OFF, fakeKnobs, fakeSetSoundKnob, fakeSpectrum, reduceArp, reduceMonoListen, reduceSpectrum } from "./fakeWave3";
 import { fakeFadeOut } from "./fakeFade";
@@ -3470,8 +3471,10 @@ const HARMONY: FakeAudio = { id: 61, file: "ハモり.wav", sampleRate: 48000, b
 const LONG_MP3: FakeAudio = { id: 62, file: "ドラム.mp3", sampleRate: 44100, bits: null, channels: 2, frames: 180 * 44100, growingTo: 72 * 44100 };
 const DRUMS_WAV: FakeAudio = { id: 63, file: "ドラム.wav", sampleRate: 44100, bits: 16, channels: 2, frames: 5 * 44100 };
 /** What the `peaks` invoke of the fake knows, by the file's number in the audio table. */
+/** The three takes of 「歌 1」 in `compTakes` (round 12, A8): four bars each, one file a take. */
+const COMP_TAKES: FakeAudio[] = [66, 67, 68].map((id) => ({ ...TAKE_1, id, file: `歌 ${id}.wav` }));
 export const FAKE_AUDIO = new Map<number, FakeAudio>(
-  [RECORDING_AUDIO, TAKE_1, HARMONY, LONG_MP3, DRUMS_WAV, { ...TAKE_1, id: 64, missing: true }, { ...HARMONY, id: 65, missing: true }].map((a) => [a.id, a]),
+  [RECORDING_AUDIO, TAKE_1, HARMONY, LONG_MP3, DRUMS_WAV, { ...TAKE_1, id: 64, missing: true }, { ...HARMONY, id: 65, missing: true }, ...COMP_TAKES].map((a) => [a.id, a]),
 );
 const LEFT_CLIP = 70;
 const RIGHT_CLIP = 72;
@@ -3581,6 +3584,30 @@ SCENES.audioKinds = {
     s.audioWork = { jobs: [{ kind: "rendering", audio: DRUMS_WAV.id, clip: 74, percent: 34 }], bounce: null };
   },
   bands: ["params"],
+  meters: QUIET,
+};
+
+/** The clip of `compTakes`; its takes have the three ids after it. */
+export const COMP_CLIP = 90;
+// Round 12, A8: 「歌 1」 over bars 5–8 with three takes and 「いいとこ取り」: take 1, then take 3, then take 2 (the mock of the
+// round's spec). The clip shows take 3. The band under the track is the screen's own (opened from the clip's menu).
+SCENES.compTakes = {
+  setup(s) {
+    vocalSong(s, { armed: false, monitor: false, selected: true });
+    const audio = fakeAudioClip(COMP_TAKES[2]!);
+    audio.takes = fakeTakes(COMP_CLIP + 1, COMP_TAKES, audio);
+    const clip = fakeVocalClip(COMP_CLIP, "歌 1", 4 * BAR, 8 * BAR, audio);
+    Object.assign(clip, { take: 3, takes: 3, takeId: COMP_CLIP + 3 });
+    clip.comp = [
+      { from: 0, take: COMP_CLIP + 1 },
+      { from: BAR + TPQ, take: COMP_CLIP + 3 },
+      { from: 3 * BAR, take: COMP_CLIP + 2 },
+    ];
+    vocalTrackOf(s).clips = [clip];
+    s.arrange = { ...arrangeOf(COMP_CLIP), pianoRollClip: null };
+    s.transport.position = 4 * BAR;
+    s.song.undoCount = 23;
+  },
   meters: QUIET,
 };
 
@@ -4764,7 +4791,10 @@ export function reduceClips(
       const start = command.edge === "start" ? Math.min(Math.max(clip.start + command.ticks, before), clip.end - 1) : clip.start;
       const end = command.edge === "end" ? Math.max(Math.min(clip.end + command.ticks, after), clip.start + 1) : clip.end;
       if (start === clip.start && end === clip.end) return null;
-      clips[at] = { ...clip, start, end, takeOffset: clip.takeOffset - (start - clip.start) };
+      const shift = start - clip.start;
+      // Every take stays where it is in the song, and 「いいとこ取り」 is cut to the clip (round 12, A8).
+      const audio = clip.audio && { ...clip.audio, takes: clip.audio.takes.map((x) => ({ ...x, takeOffset: x.takeOffset - shift })) };
+      clips[at] = { ...clip, start, end, takeOffset: clip.takeOffset - shift, audio, comp: fakeCompWindow(clip.comp, shift, end - start) };
       return done();
     }
     case "deleteTake": {
@@ -5809,6 +5839,7 @@ export function createFakeTransport(initial?: AppState): Transport {
         reduceSpectrum(state, command) ??
         reduceMonoListen(state, command) ??
         reduceClips27(state, command) ??
+        reduceComp(state, command, FAKE_AUDIO) ??
         reduceA9(state, command, FAKE_AUDIO) ??
         reduceA7(state, command, FAKE_AUDIO, (from, to) => {
           const points = FAKE_LANES.get(from);

@@ -245,6 +245,10 @@ BOARDS = {
     # 「ノーマライズ」 and 「逆にする」 (round 12, A9).
     "audioNormalized": None,
     "menuAudioClip": None,
+    # 「いいとこ取り」 (round 12, A8): the clip alone, its band open, and a drag over a take's row.
+    "compTakes": None,
+    "compBand": None,
+    "compDrag": None,
     # 「音のクリップにする」 (round 12, A7).
     "bouncing": None,
     "bounced": None,
@@ -446,6 +450,27 @@ CONTEXT_AUDIO_CLIP = """
 const label = [...document.querySelectorAll(".labels > .clip-label")].find((l) => l.textContent.includes("歌 テイク 1"));
 const r = label.getBoundingClientRect();
 document.querySelector(".lanes").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2, clientX: r.left + 4, clientY: r.top + 4 }));
+"""
+
+# Right-clicks 「歌 1」 of the scene compTakes and presses 「いいとこ取り」 (the band opens under the track); then the given lines.
+COMP_BAND = """
+const label = [...document.querySelectorAll(".labels > .clip-label")].find((l) => l.textContent.includes("歌 1"));
+const r = label.getBoundingClientRect();
+document.querySelector(".lanes").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2, clientX: r.left + 4, clientY: r.top + 4 }));
+await new Promise((r) => setTimeout(r, 100));
+[...document.querySelectorAll('[data-test="context-menu"] button')].find((b) => !b.disabled && b.textContent.includes("いいとこ取り")).click();
+await new Promise((r) => setTimeout(r, 300));
+%s
+"""
+# Holds the row of take 1 (the third row) and moves two bars to the right, without letting go.
+COMP_DRAG = """
+const band = document.querySelector('[data-test="comp-band"]');
+const b = band.getBoundingClientRect();
+const ev = (type, x) => band.dispatchEvent(new PointerEvent(type, { bubbles: true, button: 0, pointerId: 1, clientX: b.left + x, clientY: b.bottom - 20 }));
+ev("pointerdown", 64 * 6 + 4);
+ev("pointermove", 64 * 7);
+ev("pointermove", 64 * 8 - 4);
+await new Promise((r) => setTimeout(r, 200));
 """
 
 
@@ -706,6 +731,8 @@ CLICKS = {
     "menuRecent": ("recentSongs", ('[data-menu="0"]', '[data-test="menubar-list"] [data-row="2"]')),
     "menuRecentEmpty": ("saved", ('[data-menu="0"]', '[data-test="menubar-list"] [data-row="2"]')),
     "menuAudioClip": ("audioEdit", "js:" + CONTEXT_AUDIO_CLIP),
+    "compBand": ("compTakes", "js:" + COMP_BAND % ""),
+    "compDrag": ("compTakes", "js:" + COMP_BAND % COMP_DRAG),
     "menuTrackBounce": ("muted", "js:" + CONTEXT_TRACK_HEAD),
     # Round 12 A1: the pointer on the repeat handle, the handle dragged by 2 copies of 3 bars, the box, and its answer.
     "arrangeRepeatHover": ("arrangeTrimmed", repeat_handle(0)),
@@ -877,6 +904,9 @@ ONLY = {
     "menuRecent": [(1280, 800, 100), (1280, 800, 150)],
     "menuRecentEmpty": [(1280, 800, 100)],
     "menuAudioClip": [(1280, 800, 100)],
+    "compTakes": [(1280, 800, 100)],
+    "compBand": [(1280, 800, 100), (1280, 800, 150), (853, 448, 100)],
+    "compDrag": [(1280, 800, 100)],
     "audioNormalized": [(1280, 800, 100), (853, 448, 100)],
     "bouncing": [(1280, 800, 100), (853, 448, 100)],
     "bounced": [(1280, 800, 100)],

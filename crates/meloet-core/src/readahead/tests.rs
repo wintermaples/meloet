@@ -122,6 +122,8 @@ fn clip(start: u64, end: u64, n: u8, file_frame: i64) -> FeedClip {
         made: None,
         file_frame,
         file_end: 1_000_000,
+        lead: 0,
+        tail: 0,
     }
 }
 
@@ -537,4 +539,87 @@ fn made_audio_that_is_gone_is_silence_and_is_told() {
     assert!(out.iter().all(|f| *f == [0.0; 2]));
     assert!(rig.ahead.stats().made_lost.load(Relaxed));
     assert_ne!(rig.ahead.stats().unopened.load(Relaxed), 0);
+}
+
+/// A piece of 「いいとこ取り」 of file `n`, in its place in the file (frame `f` of the song
+/// is frame `f` of the file), `lead` and `tail` frames of it lying over its neighbours.
+fn piece(start: u64, end: u64, n: u8, lead: u32, tail: u32) -> FeedClip {
+    FeedClip {
+        lead,
+        tail,
+        ..clip(start, end, n, start as i64)
+    }
+}
+
+#[test]
+fn the_seams_of_a_comp_go_from_one_take_to_the_next_without_a_step() {
+    // Seams at frames 10000 and 30000, 480 frames each; the third piece is of the first
+    // take again, and the fourth of the same audio as the third.
+    let pieces = vec![
+        piece(5_000, 10_240, 1, 0, 480),
+        piece(9_760, 30_240, 2, 480, 480),
+        piece(29_760, 50_240, 1, 480, 480),
+        piece(49_760, 60_000, 1, 480, 0),
+    ];
+    let mut rig = Rig::new(Store::new(), pieces.clone());
+    rig.jump(0.0, 0, None);
+    rig.wait_full(96_000);
+    let (out, missing) = rig.read(0, 96_000);
+    assert_eq!(missing, 0);
+    // The largest step a seam between files 1 and 2 may take: the files are 100000 apart
+    // and go up by one a frame.
+    let step = 100_000.0 / 481.0 + 1.5;
+    for (f, frame) in out.iter().enumerate() {
+        let f = f as u64;
+        assert_eq!(frame[0], frame[1]);
+        match f {
+            0..5_000 | 60_000.. => assert_eq!(frame[0], 0.0, "frame {f}"),
+            5_000..9_760 | 30_240..49_760 | 50_240..60_000 => {
+                assert_eq!(frame[0], sample(1, f), "frame {f}")
+            }
+            10_240..29_760 => assert_eq!(frame[0], sample(2, f), "frame {f}"),
+            // The same audio on both sides of a seam is that audio.
+            49_760..50_240 => {
+                assert!(
+                    (frame[0] - sample(1, f)).abs() < 0.05,
+                    "frame {f}: {frame:?}"
+                )
+            }
+            _ => {
+                let before = out[f as usize - 1][0];
+                let (low, high) = (sample(1, f), sample(2, f));
+                assert!(frame[0] > low && frame[0] < high, "frame {f}: {frame:?}");
+                assert!((frame[0] - before).abs() <= step, "frame {f}: a step");
+            }
+        }
+    }
+    // Out of a seam as into it.
+    assert!((out[10_240][0] - out[10_239][0]).abs() <= step);
+    assert!((out[30_240][0] - out[30_239][0]).abs() <= step);
+    // Halfway through a seam it is halfway between the two.
+    let middle = (sample(1, 9_999) + sample(2, 9_999)) / 2.0;
+    assert!((out[9_999][0] - middle).abs() < 200.0);
+
+    // An export fills its rings between its blocks, with the same audio to the bit.
+    let mut inline = ReadAhead::inline(Store::new());
+    let (mut wants, rx) = rtrb_free::Wants::new();
+    inline.set_wants(rx);
+    inline.pump();
+    inline.set_map(map(), 1);
+    let (writer, mut reader) = stream_ring(RATE);
+    inline.set_track(SEAT, Some((writer, RATE)), pieces);
+    wants.say(StreamWant {
+        track: SEAT as u32,
+        generation: 1,
+        map_gen: 1,
+        anchor_sec: 0.0,
+        frame: 0,
+        loop_ticks: None,
+    });
+    reader.settle(1, 0);
+    inline.pump();
+    let mut same = vec![9.0f32; 96_000 * 2];
+    assert_eq!(reader.read(1, 0, &mut same).missing, 0);
+    let heard = out.iter().flatten();
+    assert!(heard.zip(&same).all(|(a, b)| a.to_bits() == b.to_bits()));
 }

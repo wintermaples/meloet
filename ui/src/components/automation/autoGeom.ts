@@ -49,6 +49,8 @@ export interface ArrangeRows {
   master: { top: number; height: number; folded: boolean } | null;
   /** The height of the tracks' rows, without the master's. */
   tracksHeight: number;
+  /** The top of the band 「いいとこ取り」, when one is open (round 12, A8). */
+  bandTop: number | null;
   height: number;
 }
 
@@ -58,15 +60,28 @@ export interface ArrangeRows {
  */
 export const showsAddRow = (track: TrackView) => track.lanes.length > 0;
 
-/** Lanes in the order they were added. Folded lanes are not shown (they are opened again from the 「＋ 帯を足す ▾」 list). */
-export function arrangeRows(tracks: readonly TrackView[], folded: readonly LaneRef[], d: RowDims, master: LaneOwner | null = null): ArrangeRows {
-  const out: ArrangeRows = { tops: [], bottoms: [], heights: [], lanes: [], rows: [], master: null, tracksHeight: 0, height: 0 };
+/**
+ * Lanes in the order they were added. Folded lanes are not shown (they are opened again from the 「＋ 帯を足す ▾」 list).
+ * `band`: the band 「いいとこ取り」 that is open, right under its track's row and above the track's lanes.
+ */
+export function arrangeRows(
+  tracks: readonly TrackView[],
+  folded: readonly LaneRef[],
+  d: RowDims,
+  master: LaneOwner | null = null,
+  band: { track: number; height: number } | null = null,
+): ArrangeRows {
+  const out: ArrangeRows = { tops: [], bottoms: [], heights: [], lanes: [], rows: [], master: null, tracksHeight: 0, bandTop: null, height: 0 };
   let y = 0;
   for (const track of tracks) {
     const h = d.tall && d.tall.track === track.id ? d.tall.h : d.trackH;
     out.tops.push(y);
     out.heights.push(h);
     y += h;
+    if (band && band.track === track.id) {
+      out.bandTop = y;
+      y += band.height;
+    }
     for (const lane of track.lanes) {
       if (hasLaneRef(folded, track.id, lane.target)) continue;
       out.lanes.push({ track, lane, top: y });

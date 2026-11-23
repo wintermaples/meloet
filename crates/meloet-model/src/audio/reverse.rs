@@ -51,9 +51,13 @@ impl PlayedFrames {
 
 /// The frames the clip plays, as the read-ahead thread lays them out: each end of the clip
 /// and the take's tick 0 rounded to frames of the file by itself (`pcm::feed_clip`). `None`
-/// for a keys clip or a clip that is not there.
+/// for a keys clip or a clip that is not there, and for a clip with 「いいとこ取り」, which
+/// plays frames of several takes.
 pub fn played_frames(doc: &Doc, clip: ClipId) -> Option<PlayedFrames> {
     let (_, c) = doc.clip(clip)?;
+    if !c.comp.is_empty() {
+        return None;
+    }
     let shown = c.active_audio()?;
     let take = &shown.take;
     let follow = c.takes.shape()?.follow;

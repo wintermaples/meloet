@@ -35,6 +35,7 @@ pub use audio::clips::{
     FadeEnd, ImportPlan, ImportedAudio, ImportedClip, fit_fades, import_audio, remove_audio,
     set_clip_fade, set_clip_gain, set_clips_shape,
 };
+pub use audio::comp::{clear_comp, comp_is_valid, set_comp};
 pub use audio::fade::{clip_fade_gain, fade_gain};
 pub use audio::follow::{FileClock, tempo_piece};
 pub use audio::record::{NewAudio, NewAudioTake, VocalRecording, add_vocal_recordings};

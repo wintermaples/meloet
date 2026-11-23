@@ -57,7 +57,7 @@
     zoomArrangeBy,
   } from "./pianoroll/view.svelte";
   import { shownTick, ticksPerBar, ticksPerBeat } from "./time";
-  import { barLineTick, eachLine, mapOf, nearestBarTick, snapToStep } from "../time/bars";
+  import { barLineTick, eachLine, mapOf, nearestBarTick, nearestBeatTick, snapToStep } from "../time/bars";
   import type { GridLine } from "../gl/slot";
   import MarkerRow from "./timeline/MarkerRow.svelte";
   import TempoBand from "./timeline/TempoBand.svelte";
@@ -67,6 +67,9 @@
   import AutoLane from "./automation/AutoLane.svelte";
   import { masterOwner } from "./automation/laneValue";
   import FadeBox from "./arrange/FadeBox.svelte";
+  import { bandHeight, compable } from "./comp/comp";
+  import CompBand from "./comp/CompBand.svelte";
+  import { closeComp, compBand, openComp, openCompOf } from "./comp/compState.svelte";
   import AudioClipHandles from "./arrange/AudioClipHandles.svelte";
   import AudioClipNotes from "./arrange/AudioClipNotes.svelte";
   import DropFrame from "./arrange/DropFrame.svelte";
@@ -106,6 +109,9 @@
   const gridBeats = $derived(G.beatsShown(barPx, perBar, ticksPerBeat({ num: timeline.meterNum, den: timeline.meterDen }), metrics.px("mock.arrange.bar") / 2));
   const viewWidth = $derived(layout.arrangeOverview ? overviewWidth : timeWidth);
   const view: G.View = $derived({ pxPerTick, scrollX: scrollTick * pxPerTick, width: viewWidth });
+  /** The band 「いいとこ取り」 that is open (round 12, A8; comp/), under its track's row. */
+  const comp = $derived(openCompOf(current.state!));
+  const compRows = $derived(comp ? { track: comp.track.id, height: bandHeight({ headH: metrics.px("size.row"), rowH: metrics.px("size.lane") }, comp.takes.length) } : null);
   /** Track rows and the automation bands under them (the same order as the head side; automation/autoGeom.ts). */
   /** The master standing in as the owner of its lane (round 12 M5): the row 「マスター」 at the foot. Null while it has none. */
   const masterLanes = $derived(song.master.lanes.length > 0 ? masterOwner(song.master) : null);
@@ -120,6 +126,7 @@
         tall: { track: current.state!.arrange.tallTrack, h: metrics.px("part.track.vocal") },
       },
       masterLanes,
+      compRows,
     ),
   );
   const dims: G.LaneDims = $derived({
@@ -218,13 +225,14 @@
 
   /** The waveform of an audio clip. `after` is the number of rectangles under the waveform. */
   function paintAudioWaves(waves: GlWave[], after: number, v: G.View, box: G.Box, track: TrackView, clip: ClipView, colors: G.ClipColors, drag: AudioDragValue | null): void {
-    const a = clip.audio!;
     const shown = G.clipColorsFor(colors, track.muted);
-    const shape = W.waveClipOf(clip, drag)!;
-    const level = W.waveLevel(W.framesPerPx(map, v, shape.timing, clip.start, clip.end), waveSizes.pitch);
-    const found = waveBook.sourceFor(song.serial, a.audio, level);
-    if (!found) return;
-    W.clipWaves(waves, after, map, v, waveArea(dims, box), shape, found.source, found.framesPerPeak, W.waveLook(waveSizes, shown.note, track.id === tallTrack));
+    const look = W.waveLook(waveSizes, shown.note, track.id === tallTrack);
+    // One part, or with 「いいとこ取り」 a part for each piece, of its own take.
+    for (const { shape, audio, range } of W.waveParts(clip, drag)) {
+      const level = W.waveLevel(W.framesPerPx(map, v, shape.timing, clip.start, clip.end), waveSizes.pitch);
+      const found = waveBook.sourceFor(song.serial, audio, level);
+      if (found) W.clipWaves(waves, after, map, v, waveArea(dims, box), shape, found.source, found.framesPerPeak, look, range);
+    }
   }
 
   /** The peaks of the audio being recorded (they grow; the tip is read every frame, so growth does not ask for a redraw). None yet during count-in. */
@@ -1238,6 +1246,15 @@
     });
   });
 
+  // The band 「いいとこ取り」 just opened: its track's row and the band come into view.
+  $effect(() => {
+    const open = compBand.clip;
+    untrack(() => {
+      const row = comp && open !== null ? song.tracks.indexOf(comp.track) : -1;
+      if (row >= 0) rowsScroll(G.revealRange(rows.tops[row]!, rows.tops[row]! + rows.heights[row]! + (compRows?.height ?? 0), shownY, rowsHeight));
+    });
+  });
+
   let drag: { d: G.RulerDrag; downX: number; left: number } | null = null;
   const still = () => metrics.px("space.1");
 
@@ -1320,6 +1337,9 @@
     snap: (tick: number) => nearestBarTick(map, tick),
     stillPx: still(),
   });
+
+  /** The ends of a drag over the band 「いいとこ取り」 go to the grid lines in view: beats when they are drawn, else bars. */
+  const compSnap = (tick: number) => (gridBeats ? nearestBeatTick(map, tick) : nearestBarTick(map, tick));
 
   /** Press in an empty place and move to select by a box (B-71). x0, y0 are the pressed place; add is Shift. */
   let boxSel = $state<{ x0: number; y0: number; x: number; y: number; moved: boolean; add: boolean } | null>(null);
@@ -1530,12 +1550,25 @@
       if (!pianoRollOpen) send({ type: "toggleBand", band: "pianoRoll" });
     };
     const cutAt = splitTick(clip, rulerLine(at));
+    // A clip with 「いいとこ取り」 (round 12, A8) keeps its takes, and is neither turned round nor measured: it plays parts of several takes.
+    const comped = clip.comp.length > 0;
+    const whileComp = comped ? t("comp.notWhileComp") : undefined;
+    // With the take rows of an audio clip: the band opens under the track; pressing it for the clip whose band is open closes it.
+    const compRows: MenuEntry[] = clip.audio
+      ? [
+          {
+            ...menuRow("menu.comp", compable(clip), () => (compBand.clip === clip.id ? closeComp() : openComp(clip.id))),
+            checked: compBand.clip === clip.id,
+            hint: compable(clip) ? undefined : t("comp.needsTakes"),
+          },
+        ]
+      : [];
     // At the bottom of an audio clip's menu (spec 3 "While the sound is being made"); Rust takes the vocal clips among the chosen.
     const audioRows: MenuEntry[] = clip.audio
       ? [
           { kind: "separator" },
-          menuRow("menu.reverse", change, () => send({ type: "reverseClips", clips: chosen() })),
-          menuRow("menu.normalize", change, () => send({ type: "normalizeClips", clips: chosen() })),
+          { ...menuRow("menu.reverse", change && !comped, () => send({ type: "reverseClips", clips: chosen() })), hint: whileComp },
+          { ...menuRow("menu.normalize", change && !comped, () => send({ type: "normalizeClips", clips: chosen() })), hint: whileComp },
         ]
       : [];
     // At the bottom of a keys clip's menu (round 12, A7); Rust takes the keys clips among the chosen, of one track.
@@ -1557,7 +1590,8 @@
       { kind: "separator" },
       menuRow("menu.nextTake", change && clip.takes > 1, () => send({ type: "stepTake", delta: 1 }), t("key.take")),
       menuRow("menu.prevTake", change && clip.takes > 1, () => send({ type: "stepTake", delta: -1 }), shiftKey(t("key.take"))),
-      menuRow("menu.deleteTake", change && clip.takes > 1, () => send({ type: "deleteTake", clip: clip.id })),
+      { ...menuRow("menu.deleteTake", change && clip.takes > 1 && !comped, () => send({ type: "deleteTake", clip: clip.id })), hint: whileComp },
+      ...compRows,
       ...audioRows,
       ...keysRows,
     ];
@@ -1757,6 +1791,9 @@
       >
         {#each song.tracks as track (track.id)}
           <div class="lane" style:height={track.id === current.state!.arrange.tallTrack ? `${metrics.px("part.track.vocal")}px` : null}></div>
+          {#if comp && comp.track.id === track.id}
+            <CompBand band={comp} {view} {map} {busy} snap={compSnap} {waveBook} {waveSizes} />
+          {/if}
           {#each rows.lanes.filter((l) => l.track.id === track.id) as l (JSON.stringify(l.lane.target))}
             <AutoLane {track} lane={l.lane} {view} {map} {busy} />
           {/each}

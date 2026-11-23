@@ -2904,6 +2904,7 @@ pub(crate) mod bounce;
 mod bulk;
 mod buttons;
 mod clips;
+mod comp;
 mod history;
 pub mod keynames;
 mod mix;

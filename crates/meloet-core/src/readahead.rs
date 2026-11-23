@@ -14,6 +14,9 @@
 //! slow), so it goes on from there and the place stays right.
 //!
 //! The fades and the volumes of the clips are not its business; the engine does those.
+//! The seams of 「いいとこ取り」 are: a clip with a comp comes as its pieces
+//! (`pcm::feed_pieces`), two neighbours lying over each other for 10 ms, and the thread
+//! adds them up with [`FeedClip::seam_gain`].
 //!
 //! When audio that was made for a clip is ready (22-19 pass 2) the clips come again with other
 //! files in the same places ([`ReadAhead::splice_clips`]). The thread then lays the new
@@ -484,8 +487,20 @@ impl Fed {
             match file.read(file_at as u64, raw) {
                 Ok(got) => {
                     let into = out[out_at * STREAM_CHANNELS..].as_chunks_mut::<2>().0;
-                    for (frame, read) in into.iter_mut().zip(raw.chunks_exact(channels).take(got)) {
-                        *frame = [read[0], read[channels - 1]];
+                    let read = raw.chunks_exact(channels).take(got);
+                    if clip.lead == 0 && clip.tail == 0 {
+                        for (frame, read) in into.iter_mut().zip(read) {
+                            *frame = [read[0], read[channels - 1]];
+                        }
+                    } else {
+                        // A piece of 「いいとこ取り」: it lies over the one next to it
+                        // around their seam, and the two add up.
+                        let at = from + out_at as u64;
+                        for (i, (frame, read)) in into.iter_mut().zip(read).enumerate() {
+                            let gain = clip.seam_gain(at + i as u64);
+                            frame[0] += read[0] * gain;
+                            frame[1] += read[channels - 1] * gain;
+                        }
                     }
                 }
                 Err(e) => {

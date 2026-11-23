@@ -45,7 +45,8 @@ export function reduceA9(state: FakeState, command: Command, files: Map<number, 
     for (const clip of track.clips) {
       const audio = clip.audio;
       const file = audio ? files.get(audio.audio) : undefined;
-      if (!audio || !file || audio.state === "missing" || !command.clips.includes(clip.id)) continue;
+      // A clip with 「いいとこ取り」 plays parts of several takes: passed by (round 12, A8).
+      if (!audio || !file || audio.state === "missing" || !command.clips.includes(clip.id) || clip.comp.length > 0) continue;
       const [from, to] = [audio.firstFrame, Math.min(audio.firstFrame + audio.frames, file.frames)];
       if (command.type === "normalizeClips") {
         const peak = loudest(file, from, to);

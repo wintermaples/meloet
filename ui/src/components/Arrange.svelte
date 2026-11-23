@@ -254,8 +254,8 @@
   onDestroy(() => stopBook?.());
 
   const rec = $derived(transport.state === "recording" ? transport.recording : null);
-  /** 「重ねる」 on and recording into a clip that was there: that clip's name (mock P10-Overdub). */
-  const overdubName = $derived(rec && transport.overdub ? overdubClipName(song.tracks, rec) : null);
+  /** The pass going on overdubs a clip: that clip's name (mock P10-Overdub). */
+  const overdubName = $derived(rec ? overdubClipName(song.tracks, rec) : null);
   /**
    * 録っている歌のトラック（仕様書 3 章 24-C: 録っている間のクリップは、どれも rec の色。モック F7-VocalRec ・ F7-TwoRec）。
    * 波形は約束 24 なので、いまは中身のない rec のクリップ。鍵盤と同じく、できた小節は大きな面、のびている先（2 小節まで）は recordingClip。
@@ -703,22 +703,26 @@
   $effect(() => {
     if (clipEdit.place === "arrange" && clipEdit.renaming !== null && (busy || !song.tracks.some((tr) => tr.clips.some((c) => c.id === clipEdit.renaming)))) stopClipRename();
   });
+  function decideName(clip: ClipView): void {
+    stopClipRename();
+    const command = renameCommand(clip.id, clip.name, nameDraft);
+    if (command) send(command);
+  }
   function nameKey(e: KeyboardEvent, clip: ClipView): void {
     if (e.isComposing) return;
     if (e.key === "Enter") {
       e.preventDefault();
       e.stopPropagation();
-      stopClipRename();
-      const command = renameCommand(clip.id, clip.name, nameDraft);
-      if (command) send(command);
+      decideName(clip);
     } else if (e.key === "Escape") {
       e.preventDefault();
       e.stopPropagation();
       stopClipRename();
     }
   }
+  // Pressing outside decides, as the track name box does (A-27). After Enter or Esc the box is already closed.
   function nameBlur(clip: ClipView): void {
-    if (clipEdit.renaming === clip.id && clipEdit.place === "arrange") stopClipRename();
+    if (clipEdit.renaming === clip.id && clipEdit.place === "arrange") decideName(clip);
   }
 
   /** えらんだクリップのテイクが 2 つ以上なら、すぐ上に切りかえの札。 */

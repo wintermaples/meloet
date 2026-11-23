@@ -335,6 +335,30 @@
               {#if app.plugins.placesOpen}
                 <PluginPlaces plugins={app.plugins} />
               {/if}
+              <!-- AI とつなぐ（モック P10-AiLink の B）: 選ぶ印と、右に口の状態（さしている印）。 -->
+              <div class="row" data-test="settings-ai">
+                <span class="strong name" use:term={"AI とつなぐ"}>{t("settings.aiLink")}</span>
+                <button
+                  type="button"
+                  class="pick"
+                  role="checkbox"
+                  aria-checked={app.aiLink.on}
+                  data-test="settings-ai-link"
+                  onclick={() => send({ type: "setAiLink", on: !app.aiLink.on })}
+                >
+                  <span class="mark" class:on={app.aiLink.on}><span class="dot"></span></span>
+                  <span class="strong">{app.aiLink.on ? t("settings.aiLinkOn") : t("settings.aiLinkOff")}</span>
+                </button>
+                {#if app.aiLink.port === "closed"}
+                  <span class="label port" data-test="settings-ai-port">{t("settings.aiClosed")}</span>
+                {:else}
+                  <span class="port strong" data-test="settings-ai-port">
+                    <span class="port-mark" class:yes={app.aiLink.port === "connected"}></span>
+                    {app.aiLink.port === "connected" ? t("settings.aiConnected") : t("settings.aiWaiting")}
+                  </span>
+                {/if}
+              </div>
+              <div class="note ai-note" data-test="settings-ai-note">{t("settings.aiLinkNote")}<br />{t("settings.aiLinkCan")}</div>
             </div>
           {/if}
         </div>
@@ -560,6 +584,63 @@
     border-bottom: var(--line-hair) solid var(--color-gray-4);
     color: var(--color-gray-8);
     white-space: normal;
+  }
+  /* 選ぶ印（仕様書 2 章「選ぶ印（設定の中）」）と、口の状態の印（「出口 ・ 入口の行」のさしている印と同じ）。 */
+  .pick {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    height: var(--part-button-height);
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+  }
+  .pick:focus-visible {
+    outline: var(--line-hair) solid var(--color-gray-10);
+    outline-offset: var(--line-hair);
+  }
+  .mark {
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--part-choice-size);
+    height: var(--part-choice-size);
+    border: var(--line-hair) solid var(--color-gray-8);
+  }
+  .mark.on {
+    border-color: var(--color-accent);
+  }
+  .dot {
+    width: var(--part-choice-dot);
+    height: var(--part-choice-dot);
+  }
+  .mark.on .dot {
+    background: var(--color-accent);
+  }
+  /* The mock puts an empty cell before the state, so the gap there is two gaps. */
+  .port {
+    margin-left: var(--space-2);
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .port-mark {
+    box-sizing: border-box;
+    flex-shrink: 0;
+    width: var(--part-endpoint-link);
+    height: var(--part-endpoint-link);
+    border: var(--line-hair) solid var(--color-gray-7);
+  }
+  .port-mark.yes {
+    border: 0;
+    background: var(--color-gray-10);
+  }
+  .note.ai-note {
+    border-bottom: 0;
   }
   .note.pack-place {
     padding-top: 0;

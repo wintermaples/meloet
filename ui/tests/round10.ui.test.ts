@@ -1,5 +1,5 @@
-// Round 10 on the screen (spec 3 "Rules added in round 10", 4, 7 A-27; mocks P10-ClipName and P10-Overdub):
-// the context menu rows, the clip name box, F2, Mod J, double presses, the marker row, 「重ねる」 and its texts.
+// Round 10 on the screen (spec 3 "Rules added in round 10", 4, 7 A-27; mocks P10-ClipName, P10-Overdub and P10-AiLink B):
+// the context menu rows, the clip name box, F2, Mod J, double presses, the marker row, 「重ねる」 and its texts, 「AI とつなぐ」.
 import { flushSync, mount, unmount, type Component } from "svelte";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, ClipView, TrackView } from "../src/bridge";
@@ -11,6 +11,7 @@ import { clipEdit, renameCommand, stopClipRename } from "../src/components/clipN
 import { transportWithOverdub } from "../src/components/fit";
 import { contextMenu, type MenuRow } from "../src/components/menu/contextMenu.svelte";
 import ParamsPanel from "../src/components/params/ParamsPanel.svelte";
+import SettingsDialog from "../src/components/SettingsDialog.svelte";
 import StatusLine from "../src/components/StatusLine.svelte";
 import { trackEdit } from "../src/components/tracks.svelte";
 import Transport from "../src/components/Transport.svelte";
@@ -230,7 +231,7 @@ describe("2 回押す（アレンジ）", () => {
     expect(app.sent).toHaveLength(1);
   });
 
-  it("鍵盤のクリップの名前の所: 名前の箱。Enter で renameClip を 1 つ、Esc ・ 外を押すと送らずに閉じる、空なら古い名前のまま", () => {
+  it("鍵盤のクリップの名前の所: 名前の箱。Enter ・ 外を押すと renameClip を 1 つ、Esc は送らずに閉じる、空 ・ 同じ名前なら送らない", () => {
     show(Arrange, song([3], 3));
     // 本体を 2 回押しても何もしない。
     mouse(lanes(), "dblclick", 300, 40);
@@ -256,16 +257,32 @@ describe("2 回押す（アレンジ）", () => {
     field.value = "ちがう";
     field.dispatchEvent(new Event("input", { bubbles: true }));
     key(field, "Escape");
+    expect(app.sent).toHaveLength(1);
+    const blur = (field: HTMLInputElement) => {
+      field.dispatchEvent(new FocusEvent("blur"));
+      flushSync();
+    };
+    // 外を押すと決まる（トラックの名前の箱と同じ。7 章 A-27）。
     field = open();
     field.value = "ちがう";
     field.dispatchEvent(new Event("input", { bubbles: true }));
-    field.dispatchEvent(new FocusEvent("blur"));
-    flushSync();
+    blur(field);
+    expect(app.sent).toEqual([
+      { type: "renameClip", clip: 3, name: "サビ 2" },
+      { type: "renameClip", clip: 3, name: "ちがう" },
+    ]);
+    expect(q('[data-test="clip-name-field"]')).toBeNull();
     field = open();
     field.value = "";
     field.dispatchEvent(new Event("input", { bubbles: true }));
     key(field, "Enter");
-    expect(app.sent).toHaveLength(1);
+    field = open();
+    field.value = "  ";
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    blur(field);
+    blur(open());
+    expect(app.sent).toHaveLength(2);
+    expect(clipEdit.renaming).toBeNull();
   });
 
   it("箱はクリップの名前の所いっぱい（打った名前が長ければ、右へのびる）", () => {
@@ -376,6 +393,39 @@ describe("右の欄「選んだクリップ」の名前（モック P10-ClipName
     // アレンジの箱は出していない（場所が別）。
     expect(clipEdit.renaming).toBeNull();
   });
+
+  it("外を押すと決まる。Esc ・ 空 ・ 同じ名前は送らない", () => {
+    show(ParamsPanel, scene(), { onfold: () => {} });
+    const open = () => {
+      q('[data-test="params-name"]')!.click();
+      flushSync();
+      return q<HTMLInputElement>('[data-test="params-name-field"]')!;
+    };
+    const type = (field: HTMLInputElement, value: string) => {
+      field.value = value;
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+    };
+    const blur = (field: HTMLInputElement) => {
+      field.dispatchEvent(new FocusEvent("blur"));
+      flushSync();
+    };
+    let field = open();
+    type(field, "歌 Aメロ");
+    blur(field);
+    expect(app.sent).toEqual([{ type: "renameClip", clip: expect.any(Number), name: "歌 Aメロ" }]);
+    expect(q('[data-test="params-name-field"]')).toBeNull();
+    expect(text(q('[data-test="clip-params"]'))).toContain(t("clipParams.selected"));
+    field = open();
+    type(field, "ちがう");
+    field.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    flushSync();
+    blur(field);
+    field = open();
+    type(field, "");
+    blur(field);
+    blur(open());
+    expect(app.sent).toHaveLength(1);
+  });
 });
 
 describe("「重ねる」（モック P10-Overdub の A）", () => {
@@ -426,17 +476,18 @@ describe("「重ねる」（モック P10-Overdub の A）", () => {
     expect(transportWithOverdub(least + 59, w, stubs, 60).overdub).toBe(false);
   });
 
-  const recording = (overdub: boolean, clipId: number | null, loop = false) =>
+  /** `overdub` is the pass going on (`RecordingView.overdub`); `toggle` is the transport switch, which may differ (it is read at a pass start). */
+  const recording = (overdub: boolean, clipId: number | null, loop = false, toggle = overdub) =>
     ready((s) => {
       s.transport.state = "recording";
-      s.transport.overdub = overdub;
+      s.transport.overdub = toggle;
       s.transport.recording = { id: 1, track: 1, from: 0, take: 2, clip: clipId, lap: loop ? 1 : 0, overdub };
       s.status.message = loop
         ? { id: "loopRecording", track: { number: 1, name: "ピアノ" }, fromBar: 1, toBar: 4, lap: 2 }
         : { id: "recording", track: { number: 1, name: "ピアノ" }, take: 2 };
     });
 
-  it("重ねて録っている間の状態行（ループなら周の文も）。クリップがない所 ・ オフのときは、いままでの文", () => {
+  it("重ねて録っている間の状態行（ループなら周の文も）。いまの周が重ねていない ・ クリップがない周は、いままでの文", () => {
     const left = () => text(target.querySelector("footer.status"))!;
     show(StatusLine, recording(true, 1, true));
     expect(left()).toContain("1 ピアノ の イントロ に重ねて録音 ・ ループ 1–4 の 2 周目 ・ 止めても イントロ に足したまま（取り消しで戻せます）");
@@ -446,6 +497,11 @@ describe("「重ねる」（モック P10-Overdub の A）", () => {
     expect(left()).toContain("1 ピアノ へ録音 ・ 止めると テイク 2 として残ります");
     show(StatusLine, recording(false, 1));
     expect(left()).toContain("1 ピアノ へ録音 ・ 止めると テイク 2 として残ります");
+    // 決めるのは RecordingView.overdub（録っている間に「重ねる」を押しても、いまの周は変わらない）。
+    show(StatusLine, recording(false, 1, false, true));
+    expect(left()).toContain("1 ピアノ へ録音 ・ 止めると テイク 2 として残ります");
+    show(StatusLine, recording(true, 1, true, false));
+    expect(left()).toContain("1 ピアノ の イントロ に重ねて録音 ・ ループ 1–4 の 2 周目");
   });
 
   it("アレンジの録っているクリップの上: 「● 重ねて録音中 イントロ」", () => {
@@ -453,6 +509,69 @@ describe("「重ねる」（モック P10-Overdub の A）", () => {
     expect(text(q(".clip-label.recording"))).toBe("● 重ねて録音中 イントロ");
     show(Arrange, recording(false, 1));
     expect(text(q(".clip-label.recording"))).toBe("● 録音中 テイク 2");
-    expect(overdubClipName(song().song.tracks, { track: 3, clip: 61 })).toBeNull();
+    show(Arrange, recording(false, 1, false, true));
+    expect(text(q(".clip-label.recording"))).toBe("● 録音中 テイク 2");
+    show(Arrange, recording(true, 1, false, false));
+    expect(text(q(".clip-label.recording"))).toBe("● 重ねて録音中 イントロ");
+    const tracks = song().song.tracks;
+    expect(overdubClipName(tracks, { track: 1, clip: 3, overdub: true })).toBe("Aメロ");
+    expect(overdubClipName(tracks, { track: 1, clip: 3, overdub: false })).toBeNull();
+    expect(overdubClipName(tracks, { track: 1, clip: null, overdub: true })).toBeNull();
+    expect(overdubClipName(tracks, { track: 1, clip: 999, overdub: true })).toBeNull();
+  });
+});
+
+describe("くわしい設定の「AI とつなぐ」（モック P10-AiLink の B）", () => {
+  const scene = (name: string) => fakeScene(name)!.state as FakeState;
+  const row = () => q('[data-test="settings-ai"]')!;
+  const port = () => q('[data-test="settings-ai-port"]')!;
+  const mark = () => port().querySelector(".port-mark");
+
+  it("「プラグインの場所」の下の行。名前、選ぶ印とオン ・ オフ、右に口の状態、下に説明の 2 文", () => {
+    show(SettingsDialog, scene("aiLinkOff"));
+    const rows = [...target.querySelectorAll('[data-test="settings-adv"] > .row')];
+    const places = rows.findIndex((r) => r.querySelector('[data-test="settings-places"]'));
+    expect(rows[places + 1]).toBe(row());
+    expect(text(row().querySelector(".name"))).toBe("AI とつなぐ");
+    expect(text(q('[data-test="settings-ai-link"]'))).toBe("オフ");
+    expect(q('[data-test="settings-ai-link"]')!.getAttribute("aria-checked")).toBe("false");
+    expect(row().querySelector(".mark")!.classList.contains("on")).toBe(false);
+    expect([text(port()), port().classList.contains("label"), mark()]).toEqual(["閉じています", true, null]);
+    const note = q('[data-test="settings-ai-note"]')!;
+    expect(row().nextElementSibling).toBe(note);
+    expect(note.innerHTML.replace(/<!---->/g, "")).toBe(`${t("settings.aiLinkNote")}<br>${t("settings.aiLinkCan")}`);
+  });
+
+  it("待っています: オン（accent の印）と、中の空いた印", () => {
+    show(SettingsDialog, scene("aiLinkWaiting"));
+    expect(text(q('[data-test="settings-ai-link"]'))).toBe("オン");
+    expect(row().querySelector(".mark")!.classList.contains("on")).toBe(true);
+    expect([text(port()), port().classList.contains("label"), mark()?.classList.contains("yes")]).toEqual(["待っています", false, false]);
+  });
+
+  it("つながっています: ぬりつぶした印", () => {
+    show(SettingsDialog, scene("aiLinkConnected"));
+    expect(text(q('[data-test="settings-ai-link"]'))).toBe("オン");
+    expect([text(port()), mark()?.classList.contains("yes")]).toEqual(["つながっています", true]);
+  });
+
+  it("押すと setAiLink を 1 つ（状態は core の答えから。画面は自分で変えない）", () => {
+    show(SettingsDialog, scene("aiLinkOff"));
+    q('[data-test="settings-ai-link"]')!.click();
+    flushSync();
+    expect(app.sent).toEqual([{ type: "setAiLink", on: true }]);
+    expect(text(q('[data-test="settings-ai-link"]'))).toBe("オフ");
+    show(SettingsDialog, scene("aiLinkConnected"));
+    q('[data-test="settings-ai-link"]')!.click();
+    expect(app.sent.at(-1)).toEqual({ type: "setAiLink", on: false });
+  });
+
+  it("文と用語の説明は、モックの文のまま", () => {
+    const mock = readProposal("P10-AiLink");
+    const term = findTerm("AI とつなぐ")!;
+    expect(mock).toContain(`${term.term}${TERM_SEPARATOR}${term.description}`);
+    for (const key of ["settings.aiLink", "settings.aiLinkOn", "settings.aiLinkOff", "settings.aiClosed", "settings.aiWaiting", "settings.aiConnected", "settings.aiLinkNote", "settings.aiLinkCan"] as const) {
+      expect(mock, key).toContain(`>${t(key)}<`);
+    }
   });
 });

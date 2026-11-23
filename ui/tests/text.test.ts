@@ -31,15 +31,16 @@ describe("仕様書 5 章「用語の説明」", () => {
     expect(terms.filter((x) => x.source === "spec:5").map((x) => [x.term, x.description])).toEqual(specTerms);
   });
 
-  it("仕様書の外の用語は、第 10 回の案のモックの 4 つだけ（文はモックのまま）。「仮の音」は「サイン波」になった（仕様書 3 章）", () => {
+  it("仕様書の外の用語は、第 10 回の案のモックの 5 つだけ（文はモックのまま）。「仮の音」は「サイン波」になった（仕様書 3 章）", () => {
     const outside = terms.filter((x) => x.source !== "spec:5");
     expect(outside.map((x) => [x.term, x.source])).toEqual([
       ["重ねる", "user:2026-11-23"],
       ["和音のスタンプ", "user:2026-11-23"],
       ["根音", "user:2026-11-23"],
       ["調の和音", "user:2026-11-23"],
+      ["AI とつなぐ", "user:2026-11-23"],
     ]);
-    const mocks = ["P10-Overdub", "P10-ChordStamp", "P10-ChordTable"]
+    const mocks = ["P10-Overdub", "P10-ChordStamp", "P10-ChordTable", "P10-AiLink"]
       .map((b) => readRepoFile(`docs/design/proposals/${b}.dc.html`))
       .join("\n");
     for (const x of outside) expect(mocks).toContain(`${x.term}${TERM_SEPARATOR}${x.description}`);

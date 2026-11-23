@@ -2037,6 +2037,7 @@ impl Audio {
             | EngineOp::PlayTarget { .. }
             | EngineOp::Strip { .. }
             | EngineOp::Sends { .. }
+            | EngineOp::Knobs { .. }
             | EngineOp::Insert { .. }
             | EngineOp::Param { .. }
             | EngineOp::Bypass { .. }

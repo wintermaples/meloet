@@ -6,6 +6,7 @@
 use std::f32::consts::TAU;
 
 use crate::instrument::{Instrument, InstrumentEvent};
+use crate::knobs::{VoiceKnobs, vibrato_ratio};
 
 const VOICES: usize = 32;
 const ATTACK_S: f32 = 0.004;
@@ -57,6 +58,12 @@ struct Voice {
     started: u64,
     /// The note waiting for this voice to finish its steal fade.
     pending: Option<Pending>,
+    attack_step: f32,
+    release_coef: f32,
+    /// Frames since the voice started.
+    age: u64,
+    /// Pitch ratio of the knob's vibrato at the end of the last block.
+    vib: f32,
 }
 
 impl Voice {
@@ -73,13 +80,28 @@ impl Voice {
         steal_step: 0.0,
         started: 0,
         pending: None,
+        attack_step: 0.0,
+        release_coef: 0.0,
+        age: 0,
+        vib: 1.0,
     };
 
     fn sounding(&self) -> bool {
         matches!(self.stage, Stage::Attack | Stage::Decay)
     }
 
-    fn start(&mut self, note: u8, velocity: u8, held: bool, started: u64, sample_rate: f32) {
+    fn release(&mut self, coef: f32) {
+        self.stage = Stage::Release;
+        self.release_coef = coef;
+    }
+
+    /// `times`: the attack step and the release coefficient of a voice that starts now.
+    fn start(
+        &mut self,
+        (note, velocity, held, started): (u8, u8, bool, u64),
+        sample_rate: f32,
+        times: (f32, f32),
+    ) {
         let v = f32::from(velocity.min(127)) / 127.0;
         let freq = 440.0 * ((f32::from(note) - 69.0) / 12.0).exp2();
         // Leave out a harmonic that would pass Nyquist even with the bend fully up.
@@ -97,6 +119,10 @@ impl Voice {
             steal_step: 0.0,
             started,
             pending: None,
+            attack_step: times.0,
+            release_coef: times.1,
+            age: 0,
+            vib: 1.0,
         };
     }
 }
@@ -115,6 +141,7 @@ pub struct PlaceholderSynth {
     /// Pitch ratio (bend x vibrato) at the end of the last rendered block.
     pitch_now: f32,
     note_counter: u64,
+    knobs: VoiceKnobs,
 }
 
 impl Default for PlaceholderSynth {
@@ -139,6 +166,7 @@ impl PlaceholderSynth {
             lfo_phase: 0.0,
             pitch_now: 1.0,
             note_counter: 0,
+            knobs: VoiceKnobs::new(),
         };
         synth.set_rate(48_000.0);
         synth
@@ -152,19 +180,36 @@ impl PlaceholderSynth {
         self.steal_frames = (STEAL_S * sample_rate).max(1.0);
     }
 
+    /// The attack step and release coefficient the knobs give now.
+    fn times(&self) -> (f32, f32) {
+        let k = &self.knobs;
+        let attack = if k.attack_as_is() {
+            self.attack_step
+        } else {
+            1.0 / (k.attack_s(ATTACK_S) * self.sample_rate).max(1.0)
+        };
+        let release = if k.release_as_is() {
+            self.release_coef
+        } else {
+            (-1.0 / (RELEASE_TAU_S * k.release_scale() * self.sample_rate)).exp()
+        };
+        (attack, release)
+    }
+
     fn note_on(&mut self, note: u8, velocity: u8) {
+        let times = self.times();
         for v in self
             .voices
             .iter_mut()
             .filter(|v| v.sounding() && v.note == note)
         {
-            v.stage = Stage::Release;
+            v.release(times.1);
             v.held = false;
         }
         self.note_counter += 1;
         let started = self.note_counter;
         if let Some(v) = self.voices.iter_mut().find(|v| v.stage == Stage::Idle) {
-            v.start(note, velocity, true, started, self.sample_rate);
+            v.start((note, velocity, true, started), self.sample_rate, times);
             return;
         }
         // No free voice: take the oldest, a releasing one if there is any.
@@ -193,11 +238,12 @@ impl PlaceholderSynth {
 
     fn note_off(&mut self, note: u8) {
         let pedal = self.pedal;
+        let coef = self.times().1;
         for v in self.voices.iter_mut() {
             if v.sounding() && v.note == note && v.held {
                 v.held = false;
                 if !pedal {
-                    v.stage = Stage::Release;
+                    v.release(coef);
                 }
             }
             if let Some(p) = v.pending.as_mut().filter(|p| p.note == note) {
@@ -207,11 +253,12 @@ impl PlaceholderSynth {
     }
 
     fn release_all(&mut self) {
+        let coef = self.times().1;
         for v in self.voices.iter_mut() {
             v.held = false;
             v.pending = None;
             if v.sounding() {
-                v.stage = Stage::Release;
+                v.release(coef);
             }
         }
     }
@@ -220,6 +267,7 @@ impl PlaceholderSynth {
 impl Instrument for PlaceholderSynth {
     fn prepare(&mut self, sample_rate: f32, _max_frames: usize) {
         self.set_rate(sample_rate);
+        self.knobs.prepare(sample_rate);
         self.reset();
     }
 
@@ -234,8 +282,9 @@ impl Instrument for PlaceholderSynth {
             } => {
                 self.pedal = value >= 64;
                 if !self.pedal {
+                    let coef = self.times().1;
                     for v in self.voices.iter_mut().filter(|v| v.sounding() && !v.held) {
-                        v.stage = Stage::Release;
+                        v.release(coef);
                     }
                 }
             }
@@ -270,20 +319,30 @@ impl Instrument for PlaceholderSynth {
         let pitch_step = (pitch_end - pitch_start) / frames as f32;
         self.pitch_now = pitch_end;
 
-        let (attack_step, decay_coef, release_coef) =
-            (self.attack_step, self.decay_coef, self.release_coef);
+        let decay_coef = self.decay_coef;
         let (pedal, sample_rate) = (self.pedal, self.sample_rate);
+        let times = self.times();
+        self.knobs.rendering();
+        let vibrato = self.knobs.vibrato_on();
+        let cents = self.knobs.advance_vibrato(frames);
 
         for v in self.voices.iter_mut() {
             if v.stage == Stage::Idle {
                 continue;
             }
             let mut pitch = pitch_start;
+            let (mut vib, mut vib_step) = (1.0, 0.0);
+            if vibrato {
+                let end = vibrato_ratio(cents, v.age + frames as u64, sample_rate, 1.0);
+                (vib, vib_step) = (v.vib, (end - v.vib) / frames as f32);
+            }
             for out in left.iter_mut() {
                 pitch += pitch_step;
+                vib += vib_step;
+                v.age += 1;
                 match v.stage {
                     Stage::Attack => {
-                        v.env += attack_step;
+                        v.env += v.attack_step;
                         if v.env >= 1.0 {
                             v.env = 1.0;
                             v.stage = Stage::Decay;
@@ -291,7 +350,7 @@ impl Instrument for PlaceholderSynth {
                     }
                     Stage::Decay => v.env = SUSTAIN_LEVEL + (v.env - SUSTAIN_LEVEL) * decay_coef,
                     Stage::Release => {
-                        v.env *= release_coef;
+                        v.env *= v.release_coef;
                         if v.env < SILENT {
                             v.stage = Stage::Idle;
                             break;
@@ -304,10 +363,12 @@ impl Instrument for PlaceholderSynth {
                                 v.stage = Stage::Idle;
                                 break;
                             };
-                            v.start(p.note, p.velocity, p.held, p.started, sample_rate);
+                            v.start((p.note, p.velocity, p.held, p.started), sample_rate, times);
                             if !p.held && !pedal {
                                 v.stage = Stage::Release;
                             }
+                            vib = 1.0;
+                            vib_step = 0.0;
                             continue;
                         }
                     }
@@ -317,11 +378,12 @@ impl Instrument for PlaceholderSynth {
                 // sin x + h2 sin 2x + h3 sin 3x, from one sin/cos pair.
                 let wave = s * (1.0 + 2.0 * v.h2 * c + v.h3 * (3.0 - 4.0 * s * s));
                 *out += wave * v.env * v.amp;
-                v.phase += v.inc * pitch;
+                v.phase += v.inc * (pitch * vib);
                 if v.phase >= 1.0 {
                     v.phase -= 1.0;
                 }
             }
+            v.vib = if vibrato { vib } else { 1.0 };
         }
         right.copy_from_slice(left);
     }
@@ -333,5 +395,10 @@ impl Instrument for PlaceholderSynth {
         self.vibrato_depth = 0.0;
         self.lfo_phase = 0.0;
         self.pitch_now = 1.0;
+        self.knobs.settle();
+    }
+
+    fn set_knob(&mut self, knob: u32, place: f32) {
+        self.knobs.set(knob, place);
     }
 }

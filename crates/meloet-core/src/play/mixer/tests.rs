@@ -1019,18 +1019,19 @@ fn a_sound_with_no_parameters_is_selected_and_the_panel_and_the_status_line_say_
     assert_eq!(selected.track, 1);
     assert!(matches!(selected.sound, SoundName::Builtin { .. }));
     assert!(params_in_front(m));
-    assert_eq!(
+    // Round 12 E3: a sound that comes with meloet has its four knobs, and a row of them can
+    // be chosen; only an SF2 preset has no parameters (`knob_tests.rs`).
+    assert_ne!(
         status(m),
         Some(StatusMessage::NoParams {
             sound: selected.sound.clone()
         })
     );
-    // A row cannot be chosen: there is none.
     cmd(m, Command::SelectParam { param: Some(0) });
-    assert_eq!(
-        m.view().params.selected,
-        Some(SelectedParams::Sound(selected.clone()))
-    );
+    let Some(SelectedParams::Sound(chosen)) = m.view().params.selected else {
+        panic!("the sound is still what the panel shows");
+    };
+    assert_eq!(chosen.knobs.and_then(|k| k.row), Some(0));
 
     // An insert selected afterwards takes the panel; a track that is gone changes nothing.
     put(m, T1, 0, EffectKind::Compressor);

@@ -5,6 +5,7 @@
 
 use std::f32::consts::TAU;
 
+use meloet_engine::knobs::VoiceKnobs;
 use meloet_engine::{Instrument, InstrumentEvent, SongPlace};
 use meloet_model::drums::DrumPiece;
 
@@ -90,17 +91,25 @@ impl Voice {
         rng: Rng::new(1),
     };
 
-    /// `seed`: a hit of the song, whose noise and metal start from it.
+    /// `seed`: a hit of the song, whose noise and metal start from it. `scale`: what 「のび」
+    /// does to how long the hit rings (its loudness falls; its pitch falls as it does).
     fn start(
         &mut self,
         piece: DrumPiece,
         (velocity, seed): (u8, Option<u32>),
         order: u64,
-        sample_rate: f32,
+        (sample_rate, scale): (f32, f32),
     ) {
         let v = f32::from(velocity.min(127)) / 127.0;
         let hz = |f: f32| f / sample_rate;
         let dc = |tau_s: f32| decay_coef(tau_s, sample_rate);
+        let ring = |tau_s: f32| {
+            if scale == 1.0 {
+                decay_coef(tau_s, sample_rate)
+            } else {
+                decay_coef(tau_s * scale, sample_rate)
+            }
+        };
         let (level, pan) = level_and_pan(piece);
         let amp = level * v * (0.4 + 0.6 * v);
         *self = Voice {
@@ -113,7 +122,7 @@ impl Voice {
         };
 
         let mut tone = |f: f32, sweep: f32, ring_s: f32, fall_s: f32, drive: f32, click: f32| {
-            self.coef = [dc(ring_s), dc(0.0015), dc(fall_s)];
+            self.coef = [ring(ring_s), ring(0.0015), dc(fall_s)];
             self.shape = Shape::Tone {
                 base_inc: hz(f),
                 sweep,
@@ -129,7 +138,7 @@ impl Voice {
             DrumPiece::Snare => {
                 self.inc[0] = hz(185.0);
                 self.inc[1] = hz(330.0);
-                self.coef = [dc(0.07), dc(0.10 + 0.04 * v), dc(0.012)];
+                self.coef = [ring(0.07), ring(0.10 + 0.04 * v), dc(0.012)];
                 self.g = svf_g(1400.0, sample_rate);
                 self.shape = Shape::Snare {
                     noise: 0.6 + 0.4 * v,
@@ -138,24 +147,28 @@ impl Voice {
             DrumPiece::SideStick => {
                 self.inc[0] = hz(455.0);
                 self.inc[1] = hz(1667.0);
-                self.coef = [dc(0.010), dc(0.0012), 0.0];
+                self.coef = [ring(0.010), ring(0.0012), 0.0];
                 self.g = svf_g(3000.0, sample_rate);
                 self.k = 0.7;
                 self.shape = Shape::SideStick;
             }
             DrumPiece::Clap => {
-                self.coef = [dc(0.006), dc(0.07 + 0.03 * v), 0.0];
+                self.coef = [ring(0.006), ring(0.07 + 0.03 * v), 0.0];
                 self.g = svf_g(1100.0, sample_rate);
                 self.k = 0.6;
                 self.shape = Shape::Clap {
                     gap: (0.011 * sample_rate) as u32,
                 };
             }
-            DrumPiece::ClosedHiHat => self.metal(sample_rate, 1.0, 7000.0, 0.035, 0.15, v),
-            DrumPiece::PedalHiHat => self.metal(sample_rate, 1.0, 6000.0, 0.050, 0.15, v),
-            DrumPiece::OpenHiHat => self.metal(sample_rate, 1.0, 6500.0, 0.26 + 0.08 * v, 0.15, v),
-            DrumPiece::Crash => self.metal(sample_rate, 1.21, 3500.0, 0.75 + 0.25 * v, 0.5, v),
-            DrumPiece::Ride => self.metal(sample_rate, 1.53, 5200.0, 0.55, 0.1, v),
+            DrumPiece::ClosedHiHat => self.metal(sample_rate, 1.0, 7000.0, ring(0.035), 0.15, v),
+            DrumPiece::PedalHiHat => self.metal(sample_rate, 1.0, 6000.0, ring(0.050), 0.15, v),
+            DrumPiece::OpenHiHat => {
+                self.metal(sample_rate, 1.0, 6500.0, ring(0.26 + 0.08 * v), 0.15, v);
+            }
+            DrumPiece::Crash => {
+                self.metal(sample_rate, 1.21, 3500.0, ring(0.75 + 0.25 * v), 0.5, v);
+            }
+            DrumPiece::Ride => self.metal(sample_rate, 1.53, 5200.0, ring(0.55), 0.1, v),
         }
         match (piece, &mut self.shape) {
             // The foot closes the hi-hat more softly than a stick hits it.
@@ -164,25 +177,26 @@ impl Voice {
                 *rise_step = 1.0 / (0.003 * sample_rate);
             }
             (DrumPiece::Crash, Shape::Metal { hit, .. }) => {
-                self.coef[1] = dc(0.06);
+                self.coef[1] = ring(0.06);
                 *hit = 0.35;
             }
             (DrumPiece::Ride, Shape::Metal { hit, .. }) => {
-                self.coef[1] = dc(0.025);
+                self.coef[1] = ring(0.025);
                 *hit = 0.5;
             }
             _ => {}
         }
     }
 
-    fn metal(&mut self, sample_rate: f32, tune: f32, cut_hz: f32, ring_s: f32, noise: f32, v: f32) {
+    /// `ring`: the coefficient of the long ring.
+    fn metal(&mut self, sample_rate: f32, tune: f32, cut_hz: f32, ring: f32, noise: f32, v: f32) {
         for (inc, f) in self.inc.iter_mut().zip(METAL_HZ) {
             *inc = f * tune / sample_rate;
         }
         for phase in self.phase.iter_mut() {
             *phase = self.rng.unit();
         }
-        self.coef = [decay_coef(ring_s, sample_rate), 0.0, 0.0];
+        self.coef = [ring, 0.0, 0.0];
         // A harder hit lets more of the lower metal through.
         self.g = svf_g(cut_hz * (1.25 - 0.25 * v), sample_rate);
         self.shape = Shape::Metal {
@@ -304,6 +318,8 @@ pub struct ElectroKit {
     voices: [Voice; VOICES],
     sample_rate: f32,
     hits: u64,
+    /// Only 「のび」 does something to a drum.
+    knobs: VoiceKnobs,
 }
 
 impl Default for ElectroKit {
@@ -323,6 +339,7 @@ impl ElectroKit {
             voices,
             sample_rate: 48_000.0,
             hits: 0,
+            knobs: VoiceKnobs::new(),
         }
     }
 
@@ -333,6 +350,7 @@ impl ElectroKit {
 
     fn hit(&mut self, piece: DrumPiece, velocity: u8, seed: Option<u32>) {
         let sample_rate = self.sample_rate;
+        let scale = self.knobs.release_scale();
         if piece.stops_open_hi_hat() {
             for v in self.slots(DrumPiece::OpenHiHat) {
                 v.fade_out(CHOKE_S, sample_rate);
@@ -352,7 +370,7 @@ impl ElectroKit {
             }
         }
         if let Some(v) = slots.iter_mut().find(|v| !v.active) {
-            v.start(piece, (velocity, seed), order, sample_rate);
+            v.start(piece, (velocity, seed), order, (sample_rate, scale));
             return;
         }
         // Both voices are busy: the hit waits a moment for the one that is already fading, or
@@ -371,6 +389,7 @@ impl ElectroKit {
 impl Instrument for ElectroKit {
     fn prepare(&mut self, sample_rate: f32, _max_frames: usize) {
         self.sample_rate = sample_rate;
+        self.knobs.prepare(sample_rate);
         self.reset();
     }
 
@@ -396,7 +415,8 @@ impl Instrument for ElectroKit {
         let (left, right) = (&mut left[..frames], &mut right[..frames]);
         left.fill(0.0);
         right.fill(0.0);
-        let sample_rate = self.sample_rate;
+        self.knobs.rendering();
+        let tone = (self.sample_rate, self.knobs.release_scale());
         for (index, v) in self.voices.iter_mut().enumerate() {
             if !v.active {
                 continue;
@@ -410,7 +430,7 @@ impl Instrument for ElectroKit {
                             v.active = false;
                             break;
                         };
-                        v.start(piece, pending, v.order, sample_rate);
+                        v.start(piece, pending, v.order, tone);
                     }
                 }
                 let s = v.tick() * v.fade;
@@ -419,7 +439,7 @@ impl Instrument for ElectroKit {
                 if v.env[0] + v.env[1] < SILENT {
                     v.active = v.pending.is_some();
                     if let Some(pending) = v.pending {
-                        v.start(piece, pending, v.order, sample_rate);
+                        v.start(piece, pending, v.order, tone);
                     } else {
                         break;
                     }
@@ -434,6 +454,13 @@ impl Instrument for ElectroKit {
                 rng: v.rng,
                 ..Voice::IDLE
             };
+        }
+        self.knobs.settle();
+    }
+
+    fn set_knob(&mut self, knob: u32, place: f32) {
+        if knob == meloet_engine::knobs::KNOB_RELEASE {
+            self.knobs.set(knob, place);
         }
     }
 }

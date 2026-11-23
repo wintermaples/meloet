@@ -250,6 +250,20 @@ impl AutoSet {
         }
     }
 
+    /// Whether a lane that is not held plays parameter `param` of the instrument.
+    pub(crate) fn plays_instrument(&self, param: u32) -> bool {
+        (self.lanes.iter()).any(|r| !r.held && r.lane.target == AutoTarget::Instrument { param })
+    }
+
+    /// The instrument's lanes send their values again (another instrument is on the seat).
+    pub(crate) fn resend_instrument(&mut self) {
+        for run in self.lanes.iter_mut() {
+            if matches!(run.lane.target, AutoTarget::Instrument { .. }) {
+                run.sent = f32::NAN;
+            }
+        }
+    }
+
     /// Whether a lane plays a parameter of the instrument.
     pub(crate) fn has_instrument(&self) -> bool {
         (self.lanes.iter())

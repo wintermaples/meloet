@@ -17,7 +17,9 @@ use std::sync::Arc;
 use meloet_model::automation::{self as auto, AutoPoint, AutoTarget as ModelTarget, LaneId};
 use meloet_model::edit::{Edit, EditError};
 use meloet_model::effects::{EffectKind as ModelEffect, ParamShape};
-use meloet_model::{Bus, Gain, InstrumentRef, Pan, PluginPlace, StepKind, StripId, TrackId};
+use meloet_model::{
+    Bus, Gain, InstrumentRef, Pan, PluginPlace, SoundKnob, StepKind, StripId, TrackId, knob_usable,
+};
 use meloet_protocol::{
     AutoSelection, AutoTarget, AutomationView, LaneHome, LaneName, LanePoint, LanePoints, LaneRef,
     LaneView, SendBus, StatusMessage, TransportState, WritingLane,
@@ -237,7 +239,12 @@ impl Play {
                     None => self.plugin_place(track, target).unwrap_or(0.5),
                 }
             }
-            ModelTarget::Instrument { .. } => self.plugin_place(track, target).unwrap_or(0.5),
+            ModelTarget::Instrument { param } => match SoundKnob::from_index(param) {
+                Some(knob) if !matches!(t.instrument, InstrumentRef::Plugin(_)) => {
+                    t.knobs.get(knob) / 100.0
+                }
+                _ => self.plugin_place(track, target).unwrap_or(0.5),
+            },
         }
     }
 
@@ -320,6 +327,12 @@ impl Play {
         Some(((track, ModelTarget::Send(bus)), gain.position()))
     }
 
+    /// The lane of a knob of a track's sound, and the place of `value` (percent).
+    pub(super) fn knob_lane(track: TrackId, knob: SoundKnob, value: f32) -> Option<(LaneKey, f32)> {
+        let param = knob.index() as u32;
+        Some(((track, ModelTarget::Instrument { param }), value / 100.0))
+    }
+
     /// What a lane moves, as its header and the status line name it.
     pub(super) fn lane_name(&self, (track, target): LaneKey) -> Option<LaneName> {
         let t = self.doc().track(track)?;
@@ -338,7 +351,12 @@ impl Play {
                     plugin: p.name.to_string(),
                     param: self.plugin_param_name(PluginPlace::Instrument(track), param),
                 },
-                _ => return None,
+                other => {
+                    let knob = SoundKnob::from_index(param).filter(|&k| knob_usable(other, k))?;
+                    LaneName::Knob {
+                        knob: super::wave3::knob_view(knob),
+                    }
+                }
             },
             ModelTarget::Insert { insert, param } => {
                 let slot = t
@@ -1188,7 +1206,14 @@ fn settle(e: &mut Edit, (track, target): LaneKey, place: f32) {
                 i.set(param, spec.value_at(place));
             }
         }
-        ModelTarget::Instrument { .. } => {}
+        ModelTarget::Instrument { param } => {
+            if let (InstrumentRef::Builtin(_), Some(knob)) =
+                (&t.instrument, SoundKnob::from_index(param))
+                && let Some(knobs) = t.knobs.with(knob, place * 100.0)
+            {
+                t.knobs = knobs;
+            }
+        }
     }
 }
 

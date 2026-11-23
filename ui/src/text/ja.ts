@@ -1434,6 +1434,8 @@ export const texts = {
   "knob.attack": e("立ち上がり", "user:2026-11-23"),
   "knob.release": e("のび", "user:2026-11-23"),
   "knob.vibrato": e("ゆれ", "user:2026-11-23"),
+  "status.soundKnobSelected": e("{track} ・ 「{knob}」をえらんでいます", "builder:2026-11-24", { track: "1 ピアノ", knob: "明るさ" }),
+  "history.soundKnob": e("{track} ・ {knob} {from} → {to} %", "builder:2026-11-24", { track: "1 ピアノ", knob: "明るさ", from: "50", to: "25" }),
   // How values are written (number and unit; the examples in the spec 3 rule on parameter names). The part after the key prefix is unit of EFFECT_PARAMS.
   "param.value.s": e("{value} s", "spec:3", { value: "2.40" }),
   "param.value.ms": e("{value} ms", "spec:3", { value: "20" }),

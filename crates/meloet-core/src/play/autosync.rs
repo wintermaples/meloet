@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 
 use meloet_model::effects::EffectKind;
-use meloet_model::{AutoTarget, Track, TrackId};
+use meloet_model::{AutoTarget, InstrumentRef, Track, TrackId};
 
 use super::{EngineOp, Play, StripSeat};
 use crate::state::Effect;
@@ -112,7 +112,15 @@ impl Play {
         let mut now: HashMap<usize, (&Track, Vec<Head>)> = HashMap::new();
         for track in &doc.tracks {
             if let Some(seat) = self.seats.of(track.id) {
-                now.insert(seat, (track, heads(track)));
+                let mut heads = heads(track);
+                // A plugin this PC does not have sounds as the sine wave, whose knobs its
+                // lanes are not for.
+                if let InstrumentRef::Plugin(p) = &track.instrument
+                    && !self.has_plugin(&p.key)
+                {
+                    heads.retain(|h| !matches!(h.target, AutoTarget::Instrument { .. }));
+                }
+                now.insert(seat, (track, heads));
             }
         }
         if all {

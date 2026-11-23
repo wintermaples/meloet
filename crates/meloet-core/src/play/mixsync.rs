@@ -6,7 +6,8 @@ use std::sync::Arc;
 
 use meloet_model::mixer::{insert_moves, move_slot, moved_slot, new_track_sends};
 use meloet_model::{
-    Bus, Channel, Gain, INSERT_SLOTS, Insert, Inserts, Pan, PluginPlace, PluginRef, Sends, StripId,
+    Bus, Channel, Gain, INSERT_SLOTS, Insert, Inserts, Pan, PluginPlace, PluginRef, Sends,
+    SoundKnobs, StripId, Track,
 };
 
 use super::mixer::Preview;
@@ -26,6 +27,8 @@ struct Told {
     inserts: Inserts,
     /// The slots it was told to pass by. A mark of the slot, apart from what it holds.
     bypassed: [bool; INSERT_SLOTS],
+    /// The knobs of a track's sound.
+    knobs: SoundKnobs,
 }
 
 impl Told {
@@ -36,8 +39,21 @@ impl Told {
             sends: [Gain::SILENT; 2],
             inserts: Inserts::default(),
             bypassed: [false; INSERT_SLOTS],
+            knobs: SoundKnobs::default(),
         }
     }
+}
+
+/// The knobs of `track` as they are to sound: the song's, with a knob being dragged on top.
+fn knobs_of(track: &Track, previews: &[Preview]) -> SoundKnobs {
+    previews.iter().fold(track.knobs, |knobs, p| match *p {
+        Preview::Knob {
+            track: t,
+            knob,
+            value,
+        } if t == track.id => knobs.with(knob, value).unwrap_or(knobs),
+        _ => knobs,
+    })
 }
 
 #[derive(Debug)]
@@ -242,6 +258,11 @@ impl Play {
                 muted: false,
             };
             sync_strip(&mut told.tracks[seat], want, previews, asks, effects);
+            let knobs = knobs_of(t, previews);
+            if told.tracks[seat].knobs != knobs {
+                told.tracks[seat].knobs = knobs;
+                effects.push(Effect::Engine(EngineOp::Knobs { seat, knobs }));
+            }
         }
         // An instrument tried for a new track sounds as the track will: with the sends a
         // track of its group starts with.

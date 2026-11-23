@@ -56,7 +56,7 @@ pub use instrument::{
     BuiltinInstrument, GmFamily, InstrumentGroup, InstrumentRef, Kept, PluginRef, SF2_DRUM_BANK,
     Sf2Ref,
 };
-pub use knobs::{SOUND_KNOB_DEFAULTS, SoundKnob, SoundKnobs};
+pub use knobs::{SOUND_KNOB_DEFAULTS, SoundKnob, SoundKnobs, knob_usable};
 pub use mixer::{
     Bus, Channel, Gain, INSERT_SLOTS, Insert, InsertId, Inserts, Pan, PluginChange, PluginPlace,
     Return, Sends, StripId,

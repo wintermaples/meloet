@@ -216,6 +216,7 @@ impl ExportEngine {
             }
             op @ (EngineOp::Strip { .. }
             | EngineOp::Sends { .. }
+            | EngineOp::Knobs { .. }
             | EngineOp::Param { .. }
             | EngineOp::Bypass { .. }
             | EngineOp::MoveInsert { .. }) => {

@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use meloet_engine::knobs::{VoiceKnobs, vibrato_ratio};
 use meloet_engine::{Instrument, InstrumentEvent, SongPlace};
 
 use super::bank::{Region, SampleBank, SampleData, Trigger};
@@ -92,6 +93,14 @@ struct Voice {
     env: f32,
     attack_step: f32,
     release_coef: f32,
+    /// The release time the coefficient was made for, in frames.
+    release_frames: f32,
+    /// 「のび」 below 50 % on a one-shot: what its own extra decay has left (1 and 1 when it
+    /// has none).
+    cut: f32,
+    cut_coef: f32,
+    /// Frames since the voice started.
+    age: u64,
     /// What the loop's own decay has left.
     decay: f32,
     decay_coef: f32,
@@ -119,6 +128,10 @@ impl Voice {
         env: 0.0,
         attack_step: 0.0,
         release_coef: 0.0,
+        release_frames: 0.0,
+        cut: 1.0,
+        cut_coef: 1.0,
+        age: 0,
         decay: 1.0,
         decay_coef: 1.0,
         fade: 1.0,
@@ -136,9 +149,13 @@ impl Voice {
         }
     }
 
-    fn release(&mut self) {
+    /// `scale`: what 「のび」 does to the release time now.
+    fn release(&mut self, scale: f32) {
         self.hold = Hold::None;
         self.stage = Stage::Release;
+        if scale != 1.0 {
+            self.release_coef = (RELEASE_FLOOR.ln() / (self.release_frames * scale)).exp();
+        }
     }
 
     /// Moves loudness on by `frames`; false when the voice has ended.
@@ -167,11 +184,13 @@ impl Voice {
             self.fade -= self.fade_step * n;
             alive &= self.fade > 0.0;
         }
-        self.amp = if alive {
-            self.env * self.decay * self.fade
-        } else {
-            0.0
-        };
+        let mut amp = self.env * self.decay * self.fade;
+        if self.cut_coef < 1.0 {
+            self.cut *= self.cut_coef.powi(frames as i32);
+            alive &= self.cut > SILENT;
+            amp *= self.cut;
+        }
+        self.amp = if alive { amp } else { 0.0 };
         alive
     }
 }
@@ -312,6 +331,9 @@ struct State {
     pan: f32,
     /// (volume, pan) at each chunk of the block being rendered.
     mix_curve: Vec<(f32, f32)>,
+    knobs: VoiceKnobs,
+    /// The depth of 「ゆれ」 in cents at the end of each chunk of the block being rendered.
+    vibrato_curve: Vec<f32>,
     frame: u64,
     events: u64,
     births: u64,
@@ -334,6 +356,7 @@ impl State {
         self.volume = self.volume_target;
         self.pan_target = 0.0;
         self.pan = 0.0;
+        self.knobs.settle();
     }
 
     /// Each controller is a loudness of (value / 127)^2, as the velocity is.
@@ -468,9 +491,18 @@ impl State {
         let by_time = 10.0_f32.powf(-region.rt_decay_db_per_s * held_s / 20.0);
         let gain = region.gain * by_velocity * by_time;
         let free_running = trigger != Trigger::Attack || region.one_shot;
-        let attack_frames = region.attack_s * self.sample_rate;
+        let attack_frames = self.knobs.attack_s(region.attack_s) * self.sample_rate;
         let release_frames = region.release_s.max(MIN_RELEASE_S) * self.sample_rate;
         let env = if attack_frames >= 1.0 { 0.0 } else { 1.0 };
+        // A one-shot has no release: 「のび」 below 50 % makes it fall faster from the hit, by
+        // 60 dB over its own length times scale / (1 - scale).
+        let scale = self.knobs.release_scale();
+        let cut_coef = if trigger == Trigger::Attack && region.one_shot && scale < 1.0 {
+            let length = sample.frames as f32 / step as f32;
+            (RELEASE_FLOOR.ln() / (length * scale / (1.0 - scale)).max(1.0)).exp()
+        } else {
+            1.0
+        };
         self.births += 1;
         self.voices[slot] = Voice {
             active: true,
@@ -492,6 +524,10 @@ impl State {
             env,
             attack_step: 1.0 / attack_frames.max(1.0),
             release_coef: (RELEASE_FLOOR.ln() / release_frames).exp(),
+            release_frames,
+            cut: 1.0,
+            cut_coef,
+            age: 0,
             decay: 1.0,
             decay_coef: 10.0_f32.powf(-region.loop_decay_db_per_s / 20.0 / self.sample_rate),
             fade: 1.0,
@@ -537,12 +573,13 @@ impl State {
         }
         self.key_down[k] = false;
         let kept = self.pedal && self.sustain_pedal;
+        let scale = self.knobs.release_scale();
         for v in self.voices.iter_mut().filter(|v| v.active && v.key == key) {
             if v.hold == Hold::Key {
                 if kept {
                     v.hold = Hold::Pedal;
                 } else {
-                    v.release();
+                    v.release(scale);
                 }
             }
         }
@@ -579,9 +616,10 @@ impl State {
             }
             return;
         }
+        let scale = self.knobs.release_scale();
         for v in self.voices.iter_mut().filter(|v| v.active) {
             if v.hold == Hold::Pedal {
-                v.release();
+                v.release(scale);
             }
         }
         for key in 0..128_u8 {
@@ -599,9 +637,10 @@ impl State {
     }
 
     fn release_all(&mut self) {
+        let scale = self.knobs.release_scale();
         for v in self.voices.iter_mut().filter(|v| v.active) {
             if v.hold != Hold::None {
-                v.release();
+                v.release(scale);
             }
         }
         self.key_down = [false; 128];
@@ -620,6 +659,17 @@ impl State {
                 self.bend = self.bend_target;
             }
             *bend = self.bend;
+        }
+
+        self.knobs.rendering();
+        let vibrato = self.knobs.vibrato_on();
+        if vibrato {
+            let mut left_frames = frames;
+            for cents in &mut self.vibrato_curve[..chunks] {
+                let n = CHUNK.min(left_frames);
+                left_frames -= n;
+                *cents = self.knobs.advance_vibrato(n);
+            }
         }
 
         if bank.shaped {
@@ -688,12 +738,20 @@ impl State {
                 }
                 continue;
             }
-            for ((l, r), &bend) in chunked.zip(&self.bend_curve[..chunks]) {
-                let step = if bend == 0.0 || v.follow == 0.0 {
+            let curves = self.bend_curve[..chunks]
+                .iter()
+                .zip(&self.vibrato_curve[..chunks]);
+            for ((l, r), (&bend, &cents)) in chunked.zip(curves) {
+                let mut step = if bend == 0.0 || v.follow == 0.0 {
                     v.step
                 } else {
                     v.step * f64::from(bend * v.follow / 12.0).exp2()
                 };
+                let middle = v.age + l.len() as u64 / 2;
+                v.age += l.len() as u64;
+                if vibrato {
+                    step *= f64::from(vibrato_ratio(cents, middle, self.sample_rate, v.follow));
+                }
                 let from = v.amp;
                 let in_loop = region
                     .looped
@@ -747,6 +805,8 @@ impl Sampler {
             pan_target: 0.0,
             pan: 0.0,
             mix_curve: vec![(1.0, 0.0); 1],
+            knobs: VoiceKnobs::new(),
+            vibrato_curve: vec![0.0; 1],
             frame: 0,
             events: 0,
             births: 0,
@@ -769,6 +829,8 @@ impl Instrument for Sampler {
         self.state.sample_rate = sample_rate;
         self.state.bend_curve = vec![0.0; max_frames.div_ceil(CHUNK).max(1)];
         self.state.mix_curve = vec![(1.0, 0.0); self.state.bend_curve.len()];
+        self.state.vibrato_curve = vec![0.0; self.state.bend_curve.len()];
+        self.state.knobs.prepare(sample_rate);
         self.state.clear();
     }
 
@@ -820,5 +882,9 @@ impl Instrument for Sampler {
 
     fn reset(&mut self) {
         self.state.clear();
+    }
+
+    fn set_knob(&mut self, knob: u32, place: f32) {
+        self.state.knobs.set(knob, place);
     }
 }

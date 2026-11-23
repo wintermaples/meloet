@@ -102,6 +102,10 @@ impl Svf {
         self.ic1 = flush(self.ic1);
         self.ic2 = flush(self.ic2);
     }
+
+    pub fn is_finite(&self) -> bool {
+        self.ic1.is_finite() && self.ic2.is_finite()
+    }
 }
 
 /// A value that moves to its target in a straight line.

@@ -19,7 +19,7 @@ import { CLICK_VOLUME_MAX_DB, CLICK_VOLUME_MIN_DB, REPEAT_COUNT_MAX } from "./ty
 import { fakeLoudnessOf } from "./fakeLoudness";
 import { reduceA9 } from "./fakeA9";
 import { fakeUserPreset, presetOf, reducePresets } from "./fakePresets";
-import { FAKE_ARP_OFF } from "./fakeWave3";
+import { FAKE_ARP_OFF, fakeKnobs, fakeSetSoundKnob } from "./fakeWave3";
 import {
   CLIP_CENTS_MAX,
   CLIP_SEMITONES_MAX,
@@ -3283,6 +3283,29 @@ SCENES.paramsSound = {
   meters: QUIET,
 };
 
+// Round 12 E3: the knobs of the piano, three of them turned, 「明るさ」 chosen.
+SCENES.paramsSoundKnobs = {
+  setup(s) {
+    bandSong(s);
+    const knobs = { ...fakeKnobs("grandPiano"), values: [35, 50, 70, 25] as [number, number, number, number], row: 0 };
+    s.params.selected = { kind: "sound", track: BAND_TRACK_ID + 1, sound: { kind: "builtin", instrument: "grandPiano" }, knobs };
+  },
+  bands: ["params"],
+  after: (s) =>
+    (s.status.message = { id: "soundKnobSelected", loopBars: null, track: { number: 1, name: "ピアノ" }, knob: "brightness" }),
+  meters: QUIET,
+};
+// Round 12 E3: a drum kit uses only 「明るさ」 and 「のび」; the other two rows are disabled.
+SCENES.paramsSoundDrums = {
+  setup(s) {
+    bandSong(s);
+    const knobs = { ...fakeKnobs("studioKit"), values: [50, 50, 30, 0] as [number, number, number, number] };
+    s.params.selected = { kind: "sound", track: BAND_TRACK_ID + 3, sound: { kind: "builtin", instrument: "studioKit" }, knobs };
+  },
+  bands: ["params"],
+  meters: QUIET,
+};
+
 // ---- Protocol 24: vocal clips, audio files brought in, files that are not found (mocks F7-AudioEdit, F7-AudioDrop,
 // F7-AudioMissing, R11-Audio). The screen's parts come later; these are the states they will show. ----
 
@@ -5043,6 +5066,9 @@ export function reduceMixer(
     }
     case "cancelMixPreview":
       break;
+    case "setSoundKnob":
+      fakeSetSoundKnob(params.selected, command);
+      break;
     // A typed value of an effect that comes with meloet: the number in it, put at an end of the range (and said so); a
     // text with no number changes nothing and says so with the value as a bare number ("-24"), as core does. A plugin's is the
     // transport's (FakeParamTables).
@@ -5090,21 +5116,24 @@ export function reduceMixer(
         selectPlugin(slot, plugin);
         break;
       }
-      // 19-A: a sound that comes with meloet or of an SF2 file has no parameters; the panel says so.
+      // 19-A: a sound of an SF2 file has no parameters; the panel says so. One that comes with meloet has its knobs (E3).
       const t = song.tracks.find((x) => x.id === command.track);
       if (!t || t.kind.kind !== "keys" || t.standIn) break;
       if (t.sound.kind === "plugin") break;
       const sound = soundNameOf(t.sound);
-      // round12 stub: E3
-      params.selected = { kind: "sound", track: t.id, sound, knobs: null };
+      const was = params.selected;
+      const kept = was?.kind === "sound" && was.track === t.id && same(was.sound, sound) ? was.knobs : null;
+      const knobs = sound.kind === "builtin" ? (kept ?? fakeKnobs(sound.instrument)) : null;
+      params.selected = { kind: "sound", track: t.id, sound, knobs };
       showParams = true;
-      notice = { id: "noParams", sound };
+      if (!knobs) notice = { id: "noParams", sound };
       break;
     }
     case "selectParam": {
       const sel = params.selected;
       if (sel?.kind === "builtin") sel.row = command.param !== null && EFFECT_PARAMS[sel.effect][command.param] ? command.param : null;
       else if (sel?.kind === "plugin") sel.row = command.param;
+      else if (sel?.kind === "sound" && sel.knobs) sel.knobs.row = command.param !== null && sel.knobs.usable[command.param] ? command.param : null;
       break;
     }
     case "toggleBypass": {

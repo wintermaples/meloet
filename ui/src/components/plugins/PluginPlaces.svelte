@@ -78,7 +78,7 @@
     gap: var(--space-2);
     height: var(--size-row);
     padding: 0 var(--space-3);
-    border-bottom: var(--line-hair) solid var(--color-gray-4);
+    border-bottom: var(--line-hair) solid var(--color-line-row);
   }
   .path {
     flex: 1;

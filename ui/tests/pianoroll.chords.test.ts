@@ -242,7 +242,7 @@ describe("drawing chords with the draw tool (drag.ts)", () => {
 describe("shadow picture (paintLive in paint.ts)", () => {
   it("where it will be written, only a 1px accent border the same size as a note (inside not filled)", () => {
     const out = new Batch();
-    const sizes = { noteH: 11, edge: 2, velBar: 3, velCap: 7, velFull: 64, velMid: 36, endMark: 16, drumGap: 8, hatch: 6 };
+    const sizes = { noteH: 11, edge: 2, velBar: 3, velCap: 7, velFull: 64, velMid: 36, endMark: 16, drumGap: 8, hatch: 12 };
     const box = { x0: 0, y0: 0, x1: 41, y1: 12 };
     paintLive(out, box, { g: GEOM, sizes, left: 0, top: 0, ty: 0, areaH: 492, notes: [{ start: 0, end: TPQ, key: 72, face: "color.accent", outline: true }] }, 1);
     const rects = out.rects();

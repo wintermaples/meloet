@@ -1116,7 +1116,7 @@
     flex-shrink: 0;
     display: flex;
     background: var(--color-gray-3);
-    border-bottom: var(--line-hair) solid var(--color-gray-5);
+    border-bottom: var(--line-hair) solid var(--color-line-thin);
   }
   .ruler-gap {
     box-sizing: border-box;

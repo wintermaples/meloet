@@ -447,7 +447,7 @@
     flex-direction: column;
     gap: var(--space-1);
     padding: var(--space-3) var(--space-4);
-    border-bottom: var(--line-hair) solid var(--color-gray-5);
+    border-bottom: var(--line-hair) solid var(--color-line-thin);
   }
   .line {
     display: flex;
@@ -481,7 +481,7 @@
   }
   .level.off {
     height: var(--part-meter-horizontal);
-    background: var(--color-gray-0);
+    background: var(--color-meter-ground);
   }
   .keys {
     flex-shrink: 0;
@@ -510,7 +510,7 @@
     outline: var(--line-hair) solid var(--color-gray-10);
     outline-offset: var(--line-hair);
   }
-  /* Advanced settings (mock F7-SettingsAdv): rows with a 120 name column. Rows are at least 32 high with a gray.4 line below. */
+  /* Advanced settings (mock F7-SettingsAdv): rows with a 120 name column. Rows are at least 32 high with a line.row line below. */
   .crumb {
     flex-shrink: 0;
     box-sizing: border-box;
@@ -519,7 +519,7 @@
     gap: var(--space-2);
     height: var(--part-dialognext-height);
     padding: 0 var(--space-4);
-    border-bottom: var(--line-hair) solid var(--color-gray-5);
+    border-bottom: var(--line-hair) solid var(--color-line-thin);
   }
   .back {
     padding: 0;
@@ -545,7 +545,7 @@
     gap: var(--space-2);
     min-height: var(--size-toolbar);
     padding: var(--space-1) 0;
-    border-bottom: var(--line-hair) solid var(--color-gray-4);
+    border-bottom: var(--line-hair) solid var(--color-line-row);
   }
   .row.joined {
     border-bottom: 0;
@@ -581,7 +581,7 @@
   }
   .note {
     padding: var(--space-1) 0 var(--space-2) calc(var(--mock-settings-adv-label) + var(--space-2));
-    border-bottom: var(--line-hair) solid var(--color-gray-4);
+    border-bottom: var(--line-hair) solid var(--color-line-row);
     color: var(--color-gray-8);
     white-space: normal;
   }

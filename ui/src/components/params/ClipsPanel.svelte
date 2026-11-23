@@ -163,14 +163,14 @@
 </div>
 
 <style>
-  /* 「3 クリップを選んでいます」 and the track names (mock F8-MultiClip: 8 above and below, 12 left and right, gap 4, a gray.5 line below). */
+  /* 「3 クリップを選んでいます」 and the track names (mock F8-MultiClip: 8 above and below, 12 left and right, gap 4, a line.thin line below). */
   .who {
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
     gap: var(--space-1);
     padding: var(--space-2) var(--space-3);
-    border-bottom: var(--line-hair) solid var(--color-gray-5);
+    border-bottom: var(--line-hair) solid var(--color-line-thin);
     white-space: nowrap;
   }
   .name,
@@ -191,7 +191,7 @@
     gap: var(--space-2);
     padding: 0 var(--space-3);
     background: var(--color-gray-4);
-    border-bottom: var(--line-hair) solid var(--color-gray-5);
+    border-bottom: var(--line-hair) solid var(--color-line-thin);
     white-space: nowrap;
   }
   .group:hover {
@@ -209,7 +209,7 @@
     align-items: center;
     gap: var(--space-2);
     padding: 0 var(--space-3);
-    border-bottom: var(--line-hair) solid var(--color-gray-4);
+    border-bottom: var(--line-hair) solid var(--color-line-row);
     white-space: nowrap;
   }
   .label {

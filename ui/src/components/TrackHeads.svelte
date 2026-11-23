@@ -385,7 +385,7 @@
     position: relative;
     height: var(--size-track);
     display: flex;
-    border-bottom: var(--line-hair) solid var(--color-gray-5);
+    border-bottom: var(--line-hair) solid var(--color-line-thin);
     background: var(--color-gray-3);
   }
   /* The selected track (B-70): the same background as the selected row of a list. */
@@ -490,8 +490,8 @@
     text-align: center;
     cursor: default;
   }
+  /* The off border is gray.5, as for disabled ones, so that ● on (rec) has 3:1 against it (spec 1 “Contrast”). */
   .tog.live {
-    border-color: var(--color-gray-6);
     color: var(--color-gray-8);
     cursor: pointer;
   }

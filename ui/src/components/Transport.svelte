@@ -538,7 +538,7 @@
     gap: var(--space-3);
     padding: 0 var(--space-3);
     background: var(--color-gray-3);
-    border-bottom: var(--line-hair) solid var(--color-gray-5);
+    border-bottom: var(--line-hair) solid var(--color-line-thin);
     white-space: nowrap;
     overflow: hidden;
   }
@@ -630,7 +630,7 @@
     gap: var(--space-4);
     padding: 0 var(--space-3);
     background: var(--color-gray-0);
-    border: var(--line-hair) solid var(--color-gray-5);
+    border: var(--line-hair) solid var(--color-line-thin);
   }
   /* When the position labels are hidden (mock F-PR150, F-Menus). */
   .position.narrow {

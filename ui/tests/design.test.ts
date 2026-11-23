@@ -141,7 +141,6 @@ const ROUNDED = [
   "part.param.step@125=7.5→8",
   "part.reading.offset@125=7.5→8",
   "part.reading.pad-x@125=7.5→8",
-  "part.row.hatch@125=7.5→8",
   "part.take.mark@125=7.5→8",
   "part.windowmark.size@125=12.5→13",
 ];

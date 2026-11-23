@@ -89,7 +89,7 @@ const MIC_HOT_FROM = micDbToLength(lengthToDb(METER_HOT_FROM));
 /**
  * Two bars: left above right, each growing to the right; `vertical`: left beside right, each growing
  * upward. `gap` and `mark` (clipMarkPx) are device pixels.
- * `mic`: the mic meter. The lengths are on its own scale (micDbToLength), the ground is gray.4, and a white line of
+ * `mic`: the mic meter. The lengths are on its own scale (micDbToLength), the ground is meter.ground.mic, and a white line of
  * one device pixel across both bars stands at `mic.peak` (0..1; none at 0).
  */
 export function paintMeter(

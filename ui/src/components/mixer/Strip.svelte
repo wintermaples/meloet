@@ -262,7 +262,7 @@
     gap: var(--space-2);
     padding: 0 var(--space-1) var(--space-2);
     background: var(--color-gray-3);
-    border-right: var(--line-hair) solid var(--color-gray-5);
+    border-right: var(--line-hair) solid var(--color-line-thin);
     /* Strips scrolled out of view are not drawn or laid out (in a 64-track song, the boxes of 40 hidden strips are not walked on every redraw).
        The width is fixed and the height follows the neighbors, so the size does not change. For Tab and find, the browser builds the inside. */
     content-visibility: auto;
@@ -284,7 +284,7 @@
     margin: 0 calc(-1 * var(--space-1));
     padding: 0 var(--space-1);
     border-top: var(--line-mark) solid;
-    border-bottom: var(--line-hair) solid var(--color-gray-5);
+    border-bottom: var(--line-hair) solid var(--color-line-thin);
   }
   .name {
     min-width: 0;
@@ -428,7 +428,7 @@
     display: flex;
     gap: var(--space-1);
   }
-  /* M / S / ● (spec 2 "Toggle M, S, ●", the same look as the track head). Disabled ones have border gray.5 and text gray.7. */
+  /* M / S / ● (spec 2 "Toggle M, S, ●", the same look as the track head). Border gray.5; disabled ones have text gray.7. */
   .tog {
     flex: 1;
     min-width: 0;
@@ -442,8 +442,8 @@
     text-align: center;
     cursor: default;
   }
+  /* The off border is gray.5, as for disabled ones, so that ● on (rec) has 3:1 against it (spec 1 “Contrast”). */
   .tog.live {
-    border-color: var(--color-gray-6);
     color: var(--color-gray-8);
     cursor: pointer;
   }

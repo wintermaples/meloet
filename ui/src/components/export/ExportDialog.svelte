@@ -289,7 +289,7 @@
     flex-direction: column;
     gap: var(--space-1);
     padding: var(--space-3) var(--space-4);
-    border-bottom: var(--line-hair) solid var(--color-gray-5);
+    border-bottom: var(--line-hair) solid var(--color-line-thin);
   }
   .choices {
     display: flex;
@@ -407,7 +407,7 @@
     outline: var(--line-hair) solid var(--color-gray-10);
     outline-offset: var(--line-hair);
   }
-  /* The open 「くわしく」 uses the same row form as the advanced sound settings (name 120, at least 32 high, a gray.4 line below). */
+  /* The open 「くわしく」 uses the same row form as the advanced sound settings (name 120, at least 32 high, a line.row line below). */
   .adv-body {
     display: flex;
     flex-direction: column;
@@ -420,7 +420,7 @@
     gap: var(--space-2);
     min-height: var(--size-toolbar);
     padding: var(--space-1) 0;
-    border-bottom: var(--line-hair) solid var(--color-gray-4);
+    border-bottom: var(--line-hair) solid var(--color-line-row);
   }
   .row:last-child {
     border-bottom: 0;

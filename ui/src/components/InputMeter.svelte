@@ -3,7 +3,7 @@
      When there is a vocal track with ●, or a selected vocal track, it takes the split form (spec 2 "Input meter band (split left and right)", spec 3 31-C,
      mock F7-VocalTrack, R11-Fit, R12-Meters): the keyboard meter on the left (pedals and such hidden), the mic meter on the right. When narrow, hide 「弾くと鳴る先」,
      then the 「モニター」 text, then the keyboard picture, and cut the keyboard name at 88 with 「…」 (spec 3 94-16, 37-A). 「固定」 and the held notes stay.
-     The mic meter bar is inside the inputMeter slot (no new slot or context). The scale is −60 to −12 on the left half and −12 to 0 on the right half, background gray.4;
+     The mic meter bar is inside the inputMeter slot (no new slot or context). The scale is −60 to −12 on the left half and −12 to 0 on the right half, background meter.ground.mic;
      the white vertical line is the 1-second peak (the same number as the dB text; spec 3 94-17, 38-B). The current dB text is an out-of-flow box under the same canvas (cover).
      While the sound pack hint is shown (spec 3 43-B, 44-A), only the input and the held notes on the left; the right is pack/PackBand.svelte. -->
 <script lang="ts">

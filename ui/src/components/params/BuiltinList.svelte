@@ -162,7 +162,7 @@
     gap: var(--space-2);
     padding: 0 var(--space-3);
     background: var(--color-gray-4);
-    border-bottom: var(--line-hair) solid var(--color-gray-5);
+    border-bottom: var(--line-hair) solid var(--color-line-thin);
     white-space: nowrap;
   }
   .group:hover {

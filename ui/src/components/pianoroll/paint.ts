@@ -1,7 +1,7 @@
 // WebGL pictures of the piano roll (lists of rectangles). Does not know the DOM. Coordinates are screen pixels of the region's canvas (box is the slot's box).
 // Notes follow spec 2 "Note": height 11, a 2px gray.10 at the left end, the face gray.8 / 9 / 10 by velocity, accent when selected,
-// the position before aligning only as a gray.7 border (accent for selected notes), rows that cannot be written row.out with gray.7 diagonal lines.
-// Line colors follow mock A-PianoRoll; rows and keys have colors of their own (spec 1, user:2026-11-23).
+// the position before aligning only as a gray.7 border (accent for selected notes), rows that cannot be written row.out with row.hatch diagonal lines.
+// Rows, keys, the hatch and the grid lines have colors of their own (spec 1, user:2026-11-23).
 // The original position while dragging is an accent border. Both borders are drawn after the notes so notes do not hide them (docs/history/design-notes.ja.md B-64).
 
 import type { ControlKind, LiveNote, MusicalScale } from "../../bridge";
@@ -57,8 +57,11 @@ export interface RollPicture {
 }
 
 const FRAME: ColorName = "color.gray.7";
-/** The lines on rows that cannot be written: the color of disabled things, 3:1 or more against row.out in every theme. */
-const HATCH: ColorName = "color.gray.7";
+/** The lines on rows that cannot be written: exactly 3:1 against row.out (spec 1, user:2026-11-23). */
+const HATCH: ColorName = "color.row.hatch";
+
+/** The grid lines by kind: 0 bar, 1 beat, 2 other. */
+const GRID = ["color.line.bar", "color.line.beat", "color.line.grid"] as const satisfies readonly ColorName[];
 
 /** When lines get closer than this, use the next coarser lines (CSS px). */
 const LINE_MIN_PX = 4;
@@ -204,15 +207,14 @@ function paintDrumRoll(out: Batch, box: Box, p: RollPicture, marks: Uint8Array |
   }
 }
 
-/** Vertical grid lines (bar gray.6, beat gray.4, other gray.3), from the top edge to bottom. */
+/** Vertical grid lines (bar line.bar, beat line.beat, other line.grid), from the top edge to bottom. */
 function gridLines(out: Batch, box: Box, p: RollPicture, X: (tick: number) => number, bottom: number): void {
   const { g } = p;
   const from = g.scrollTick;
   const to = g.scrollTick + g.width / g.ppt;
   eachGridLine(p, g.ppt, from, to, (tick, kind) => {
     const x = Math.round(X(tick));
-    const color = kind === 0 ? "color.gray.6" : kind === 1 ? "color.gray.4" : "color.gray.3";
-    out.rect(x, box.y0, x + HAIR, bottom, rgb(color));
+    out.rect(x, box.y0, x + HAIR, bottom, rgb(GRID[kind]));
   });
 }
 
@@ -513,14 +515,14 @@ function laneSquare(out: Batch, cx: number, cy: number, size: number, color: Col
   else out.rect(x0, y0, x0 + size, y0 + size, rgb(color));
 }
 
-/** Lane background and lines: gray.1 background, bar lines gray.4, other lines gray.2, and for pitch bend a gray.5 line at 0. */
+/** Lane background and lines: gray.1 background, the grid lines of the note area, and for pitch bend a gray.5 line at 0. */
 function laneGround(out: Batch, box: Box, p: LanePicture, dpr: number): void {
   const { g } = p;
   out.rect(box.x0, box.y0, box.x1, box.y1, rgb("color.gray.1"));
   const to = g.scrollTick + g.width / g.ppt;
   eachGridLine(p, g.ppt, g.scrollTick, to, (tick, kind) => {
     const x = Math.round(box.x0 + (tick - g.scrollTick) * g.ppt * dpr);
-    out.rect(x, box.y0, x + HAIR, box.y1, rgb(kind === 0 ? "color.gray.4" : "color.gray.2"));
+    out.rect(x, box.y0, x + HAIR, box.y1, rgb(GRID[kind]));
   });
   if (p.control?.kind === "pitchBend") {
     const y = Math.round(box.y0 + valueToY(p.control, p.lane, 0) * dpr);

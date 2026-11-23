@@ -133,7 +133,7 @@
     justify-content: center;
     padding: 0 var(--space-2) 0 var(--space-6);
     background: var(--color-gray-2);
-    border-bottom: var(--line-hair) solid var(--color-gray-5);
+    border-bottom: var(--line-hair) solid var(--color-line-thin);
     white-space: nowrap;
     overflow: hidden;
   }

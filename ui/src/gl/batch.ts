@@ -141,9 +141,9 @@ export class Batch {
   }
 
   /**
-   * Lines one pixel wide rising to the right ("/"), `pitch` pixels apart along a pixel row: inside the rectangle, the
-   * pixels (x, y) where x + y − ox − oy is a multiple of pitch. (ox, oy) ties the pattern to what it lies on, so it
-   * moves with it. Cut to the clip box, as a rectangle is.
+   * Thin lines rising to the right ("/"), `pitch` pixels apart along a pixel row: inside the rectangle, through the
+   * pixels (x, y) where x + y − ox − oy is a multiple of pitch, with smooth edges (hatchCover in renderer.ts).
+   * (ox, oy) ties the pattern to what it lies on, so it moves with it. Cut to the clip box, as a rectangle is.
    */
   hatch(x0: number, y0: number, x1: number, y1: number, color: Rgb, pitch: number, ox: number, oy: number): void {
     x0 = Math.max(Math.round(x0), this.cx0);

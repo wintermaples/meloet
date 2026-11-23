@@ -206,7 +206,7 @@
   .rows {
     position: relative;
   }
-  /* A row is size.row high, with space.3 at the left, right and between fields, and a gray.4 line.hair below. The line.mark on the left is accent only for the current step. */
+  /* A row is size.row high, with space.3 at the left, right and between fields, and a line.row line.hair below. The line.mark on the left is accent only for the current step. */
   .row {
     position: absolute;
     left: 0;
@@ -218,7 +218,7 @@
     align-items: center;
     gap: var(--space-3);
     padding: 0 var(--space-3);
-    border-bottom: var(--line-hair) solid var(--color-gray-4);
+    border-bottom: var(--line-hair) solid var(--color-line-row);
     border-left: var(--line-mark) solid var(--color-gray-1);
     background: var(--color-gray-1);
     color: var(--color-gray-9);

@@ -47,32 +47,31 @@ export const KEY_FORMS = {
 } as const;
 export type KeyForm = keyof typeof KEY_FORMS;
 
-/** F-Connect2 (a keyboard is there) and F-Connect1 (none: `dim`). The keys have colors of their own (user:2026-11-23). */
+/** F-Connect2 (a keyboard is there) and F-Connect1 (none: `dim`). The keys have colors of their own; the lines are line.thin, and the white-key lines of `dim` gray.5 (user:2026-11-23). */
 export const KEYBOARD = {
   whiteFill: "color.key.meter.white",
   blackFill: "color.key.meter.black",
   down: "color.accent",
-  lit: { frame: "color.gray.6", blackFrame: "color.gray.7" },
-  dim: { frame: "color.gray.5", blackFrame: "color.gray.6" },
+  lit: { frame: "color.line.thin", blackFrame: "color.gray.7" },
+  dim: { frame: "color.gray.5", blackFrame: "color.line.thin" },
 } as const satisfies Record<string, ColorName | { frame: ColorName; blackFrame: ColorName }>;
 
 /** F-Connect2, the bar beside 「ベロシティ 87」. `max` is the top MIDI velocity. */
 export const VELOCITY = { ground: "color.gray.4", fill: "color.accent", max: 127 } as const;
 
 export const METER = {
-  ground: "color.gray.0",
+  ground: "color.meter.ground",
   ok: "color.meter.ok",
   hot: "color.meter.hot",
-  clip: "color.rec",
+  clip: "color.meter.clip",
 } as const satisfies Record<string, ColorName>;
 
 /** Spec 3, "Scale marks of the mic meter" (38-B) and "Background and line of the mic meter": the dB in the middle, the ground, the white line of the 1 s peak. */
 export const MIC_MID_DB = -12;
-export const MIC_METER = { ground: "color.gray.4", peak: "color.gray.10" } as const satisfies Record<string, ColorName>;
+export const MIC_METER = { ground: "color.meter.ground.mic", peak: "color.meter.peak" } as const satisfies Record<string, ColorName>;
 
-/** F-Empty / F-Connect1, the bar lines of the arrange area. */
-/** Bar lines alone are gray.4 (Main). With beat lines (B-61), as in the piano roll: bars gray.6, beats gray.4. */
-export const ARRANGE_GRID = { line: "color.gray.4", bar: "color.gray.6", beat: "color.gray.4" } as const;
+/** F-Empty / F-Connect1, the bar lines of the arrange area. Bar lines alone are one step quieter (Main: as beat lines). With beat lines (B-61), as in the piano roll. */
+export const ARRANGE_GRID = { line: "color.line.beat", bar: "color.line.bar", beat: "color.line.beat" } as const;
 
 /**
  * The wave of a vocal clip (spec 2 "Audio clip", spec 3 (93-3, 93-4), F7-AudioEdit): bars of gray.8, the line of

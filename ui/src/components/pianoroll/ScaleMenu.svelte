@@ -97,7 +97,7 @@
     align-items: center;
     gap: var(--space-2);
     padding: 0 var(--space-3);
-    border-bottom: var(--line-hair) solid var(--color-gray-4);
+    border-bottom: var(--line-hair) solid var(--color-line-row);
     white-space: nowrap;
   }
   /* Hover (spec 2: border gray.8, text gray.10), pressed (bg gray.2, border gray.8). The border is drawn inside the row,

@@ -372,7 +372,7 @@
     flex-shrink: 0;
     height: var(--size-row);
     background: var(--color-gray-3);
-    border-bottom: var(--line-hair) solid var(--color-gray-5);
+    border-bottom: var(--line-hair) solid var(--color-line-thin);
     touch-action: none;
   }
   /* The open band (folded 24, open 72 = time signature row size.row + tempo row size.lane. The background in mock F6-Tempo is gray.2). */
@@ -383,7 +383,7 @@
   .meter-row {
     position: relative;
     height: var(--size-row);
-    border-bottom: var(--line-hair) solid var(--color-gray-5);
+    border-bottom: var(--line-hair) solid var(--color-line-thin);
     box-sizing: border-box;
   }
   .tempo-row {

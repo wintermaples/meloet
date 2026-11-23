@@ -134,8 +134,22 @@ void main() {
 const WAVE_UNIFORMS = ["u_size", "u_rect", "u_peaks", "u_stereo", "u_index", "u_map", "u_bars", "u_y", "u_gain", "u_fade", "u_color", "u_mid", "u_line"] as const;
 type WaveUniform = (typeof WAVE_UNIFORMS)[number];
 
+/** The width of a hatch line across its direction, device pixels: its middle pixels get the whole color. */
+export const HATCH_WIDTH = 1;
+
+/**
+ * How much of the hatch color a pixel gets (0..1), as HATCH_FRAGMENT works it out: the lines run through the centers of
+ * the pixels where x + y + shift is a multiple of pitch, and the cover falls off with the distance of the pixel's
+ * center from the nearest line (a 45° line, so √2 per step along the row).
+ */
+export function hatchCover(x: number, y: number, pitch: number, shift: number): number {
+  const u = (x + y + shift) % pitch;
+  const d = Math.min(u, pitch - u) * Math.SQRT1_2;
+  return Math.min(1, Math.max(0, HATCH_WIDTH / 2 + 0.5 - d));
+}
+
 // Batch.hatch: u_hatch is (pitch, shift). Pixels are counted on the picture (v_px), not gl_FragCoord, so a picture
-// drawn lower in its canvas (`below`) has the same lines.
+// drawn lower in its canvas (`below`) has the same lines. The cover is blended over what is under it (the row).
 const HATCH_FRAGMENT = `#version 300 es
 precision highp float;
 precision highp int;
@@ -143,10 +157,13 @@ in vec2 v_px;
 out vec4 o_color;
 uniform ivec2 u_hatch;
 uniform vec3 u_color;
+const float REACH = ${(HATCH_WIDTH / 2 + 0.5).toFixed(6)};
 void main() {
   ivec2 p = ivec2(floor(v_px));
-  if ((p.x + p.y + u_hatch.y) % u_hatch.x != 0) discard;
-  o_color = vec4(u_color, 1.0);
+  int u = (p.x + p.y + u_hatch.y) % u_hatch.x;
+  float cover = clamp(REACH - float(min(u, u_hatch.x - u)) * 0.70710678, 0.0, 1.0);
+  if (cover <= 0.0) discard;
+  o_color = vec4(u_color, cover);
 }`;
 
 const HATCH_UNIFORMS = ["u_size", "u_rect", "u_hatch", "u_color"] as const;
@@ -245,6 +262,8 @@ export class Renderer {
     gl.enableVertexAttribArray(color);
     gl.vertexAttribPointer(color, 3, gl.FLOAT, false, stride, 2 * Float32Array.BYTES_PER_ELEMENT);
     gl.disable(gl.BLEND);
+    // Only hatches blend: the color by its cover over what is there, and an opaque pixel stays opaque.
+    gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     gl.clearColor(0, 0, 0, 0);
   }
 
@@ -290,6 +309,7 @@ export class Renderer {
 
   private useRects(): void {
     if (this.using === "rects") return;
+    if (this.using === "hatch") this.gl.disable(this.gl.BLEND);
     this.using = "rects";
     this.gl.useProgram(this.program);
     this.gl.bindVertexArray(this.vao);
@@ -303,6 +323,7 @@ export class Renderer {
     const at = hatch.at;
     if (this.using !== "hatch") {
       this.using = "hatch";
+      gl.enable(gl.BLEND);
       gl.useProgram(hatch.program);
       gl.bindVertexArray(hatch.vao);
     }
@@ -326,6 +347,7 @@ export class Renderer {
     if (!wave) return;
     const at = wave.at;
     if (this.using !== "wave") {
+      if (this.using === "hatch") gl.disable(gl.BLEND);
       this.using = "wave";
       gl.useProgram(wave.program);
       gl.bindVertexArray(wave.vao);

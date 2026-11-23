@@ -1220,7 +1220,7 @@
     gap: var(--space-4);
     padding: 0 var(--space-3);
     background: var(--color-gray-0);
-    border-top: var(--line-hair) solid var(--color-gray-5);
+    border-top: var(--line-hair) solid var(--color-line-thin);
     white-space: nowrap;
     overflow: hidden;
   }

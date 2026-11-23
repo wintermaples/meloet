@@ -4329,6 +4329,10 @@ export function reduceRound7(state: AppState, command: Command, memo: FakeVocalM
   switch (command.type) {
     case "addVocalTrack": {
       if (busy) return [];
+      if (song.tracks.length >= MAX_TRACKS) {
+        message = { id: "tooManyTracks" };
+        break;
+      }
       const names = new Set(song.tracks.map((t) => t.name));
       let name = "歌";
       for (let n = 2; names.has(name); n++) name = `歌 ${n}`;
@@ -5159,6 +5163,8 @@ export function reduceTracks(
     case "shelfConfirm": {
       const picked = shelf.selected;
       if (picked === null || !change) return null;
+      // The row stays auditioned, as in core.
+      if (shelf.mode.kind === "newTrack" && song.tracks.length >= MAX_TRACKS) return { song, shelf, canRecord: false, notice: { id: "tooManyTracks" } };
       if (shelf.mode.kind === "newTrack") {
         const base = trackNameOf(picked);
         const names = new Set(song.tracks.map((t) => t.name));

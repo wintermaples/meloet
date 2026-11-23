@@ -173,7 +173,7 @@ fn normalize_measures_first_and_is_one_step_when_the_answer_comes() {
         status(&m),
         Some(StatusMessage::NormalizeLimited { count: 1 })
     );
-    // A file that could not be read: nothing, and nothing said.
+    // A file that could not be read: nothing, and it is said.
     let effects = cmd(&mut m, Command::NormalizeClips { clips: vec![b] });
     let (ticket, _) = measured(&effects);
     let steps_now = steps(&m);
@@ -182,6 +182,15 @@ fn normalize_measures_first_and_is_one_step_when_the_answer_comes() {
         peaks: vec![None],
     }));
     assert_eq!(steps(&m), steps_now);
+    assert_eq!(status(&m), Some(StatusMessage::ClipWorkFailed { count: 1 }));
+    // One read and one not: the one read is a step, and the other is said first.
+    let effects = cmd(&mut m, Command::NormalizeClips { clips: vec![a, b] });
+    let (ticket, _) = measured(&effects);
+    m.handle(Input::Audio(AudioNews::Measured {
+        ticket,
+        peaks: vec![Some(0.0), None],
+    }));
+    assert_eq!(status(&m), Some(StatusMessage::ClipWorkFailed { count: 1 }));
 }
 
 #[test]
@@ -361,6 +370,31 @@ fn reverse_puts_a_new_take_in_one_step_once_the_files_are_made() {
     assert_eq!(clip(&m, a).take_id, old.take_id);
     cmd(&mut m, Command::Redo);
     assert_eq!(clip(&m, a).take_id, new.take_id);
+}
+
+#[test]
+fn a_backwards_file_that_could_not_be_written_is_said() {
+    let mut m = model();
+    let a = bring(&mut m, "歌 1.wav", 2);
+    let b = bring(&mut m, "歌 2.wav", 2);
+    let before = steps(&m);
+    let effects = cmd(&mut m, Command::ReverseClips { clips: vec![a, b] });
+    let (ticket, played, _) = asked_to_reverse(&effects);
+    m.handle(Input::Audio(AudioNews::Reversed {
+        ticket,
+        files: vec![None, None],
+    }));
+    assert_eq!(steps(&m), before);
+    assert_eq!(status(&m), Some(StatusMessage::ClipWorkFailed { count: 2 }));
+    // One made and one not: the one made is a step, and the other is said.
+    let effects = cmd(&mut m, Command::ReverseClips { clips: vec![a, b] });
+    let (ticket, again, _) = asked_to_reverse(&effects);
+    assert_eq!(again, played);
+    let mut files = made(&again);
+    files[1] = None;
+    m.handle(Input::Audio(AudioNews::Reversed { ticket, files }));
+    assert_eq!(steps(&m), before + 1);
+    assert_eq!(status(&m), Some(StatusMessage::ClipWorkFailed { count: 1 }));
 }
 
 #[test]

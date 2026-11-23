@@ -1,7 +1,7 @@
 // 「割合」 「だんだん」 「ばらつき」 of 「ベロシティをまとめて変える」 and 「次の音までのばす」 of 「長さをそろえる」 (round 12, P3).
 // Pure functions that do not know the DOM: the fields' ranges, reading typed text, and the intents to send. Rust does the maths.
 
-import type { Command } from "../../bridge";
+import type { Command, ValueField } from "../../bridge";
 import { readVelocityLoose, type FieldRead } from "./noteFields";
 
 export type ToolField = "percent" | "rampFrom" | "rampTo" | "spread";
@@ -11,15 +11,15 @@ interface ToolRange {
   low: number;
   high: number;
   initial: number;
-  /** Only the velocity fields say on the status line that a value was put at an end. */
-  velocity: boolean;
+  /** The name the status line gives the field when a value is put at an end or cannot be read. */
+  field: ValueField;
 }
 
 export const TOOL_FIELDS: Record<ToolField, ToolRange> = {
-  percent: { low: 10, high: 300, initial: 100, velocity: false },
-  rampFrom: { low: 1, high: 127, initial: 40, velocity: true },
-  rampTo: { low: 1, high: 127, initial: 110, velocity: true },
-  spread: { low: 1, high: 32, initial: 8, velocity: false },
+  percent: { low: 10, high: 300, initial: 100, field: "percent" },
+  rampFrom: { low: 1, high: 127, initial: 40, field: "velocity" },
+  rampTo: { low: 1, high: 127, initial: 110, field: "velocity" },
+  spread: { low: 1, high: 32, initial: 8, field: "amount" },
 };
 
 /** The fields each tool reads. */
@@ -35,9 +35,9 @@ export const toolInitial = (f: ToolField): string => String(TOOL_FIELDS[f].initi
 export function readTool(f: ToolField, s: string): FieldRead | null {
   const r = readVelocityLoose(s);
   if (!r) return null;
-  const { low, high, velocity } = TOOL_FIELDS[f];
+  const { low, high, field } = TOOL_FIELDS[f];
   const value = Math.min(high, Math.max(low, r.value));
-  const clamped = value !== r.value && velocity ? { field: "velocity" as const, value: String(value), range: null } : null;
+  const clamped = value !== r.value ? { field, value: String(value), range: null } : null;
   return { value, clamped };
 }
 

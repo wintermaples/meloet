@@ -538,7 +538,7 @@ describe("the rest of 85", () => {
     expect(trackDrums(kit)).toBe("sf2");
     expect(drumKeysOf(kit, "sf2")).toEqual(kit.drumKeys);
     expect(drumName(47, "sf2")).toBe("ミッドタム 2");
-    expect(drumName(47, "builtin")).toBe("ミッドタム");
+    expect(drumName(47, "builtin")).toBe("ミッドタム 2");
     expect(drumName(62, "sf2")).toBe("コンガ（高 ・ ミュート）");
     expect(keyLabel(82, "sf2")).toBe("A#5");
     expect(keyLabel(35, "sf2")).toBe("キック 2");

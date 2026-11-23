@@ -697,6 +697,8 @@
         return plain("msg.normalizeLimited", { count: m.count });
       case "normalizeSilent":
         return plain("msg.normalizeSilent", { count: m.count });
+      case "clipWorkFailed":
+        return plain("msg.clipWorkFailed", { count: m.count });
       case "exportPictureTooLarge":
         return plain("msg.exportPictureTooLarge", { file: m.file, mb: EXPORT_PICTURE_MAX_BYTES / (1024 * 1024) });
       case "exportPictureUnreadable":

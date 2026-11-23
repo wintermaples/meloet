@@ -17,7 +17,7 @@
   import ChoiceMenu from "../ChoiceMenu.svelte";
   import { gridText, scaleName } from "../format";
   import { keyLabel, rollShowsDrums, selectedKeysFull, selectedKeysText } from "./drums";
-  import { newSeed, readTool, stepTool, TOOL_INPUTS, toolCommand, toolInitial, type Tool, type ToolField } from "./bulkTools";
+  import { newSeed, readTool, stepTool, TOOL_FIELDS, TOOL_INPUTS, toolCommand, toolInitial, type Tool, type ToolField } from "./bulkTools";
   import { GRID_DIVISIONS, indexesOf } from "./geom";
   import NoteFieldInput from "./NoteFieldInput.svelte";
   import {
@@ -199,8 +199,8 @@
     const reads = fields.map((f) => readTool(f, toolDrafts[f]));
     const bad = fields.findIndex((_, i) => reads[i] === null);
     if (bad >= 0) {
-      // Only the velocity fields have words on the status line; the others stay red.
-      if (tool === "ramp") send({ type: "rejectValue", field: "velocity", kept: toolKept[fields[bad]!], range: null });
+      const f = fields[bad]!;
+      send({ type: "rejectValue", field: TOOL_FIELDS[f].field, kept: toolKept[f], range: null });
       return;
     }
     const values = reads.map((r) => r!.value);

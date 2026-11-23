@@ -171,6 +171,39 @@ fn one_file_let_go_of_over_a_vocal_track_goes_there_as_one_step() {
 }
 
 #[test]
+fn a_file_that_needs_a_new_track_past_sixty_four_is_said() {
+    let mut m = model();
+    while m.view().song.tracks.len() < crate::play::MAX_TRACKS {
+        vocal_track(&mut m);
+    }
+    let steps = undo_count(&m);
+    drop_files(
+        &mut m,
+        &["ドラム.wav"],
+        None,
+        0,
+        DropMode::InRow,
+        vec![brought("ドラム.wav", 2, 48_000)],
+    );
+    assert_eq!(status(&m), Some(StatusMessage::TooManyTracks));
+    assert_eq!(undo_count(&m), steps);
+    assert!(clips(&m).is_empty());
+    assert_eq!(m.view().song.tracks.len(), crate::play::MAX_TRACKS);
+    // Over a vocal track it still goes in: no track is added.
+    let last = m.view().song.tracks.last().unwrap().id;
+    drop_files(
+        &mut m,
+        &["ドラム.wav"],
+        Some(last),
+        0,
+        DropMode::InRow,
+        vec![brought("ドラム.wav", 2, 48_000)],
+    );
+    assert_eq!(clips(&m).len(), 1);
+    assert_eq!(undo_count(&m), steps + 1);
+}
+
+#[test]
 fn several_files_go_apart_or_in_a_row_as_one_step() {
     let files = || {
         vec![

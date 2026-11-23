@@ -38,7 +38,7 @@ const KIT_NAMES: [(&str, &str); DrumPiece::COUNT] = [
     ("pedalHiHat", "ペダルハイハット"),
     ("closedHiHat", "クローズハイハット"),
     ("highTom", "ハイタム"),
-    ("midTom", "ミッドタム"),
+    ("midTom", "ミッドタム 2"),
     ("lowTom", "ロータム"),
     ("clap", "クラップ"),
     ("snare", "スネア"),

@@ -94,7 +94,7 @@ describe("key column (mock R7-Drum)", () => {
       "ペダルハイハット",
       "クローズハイハット",
       "ハイタム",
-      "ミッドタム",
+      "ミッドタム 2",
       "ロータム",
       "クラップ",
       "スネア",
@@ -102,7 +102,7 @@ describe("key column (mock R7-Drum)", () => {
       "キック",
     ]);
     const used = names.filter((n) => n.classList.contains("used")).map(text);
-    expect(used).toEqual(["クラッシュ", "クローズハイハット", "ハイタム", "ミッドタム", "ロータム", "スネア", "キック"]);
+    expect(used).toEqual(["クラッシュ", "クローズハイハット", "ハイタム", "ミッドタム 2", "ロータム", "スネア", "キック"]);
     expect(names.map((n) => n.style.height)).toEqual(Array(12).fill("36px"));
     expect(names[11]!.style.top).toBe(`${11 * 36}px`);
     // term tips are only on words inside the name (「タム」 in 「ハイタム」).

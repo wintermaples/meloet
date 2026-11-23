@@ -55,11 +55,12 @@ function type(sel: string, value: string, key?: string, shiftKey = false): void 
 }
 
 describe("the pure parts", () => {
-  it("reads and puts values at the ends; only velocity says so", () => {
+  it("reads and puts values at the ends, and says so for every field", () => {
     expect(readTool("percent", "120")).toEqual({ value: 120, clamped: null });
-    expect(readTool("percent", "5")).toEqual({ value: 10, clamped: null });
+    expect(readTool("percent", "5")).toEqual({ value: 10, clamped: { field: "percent", value: "10", range: null } });
     expect(readTool("percent", "１２０")).toEqual({ value: 120, clamped: null });
-    expect(readTool("spread", "99")).toEqual({ value: 32, clamped: null });
+    expect(readTool("spread", "99")).toEqual({ value: 32, clamped: { field: "amount", value: "32", range: null } });
+    expect(readTool("spread", "-3")).toEqual({ value: 1, clamped: { field: "amount", value: "1", range: null } });
     expect(readTool("rampTo", "300")).toEqual({ value: 127, clamped: { field: "velocity", value: "127", range: null } });
     expect(readTool("rampFrom", "あ")).toBeNull();
     expect(stepTool("percent", "295", 10)).toBe("300");
@@ -107,7 +108,7 @@ describe("the rows", () => {
     expect(app.sent).toEqual([{ type: "legato", take: take.id, notes }]);
   });
 
-  it("puts values at the ends, says so for velocity, and keeps a broken one red", async () => {
+  it("puts values at the ends and says so; a broken one stays red and is said too", async () => {
     const take = await scene();
     type('[data-test="inspector-ramp-from-field"]', "0", "Enter");
     expect(app.sent).toEqual([
@@ -121,9 +122,22 @@ describe("the rows", () => {
     expect(app.sent).toEqual([{ type: "rejectValue", field: "velocity", kept: "110", range: null }]);
     app.sent.length = 0;
     type('[data-test="inspector-percent-field"]', "x", "Enter");
-    expect(app.sent).toEqual([]);
+    expect(app.sent).toEqual([{ type: "rejectValue", field: "percent", kept: "100", range: null }]);
+    app.sent.length = 0;
     type('[data-test="inspector-percent-field"]', "1000", "Enter");
-    expect(app.sent).toEqual([{ type: "scaleVelocity", take: take.id, notes: [14, 15, 16], percent: 300 }]);
+    expect(app.sent).toEqual([
+      { type: "scaleVelocity", take: take.id, notes: [14, 15, 16], percent: 300 },
+      { type: "clampValue", field: "percent", value: "300", range: null },
+    ]);
+    app.sent.length = 0;
+    type('[data-test="inspector-spread-field"]', "", "Enter");
+    expect(app.sent).toEqual([{ type: "rejectValue", field: "amount", kept: "8", range: null }]);
+    app.sent.length = 0;
+    type('[data-test="inspector-spread-field"]', "40", "Enter");
+    expect(app.sent).toEqual([
+      { type: "randomVelocity", take: take.id, notes: [14, 15, 16], amount: 32, seed: expect.any(Number) },
+      { type: "clampValue", field: "amount", value: "32", range: null },
+    ]);
   });
 
   it("↑ ↓ step (Shift by 10), Esc puts back the last value used", async () => {

@@ -570,7 +570,7 @@ impl Play {
         let (edit, made): (_, Vec<ImportedClip>) =
             meloet_model::import_audio(self.doc(), files, plan, tick, self.names).ok()?;
         if edit.doc.tracks.len() > super::MAX_TRACKS {
-            return None;
+            return Some(StatusMessage::TooManyTracks);
         }
         let mut clips: Vec<ClipId> = made.iter().map(|m| m.clip).collect();
         clips.sort_unstable();

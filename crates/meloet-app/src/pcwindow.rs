@@ -5,6 +5,7 @@
 
 use std::path::PathBuf;
 
+use meloet_protocol::Language;
 use tauri::WebviewWindow;
 
 // The shell shows these windows, not the screen, so their titles cannot come from
@@ -16,6 +17,29 @@ pub const SAVE_AS_TITLE: &str = "名前をつけて保存";
 // Spec 3 「PC の保存の窓の題（94-79）」.
 pub const EXPORT_TITLE: &str = "書き出す";
 pub const EXPORT_FOLDER_TITLE: &str = "書き出すフォルダをえらぶ";
+// The same titles when the screen is English (round 12, D4).
+pub const OPEN_TITLE_EN: &str = "Open";
+pub const FOLDER_TITLE_EN: &str = "Choose a folder";
+pub const SAVE_AS_TITLE_EN: &str = "Save as";
+pub const EXPORT_TITLE_EN: &str = "Export";
+pub const EXPORT_FOLDER_TITLE_EN: &str = "Choose a folder to export to";
+
+/// The title of the window of `pick`, in the language of the screen.
+pub fn title(pick: &Pick, language: Language) -> &'static str {
+    let (ja, en) = match pick {
+        Pick::SongFile | Pick::Sf2 | Pick::Audio { .. } | Pick::Picture => {
+            (OPEN_TITLE, OPEN_TITLE_EN)
+        }
+        Pick::Folder | Pick::PluginPlace => (FOLDER_TITLE, FOLDER_TITLE_EN),
+        Pick::ExportFolder => (EXPORT_FOLDER_TITLE, EXPORT_FOLDER_TITLE_EN),
+        Pick::SaveAs { .. } => (SAVE_AS_TITLE, SAVE_AS_TITLE_EN),
+        Pick::ExportFile { .. } => (EXPORT_TITLE, EXPORT_TITLE_EN),
+    };
+    match language {
+        Language::Ja => ja,
+        Language::En => en,
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Pick {
@@ -69,10 +93,7 @@ mod imp {
     use gtk::prelude::*;
     use tauri::WebviewWindow;
 
-    use super::{
-        EXPORT_FOLDER_TITLE, EXPORT_TITLE, FOLDER_TITLE, OPEN_TITLE, PICTURE_EXTENSIONS, Pick,
-        SAVE_AS_TITLE, SF2_EXTENSION, patterns,
-    };
+    use super::{PICTURE_EXTENSIONS, Pick, SF2_EXTENSION, patterns};
 
     thread_local! {
         // A native dialog is not a widget: nothing else keeps it alive until it answers.
@@ -84,19 +105,18 @@ mod imp {
     pub fn pick(
         window: &WebviewWindow,
         pick: Pick,
+        title: &'static str,
         folder: Option<PathBuf>,
         answer: impl FnOnce(Vec<PathBuf>) + 'static,
     ) {
-        let (title, action) = match pick {
+        let action = match pick {
             Pick::SongFile | Pick::Sf2 | Pick::Audio { .. } | Pick::Picture => {
-                (OPEN_TITLE, gtk::FileChooserAction::Open)
+                gtk::FileChooserAction::Open
             }
-            Pick::Folder | Pick::PluginPlace => {
-                (FOLDER_TITLE, gtk::FileChooserAction::SelectFolder)
+            Pick::Folder | Pick::PluginPlace | Pick::ExportFolder => {
+                gtk::FileChooserAction::SelectFolder
             }
-            Pick::ExportFolder => (EXPORT_FOLDER_TITLE, gtk::FileChooserAction::SelectFolder),
-            Pick::SaveAs { .. } => (SAVE_AS_TITLE, gtk::FileChooserAction::Save),
-            Pick::ExportFile { .. } => (EXPORT_TITLE, gtk::FileChooserAction::Save),
+            Pick::SaveAs { .. } | Pick::ExportFile { .. } => gtk::FileChooserAction::Save,
         };
         let parent = window.gtk_window().ok();
         let dialog = gtk::FileChooserNative::new(Some(title), parent.as_ref(), action, None, None);
@@ -180,6 +200,7 @@ mod imp {
     pub fn pick(
         _: &WebviewWindow,
         _: Pick,
+        _: &'static str,
         _: Option<PathBuf>,
         answer: impl FnOnce(Vec<PathBuf>) + 'static,
     ) {
@@ -273,12 +294,55 @@ fn xdg_open(thread: &str, what: std::ffi::OsString) {
 }
 
 /// Main thread only. `answer` gets the paths chosen (more than one only for `Pick::Audio`
-/// with `many`), or none when the window was put away.
+/// with `many`), or none when the window was put away. `language`: the screen's.
 pub fn pick(
     window: &WebviewWindow,
     pick: Pick,
+    language: Language,
     folder: Option<PathBuf>,
     answer: impl FnOnce(Vec<PathBuf>) + 'static,
 ) {
-    imp::pick(window, pick, folder, answer);
+    let title = title(&pick, language);
+    imp::pick(window, pick, title, folder, answer);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_titles_follow_the_language_of_the_screen() {
+        let picks = [
+            Pick::SongFile,
+            Pick::Folder,
+            Pick::SaveAs { name: "a".into() },
+            Pick::ExportFile { name: "a".into() },
+            Pick::ExportFolder,
+            Pick::Picture,
+        ];
+        let ja = picks.clone().map(|p| title(&p, Language::Ja));
+        let en = picks.map(|p| title(&p, Language::En));
+        assert_eq!(
+            ja,
+            [
+                "ひらく",
+                "場所をえらぶ",
+                "名前をつけて保存",
+                "書き出す",
+                "書き出すフォルダをえらぶ",
+                "ひらく"
+            ]
+        );
+        assert_eq!(
+            en,
+            [
+                "Open",
+                "Choose a folder",
+                "Save as",
+                "Export",
+                "Choose a folder to export to",
+                "Open"
+            ]
+        );
+    }
 }

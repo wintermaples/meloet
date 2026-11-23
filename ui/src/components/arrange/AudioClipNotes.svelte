@@ -8,7 +8,7 @@
   import type { TrackView } from "../../bridge";
   import { current } from "../../state/app.svelte";
   import { shownWork } from "../../state/audioWork.svelte";
-  import { t } from "../../text/ja";
+  import { t } from "../../text";
   import { askWhole } from "../automation/coverIf";
   import { clipBox, type LaneDims, type View } from "../arrangeGeom";
   import { waveArea } from "./audioClipGeom";

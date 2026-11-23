@@ -164,8 +164,9 @@ export function meterFit(input: MeterFitInput): MeterFit {
   return slim("part.meter.name.slim-narrow", false, false);
 }
 
-/** Splits a text after 「。」. */
+/** Splits a text after 「。」, or after ". " in English (the space stays with the sentence before it). */
 export function sentences(text: string): string[] {
+  if (!text.includes("。")) return text.split(/(?<=\. )/);
   return text.match(/[^。]+。?/g) ?? [text];
 }
 

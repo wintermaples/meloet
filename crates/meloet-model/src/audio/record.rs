@@ -242,7 +242,7 @@ mod tests {
 
     fn with_vocal() -> (Doc, TrackId) {
         let doc = Doc::new_default();
-        let (e, track) = edit::add_vocal_track(&doc, None).unwrap();
+        let (e, track) = edit::add_vocal_track(&doc, None, crate::Language::Ja).unwrap();
         (e.doc, track)
     }
 

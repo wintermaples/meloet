@@ -3,7 +3,7 @@
 // Does not know the DOM.
 
 import type { keyNames } from "../components/menu/menus";
-import { t, type TextKey } from "../text/ja";
+import { t, type TextKey } from "../text";
 import type { KeyAction } from "./keys";
 
 export type KeyNames = ReturnType<typeof keyNames>;

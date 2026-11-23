@@ -4,7 +4,7 @@
 
 import type { AutoTarget, LaneHome, LaneName, LanePoints, LaneRef, LaneView, MasterView, TrackView } from "../../bridge";
 import { EFFECT_PARAMS, type EffectParam } from "../../bridge/types";
-import { t } from "../../text/ja";
+import { t } from "../../text";
 import { dbToFrac, faderText, fracToDb, panText } from "../mixer/scale";
 import { fractionOf, unitText, valueAt as paramValueAt, valueText as paramValueText } from "../params/paramRows";
 

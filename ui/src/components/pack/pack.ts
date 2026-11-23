@@ -2,7 +2,7 @@
 // mock F8-PackAsk, F8-PackGet, F8-PackFail, Opt8-PackShow, R12-Fit). Pure functions that do not know the DOM.
 
 import type { AppState, PackFailure, PackFetchView, SoundsView } from "../../bridge";
-import { STATUS_JOIN, t } from "../../text/ja";
+import { STATUS_JOIN, t } from "../../text";
 
 const MB = 1_000_000;
 /** MB is 1000 × 1000 bytes (the same as mb in the status line). */

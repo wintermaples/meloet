@@ -126,6 +126,8 @@ pub struct CoreOptions {
     /// nothing is kept; only plain wav files at the rate of the stream sound, and no
     /// waveform is drawn.
     pub cache_dir: Option<PathBuf>,
+    /// The PC's language: the screen's while the person chose none (round 12, D4).
+    pub pc_language: meloet_protocol::Language,
 }
 
 /// The pack as the start found it, and the thread that fetches it.
@@ -245,6 +247,7 @@ impl CoreOptions {
             plugins: PluginOptions::from_env(),
             sf2_dir: sf2store::dir(),
             cache_dir: dirs::cache_dir().map(|d| d.join("meloet")),
+            pc_language: crate::language::of_pc(),
         }
     }
 
@@ -265,6 +268,7 @@ impl CoreOptions {
             plugins: None,
             sf2_dir: None,
             cache_dir: None,
+            pc_language: meloet_protocol::Language::Ja,
         }
     }
 }
@@ -530,7 +534,9 @@ impl Core {
             Sf2Store::open(options.sf2_dir.clone(), Box::new(done))
         };
         let wishes = (settings.sound.buffer, settings.sound.sample_rate);
-        let mut model = Model::new(settings).with_sounds(library.installed());
+        let mut model = Model::new(settings)
+            .with_pc_language(options.pc_language)
+            .with_sounds(library.installed());
         let mut fetcher = None;
         if let Some(pack) = pack {
             model = model.with_pack(pack.start);
@@ -2542,7 +2548,8 @@ impl PluginSide {
 
 impl Worker {
     fn run(mut self, rx: Receiver<Msg>) {
-        match self.state_dir.as_deref().and_then(recovery_start) {
+        let names = crate::language::names(self.model.language());
+        match (self.state_dir.as_deref()).and_then(|dir| recovery_start(dir, names)) {
             Some(start) => {
                 if matches!(
                     &start,
@@ -3786,7 +3793,7 @@ pub(crate) fn read_song(path: PathBuf, previous: bool) -> Input {
 }
 
 /// Reads the recovery file in `dir`, and the song's file it names.
-pub(crate) fn recovery_start(dir: &Path) -> Option<RecoveryStart> {
+pub(crate) fn recovery_start(dir: &Path, names: meloet_model::Language) -> Option<RecoveryStart> {
     let read_saved = |path: &Path| {
         songfile::read(path)
             .inspect_err(|e| eprintln!("meloet: cannot read {}: {e:?}", path.display()))
@@ -3807,7 +3814,7 @@ pub(crate) fn recovery_start(dir: &Path) -> Option<RecoveryStart> {
         (None, Some(note)) => {
             let path = note.song.as_ref().map(PathBuf::from);
             let song =
-                (path.as_deref().and_then(read_saved)).map_or_else(Song::new_default, |s| *s);
+                (path.as_deref().and_then(read_saved)).map_or_else(|| Song::new_in(names), |s| *s);
             recovery::Found::Read(Box::new(recovery::Recovered {
                 song,
                 path,
@@ -3822,7 +3829,7 @@ pub(crate) fn recovery_start(dir: &Path) -> Option<RecoveryStart> {
             // The note stays while it is the only place that knows where the clips belong:
             // until the recovery file holds them (`input::KeptNote`).
             let vocals = note.and_then(|note| {
-                let kept = input::keep_vocals(dir, &note, &mut song.doc);
+                let kept = input::keep_vocals(dir, &note, &mut song.doc, names);
                 if kept.is_none() {
                     crate::vocalrec::remove_note(dir);
                 }

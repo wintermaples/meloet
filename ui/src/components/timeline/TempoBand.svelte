@@ -7,7 +7,7 @@
   import type { Command, TimelineRef, TimelineView } from "../../bridge";
   import { glSlot } from "../../gl/slot";
   import { send } from "../../state/app.svelte";
-  import { t } from "../../text/ja";
+  import { t } from "../../text";
   import type { TempoMap } from "../../time/tempoMap";
   import { tickToX, type View } from "../arrangeGeom";
   import { tempoText } from "../format";

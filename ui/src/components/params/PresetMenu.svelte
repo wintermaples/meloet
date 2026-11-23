@@ -8,7 +8,7 @@
   import type { PresetRef, SelectedInsert } from "../../bridge";
   import { FACTORY_PRESETS, PRESET_NAME_MAX } from "../../bridge/types";
   import { current, send } from "../../state/app.svelte";
-  import { t } from "../../text/ja";
+  import { t } from "../../text";
   import { openContextMenu } from "../menu/contextMenu.svelte";
   import { presetName } from "./presetName";
 

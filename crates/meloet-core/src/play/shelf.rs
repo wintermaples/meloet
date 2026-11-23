@@ -292,7 +292,8 @@ impl Play {
                     return None;
                 }
                 let below = self.song.session.play_target;
-                let (e, id) = edit::add_track(self.doc(), below, instrument.clone()).ok()?;
+                let (e, id) =
+                    edit::add_track(self.doc(), below, instrument.clone(), self.names).ok()?;
                 let seat = self.seats.take(id, instrument)?;
                 self.shelf.trial = None;
                 self.song.session.play_target = Some(id);

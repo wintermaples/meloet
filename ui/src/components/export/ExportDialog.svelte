@@ -8,7 +8,7 @@
   import ScrollArea from "../../lib/ScrollArea.svelte";
   import { current, send } from "../../state/app.svelte";
   import { exportShown } from "../../state/exportShown.svelte";
-  import { LIST_COMMA, t, type TextKey } from "../../text/ja";
+  import { LIST_COMMA, t, type TextKey } from "../../text";
   import { mapOf } from "../../time/bars";
   import Button from "../Button.svelte";
   import { openContextMenu, type MenuEntry } from "../menu/contextMenu.svelte";

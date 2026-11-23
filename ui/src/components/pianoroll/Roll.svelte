@@ -22,7 +22,7 @@
   import HScrollbar from "../../lib/HScrollbar.svelte";
   import { term, tipAround } from "../../lib/tip.svelte";
   import { current, send } from "../../state/app.svelte";
-  import { t } from "../../text/ja";
+  import { t } from "../../text";
   import { termParts, textParts } from "../format";
   import { closeContextMenu, openContextMenu } from "../menu/contextMenu.svelte";
   import * as AG from "../arrangeGeom";

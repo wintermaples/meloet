@@ -1,7 +1,7 @@
 // How the mixer shows numbers, and fader / send positions (spec 2 "Scale marks of meters and faders"). Pure functions that do not know the DOM.
 
 import { meterScale } from "../../design/tokens";
-import { t } from "../../text/ja";
+import { t } from "../../text";
 import { dbNumber } from "../format";
 
 const MINUS = "−";

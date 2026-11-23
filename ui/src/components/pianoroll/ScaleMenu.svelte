@@ -5,7 +5,7 @@
   import { onMount } from "svelte";
   import { SCALE_MODES, type MusicalScale, type ScaleMode } from "../../bridge";
   import ScrollArea from "../../lib/ScrollArea.svelte";
-  import { t } from "../../text/ja";
+  import { t } from "../../text";
   import { pitchClassName, scaleModeName } from "../format";
 
   interface Props {

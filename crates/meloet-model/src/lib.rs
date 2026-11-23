@@ -16,6 +16,7 @@ pub mod instrument;
 pub mod knobs;
 pub mod mixer;
 pub mod mute_sets;
+pub mod names;
 pub mod notes;
 pub mod playback;
 pub mod presets;
@@ -50,7 +51,7 @@ pub use audio::stretch::{
 };
 pub use audio::{
     AudioId, AudioShape, AudioSource, AudioTake, ClipGain, CompPiece, SourceTempo,
-    TUNE_STRENGTH_MAX, TrackKind, Tune, VOCAL_TRACK_NAME, VocalInput,
+    TUNE_STRENGTH_MAX, TrackKind, Tune, VocalInput, vocal_track_name,
 };
 pub use automation::{AutoPoint, AutoTarget, Lane, LaneHome, LaneId};
 pub use chunked::ChunkedVec;
@@ -66,6 +67,7 @@ pub use mixer::{
     Return, Sends, StripId,
 };
 pub use mute_sets::MuteSet;
+pub use names::{Language, first_song_name};
 pub use notes::{NoteField, NotesEdited, WriteAt};
 pub use roll::{Grid, MusicalScale, QuantizeAlign, QuantizeSettings, RollSettings, ScaleMode};
 pub use song::{
@@ -129,6 +131,37 @@ mod tests {
         assert!(doc.audio.is_empty());
         assert_eq!(doc.loop_range, None);
         assert!(!song.session.loop_on);
+    }
+
+    /// Round 12 D4: the names of a new song, a new track and a new vocal track follow the
+    /// language they are made in; the rest of the song is the same.
+    #[test]
+    fn names_of_new_things_per_language() {
+        let en = Song::new_in(Language::En);
+        assert_eq!(en.doc.name, "My first song");
+        assert_eq!(en.doc.tracks[0].name, "Piano");
+        let mut ja = Song::new_default();
+        ja.doc.name = en.doc.name.clone();
+        std::sync::Arc::make_mut(&mut ja.doc.tracks[0]).name = "Piano".to_owned();
+        assert_eq!(ja, en);
+        let bass = InstrumentRef::Builtin(BuiltinInstrument::FingerBass);
+        for (language, names) in [
+            (Language::Ja, ["ベース", "ベース 2", "歌", "歌 2"]),
+            (Language::En, ["Bass", "Bass 2", "Vocal", "Vocal 2"]),
+        ] {
+            let mut doc = Doc::new_in(language);
+            for _ in 0..2 {
+                doc = edit::add_track(&doc, None, bass.clone(), language)
+                    .unwrap()
+                    .0
+                    .doc;
+            }
+            for _ in 0..2 {
+                doc = edit::add_vocal_track(&doc, None, language).unwrap().0.doc;
+            }
+            let made: Vec<&str> = doc.tracks[1..].iter().map(|t| t.name.as_str()).collect();
+            assert_eq!(made, names);
+        }
     }
 
     #[test]

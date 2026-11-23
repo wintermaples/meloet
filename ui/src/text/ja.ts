@@ -1,4 +1,4 @@
-// All screen text lives here.
+// All screen text lives here, in Japanese: the source. en.ts follows it key by key; the screen reads both through index.ts.
 // Sources: spec:<chapter> (docs/spec/<chapter>-*.md), mock:<board> (docs/design/mock/<board>.dc.html), user:<date> (the owner's decision),
 // draft:<date> (the developers' proposal for text that is in neither the spec nor the mocks; check with the owner, then make it user: or mock:).
 // builder:<date> (text the developers decided for now where the spec has none; sent back to the design in B of docs/history/design-notes.ja.md).
@@ -2072,6 +2072,10 @@ export const texts = {
   "theme.pinkLight": e("ピンク ・ ライト", "user:2026-11-23"),
   "theme.mintDark": e("ミント ・ ダーク", "user:2026-11-23"),
   "theme.mintLight": e("ミント ・ ライト", "user:2026-11-23"),
+  // 「ことば / Language」 (round 12 D4): the same words in both languages, so that it can be found in either.
+  "menu.language": e("ことば / Language", "user:2026-11-23"),
+  "language.ja": e("日本語", "user:2026-11-23"),
+  "language.en": e("English", "user:2026-11-23"),
   "menu.noteGlow": e("鳴っている音を光らせる", "user:2026-11-23"),
   "menu.playStart": e("再生", "user:2026-11-18"),
   "menu.stop": e("停止", "user:2026-11-18"),
@@ -3351,13 +3355,6 @@ export function fill(
   return text.replace(/\{(\w+)\}/g, (whole, name: string) =>
     name in values ? String(values[name]) : whole,
   );
-}
-
-export function t(
-  key: TextKey,
-  values?: Readonly<Record<string, string | number>>,
-): string {
-  return fill(texts[key].text, values);
 }
 
 /** The joint between parts of the status line left text (joined with 「 ・ 」 as in spec 6 「止まっているときの状態行の左」). */

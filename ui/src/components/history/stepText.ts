@@ -3,7 +3,7 @@
 
 import { EFFECT_PARAMS } from "../../bridge/types";
 import type { EffectName, HistoryRow, LaneName, LibraryView, SongView, StepName, StepPlace, StepWhat, StripName, TrackRef } from "../../bridge";
-import { fill, stepNames, t } from "../../text/ja";
+import { fill, stepNameText as rawStepName, t, textLanguage } from "../../text";
 import { gridText, tempoText } from "../format";
 import { noteName } from "../meterFormat";
 import { faderText, panText } from "../mixer/scale";
@@ -19,7 +19,7 @@ export interface StepContext {
 }
 
 /** A name from a plugin gets a space before the following 「の」 (「Surge XT の」). */
-const spaced = (name: string) => `${name} `;
+const spaced = (name: string) => (textLanguage() === "en" ? name : `${name} `);
 const trackLabel = (r: TrackRef) => t("track.label", { number: r.number, name: r.name });
 const effectText = (e: EffectName) => (e.kind === "builtin" ? t(`effect.${e.effect}`) : e.name);
 const busText = (bus: "a" | "b") => t(bus === "a" ? "mixer.sendA" : "mixer.sendB");
@@ -56,7 +56,7 @@ export function laneNameText(name: LaneName): string {
 
 /** The step name (「ノートを動かす」「コンプレッサーの「しきい値」を変える」). */
 export function stepNameText(name: StepName): string {
-  const text = stepNames[name.kind].text;
+  const text = rawStepName(name.kind);
   switch (name.kind) {
     case "setParam":
       return fill(text, { effect: t(`effect.${name.effect}`), param: paramName(name.effect, name.param) });

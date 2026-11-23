@@ -348,7 +348,7 @@ impl Play {
             C::AddVocalTrack if doc.tracks.len() >= MAX_TRACKS => {
                 return AiRefusal::TooManyTracks;
             }
-            C::AddVocalTrack => edit::add_vocal_track(doc, None).map(drop),
+            C::AddVocalTrack => edit::add_vocal_track(doc, None, self.names).map(drop),
             C::MoveClips {
                 clips,
                 ticks,
@@ -1111,7 +1111,8 @@ impl Play {
             return Err(AiRefusal::TooManyTracks);
         }
         let below = self.doc().tracks.last().map(|t| t.id);
-        let (e, id) = edit::add_track(self.doc(), below, instrument).map_err(refusal)?;
+        let (e, id) =
+            edit::add_track(self.doc(), below, instrument, self.names).map_err(refusal)?;
         self.apply(e, effects);
         Ok(AiWrote {
             clip: None,

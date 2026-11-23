@@ -14,7 +14,7 @@
   import ScrollArea from "../lib/ScrollArea.svelte";
   import { term, tip } from "../lib/tip.svelte";
   import { current, send } from "../state/app.svelte";
-  import { findTerm, t } from "../text/ja";
+  import { findTerm, t } from "../text";
   import Button from "./Button.svelte";
   import { textParts } from "./format";
   import { openContextMenu, type MenuEntry } from "./menu/contextMenu.svelte";

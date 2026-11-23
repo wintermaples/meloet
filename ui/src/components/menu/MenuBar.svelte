@@ -5,7 +5,7 @@
   import { platformOf } from "../../keys/keys";
   import { menuOpened } from "../../lib/menu";
   import { current, send } from "../../state/app.svelte";
-  import { t } from "../../text/ja";
+  import { t } from "../../text";
   import MenuList from "./MenuList.svelte";
   import { closeMenuBar, menuBar, openMenuBar } from "./menuBar.svelte";
   import { TOP_MENUS, topMenus, type ListRow } from "./menus";

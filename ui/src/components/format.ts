@@ -1,6 +1,6 @@
 // How numbers are shown. Pure functions with no DOM.
 import type { ScaleMode } from "../bridge";
-import { t, texts, type TextKey } from "../text/ja";
+import { findTerm, rawText, t, textLanguage, type TextKey } from "../text";
 import { barBeatTick, tickText, ticksPerBeat, type Bars, type Meter } from "./time";
 
 /** The minus sign is 「−」 (U+2212), as in the spec. */
@@ -72,8 +72,19 @@ export function dayAndTime(ms: number): { month: number; day: number; time: stri
   return { month: d.getMonth() + 1, day: d.getDate(), time: `${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}` };
 }
 
-/** Splits a text into plain parts and terms (parts with `word`), so that term tips can be added. */
+/**
+ * Splits a text into plain parts and terms (parts with `word`, the Japanese word of the term), so that term tips can be
+ * added. In English the term's English word is looked for, as a whole word in any case, also with a plural "s".
+ */
 export function termParts(text: string, word: string): { text: string; term: boolean }[] {
+  const english = textLanguage() === "en" ? findTerm(word)?.term : undefined;
+  if (english) {
+    const escaped = english.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return text
+      .split(new RegExp(`(\\b${escaped}(?:e?s)?\\b)`, "i"))
+      .map((piece, i) => ({ text: piece, term: i % 2 === 1 }))
+      .filter((p) => p.text !== "");
+  }
   return text
     .split(word)
     .flatMap((piece, i) => (i === 0 ? [piece] : [word, piece]))
@@ -90,7 +101,7 @@ export interface TextPart {
 /** Splits a text into plain parts and filled-in values (so that only the values get another font or color). */
 export function textParts(key: TextKey, values: Readonly<Record<string, string | number>>): TextPart[] {
   const out: TextPart[] = [];
-  const text = texts[key].text;
+  const text = rawText(key, values);
   const re = /\{(\w+)\}/g;
   let last = 0;
   for (const m of text.matchAll(re)) {

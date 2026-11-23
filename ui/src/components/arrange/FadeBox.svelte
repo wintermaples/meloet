@@ -5,7 +5,7 @@
   import { onDestroy, tick as nextTick } from "svelte";
   import { FADE_OUT_BARS_DEFAULT, FADE_OUT_BARS_MAX, type TrackView } from "../../bridge";
   import { send } from "../../state/app.svelte";
-  import { t } from "../../text/ja";
+  import { t } from "../../text";
   import type { TempoMap } from "../../time/tempoMap";
   import { tickToX, type View } from "../arrangeGeom";
   import { dragReading } from "../pianoroll/view.svelte";

@@ -7,7 +7,7 @@
   import { onMount, untrack } from "svelte";
   import type { ParamRow, PluginSlotRef } from "../../bridge";
   import { send } from "../../state/app.svelte";
-  import { t } from "../../text/ja";
+  import { t } from "../../text";
   import { MixPreview } from "../mixer/mixDrag";
   import { onDragCancel } from "../pianoroll/view.svelte";
   import { paramUi, stopTyping } from "./paramUi.svelte";

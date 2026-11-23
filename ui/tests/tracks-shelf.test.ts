@@ -13,7 +13,7 @@ import { shelfModel, type ShelfLook } from "../src/components/shelfList";
 import { moveSlot, shelfStepCommand, shelfUi, trackEdit } from "../src/components/tracks.svelte";
 import { handleKeydown, handlePointerdown, type KeyDeps } from "../src/keys/attach";
 import { keyAction, type KeyInput } from "../src/keys/keys";
-import { t } from "../src/text/ja";
+import { t } from "../src/text";
 import * as app from "./fake-app.svelte";
 
 vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));

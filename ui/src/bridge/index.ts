@@ -9,7 +9,7 @@ import { PeakStore, songAudioIds, type LevelPeaks } from "./peaks";
 import { connectWith, type Connection, type Handlers, type Transport } from "./session";
 import { songTakeIds, TakeStore, type TakeNotes } from "./take";
 import { tauriMeasureEnabled, tauriMeasureReport, tauriTransport, tauriUiScript } from "./tauri";
-import type { AppState, Command, HistoryRow } from "./types";
+import { PROTOCOL_VERSION, type AppState, type Command, type HelloReply, type HistoryRow, type Language } from "./types";
 
 export type * from "./types";
 export { DRUM_ROWS, INSTRUMENT_GROUPS, LATENCY_CLICKS, PROTOCOL_VERSION, RECORD_FORMATS, STEP_NAME_KINDS, VOCAL_INPUTS } from "./types";
@@ -65,9 +65,33 @@ export type { ParamTableBook, ParamTableListener } from "./paramTable";
 export { ProtocolVersionError, type Connection, type Handlers } from "./session";
 
 let connection: Connection | null = null;
+// The transport whose greeting pageLanguage() made, until connect() goes on from it: one greeting for both.
+let greeted: Transport | null = null;
 
 function pickTransport(): Transport {
-  return "__TAURI_INTERNALS__" in window ? tauriTransport : createFakeTransport();
+  if (!greeted) {
+    const picked = "__TAURI_INTERNALS__" in window ? tauriTransport : createFakeTransport();
+    const hello = picked.hello.bind(picked);
+    let greeting: Promise<HelloReply> | null = null;
+    greeted = { ...picked, hello: (version) => (greeting ??= hello(version)) };
+  }
+  return greeted;
+}
+
+async function languageOf(transport: Transport): Promise<Language> {
+  try {
+    return (await transport.hello(PROTOCOL_VERSION)).language;
+  } catch {
+    return "ja";
+  }
+}
+
+/**
+ * The language of the page (docs/architecture.md 25, D4), from the greeting: Japanese when the greeting fails (connect()
+ * then says why). It stays until the page is loaded again.
+ */
+export function pageLanguage(): Promise<Language> {
+  return languageOf(pickTransport());
 }
 
 const takes = new TakeStore((id) => connected().takeNotes(id));
@@ -95,9 +119,17 @@ export async function connect(handlers: Handlers): Promise<Connection> {
   let serial: number | null = null;
   let history: AppState["history"] | null = null;
   let lastRev: number | null = null;
-  connection = await connectWith(pickTransport(), {
+  const transport = pickTransport();
+  greeted = null;
+  const language = await languageOf(transport);
+  connection = await connectWith(transport, {
     ...handlers,
     onState(state, rev) {
+      // The words of the page are fixed when it loads: another language loads it again, and the core keeps the rest.
+      if (state.workspace.language !== language) {
+        location.reload();
+        return;
+      }
       // A patch is always the rev after the last; any other rev is a snapshot, which may have skipped history rows.
       const snapshot = lastRev === null || rev !== lastRev + 1;
       lastRev = rev;

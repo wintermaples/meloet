@@ -17,7 +17,7 @@ import { contextsMade, resetPool } from "../src/gl/pool";
 import { Renderer } from "../src/gl/renderer";
 import { glRegion, glSlot, type GlSlot } from "../src/gl/slot";
 import type { RegionName } from "../src/gl/budget";
-import { t } from "../src/text/ja";
+import { t } from "../src/text";
 
 vi.mock("../src/design/themes", async (importOriginal) => {
   const real = await importOriginal<typeof import("../src/design/themes")>();

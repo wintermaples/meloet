@@ -12,7 +12,7 @@ import { contextMenu, listEntries, type MenuRow } from "../src/components/menu/c
 import { dragReading } from "../src/components/pianoroll/view.svelte";
 import { closeSpaceBox, spaceBox } from "../src/components/timeline/spaceBox.svelte";
 import { readBars } from "../src/components/valueClamp";
-import { t } from "../src/text/ja";
+import { t } from "../src/text";
 import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 import * as app from "./fake-app.svelte";
 

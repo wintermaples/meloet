@@ -1,7 +1,7 @@
 // 「仕上げのメーター」 (round 12 M3): the numbers it shows, and how often they may change. No DOM.
 
 import { EXPORT_MATCH_LUFS, EXPORT_MATCH_TRUE_PEAK_DB, type Telemetry } from "../../bridge";
-import { t } from "../../text/ja";
+import { t } from "../../text";
 import { dbNumber } from "../format";
 
 /** The numbers change at most 4 times a second (not every frame: docs/architecture.md 7). */

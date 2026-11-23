@@ -59,7 +59,7 @@ You are not the first one here, and you will not be the last. Leave things so th
 - Write the built-in effects ourselves (`crates/meloet-sound/src/effects/`). Sound material is only CC0, CC BY or MIT (not CC BY-SA). Credits are in `NOTICE` and in 「meloet について」; `node licenses/check.mjs` watches the material too. How the material is made lives in the repository (`tools/sounds/`); the built packs go on GitHub Releases (ask the owner before uploading).
 - Plugins run in a separate process (`meloet-plughost`; the same plugin goes in one process). Do not use stdout or stderr for communication. Watch for a stop by time (chapter 20 of `docs/architecture.md`). Start child processes one at a time with `meloet_plugin::launch::spawn` (because of LLDB in VS Code). Formats are VST3 and LV2 (CLAP is not in).
 - Use numbers by their names in the spec (`color.gray.4`, `size.meter.slim`, `space.3` …), as they are, from `ui/src/design/tokens.ts`. Do not add colors, text sizes or spaces on your own.
-- Screen wording lives in one place, `ui/src/text/ja.ts`. Do not change a single character of the spec's wording (`docs/spec/`). Text found only in a mock is used as written in the mock (with its source). Text the owner decided has the source `user:<date>`.
+- Screen wording lives in one place, `ui/src/text/`: `ja.ts` is the source (Japanese, with sources), `en.ts` follows it key by key with the same holes (round 12 D4); the screen reads them through `index.ts` (`t()`). Do not change a single character of the spec's wording (`docs/spec/`). Text found only in a mock is used as written in the mock (with its source). Text the owner decided has the source `user:<date>`.
 - When the mocks and the spec disagree, the spec is right. Make a list of what you fixed.
 - Parts with no content yet are not removed; show them in the "disabled" state.
 - Positions in a song are in ticks (a quarter note = 1920). Tempo is always quarter notes per minute (whatever the time signature). A recorded key is put at "the position that was reaching the ear at the moment it was pressed". Quantize is only an edit (chapters 11 and 12 of `docs/architecture.md`).
@@ -94,7 +94,7 @@ crates/
 ui/
   src/bridge/      the only place that knows Tauri
   src/design/      numbers (by their names in the spec)
-  src/text/        wording
+  src/text/        wording (ja.ts the source, en.ts the English that follows it, index.ts what the screen reads)
   src/gl/          the WebGL helper (regions, reuse, budget)
   src/time/        the screen's tempo map (tempoMap.ts. Tested with the table of Rust's answers, tempoMap.table.json)
   src/components/pianoroll/  the piano roll band (the range in view view.svelte.ts, the take shown shown.svelte.ts, drag drag.ts, CC lanes cc.ts)

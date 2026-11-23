@@ -23,7 +23,7 @@ import TrackHeads from "../src/components/TrackHeads.svelte";
 import { trackContextMenu } from "../src/components/trackMenu";
 import { keyCommand } from "../src/keys/attach";
 import { keyAction, type KeyInput } from "../src/keys/keys";
-import { t } from "../src/text/ja";
+import { t } from "../src/text";
 import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 import * as app from "./fake-app.svelte";
 

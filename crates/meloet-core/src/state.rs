@@ -69,9 +69,12 @@ pub const REQUESTED_FRAMES: u32 = crate::settings::DEFAULT_BUFFER;
 pub use crate::settings::{BUFFER_CHOICES, SAMPLE_RATE_CHOICES};
 pub use vocal::Delays;
 pub const AUDIO_SYSTEM: &str = "PipeWire";
-/// The user guide 「使い方をひらく」 opens. The only place it is written.
+/// The user guide 「使い方をひらく」 opens, in Japanese and in English. The only place they are
+/// written.
 pub const USER_GUIDE_URL: &str =
     "https://github.com/wintermaples/meloet/blob/main/docs/user/README.ja.md";
+pub const USER_GUIDE_URL_EN: &str =
+    "https://github.com/wintermaples/meloet/blob/main/docs/user/README.en.md";
 /// Key to sound is about this many buffers (docs/architecture.md 4).
 const LATENCY_BUFFERS: f32 = 2.5;
 /// Measured key-to-sound times that make up the shown average.
@@ -832,6 +835,9 @@ pub struct Model {
     mono_listen: bool,
     /// 「ことば / Language」 (round 12, D4) as the settings have it.
     language: Option<meloet_protocol::Language>,
+    /// The PC's language: the screen's until one is chosen. Japanese unless told
+    /// ([`Model::with_pc_language`]).
+    pc_language: meloet_protocol::Language,
 }
 
 /// Audio files let go of over the window (`Model::pending_drop`).
@@ -882,7 +888,7 @@ impl Model {
         } else {
             crate::settings::DEFAULT_SCALE
         };
-        Model {
+        let mut model = Model {
             play: Play::new(settings.metronome, settings.count_in_bars)
                 .with_overdub(settings.overdub)
                 .with_click(settings.click),
@@ -961,7 +967,28 @@ impl Model {
             spectrum: settings.spectrum,
             mono_listen: false,
             language: settings.language,
-        }
+            pc_language: meloet_protocol::Language::Ja,
+        };
+        model.start_names();
+        model
+    }
+
+    /// `pc`: the PC's language ([`crate::language::of_pc`]), the screen's while none was
+    /// chosen. The new song nobody touched yet takes its names.
+    pub fn with_pc_language(mut self, pc: meloet_protocol::Language) -> Model {
+        self.pc_language = pc;
+        self.start_names();
+        self
+    }
+
+    fn start_names(&mut self) {
+        let names = crate::language::names(self.language());
+        self.play.set_names(names, true);
+    }
+
+    /// The language of the screen.
+    pub fn language(&self) -> meloet_protocol::Language {
+        self.language.unwrap_or(self.pc_language)
     }
 
     /// `files`: the SF2 files that were added before, as meloet's folder has them.
@@ -2459,7 +2486,13 @@ impl Model {
             Command::ClearRecent => self.clear_recent(effects),
             Command::NormalizeClips { clips } => self.ask_clip_work(&clips, false, effects),
             Command::ReverseClips { clips } => self.ask_clip_work(&clips, true, effects),
-            Command::OpenUserGuide => effects.push(Effect::OpenUrl(USER_GUIDE_URL.to_string())),
+            Command::OpenUserGuide => {
+                let url = match self.language() {
+                    meloet_protocol::Language::Ja => USER_GUIDE_URL,
+                    meloet_protocol::Language::En => USER_GUIDE_URL_EN,
+                };
+                effects.push(Effect::OpenUrl(url.to_string()));
+            }
             Command::SetCheckUpdates { on } => self.set_check_updates(on, effects),
             Command::OpenReleasePage => self.open_release_page(effects),
             Command::DismissNewVersion => self.dismiss_new_version(),
@@ -2512,8 +2545,14 @@ impl Model {
             }
             Command::ClearComp { clip } => self.play.clear_comp(clip, effects),
 
-            // round12 stub: D4
-            Command::SetLanguage { .. } => {}
+            // A setting, not a step; the screen loads itself again in the new language.
+            Command::SetLanguage { language } => {
+                if language != self.language() && !self.play.busy() {
+                    self.language = Some(language);
+                    self.play.set_names(crate::language::names(language), false);
+                    effects.push(Effect::SaveSettings(self.settings()));
+                }
+            }
         }
         None
     }
@@ -3018,8 +3057,7 @@ impl Model {
                 note_glow: self.note_glow,
                 spectrum: self.spectrum,
                 mono_listen: self.mono_listen,
-                // round12 stub: D4 (the screen is Japanese until the English table is there)
-                language: meloet_protocol::Language::Ja,
+                language: self.language(),
             },
             shelf: self.shelf_view(&library),
             library,
@@ -3458,6 +3496,8 @@ pub(crate) mod added_tests;
 mod audio_tests;
 #[cfg(test)]
 mod click_tests;
+#[cfg(test)]
+mod language_tests;
 #[cfg(test)]
 mod mono_tests;
 #[cfg(test)]

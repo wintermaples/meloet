@@ -34,7 +34,9 @@ impl TrackKind {
 
 /// The name a new vocal track gets ("歌", then "歌 2"; spec 3, 23-A). Part of the song, as
 /// the names of keys tracks are.
-pub const VOCAL_TRACK_NAME: &str = "歌";
+pub fn vocal_track_name(language: crate::Language) -> &'static str {
+    language.pick("歌", "Vocal")
+}
 
 /// Which channels of the input a vocal track records (spec 3 「歌のトラックの見出し」):
 /// 「入口 1 ・ モノ」, 「入口 2 ・ モノ」, 「入口 1 ・ 2 ・ ステレオ」. Whether the PC has an

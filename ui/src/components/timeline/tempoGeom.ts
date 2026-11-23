@@ -4,7 +4,7 @@
 import type { TimelineRef, TimelineView } from "../../bridge";
 import type { ColorName } from "../../design/tokens";
 import type { GlRect } from "../../gl/slot";
-import { t } from "../../text/ja";
+import { t } from "../../text";
 import { nearestBarLine, nearestBeatTick } from "../../time/bars";
 import type { TempoMap } from "../../time/tempoMap";
 import { tickToX, xToTick, type View } from "../arrangeGeom";

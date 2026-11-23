@@ -15,7 +15,7 @@
   import { untrack } from "svelte";
   import type { InsertRef, InsertView, SongView } from "../../bridge";
   import { current, send } from "../../state/app.svelte";
-  import { t } from "../../text/ja";
+  import { t } from "../../text";
   import Button from "../Button.svelte";
   import { stripName } from "../mixer/stripName";
   import { formatName, soundNameText } from "../sounds";

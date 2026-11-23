@@ -167,6 +167,7 @@ fn every_quantum(keep: bool) {
         force_quantum(&pw, quantum);
 
         let core = Core::start(CoreOptions {
+            pc_language: meloet_protocol::Language::Ja,
             config_dir: Some(config.clone()),
             measure_dir: None,
             midi: Some(midi.clone()),

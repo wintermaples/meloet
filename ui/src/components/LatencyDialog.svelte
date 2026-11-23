@@ -5,7 +5,7 @@
   import { LATENCY_CLICKS, type LatencyMeasure } from "../bridge";
   import { movableDialog } from "../lib/dialogMove";
   import { current, send } from "../state/app.svelte";
-  import { t } from "../text/ja";
+  import { t } from "../text";
   import Button from "./Button.svelte";
   import { msText, textParts } from "./format";
 

@@ -247,7 +247,7 @@ pub fn song() -> (Doc, Parts) {
     let doc = (mixer::set_send(&doc, lead, Bus::A, Gain::from_db(-9.0)).unwrap()).doc;
 
     let kit = InstrumentRef::Builtin(BuiltinInstrument::ElectroKit);
-    let (e, drums) = edit::add_track(&doc, None, kit).unwrap();
+    let (e, drums) = edit::add_track(&doc, None, kit, meloet_model::Language::Ja).unwrap();
     let hits: Vec<u8> = (0..48).map(|i| [36, 42, 38, 42][i % 4]).collect();
     let take = notes(&hits, BAR / 8, 400);
     let doc = edit::add_recording(&e.doc, drums, vec![take], 0)
@@ -257,7 +257,7 @@ pub fn song() -> (Doc, Parts) {
     let doc = (mixer::set_pan(&doc, StripId::Track(drums), meloet_model::Pan::new(-30)))
         .map_or(doc.clone(), |e| e.doc);
 
-    let (e, vocals) = edit::add_vocal_track(&doc, None).unwrap();
+    let (e, vocals) = edit::add_vocal_track(&doc, None, meloet_model::Language::Ja).unwrap();
     let (doc, plain) = recorded(&e.doc, vocals, 1, BAR, 2 * BAR);
     let doc = set_clip_fade(&doc, plain, FadeEnd::In, 900).unwrap().doc;
     let doc = set_clip_fade(&doc, plain, FadeEnd::Out, 1_900).unwrap().doc;

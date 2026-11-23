@@ -9,7 +9,8 @@ import InputMeter from "../src/components/InputMeter.svelte";
 import MixerStrips from "../src/components/mixer/MixerStrips.svelte";
 import { meterFit, type MeterFitInput } from "../src/components/meterFit";
 import { closeMenu, menuVisible } from "../src/lib/menu";
-import { stepNames, t } from "../src/text/ja";
+import { t } from "../src/text";
+import { stepNames } from "../src/text/ja";
 import * as app from "./fake-app.svelte";
 
 vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));

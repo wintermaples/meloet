@@ -68,6 +68,7 @@ fn overdub_over_a_loop_adds_each_pass_as_one_step() {
     let config = pw.dir().join("config-meloet");
     record_timing::write_settings(&config, private_pw::SINK);
     let core = Core::start(CoreOptions {
+        pc_language: meloet_protocol::Language::Ja,
         config_dir: Some(config),
         measure_dir: None,
         midi: Some(midi),

@@ -974,7 +974,7 @@ fn vocal_track(doc: &mut Doc, start: u64, end: u64, shape: AudioShape) -> ClipId
     };
     doc.tracks.push(Arc::new(Track {
         id: T3,
-        name: crate::VOCAL_TRACK_NAME.to_owned(),
+        name: crate::vocal_track_name(crate::Language::Ja).to_owned(),
         kind: TrackKind::Vocal {
             input: VocalInput::Mono1,
         },

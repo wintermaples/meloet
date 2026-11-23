@@ -1,7 +1,7 @@
 // The name a strip goes by in the mixer, the parameters panel and the status line (B-86).
 
 import type { InsertView, LibraryView, SongView, StripRef } from "../../bridge/types";
-import { t } from "../../text/ja";
+import { t } from "../../text";
 import { insertName, pluginRowOf } from "../sounds";
 
 /**

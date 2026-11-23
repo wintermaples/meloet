@@ -17,7 +17,7 @@ import { EFFECT_PARAMS } from "../src/bridge/types";
 import { mapOf } from "../src/time/bars";
 import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 import * as app from "./fake-app.svelte";
-import { t } from "../src/text/ja";
+import { t } from "../src/text";
 
 vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));
 

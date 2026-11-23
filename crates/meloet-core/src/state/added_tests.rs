@@ -836,7 +836,8 @@ fn song_with_missing() -> Song {
         kept: Kept::NONE,
     };
     let add = |song: &mut Song, instrument| {
-        let (e, id) = edit::add_track(&song.doc, None, instrument).unwrap();
+        let (e, id) =
+            edit::add_track(&song.doc, None, instrument, meloet_model::Language::Ja).unwrap();
         song.doc = e.doc;
         id
     };

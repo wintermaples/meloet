@@ -12,7 +12,7 @@
   import ScrollArea from "../../lib/ScrollArea.svelte";
   import { tipWhenCut } from "../../lib/tip.svelte";
   import { current, send } from "../../state/app.svelte";
-  import { t } from "../../text/ja";
+  import { t } from "../../text";
   import { noteLengthText, notePositionText } from "../format";
   import { metrics } from "../metrics.svelte";
   import { drumName, keyLabel, rollShowsDrums } from "./drums";

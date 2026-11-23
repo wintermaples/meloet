@@ -27,7 +27,7 @@
   import { askWhole } from "../automation/coverIf";
   import { clipEdit, renameCommand, startClipRename, stopClipRename } from "../clipName.svelte";
   import { tip } from "../../lib/tip.svelte";
-  import { STATUS_JOIN, t } from "../../text/ja";
+  import { STATUS_JOIN, t } from "../../text";
   import { mapOf } from "../../time/bars";
   import Button from "../Button.svelte";
   import { dbNumber, scaleName, tempoText, textParts } from "../format";

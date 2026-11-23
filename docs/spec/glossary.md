@@ -2,7 +2,7 @@
 
 Japanese words that the spec and the screen use often, and the English word to use for each when the spec is written in English. Where the code already has a name, the English follows the code. Katakana loanwords that are already English (ループ, グリッド, ベロシティ, …) are left out.
 
-This table is for the words that explain. Text shown on the screen (`ui/src/text/ja.ts`) and the names of the values (`color.gray.4`, `space.3`, …) are not translated.
+This table is for the words that explain, and for the English wording of the screen. Text shown on the screen is Japanese first (`ui/src/text/ja.ts`, the source); its English (`ui/src/text/en.ts`, round 12 D4) follows it and uses the words of this table. The names of the values (`color.gray.4`, `space.3`, …) are not translated.
 
 Code names: `ui/src/components/…` are files under that folder; type names come from `crates/meloet-protocol` (and `ui/src/bridge/generated/`) or `crates/meloet-model`.
 

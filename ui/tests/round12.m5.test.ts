@@ -30,7 +30,7 @@ import { topMenus } from "../src/components/menu/menus";
 import MixerStrips from "../src/components/mixer/MixerStrips.svelte";
 import { dragReading } from "../src/components/pianoroll/view.svelte";
 import type { KeyDeps } from "../src/keys/attach";
-import { t } from "../src/text/ja";
+import { t } from "../src/text";
 import { TempoMap } from "../src/time/tempoMap";
 import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 import * as app from "./fake-app.svelte";

@@ -6,7 +6,7 @@
 // The key handler (handleKeydown in ui/src/keys/attach.ts) calls this before the other key rules, except for Esc.
 
 import type { Command, TimelineView } from "../../bridge";
-import { t } from "../../text/ja";
+import { t } from "../../text";
 import { lastPick } from "./pick";
 
 export interface TimelineKey {

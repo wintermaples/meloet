@@ -2,7 +2,7 @@
 // The rows are a heading for each kind and all points of that kind (in tick order). Position and value can be typed. Deciding sends one MoveControls.
 
 import { CONTROL_PITCH_BEND, type ClipView, type Command, type ControlKind, type TakeNotes } from "../../bridge";
-import { t } from "../../text/ja";
+import { t } from "../../text";
 import { notePositionText, rangeText } from "../format";
 import { signed4 } from "../meterFormat";
 import type { Bars } from "../time";

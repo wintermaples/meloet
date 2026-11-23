@@ -2,6 +2,8 @@
 
 use std::sync::Arc;
 
+use crate::Language;
+
 /// What a track sounds with.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InstrumentRef {
@@ -32,11 +34,11 @@ impl InstrumentRef {
     /// The name a new track gets, before a number tells it from another track: the short
     /// name of a built-in sound's group or of an SF2 preset's family, or the plugin's own
     /// name (spec 3 Y14).
-    pub fn track_name(&self) -> &str {
+    pub fn track_name(&self, language: Language) -> &str {
         match self {
-            InstrumentRef::Builtin(b) => b.track_name(),
+            InstrumentRef::Builtin(b) => b.track_name(language),
             InstrumentRef::Plugin(p) => &p.name,
-            InstrumentRef::Sf2(s) => s.family().track_name(),
+            InstrumentRef::Sf2(s) => s.family().track_name(language),
         }
     }
 }
@@ -177,25 +179,26 @@ impl GmFamily {
 
     /// The name a new track gets (spec 3 「SF2 のトラックの名前」). Part of the song, not a
     /// text of the screen.
-    pub fn track_name(self) -> &'static str {
-        match self {
-            GmFamily::Piano => "ピアノ",
-            GmFamily::Mallet => "マレット",
-            GmFamily::Organ => "オルガン",
-            GmFamily::Guitar => "ギター",
-            GmFamily::Bass => "ベース",
-            GmFamily::Strings => "弦",
-            GmFamily::Ensemble => "アンサンブル",
-            GmFamily::Brass => "金管",
-            GmFamily::Reed => "木管",
-            GmFamily::Pipe => "笛",
-            GmFamily::SynthLead | GmFamily::SynthEffects => "シンセ",
-            GmFamily::SynthPad => "パッド",
-            GmFamily::Ethnic => "民族楽器",
-            GmFamily::Percussive => "打楽器",
-            GmFamily::SoundEffects => "効果音",
-            GmFamily::DrumKit => "ドラム",
-        }
+    pub fn track_name(self, language: Language) -> &'static str {
+        let (ja, en) = match self {
+            GmFamily::Piano => ("ピアノ", "Piano"),
+            GmFamily::Mallet => ("マレット", "Mallets"),
+            GmFamily::Organ => ("オルガン", "Organ"),
+            GmFamily::Guitar => ("ギター", "Guitar"),
+            GmFamily::Bass => ("ベース", "Bass"),
+            GmFamily::Strings => ("弦", "Strings"),
+            GmFamily::Ensemble => ("アンサンブル", "Ensemble"),
+            GmFamily::Brass => ("金管", "Brass"),
+            GmFamily::Reed => ("木管", "Reeds"),
+            GmFamily::Pipe => ("笛", "Pipes"),
+            GmFamily::SynthLead | GmFamily::SynthEffects => ("シンセ", "Synth"),
+            GmFamily::SynthPad => ("パッド", "Pad"),
+            GmFamily::Ethnic => ("民族楽器", "Ethnic"),
+            GmFamily::Percussive => ("打楽器", "Percussion"),
+            GmFamily::SoundEffects => ("効果音", "Sound effects"),
+            GmFamily::DrumKit => ("ドラム", "Drums"),
+        };
+        language.pick(ja, en)
     }
 
     /// The nearest group that comes with meloet (spec 3: guitars with the guitars, ethnic
@@ -358,13 +361,13 @@ impl BuiltinInstrument {
     /// The name a new track gets (spec 3 「トラックの名前（84）」): its group's short name, but
     /// the organs are 「オルガン」 and the vibraphone and the marimba 「マレット」. Part of the
     /// song, as "はじめての曲" is: not a text of the screen.
-    pub fn track_name(self) -> &'static str {
+    pub fn track_name(self, language: Language) -> &'static str {
         if self.is_organ() {
-            "オルガン"
+            language.pick("オルガン", "Organ")
         } else if self.is_mallet() {
-            "マレット"
+            language.pick("マレット", "Mallets")
         } else {
-            self.group().short_name()
+            self.group().short_name(language)
         }
     }
 }
@@ -381,16 +384,17 @@ impl InstrumentGroup {
     ];
 
     /// The short name of the group (spec 3 「トラックの名前（84）」).
-    pub fn short_name(self) -> &'static str {
-        match self {
-            InstrumentGroup::PianoKeys => "ピアノ",
-            InstrumentGroup::Guitar => "ギター",
-            InstrumentGroup::Bass => "ベース",
-            InstrumentGroup::Drums => "ドラム",
-            InstrumentGroup::PadStrings => "パッド",
-            InstrumentGroup::Wind => "管楽器",
-            InstrumentGroup::Synth => "シンセ",
-        }
+    pub fn short_name(self, language: Language) -> &'static str {
+        let (ja, en) = match self {
+            InstrumentGroup::PianoKeys => ("ピアノ", "Piano"),
+            InstrumentGroup::Guitar => ("ギター", "Guitar"),
+            InstrumentGroup::Bass => ("ベース", "Bass"),
+            InstrumentGroup::Drums => ("ドラム", "Drums"),
+            InstrumentGroup::PadStrings => ("パッド", "Pad"),
+            InstrumentGroup::Wind => ("管楽器", "Winds"),
+            InstrumentGroup::Synth => ("シンセ", "Synth"),
+        };
+        language.pick(ja, en)
     }
 }
 
@@ -462,7 +466,7 @@ mod tests {
     #[test]
     fn track_names() {
         assert_eq!(
-            InstrumentGroup::ALL.map(InstrumentGroup::short_name),
+            InstrumentGroup::ALL.map(|g| g.short_name(Language::Ja)),
             [
                 "ピアノ",
                 "ギター",
@@ -478,7 +482,7 @@ mod tests {
         assert_eq!(organs.len(), 7);
         for organ in organs {
             assert_eq!(organ.group(), InstrumentGroup::PianoKeys);
-            assert_eq!(organ.track_name(), "オルガン");
+            assert_eq!(organ.track_name(Language::Ja), "オルガン");
         }
         use BuiltinInstrument as I;
         let names = [
@@ -492,10 +496,9 @@ mod tests {
             I::Pizzicato,
             I::Flute,
             I::Sine,
-        ]
-        .map(BuiltinInstrument::track_name);
+        ];
         assert_eq!(
-            names,
+            names.map(|i| i.track_name(Language::Ja)),
             [
                 "ピアノ",
                 "ピアノ",
@@ -507,6 +510,13 @@ mod tests {
                 "パッド",
                 "管楽器",
                 "シンセ"
+            ]
+        );
+        assert_eq!(
+            names.map(|i| i.track_name(Language::En)),
+            [
+                "Piano", "Piano", "Mallets", "Mallets", "Guitar", "Bass", "Drums", "Pad", "Winds",
+                "Synth"
             ]
         );
         assert_eq!(
@@ -534,7 +544,7 @@ mod tests {
             assert_eq!(GmFamily::of(0, i as u8 * 8), f);
         }
         assert_eq!(
-            GmFamily::ALL.map(GmFamily::track_name),
+            GmFamily::ALL.map(|f| f.track_name(Language::Ja)),
             [
                 "ピアノ",
                 "マレット",
@@ -588,7 +598,7 @@ mod tests {
             "Surge Synth Team",
             "/usr/lib/lv2/Surge XT.lv2",
         )));
-        assert_eq!(plugin.track_name(), "Surge XT");
+        assert_eq!(plugin.track_name(Language::Ja), "Surge XT");
         assert_eq!(plugin.group(), InstrumentGroup::Synth);
         let preset = |bank, program, name: &str| {
             InstrumentRef::Sf2(Arc::new(Sf2Ref {
@@ -601,12 +611,15 @@ mod tests {
             }))
         };
         let guitar = preset(0, 27, "Clean Guitar");
-        assert_eq!(guitar.track_name(), "ギター");
+        assert_eq!(guitar.track_name(Language::Ja), "ギター");
         assert_eq!(guitar.group(), InstrumentGroup::Guitar);
         let kit = preset(SF2_DRUM_BANK, 0, "Standard");
-        assert_eq!(kit.track_name(), "ドラム");
+        assert_eq!(kit.track_name(Language::Ja), "ドラム");
         assert_eq!(kit.group(), InstrumentGroup::Drums);
-        assert_eq!(InstrumentRef::GRAND_PIANO.track_name(), "ピアノ");
+        assert_eq!(
+            InstrumentRef::GRAND_PIANO.track_name(Language::Ja),
+            "ピアノ"
+        );
         assert_eq!(InstrumentRef::SINE.group(), InstrumentGroup::Synth);
     }
 

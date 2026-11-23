@@ -3,7 +3,7 @@
 
 import { VOCAL_INPUTS, type AppState, type Command, type TrackView, type VocalInput } from "../bridge";
 import { songBusy } from "../keys/attach";
-import { t } from "../text/ja";
+import { t } from "../text";
 import type { MenuEntry, MenuRow } from "./menu/contextMenu.svelte";
 import { startRename } from "./tracks.svelte";
 

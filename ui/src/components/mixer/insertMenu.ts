@@ -4,7 +4,7 @@
 
 import type { Command, InsertRef, InsertView } from "../../bridge";
 import { INSERT_SLOTS } from "../../bridge/types";
-import { t } from "../../text/ja";
+import { t } from "../../text";
 import type { MenuEntry } from "../menu/contextMenu.svelte";
 import { openShelf } from "../tracks.svelte";
 

@@ -56,6 +56,7 @@ fn start(config: &Path, state: &Path, audio: bool) -> Core {
         plugins: None,
         sf2_dir: None,
         cache_dir: None,
+        pc_language: meloet_protocol::Language::Ja,
     })
 }
 

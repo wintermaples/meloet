@@ -1,7 +1,7 @@
 <!-- Output and input row (spec 2 "Output and input row"). 32 high with a test sound in flow 2, 24 high in the sound settings. -->
 <script lang="ts">
   import { tipWhenCut } from "../lib/tip.svelte";
-  import { t } from "../text/ja";
+  import { t } from "../text";
   import type { EndpointLook } from "./endpoint";
 
   let {

@@ -74,7 +74,7 @@ impl Play {
     pub fn set_installed_sounds(&mut self, installed: Vec<BuiltinInstrument>) {
         self.sounds.installed = installed;
         // The song is still the one `new` made, and the engine was told nothing of it yet.
-        if self.song == Song::new_default() {
+        if self.song == Song::new_in(self.names) {
             self.song = self.new_song();
             self.seats = Seats::for_song(&self.song.doc);
         }
@@ -127,7 +127,7 @@ impl Play {
     /// the pack is not here and cannot be fetched (none to fetch, or it came broken) is the
     /// first track the sine wave under the name of its group (spec 3, 85).
     pub fn new_song(&self) -> Song {
-        let mut song = Song::new_default();
+        let mut song = Song::new_in(self.names);
         let piano = BuiltinInstrument::GrandPiano;
         let can_come = self.sounds.fetchable.contains(&piano) && !self.sounds.broken;
         if self.pack_missing()
@@ -136,7 +136,7 @@ impl Play {
         {
             let track = Arc::make_mut(first);
             track.instrument = InstrumentRef::SINE;
-            track.name = InstrumentRef::SINE.track_name().to_owned();
+            track.name = InstrumentRef::SINE.track_name(self.names).to_owned();
             track.sends = new_track_sends(&InstrumentRef::SINE);
         }
         song

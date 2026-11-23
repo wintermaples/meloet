@@ -10,7 +10,8 @@ import Transport from "../src/components/Transport.svelte";
 import { keyCommand, type KeyDeps } from "../src/keys/attach";
 import { ACTION_ROWS, keyListGroups } from "../src/keys/keyList";
 import { keyAction, type KeyInput } from "../src/keys/keys";
-import { stepNames, t } from "../src/text/ja";
+import { t } from "../src/text";
+import { stepNames } from "../src/text/ja";
 import * as app from "./fake-app.svelte";
 
 vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));

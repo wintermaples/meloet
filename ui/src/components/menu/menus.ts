@@ -1,11 +1,11 @@
 // Content of the menu bar (docs/history/design-notes.ja.md B-59). Does not know the DOM. Rows with a key go the same way as the key (runKeyAction in keys/attach.ts).
 
-import { SCALE_MODES, type AppState, type Band, type Command } from "../../bridge";
+import { LANGUAGES, SCALE_MODES, type AppState, type Band, type Command } from "../../bridge";
 import { THEME_IDS } from "../../design/themes";
 import { SCALES } from "../../design/tokens";
 import { keyActionUsable, pianoRollOpen, runKeyAction, songBusy, type KeyDeps } from "../../keys/attach";
 import type { KeyAction, Platform } from "../../keys/keys";
-import { t, type TextKey } from "../../text/ja";
+import { t, type TextKey } from "../../text";
 import { gridText, pitchClassName, scaleModeName } from "../format";
 import { GRID_DIVISIONS, indexesOf } from "../pianoroll/geom";
 import { shown } from "../pianoroll/shown.svelte";
@@ -177,6 +177,10 @@ export function topMenus(state: AppState, deps: KeyDeps, platform: Platform): To
     }),
     plain("menu.theme", true, undefined, {
       sub: THEME_IDS.map((id) => choice(t(`theme.${id}`), id === state.workspace.theme, true, send({ type: "setTheme", theme: id }))),
+    }),
+    // Round 12 D4: choosing loads the page again in that language (not while counting in or recording).
+    plain("menu.language", !busy, undefined, {
+      sub: LANGUAGES.map((l) => choice(t(`language.${l}`), l === state.workspace.language, !busy, send({ type: "setLanguage", language: l }))),
     }),
     plain("menu.noteGlow", true, send({ type: "setNoteGlow", on: !state.workspace.noteGlow }), { checked: state.workspace.noteGlow }),
     // Round 12 E7: the bars left of 「マスター」 in the top band.

@@ -634,7 +634,7 @@ fn an_empty_clip_on_an_empty_place() {
         create_clip(&doc, T1, 2 * BAR).unwrap_err(),
         EditError::Overlap
     );
-    let (v, vocal) = crate::edit::add_vocal_track(&doc, None).unwrap();
+    let (v, vocal) = crate::edit::add_vocal_track(&doc, None, crate::Language::Ja).unwrap();
     assert_eq!(
         create_clip(&v.doc, vocal, 0).unwrap_err(),
         EditError::NotKeys

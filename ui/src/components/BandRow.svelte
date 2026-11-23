@@ -4,7 +4,7 @@
   import { space } from "../design/tokens";
   import { term } from "../lib/tip.svelte";
   import { current, send } from "../state/app.svelte";
-  import { t } from "../text/ja";
+  import { t } from "../text";
   import { bandCountsShown, bandTabWidth, textWidth } from "./fit";
   import { dbNumber, termParts } from "./format";
   import { metrics } from "./metrics.svelte";

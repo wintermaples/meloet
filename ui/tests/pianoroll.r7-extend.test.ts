@@ -7,7 +7,7 @@ import { pianoRollCommand } from "../src/components/pianoroll/commands";
 import { RollDrag, type Mods } from "../src/components/pianoroll/drag";
 import * as G from "../src/components/pianoroll/geom";
 import type { Tool } from "../src/components/pianoroll/view.svelte";
-import { t } from "../src/text/ja";
+import { t } from "../src/text";
 import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 import { GEOM, take } from "./pianoroll-fixture";
 

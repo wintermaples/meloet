@@ -4,7 +4,7 @@
   import type { ExportRunView } from "../../bridge";
   import { movableDialog } from "../../lib/dialogMove";
   import { send } from "../../state/app.svelte";
-  import { t } from "../../text/ja";
+  import { t } from "../../text";
   import Button from "../Button.svelte";
   import { metrics } from "../metrics.svelte";
   import { exportedDetails, exportedLoudness, exportedName, perTrack, wavePath } from "./exported";

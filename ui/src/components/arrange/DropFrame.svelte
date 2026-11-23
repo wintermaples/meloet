@@ -4,7 +4,7 @@
 <script lang="ts">
   import type { DropMode, TrackView } from "../../bridge";
   import { current } from "../../state/app.svelte";
-  import { t } from "../../text/ja";
+  import { t } from "../../text";
   import type { TempoMap } from "../../time/tempoMap";
   import { nearestBeatTick } from "../../time/bars";
   import { type LaneDims, type View } from "../arrangeGeom";

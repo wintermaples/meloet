@@ -13,7 +13,9 @@ use crate::song::{
 };
 use crate::time::TickRange;
 pub use crate::timeline::{set_meter, set_tempo};
-use crate::{InstrumentRef, TrackColor, TrackId, TrackKind, VOCAL_TRACK_NAME, VocalInput};
+use crate::{
+    InstrumentRef, Language, TrackColor, TrackId, TrackKind, VocalInput, vocal_track_name,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EditError {
@@ -458,18 +460,29 @@ pub fn add_track(
     doc: &Doc,
     below: Option<TrackId>,
     instrument: InstrumentRef,
+    language: Language,
 ) -> Result<(Edit, TrackId), EditError> {
-    let name = instrument.track_name().to_owned();
+    let name = instrument.track_name(language).to_owned();
     add_track_of(doc, below, TrackKind::Keys, instrument, &name)
 }
 
 /// A vocal track named 「歌」 (then 「歌 2」), with 「入口 1 ・ モノ」 (spec 3, 23-A). Its
 /// sends are off, and it has the color its place gives, as a keys track.
-pub fn add_vocal_track(doc: &Doc, below: Option<TrackId>) -> Result<(Edit, TrackId), EditError> {
+pub fn add_vocal_track(
+    doc: &Doc,
+    below: Option<TrackId>,
+    language: Language,
+) -> Result<(Edit, TrackId), EditError> {
     let kind = TrackKind::Vocal {
         input: VocalInput::default(),
     };
-    add_track_of(doc, below, kind, InstrumentRef::SINE, VOCAL_TRACK_NAME)
+    add_track_of(
+        doc,
+        below,
+        kind,
+        InstrumentRef::SINE,
+        vocal_track_name(language),
+    )
 }
 
 /// The vocal track records from other channels of the input. `NotKeys` has no opposite:

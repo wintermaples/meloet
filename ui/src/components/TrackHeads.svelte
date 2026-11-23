@@ -14,7 +14,7 @@
   import { glSlot } from "../gl/slot";
   import { term, tip } from "../lib/tip.svelte";
   import { current, send } from "../state/app.svelte";
-  import { findTerm, t } from "../text/ja";
+  import { findTerm, t } from "../text";
   import { dbNumber } from "./format";
   import { openContextMenu } from "./menu/contextMenu.svelte";
   import { metrics } from "./metrics.svelte";

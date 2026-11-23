@@ -36,7 +36,7 @@ import {
 } from "./geom";
 import { keyLabel } from "./drums";
 import type { Tool } from "./view.svelte";
-import { t } from "../../text/ja";
+import { t } from "../../text";
 import type { IndexRange } from "../../bridge";
 
 export interface Mods {

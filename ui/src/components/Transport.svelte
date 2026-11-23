@@ -7,7 +7,7 @@
   import { menuOpened } from "../lib/menu";
   import { term, tip } from "../lib/tip.svelte";
   import { current, onTelemetry, send } from "../state/app.svelte";
-  import { t } from "../text/ja";
+  import { t } from "../text";
   import ChoiceMenu from "./ChoiceMenu.svelte";
   import MetronomeWindow from "./MetronomeWindow.svelte";
   import { transportWithSpectrum, type TransportParts } from "./fit";

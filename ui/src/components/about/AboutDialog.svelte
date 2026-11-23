@@ -4,7 +4,7 @@
   import { movableDialog } from "../../lib/dialogMove";
   import ScrollArea from "../../lib/ScrollArea.svelte";
   import { current } from "../../state/app.svelte";
-  import { STATUS_JOIN, t, texts, type TextKey } from "../../text/ja";
+  import { hasText, STATUS_JOIN, t } from "../../text";
   import Button from "../Button.svelte";
   import { metrics } from "../metrics.svelte";
   import { about, closeAbout, showFirstStage, showLicenses, toggleGroup, togglePart, toggleSection } from "./about.svelte";
@@ -42,7 +42,7 @@
 
   const changesOf = (id: string): string => {
     const key = `about.changes.${id}`;
-    return key in texts ? t(key as TextKey) : "";
+    return hasText(key) ? t(key) : "";
   };
   // While searching, open the headings that have matches.
   const groupOpen = (g: string): boolean => searching || about.groups.includes(g);

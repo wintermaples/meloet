@@ -1938,7 +1938,10 @@ fn a_song_with_what_this_pc_does_not_have_keeps_it_and_says_so() {
         InstrumentRef::Plugin(Arc::new(surge.clone())),
         InstrumentRef::Sf2(Arc::new(kit)),
     ] {
-        song.doc = edit::add_track(&song.doc, None, instrument).unwrap().0.doc;
+        song.doc = edit::add_track(&song.doc, None, instrument, meloet_model::Language::Ja)
+            .unwrap()
+            .0
+            .doc;
     }
     let strip = meloet_model::StripId::Track(song.doc.tracks[0].id);
     let mverb = PluginRef::new("lv2:urn:mverb", "MVerb", "DISTRHO", "");
@@ -2034,6 +2037,12 @@ fn the_user_guide_opens_in_the_browser_and_the_state_stays() {
     );
     assert!(super::USER_GUIDE_URL.starts_with("https://"));
     assert_eq!(AppState::changes_from(&before, &m.view()), []);
+    // In English, the English guide.
+    let mut m = fresh().with_pc_language(meloet_protocol::Language::En);
+    assert_eq!(
+        cmd(&mut m, Command::OpenUserGuide),
+        [Effect::OpenUrl(super::USER_GUIDE_URL_EN.to_string())]
+    );
 }
 
 /// Protocol 32 (round 12, wave 2): every new intent is taken, and until its feature is built

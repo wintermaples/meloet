@@ -5,7 +5,7 @@ import type { AppState, Command, StatusMessage, TimelineView } from "../src/brid
 import { PROTOCOL_VERSION } from "../src/bridge";
 import { fakeScene, fakeState } from "../src/bridge/fake";
 import StatusLine from "../src/components/StatusLine.svelte";
-import { t } from "../src/text/ja";
+import { t } from "../src/text";
 import { TempoMap } from "../src/time/tempoMap";
 import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 import * as app from "./fake-app.svelte";

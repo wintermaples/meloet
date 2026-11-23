@@ -56,7 +56,7 @@ fn the_commands_of_round_12_waves_3_and_4_are_taken_and_change_nothing_yet() {
             change: StretchChange::TuneStrength { percent: 50.0 },
         },
         Command::SetLanguage {
-            language: Language::En,
+            language: Language::Ja,
         },
     ];
     for command in commands {
@@ -86,8 +86,8 @@ fn the_spectrum_switch_is_kept_in_the_settings() {
     assert_eq!(AppState::changes_from(&before, &m.view()), []);
 }
 
-/// The settings of E7 and D4 are read and written back as they are; the screen stays
-/// Japanese until D4.
+/// The settings of E7 and D4 are read and written back as they are; the chosen language is
+/// the screen's.
 #[test]
 fn the_spectrum_and_the_language_are_settings() {
     let settings = Settings {
@@ -98,6 +98,6 @@ fn the_spectrum_and_the_language_are_settings() {
     let m = Model::new(settings.clone());
     let ws = m.view().workspace;
     assert!(!ws.spectrum);
-    assert_eq!(ws.language, Language::Ja);
+    assert_eq!(ws.language, Language::En);
     assert_eq!(*m.settings(), settings);
 }

@@ -90,7 +90,7 @@ fn a_new_track_sends_by_its_group() {
 
     let doc = Doc::new_default();
     let drums = InstrumentRef::Builtin(I::StudioKit);
-    let (e, id) = edit::add_track(&doc, None, drums).unwrap();
+    let (e, id) = edit::add_track(&doc, None, drums, crate::Language::Ja).unwrap();
     let t = e.doc.track(id).unwrap();
     assert_eq!(t.sends, [Gain::from_db(-24.0), Gain::SILENT]);
     assert_eq!(t.channel, Channel::default());
@@ -510,7 +510,13 @@ fn a_plugin_goes_into_a_slot_and_out_again() {
 #[test]
 fn the_state_of_a_plugin_changes_as_one_step_and_undo_brings_the_old_state_back() {
     let start = Doc::new_default();
-    let (e, track) = edit::add_track(&start, None, InstrumentRef::Plugin(surge())).unwrap();
+    let (e, track) = edit::add_track(
+        &start,
+        None,
+        InstrumentRef::Plugin(surge()),
+        crate::Language::Ja,
+    )
+    .unwrap();
     assert_eq!(e.doc.track(track).unwrap().name, "Surge XT");
     let doc = add_plugin_effect(&e.doc, StripId::Track(track), 0, mverb())
         .unwrap()
@@ -594,10 +600,22 @@ fn a_track_of_a_plugin_or_an_sf2_preset_sends_as_its_group() {
     assert_eq!(a(&preset(SF2_DRUM_BANK, 0)), Gain::from_db(-24.0));
     // The second track of the same name gets a number (spec 3 Y14).
     let doc = Doc::new_default();
-    let (e, _) = edit::add_track(&doc, None, InstrumentRef::Plugin(surge())).unwrap();
-    let (e, second) = edit::add_track(&e.doc, None, InstrumentRef::Plugin(surge())).unwrap();
+    let (e, _) = edit::add_track(
+        &doc,
+        None,
+        InstrumentRef::Plugin(surge()),
+        crate::Language::Ja,
+    )
+    .unwrap();
+    let (e, second) = edit::add_track(
+        &e.doc,
+        None,
+        InstrumentRef::Plugin(surge()),
+        crate::Language::Ja,
+    )
+    .unwrap();
     assert_eq!(e.doc.track(second).unwrap().name, "Surge XT 2");
-    let (e, guitar) = edit::add_track(&e.doc, None, preset(0, 27)).unwrap();
+    let (e, guitar) = edit::add_track(&e.doc, None, preset(0, 27), crate::Language::Ja).unwrap();
     assert_eq!(e.doc.track(guitar).unwrap().name, "ギター");
 }
 
@@ -749,9 +767,9 @@ fn lowering_keeps_minus_infinity_and_stops_at_minus_60() {
 fn lowering_every_track_is_one_step_that_leaves_returns_and_master() {
     use crate::automation::{AutoPoint, add_lane, put_points, set_resting};
     let piano = || InstrumentRef::Builtin(BuiltinInstrument::GrandPiano);
-    let (e, t2) = edit::add_track(&Doc::new_default(), None, piano()).unwrap();
-    let (e, t3) = edit::add_track(&e.doc, None, piano()).unwrap();
-    let (e, t4) = edit::add_track(&e.doc, None, piano()).unwrap();
+    let (e, t2) = edit::add_track(&Doc::new_default(), None, piano(), crate::Language::Ja).unwrap();
+    let (e, t3) = edit::add_track(&e.doc, None, piano(), crate::Language::Ja).unwrap();
+    let (e, t4) = edit::add_track(&e.doc, None, piano(), crate::Language::Ja).unwrap();
     let t1 = TrackId(1);
     let mut doc = e.doc;
     doc = set_gain(&doc, StripId::Track(t2), Gain::SILENT)

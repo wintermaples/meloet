@@ -12,7 +12,7 @@ import { askInStatus, failedLines, fetchingLines, flowHintUp, minutesOf, packBan
 import RightRail from "../src/components/RightRail.svelte";
 import SettingsDialog from "../src/components/SettingsDialog.svelte";
 import StatusLine from "../src/components/StatusLine.svelte";
-import { t } from "../src/text/ja";
+import { t } from "../src/text";
 import * as app from "./fake-app.svelte";
 
 vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));

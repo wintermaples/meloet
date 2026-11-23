@@ -9,7 +9,7 @@ import SoundHint from "../src/components/SoundHint.svelte";
 import StatusLine from "../src/components/StatusLine.svelte";
 import { closeContextMenu, contextMenu, type MenuRow } from "../src/components/menu/contextMenu.svelte";
 import { hideTip, TIP_DELAY_MS, tipView } from "../src/lib/tip.svelte";
-import { t } from "../src/text/ja";
+import { t } from "../src/text";
 import * as app from "./fake-app.svelte";
 
 vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));

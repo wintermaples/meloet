@@ -6,7 +6,7 @@
   import { keyListGroups, type KeyGroup } from "../../keys/keyList";
   import { platformOf, type Platform } from "../../keys/keys";
   import { send } from "../../state/app.svelte";
-  import { t } from "../../text/ja";
+  import { t } from "../../text";
   import Button from "../Button.svelte";
   import { keyNames } from "../menu/menus";
   import { metrics } from "../metrics.svelte";

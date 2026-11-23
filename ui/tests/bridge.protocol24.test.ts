@@ -7,7 +7,7 @@ import { AUDIO_EXTENSIONS, CLIP_GAIN_MAX_DB, CLIP_GAIN_MIN_DB, PROTOCOL_VERSION 
 import { FAKE_AUDIO, SCENES, createFakeTransport, fakeScene, fakeState, reduceAudio } from "../src/bridge/fake";
 import { decodePeaks } from "../src/bridge/peaks";
 import { stepNameText, stepWhatText } from "../src/components/history/stepText";
-import { t } from "../src/text/ja";
+import { t } from "../src/text";
 import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 
 const scene = (name: string) => fakeScene(name)!;

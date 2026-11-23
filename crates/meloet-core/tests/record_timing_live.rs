@@ -22,6 +22,7 @@ fn recorded_keys_land_where_they_were_heard_on_the_real_output() {
     let config = std::env::temp_dir().join(format!("meloet-timing-live-{}", std::process::id()));
     let Ok(output) = std::env::var("MELOET_TIMING_OUTPUT") else {
         let core = Core::start(CoreOptions {
+            pc_language: meloet_protocol::Language::Ja,
             config_dir: None,
             measure_dir: None,
             midi: None,
@@ -54,6 +55,7 @@ fn recorded_keys_land_where_they_were_heard_on_the_real_output() {
     record_timing::write_settings(&config, &output);
 
     let core = Core::start(CoreOptions {
+        pc_language: meloet_protocol::Language::Ja,
         config_dir: Some(config.clone()),
         measure_dir: None,
         midi: Some(midi),

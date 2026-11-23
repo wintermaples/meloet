@@ -3,7 +3,7 @@
 // the nearest row with that note name). The last one chosen wins.
 
 import type { MusicalScale, ScaleMode } from "../../bridge";
-import { t, type TextKey } from "../../text/ja";
+import { t, type TextKey } from "../../text";
 import { pitchClassName } from "../format";
 import { KEY_MAX, KEY_MIN, noteName, SCALE_STEPS } from "./geom";
 

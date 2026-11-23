@@ -4,7 +4,7 @@
   import { platformOf } from "../keys/keys";
   import { term } from "../lib/tip.svelte";
   import { current, send } from "../state/app.svelte";
-  import { t } from "../text/ja";
+  import { SENTENCE_JOIN, t } from "../text";
   import Button from "./Button.svelte";
   import { dayAndTime, termParts } from "./format";
   import { mapOf } from "../time/bars";
@@ -33,9 +33,10 @@
     }
     const values = { ...dayAndTime(recovery.writtenMs), song };
     const takes = recovery.takes > 0 ? t("msg.recoveredTakes", { takes: recovery.takes }) : "";
+    const gap = takes ? SENTENCE_JOIN : "";
     return recovery.cause === "pcEnding"
-      ? { strong: t("msg.recoveredPcEnding"), dim: t("msg.recoveredPcEndingDetail", values) + takes }
-      : { strong: t("msg.recoveredSudden"), dim: t("msg.recoveredSuddenDetail", values) + takes };
+      ? { strong: t("msg.recoveredPcEnding"), dim: t("msg.recoveredPcEndingDetail", values) + gap + takes }
+      : { strong: t("msg.recoveredSudden"), dim: t("msg.recoveredSuddenDetail", values) + gap + takes };
   });
 </script>
 

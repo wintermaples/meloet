@@ -1,6 +1,6 @@
 // Decides what an output or input row shows, from the state (pure functions).
 import type { EndpointView, Friendly, Unusable } from "../bridge";
-import { t, type TextKey } from "../text/ja";
+import { t, type TextKey } from "../text";
 
 /** The plugged-in text. null shows neither mark nor text (when PipeWire cannot tell). */
 export type LinkLook = "plugged" | "connected" | "nothing" | null;

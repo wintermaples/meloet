@@ -191,7 +191,7 @@ fn a_color_an_instrument_and_an_input_say_what_they_became() {
         }
     );
 
-    let (added, vocal) = edit::add_vocal_track(&doc, None).unwrap();
+    let (added, vocal) = edit::add_vocal_track(&doc, None, meloet_model::Language::Ja).unwrap();
     assert_eq!(
         what(&doc, &added),
         StepWhat::Track {

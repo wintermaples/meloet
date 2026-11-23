@@ -131,7 +131,7 @@ impl Play {
                     return Some(StatusMessage::TooManyTracks);
                 }
                 let below = self.song.session.play_target;
-                let (e, id) = edit::add_track(self.doc(), below, STUDIO_KIT).ok()?;
+                let (e, id) = edit::add_track(self.doc(), below, STUDIO_KIT, self.names).ok()?;
                 (e.doc, id, true)
             }
         };

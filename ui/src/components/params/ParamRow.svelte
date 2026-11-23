@@ -16,7 +16,7 @@
   import { forgetHand, noteHand } from "../automation/handValue";
   import { term } from "../../lib/tip.svelte";
   import { send } from "../../state/app.svelte";
-  import { findTerm, t } from "../../text/ja";
+  import { findTerm, t } from "../../text";
   import { metrics } from "../metrics.svelte";
   import { onDragCancel } from "../pianoroll/view.svelte";
   import { fractionOf, keyStep, typedText, unitText, valueAt, valueText } from "./paramRows";

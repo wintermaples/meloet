@@ -2,7 +2,7 @@
 // On a note: 「切り取り」「コピー」「貼りつけ」「複製」「消す」 / 「クオンタイズ」「もとの位置へ戻す」.
 // On an empty place: 「貼りつけ」 (to the pressed place snapped to the grid), 「ぜんぶ選ぶ」. The keys on the right of rows are written the same way as band tabs (Mod is Ctrl on Linux).
 
-import { t } from "../../text/ja";
+import { t } from "../../text";
 import type { MenuEntry } from "../menu/contextMenu.svelte";
 import type { PianoRollKey } from "./commands";
 

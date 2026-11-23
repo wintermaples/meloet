@@ -7,7 +7,7 @@
   import { historyRowBook } from "../../bridge";
   import ScrollArea from "../../lib/ScrollArea.svelte";
   import { current, send } from "../../state/app.svelte";
-  import { t } from "../../text/ja";
+  import { t } from "../../text";
   import { metrics } from "../metrics.svelte";
   import { historyJumpCommand, historyUi, pickRow, selectedRow } from "./historyUi.svelte";
   import { historyRowText, stepPlaceText } from "./stepText";

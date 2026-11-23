@@ -13,6 +13,7 @@ mod catalog;
 pub mod export;
 mod hub;
 mod instruments;
+pub mod language;
 pub mod layout;
 pub mod made;
 pub mod maker;

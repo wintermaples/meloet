@@ -17,7 +17,7 @@ import { trackEdit } from "../src/components/tracks.svelte";
 import Transport from "../src/components/Transport.svelte";
 import { handleKeydown, keyActionUsable, type KeyDeps } from "../src/keys/attach";
 import { keyAction, type KeyInput } from "../src/keys/keys";
-import { findTerm, t, TERM_SEPARATOR } from "../src/text/ja";
+import { findTerm, t, TERM_SEPARATOR } from "../src/text";
 import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 import * as app from "./fake-app.svelte";
 

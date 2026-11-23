@@ -4,7 +4,7 @@
 <script lang="ts">
   import type { StripRef } from "../../bridge";
   import { term } from "../../lib/tip.svelte";
-  import { t } from "../../text/ja";
+  import { t } from "../../text";
   import { metrics } from "../metrics.svelte";
   import { mixControl } from "./control.svelte";
   import ValueField from "../params/ValueField.svelte";

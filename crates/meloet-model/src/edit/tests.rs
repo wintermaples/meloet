@@ -549,7 +549,7 @@ fn adding_a_track_below_another_with_a_name_a_color_and_a_fresh_id() {
         "the three inserts of a new song, a clip and a take"
     );
 
-    let (e, id) = add_track(&doc, Some(T1), bass.clone()).unwrap();
+    let (e, id) = add_track(&doc, Some(T1), bass.clone(), crate::Language::Ja).unwrap();
     assert_eq!(id, TrackId(6), "past every track, clip and take id");
     assert_eq!(e.step, StepKind::AddTrack { track: id });
     assert_eq!(e.doc.next_id, 7);
@@ -574,14 +574,26 @@ fn adding_a_track_below_another_with_a_name_a_color_and_a_fresh_id() {
     assert!(Arc::ptr_eq(&doc.tracks[1], &e.doc.tracks[2]));
 
     // The smallest free number from 2, and at the end without a track to go below.
-    let (e2, id2) = add_track(&e.doc, None, InstrumentRef::Builtin(B::FingerBass)).unwrap();
+    let (e2, id2) = add_track(
+        &e.doc,
+        None,
+        InstrumentRef::Builtin(B::FingerBass),
+        crate::Language::Ja,
+    )
+    .unwrap();
     assert_eq!(id2, TrackId(7));
     assert_eq!(rows(&e2.doc)[3], (7, "ベース 3".to_owned(), 4));
     let renamed = rename_track(&e2.doc, TrackId(6), "低い音").unwrap().doc;
-    let (e3, _) = add_track(&renamed, None, bass.clone()).unwrap();
+    let (e3, _) = add_track(&renamed, None, bass.clone(), crate::Language::Ja).unwrap();
     assert_eq!(e3.doc.tracks[4].name, "ベース 2");
     assert_eq!(e3.doc.tracks[4].color.get(), 5);
-    let (e4, _) = add_track(&e3.doc, None, InstrumentRef::Builtin(B::StudioKit)).unwrap();
+    let (e4, _) = add_track(
+        &e3.doc,
+        None,
+        InstrumentRef::Builtin(B::StudioKit),
+        crate::Language::Ja,
+    )
+    .unwrap();
     assert_eq!(e4.doc.tracks[5].name, "ドラム");
     assert_eq!(
         e4.doc.tracks[5].color.get(),
@@ -594,24 +606,29 @@ fn adding_a_track_below_another_with_a_name_a_color_and_a_fresh_id() {
         next_id: 1,
         ..Doc::new_default()
     };
-    let (e, id) = add_track(&fresh, Some(T1), InstrumentRef::SINE).unwrap();
+    let (e, id) = add_track(&fresh, Some(T1), InstrumentRef::SINE, crate::Language::Ja).unwrap();
     assert_eq!((id, e.doc.next_id), (TrackId(2), 3));
     assert_eq!(e.doc.tracks[1].name, "シンセ");
 
     // A track that is gone keeps its id to itself.
     let none = delete_track(&fresh, T1).unwrap().doc;
     assert_eq!(none.next_id, 2);
-    let (e, id) = add_track(&none, None, InstrumentRef::GRAND_PIANO).unwrap();
+    let (e, id) = add_track(&none, None, InstrumentRef::GRAND_PIANO, crate::Language::Ja).unwrap();
     assert_eq!((id, e.doc.tracks.len()), (TrackId(2), 1));
     let two = Doc {
         next_id: 1,
         ..two_tracks()
     };
     let less = delete_track(&two, T2).unwrap().doc;
-    let (_, id) = add_track(&less, None, InstrumentRef::SINE).unwrap();
+    let (_, id) = add_track(&less, None, InstrumentRef::SINE, crate::Language::Ja).unwrap();
     assert_eq!(id, TrackId(3), "not the id the deleted track had");
     assert_eq!(
-        add_track(&doc, Some(TrackId(9)), InstrumentRef::SINE),
+        add_track(
+            &doc,
+            Some(TrackId(9)),
+            InstrumentRef::SINE,
+            crate::Language::Ja
+        ),
         Err(EditError::NoSuchTrack(TrackId(9)))
     );
     let full = Doc {
@@ -619,7 +636,7 @@ fn adding_a_track_below_another_with_a_name_a_color_and_a_fresh_id() {
         ..doc.clone()
     };
     assert_eq!(
-        add_track(&full, None, InstrumentRef::SINE),
+        add_track(&full, None, InstrumentRef::SINE, crate::Language::Ja),
         Err(EditError::OutOfIds)
     );
 }
@@ -638,7 +655,8 @@ fn a_new_track_is_named_by_its_instrument() {
         B::Trumpet,
         B::ElectricPiano,
     ] {
-        let (e, id) = add_track(&doc, None, InstrumentRef::Builtin(b)).unwrap();
+        let (e, id) =
+            add_track(&doc, None, InstrumentRef::Builtin(b), crate::Language::Ja).unwrap();
         names.push(e.doc.track(id).unwrap().name.clone());
         doc = e.doc;
     }

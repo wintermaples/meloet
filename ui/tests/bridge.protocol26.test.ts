@@ -5,7 +5,7 @@ import type { Command, ExportChange, ExportCheck, ExportRunView, ExportView, Sta
 import { EXPORT_FORMATS, EXPORT_TAIL_MAX_S, PROTOCOL_VERSION } from "../src/bridge";
 import { fakeExportWave, fakeScene, fakeState, reduceExport, type FakeState } from "../src/bridge/fake";
 import App from "../src/App.svelte";
-import { t } from "../src/text/ja";
+import { t } from "../src/text";
 import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 import { mockScreenText } from "./design-sources";
 import { current } from "../src/state/app.svelte";

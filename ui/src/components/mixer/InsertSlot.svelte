@@ -10,7 +10,7 @@
   import type { InsertRef, InsertView } from "../../bridge";
   import { tipOf } from "../../lib/tip.svelte";
   import { send } from "../../state/app.svelte";
-  import { t } from "../../text/ja";
+  import { t } from "../../text";
   import { openContextMenu } from "../menu/contextMenu.svelte";
   import { insertName } from "../sounds";
   import { openShelf } from "../tracks.svelte";

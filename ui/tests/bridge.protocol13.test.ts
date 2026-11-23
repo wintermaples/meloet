@@ -2,7 +2,8 @@
 import { describe, expect, it } from "vitest";
 import { createFakeTransport, fakeScene, fakeState } from "../src/bridge/fake";
 import { INSTRUMENT_GROUPS, type AppState, type Command, type ServerMessage } from "../src/bridge/types";
-import { fill, t, texts, type TextKey } from "../src/text/ja";
+import { fill, t, type TextKey } from "../src/text";
+import { texts } from "../src/text/ja";
 import { mockScreenText } from "./design-sources";
 
 const state = (scene: string) => fakeScene(scene)!.state;

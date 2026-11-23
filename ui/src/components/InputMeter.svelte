@@ -18,7 +18,7 @@
   import { current, onEvent, post, send } from "../state/app.svelte";
   import { octaveNote, switchTypedKeys } from "../keys/typed.svelte";
   import { keyboardName } from "./keyboardName";
-  import { findTerm, t } from "../text/ja";
+  import { findTerm, STATUS_JOIN, t } from "../text";
   import { dbNumber, PeakHold, textParts } from "./format";
   import { CLIP_HOLD_MS } from "../gl/dims";
   import { noteName, pad3, signed4, SUSTAIN_ON } from "./meterFormat";
@@ -51,7 +51,7 @@
   const name = $derived(keyboard ? keyboardName(keyboard) : t("meter.noKeyboard"));
   const others = $derived(keyboard ? app!.keyboards.list.length - 1 : 0);
   const more = $derived(others > 0 ? t("meter.otherKeyboards", { count: others }) : "");
-  const allNames = $derived(app?.keyboards.list.map(keyboardName).join(" ・ ") ?? "");
+  const allNames = $derived(app?.keyboards.list.map(keyboardName).join(STATUS_JOIN) ?? "");
   // R2 「キーで弾く」: the switch right of the name, and the octave of the A key while it is on.
   const typedOn = $derived(app?.keyboards.typedKeys ?? false);
   function toggleTyped(): void {

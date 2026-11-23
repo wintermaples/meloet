@@ -607,7 +607,12 @@ pub(super) fn mic_meters(shared: &Shared) -> (Vec<meloet_protocol::MicMeter>, bo
 
 /// Puts the files a recording left when meloet ended into `doc`, each as a clip on its vocal
 /// track, as far as it was written. Returns how many were kept and where the last ends.
-pub(super) fn keep_vocals(state_dir: &Path, note: &RecNote, doc: &mut Doc) -> Option<KeptVocals> {
+pub(super) fn keep_vocals(
+    state_dir: &Path,
+    note: &RecNote,
+    doc: &mut Doc,
+    names: meloet_model::Language,
+) -> Option<KeptVocals> {
     let dir = vocalrec::work_audio_dir(state_dir);
     let map = TempoMap::new(&doc.timeline);
     let mut until = 0u64;
@@ -640,7 +645,7 @@ pub(super) fn keep_vocals(state_dir: &Path, note: &RecNote, doc: &mut Doc) -> Op
             .is_some_and(|t| t.kind.is_vocal());
         let track = match on_song {
             true => TrackId(file.track),
-            false => match edit::add_vocal_track(doc, None) {
+            false => match edit::add_vocal_track(doc, None, names) {
                 Ok((e, id)) => {
                     *doc = e.doc;
                     id

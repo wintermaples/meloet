@@ -44,14 +44,21 @@ fn imported() -> (Doc, ClipId) {
         sha256: [3; 32],
         name: "ドラム".to_owned(),
     };
-    let (e, made) = import_audio(&doc, vec![file], ImportPlan::Separate, BAR).unwrap();
+    let (e, made) = import_audio(
+        &doc,
+        vec![file],
+        ImportPlan::Separate,
+        BAR,
+        crate::Language::Ja,
+    )
+    .unwrap();
     (e.doc, made[0].clip)
 }
 
 /// A recording of two bars from bar 2 into `doc`: the file starts half a second before the
 /// take, which is three laps long; the second lap is shown.
 fn recorded(doc: &Doc) -> (Doc, ClipId) {
-    let (e, track) = add_vocal_track(doc, None).unwrap();
+    let (e, track) = add_vocal_track(doc, None, crate::Language::Ja).unwrap();
     let lap = |first_frame| NewAudioTake {
         origin: BAR,
         length: 2 * BAR,

@@ -2470,3 +2470,74 @@ Fixes "F8-ExportClip cannot be made" from `docs/history/measurements/2026-11-22-
   - No protocol change (`peak_db`, `over`, `clips` of `ExportCheck` mean the same; `clips` stays `false` for 32-bit).
 - **"The same as the output, bit for bit", read again**: a song that never goes over 0 dB is still identical (`what_is_exported_is_what_plays_sample_for_sample`). A song that goes over is identical once the export is cut to ±1.0 (`what_goes_over_0_db_is_exported_as_it_is_and_cut_as_it_plays`). 16 / 24-bit values are cut before turning into integers, so they equal what would be made from the output.
 - **Real app**: `shoot_app.py exportClipApp` (limiter removed, all faders +6 dB) shows 「いちばん大きい所 +11.7 dB」 and 「0 dB をこえる所が 1 か所あります（いちばん大きい所 +11.7 dB）。音が割れます。」 (a dense song never has 100 ms below 0 dB, so one place).
+
+---
+
+## 24. The owner's improvement notes (round 10)
+
+The owner's answers are in `docs/progress.md` (chapter 6) and in the spec (`docs/spec/3-bands.md`, "Rules added in round 10"; `docs/spec/7-readings.md`, A-25 to A-27). This chapter says how they are built and why. Protocol versions: 28 (clip steps, overdub, chord stamp), 29 (opening the piano roll from a track head, the AI link switch).
+
+### 24-1 Keyboard buttons and the fader
+- `meloet-midi` listens to every readable hardware port of a keyboard client: the lowest port is the keys port, every later port is a **button port** (`rules.rs` `keyboard_ports`). The keyboard's id and name still come from the keys port, so plugging in again keeps the id.
+- On a button port only Mackie Control note-ons are read (`Button::from_mcu_note`: 86 cycle, 91 rewind, 92 fast forward, 93 stop, 94 play, 95 record, 96–99 up/down/left/right, 100 middle). They come out as `MidiMessage::Button`, never as `MidiMessage::Event`, so they never sound and are never recorded. Other notes, CCs and note-offs from a button port are dropped. Ports that cannot be subscribed are skipped; keys still work.
+- In core, a button becomes an ordinary `Command` (`state/buttons.rs`): play only when stopped (`PlayStop`), stop only when not stopped, `Record`, `Locate` one bar back/forward (`play/buttons.rs` `bar_step`; the start of the bar when in the middle; never before the song start), `ToggleLoop`, `SelectTrack { from_arm: false }` for up/down (stops at the ends). So buttons behave exactly like keys and screen buttons; the tests compare the whole `view()` of the two ways.
+- **Fader (CC 7 on the keys port)**: not sent to the sound, not recorded, not shown. The MIDI thread keeps only the newest value in `Shared::fader` (an `AtomicU16`, `NO_FADER` when none) and sends `Msg::Fader` only when no older one is waiting, so a fast fader becomes one message while core is busy. Core reads 0–127 as a fader position with the mixer's scale (`Gain::from_position(v / 127)`, `FADER_SCALE`). **Pick-up**: nothing happens until the fader passes the current volume (or comes within half a step); a new selected track, or a volume changed on the screen or by undo, starts the pick-up again. While moving it sends `SetGain { commit: false }`; 0.5 s (`FADER_REST_US`) after it stops, `commit: true` (one step 「音量を変える」). Moving on another track first commits the earlier one. `Input::Tick` and `wake_at_us` watch the deadline.
+- **CC 123 / CC 121**: `service/keys.rs` (`keys::Hands`) remembers, per keyboard on the MIDI thread, the held keys, sustain, modulation and bend. On CC 123 or 121 it makes the key-ups (121 also bend 0, modulation 0, sustain up) and sends them the normal way, so a take never keeps a note or the pedal held (spec 7, A-26). The CC messages themselves are not recorded.
+- `meloet-vkeys appear --buttons 1` adds a second port 「<name> buttons」; `meloet-vkeys button --note N` presses a button (tests).
+- Not done: HUI and plain MIDI modes; separate pick-up per keyboard.
+
+### 24-2 Pasting notes
+- `meloet_model::notes::paste_notes` no longer drops notes outside the clip. It passes the reach (earliest start, latest end) to `put_notes`, and the clip grows in whole bars like writing outside the clip (82). Where it would hit the next clip: `EditError::Overlap`, nothing changes, and core says `StatusMessage::ClipsNotPasted` (「ほかのクリップと重なるので、貼りつけませんでした。」). Notes past `MAX_TICK` are dropped, notes reaching it are cut. Growing and pasting are one step (`PasteNotes`). The owner's decision (spec 3, 82).
+- **What Mod V pastes**: the screen remembers the kind of the last copy or cut (`ui/src/state/copied.ts`, set by `send` in `app.svelte.ts` for `copyNotes`/`cutNotes`/`copyClips`/`cutClips`). Last copy was notes and the piano roll is open → notes go into the shown clip even when the keys point at the arrange (`ui/src/keys/attach.ts`). Last copy was clips → clips, as before. Nothing copied yet, or the piano roll closed → the key focus decides, as before. Context menus paste the kind of the pressed place.
+- **Where Mod V puts notes** (`ui/src/components/pianoroll/commands.ts`): at the play line (snapped to the grid) when it is inside the shown clip; otherwise at the start of the clip. No shown clip: nothing.
+- The bug the owner hit had both causes: notes outside the clip were dropped, and after pressing a clip in the arrange the keys pointed at the arrange, so Mod V pasted (empty) clips.
+
+### 24-3 Home with the loop on
+- `Play::go_to_start` (from `Command::GoToStart`): loop off → the song start. Loop on → the loop start; when already there, the song start.
+- "Already there" while stopped means the play position equals the loop start. While playing the line moves, so a flag `homed` means "the last move while playing was a Home to the loop start"; `locate` and starting playback clear it. So while playing, two Homes in a row go to the song start. Recording and count-in: nothing (as `locate`).
+
+### 24-4 The piano roll opens on the loop
+- `openSpan(clip, loop)` in `ui/src/components/pianoroll/geom.ts`: when the loop is on and overlaps the clip (touching ends do not count), the loop range; otherwise the clip. `Roll.svelte` picks the zoom step with `fitQuarterPx` over that span and scrolls to its start. A clip made by writing where there was none keeps the view as before.
+
+### 24-5 Protocol 28
+- New commands: `RenameClip { clip, name }`, `SplitClipAt { clip, tick }`, `JoinClips { clips }`, `CreateClip { track, tick }`, `AddMarker { name, tick: Option }` (a missing `tick` reads as `None`, for old senders such as `tools/design/shoot_app.py`), `SetOverdub { on }`, `AddNotes { take, start, length, keys, velocity }`. `TransportView::overdub`, `RecordingView::overdub`.
+- New step names: `RenameClip` 「クリップの名前を変える」, `JoinClips` 「クリップをつなげる」 (both `user:2026-11-23`), `WriteClip` 「クリップを書く」 (spec 3, Y19; it existed in the spec list but no step used it before). `StepKind::WriteNote` has a `count`: one note shows its key name, more show the number of notes.
+- The first pass made the shapes, TS types and fake scenes (`ui/src/bridge/fakeRound10.ts`, which answers like core), with core arms that did nothing; the second pass filled core and the screen at the same time (CLAUDE.md's two-pass rule).
+
+### 24-6 Clip steps in core
+- `meloet_model::arrange::rename_clip`: trims spaces; empty, only spaces or the same name → `Unchanged` (no step). Keys and audio clips. History: `StepWhat::Renamed { from, to }`, place 「アレンジ」.
+- `SplitClipAt` goes the same way as S: `Play::split_clips` was split so that both call `split_at(clips, at)` (`StepName::SplitClips`, `ClipSplit`, the right half chosen). Not at an edge, not outside, not during count-in or recording.
+- `meloet_model::arrange::join_clips(doc, clips) -> (Edit, ClipId)`: from the start of the first to the end of the last; the first clip's id and name; one new take (new id) made of each clip's shown take, only the notes and CC points whose start is inside that clip's range, notes cut at the clip's end; other takes and the quantize origins are not kept (undo brings them back). Nothing happens with an audio clip (`NotKeys`), fewer than two, different tracks, or a clip that is not chosen lying between (`Unchanged`), or an id that does not exist (`NoSuchClip`). The joined clip is chosen (`ClipPick::one`).
+- `meloet_model::notes::create_clip(doc, track, tick)`: the place rule of `write_in_new_clip` was split out (`new_clip_place`, `with_new_clip`): from the start of the bar, 4 bars, up to the next clip, never past `MAX_TICK`. Inside a clip → `Overlap`, audio track → `NotKeys`. Core chooses the clip, shows it in the piano roll, makes its track the play target (as a click on a clip does), and opens the piano roll band through `toggle_band` when it is closed. Step `StepKind::CreateClip` → `WriteClip`, what: the clip name.
+- `Play::add_marker(name, tick: Option<u64>)` snaps `tick` (or the play line) to the beat.
+- `Play::add_notes` (from `write_notes`, shared with `add_note`): keys over 127 are dropped, the same key is written once; **keys outside a fixed scale are written** (the owner's decision); all new notes are chosen; outside the clip it grows, `take: None` makes a clip.
+
+### 24-7 Overdub
+- `meloet_model::record::overdub::overdub_recording(doc, track, NewTake)`: the recorded notes are added to the **shown take** of the clip that holds their starts, as an edited take (new id in the same place, the take count stays, origin and `from` carried over when one clip is involved). Clips between such clips are included. A note whose tail only reaches into the next clip does not join the two clips (it would surprise). Recording past the clip grows it in whole bars, stopping at the next clip (the hidden tail stays in the take, as with a trimmed clip). When note starts fall in two or more clips, they are merged like `add_recording` (first id and name kept, every take kept, the shown takes joined into one in the place of the first clip's shown take, notes cut at each clip's end). The same CC point is not written twice.
+- No clip there: `add_recording` makes a new clip, but only over the empty gap around the notes (it does not swallow a neighbouring clip, which would hide its notes in another take). Later passes add to it.
+- Vocal tracks always record takes (`NotKeys`).
+- **Loop passes**: `Recorder::close_laps(upto)` hands over each finished pass once (keys held over the end are cut at the loop end, as before). A pass ends when the heard position enters the next pass (checked on every `Input::Tick`, 15 ms). A pass with notes becomes one step 「録音」. Because the engine plays ahead of the heard position, 0.15 s before the end of a pass core sends the sequence with that pass's notes so far (`EngineOp::GrowSequence` → `EngineCommand::GrowSequence`, which keeps sounding notes and does not resend what was already sent, also inside the lookahead); at the pass boundary the step is made and the sequence is sent again only if it changed. The 0.15 s is meant for quanta up to about 1024 frames; not measured.
+- While overdubbing, the recorded keys track plays its clip (`EngineOp::RecordMuted` / `EngineCommand::SetRecordMuted`); without overdub it is still muted while recording, as before. Both engine commands stay off the allocator (`every_transport_path_stays_off_the_allocator`).
+- Turning the switch while recording works from the next pass (from the next recording without a loop). Off → on: the passes so far go in as takes in one step, then later passes add to the last take. On → off: later passes are takes again.
+- History "（何を）" of a recording: 「テイク N」 with N the shown take number (`active + 1`); for a normal recording this is the same as before.
+- The switch is a meloet setting (`settings.json` `overdub`, not written when off), read at start, not an undoable step.
+- Not done yet: measuring key → sound and key → screen while overdubbing, and recording the output to hear the head of the next pass.
+
+### 24-8 Chord help
+- All screen-side; the core only receives `AddNotes`. `ui/src/components/pianoroll/chords.ts` (no DOM): the nine shapes, chords of a key (`keyChords`: stack every other note of the scale three times; keep only major, minor, dim and aug, in order from the tonic; unnamed stacks are not shown, so a pentatonic scale has none and a whole-tone scale only aug; `ScaleMode` has only major and minor today), `nearestRoot` (the nearest row with the chord's root name; the lower one on a tie), `stampKeys` (no key over 127).
+- `chordPick.svelte.ts`: one screen-only choice shared by the stamp shape and the table chord (the last one chosen); it stays when the band folds.
+- `ChordRow.svelte`: the row under the tool row (`size.row`). Pressing a chord auditions it while pressed (root placed in C4–B4); the keyboard column does not light up for it (separate auditioner).
+- `drag.ts`: the write drag carries `keys`; with two or more keys it sends one `AddNotes` on release. The shadow is drawn on the existing live region (`paintLive` with `outline`, a 1px accent border), so no new WebGL context.
+- The piano roll band got 24 taller at both ends to keep "at least 10 rows, at most 49 keys": `PIANO_ROLL_MIN` 268 → 292, `PIANO_ROLL_MAX` 736 → 760 (`crates/meloet-core/src/layout.rs`; spec 3 tables updated).
+- Drum piano roll: the ▾ and the chord row are disabled.
+
+### 24-9 Arrange, menus and names on the screen
+- `ui/src/components/clipEdits.ts` (no DOM): `joinable`, `joinTarget`, `splitTick` (null at a clip edge), `renameClipTarget` (F2: the clip pressed last, else the first chosen), `overdubClipName`. `rulerLine()` in `Arrange.svelte` is shared by ruler drags and 「ここで切る」.
+- `ui/src/components/clipName.svelte.ts`: the screen-only state of the clip name box (`arrange` or `params`). The box is HTML over the WebGL clips; it closes when recording starts or the clip goes away.
+- Double click: the name strip → name box; an audio clip's waveform → row 160 (as before); an empty place of a keyboard track → `CreateClip`; an empty place of a vocal track → nothing; an empty place of the marker row → `AddMarker { tick }`.
+- `transportWithOverdub` in `ui/src/components/fit.ts`: the other folding parts fold first; 「重ねる」 hides last.
+- The overdub status line is made on the screen from `TransportView`/`RecordingView` (no new `StatusMessage`).
+
+### 24-10 The studio kit crash
+- The owner's report (the crash cut at the note end) did not reproduce on any path (sampler, engine, core rules, the real app); the owner later said it was a mistake. The tests that were written stay as guards: `crates/meloet-sound/tests/kit_tails.rs` and `crates/meloet-core/src/export/kit_tests.rs` (one-shot cymbals ring past short notes, also among other drums).
+- Found on the way, not changed: the studio kit's crash loses about 12 dB in its first 0.3 s (the FluidR3 SF2 crash loses 3 dB), so it sounds short by nature; the master limiter turns both stereo sides down by the same amount.

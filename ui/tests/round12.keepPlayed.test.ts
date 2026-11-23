@@ -8,7 +8,7 @@ import { keyNames, topMenus, type ListRow } from "../src/components/menu/menus";
 import StatusLine from "../src/components/StatusLine.svelte";
 import Transport from "../src/components/Transport.svelte";
 import { keyCommand, type KeyDeps } from "../src/keys/attach";
-import { ACTION_ROWS, keyListGroups, WAVE2_ROWS } from "../src/keys/keyList";
+import { ACTION_ROWS, keyListGroups } from "../src/keys/keyList";
 import { keyAction, type KeyInput } from "../src/keys/keys";
 import { stepNames, t } from "../src/text/ja";
 import * as app from "./fake-app.svelte";
@@ -65,7 +65,6 @@ describe("Shift R", () => {
 
   it("is in the key list under 「再生と録音」's group, and no longer among the keys to come", () => {
     expect(ACTION_ROWS.keepPlayed).toHaveLength(1);
-    expect(WAVE2_ROWS.map((r) => r.label)).not.toContain("keyList.keepLast");
     const play = keyListGroups(keyNames("other")).find((g) => g.group === "play")!;
     const rows = play.rows.filter((r) => r.label === "さっきのを残す");
     expect(rows).toEqual([{ label: "さっきのを残す", keys: "Shift R" }]);

@@ -2107,6 +2107,13 @@ export const texts = {
   "arrange.repeatCount": e("くり返す回数", "builder:2026-11-23"),
   // Velocity lock (B-66) and changing velocities together (B-67).
   "input.velocityFixed": e("固定", "user:2026-11-18"),
+  // R2 (round 12): the PC keyboard plays while 「キーで弾く」 is on. The octave is the note of the A key.
+  "input.typedKeys": e("キーで弾く", "user:2026-11-23"),
+  "input.typedKeyboard": e("パソコンのキーボード", "user:2026-11-23"),
+  "input.octave": e("オクターブ", "user:2026-11-23"),
+  "menu.typedKeys": e("キーで弾く", "user:2026-11-23"),
+  "msg.typedKeysOn": e("キーで弾く：オン。1文字のショートカットは止まっています。Z ／ X でオクターブ、Esc でやめる", "user:2026-11-23"),
+  "msg.typedKeysIme": e("日本語入力がオンだと鳴りません", "builder:2026-11-24"),
   "inspector.matchVelocity": e("そろえる", "user:2026-11-18"),
   // P3 (round 12): more rows of 「ベロシティをまとめて変える」 and 「長さをそろえる」. The marks % → ± are those of the spec's picture.
   "inspector.scaleVelocity": e("割合", "user:2026-11-23"),

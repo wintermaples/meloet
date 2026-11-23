@@ -39,6 +39,7 @@ export const ACTION_ROWS: Record<KeyAction["kind"], readonly KeyRow[]> = {
   playStop: [row("play", "keyList.playStop", () => t("key.playStop"))],
   record: [row("play", "menu.record", () => t("key.record"))],
   keepPlayed: [row("play", "keyList.keepLast", (k) => k.shift(t("key.keepLast")))],
+  typedKeys: [row("play", "keyList.playByKeys", (k) => k.mod(t("key.playByKeys")))],
   toStart: [row("play", "menu.toStart", () => t("key.toStart"))],
   loop: [row("play", "menu.loop", () => t("key.loop"))],
   metronome: [row("play", "menu.metronome", () => t("key.metronome"))],
@@ -116,14 +117,6 @@ export const OTHER_ROWS: readonly KeyRow[] = [
   row("view", "keyList.focus", (k) => or(t("key.tab"), k.shift(t("key.tab")))),
 ];
 
-/**
- * Coming in round 12 wave 2 (R2, A1). When their KeyAction kinds are added to keys.ts, move each row into
- * ACTION_ROWS under its kind (the type check asks for it) and take it out of here.
- */
-export const WAVE2_ROWS: readonly KeyRow[] = [
-  row("play", "keyList.playByKeys", (k) => k.mod(t("key.playByKeys"))),
-];
-
 export interface ShownRow {
   label: string;
   keys: string;
@@ -143,7 +136,7 @@ export function labelOf(r: KeyRow): string {
  * and the group name (case does not matter); a group whose name matches shows all its rows. Groups left empty are dropped.
  */
 export function keyListGroups(names: KeyNames, query = ""): ShownGroup[] {
-  const all = [...Object.values(ACTION_ROWS).flat(), ...OTHER_ROWS, ...WAVE2_ROWS];
+  const all = [...Object.values(ACTION_ROWS).flat(), ...OTHER_ROWS];
   const q = query.trim().toLowerCase();
   const has = (text: string) => text.toLowerCase().includes(q);
   return KEY_GROUPS.map((group) => {

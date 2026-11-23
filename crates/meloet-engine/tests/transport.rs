@@ -45,6 +45,8 @@ struct Rig {
     delay_us: u64,
     /// Keys not yet arrived, by `t_us`.
     keys: Vec<MidiIn>,
+    /// Keys of the PC keyboard not yet arrived, with when they arrive, in that order.
+    typed: Vec<(u64, MidiIn)>,
     out: Vec<f32>,
     /// The `Recent` and `RecentEnd` items read so far ([`Rig::recent`]).
     recent: Vec<Recorded>,
@@ -59,6 +61,7 @@ impl Rig {
             base_us: 1_000_000,
             delay_us,
             keys: Vec::new(),
+            typed: Vec::new(),
             out: vec![0.0; block * 2],
             recent: Vec::new(),
         }
@@ -121,6 +124,12 @@ impl Rig {
         self.keys.sort_by_key(|k| k.t_us);
     }
 
+    /// A key of the PC keyboard played at `t_us` that reaches the engine's ring at `arrive_us`.
+    fn typed_key(&mut self, t_us: u64, arrive_us: u64, event: InstrumentEvent) {
+        self.typed.push((arrive_us, MidiIn { event, t_us }));
+        self.typed.sort_by_key(|(arrive, _)| *arrive);
+    }
+
     /// Renders whole device blocks until at least `frames` more frames are done. Returns the
     /// left channel.
     fn run(&mut self, frames: u64) -> Vec<f32> {
@@ -131,6 +140,11 @@ impl Rig {
             while self.keys.first().is_some_and(|k| k.t_us <= callback_us) {
                 let key = self.keys.remove(0);
                 self.parts.midi_in.push(key).expect("midi ring full");
+            }
+            while self.typed.first().is_some_and(|(at, _)| *at <= callback_us) {
+                let (_, key) = self.typed.remove(0);
+                let ring = self.parts.handle.typed_in();
+                ring.push(key).expect("typed ring full");
             }
             let timing = BlockTiming {
                 callback_us,
@@ -1568,6 +1582,11 @@ fn every_transport_path_stays_off_the_allocator() {
             rig.key(now + k * 3_000 + 1_500, off(60 + k as u8));
         }
         rig.key(now, cc(64, 127));
+        for k in 0..10u64 {
+            let t = now + k * 4_000 + 700;
+            rig.typed_key(t, t + 6_000, on(90 + k as u8));
+            rig.typed_key(t + 2_000, t + 8_000, off(90 + k as u8));
+        }
         rig.run(RATE / 2);
         // Off the audio thread: empty what came back.
         rig.recorded();
@@ -2007,4 +2026,85 @@ fn keys_outside_a_recording_leave_room_for_what_a_recording_says() {
     );
     let kept = rig.recent.len();
     assert!((3000..4096).contains(&kept), "{kept}");
+}
+
+/// R2: the PC keyboard's ring is read with the MIDI ring in the order the keys were played,
+/// both sound on the play target, and only the MIDI keyboard's keys say how late their sound
+/// was (the PC keyboard's time comes from the screen).
+#[test]
+fn the_pc_keyboards_keys_sound_with_the_midi_keys_in_the_order_they_were_played() {
+    let mut rig = Rig::new(256, 13_000);
+    let mut tape = rig.tape(0);
+    rig.run(256);
+    let next_us = rig.base_us + (rig.frames as f64 * 1e6 / RATE as f64) as u64;
+    rig.key(next_us - 3_000, on(60));
+    rig.typed_key(next_us - 2_000, next_us - 100, on(72));
+    rig.key(next_us - 1_000, on(62));
+    rig.typed_key(next_us - 500, next_us, off(72));
+    rig.run(256);
+    let played: Vec<_> = drain(&mut tape).into_iter().map(|(_, e)| e).collect();
+    assert_eq!(played, [on(60), on(72), on(62), off(72)]);
+    let timed: Vec<_> = std::iter::from_fn(|| rig.parts.handle.pop_latency())
+        .map(|r| r.key_us)
+        .collect();
+    assert_eq!(timed, [next_us - 3_000, next_us - 1_000]);
+}
+
+/// R2: a key of the PC keyboard reaches the engine some ms after it was played (the screen,
+/// the core thread). Recorded, and played outside a recording (R1), it still takes the
+/// position that was heard when it was played.
+#[test]
+fn the_pc_keyboards_keys_take_the_position_heard_when_played_though_they_come_late() {
+    let bpm = 12_000;
+    for block in [64usize, 256, 1024] {
+        for late_ms in [2u64, 15, 40] {
+            for record in [true, false] {
+                let label = format!("block {block}, {late_ms} ms late, recording {record}");
+                let mut rig = Rig::new(block, 13_000);
+                rig.tempo(bpm);
+                rig.run(block as u64);
+                let start = rig.frames;
+                rig.send(if record {
+                    EngineCommand::Record {
+                        from: 0,
+                        count_in_beats: 0,
+                        muted: TrackSet::default(),
+                    }
+                } else {
+                    EngineCommand::Play { from: 0 }
+                });
+                let beats: Vec<u64> = (1..=4).map(|b| b * Q).collect();
+                for &tick in &beats {
+                    let t = rig.dac_us(start + frame_of(tick, 0, bpm)).round() as u64;
+                    rig.typed_key(t, t + late_ms * 1000, on(60));
+                    rig.typed_key(t + 100_000, t + 100_000 + late_ms * 1000, off(60));
+                }
+                rig.run(frame_of(6 * Q, 0, bpm));
+                let ticks: Vec<f64> = if record {
+                    (rig.recorded().iter())
+                        .filter_map(|r| match *r {
+                            Recorded::Event {
+                                event: InstrumentEvent::NoteOn { .. },
+                                tick,
+                                ..
+                            } => Some(tick),
+                            _ => None,
+                        })
+                        .collect()
+                } else {
+                    let got = rig.recent();
+                    (recent_keys(&got).iter())
+                        .map(|(_, _, at)| at.expect("placed").tick)
+                        .collect()
+                };
+                assert_eq!(ticks.len(), beats.len(), "{label}: {ticks:?}");
+                for (got, want) in ticks.iter().zip(&beats) {
+                    assert!(
+                        (got - *want as f64).abs() <= 0.5,
+                        "{label}: {got} for {want}"
+                    );
+                }
+            }
+        }
+    }
 }

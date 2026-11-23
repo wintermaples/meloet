@@ -22,6 +22,7 @@
   import { openContextMenu, type MenuEntry } from "./menu/contextMenu.svelte";
   import PluginPlaces from "./plugins/PluginPlaces.svelte";
   import ValueField from "./params/ValueField.svelte";
+  import { keyboardName } from "./keyboardName";
 
   const FIRST_NOTE = 36;
   const LAST_NOTE = 84;
@@ -147,7 +148,7 @@
 {#snippet keyboardRows()}
   {#each app?.keyboards.list ?? [] as k (k.id)}
     <EndpointRow
-      look={{ name: k.name, side: t("friendly.keyboard"), link: "connected" }}
+      look={{ name: keyboardName(k), side: t("friendly.keyboard"), link: "connected" }}
       selected={k.id === app?.keyboards.active}
       disabled={false}
       still

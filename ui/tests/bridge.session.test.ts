@@ -69,6 +69,9 @@ function scripted(version = PROTOCOL_VERSION) {
       calls.push("send");
       return { rev: 0 };
     },
+    async post() {
+      calls.push("post");
+    },
     async clock() {
       return clockReplies.shift() ?? 0;
     },

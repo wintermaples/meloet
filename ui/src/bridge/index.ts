@@ -211,6 +211,11 @@ export async function send(command: Command): Promise<number> {
   return connected().send(command);
 }
 
+/** Sends an intent without waiting for Rust to be done with it (the keys of the PC keyboard). */
+export async function post(command: Command): Promise<void> {
+  return connected().post(command);
+}
+
 /** `rustMonoUs ≈ performance.now() * 1000 + offset`. */
 export async function clockOffsetUs(): Promise<number> {
   return connected().clockOffsetUs();

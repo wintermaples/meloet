@@ -17,7 +17,7 @@ import { cancelDrag, dragReading } from "../src/components/pianoroll/view.svelte
 import { watchSlots, type GlRect, type GlSlot } from "../src/gl/slot";
 import { handleKeydown, keyActionUsable, type KeyDeps } from "../src/keys/attach";
 import { keyAction, type KeyInput } from "../src/keys/keys";
-import { ACTION_ROWS, WAVE2_ROWS } from "../src/keys/keyList";
+import { ACTION_ROWS } from "../src/keys/keyList";
 import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 import * as app from "./fake-app.svelte";
 
@@ -176,7 +176,6 @@ describe("Mod R and the menus", () => {
   });
   it("the key list has the row under 「アレンジ」 (no longer among the rows to come)", () => {
     expect(ACTION_ROWS.repeatClips.map((r) => r.label)).toEqual(["keyList.repeatClips"]);
-    expect(WAVE2_ROWS.some((r) => r.label === "keyList.repeatClips")).toBe(false);
   });
 });
 

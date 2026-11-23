@@ -9,7 +9,7 @@ import { closeKeyList, keyList, keyListBack, openKeyList } from "../src/componen
 import { keyNames, topMenus, type ListRow } from "../src/components/menu/menus";
 import StatusLine from "../src/components/StatusLine.svelte";
 import { handleKeydown, type KeyDeps } from "../src/keys/attach";
-import { ACTION_ROWS, KEY_GROUPS, keyListGroups, OTHER_ROWS, WAVE2_ROWS } from "../src/keys/keyList";
+import { ACTION_ROWS, KEY_GROUPS, keyListGroups, OTHER_ROWS } from "../src/keys/keyList";
 import { t } from "../src/text/ja";
 import * as app from "./fake-app.svelte";
 
@@ -62,7 +62,7 @@ describe("the table (keyList.ts)", () => {
 
   it("every row has words and keys; the count covers the spec 4 table", () => {
     const rows = keyListGroups(linux).flatMap((g) => g.rows);
-    expect(rows.length).toBe(Object.values(ACTION_ROWS).flat().length + OTHER_ROWS.length + WAVE2_ROWS.length);
+    expect(rows.length).toBe(Object.values(ACTION_ROWS).flat().length + OTHER_ROWS.length);
     expect(rows.length).toBeGreaterThanOrEqual(60);
     for (const r of rows) {
       expect(r.label, JSON.stringify(r)).not.toBe("");

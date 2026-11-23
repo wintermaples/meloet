@@ -34,10 +34,8 @@ export function renameClipTarget(state: AppState): number | null {
   return a.selectedClip !== null && a.selectedClips.includes(a.selectedClip) ? a.selectedClip : a.selectedClips[0]!;
 }
 
-/** While overdubbing (「重ねる」 on), the name of the clip the keyboard recording goes into; null when it makes a new clip. */
-export function overdubClipName(tracks: readonly TrackView[], recording: { track: number; clip: number | null }): string | null {
-  if (recording.clip === null) return null;
-  const track = tracks.find((t) => t.id === recording.track);
-  if (!track || track.kind.kind !== "keys") return null;
-  return track.clips.find((c) => c.id === recording.clip)?.name ?? null;
+/** While the pass going on overdubs (`RecordingView.overdub`), the name of the clip its notes go into; null for a plain recording. */
+export function overdubClipName(tracks: readonly TrackView[], recording: { track: number; clip: number | null; overdub: boolean }): string | null {
+  if (!recording.overdub || recording.clip === null) return null;
+  return tracks.find((t) => t.id === recording.track)?.clips.find((c) => c.id === recording.clip)?.name ?? null;
 }

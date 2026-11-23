@@ -57,14 +57,18 @@
       nameField?.select();
     });
   });
+  function decideName(): void {
+    if (!clip) return;
+    stopClipRename();
+    const command = renameCommand(clip.id, clip.name, nameDraft);
+    if (command) send(command);
+  }
   function nameKey(e: KeyboardEvent): void {
     if (e.isComposing || !clip) return;
     if (e.key === "Enter") {
       e.preventDefault();
       e.stopPropagation();
-      stopClipRename();
-      const command = renameCommand(clip.id, clip.name, nameDraft);
-      if (command) send(command);
+      decideName();
     } else if (e.key === "Escape") {
       e.preventDefault();
       e.stopPropagation();
@@ -204,7 +208,7 @@
           bind:this={nameField}
           bind:value={nameDraft}
           onkeydown={nameKey}
-          onblur={() => naming && stopClipRename()}
+          onblur={() => naming && decideName()}
         />
       {:else}
         <button class="m-plain m-name name" class:live={!busy} disabled={busy} data-test="params-name" onclick={() => clip && startClipRename(clip.id, "params")}

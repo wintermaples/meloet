@@ -183,10 +183,10 @@
     return pieces.filter((p) => p.length > 0).flatMap((p, i) => (i === 0 ? p : [{ text: STATUS_JOIN, hole: null }, ...p]));
   }
 
-  /** 「重ねる」 on and the keyboard recording going into a clip: that clip's name. */
+  /** The pass going on overdubs a clip: that clip's name. */
   const overdubName = $derived.by(() => {
     const r = app.transport.recording;
-    return r && app.transport.overdub ? overdubClipName(app.song.tracks, r) : null;
+    return r ? overdubClipName(app.song.tracks, r) : null;
   });
 
   /** Recording with 「重ねる」 (mock P10-Overdub); the loop part only in a loop. */

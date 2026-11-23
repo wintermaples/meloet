@@ -2442,6 +2442,15 @@ export const texts = {
   "settings.packRow": e("音の素材", "spec:3"),
   "settings.packAll": e("ぜんぶあります ・ {mb} MB", "spec:3", { mb: "240" }),
   "settings.packNotYet": e("まだ {have} / {total}", "spec:3", { have: "12", total: "31" }),
+  // The row 「AI とつなぐ」 of the advanced settings (mock P10-AiLink, option B).
+  "settings.aiLink": e("AI とつなぐ", "user:2026-11-23"),
+  "settings.aiLinkOn": e("オン", "user:2026-11-23"),
+  "settings.aiLinkOff": e("オフ", "user:2026-11-23"),
+  "settings.aiClosed": e("閉じています", "user:2026-11-23"),
+  "settings.aiWaiting": e("待っています", "user:2026-11-23"),
+  "settings.aiConnected": e("つながっています", "user:2026-11-23"),
+  "settings.aiLinkNote": e("オンの間だけ、この PC の中に口をひらきます。同じユーザーのアプリだけがつなげます。", "user:2026-11-23"),
+  "settings.aiLinkCan": e("できること: 曲を読んで助言する ・ 頼まれたら書く（1 手ずつ取り消せます） ・ 書き出した音を調べる", "user:2026-11-23"),
 
   // [メニュー ・ キー]
   // メニューの行の右に書くキーの名前（仕様書 4 章の表）。Mod は key.ctrl か key.cmd に読みかえる。
@@ -2923,6 +2932,8 @@ export const terms: readonly Term[] = [
   ut("和音のスタンプ", "書く道具で、押した音を根音にして、えらんだ形の和音をまとめて書く。"),
   ut("根音", "和音のいちばん元になる音。C メジャーなら C。"),
   ut("調の和音", "スケール固定でえらんだ調の音だけでできる和音。C メジャーなら C ・ Dm ・ Em ・ F ・ G ・ Am ・ Bdim。"),
+  // The term wording of the mock P10-AiLink.
+  ut("AI とつなぐ", "AI のアプリ（MCP）が、動いている meloet の曲を読んだり、頼まれて書いたりできるようにする。"),
 ];
 
 /** 用語と用語の説明をつなぐ記号（仕様書 5 章「用語 — 説明」）。 */

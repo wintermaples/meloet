@@ -402,7 +402,7 @@ describe("音の設定", () => {
     expect(qa('[data-test="endpoint-row"]')).toHaveLength(0);
     expect(target.textContent).not.toContain("音のしくみ");
     expect(target.textContent).not.toContain("PipeWire");
-    expect(qa(".adv-body .row .name").map((n) => n.textContent!.trim())).toEqual(["入口", "バッファ", "サンプルレート", "録る形", "遅れの合わせ", "音の素材", "プラグインの場所"]);
+    expect(qa(".adv-body .row .name").map((n) => n.textContent!.trim())).toEqual(["入口", "バッファ", "サンプルレート", "録る形", "遅れの合わせ", "音の素材", "プラグインの場所", "AI とつなぐ"]);
   });
 
   it("くわしい設定: 頼む数の右に動いている数。ちがえば下に「頼んだ 256 ではなく、1024 で動いています…」。固定の囲みは出さない", () => {

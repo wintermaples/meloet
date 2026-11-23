@@ -22,7 +22,8 @@ for name, b in boards.items():
     if pick and stem not in pick:
         continue
     png = os.path.join(out, stem + ".png")
-    subprocess.run(["google-chrome", "--headless=new", "--disable-gpu", "--hide-scrollbars",
+    # --password-store=basic: without it Chrome can wait 11 to 25 s for the desktop keyring at start.
+    subprocess.run(["google-chrome", "--headless=new", "--disable-gpu", "--hide-scrollbars", "--password-store=basic",
                     "--virtual-time-budget=4000", f"--window-size={b['w']},{b['h']}",
                     f"--screenshot={png}", "file://" + os.path.join(mock, name)],
                    check=True, capture_output=True, timeout=60)

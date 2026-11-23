@@ -3,13 +3,16 @@
      While playing, the lines and the tip of the recording clip move on every frame of the WebGL side (everyGlFrame).
      A clip drag (mock R3-Arrange) leaves the original place on the big face with a gray.7 border and draws the moving clips in a small slot (recordingClip;
      there is no drag while recording, so it is never used at the same time as the tip of a recording clip). A plain move only moves the box with transform.
-     Any number of selected clips move together (docs/history/design-notes.ja.md B-71). The context menu is B-60. -->
+     Any number of selected clips move together (docs/history/design-notes.ja.md B-71). The context menu is B-60.
+     The repeat handle (round 12 A1) draws the frames of the copies in the same small slot; 「くり返す…」 opens a box of digits at the end of the clips. -->
 <script lang="ts">
   import { onDestroy, onMount, tick as nextTick, untrack, type Snippet } from "svelte";
   import {
     clockOffsetUs,
     liveNotes,
     peekTakeNotes,
+    REPEAT_COUNT_DEFAULT,
+    REPEAT_COUNT_MAX,
     takeNotes,
     type ClipView,
     type LiveNote,
@@ -21,7 +24,8 @@
   } from "../bridge";
   import { WAVE } from "../gl/dims";
   import { everyGlFrame, glRegion, glSlot, type GlRect, type GlSlot, type GlWave } from "../gl/slot";
-  import { handleRects, waveArea } from "./arrange/audioClipGeom";
+  import { audioShapeOf, fadeHandleBox, handleRects, waveArea } from "./arrange/audioClipGeom";
+  import { closeRepeatBox, openRepeatBox, repeatBox } from "./arrange/repeatBox.svelte";
   import { clipMarks, NO_MARKS } from "./params/clipFields";
   import { audioDrag, type AudioDragValue } from "./arrange/audioDrag.svelte";
   import * as W from "./arrange/wave";
@@ -33,7 +37,7 @@
   import VScrollbar from "./mixer/VScrollbar.svelte";
   import { term } from "../lib/tip.svelte";
   import { openContextMenu, type MenuEntry, type MenuRow } from "./menu/contextMenu.svelte";
-  import { joinable, overdubClipName, splitTick } from "./clipEdits";
+  import { joinable, overdubClipName, repeatCountOf, splitTick } from "./clipEdits";
   import { clipEdit, renameCommand, startClipRename, stopClipRename } from "./clipName.svelte";
   import { current, send } from "../state/app.svelte";
   import { t } from "../text/ja";
@@ -373,15 +377,17 @@
    */
   const dragKey = $derived.by(() => {
     const d = shownDrag;
-    if (!d) return "";
+    // A repeat leaves the clips where they are, drawn as they are.
+    if (!d || d.kind === "repeat") return "";
     return d.kind === "trim" ? String(d.clip.id) : d.group.map((g) => g.clip.id).join(",");
   });
   const dragIds = $derived(new Set(dragKey ? dragKey.split(",").map(Number) : []));
-  const dragFrame = $derived(shownDrag !== null && (shownDrag.kind === "trim" || !shownDrag.copy));
+  const dragFrame = $derived(shownDrag !== null && (shownDrag.kind === "trim" || (shownDrag.kind === "move" && !shownDrag.copy)));
   /** Changes only when the shape of the moving picture changes (not for a plain move). */
   const dragShape = $derived.by(() => {
     const d = shownDrag;
     if (!d) return null;
+    if (d.kind === "repeat") return `r${d.group.map((g) => g.clip.id).join(",")}:${d.count}`;
     return d.kind === "trim" ? `t${d.clip.id}:${d.start}:${d.end}` : `m${dragKey}`;
   });
   const dragShift = $derived.by(() => {
@@ -439,6 +445,15 @@
       }
       for (const h of handles) rects.push(h);
       place = { left: G.tickToX(view, first), top, width: (last - first) * pxPerTick, height: bottom - top };
+    } else if (d.kind === "repeat") {
+      // The frames of the copies, in a box the full width of the group's rows (only the rectangles change with the count).
+      const rowsOf = d.group.map((g) => g.row);
+      const top = G.clipBox(view, dims, Math.min(...rowsOf), 0, 0).y0;
+      const bottom = G.clipBox(view, dims, Math.max(...rowsOf), 0, 0).y1;
+      const places = d.group.map((g) => ({ row: g.row, start: g.clip.start, end: g.clip.end }));
+      G.paintRepeats(rects, view, dims, places, CD.repeatBlock(d.group).length, d.count, { row: d.row, start: d.clip.start, end: d.clip.end });
+      for (const q of rects) q.y -= top;
+      place = { left: 0, top, width: view.width, height: bottom - top };
     } else {
       // A clip being trimmed gets a box the full width of the row. Tick 0 of the take does not move (the notes stay at the same place in the song).
       const take = takeOf(d.clip.takeId);
@@ -1269,7 +1284,24 @@
     const r = lanesBox!.getBoundingClientRect();
     return { x: e.clientX - r.left, y: e.clientY - r.top };
   }
-  const hitAt = (p: { x: number; y: number }) => CD.clipHit(view, dims, song.tracks, p.x, p.y, metrics.px("part.clip.edge"));
+  /** The repeat handle (round 12 A1): space.3 wide at the right end of the name strip; none on a clip too narrow for the take tag. */
+  const repeatGrip = $derived({ width: metrics.px("space.3"), minClip: tagMin });
+  /** The fade handles of an audio clip come before the repeat handle (AudioClipHandles takes their press first). */
+  function onFadeHandle(hit: CD.ClipHit, p: { x: number; y: number }): boolean {
+    const shape = audioShapeOf(hit.clip);
+    if (!shape || hit.clip.audio!.state === "missing") return false;
+    const box = G.clipBox(view, dims, hit.row, hit.clip.start, hit.clip.end);
+    return (["fadeIn", "fadeOut"] as const).some((edge) => {
+      const b = fadeHandleBox(view, dims, box, shape, edge, handleSize);
+      return p.x >= b.x0 && p.x < b.x1 && p.y >= b.y0 && p.y < b.y1;
+    });
+  }
+  function hitAt(p: { x: number; y: number }): CD.ClipHit | null {
+    const hit = CD.clipHit(view, dims, song.tracks, p.x, p.y, metrics.px("part.clip.edge"), repeatGrip);
+    return hit?.repeat && onFadeHandle(hit, p) ? { ...hit, repeat: false } : hit;
+  }
+  /** The clip whose repeat handle the pointer is on (the ⟳ shows there). */
+  let repeatHover = $state<number | null>(null);
   const dragInput = (shift: boolean): CD.DragInput => ({
     view,
     dims,
@@ -1334,7 +1366,9 @@
     }
     const d = clipDrag;
     if (!d) {
-      laneCursor = busy ? "default" : CD.hoverCursor(hitAt(p), e.altKey);
+      const hit = busy ? null : hitAt(p);
+      laneCursor = CD.hoverCursor(hit, e.altKey);
+      repeatHover = hit?.repeat ? hit.clip.id : null;
       return;
     }
     const next = CD.dragClipTo(d, dragInput(e.shiftKey), p.x, p.y, { shift: e.shiftKey, alt: e.altKey });
@@ -1362,6 +1396,7 @@
     const d = clipDrag;
     if (!d) return;
     clipDrag = null;
+    if (d.kind === "repeat") repeatHover = null;
     dragReading.text = null;
     readingAt = null;
     if (!d.press.moved && clickedOnly !== null) send({ type: "selectClip", clip: clickedOnly });
@@ -1380,6 +1415,7 @@
     if (!clipDrag) return false;
     clipDrag = null;
     clickedOnly = null;
+    repeatHover = null;
     dragReading.text = null;
     readingAt = null;
     laneCursor = "default";
@@ -1387,6 +1423,84 @@
   }
   onMount(() => onDragCancel(cancelClipDrag));
   onDestroy(cancelClipDrag);
+
+  /** Where the ⟳ shows: the handle under the pointer, or the one held. */
+  const repeatMark = $derived.by(() => {
+    const id = clipDrag?.kind === "repeat" ? clipDrag.clip.id : repeatHover;
+    if (id === null || busy) return null;
+    for (const [row, track] of song.tracks.entries()) {
+      const clip = track.clips.find((c) => c.id === id);
+      if (!clip) continue;
+      const g = CD.repeatGripBox(dims, G.clipBox(view, dims, row, clip.start, clip.end), repeatGrip);
+      return g && g.x1 > 0 && g.x0 < view.width ? g : null;
+    }
+    return null;
+  });
+
+  // ---- The box of 「くり返す…」 (round 12 A1): at the end of the block, on the name strip of the clip it sits on ----
+
+  let repeatW = $state(0);
+  const repeating = $derived.by(() => {
+    const ids = repeatBox.clips;
+    if (ids === null) return null;
+    const group = CD.groupOf(song.tracks, ids);
+    if (group.length === 0) return null;
+    const { last } = CD.repeatBlock(group);
+    // The clip right-clicked, else the upper one of those that end last.
+    const on = group.find((g) => g.clip.id === repeatBox.at) ?? group.find((g) => g.clip.end === last)!;
+    const box = G.clipBox(view, dims, on.row, on.clip.start, on.clip.end);
+    const x = Math.min(Math.max(G.tickToX(view, last), 0), Math.max(0, view.width - repeatW));
+    return { clips: group.map((g) => g.clip.id), x, y: box.y0 + dims.mark + dims.hair };
+  });
+  let repeatDraft = $state("");
+  let repeatField = $state<HTMLInputElement>();
+  let repeatFor: number[] | null = null;
+  const repeatBroken = $derived(repeatCountOf(repeatDraft) === null);
+  $effect(() => {
+    const ids = repeatBox.clips;
+    if (ids === repeatFor) return;
+    repeatFor = ids;
+    if (ids === null) return;
+    repeatDraft = String(REPEAT_COUNT_DEFAULT);
+    void nextTick().then(() => {
+      repeatField?.focus();
+      repeatField?.select();
+    });
+  });
+  // Recording starting, the clips going away, or the arrange folding into the overview closes the box.
+  $effect(() => {
+    if (repeatBox.clips !== null && (busy || layout.arrangeOverview || !repeating)) closeRepeatBox();
+  });
+  // While the box is open, the status line says what Enter does (as during the drag).
+  $effect(() => {
+    if (!repeating) return;
+    const count = repeatCountOf(repeatDraft);
+    dragReading.text = count === null ? null : t("arrange.readRepeat", { count });
+    return () => {
+      dragReading.text = null;
+    };
+  });
+  onDestroy(closeRepeatBox);
+  function repeatKey(e: KeyboardEvent, clips: number[]): void {
+    if (e.isComposing) return;
+    const count = repeatCountOf(repeatDraft);
+    if (e.key === "Enter") {
+      // A box that is not a whole number stays open.
+      if (count !== null) {
+        closeRepeatBox();
+        send({ type: "repeatClips", clips, count });
+      }
+    } else if (e.key === "Escape") {
+      closeRepeatBox();
+    } else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+      const by = (e.key === "ArrowUp" ? 1 : -1) * (e.shiftKey ? 10 : 1);
+      repeatDraft = String(Math.min(REPEAT_COUNT_MAX, Math.max(1, (count ?? REPEAT_COUNT_DEFAULT) + by)));
+    } else {
+      return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+  }
 
   // ---- Context menu (B-60). Right-clicking something not selected selects only it, then opens ----
 
@@ -1420,6 +1534,7 @@
       menuRow("menu.copy", true, () => send({ type: "copyClips", clips: chosen() }), modKey(t("key.copy"))),
       menuRow("menu.paste", change && clipboardCount > 0, () => send({ type: "pasteClips", to: null }), modKey(t("key.paste"))),
       menuRow("menu.duplicate", change, () => send({ type: "duplicateClips", clips: chosen() }), modKey(t("key.duplicate"))),
+      menuRow("menu.repeatClips", change, () => openRepeatBox(chosen(), clip.id), modKey(t("key.repeatClips"))),
       menuRow("menu.delete", change, () => send({ type: "deleteSelected" }), t("key.delete")),
       { kind: "separator" },
       menuRow("menu.splitHere", change && cutAt !== null, () => cutAt !== null && send({ type: "splitClipAt", clip: clip.id, tick: cutAt })),
@@ -1620,6 +1735,7 @@
         onpointermove={lanesMove}
         onpointerup={lanesUp}
         onpointercancel={cancelClipDrag}
+        onpointerleave={() => (repeatHover = clipDrag ? repeatHover : null)}
         oncontextmenu={lanesContext}
         ondblclick={lanesDouble}
       >
@@ -1718,7 +1834,48 @@
               {/if}
             </div>
           {/each}
+          {#if repeatMark}
+            <div
+              class="repeat-mark"
+              data-test="repeat-mark"
+              style:left="{repeatMark.x0}px"
+              style:top="{repeatMark.y0 + dims.mark}px"
+              style:width="{repeatMark.x1 - repeatMark.x0}px"
+              style:height="{repeatMark.y1 - repeatMark.y0 - dims.mark}px"
+            >
+              {t("arrange.repeatMark")}
+            </div>
+          {/if}
         </div>
+        {#if repeating}
+          {@const ids = repeating.clips}
+          <div
+            class="repeat-box"
+            role="presentation"
+            data-over-clips
+            style:left="{repeating.x}px"
+            style:top="{repeating.y}px"
+            bind:clientWidth={repeatW}
+            onpointerdown={(e) => e.stopPropagation()}
+            ondblclick={(e) => e.stopPropagation()}
+          >
+            <input
+              class="repeat-field"
+              class:broken={repeatBroken}
+              type="text"
+              inputmode="numeric"
+              spellcheck="false"
+              autocomplete="off"
+              aria-label={t("arrange.repeatCount")}
+              aria-invalid={repeatBroken}
+              data-test="repeat-count-field"
+              bind:this={repeatField}
+              bind:value={repeatDraft}
+              onkeydown={(e) => repeatKey(e, ids)}
+              onblur={closeRepeatBox}
+            />
+          </div>
+        {/if}
         {#if naming}
           {@const c = naming.clip}
           <div
@@ -2103,6 +2260,42 @@
     border-radius: var(--radius-1);
     color: var(--color-gray-10);
     outline: none;
+  }
+  /* ⟳ on the repeat handle (round 12 A1), over the end of the name line. */
+  .repeat-mark {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    background: var(--color-gray-4);
+    color: var(--color-accent);
+    line-height: var(--text-s-line-height);
+  }
+  /* The box of 「くり返す…」: the look of the clip name box, two digits wide. */
+  .repeat-box {
+    position: absolute;
+    z-index: 5;
+    pointer-events: auto;
+  }
+  .repeat-field {
+    box-sizing: border-box;
+    width: calc(2ch + 2 * var(--space-1) + 2 * var(--line-hair));
+    height: var(--part-toggle-size);
+    padding: 0 var(--space-1);
+    border: var(--line-hair) solid var(--color-gray-10);
+    border-radius: var(--radius-1);
+    background: var(--color-gray-0);
+    color: var(--color-gray-10);
+    font: inherit;
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-weight: var(--text-s-weight-600);
+    outline: none;
+  }
+  .repeat-field.broken {
+    border-color: var(--color-rec);
+    color: var(--color-rec);
   }
   /* The box-select frame (the same accent line.hair as the box select in the piano roll). */
   .box-frame {

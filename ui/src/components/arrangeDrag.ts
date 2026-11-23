@@ -1,11 +1,11 @@
 // The mouse on arrange clips (spec 3 "Rules for round 3", the arrange clip part; spec 4; mock R3-Arrange). Does not know the DOM.
-// Press → move → release. While moving, only the look changes; on release, exactly one MoveClips or TrimClip is sent (architecture 17).
-// Moving takes all selected clips together (docs/history/design-notes.ja.md B-71). Trimming or extending an edge is only for the one grabbed clip.
+// Press → move → release. While moving, only the look changes; on release, exactly one MoveClips, TrimClip or RepeatClips is sent (architecture 17).
+// Moving and repeating take all selected clips together (docs/history/design-notes.ja.md B-71). Trimming or extending an edge is only for the one grabbed clip.
 // Coordinates are the same as arrangeGeom.ts (x from the left edge of the visible part, y from the top of the track rows, CSS px).
 
-import type { ClipEdge, ClipView, Command, TrackView } from "../bridge";
+import { REPEAT_COUNT_MAX, type ClipEdge, type ClipView, type Command, type TrackView } from "../bridge";
 import { t } from "../text/ja";
-import { blockAt, clipBox, trackRowAt, type LaneDims, type View } from "./arrangeGeom";
+import { blockAt, clipBox, trackRowAt, type Box, type LaneDims, type View } from "./arrangeGeom";
 import { positionText, signed, snapTick } from "./pianoroll/geom";
 import { barFloat, barsMap } from "../time/bars";
 import { tickText, ticksPerBar, ticksPerBeat, type Bars, type Meter } from "./time";
@@ -15,10 +15,25 @@ export interface ClipHit {
   row: number;
   /** The left or right edge (part.clip.edge). null when not on an edge. */
   edge: ClipEdge | null;
+  /** On the repeat handle (round 12 A1). It comes before `edge`. */
+  repeat: boolean;
+}
+
+/** The repeat handle (round 12 A1): `width` px at the right end of the name strip, at most 1/3 of the clip; none on a clip narrower than `minClip`. */
+export interface RepeatGrip {
+  width: number;
+  minClip: number;
+}
+
+/** Where the repeat handle of a clip box is; null when the clip has none. */
+export function repeatGripBox(d: LaneDims, b: Box, grip: RepeatGrip): Box | null {
+  const w = b.x1 - b.x0;
+  if (w < grip.minClip) return null;
+  return { x0: b.x1 - Math.min(grip.width, w / 3), x1: b.x1, y0: b.y0, y1: Math.min(b.y1, b.y0 + d.mark + d.nameH) };
 }
 
 /** The clip under (x, y). The edge width is at most 1/3 of the clip width, so a narrow clip keeps a middle. */
-export function clipHit(v: View, d: LaneDims, tracks: readonly TrackView[], x: number, y: number, edgePx: number): ClipHit | null {
+export function clipHit(v: View, d: LaneDims, tracks: readonly TrackView[], x: number, y: number, edgePx: number, grip?: RepeatGrip): ClipHit | null {
   const row = trackRowAt(d, y);
   const track = tracks[row];
   if (!track) return null;
@@ -27,7 +42,9 @@ export function clipHit(v: View, d: LaneDims, tracks: readonly TrackView[], x: n
     if (x < b.x0 || x >= b.x1 || y < b.y0 || y >= b.y1) continue;
     const e = Math.min(edgePx, (b.x1 - b.x0) / 3);
     const edge: ClipEdge | null = x < b.x0 + e ? "start" : x >= b.x1 - e ? "end" : null;
-    return { clip, row, edge };
+    const r = grip ? repeatGripBox(d, b, grip) : null;
+    const repeat = r !== null && x >= r.x0 && y < r.y1;
+    return { clip, row, edge, repeat };
   }
   return null;
 }
@@ -52,7 +69,12 @@ export type ClipDrag =
    */
   | { kind: "move"; press: Press; clip: ClipView; row: number; group: GroupClip[]; copy: boolean; ticks: number; toRow: number; ok: boolean }
   /** start, end: the current edge positions (ticks in the song). */
-  | { kind: "trim"; press: Press; clip: ClipView; row: number; edge: ClipEdge; start: number; end: number };
+  | { kind: "trim"; press: Press; clip: ClipView; row: number; edge: ClipEdge; start: number; end: number }
+  /**
+   * The repeat handle (round 12 A1). group: the clips repeated as one block (as for a move). count: the copies now (whole ones, 0 at first).
+   * room: how many copies fit before another clip, up to REPEAT_COUNT_MAX (null until it first moves).
+   */
+  | { kind: "repeat"; press: Press; clip: ClipView; row: number; group: GroupClip[]; count: number; room: number | null };
 
 export interface DragInput {
   view: View;
@@ -81,13 +103,36 @@ export function groupOf(tracks: readonly TrackView[], ids: Iterable<number>): Gr
   return out;
 }
 
-/** group: the clips that move together (only the grabbed clip if it is not in them). Not used when an edge is grabbed. */
+/** group: the clips that move (or repeat) together (only the grabbed clip if it is not in them). Not used when an edge is grabbed. */
 export function startClipDrag(hit: ClipHit, x: number, y: number, mods: DragMods, group: readonly GroupClip[] = []): ClipDrag {
   const press = { x, y, moved: false };
   const { clip, row } = hit;
-  if (hit.edge) return { kind: "trim", press, clip, row, edge: hit.edge, start: clip.start, end: clip.end };
   const members = group.some((g) => g.clip.id === clip.id) ? [...group] : [{ clip, row }];
+  if (hit.repeat) return { kind: "repeat", press, clip, row, group: members, count: 0, room: null };
+  if (hit.edge) return { kind: "trim", press, clip, row, edge: hit.edge, start: clip.start, end: clip.end };
   return { kind: "move", press, clip, row, group: members, copy: mods.alt, ticks: 0, toRow: row, ok: true };
+}
+
+/** The block a group repeats as: the earliest start to the latest end. */
+export function repeatBlock(group: readonly GroupClip[]): { first: number; last: number; length: number } {
+  const first = Math.min(...group.map((g) => g.clip.start));
+  const last = Math.max(...group.map((g) => g.clip.end));
+  return { first, last, length: last - first };
+}
+
+/** How many copies of the group's block fit one after another before a clip is in the way (at most `limit`). */
+export function repeatRoom(tracks: readonly TrackView[], group: readonly GroupClip[], limit = REPEAT_COUNT_MAX): number {
+  const { length } = repeatBlock(group);
+  if (!(length > 0)) return 0;
+  const fits = (k: number) =>
+    group.every(({ clip, row }) => {
+      const start = clip.start + k * length;
+      const end = clip.end + k * length;
+      return !tracks[row]?.clips.some((c) => c.start < end && start < c.end);
+    });
+  let n = 0;
+  while (n < limit && fits(n + 1)) n++;
+  return n;
 }
 
 /** Whether [start, end) can go on row. without: clips not counted (the moving ones). Ends that only touch do not overlap. */
@@ -153,6 +198,13 @@ export function dragClipTo(d: ClipDrag, i: DragInput, x: number, y: number, mods
   const dx = (x - press.x) / i.view.pxPerTick;
   const snap = (tick: number) => (i.step ? (i.snap ? i.snap(tick) : snapTick(tick, i.step)) : Math.round(tick));
   const c = d.clip;
+  if (d.kind === "repeat") {
+    // Whole copies only: the nearest whole number of block lengths, stopping before a clip in the way.
+    const room = d.room ?? repeatRoom(i.tracks, d.group);
+    const count = Math.min(room, Math.max(0, Math.round(dx / repeatBlock(d.group).length) || 0));
+    if (press === d.press && count === d.count && room === d.room) return d;
+    return { ...d, press, count, room };
+  }
   if (d.kind === "move") {
     // The grabbed clip snaps to the grid; the others follow with the same gaps. The front clip stops at the song start.
     const earliest = Math.min(...d.group.map((g) => g.clip.start));
@@ -185,6 +237,7 @@ export function dragClipTo(d: ClipDrag, i: DragInput, x: number, y: number, mods
 /** The intent to send on release. null for a plain press, a place where it cannot go, or no change. */
 export function clipDragCommand(d: ClipDrag, tracks: readonly TrackView[]): Command | null {
   if (!d.press.moved) return null;
+  if (d.kind === "repeat") return d.count > 0 ? { type: "repeatClips", clips: d.group.map((g) => g.clip.id), count: d.count } : null;
   if (d.kind === "move") {
     const track = tracks[d.toRow];
     if (!d.ok || !track || (d.ticks === 0 && d.toRow === d.row && !d.copy)) return null;
@@ -199,12 +252,14 @@ export type ArrangeCursor = "default" | "move" | "copy" | "ew-resize" | "not-all
 
 export function hoverCursor(hit: ClipHit | null, alt: boolean): ArrangeCursor {
   if (!hit) return "default";
+  if (hit.repeat) return "copy";
   if (hit.edge) return "ew-resize";
   return alt ? "copy" : "move";
 }
 
 export function clipDragCursor(d: ClipDrag): ArrangeCursor {
   if (d.kind === "trim") return "ew-resize";
+  if (d.kind === "repeat") return d.press.moved && d.room === 0 ? "not-allowed" : "copy";
   if (d.press.moved && !d.ok) return "not-allowed";
   return d.copy ? "copy" : "move";
 }
@@ -229,6 +284,7 @@ export function clipLengthText(ticks: number, meter: Meter): string {
 /** The text for the reading in place and the status line. null when not shown. The length counts by the time signature at the clip start. */
 export function clipDragReading(d: ClipDrag, bars: Bars): string | null {
   if (!d.press.moved) return null;
+  if (d.kind === "repeat") return d.count > 0 ? t("arrange.readRepeat", { count: d.count }) : null;
   const map = barsMap(bars);
   if (d.kind === "trim") return t("arrange.readTrim", { length: clipLengthText(d.end - d.start, map.meterAt(d.start)) });
   const position = positionText(d.clip.start + d.ticks, map);

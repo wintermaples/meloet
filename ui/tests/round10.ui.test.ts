@@ -153,6 +153,7 @@ describe("arrange right click (spec 3)", () => {
       "menu.copy",
       "menu.paste",
       "menu.duplicate",
+      "menu.repeatClips",
       "menu.delete",
       "-",
       "menu.splitHere",

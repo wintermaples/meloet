@@ -1474,8 +1474,11 @@ impl Model {
             Command::ShelfSelectPattern { .. }
             | Command::PlayPattern { .. }
             | Command::PlacePattern { .. } => {}
-            // round12 stub: A1
-            Command::RepeatClips { .. } => {}
+            Command::RepeatClips { clips, count } => {
+                if let Some(n) = self.play.repeat_clips(&clips, count, effects) {
+                    self.notice = Some(n);
+                }
+            }
             // round12 stub: M1
             Command::ApplyPreset { .. }
             | Command::SavePreset { .. }

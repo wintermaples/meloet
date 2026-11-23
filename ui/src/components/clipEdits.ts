@@ -1,7 +1,7 @@
 // When joining and cutting clips can be used (spec 3 "Rules added in round 10", 7 A-27). No DOM.
 // The context menus, the menu bar and Mod J share these rules; Rust decides what is joined, these only disable rows.
 
-import type { AppState, ClipView, TrackView } from "../bridge";
+import { REPEAT_COUNT_MAX, type AppState, type ClipView, type TrackView } from "../bridge";
 
 /** Two or more keyboard clips of one track, with no clip that is not chosen between them. */
 export function joinable(tracks: readonly TrackView[], ids: readonly number[]): boolean {
@@ -25,6 +25,23 @@ export function joinTarget(state: AppState): number[] | null {
 /** 「ここで切る」: the snapped place, when it is inside the clip (not at an end). */
 export function splitTick(clip: ClipView, snapped: number): number | null {
   return clip.start < snapped && snapped < clip.end ? snapped : null;
+}
+
+/**
+ * The clips Mod R and 「くり返す…」 repeat (round 12 A1): the chosen ones. null when none, while recording or counting in,
+ * or while the arrange is only the overview (the box goes on the clips).
+ */
+export function repeatTarget(state: AppState): number[] | null {
+  const ids = state.arrange.selectedClips;
+  const busy = state.transport.state === "recording" || state.transport.state === "countIn";
+  return ids.length === 0 || busy || state.workspace.layout.arrangeOverview ? null : [...ids];
+}
+
+/** The count typed in the box of 「くり返す…」: a whole number, put into 1..REPEAT_COUNT_MAX (B-68); null when it is not one. */
+export function repeatCountOf(text: string): number | null {
+  const s = text.trim().replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0));
+  if (!/^[0-9]+$/.test(s)) return null;
+  return Math.min(REPEAT_COUNT_MAX, Math.max(1, Number(s)));
 }
 
 /** The clip F2 renames: the one clicked last, else the first chosen. */

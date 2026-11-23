@@ -79,6 +79,7 @@ describe("menu contents (B-59)", () => {
       "コピー Ctrl C",
       "貼りつけ Ctrl V",
       "複製 Ctrl D",
+      "くり返す… Ctrl R",
       "消す Delete",
       "ぜんぶ選ぶ Ctrl A",
       "クリップを切る S",
@@ -180,6 +181,7 @@ describe("menu contents (B-59)", () => {
         コピー: true,
         貼りつけ: false,
         複製: false,
+        "くり返す…": false,
         消す: false,
         ぜんぶ選ぶ: true,
       });
@@ -206,7 +208,7 @@ describe("menu contents (B-59)", () => {
     const s = withClip((s) => (s.arrange.clipboardClips = 1));
     const menus = topMenus(s, depsOf(s, []), "other");
     // Joining clips needs 2 or more keyboard clips chosen on the same track.
-    expect(Object.values(usableOf(menus[1]!.entries))).toEqual([true, false, true, true, true, true, true, true, true, false]);
+    expect(Object.values(usableOf(menus[1]!.entries))).toEqual([true, false, true, true, true, true, true, true, true, true, false]);
     expect(usableOf(menus[3]!.entries)).toMatchObject({ 再生: true, 停止: false, 録音: true });
   });
 

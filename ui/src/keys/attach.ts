@@ -34,7 +34,8 @@ import {
 } from "../components/tracks.svelte";
 import { shownTick } from "../components/time";
 import { laneDeleteCommand } from "../components/automation/laneKeys";
-import { joinTarget, renameClipTarget } from "../components/clipEdits";
+import { joinTarget, renameClipTarget, repeatTarget } from "../components/clipEdits";
+import { openRepeatBox } from "../components/arrange/repeatBox.svelte";
 import { startClipRename } from "../components/clipName.svelte";
 import { historyFocused, historyHome, historyJumpCommand, historyStep } from "../components/history/historyUi.svelte";
 import { timelineKeyCommand } from "../components/timeline/keys";
@@ -307,6 +308,7 @@ export function keyActionUsable(
   if (!state) return false;
   if (action.kind === "tool") return pianoRollOpen(state);
   if (action.kind === "renameTrack") return renameTarget(state) !== null;
+  if (action.kind === "repeatClips") return repeatTarget(state) !== null;
   if (screenOnly(action)) return true;
   return keyCommand(action, state, deps, toPianoRoll) !== null;
 }
@@ -341,6 +343,11 @@ export function runKeyAction(
       return historyStep(state, action.delta);
     case "historyHome":
       return historyHome(state);
+    case "repeatClips": {
+      const clips = repeatTarget(state);
+      if (clips) openRepeatBox(clips);
+      return clips !== null;
+    }
   }
   const c = keyCommand(action, state, deps, toPianoRoll);
   if (c) deps.send(c);
@@ -366,6 +373,7 @@ const WITH_MOD = new Set<KeyAction["kind"]>([
   "paste",
   "zoom",
   "joinClips",
+  "repeatClips",
 ]);
 
 /**

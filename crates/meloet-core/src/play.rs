@@ -20,9 +20,9 @@ use meloet_model::{
 use meloet_protocol::{
     ArrangeView, BarSpan, ClipEdge, ClipSpot, ClipView, ControlKind, Grid, IndexRange, KeyCount,
     LiveNote, LiveNotes, LiveNotesSnapshot, MusicalScale, NOTE_SELECTION_KEYS, NoteField,
-    NoteSelection, PianoRollView, QuantizeAlign, QuantizeSettings, RecordFormat, RecordingView,
-    ScaleMode, SelectMode, StatusMessage, TakeControl, TakeControlValue, TakeNote, TakeNotes,
-    TickSpan, TimelineRef, TrackRef, TransportState, TransportView,
+    NoteSelection, PianoRollView, QuantizeAlign, QuantizeSettings, REPEAT_COUNT_MAX, RecordFormat,
+    RecordingView, ScaleMode, SelectMode, StatusMessage, TakeControl, TakeControlValue, TakeNote,
+    TakeNotes, TickSpan, TimelineRef, TrackRef, TransportState, TransportView,
 };
 
 use crate::instruments::Sounds;
@@ -1114,6 +1114,25 @@ impl Play {
             return None;
         }
         let copied = arrange::duplicate_clips(self.doc(), &Self::clip_ids(clips));
+        self.apply_placed(copied, StatusMessage::ClipsNotDuplicated, effects)
+    }
+
+    /// The repeat handle and 「くり返す…」: `count` copies of the clips as one block. Past the
+    /// song's end is told as an overlap. Returns the notice to show.
+    pub fn repeat_clips(
+        &mut self,
+        clips: &[u32],
+        count: u32,
+        effects: &mut Vec<Effect>,
+    ) -> Option<StatusMessage> {
+        if self.busy() || !(1..=REPEAT_COUNT_MAX).contains(&count) {
+            return None;
+        }
+        let copied = arrange::repeat_clips(self.doc(), &Self::clip_ids(clips), count as usize)
+            .map_err(|e| match e {
+                EditError::OffTheSong => EditError::Overlap,
+                e => e,
+            });
         self.apply_placed(copied, StatusMessage::ClipsNotDuplicated, effects)
     }
 

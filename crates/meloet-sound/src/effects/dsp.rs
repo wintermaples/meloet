@@ -48,6 +48,62 @@ pub fn one_pole(cutoff_hz: f32, sample_rate: f32) -> f32 {
     1.0 - (-std::f32::consts::TAU * cutoff_hz / sample_rate).exp()
 }
 
+/// The coefficients of [`Svf`]. `g` is `tan(pi * cutoff / sample_rate)`, `k` is `1 / Q`.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SvfCoefs {
+    a1: f32,
+    a2: f32,
+    a3: f32,
+    pub k: f32,
+}
+
+impl SvfCoefs {
+    #[inline]
+    pub fn new(g: f32, k: f32) -> SvfCoefs {
+        let a1 = 1.0 / (1.0 + g * (g + k));
+        let a2 = g * a1;
+        SvfCoefs {
+            a1,
+            a2,
+            a3: g * a2,
+            k,
+        }
+    }
+}
+
+/// One channel of a 12 dB/oct state variable filter (Andrew Simper's linear trapezoidal form,
+/// cytomic.com "SvfLinearTrapOptimised2"), which stays well behaved while its coefficients move.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Svf {
+    ic1: f32,
+    ic2: f32,
+}
+
+impl Svf {
+    /// The band-pass and the low-pass output for `v0`; the high-pass is `v0 - k * band - low`.
+    #[inline]
+    pub fn tick(&mut self, c: &SvfCoefs, v0: f32) -> (f32, f32) {
+        let v3 = v0 - self.ic2;
+        let v1 = c.a1 * self.ic1 + c.a2 * v3;
+        let v2 = self.ic2 + c.a2 * self.ic1 + c.a3 * v3;
+        self.ic1 = 2.0 * v1 - self.ic1;
+        self.ic2 = 2.0 * v2 - self.ic2;
+        (v1, v2)
+    }
+
+    #[inline]
+    pub fn high(&mut self, c: &SvfCoefs, v0: f32) -> f32 {
+        let (band, low) = self.tick(c, v0);
+        v0 - c.k * band - low
+    }
+
+    /// Once per block: zero instead of states too small to go on decaying.
+    pub fn flush(&mut self) {
+        self.ic1 = flush(self.ic1);
+        self.ic2 = flush(self.ic2);
+    }
+}
+
 /// A value that moves to its target in a straight line.
 #[derive(Clone, Copy, Debug)]
 pub struct Ramp {

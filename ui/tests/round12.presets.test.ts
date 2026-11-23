@@ -19,7 +19,7 @@ const builtin = (s: AppState) => s.params.selected as SelectedInsert;
 const text = (el: Element | null) => el?.textContent?.replace(/\s+/g, " ").trim() ?? null;
 
 describe("the presets that come with meloet", () => {
-  it("the spec's names, in its order; every name in ja.ts; the gate, de-esser and saturation have none yet", () => {
+  it("the spec's names, in its order; every name in ja.ts; two each for the gate, de-esser and saturation", () => {
     const names = (kind: keyof typeof FACTORY_PRESETS) => FACTORY_PRESETS[kind].map((p) => presetName(kind, { kind: "factory", id: p.id }));
     expect(names("eq4")).toEqual(["歌をくっきり", "こもりを取る", "低い音をすっきり", "ベースを太く"]);
     expect(names("compressor")).toEqual(["歌をそろえる", "ドラムをはっきり", "ベースをどっしり", "やさしくまとめる"]);
@@ -27,7 +27,9 @@ describe("the presets that come with meloet", () => {
     expect(names("delay")).toEqual(["やまびこ", "短いはね返り", "左右にとぶ"]);
     expect(names("chorus")).toEqual(["うすく広げる", "深くゆらす"]);
     expect(names("limiter")).toEqual(["仕上げ", "やさしく止める"]);
-    for (const kind of ["gate", "deEsser", "saturation"] as const) expect(FACTORY_PRESETS[kind]).toEqual([]);
+    expect(names("gate")).toEqual(["雑音を消す", "余韻を短く切る"]);
+    expect(names("deEsser")).toEqual(["サ行をやわらかく", "サ行をしっかりおさえる"]);
+    expect(names("saturation")).toEqual(["あたたかく", "荒くひずませる"]);
     for (const kind of EFFECT_KINDS)
       for (const p of FACTORY_PRESETS[kind]) {
         expect(`preset.${kind}.${p.id}` in texts, `${kind} ${p.id}`).toBe(true);
@@ -152,14 +154,14 @@ describe("「プリセット ▾」 in the params panel", () => {
     expect(q("preset-menu")).toBeNull();
   });
 
-  it("a gate has no factory rows; the rows are disabled while recording", () => {
+  it("a gate has its two factory rows; the rows are disabled while recording", () => {
     const s = scene("presetsNone");
     s.transport.state = "recording";
     show(s);
     q("preset-button")!.click();
     flushSync();
-    expect(all("preset-factory")).toEqual([]);
-    expect([...q("preset-menu")!.children].map(text)).toEqual(["はじめから入っているもの", "自分で残したもの", "いまの設定を残す…"]);
+    expect(all("preset-factory").map(text)).toEqual(["雑音を消す", "余韻を短く切る"]);
+    expect([...q("preset-menu")!.children].map(text)).toEqual(["はじめから入っているもの", "雑音を消す", "余韻を短く切る", "自分で残したもの", "いまの設定を残す…"]);
     unmount(mounted!);
     const r = scene("presets");
     r.transport.state = "recording";

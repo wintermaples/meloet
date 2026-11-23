@@ -3,7 +3,9 @@
 mod support;
 
 use meloet_engine::Effect;
-use meloet_model::effects::{EffectKind, chorus, compressor, delay, eq4, limiter, reverb};
+use meloet_model::effects::{
+    EffectKind, chorus, compressor, de_esser, delay, eq4, gate, limiter, reverb, saturation,
+};
 use support::*;
 
 // ---------------------------------------------------------------------------------------------
@@ -650,8 +652,20 @@ fn lively(kind: EffectKind) -> Box<dyn Effect> {
             fx.set_param(limiter::CEILING, -6.0);
         }
         EffectKind::Reverb | EffectKind::Chorus => {}
-        // round12 stub: M6 (settings that make each of them work hard)
-        EffectKind::Gate | EffectKind::DeEsser | EffectKind::Saturation => {}
+        // Closed on the test's -12 dB sine, and not all the way down, so the range is heard.
+        EffectKind::Gate => {
+            fx.set_param(gate::THRESHOLD, -6.0);
+            fx.set_param(gate::RANGE, -20.0);
+        }
+        EffectKind::DeEsser => {
+            fx.set_param(de_esser::FREQUENCY, 3000.0);
+            fx.set_param(de_esser::THRESHOLD, -60.0);
+            fx.set_param(de_esser::REDUCTION, 18.0);
+        }
+        EffectKind::Saturation => {
+            fx.set_param(saturation::DRIVE, 24.0);
+            fx.set_param(saturation::TONE, 4000.0);
+        }
     }
     fx
 }
@@ -902,6 +916,675 @@ fn other_sample_rates_and_block_sizes() {
             assert!(
                 seen > 0.0 || kind == EffectKind::Delay,
                 "{} at {rate}",
+                kind.name()
+            );
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// 5. Gate, de-esser and saturation.
+
+fn sine_at(rate: f32, freq: f32, amp: f32, frames: usize) -> Vec<f32> {
+    (0..frames)
+        .map(|i| {
+            let phase = std::f64::consts::TAU * f64::from(freq) * i as f64 / f64::from(rate);
+            (f64::from(amp) * phase.sin()) as f32
+        })
+        .collect()
+}
+
+/// A new effect at `rate`, set up by `setup`, run over `input` on both sides.
+fn at_rate(
+    kind: EffectKind,
+    rate: f32,
+    setup: &dyn Fn(&mut dyn Effect),
+    input: &[f32],
+) -> Vec<f32> {
+    let mut fx = meloet_sound::effects::create(kind);
+    fx.prepare(rate, 1024);
+    setup(fx.as_mut());
+    let ctx = meloet_engine::EffectContext { tempo_bpm: TEMPO };
+    let mut l = input.to_vec();
+    let mut r = input.to_vec();
+    for (l, r) in l.chunks_mut(1024).zip(r.chunks_mut(1024)) {
+        fx.process(l, r, &ctx);
+    }
+    l
+}
+
+/// How loud the `freq` part of `x` is (the height of that sine). `x` must hold whole cycles.
+fn tone_level(x: &[f32], rate: f32, freq: f32) -> f32 {
+    let (mut s, mut c) = (0.0_f64, 0.0_f64);
+    for (i, v) in x.iter().enumerate() {
+        let phase = std::f64::consts::TAU * f64::from(freq) * i as f64 / f64::from(rate);
+        s += f64::from(*v) * phase.sin();
+        c += f64::from(*v) * phase.cos();
+    }
+    (2.0 * (s * s + c * c).sqrt() / x.len() as f64) as f32
+}
+
+fn gate_with(threshold: f32, range: f32, release: f32) -> impl Fn(&mut dyn Effect) {
+    move |fx| {
+        fx.set_param(gate::THRESHOLD, threshold);
+        fx.set_param(gate::RANGE, range);
+        fx.set_param(gate::RELEASE, release);
+    }
+}
+
+const LOUD_DB: f32 = -10.0;
+
+/// A 1 kHz sine at -10 dB for `loud_s`, then at `after_db` to the end. At every rate used
+/// here the change falls where the sine passes zero.
+fn loud_then(rate: f32, loud_s: f32, after_db: f32, total_s: f32) -> Vec<f32> {
+    let change = (loud_s * rate) as usize;
+    let mut x = sine_at(rate, 1000.0, 1.0, (total_s * rate) as usize);
+    for (i, v) in x.iter_mut().enumerate() {
+        *v *= gain(if i < change { LOUD_DB } else { after_db });
+    }
+    x
+}
+
+/// The gain in dB over the millisecond that starts at `at_s`.
+fn gain_at(rate: f32, input: &[f32], output: &[f32], at_s: f32) -> f32 {
+    let from = (at_s * rate) as usize;
+    let to = from + (rate / 1000.0) as usize;
+    db(peak(&output[from..to]) / peak(&input[from..to]))
+}
+
+#[test]
+fn gate_brings_down_what_is_under_the_threshold() {
+    for range in [-60.0, -24.0, -6.0] {
+        let input = sine(1000.0, gain(-40.0), frames(0.5));
+        let out = at_rate(
+            EffectKind::Gate,
+            SR,
+            &gate_with(-30.0, range, 120.0),
+            &input,
+        );
+        let got = gain_at(SR, &input, &out, 0.4);
+        assert!((got - range).abs() < 0.01, "range {range}: {got} dB");
+        // From the first frame: a gate starts closed.
+        let got = gain_at(SR, &input, &out, 0.0);
+        assert!(
+            (got - range).abs() < 0.01,
+            "range {range} at the start: {got} dB"
+        );
+    }
+    // Over the threshold: open within a millisecond, and then the very same samples.
+    let input = sine(1000.0, gain(-20.0), frames(0.5));
+    let out = at_rate(
+        EffectKind::Gate,
+        SR,
+        &gate_with(-30.0, -60.0, 120.0),
+        &input,
+    );
+    assert!(out[60..] == input[60..]);
+    assert!(
+        out[..48]
+            .iter()
+            .zip(&input)
+            .all(|(o, i)| o.abs() <= i.abs())
+    );
+}
+
+#[test]
+fn gate_with_no_range_gives_the_very_same_samples() {
+    let quiet_and_loud: Vec<f32> = noise(0.9, frames(1.0), 31)
+        .iter()
+        .enumerate()
+        .map(|(i, v)| if i / 4800 % 2 == 0 { *v } else { v * 1.0e-4 })
+        .collect();
+    let out = at_rate(
+        EffectKind::Gate,
+        SR,
+        &gate_with(-20.0, 0.0, 5.0),
+        &quiet_and_loud,
+    );
+    assert!(out == quiet_and_loud);
+}
+
+#[test]
+fn gate_opens_in_a_millisecond_with_no_delay() {
+    let change = frames(0.1);
+    let mut input = sine(1000.0, 1.0, frames(0.3));
+    for (i, v) in input.iter_mut().enumerate() {
+        *v *= gain(if i < change { -50.0 } else { LOUD_DB });
+    }
+    let out = at_rate(
+        EffectKind::Gate,
+        SR,
+        &gate_with(-30.0, -60.0, 120.0),
+        &input,
+    );
+    assert!((gain_at(SR, &input, &out, 0.09) + 60.0).abs() < 0.01);
+    // The first frame over the threshold is the frame after the change; 48 frames later the
+    // gate is open, and half way there the gain is half.
+    assert!(out[change + 50..] == input[change + 50..]);
+    let half = out[change + 25] / input[change + 25];
+    assert!((half - 0.5).abs() < 0.05, "{half}");
+    let first = out[change + 1] / input[change + 1];
+    assert!(first > 0.02 && first < 0.03, "{first}");
+}
+
+#[test]
+fn gate_holds_30_ms_and_then_falls_60_db_in_the_release_time() {
+    let loud_s = 0.2;
+    for (release, range, checks) in [
+        // (seconds after the last loud frame, the gain there, how close)
+        (
+            120.0,
+            -60.0,
+            vec![(0.028, 0.0, 0.01), (0.09, -30.0, 1.0), (0.155, -60.0, 0.01)],
+        ),
+        (120.0, -20.0, vec![(0.028, 0.0, 0.01), (0.075, -20.0, 0.01)]),
+        (5.0, -60.0, vec![(0.028, 0.0, 0.01), (0.037, -60.0, 0.01)]),
+        (
+            1000.0,
+            -60.0,
+            vec![(0.028, 0.0, 0.01), (0.53, -30.0, 0.2), (1.04, -60.0, 0.01)],
+        ),
+    ] {
+        let input = loud_then(SR, loud_s, -50.0, 1.5);
+        let out = at_rate(
+            EffectKind::Gate,
+            SR,
+            &gate_with(-30.0, range, release),
+            &input,
+        );
+        for (after, want, close) in checks {
+            let got = gain_at(SR, &input, &out, loud_s + after);
+            println!("gate release {release} range {range}: {got:.2} dB after {after} s");
+            assert!(
+                (got - want).abs() <= close,
+                "release {release}, range {range}, {after} s after: {got} dB, want {want}"
+            );
+        }
+    }
+}
+
+#[test]
+fn gate_closes_3_db_under_where_it_opens() {
+    let setup = gate_with(-30.0, -60.0, 5.0);
+    // 1.5 dB under the threshold: not enough to open.
+    let input = sine(1000.0, gain(-31.5), frames(0.5));
+    let out = at_rate(EffectKind::Gate, SR, &setup, &input);
+    assert!((gain_at(SR, &input, &out, 0.4) + 60.0).abs() < 0.01);
+    // But enough to stay open.
+    let input = loud_then(SR, 0.1, -31.5, 1.0);
+    let out = at_rate(EffectKind::Gate, SR, &setup, &input);
+    assert!(out[frames(0.1)..] == input[frames(0.1)..]);
+    // 4 dB under is closed.
+    let input = loud_then(SR, 0.1, -34.0, 1.0);
+    let out = at_rate(EffectKind::Gate, SR, &setup, &input);
+    assert!((gain_at(SR, &input, &out, 0.9) + 60.0).abs() < 0.01);
+}
+
+#[test]
+fn gate_moves_both_sides_together() {
+    let mut fx = prepared(EffectKind::Gate);
+    gate_with(-30.0, -60.0, 120.0)(fx.as_mut());
+    let mut l = sine(1000.0, gain(LOUD_DB), frames(0.5));
+    let mut r = noise(1.0e-3, frames(0.5), 32);
+    let in_r = r.clone();
+    run(fx.as_mut(), &mut l, &mut r);
+    assert!(r[60..] == in_r[60..]);
+}
+
+fn de_esser_with(frequency: f32, threshold: f32, reduction: f32) -> impl Fn(&mut dyn Effect) {
+    move |fx| {
+        fx.set_param(de_esser::FREQUENCY, frequency);
+        fx.set_param(de_esser::THRESHOLD, threshold);
+        fx.set_param(de_esser::REDUCTION, reduction);
+    }
+}
+
+/// The gain in dB a steady sine gets, after half a second to settle.
+fn settled_gain_db(
+    kind: EffectKind,
+    rate: f32,
+    setup: &dyn Fn(&mut dyn Effect),
+    input: &[f32],
+) -> f32 {
+    let out = at_rate(kind, rate, setup, input);
+    let from = input.len() / 2;
+    db(rms(&out[from..]) / rms(&input[from..]))
+}
+
+#[test]
+fn de_esser_lowers_7_khz_and_leaves_500_hz_alone() {
+    let defaults = |_: &mut dyn Effect| {};
+    let hiss = sine(7000.0, gain(-10.0), frames(1.0));
+    let got = settled_gain_db(EffectKind::DeEsser, SR, &defaults, &hiss);
+    println!("de-esser, defaults, 7 kHz at -10 dB: {got:.2} dB");
+    assert!(got < -3.0 && got > -8.0, "{got} dB");
+
+    // Nothing over the threshold above the frequency: the very same samples.
+    let body = sine(500.0, gain(-10.0), frames(1.0));
+    let out = at_rate(EffectKind::DeEsser, SR, &defaults, &body);
+    assert!(out == body);
+}
+
+#[test]
+fn de_esser_takes_off_what_is_over_up_to_the_reduction() {
+    // Well above the frequency the shelf is all the way down.
+    for reduction in [3.0, 8.0, 18.0] {
+        let input = sine(12000.0, gain(-6.0), frames(1.0));
+        let setup = de_esser_with(3000.0, -40.0, reduction);
+        let got = settled_gain_db(EffectKind::DeEsser, SR, &setup, &input);
+        println!("de-esser reduction {reduction}: {got:.2} dB at 12 kHz");
+        assert!(
+            (got + reduction).abs() < 0.5,
+            "reduction {reduction}: {got} dB"
+        );
+    }
+    // 4 dB over the threshold: 4 dB off, though 8 are allowed.
+    // (10 kHz: at 12 kHz there are four frames a cycle, and the frames can miss the tops.)
+    let input = sine(10000.0, gain(-16.0), frames(1.0));
+    let setup = de_esser_with(3000.0, -20.0, 8.0);
+    let got = settled_gain_db(EffectKind::DeEsser, SR, &setup, &input);
+    println!("de-esser 4 dB over: {got:.2} dB");
+    assert!((got + 4.0).abs() < 0.5, "{got} dB");
+    // Under the threshold: untouched.
+    let input = sine(10000.0, gain(-25.0), frames(1.0));
+    assert!(at_rate(EffectKind::DeEsser, SR, &setup, &input) == input);
+    // At the frequency itself the shelf is half way down (in dB).
+    let input = sine(4000.0, gain(-6.0), frames(1.0));
+    let setup = de_esser_with(4000.0, -60.0, 12.0);
+    let got = settled_gain_db(EffectKind::DeEsser, SR, &setup, &input);
+    println!("de-esser at its frequency, 12 dB: {got:.2} dB");
+    assert!((got + 6.0).abs() < 0.5, "{got} dB");
+}
+
+#[test]
+fn de_esser_with_no_reduction_gives_the_very_same_samples() {
+    let input = noise(0.9, frames(1.0), 33);
+    let setup = de_esser_with(3000.0, -60.0, 0.0);
+    assert!(at_rate(EffectKind::DeEsser, SR, &setup, &input) == input);
+}
+
+#[test]
+fn de_esser_lowers_only_the_band_above_while_it_works() {
+    let n = frames(1.0);
+    let low = sine(300.0, gain(-6.0), n);
+    let high = sine(9000.0, gain(-12.0), n);
+    let input: Vec<f32> = low.iter().zip(&high).map(|(a, b)| a + b).collect();
+    let setup = de_esser_with(5000.0, -40.0, 12.0);
+    let out = at_rate(EffectKind::DeEsser, SR, &setup, &input);
+    let from = n / 2;
+    let low_db = db(tone_level(&out[from..], SR, 300.0) / tone_level(&input[from..], SR, 300.0));
+    let high_db = db(tone_level(&out[from..], SR, 9000.0) / tone_level(&input[from..], SR, 9000.0));
+    println!("de-esser at work: 300 Hz {low_db:.3} dB, 9 kHz {high_db:.2} dB");
+    assert!(low_db.abs() < 0.05, "300 Hz: {low_db} dB");
+    assert!(high_db < -8.0, "9 kHz: {high_db} dB");
+}
+
+#[test]
+fn de_esser_moves_both_sides_together() {
+    let mut fx = prepared(EffectKind::DeEsser);
+    de_esser_with(4000.0, -40.0, 12.0)(fx.as_mut());
+    let mut l = sine(12000.0, gain(-6.0), frames(1.0));
+    let mut r = sine(12000.0, gain(-50.0), frames(1.0));
+    let (in_l, in_r) = (l.clone(), r.clone());
+    run(fx.as_mut(), &mut l, &mut r);
+    let from = frames(0.5);
+    let left = db(rms(&l[from..]) / rms(&in_l[from..]));
+    let right = db(rms(&r[from..]) / rms(&in_r[from..]));
+    assert!(left < -10.0, "{left}");
+    assert!((left - right).abs() < 0.1, "{left} {right}");
+}
+
+/// A 110 Hz sine and an 8 kHz sine through `fx`, with `change` once in the middle. Gives, for
+/// the time around the change: the steepest step of what the effect did under 1 kHz, over the
+/// steepest step of the 110 Hz sine itself; and the largest move in one frame of the 8 kHz
+/// part (its height and phase, as a fraction of the height it goes in with).
+fn band_moves(fx: &mut dyn Effect, change: &mut dyn FnMut(&mut dyn Effect)) -> (f32, f32) {
+    const HIGH: f32 = 0.1;
+    let total = frames(SETTLE_S + MOVE_S + AFTER_S);
+    let low = sine(110.0, 0.25, total);
+    let mut l: Vec<f32> = (low.iter().zip(&sine(8000.0, HIGH, total)))
+        .map(|(a, b)| a + b)
+        .collect();
+    let mut r = l.clone();
+    let at = frames(SETTLE_S) / BLOCK * BLOCK;
+    run(fx, &mut l[..at], &mut r[..at]);
+    change(fx);
+    run(fx, &mut l[at..], &mut r[at..]);
+    let moved = at + frames(MOVE_S);
+
+    let coef = 1.0 - (-std::f32::consts::TAU * 1000.0 / SR).exp();
+    let under = |x: &[f32]| -> Vec<f32> {
+        let mut state = [0.0_f32; 4];
+        x.iter()
+            .map(|v| {
+                let mut x = *v;
+                for s in &mut state {
+                    *s += coef * (x - *s);
+                    x = *s;
+                }
+                x
+            })
+            .collect()
+    };
+    let (under_out, under_in) = (under(&l), under(&low));
+    let done: Vec<f32> = under_out
+        .iter()
+        .zip(&under_in)
+        .map(|(a, b)| a - b)
+        .collect();
+    let low_ratio = steepest(&done[at - 1..moved + 1]) / steepest(&under_in);
+
+    // 8 kHz is six frames a cycle: the sum over six frames against a cosine and a sine is the
+    // part's height and phase, with nothing left of anything steady.
+    let part = |n: usize| {
+        let (mut i, mut q) = (0.0_f32, 0.0_f32);
+        for at in n..n + 6 {
+            let phase = std::f32::consts::TAU * (at % 6) as f32 / 6.0;
+            i += (l[at] - low[at]) * phase.cos();
+            q += (l[at] - low[at]) * phase.sin();
+        }
+        (i / 3.0, q / 3.0)
+    };
+    let mut high_step = 0.0_f32;
+    for n in at - 1..moved {
+        let (a, b) = (part(n), part(n + 1));
+        high_step = high_step.max((b.0 - a.0).hypot(b.1 - a.1) / HIGH);
+    }
+    (low_ratio, high_step)
+}
+
+/// The fastest the de-esser's own detector moves the band: 18 dB in its 1 ms attack is 4.4 %
+/// of the height in one frame. A parameter that jumps must not move it faster than that.
+const DE_ESSER_STEP: f32 = 0.06;
+
+#[test]
+fn de_esser_does_not_click_while_parameters_jump() {
+    let kind = EffectKind::DeEsser;
+    for (index, spec) in kind.params().iter().enumerate() {
+        for (from, to) in [(spec.min, spec.max), (spec.max, spec.min)] {
+            let mut fx = lively(kind);
+            fx.set_param(index as u32, from);
+            let (low, high) = band_moves(fx.as_mut(), &mut |fx| fx.set_param(index as u32, to));
+            println!(
+                "deEsser {:10} {from:>8} -> {to:<8} low {low:.3} high {high:.4}",
+                spec.name
+            );
+            assert!(low <= 0.1, "{} {from} -> {to}: low {low}", spec.name);
+            assert!(
+                high <= DE_ESSER_STEP,
+                "{} {from} -> {to}: high {high}",
+                spec.name
+            );
+        }
+    }
+    // The meter sees a gain that jumps: by half (the low part), by 18 dB (the high part).
+    struct Jump(f32);
+    impl Effect for Jump {
+        fn prepare(&mut self, _: f32, _: usize) {}
+        fn set_param(&mut self, _: u32, value: f32) {
+            self.0 = value;
+        }
+        fn process(&mut self, l: &mut [f32], r: &mut [f32], _: &meloet_engine::EffectContext) {
+            l.iter_mut().chain(r).for_each(|v| *v *= self.0);
+        }
+        fn reset(&mut self) {}
+    }
+    let (low, _) = band_moves(&mut Jump(1.0), &mut |fx| fx.set_param(0, 0.5));
+    assert!(low > 0.1, "a jump must show under the band: {low}");
+    let mut working = lively(kind);
+    let (_, high) = band_moves(working.as_mut(), &mut |fx| fx.reset());
+    assert!(high > DE_ESSER_STEP, "a jump must show in the band: {high}");
+}
+
+fn saturation_with(drive: f32, tone: f32, mix: f32, output: f32) -> impl Fn(&mut dyn Effect) {
+    move |fx| {
+        fx.set_param(saturation::DRIVE, drive);
+        fx.set_param(saturation::TONE, tone);
+        fx.set_param(saturation::MIX, mix);
+        fx.set_param(saturation::OUTPUT, output);
+    }
+}
+
+#[test]
+fn saturation_with_no_drive_gives_the_very_same_samples() {
+    let input = noise(0.95, frames(1.0), 34);
+    for mix in [100.0, 50.0, 0.0] {
+        let setup = saturation_with(0.0, 20000.0, mix, 0.0);
+        assert!(
+            at_rate(EffectKind::Saturation, SR, &setup, &input) == input,
+            "mix {mix}"
+        );
+    }
+    // And with no mix, whatever the rest is.
+    let setup = saturation_with(36.0, 1000.0, 0.0, 0.0);
+    assert!(at_rate(EffectKind::Saturation, SR, &setup, &input) == input);
+}
+
+#[test]
+fn saturation_drive_lifts_quiet_sound_and_keeps_the_reference_level() {
+    for drive in [1.0, 6.0, 12.0, 24.0, 36.0] {
+        let setup = saturation_with(drive, 20000.0, 100.0, 0.0);
+        // 60 dB under the reference level the curve is still straight.
+        let reference = meloet_sound::effects::SATURATION_REFERENCE;
+        let quiet = sine(1000.0, reference * gain(-60.0), frames(0.2));
+        let got = settled_gain_db(EffectKind::Saturation, SR, &setup, &quiet);
+        assert!((got - drive).abs() < 0.05, "drive {drive}: {got} dB");
+        // A sample at the reference level (-18 dBFS) stays there.
+        let input = sine(1000.0, reference, frames(0.2));
+        let out = at_rate(EffectKind::Saturation, SR, &setup, &input);
+        assert!(
+            (peak(&out) / reference - 1.0).abs() < 1.0e-3,
+            "drive {drive}"
+        );
+        // Nothing comes out above the curve's top, however loud it goes in.
+        let hot = noise(4.0, frames(0.2), 35);
+        let out = at_rate(EffectKind::Saturation, SR, &setup, &hot);
+        let bend = f64::from(meloet_sound::effects::saturation_bend(gain(drive)));
+        let top = reference / bend.tanh() as f32;
+        assert!(
+            peak(&out) <= top * 1.001,
+            "drive {drive}: {} > {top}",
+            peak(&out)
+        );
+    }
+}
+
+#[test]
+fn saturation_drive_does_not_make_ordinary_sound_much_louder() {
+    // Noise at -18 dB RMS, about where the built-in sounds sit.
+    let input = noise(0.125 * 3.0_f32.sqrt(), frames(1.0), 36);
+    for drive in [0.0, 3.0, 6.0, 12.0, 18.0, 24.0, 30.0, 36.0] {
+        let setup = saturation_with(drive, 20000.0, 100.0, 0.0);
+        let out = at_rate(EffectKind::Saturation, SR, &setup, &input);
+        let change = db(rms(&out) / rms(&input));
+        println!("saturation drive {drive:>4} dB: loudness {change:+.2} dB");
+        assert!(change.abs() < 3.0, "drive {drive}: {change} dB");
+    }
+}
+
+#[test]
+fn saturation_tone_mix_and_output() {
+    // The tone is a 12 dB/oct low-pass after the curve.
+    let setup = saturation_with(0.0, 1000.0, 100.0, 0.0);
+    let got = settled_gain_db(
+        EffectKind::Saturation,
+        SR,
+        &setup,
+        &sine(1000.0, 0.1, frames(0.5)),
+    );
+    assert!((got + 3.0).abs() < 0.2, "at the tone: {got} dB");
+    let got = settled_gain_db(
+        EffectKind::Saturation,
+        SR,
+        &setup,
+        &sine(4000.0, 0.1, frames(0.5)),
+    );
+    assert!(
+        (got + 24.6).abs() < 1.0,
+        "two octaves above the tone: {got} dB"
+    );
+    let got = settled_gain_db(
+        EffectKind::Saturation,
+        SR,
+        &setup,
+        &sine(100.0, 0.1, frames(0.5)),
+    );
+    assert!(got.abs() < 0.05, "well under the tone: {got} dB");
+    // It takes the curve's overtones off: a driven 2 kHz sine keeps little above the tone.
+    let input = sine(2000.0, 0.25, frames(0.5));
+    let level = |tone: f32| {
+        let out = at_rate(
+            EffectKind::Saturation,
+            SR,
+            &saturation_with(30.0, tone, 100.0, 0.0),
+            &input,
+        );
+        tone_level(&out[frames(0.25)..], SR, 6000.0)
+    };
+    let (bright, dark) = (level(20000.0), level(2000.0));
+    assert!(bright > 0.02, "the third overtone is there: {bright}");
+    assert!(db(dark / bright) < -15.0, "{dark} {bright}");
+
+    // The mix is a straight line between the dry and the wet sound.
+    let input = noise(0.5, frames(0.5), 37);
+    let wet = at_rate(
+        EffectKind::Saturation,
+        SR,
+        &saturation_with(24.0, 3000.0, 100.0, 0.0),
+        &input,
+    );
+    let half = at_rate(
+        EffectKind::Saturation,
+        SR,
+        &saturation_with(24.0, 3000.0, 50.0, 0.0),
+        &input,
+    );
+    let worst = (half.iter().zip(&wet).zip(&input))
+        .fold(0.0_f32, |m, ((h, w), d)| m.max((h - 0.5 * (w + d)).abs()));
+    assert!(worst < 1.0e-6, "{worst:e}");
+
+    // The output gain is the last step.
+    for output in [-24.0, -12.0, 6.0] {
+        let setup = saturation_with(0.0, 20000.0, 100.0, output);
+        let got = settled_gain_db(EffectKind::Saturation, SR, &setup, &input);
+        assert!((got - output).abs() < 0.01, "output {output}: {got} dB");
+    }
+}
+
+#[test]
+fn the_new_effects_add_no_delay() {
+    for kind in [
+        EffectKind::Gate,
+        EffectKind::DeEsser,
+        EffectKind::Saturation,
+    ] {
+        let mut fx = lively(kind);
+        if kind == EffectKind::Gate {
+            fx.set_param(gate::THRESHOLD, -45.0);
+        }
+        assert_eq!(fx.latency(), 0);
+        let mut l = vec![0.0; BLOCK];
+        l[0] = 0.5;
+        let mut r = l.clone();
+        run(fx.as_mut(), &mut l, &mut r);
+        assert!(l[0] != 0.0 && r[0] != 0.0, "{}", kind.name());
+    }
+}
+
+#[test]
+fn the_new_effects_do_the_same_at_every_rate() {
+    let rates = [44_100.0, 48_000.0, 88_200.0, 96_000.0, 192_000.0];
+    for rate in rates {
+        // The gate: half way down (in dB) half a release after the 30 ms.
+        let n = |seconds: f32| (seconds * rate) as usize;
+        let input = loud_then(rate, 0.1, -50.0, 0.4);
+        let out = at_rate(
+            EffectKind::Gate,
+            rate,
+            &gate_with(-30.0, -60.0, 100.0),
+            &input,
+        );
+        let got = gain_at(rate, &input, &out, 0.1 + 0.03 + 0.05);
+        assert!((got + 30.0).abs() < 1.0, "gate at {rate}: {got} dB");
+        assert!(
+            (gain_at(rate, &input, &out, 0.128)).abs() < 0.01,
+            "gate hold at {rate}"
+        );
+        assert!((gain_at(rate, &input, &out, 0.24) + 60.0).abs() < 0.01);
+
+        // The de-esser: the same cut, in and above its band.
+        let hiss = sine_at(rate, 7000.0, gain(-10.0), n(1.0));
+        let got = settled_gain_db(EffectKind::DeEsser, rate, &|_| {}, &hiss);
+        let at_48k = settled_gain_db(
+            EffectKind::DeEsser,
+            SR,
+            &|_| {},
+            &sine(7000.0, gain(-10.0), frames(1.0)),
+        );
+        println!("de-esser at {rate}: {got:.2} dB (48 kHz: {at_48k:.2})");
+        assert!((got - at_48k).abs() < 0.5, "de-esser at {rate}: {got} dB");
+        let body = sine_at(rate, 500.0, gain(-10.0), n(0.5));
+        assert!(at_rate(EffectKind::DeEsser, rate, &|_| {}, &body) == body);
+
+        // The saturation: the same lift, the same tone.
+        let quiet = sine_at(rate, 1000.0, 0.001, n(0.2));
+        let setup = saturation_with(12.0, 20000.0, 100.0, 0.0);
+        let got = settled_gain_db(EffectKind::Saturation, rate, &setup, &quiet);
+        assert!((got - 12.0).abs() < 0.05, "saturation at {rate}: {got} dB");
+        let setup = saturation_with(0.0, 2000.0, 100.0, 0.0);
+        let tone = sine_at(rate, 4000.0, 0.1, n(0.5));
+        let got = settled_gain_db(EffectKind::Saturation, rate, &setup, &tone);
+        assert!(
+            (got + 12.4).abs() < 0.5,
+            "saturation tone at {rate}: {got} dB"
+        );
+        let input = noise(0.9, n(0.2), 38);
+        let setup = saturation_with(0.0, 20000.0, 100.0, 0.0);
+        assert!(at_rate(EffectKind::Saturation, rate, &setup, &input) == input);
+    }
+}
+
+#[test]
+fn the_new_effects_do_the_same_in_every_block_size() {
+    // Loud and quiet in turns, with a bright part, so all three have work to do.
+    let n = frames(1.0);
+    let bright = sine(8000.0, 0.2, n);
+    let input: Vec<f32> = noise(0.3, n, 39)
+        .iter()
+        .zip(&bright)
+        .enumerate()
+        .map(|(i, (v, b))| if i / 7000 % 2 == 0 { v + b } else { v * 1.0e-3 })
+        .collect();
+    let ctx = meloet_engine::EffectContext { tempo_bpm: TEMPO };
+    for kind in [
+        EffectKind::Gate,
+        EffectKind::DeEsser,
+        EffectKind::Saturation,
+    ] {
+        let render = |sizes: &[usize]| {
+            let mut fx = meloet_sound::effects::create(kind);
+            fx.prepare(SR, 2048);
+            match kind {
+                EffectKind::Gate => gate_with(-20.0, -40.0, 50.0)(fx.as_mut()),
+                EffectKind::DeEsser => de_esser_with(5000.0, -40.0, 12.0)(fx.as_mut()),
+                _ => saturation_with(18.0, 5000.0, 80.0, -3.0)(fx.as_mut()),
+            }
+            let (mut l, mut r) = (input.clone(), input.clone());
+            let (mut at, mut turn) = (0, 0);
+            while at < n {
+                let len = sizes[turn % sizes.len()].min(n - at);
+                fx.process(&mut l[at..at + len], &mut r[at..at + len], &ctx);
+                at += len;
+                turn += 1;
+            }
+            l
+        };
+        let whole = render(&[2048]);
+        assert!(whole != input, "{}: at work", kind.name());
+        for sizes in [&[32][..], &[256], &[1, 7, 64, 333, 1024, 2048]] {
+            assert!(
+                render(sizes) == whole,
+                "{} in blocks of {sizes:?}",
                 kind.name()
             );
         }

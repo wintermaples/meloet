@@ -1935,7 +1935,7 @@ SCENES.presets = {
   bands: ["mixer", "params"],
   meters: QUIET,
 };
-// Round 12 M1: a gate (no preset comes with it yet), its values not a preset's: 「プリセット ▾」.
+// Round 12 M1: a gate with its values as it is new, which are not a preset's: 「プリセット ▾」.
 SCENES.presetsNone = {
   setup(s) {
     mixerSong(s, { strip: RETURN_A, slot: 0 }, "reverb", null);
@@ -1946,6 +1946,20 @@ SCENES.presetsNone = {
   bands: ["mixer", "params"],
   meters: QUIET,
 };
+// Round 12 M6 (no mock): the gate, the de-esser and the saturation in the first slot of track 1, as they are new.
+const newEffectScene = (effect: EffectKind): SceneDef => ({
+  setup(s) {
+    mixerSong(s, { strip: RETURN_A, slot: 0 }, "reverb", null);
+    s.song.tracks[0]!.inserts = firstInsert(effect);
+    const insert: InsertRef = { strip: { kind: "track", id: s.song.tracks[0]!.id }, slot: 0 };
+    s.params.selected = { kind: "builtin", insert, effect, values: effectDefaults(effect), row: null, preset: null };
+  },
+  bands: ["mixer", "params"],
+  meters: QUIET,
+});
+SCENES.paramsGate = newEffectScene("gate");
+SCENES.paramsDeEsser = newEffectScene("deEsser");
+SCENES.paramsSaturation = newEffectScene("saturation");
 // Not from a mock: 「空き ＋」 of the second slot of 「1 ピアノ」 opened the shelf, which lists the effects; 「コンプレッサー」 is chosen.
 SCENES.shelfEffects = {
   setup(s) {

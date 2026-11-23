@@ -218,8 +218,8 @@ pub struct EffectArgs {
     /// 1 to 4, top first.
     #[schemars(range(min = 1, max = 4))]
     pub slot: u32,
-    /// A built-in effect (eq4, compressor, reverb, delay, chorus, limiter) or an effect
-    /// plugin's key from list_effects.
+    /// A built-in effect (eq4, compressor, reverb, delay, chorus, limiter, gate, deEsser,
+    /// saturation) or an effect plugin's key from list_effects.
     #[schemars(length(min = 1, max = 1024))]
     pub effect: String,
 }

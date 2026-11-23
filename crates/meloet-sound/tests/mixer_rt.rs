@@ -16,7 +16,7 @@ fn the_whole_mixer_never_touches_the_allocator() {
     use EffectKind as K;
     let mut song = Song::new(&[K::Eq4, K::Compressor, K::Chorus, K::Delay], true);
     for bus in 0..2 {
-        for (slot, kind) in [K::Eq4, K::Compressor, K::Chorus].into_iter().enumerate() {
+        for (slot, kind) in [K::Gate, K::DeEsser, K::Saturation].into_iter().enumerate() {
             song.effect(MixStrip::Return(bus), slot + 1, Some(create(kind)));
         }
     }

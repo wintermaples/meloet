@@ -119,7 +119,7 @@ describe("hint in the input meter band (spec 3 43-B, 44-A)", () => {
   });
 
   it("on an audio track in the split form too, the hint comes first (no mic meter)", () => {
-    const s = scene("vocalFit");
+    const s = scene("vocalTrack");
     s.sounds.ask = true;
     show(InputMeter, s);
     expect(q("[data-test=pack-band]")!.dataset.kind).toBe("ask");

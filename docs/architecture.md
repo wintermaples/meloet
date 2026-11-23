@@ -1984,7 +1984,7 @@ Only shapes; the bodies came in the second passes.
   - **Why seats by place**: seat numbers are decided by the engine side (`Seats::for_song`); the plugin side need not know them.
 - **File writer** (`crates/meloet-core/src/export/sink.rs`): `trait AudioSink { write(&[f32]) / finish() -> frames / abandon() }` and `create(path, SinkSpec { format, sample_rate, channels, bits })`. **Why a trait**: the export thread writes the same way whatever the format; float in, and integer conversion (with 16-bit dither) in one place inside, so wav and flac hold the same samples.
 - **Temporary decisions** (not in the spec; B-94): (1) default place: the song folder for a saved song, else the PC music folder; name = song name. (2) Per-track export saves to a folder; «えらぶ…» opens a folder window. (3) «書き出す» can be pressed during counting once a value has arrived; not before, not on failure, not for an empty song. (4) Tail: «音が消えるまで» or «なし»; «実時間で書き出す» is a toggle in «くわしく». (5) The dialog does not open during count-in, recording or export; it opens while playing. (6) «ループ» and «曲ぜんぶ» both use the song name.
-- **Fake scenes**: `exportDialog`, `exportWaiting`, `exportCounting`, `exportClips`, `exportStopped`, `exportAdvanced`, `exportCheckFailed`, `exportFit`, `exporting`, `exportingRealtime`, `exportDone`, `exportCancelled`, `exportFailed`.
+- **Fake scenes**: `exportDialog`, `exportWaiting`, `exportCounting`, `exportClips`, `exportStopped`, `exportAdvanced`, `exportCheckFailed`, `exporting`, `exportingRealtime`, `exportDone`, `exportCancelled`, `exportFailed`.
 
 ### 22-21. Remaining fixes of steps 3 and 4 (core and engine)
 

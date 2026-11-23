@@ -412,50 +412,18 @@ mod tests {
     /// Spec 3: one open band that does not fit is not folded; it gets what is left.
     #[test]
     fn one_band_in_a_low_window_gets_the_rest() {
-        // Two low windows.
-        for h in [533.0, 356.0] {
-            let left = h - 24.0 - 48.0 - 24.0 - 40.0 - 24.0 - 24.0;
-            for band in [PianoRoll, Mixer] {
-                let mut b = bands(h);
-                b.toggle(band.into());
-                let l = b.layout();
-                assert_eq!(open_bottom(&l), [band], "{h}");
-                assert_eq!(l.arrange_height, 40.0);
-                assert_eq!(height_of(&l, band), left, "{h} {band:?}");
-            }
-        }
-        // History fits at 533 and leaves the rest to the arrange view; at 356 it does not.
-        let mut b = bands(533.0);
-        b.toggle(History.into());
-        let l = b.layout();
-        assert_eq!(height_of(&l, History), 248.0);
-        assert_eq!(
-            l.arrange_height,
-            533.0 - 24.0 - 48.0 - 24.0 - 248.0 - 24.0 - 24.0
-        );
-        b.set_window(WindowSize {
-            width: 853.0,
-            height: 356.0,
-        });
-        let l = b.layout();
-        assert_eq!(
-            height_of(&l, History),
-            356.0 - 24.0 - 48.0 - 24.0 - 40.0 - 24.0 - 24.0
-        );
-        assert_eq!(l.arrange_height, 40.0);
-    }
-
-    #[test]
-    fn a_band_is_never_height_zero() {
-        for h in [1.0, 100.0, 160.0, 200.0] {
-            for band in [PianoRoll, Mixer, History] {
-                let mut b = bands(h);
-                b.toggle(band.into());
-                let l = b.layout();
-                assert_eq!(open_bottom(&l), [band]);
-                assert!(height_of(&l, band) >= 32.0, "{h} {band:?}");
-                assert_eq!(l.arrange_height, 40.0);
-            }
+        // The mixer fits from 700.
+        for h in [640.0, 699.0] {
+            let mut b = bands(h);
+            b.toggle(Mixer.into());
+            let l = b.layout();
+            assert_eq!(open_bottom(&l), [Mixer], "{h}");
+            assert_eq!(l.arrange_height, 40.0);
+            assert_eq!(
+                height_of(&l, Mixer),
+                h - 24.0 - 48.0 - 24.0 - 40.0 - 24.0 - 24.0,
+                "{h}"
+            );
         }
     }
 
@@ -464,15 +432,12 @@ mod tests {
         let mut b = bands(1080.0);
         b.toggle(History.into());
         b.toggle(Mixer.into());
-        b.set_window(WindowSize {
-            width: 853.0,
-            height: 533.0,
-        });
+        b.set_window(MIN_WINDOW);
         let l = b.layout();
         assert_eq!(open_bottom(&l), [Mixer]);
         assert_eq!(
             height_of(&l, Mixer),
-            533.0 - 24.0 - 48.0 - 24.0 - 40.0 - 24.0 - 24.0
+            640.0 - 24.0 - 48.0 - 24.0 - 40.0 - 24.0 - 24.0
         );
     }
 
@@ -792,7 +757,7 @@ mod tests {
 
     #[test]
     fn meter_is_slim_exactly_while_a_bottom_band_is_open() {
-        for h in [448.0, 800.0, 959.0, 960.0, 1080.0, 2000.0] {
+        for h in [640.0, 800.0, 959.0, 960.0, 1080.0, 2000.0] {
             assert_eq!(bands(h).layout().meter, MeterSize::Full, "{h}");
             for band in [PianoRoll, Mixer, History] {
                 let mut b = opened(h, &[band]);
@@ -809,14 +774,14 @@ mod tests {
 
     #[test]
     fn overview_only_depends_on_the_arrange_height() {
-        // Nothing open in a window 448 high: 448 - 24 - 48 - 52 - 24 - 24 = 276.
-        assert!(!bands(448.0).layout().arrange_overview);
+        // Nothing open in a window 640 high: 640 - 24 - 48 - 52 - 24 - 24 = 468.
+        assert!(!bands(640.0).layout().arrange_overview);
         // The piano roll open with tall arrange rows above it.
         let l = opened(1080.0, &[PianoRoll]).layout();
         assert_eq!(l.arrange_height, 176.0);
         assert!(!l.arrange_overview);
-        // The history open, 135 left.
-        let l = opened(527.0, &[History]).layout();
+        // The piano roll open, 135 left.
+        let l = opened(1039.0, &[PianoRoll]).layout();
         assert_eq!(l.arrange_height, 135.0);
         assert!(l.arrange_overview);
     }
@@ -887,23 +852,23 @@ mod tests {
         assert_eq!(open_bottom(&b.layout()), [PianoRoll]);
     }
 
-    /// Spec 3 (94-92): the arrange view's 40 comes first. A window 533 high at 100 %
-    /// with the piano roll, the history and the tempo band open:
-    /// the piano roll is folded, and the arrange view is the overview, not track rows 20 high.
+    /// Spec 3 (94-92): the arrange view's 40 comes first. A window 960 high at 100 %
+    /// with the piano roll, the mixer and the tempo band open:
+    /// the piano roll is folded, and the arrange view is the overview, not track rows 36 high.
     #[test]
     fn the_arrange_views_40_comes_first() {
-        let mut b = bands(800.0 / 1.5);
+        let mut b = bands(960.0);
         assert_eq!(b.toggle(PianoRoll.into()), None);
         assert_eq!(
-            b.toggle(History.into()),
+            b.toggle(Mixer.into()),
             Some(Fold {
                 band: PianoRoll,
                 why: FoldWhy::TooLow
             })
         );
         let l = b.layout_with(true);
-        assert_eq!(open_bottom(&l), [History]);
-        let left = 800.0 / 1.5 - 24.0 - 48.0 - 24.0 - 248.0 - 24.0 - 24.0;
+        assert_eq!(open_bottom(&l), [Mixer]);
+        let left = 960.0 - 24.0 - 48.0 - 24.0 - 660.0 - 24.0 - 24.0;
         assert_eq!(l.arrange_height, left);
         assert!(left >= ARRANGE_ROWS && left - 72.0 - SIZE_LANE < 64.0);
         assert!(

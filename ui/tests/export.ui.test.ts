@@ -211,7 +211,7 @@ describe("export dialog (mock F7-Export, spec 3 (34-B))", () => {
   });
 
   it("R11-Fit: the contents are in a scrolling box, the heading and the bottom buttons are outside it", () => {
-    show(ExportDialog, scene("exportFit"));
+    show(ExportDialog, scene("exportAdvanced"));
     const body = q('[data-test="export-body"]')!;
     expect(body.contains(q('[data-test="export-check"]'))).toBe(true);
     expect(body.contains(q(".head"))).toBe(false);

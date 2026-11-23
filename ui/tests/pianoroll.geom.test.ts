@@ -65,10 +65,9 @@ describe("how it shows when opened", () => {
     expect(G.fitTopKey({ low: 0, high: 2 }, 41)).toBe(40);
   });
 
-  it("horizontal: the largest step where the clip fits (40 per beat at 1280, 80 at 1920, 40 at 150 % too)", () => {
+  it("horizontal: the largest step where the clip fits (40 per beat at 1280, 80 at 1920)", () => {
     expect(G.fitQuarterPx(16 * TPQ, 696, 100)).toBe(40);
     expect(G.fitQuarterPx(16 * TPQ, 1336, 100)).toBe(80);
-    expect(G.fitQuarterPx(16 * TPQ, 1016, 150)).toBe(40);
     expect(G.fitQuarterPx(1600 * TPQ, 696, 100)).toBe(10);
   });
 
@@ -88,8 +87,8 @@ describe("how it shows when opened", () => {
     expect(G.fitQuarterPx(span.end - span.start, 696, 100)).toBe(40);
   });
 
-  it("row count from adding up the height (11, 34, 38, 41, 49 for windows 448, 720, 768, 800, 1080)", () => {
-    expect([140, 412, 460, 492, 588].map((h) => G.wholeRows(h, 12))).toEqual([11, 34, 38, 41, 49]);
+  it("row count from adding up the height (34, 38, 41, 49 for windows 720, 768, 800, 1080)", () => {
+    expect([412, 460, 492, 588].map((h) => G.wholeRows(h, 12))).toEqual([34, 38, 41, 49]);
   });
 });
 

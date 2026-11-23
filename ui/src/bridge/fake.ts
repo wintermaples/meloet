@@ -3264,7 +3264,7 @@ function themeFromUrl(): Theme | null {
 }
 
 // ---- round 7, step 2: vocal tracks, the input and the latency (protocol 23) ----
-// The states of the mocks F7-VocalTrack, F7-VocalRec, F7-TwoRec, F7-Latency, F7-SettingsAdv and R11-Fit. The
+// The states of the mocks F7-VocalTrack, F7-VocalRec, F7-TwoRec, F7-Latency and F7-SettingsAdv. The
 // fake answers none of the new commands yet.
 
 const VOCAL_TRACK_ID = BAND_TRACK_ID + 6;
@@ -3443,16 +3443,6 @@ SCENES.latencyFailed = {
     s.status.message = { id: "latencyMeasureOpen" };
   },
   meters: QUIET,
-};
-
-// R11-Fit: the input meter in two halves in the smallest window (853 wide): 「弾くと鳴る先」 and the word
-// 「モニター」 give way.
-SCENES.vocalFit = {
-  setup(s) {
-    vocalSong(s, { armed: true, monitor: true, selected: true });
-  },
-  screen: { width: 853, height: 448 },
-  meters: { ...QUIET, keys: [60, 64, 67], mics: [micAt(-18)] },
 };
 
 // A song opened after meloet ended while a voice was being recorded: the hint about the recovery file has a
@@ -3787,7 +3777,7 @@ SCENES.stretchRamp = {
 };
 
 // ---- round 7, step 5: writing the song out (protocol 26) ----
-// The states of the mocks F7-Export, F7-Exporting and of the export of R11-Fit. The numbers of a check or of a run
+// The states of the mocks F7-Export and F7-Exporting. The numbers of a check or of a run
 // move only when a scene sets them.
 
 /**
@@ -3831,14 +3821,13 @@ function fakeExportDialog(song: SongView, over: Partial<ExportDialogView> = {}):
   return { ...d, pictureUsable: d.format !== "wav", ...fakeLoudnessOf(d.check, d.range, d.loudness) };
 }
 
-const exportDialogScene = (over: Partial<ExportDialogView> = {}, screen?: SceneDef["screen"]): SceneDef => ({
+const exportDialogScene = (over: Partial<ExportDialogView> = {}): SceneDef => ({
   setup(s) {
     bandSong(s, BAND_TRACKS.slice(0, 4));
     s.song.name = "はじめての曲";
     s.export.dialog = fakeExportDialog(s.song, over);
   },
   after: (s) => (s.status.message = { id: "exportDialogOpen" }),
-  screen,
   meters: QUIET,
 });
 
@@ -3865,8 +3854,6 @@ SCENES.exportAdvanced = exportDialogScene({
 });
 // The check could not run: a plugin did not load for the export.
 SCENES.exportCheckFailed = exportDialogScene({ check: { state: "failed", reason: { kind: "plugin", name: "Surge XT" } }, canExport: false });
-// R11-Fit: in the smallest window the dialog scrolls inside, its heading and its buttons stay.
-SCENES.exportFit = exportDialogScene({}, { width: 853, height: 448 });
 // Round 12 F1 「音の大きさ」: 「公開先に合わせる」 makes a quiet song 4.6 dB louder.
 SCENES.exportLoudness = exportDialogScene({ check: { state: "done", peakDb: -6.8, clips: false, over: 0, lufs: -18.6, truePeakDb: -6.0 }, loudness: "match" });
 // The true peak stops it: 「−1 dBTP を越えないよう、−15.2 LUFS になります」.

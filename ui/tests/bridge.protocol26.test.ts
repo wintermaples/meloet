@@ -149,12 +149,6 @@ describe("fake scenes (mock F7-Export, F7-Exporting, R11-Fit)", () => {
     expect(scene("exportCheckFailed").export.dialog).toMatchObject({ check: { state: "failed", reason: { kind: "plugin", name: "Surge XT" } }, canExport: false });
   });
 
-  it("exportFit (R11-Fit): the same dialog in the smallest window 853×448", () => {
-    const fit = fakeScene("exportFit", undefined, { width: 853, height: 448 })!.state;
-    expect([fit.workspace.viewportWidth, fit.workspace.viewportHeight]).toEqual([853, 448]);
-    expect(fit.export.dialog).toEqual(scene("exportDialog").export.dialog);
-  });
-
   it("exporting (F7-Exporting): exporting a 6-track song at 46 %, 40 seconds left. The dialog is closed", () => {
     const s = scene("exporting");
     expect(s.export).toEqual({ dialog: null, run: { state: "running", percent: 46, file: "はじめての曲.wav", remainingS: 40, realtime: false, realtimeForced: false, lengthS: 182 } });

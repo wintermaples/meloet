@@ -196,7 +196,7 @@ describe("input meter split left and right in the smallest window (spec 3 (94-16
     ["左が入らない: 弾くと鳴る先", { left: 450, right: 600 }, { target: false, monitor: true, keys: true, held: true, fixed: true, name: "" }],
     ["右も入らない: 次にモニター", { left: 450, right: 380 }, { target: false, monitor: false, keys: true, held: true, fixed: true, name: "" }],
     [
-      "まだ入らない（幅 853）: 鍵盤の絵、名前は 88",
+      "まだ入らない（幅 1024）: 鍵盤の絵、名前は 88",
       { left: 300, right: 300 },
       { target: false, monitor: false, keys: false, held: true, fixed: true, name: "var(--part-meter-name-split-narrow)" },
     ],

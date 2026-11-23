@@ -135,7 +135,6 @@ describe("fake scenes (F7-VocalTrack, F7-VocalRec, F7-TwoRec, F7-Latency, F7-Set
     "latency",
     "latencyDone",
     "latencyFailed",
-    "vocalFit",
     "recoverVocal",
     "paramsSound",
   ];
@@ -218,11 +217,7 @@ describe("fake scenes (F7-VocalTrack, F7-VocalRec, F7-TwoRec, F7-Latency, F7-Set
     expect(scene("latencyFailed").state.workspace.latencyDialog).toEqual({ measure: { state: "failed", reason: "tooQuiet" } });
   });
 
-  it("R11-Fit: in a narrow window, the keyboard and mic meters come at the same time. A vocal row left in the recovery file hint", () => {
-    const fit = scene("vocalFit");
-    expect(fit.meters.keys).toEqual([60, 64, 67]);
-    expect(fit.meters.mics!.length).toBe(1);
-    expect(fit.state.workspace.unfitScales).toEqual([125]);
+  it("a vocal row left in the recovery file hint", () => {
     const kept = scene("recoverVocal").state.workspace.recovery;
     expect(kept).toMatchObject({ kind: "recovered", vocals: { count: 1, until: 8 * BAR + 2 * TPQ } });
     expect(t("recovery.vocalKept", { count: 1, position: "9. 3. 0000" })).toBe("録っていた歌 1 つを、止まる直前（9. 3. 0000 ごろ）まで残しました。");

@@ -2694,7 +2694,7 @@ export const texts = {
   "button.packLater": e("あとで", "spec:3"),
   "pack.ask": e("音の素材（約 {mb} MB）を取りにいきます", "spec:3", { mb: "240" }),
   "pack.askDetail": e("グランドピアノなど {count} の音色 ・ 取っている間も弾けます", "spec:3", { count: "31" }),
-  // When the small text of the asking band does not fit in a window 853 wide.
+  // When the small text of the asking band does not fit.
   "pack.askDetailShort": e("取っている間も弾けます", "mock:R12-Fit"),
   "pack.soundReady": e("{instrument} が鳴るようになりました ・ のこりの音色を取っています", "spec:3", { instrument: "グランドピアノ" }),
   "pack.askingStatus": e("音の素材がまだありません ・ いまはサイン波で鳴ります", "mock:F8-PackAsk"),

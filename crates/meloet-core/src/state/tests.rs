@@ -1184,25 +1184,18 @@ fn the_note_glow_is_a_setting_and_not_a_step() {
 #[test]
 fn arrange_lower_than_one_track_row_is_drawn_as_the_overview() {
     let mut m = fresh();
-    // History 248 + 40 with the slim meter (24 + 48 + 24 + 24 = 120).
-    cmd(
-        &mut m,
-        Command::SetViewport {
-            width: 1280.0,
-            height: 408.0,
-        },
-    );
+    // The piano roll grows up to 760 before the arrange view does (with the slim meter, 144 more).
     cmd(
         &mut m,
         Command::ToggleBand {
-            band: Band::History,
+            band: Band::PianoRoll,
         },
     );
     let l = m.view().workspace.layout;
     assert_eq!(l.arrange_height, 40.0);
     assert!(l.arrange_overview);
 
-    for (height, arrange, overview) in [(527.0, 135.0, true), (528.0, 136.0, false)] {
+    for (height, arrange, overview) in [(1039.0, 135.0, true), (1040.0, 136.0, false)] {
         cmd(
             &mut m,
             Command::SetViewport {
@@ -1395,7 +1388,7 @@ fn unfit_scales_follow_the_screen() {
 fn a_scale_that_does_not_fit_is_not_taken() {
     let mut m = playing();
     screen(&mut m, 1200.0, 700.0);
-    viewport(&mut m, 1100.0, 600.0);
+    viewport(&mut m, 1100.0, 640.0);
     assert_eq!(status(&m), idle());
 
     assert!(cmd(&mut m, Command::SetScale { percent: 125 }).is_empty());
@@ -1415,7 +1408,7 @@ fn a_scale_that_does_not_fit_is_not_taken() {
 #[test]
 fn a_new_scale_grows_a_window_that_is_too_small_for_it() {
     let mut m = playing();
-    viewport(&mut m, 900.0, 900.0);
+    viewport(&mut m, 1024.0, 900.0);
     assert_eq!(cmd(&mut m, Command::SetScale { percent: 125 }).len(), 1);
     let ws = m.view().workspace;
     // Only the width was too small: 1280x800 is the smallest window at 125 %.
@@ -1477,7 +1470,7 @@ fn a_higher_scale_that_folds_a_band_says_the_scale_did_it() {
 
     // The fold is told even when the window also grew.
     let mut m = playing();
-    viewport(&mut m, 900.0, 724.0);
+    viewport(&mut m, 1024.0, 724.0);
     toggle(&mut m, Band::PianoRoll);
     toggle(&mut m, Band::History);
     cmd(&mut m, Command::SetScale { percent: 125 });

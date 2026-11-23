@@ -432,3 +432,12 @@ In the "Basis" column: "spec 3" is chapter 3 of this spec; "mock Main" is a mock
 | Lines of the CC lanes (themes) | The CC lanes use the same line names as the piano roll (bar `color.line.bar`, beat `color.line.beat`, fine `color.line.grid`), one step stronger than the mock R3-Lanes, so lines read the same in every lane and theme. | the developers' decision (the owner chose line-only names, 2026-11-23) |
 | Off borders of M / S / ● (themes) | Spec 2 says "normal border gray.6", spec 1's Contrast table puts the M, S, ● toggles on gray.5. The toggles keep gray.5, so accent and rec stay 3:1 against the off border after gray.6 got stronger in the dark themes. | the developers' reading |
 | Lines under track rows (themes) | `color.line.thin`, not `color.line.row`: they were gray.5, and line.row would make them weaker than before. | the developers' decision |
+
+## A-28 The AI link (round 11)
+
+| Where | Rule | Basis |
+|---|---|---|
+| Key names of an LV2 plugin (midnam) | Read when the plugin is loaded and when its state is restored, never at other times. The midnam update feature is not offered, so a plugin that renames its keys while it runs keeps the old names until its state is restored again. | the developers' decision (architecture 24-16 E) |
+| Measuring a muted track with `ignore_mute` | Only the mute button is ignored, for the track measured alone; a moving mute lane is still followed, and the mix keeps the song's mutes. The song does not change. | the developers' decision (architecture 24-16 D) |
+| A recalled mute set and a moving mute lane | When a recall changes the mute of a track that has a moving mute lane, the lane is rested in the same step, as pressing M does; tracks whose mute does not change keep their lane as it is. | the developers' decision (architecture 24-16 F) |
+| Solo in a mute set | A set remembers solo and a recall sets it, but solo is not part of the step (as solo is never a step): undo does not bring the old solo back. | the developers' decision (architecture 24-16 F) |

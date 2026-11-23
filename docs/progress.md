@@ -19,7 +19,7 @@ Branch: each piece of work is done on its own branch made from `main` (`fea/`, `
 | Lane points binary | 1 | `crates/meloet-protocol/src/automation.rs` |
 | Song file | 6 (versions 5 and older cannot be read) | `crates/meloet-core/src/songfile.rs`, architecture 14 and 22-3 |
 | Recovery file | 2 | `crates/meloet-core/src/recovery.rs`, architecture 15 |
-| Wire to the plugin host | 5 | `crates/meloet-plugin/src/wire.rs` |
+| Wire to the plugin host | 7 | `crates/meloet-plugin/src/wire.rs`, architecture 24-16 E and I |
 | Sound pack catalog | format `meloet-sounds-catalog`, version 1; pack `2026.11.2` | `tools/sounds/catalog.json`, architecture 23-1 and 23-9 |
 | App | 0.2.1 (released as v0.x.y) | `crates/meloet-app/Cargo.toml` |
 
@@ -230,6 +230,112 @@ Release 0.2.1 (2026-11-23): fix for `meloet-mcp` (the bridge of 「AI とつな�
 Release 0.2.0 (2026-11-23): `foundation` was fast-forwarded into `main` after the README picture (the owner's order), then `scripts/check-all.sh --release` passed (Rust 1504 passed, screen 3443 passed), the version went to 0.2.0 (`scripts/bump-version.sh`, 22 files) and passed again, and `MELOET_DOCKER_SG=1 scripts/build-deb.sh` built `target/deb/meloet_0.2.0_amd64.deb`: 19 606 918 bytes (18.70 MiB), sha256 `2b44399ed38a2f46d41b72818921f6a8bebb85afb38ce083bdafe133a902bb2d`. Checked: control ASCII only; `/usr/bin/meloet`, `meloet-plughost`, `meloet-mcp`; the MIME XML and the .desktop with `MimeType=application/x-meloet;` and `Exec=meloet %f`; the icons; LICENSE-MIT, LICENSE-APACHE and NOTICE; no development hook names in the binaries. With the owner's go-ahead: `main` and `foundation` pushed, tag `v0.2.0`, and the GitHub release 「meloet 0.2.0」 with the deb (https://github.com/wintermaples/meloet/releases/tag/v0.2.0; the downloaded asset has the same sha256). The sound pack is not affected: the online catalog is read from `main` (unchanged) and the sounds from their own `sounds-*` tags.
 
 Left for later in round 10: a real-app check of the new features and themes by the owner, measuring key → sound and key → screen while overdubbing, and the light themes showing dark for a moment at start.
+
+### Round 11 (2026-11-23): the AI link, from the owner's 13 requirements
+
+The owner let an AI make music in meloet through the MCP tools and listed 13 things that went badly. Branch `fea/mcp-improvements`; eleven helpers, one part each. How each is built: architecture 24-16 (letters below). Every new and changed tool with its arguments and answers: [`development/ai-tools.md`](development/ai-tools.md). 70 → 94 tools. No protocol change; the plugin host wire is now 7; the song file stays version 6.
+
+1. **Plugin presets**: done (I, J). `list_presets`, `load_preset` (one step), `save_preset` for LV2 presets (through lilv in the plugin host), VST3 `.vstpreset` files and Surge XT patches. VST3 program lists are not read (decision below).
+2. **A plugin's whole state**: done (G, J); one part being finished (TODO(lead): the plugin host waiting after a state put while the sound runs, which replaces a 200 ms put-again stopgap). `get_plugin_state` / `set_plugin_state` (one step; a refused or crashing state leaves the song as it was), Surge XT's patch as XML with `set_plugin_state_text`.
+3. **Many notes with little work**: done (C). Notes as `[start, length, key, velocity]`, `origin`, `create_clip` with `bars` / `end`, `copy_notes` (another track, transposed), `import_midi` and `export_midi` (our own reader and writer, 1920 ticks a quarter note).
+4. **Plugin parameters that can be used**: done (H). Choices by name (probing the plugin's texts), `text` in `set_param`, `set_params` as one step, pages and filters. The cause of "no step came within 5 s" was found (DPF plugins take a value on their next audio block) and fixed in the plugin host.
+5. **Several changes as one undo step**: done (A). `batch` of up to 200 operations; a failure takes all of it back; the person's intents wait while it runs.
+6. **Measuring muted candidates**: done (D). `measure_mix` gains `alone`, `ignore_mute` and LUFS.
+7. **What sounds where in frequency**: done (D). `analyze_bands`: levels per band, two tracks sounding in the same band at once, sections by markers or bars.
+8. **Which key is which drum**: done (E) for built-in kits, SF2 kits (sample names) and LV2 midnam (checked with Black Pearl); VST3 gives no names (a GM guess is marked as a guess).
+9. **Tracks that do not move under the AI**: done (K). Every track argument takes the number or `"id:7"`; answers give ids.
+10. **Notes that went missing (266 sent, 265 written)**: done (C). The cause was the 4-bar clip `write_notes` made; now the new clip is long enough, and every write answers `not_written` and `changed` with reasons.
+11. **"No change" is not an error**: done (B). `changed: false` as a success; real failures got real reasons (`ai_why_not`).
+12. **Finding song files**: done (F). `list_songs` (the song open now, the songs opened or saved lately, the songs folder, or a given folder). Nothing on the screen yet (B-97-4).
+13. **Mute sets**: done for the AI (F). `save_mute_set`, `list_mute_sets`, `recall_mute_set`, `delete_mute_set`; one step each; kept in the song (`muteSets`). Nothing on the screen yet (B-97-3).
+
+New questions for the owner: B-97-1 to B-97-7 in `docs/spec/open-questions.md` (history rows of a batch, of mute sets, of a plugin state and of several parameters; where mute sets and recent songs go on the screen; renaming a mute set). New readings: spec 7, A-28.
+
+TODO(lead): checks, version 0.3.0, deb
+
+TODO(lead): the owner's completion conditions as end-to-end tests (`crates/meloet-ai/tests/conditions.rs`), being finished.
+
+**The lead's decisions** (one line each, with the reason):
+
+- `get_plugin_params` and `list_effects` give 50 a page by default, so an old call without arguments now gets a page instead of everything: the old answers were about 400 000 and 190 000 characters, too large for an AI app.
+- `write_notes` into a track makes its new clip 4 bars (or up to the next clip) and longer when the notes need it, not exactly as long as the notes: an AI that writes a bar at a time would line up 1-bar clips. When another clip is in the way the whole call is refused naming it: all or nothing, as `import_midi` and `copy_notes`, so a batch never succeeds with half a write.
+- `ignore_mute` ignores the mute button only; a moving mute lane is still followed: the lane is part of the song as written, the button is the candidate being tried.
+- `tracks` and `alone` together are refused: they say different things about the mix.
+- Surge XT modulation is edited in the patch XML inside the plugin's state, not over OSC: OSC is off by default and cannot add or remove routings.
+- VST3 program lists are not read: on this PC they are empty (Zam) or a single empty name (Surge XT); Zam's presets are a hidden parameter, and the same presets come through the LV2 versions.
+- An empty plugin state is an error, and the same state as the song's is "no change" (not a failed put).
+
+**Left for later** (from the helpers' reports; not fixed in round 11):
+
+- Batch
+  - The history row of a batch is the last operation's name (B-97-1).
+  - `BatchLost` can still come from inputs that are not held but make a step: an automation write while playing ending in `sync_automation`, and a song handed over at start opening on `ScreenUp`.
+  - When the core thread stops for more than 2 s (for example while an output opens), a live batch is taken back by the idle limit; the tool then says nothing was changed.
+  - No limit on the time of a whole batch.
+  - A held intent's answer waits until it has run; whether Tauri's synchronous commands run on the main thread was not checked (if so, the window could freeze up to 2 s in the worst case).
+  - Not checked in the real app with a person working while a batch runs.
+  - Old doc comments: `AiAsk::InBatch` / `Rollback` in `crates/meloet-core/src/ai.rs`, and `HistoryView` in `meloet-protocol` ("only the last row changes"; now rows above the lower of the two `current` may change when `newest` changes).
+  - Intents of the screen path still change the selection when the AI sends them (`MoveClips`, `DuplicateClips`, `SplitClipAt`, `JoinClips` choose the clips they make; `timeline_step` chooses tempo points, meters and markers; `AddVocalTrack` changes the selected track), against "the AI does not change the selection". Their results also show on the person's status line (`TrackDeleted` and so on).
+  - `EditError::Unchanged` of the model still mixes "cannot" (`join_clips` with one clip, other tracks or a clip between; `split_clips` outside the clip; empty names); `ai_why_not` and the tools give the AI the right reason, the model was not changed.
+  - `play/params.rs` still answers an empty or non-finite plugin value with `AiRefusal::Unchanged` (which the tools now show as a success); the tools refuse such values first, but it should be `Cannot`.
+- Notes and MIDI
+  - Not tried with MIDI files written by other DAWs; track names in Shift-JIS come out garbled; a note fully inside another of the same key swaps ends on a round trip (a limit of the format).
+  - `import_midi` / `copy_notes` with another clip in the way refuse; they do not spread the notes over several clips.
+  - With 200 notes listed, an answer is about 30 KB (text and `structuredContent` both hold the JSON; `MAX_TOLD`).
+  - The `anyOf` note schema was not shown to a real AI app.
+  - Note writes answer `changed` as the list of cut notes, while other writes answer `changed: true` / `false`.
+  - `AiNoteWhy::PastClipEnd` and `at_clip_end` no longer come on the AI path.
+  - No test for a next clip that starts in the middle of a bar with notes ending before it.
+  - Sending a take of 50 000 notes to the screen was not measured.
+- Measuring
+  - Each measuring pass still writes a temporary WAV and deletes it (600 s × 65 passes would write about 15 GB).
+  - Overlap sums left and right, so two tracks panned apart still count as overlapping; no true peak.
+  - Not checked through the real app and the `meloet-mcp` bridge; 44.1 and 96 kHz only in unit tests.
+- Key names
+  - VST3 `getProgramPitchName` is not built (no VST3 drum plugin that uses it on this PC).
+  - The midnam update feature is not offered; with several name lists, no choice by patch or channel.
+  - Built-in kit keys from a loaded bank are checked only by unit tests (no pack in the tests).
+  - Answers a tool gave up on stay until the next ask (as `ai_lists`).
+  - Idea: the SF2 reading thread could make the key names with the bank (no second open, names always match the sound).
+- Mute sets and recent songs
+  - Nothing on the screen (B-97-3, B-97-4); no rename tool (B-97-5).
+  - A set does not remember whether a lane was resting.
+  - A song restored from the recovery file is not added to the recent songs.
+  - meloet 0.2.x opens a song with mute sets but drops them when it saves.
+  - `deleted_track_ids` are plain integers, not `"id:N"`.
+- Presets
+  - Loading the same LV2 preset again after the song was opened again ends in "says it has the state it had" (the in-memory record is gone); a typed outcome of a state put would fix it.
+  - An LV2 state without `appliesTo` put through `set_plugin_state` may make the plugin host panic (in livi's `restore_state`; not tried).
+  - LV2 presets that point to files (samples): relative paths not checked.
+  - The class id letter form of `.vstpreset` checked only against our own round trip and vst3-host 0.11.1; no files from other hosts on this PC.
+  - ZynAddSubFX preset names come as the bundle gives them ("Bass: 0001-Bass 1.xiz").
+- Surge XT
+  - While the 200 ms put-again stopgap stays, a `set_param` on the same plugin in that time could come in the wrong order (TODO(lead), being finished).
+  - On LV2 with the sound running, a put whose result equalled the song's state still made a step (suspected empty step; not looked into).
+  - `set_plugin_state_text` with attributes Surge XT does not write back (such as `deactivated` on `a_pitch`) ends in "says it has the state it had".
+  - Routings with `scene` on parameters of the whole patch were tried only in unit tests; `source_index` is always 0.
+  - After a patch swap on LV2, whether `get_plugin_params` shows the new patch's values was not checked.
+- Parameters
+  - `Handle::touch` in `crates/meloet-plughost/src/rt.rs` does not ring the bell when it leaves a seat (as `params_taken` did before its fix).
+  - VST3 values set in blocks while the gate is closed are lost (`vst3.rs`, around line 746).
+  - LV2 ports that are continuous but have scale points get no names.
+  - `list_instruments` has the same size problem as `list_effects` had.
+  - Each plugin set reads the whole list once (about 100 ms for Surge XT); a cache would help.
+  - `changed_only` lists about 320 parameters of a Surge XT just loaded (its first patch differs from the plugin's defaults).
+- Plugin host
+  - `Hosts::request` in `crates/meloet-core/src/plugins/hosts.rs` answers `Gone` on a broken read without killing the process, so no `Stopped` comes: the AI is told the plugin was reloaded, but it is not (one `pidfd.kill()` would fix it).
+  - Esc on a panel drag that started during a state put puts the old value into the plugin (a window of a few ms).
+  - The 2 s revive window also reloads plugins of the same key that stopped for another reason.
+  - A large plugin state makes the recovery file large on every change.
+  - A Surge XT VST3 state cut in half crashes the plugin host (the song is safe; the instructions to the AI say to put back only states it read).
+  - A state put answers `step: null` (the step comes later through a ticket); there is no way yet to hand the row to the AI.
+- Tracks
+  - The id is turned into a number inside the tool; many core asks take numbers, so a change in that short time can still move them. `add_track` reads the song again after the write for its `track_id` (a `track_id` in `AiDone` would be exact).
+  - `add_vocal_track` answers no track number or id.
+- Tests that fail now and then
+  - `readahead::tests::other_audio_for_the_same_clips_comes_in_over_ten_ms_where_the_ring_ends` (2 of 5 runs on a busy PC: 3 swaps where 2 are waited for).
+  - `link.rs` `a_note_is_rendered_into_the_private_folder` and `the_export_writes_over_a_file_only_when_asked` failed once right after a build, then passed 7 times.
+  - `tests/common` `scratch` in `crates/meloet-ai` does not remove its folders: `/tmp/k10ai2-link-*` piles up (619 seen).
 
 ## 7. Notes for Windows and Mac
 

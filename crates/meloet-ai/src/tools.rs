@@ -77,26 +77,38 @@ const MAX_PATH: usize = 4096;
 /// How long a save, an open, a file brought in or a plugin's step is waited for.
 const WAIT_FOR: Duration = Duration::from_secs(30);
 
-const INSTRUCTIONS: &str = "meloet is a DAW for people who have just bought a MIDI keyboard. \
-These tools read and change the song open in meloet right now. Positions are \"bar.beat.tick\" \
-(bar and beat from 1, the tick from 0; 1920 ticks are a quarter note) or plain ticks from the \
-song's start. Keys are MIDI numbers (60 is C4). Tracks are numbered from 1 as song_overview \
-lists them; insert slots from 1 to 4.\n\
-Groups: song and notes (song_overview, get_notes, write_notes, delete_notes, move_notes, \
-resize_notes, set_note_length, set_velocity, quantize_notes, unquantize_notes); time \
-(set_tempo, set_meter, markers, loop); tracks and clips (add_track, delete_track, clips, takes, \
-import_audio, clip gain, fades, pitch and stretch); sounds (list_sounds, list_instruments, \
-set_instrument); mixer (get_mixer, list_effects, volume, pan, sends, mute, solo, effects and \
-their parameters, plugin parameters); automation (get_automation, lanes and points); files \
-(save_song, save_song_as, open_song, new_song, export_song); listening (measure_mix, \
-render_audio, render_note, get_clip_audio).\n\
-Every change of the song is one step the person can see in meloet's undo history and take \
-back; `undo` takes back the last step, whoever made it. Nothing can be changed while meloet \
-records, counts in or exports. Ask before changing the song when the person did not ask for \
-it, and before open_song or new_song when the song has unsaved changes. You cannot hear \
-audio: measure_mix gives numbers; render_audio, render_note and get_clip_audio write WAV \
-files into a private temporary folder and give their paths for a program of yours to read. \
-Those files are deleted after an hour.";
+const INSTRUCTIONS: &str = "meloet is a DAW for people who have just bought a MIDI keyboard; \
+these tools read and change the song open in it now. Places: \"bar.beat.tick\" (from 1, tick \
+from 0; 1920 ticks a quarter note) or ticks. Tracks: the number from 1 of song_overview, or \
+the id like \"id:7\", which stays when tracks move: prefer ids.\n\
+Groups: song (song_overview, list_songs, save_song, save_song_as, open_song, new_song, \
+export_song, undo, batch); notes (get_notes, write_notes, delete_notes, move_notes, copy_notes, \
+resize_notes, set_note_length, set_velocity, quantize_notes, unquantize_notes, import_midi, \
+export_midi); time (set_tempo, set_tempo_ramp, delete_tempo_change, set_meter, \
+delete_meter_change, add_marker, move_marker, rename_marker, delete_marker, set_loop, \
+set_loop_on); tracks, clips (add_track, add_vocal_track, delete_track, rename_track, \
+move_track, create_clip, rename_clip, delete_clips, move_clips, duplicate_clips, split_clip, \
+join_clips, switch_take, set_clip, set_clip_stretch, import_audio); sounds (list_sounds, \
+list_instruments, set_instrument, get_key_names, list_presets, load_preset, save_preset); mixer \
+(get_mixer, set_volume, set_pan, set_send, set_mute, set_solo, save_mute_set, list_mute_sets, \
+recall_mute_set, delete_mute_set); effects (list_effects, insert_effect, replace_effect, \
+remove_effect, move_effect, bypass_effect); plugins (get_plugin_params, get_param_choices, \
+set_param, set_params, get_plugin_state, set_plugin_state, set_plugin_state_text); Surge XT \
+(surge_list_modulations, surge_get_patch_params, surge_set_modulation, \
+surge_remove_modulation, surge_set_patch_params); automation (get_automation, add_lane, \
+delete_lane, write_automation, move_automation, delete_automation); listening (measure_mix, \
+analyze_bands, render_audio, render_note, get_clip_audio).\n\
+Each change is one undo step in meloet; undo takes back the last one, whoever made it. \
+batch makes many changes ONE step, all or nothing. \"No change\" (changed: false) is a \
+success. Nothing changes while meloet records or exports. Ask before changes not asked for, \
+and before open_song or new_song with unsaved changes.\n\
+Long lists come in pages (limit, offset, next_offset) and take filters. Read not_written and \
+changed in note answers. A plugin state or preset fits only the same plugin and format; put \
+back only states you read (a broken one can stop the plugin). Surge XT: the surge_ tools edit \
+its patch; set_param its effect types.\n\
+You cannot hear: measure_mix gives levels and LUFS, analyze_bands levels per frequency band; \
+render_audio, render_note, get_clip_audio and export_midi write files into a private folder \
+(deleted after an hour) for a program of yours to read.";
 
 /// Calls allowed over time (a token bucket).
 #[derive(Debug)]

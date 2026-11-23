@@ -156,3 +156,50 @@ Sent back at the end of round 8 with the items above:
 - Question: the built-in kits call key 47 「ミッドタム」, but the table of spec 3 for SF2 kits (GM) calls 47 「ミッドタム 2」 and 48 「ミッドタム」.
 - Now: the built-in kits use 「ミッドタム」 for 47 (`crates/meloet-model/src/drums.rs`).
 - From: chapter 7, A-11.
+
+## B-97: round 11 (the AI link)
+
+### B-97-1 The history row of a batch
+
+- Question: the AI tool `batch` makes several changes as one undo step. What should its row in the undo history band say?
+- Now: the name of the last operation inside it. A mix of 15 operations shows one row such as the volume change of track 3, which does not tell what is inside.
+- Proposal (helper): a new row wording such as 「まとめて変える（N 個）」. It needs a new step name (`StepKind`, `StepName`, `ja.ts`; a protocol change).
+- From: architecture 24-16 A.
+
+### B-97-2 Step names of mute sets, and the word 「セット」
+
+- Question: saving, recalling and deleting a mute set are one step each. What should their rows say? And is 「セット」 the right word, or 「組み合わせ」?
+- Now: all three show the step name 「ミュート」 with the set's name as the (what), place 「ミキサー」.
+- Proposal (helper): 「ミュートのセットを保存する」, 「ミュートのセットを呼び出す」, 「ミュートのセットを消す」 (and 「ミュートのセットの名前を変える」 if renaming is built).
+- From: architecture 24-16 F. Code: `crates/meloet-core/src/play/history.rs` (a comment marks the open question).
+
+### B-97-3 Where on the screen a mute set is chosen
+
+- Question: mute sets can only be used by the AI now. Should the screen have them, and where? Should saving, renaming and deleting be possible from the screen too?
+- Now: nothing on the screen.
+- Proposal (helper): the menu at the head of the mixer band, the 「表示」 menu, or the context menu of a track head.
+- From: architecture 24-16 F.
+
+### B-97-4 「最近ひらいた曲」 in the file menu
+
+- Question: meloet now remembers the 20 songs opened or saved last (`recent-songs.json`; the AI reads it with `list_songs`). Should the file menu show them, and where and with what wording?
+- Now: not shown on the screen.
+- From: architecture 24-16 F.
+
+### B-97-5 Renaming a mute set
+
+- Question: is a tool (and later a screen way) to rename a mute set wanted?
+- Now: not built (it was not in the list asked for). A set can be saved again under a new name and the old one deleted.
+- From: architecture 24-16 F.
+
+### B-97-6 The history row of a plugin state set by the AI
+
+- Question: `set_plugin_state`, `set_plugin_state_text`, `load_preset` and the Surge XT tools put a whole plugin state as one step. What should the row say?
+- Now: 「プラグインの窓」 (`StepKind::PluginWindow`), as a change made in the plugin's window, so no new wording was made.
+- From: architecture 24-16 G.
+
+### B-97-7 The history row of several plugin parameters set at once
+
+- Question: `set_params` sets several parameters of one plugin as one step. What should the row say?
+- Now: the row of the first parameter (`SetPluginParam`). The model has no step name for "several parameters".
+- From: architecture 24-16 H.

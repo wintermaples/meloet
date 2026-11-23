@@ -137,3 +137,59 @@ export function stampStatus(pick: ChordPick, key: number): string | null {
 export function auditionKeys(root: number, triad: Triad): number[] {
   return TRIAD_STEPS[triad].map((s) => 60 + root + s);
 }
+
+// ---- 「進行から並べる」 (round 12, P6) ----
+
+/** The scale whose chords a 5- or 6-note scale shows (P1): major pentatonic → major; minor pentatonic and blues → minor; 7-note scales → themselves. */
+export function parentScale(mode: ScaleMode): ScaleMode {
+  if (mode === "majorPentatonic") return "major";
+  if (mode === "minorPentatonic" || mode === "blues") return "minor";
+  return mode;
+}
+
+/** Scales read from their relative major (the root + 3 semitones): those whose third is minor. */
+const MINOR_LIKE: ReadonlySet<ScaleMode> = new Set<ScaleMode>(["minor", "harmonicMinor", "melodicMinor", "dorian"]);
+
+export type Progression = "royal" | "canon" | "komuro" | "circle" | "pop" | "sad";
+
+/** A degree of the major scale: semitones above the tonic, and the chord there. */
+type Degree = { step: number; triad: Triad };
+const I: Degree = { step: 0, triad: "major" };
+const iii: Degree = { step: 4, triad: "minor" };
+const IV: Degree = { step: 5, triad: "major" };
+const V: Degree = { step: 7, triad: "major" };
+const vi: Degree = { step: 9, triad: "minor" };
+
+/** The order of the list. */
+export const PROGRESSIONS: readonly { id: Progression; name: TextKey; degrees: readonly Degree[] }[] = [
+  { id: "royal", name: "pr.progRoyal", degrees: [IV, V, iii, vi] },
+  { id: "canon", name: "pr.progCanon", degrees: [I, V, vi, iii, IV, I, IV, V] },
+  { id: "komuro", name: "pr.progKomuro", degrees: [vi, IV, V, I] },
+  { id: "circle", name: "pr.progCircle", degrees: [I, vi, IV, V] },
+  { id: "pop", name: "pr.progPop", degrees: [I, V, vi, IV] },
+  { id: "sad", name: "pr.progSad", degrees: [vi, V, IV, V] },
+];
+
+/** The major key a progression is read in: the tonic of the scale, or of its relative major for minor-like scales. */
+export function progressionTonic(scale: Pick<MusicalScale, "root" | "mode">): number {
+  return MINOR_LIKE.has(parentScale(scale.mode)) ? (scale.root + 3) % 12 : scale.root;
+}
+
+/** The chords of a progression in the scale. */
+export function progressionChords(id: Progression, scale: Pick<MusicalScale, "root" | "mode">): { root: number; triad: Triad }[] {
+  const tonic = progressionTonic(scale);
+  const p = PROGRESSIONS.find((x) => x.id === id)!;
+  return p.degrees.map((d) => ({ root: (tonic + d.step) % 12, triad: d.triad }));
+}
+
+/** 「F – G – Em – Am」. */
+export function progressionText(id: Progression, scale: Pick<MusicalScale, "root" | "mode">): string {
+  return progressionChords(id, scale)
+    .map((c) => triadName(c.root, c.triad))
+    .join(t("pr.progSeparator"));
+}
+
+/** The keys placed for a chord: root position, the root between C3 and B3. */
+export function placedKeys(root: number, triad: Triad): number[] {
+  return TRIAD_STEPS[triad].map((s) => 48 + root + s);
+}

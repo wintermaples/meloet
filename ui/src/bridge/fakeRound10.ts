@@ -229,6 +229,34 @@ export function reduceRound10(
       };
       break;
     }
+    // P6 (round 12) 「並べる」: only into the take the piano roll shows (the fake makes no clip for it). The clip grows to the
+    // right by bars; chords from the one that would reach the next clip are left out, as Rust.
+    case "addNotesAt": {
+      const shown = command.take !== null && state.pianoRoll.take === command.take ? arrange.pianoRollClip : null;
+      const f = shown === null ? null : found(shown);
+      if (busy || !f) return nothing;
+      const c = f.clip;
+      const later = f.track.clips.filter((x) => x.start >= c.end).reduce((m, x) => Math.min(m, x.start), Infinity);
+      const given = command.notes.filter((n) => n.key <= 127 && n.start >= c.start);
+      const starts = [...new Set(given.map((n) => n.start))].sort((a, b) => a - b);
+      const fits = starts.filter((s) => given.filter((n) => n.start <= s).every((n) => barAfter(n.start + Math.max(1, n.length)) <= later));
+      const last = fits[fits.length - 1] ?? -1;
+      const kept = given.filter((n) => n.start <= last);
+      if (kept.length === 0) return nothing;
+      const end = Math.max(c.end, ...kept.map((n) => barAfter(n.start + Math.max(1, n.length))));
+      const zero = c.start + c.takeOffset;
+      const added = kept.map((n) => ({ start: n.start - zero, length: Math.max(1, n.length), key: n.key, velocity: Math.min(127, Math.max(1, n.velocity)) }));
+      const take = newTake(Math.max(takes.get(c.takeId)?.length ?? 0, end - zero), [...notesOf(c).map((n) => ({ ...n })), ...added]);
+      const index = take.notes
+        .map((n, i) => (added.some((a) => a.start === n.start && a.key === n.key && a.length === n.length) ? i : -1))
+        .filter((i) => i >= 0);
+      const clip: ClipView = { ...c, end, takeId: take.id, noteCount: take.notes.length };
+      f.track.clips.splice(f.track.clips.indexOf(c), 1, clip);
+      pianoRoll.take = clip.takeId;
+      pianoRoll.selectedNotes = index.map((i) => ({ start: i, end: i + 1 }));
+      row = { name: { kind: "writeNote" }, what: { kind: "notes", count: added.length }, place: PIANO_ROLL };
+      break;
+    }
     default:
       return null;
   }

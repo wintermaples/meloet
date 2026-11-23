@@ -154,7 +154,8 @@ describe("sizes of the change-all row (C-6 67)", () => {
     inspectorFolds.sameLength = true;
     inspectorFolds.velocityAll = true;
     show(NoteInspector);
-    const rows = qa(".bulk-row");
+    // The rows of P3 (round 12) sit among them; pianoroll.p3-tools.test.ts checks those.
+    const rows = qa(".bulk-row").filter((r) => r.querySelector('[data-test="inspector-same-length-field"], [data-test="inspector-velocity-all-field"]'));
     expect(rows.map(text)).toEqual(["長さ そろえる", "ベロシティ そろえる"]);
     for (const r of rows) {
       expect(r.querySelector(".bulk-label")).not.toBeNull();

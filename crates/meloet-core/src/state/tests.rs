@@ -1998,7 +1998,7 @@ fn the_user_guide_opens_in_the_browser_and_the_state_stays() {
 /// it changes nothing, as an intent with an old id.
 #[test]
 fn the_commands_of_round_12_are_taken_and_change_nothing_yet() {
-    use meloet_protocol::{ClickSound, ClickWhen, NoteAt};
+    use meloet_protocol::{ClickSound, ClickWhen};
     let mut m = fresh();
     let before = m.view();
     assert_eq!(
@@ -2039,15 +2039,6 @@ fn the_commands_of_round_12_are_taken_and_change_nothing_yet() {
         Command::Legato {
             take: 99,
             notes: vec![0, 1],
-        },
-        Command::AddNotesAt {
-            take: None,
-            notes: vec![NoteAt {
-                start: 0,
-                length: 7680,
-                key: 53,
-                velocity: 100,
-            }],
         },
         Command::PlayExported,
         Command::DuplicateTrack { track },

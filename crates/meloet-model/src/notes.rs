@@ -1031,5 +1031,11 @@ fn grown(
     Ok((start, end))
 }
 
+mod bulk;
+pub use bulk::{
+    RANDOM_AMOUNT, SCALE_PERCENT, legato, ramp_velocity, random_delta, random_velocity,
+    scale_velocity, splitmix64,
+};
+
 #[cfg(test)]
 mod tests;

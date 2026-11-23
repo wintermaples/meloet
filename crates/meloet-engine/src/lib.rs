@@ -31,7 +31,8 @@ pub use clock::{HeardPosition, TransportClock, TransportState};
 pub use effect::{Effect, EffectContext};
 pub use engine::{
     BlockTiming, Chord, Engine, EngineCommand, EngineConfig, EngineHandle, EngineMeters,
-    EngineParts, FADE_S, LatencyRecord, MidiFeed, MidiIn, ProbeSent, Recorded, Voice, monotonic_us,
+    EngineParts, FADE_S, LatencyRecord, MidiFeed, MidiIn, ProbeSent, RecentAt, Recorded, Voice,
+    monotonic_us,
 };
 pub use input::{
     AudioInput, InputBlock, InputEnds, InputError, InputFeed, InputMeters, InputRingReader,

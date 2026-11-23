@@ -30,6 +30,9 @@ const COMMAND_RING: usize = 256;
 const MIDI_RING: usize = 1024;
 const LATENCY_RING: usize = 1024;
 const RECORDED_RING: usize = 4096;
+/// Slots of that ring left to what a recording says: the keys played outside one
+/// ([`Recorded::Recent`]) stop coming while fewer are free.
+const RECORDED_HEADROOM: usize = 256;
 const MAP_RING: usize = 16;
 const INPUT_RING: usize = 4;
 const PROBE_RING: usize = 16;
@@ -382,6 +385,35 @@ pub enum Recorded {
         lap: u32,
         frame: u64,
     },
+    /// A keyboard event while the transport is stopped or plays (not counting in, not
+    /// recording): what was played can still be kept afterwards. `run` names the stretch of
+    /// the transport the key belongs to: a new run begins whenever the play starts, stops or
+    /// jumps, a recording starts, or the loop changes while playing. `at`: where the key was
+    /// heard in a run that plays; `None` in a run that stands still, where only `t_us` tells
+    /// the keys apart.
+    Recent {
+        event: InstrumentEvent,
+        t_us: u64,
+        run: u32,
+        at: Option<RecentAt>,
+    },
+    /// Run `run` ended at `t_us`, and the next one began. `at`: where the listener was then,
+    /// when the run played and the place is known. Comes before every key of later runs,
+    /// but for the keys a stop finds played after its own time: those come first.
+    RecentEnd {
+        run: u32,
+        t_us: u64,
+        at: Option<RecentAt>,
+    },
+}
+
+/// Where in the song the listener was when a key of [`Recorded::Recent`] was played.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RecentAt {
+    /// Heard position, with the fraction. May be before where the run started.
+    pub tick: f64,
+    /// How often the loop had gone round in this run.
+    pub lap: u32,
 }
 
 /// One keyboard event, pushed by the MIDI thread straight into the engine's ring.
@@ -748,6 +780,9 @@ struct Transport {
     auto_silent: TrackSet,
     session: u32,
     lap: u32,
+    /// [`Recorded::Recent`]: the run going on, and how often the loop went round in it.
+    run: u32,
+    run_lap: u32,
     /// After `RecordHere`: the session whose playing stretches, already sent to the DAC, still
     /// carry keys into this recording.
     punched: Option<u32>,
@@ -929,6 +964,8 @@ impl Transport {
             auto_silent: TrackSet::default(),
             session: 0,
             lap: 0,
+            run: 0,
+            run_lap: 0,
             punched: None,
         };
         transport.set_pos(0.0);
@@ -1567,6 +1604,20 @@ impl Engine {
         let t = &mut self.transport;
         let tick = snap(t.tick()).floor().max(0.0);
         t.sample_rate = f64::from(sample_rate.max(1));
+        if t.state.is_moving() {
+            let run = t.run;
+            t.run = run.wrapping_add(1);
+            t.run_lap = 0;
+            let ended = Recorded::RecentEnd {
+                run,
+                t_us: monotonic_us(),
+                at: None,
+            };
+            if self.recorded.push(ended).is_err() {
+                self.meters.record_overflows.fetch_add(1, Relaxed);
+            }
+        }
+        let t = &mut self.transport;
         t.state = TransportState::Stopped;
         t.set_pos(tick);
         t.silent = TrackSet::default();
@@ -2052,6 +2103,12 @@ impl Engine {
                 }
                 EngineCommand::Probe => self.probe.asked = true,
                 EngineCommand::SetLoop { start, end, on } => {
+                    let t = &self.transport;
+                    if t.state == TransportState::Playing
+                        && (t.looping, t.loop_start, t.loop_end) != (on, start, end)
+                    {
+                        self.end_run(timing.callback_us, timing);
+                    }
                     let t = &mut self.transport;
                     let turned = t.stream_loop();
                     t.looping = on;
@@ -2084,6 +2141,7 @@ impl Engine {
                 }
                 EngineCommand::Play { from } => {
                     self.end_recording(timing);
+                    self.end_run(timing.callback_us, timing);
                     self.silence_lanes();
                     self.transport.state = TransportState::Playing;
                     self.transport.run_from = from;
@@ -2097,6 +2155,7 @@ impl Engine {
                     muted,
                 } => {
                     self.end_recording(timing);
+                    self.end_run(timing.callback_us, timing);
                     self.silence_lanes();
                     let t = &mut self.transport;
                     t.session = t.session.wrapping_add(1);
@@ -2130,6 +2189,9 @@ impl Engine {
                 EngineCommand::Stop { t_us } => self.stop(t_us, timing),
                 EngineCommand::Locate { tick } => {
                     self.end_recording(timing);
+                    if self.transport.state.is_moving() {
+                        self.end_run(timing.callback_us, timing);
+                    }
                     let t = &mut self.transport;
                     t.run_from = tick;
                     t.set_pos(tick as f64);
@@ -2217,6 +2279,9 @@ impl Engine {
             }
             _ => self.transport.run_from as f64,
         };
+        if self.transport.state.is_moving() {
+            self.end_run(t_us, timing);
+        }
         self.silence_lanes();
         self.transport.state = TransportState::Stopped;
         self.transport.set_pos(to);
@@ -2248,6 +2313,7 @@ impl Engine {
             .filter(|s| s.session == t.session && s.state == TransportState::Playing)
             .map_or_else(|| t.tick(), |s| heard(&s, now, t.map_for(&s)).tick);
         let from = heard_tick.max(0.0).floor() as u64;
+        self.end_run(timing.callback_us, timing);
         let t = &mut self.transport;
         t.punched = Some(t.session);
         t.session = t.session.wrapping_add(1);
@@ -2279,6 +2345,40 @@ impl Engine {
             TransportState::CountIn | TransportState::Recording
         ) {
             self.stop(timing.callback_us, timing);
+        }
+    }
+
+    /// The run of the transport ends at `t_us` and the next begins
+    /// ([`Recorded::RecentEnd`]). Call before the state or the position changes.
+    fn end_run(&mut self, t_us: u64, timing: BlockTiming) {
+        let run = self.transport.run;
+        let at = match self.transport.state {
+            TransportState::Stopped => Some(None),
+            TransportState::Playing => Some(Some(self.run_place(t_us, timing))),
+            // What is played in these is the recording's.
+            TransportState::CountIn | TransportState::Recording => None,
+        };
+        if let Some(at) = at {
+            self.push_recorded(Recorded::RecentEnd { run, t_us, at });
+        }
+        let t = &mut self.transport;
+        t.run = run.wrapping_add(1);
+        t.run_lap = 0;
+    }
+
+    /// Where the listener was at `t_us` in the run going on, which plays. Before the run's
+    /// first frame reaches the DAC, the place is counted back from the frames about to be
+    /// rendered: a key played in that gap comes just before where the run starts.
+    fn run_place(&self, t_us: u64, timing: BlockTiming) -> RecentAt {
+        let t = &self.transport;
+        let segment = self
+            .clock
+            .segment_at(t_us as f64)
+            .filter(|s| s.run == t.run)
+            .unwrap_or_else(|| self.segment_now(0, timing));
+        RecentAt {
+            tick: heard(&segment, t_us as f64, t.map_for(&segment)).tick,
+            lap: segment.run_lap,
         }
     }
 
@@ -2377,24 +2477,61 @@ impl Engine {
     /// Keys played after `record_until` sound but are not recorded.
     fn read_midi(&mut self, timing: BlockTiming, record_until: u64) {
         while let Ok(midi) = self.midi.pop() {
-            if matches!(midi.event, InstrumentEvent::NoteOn { velocity, .. } if velocity > 0) {
-                // Every event starts at frame 0 of this block, so `playback_us` is its first sample.
-                let _ = self.latency.push(LatencyRecord {
-                    key_us: midi.t_us,
-                    callback_us: timing.callback_us,
-                    playback_us: timing.playback_us,
-                });
-            }
-            if let Some(instrument) = self
-                .play_target
-                .and_then(|t| self.tracks[t].instrument.as_mut())
-            {
-                instrument.event(midi.event);
-            }
-            if midi.t_us <= record_until {
-                self.stamp(midi);
-            }
+            self.key_in(midi, timing, record_until);
         }
+    }
+
+    /// One event of a keyboard: it sounds on the play target and is written down as played.
+    fn key_in(&mut self, midi: MidiIn, timing: BlockTiming, record_until: u64) {
+        if matches!(midi.event, InstrumentEvent::NoteOn { velocity, .. } if velocity > 0) {
+            // Every event starts at frame 0 of this block, so `playback_us` is its first sample.
+            let _ = self.latency.push(LatencyRecord {
+                key_us: midi.t_us,
+                callback_us: timing.callback_us,
+                playback_us: timing.playback_us,
+            });
+        }
+        if let Some(instrument) = self
+            .play_target
+            .and_then(|t| self.tracks[t].instrument.as_mut())
+        {
+            instrument.event(midi.event);
+        }
+        self.stamp_played(midi, timing, record_until);
+    }
+
+    /// Writes down an event that sounded on the play target at `midi.t_us`: for the recording
+    /// going on, or else as what can be kept afterwards. Whatever plays notes there by hand
+    /// comes through here.
+    fn stamp_played(&mut self, midi: MidiIn, timing: BlockTiming, record_until: u64) {
+        if midi.t_us <= record_until {
+            self.stamp(midi);
+        }
+        // Played after the stop that is being taken: in the run that stop begins.
+        let after_stop = midi.t_us > record_until && self.transport.state.is_moving();
+        self.stamp_recent(midi, timing, after_stop);
+    }
+
+    /// Sends a keyboard event that no recording takes, with the position the person heard
+    /// when they played it while the song plays ([`Recorded::Recent`]).
+    fn stamp_recent(&mut self, midi: MidiIn, timing: BlockTiming, after_stop: bool) {
+        let t = &self.transport;
+        let (run, at) = match t.state {
+            _ if after_stop => (t.run.wrapping_add(1), None),
+            TransportState::Stopped => (t.run, None),
+            TransportState::Playing => (t.run, Some(self.run_place(midi.t_us, timing))),
+            TransportState::CountIn | TransportState::Recording => return,
+        };
+        if self.recorded.slots() <= RECORDED_HEADROOM {
+            self.meters.record_overflows.fetch_add(1, Relaxed);
+            return;
+        }
+        self.push_recorded(Recorded::Recent {
+            event: midi.event,
+            t_us: midi.t_us,
+            run,
+            at,
+        });
     }
 
     /// Sends a keyboard event to the recording with the position the person heard when they
@@ -2435,9 +2572,15 @@ impl Engine {
     }
 
     fn open_segment(&mut self, frame: usize, timing: BlockTiming) {
+        self.segment = self.segment_now(frame, timing);
+        self.segment_from = frame;
+    }
+
+    /// The stretch that starts at `frame` of this block, where the transport is now.
+    fn segment_now(&self, frame: usize, timing: BlockTiming) -> Segment {
         let t = &self.transport;
         let tick = t.tick();
-        self.segment = Segment {
+        Segment {
             start_us: self.dac_us(frame, timing),
             frame0: self.block_frame + frame as u64,
             frames: 0,
@@ -2451,8 +2594,9 @@ impl Engine {
             lap: t.lap,
             record_from: t.record_from as i64,
             ticks_per_beat: t.record_click,
-        };
-        self.segment_from = frame;
+            run: t.run,
+            run_lap: t.run_lap,
+        }
     }
 
     fn close_segment(&mut self, frame: usize) {
@@ -2495,6 +2639,9 @@ impl Engine {
             }
             let t = &mut self.transport;
             t.set_pos(t.loop_start as f64);
+            if t.state == TransportState::Playing {
+                t.run_lap += 1;
+            }
             if t.state == TransportState::Recording {
                 t.lap += 1;
                 let lap = t.lap;

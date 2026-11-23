@@ -32,6 +32,8 @@ export type KeyAction =
   | { kind: "chooserConfirm" }
   | { kind: "playStop" }
   | { kind: "record" }
+  /** Shift R: 「さっきのを残す」 (round 12, R1). */
+  | { kind: "keepPlayed" }
   | { kind: "toStart" }
   | { kind: "loop" }
   | { kind: "metronome" }
@@ -211,6 +213,7 @@ export function keyAction(k: KeyInput, typing: boolean, platform: Platform, cont
     // Shift M, Shift S mute and solo the selected track. Like other one-letter keys, they do not work while typing (B-70).
     if (l === "m") return { kind: "trackMute" };
     if (l === "s") return { kind: "trackSolo" };
+    if (l === "r") return { kind: "keepPlayed" };
     return l === "t" ? { kind: "stepTake", delta: -1 } : null;
   }
   if (l === "q") return { kind: "quantize" };

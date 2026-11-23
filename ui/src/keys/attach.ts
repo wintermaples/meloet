@@ -177,6 +177,9 @@ function command(action: KeyAction, state: AppState): Command | null {
         : null;
     case "record":
       return transport.canPlay ? { type: "record" } : null;
+    // Sent with nothing to keep too: the status line then says so.
+    case "keepPlayed":
+      return { type: "keepPlayed" };
     case "toStart":
       return { type: "goToStart" };
     case "loop":

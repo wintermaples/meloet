@@ -217,8 +217,11 @@ impl Rig {
         }
     }
 
+    /// What a recording says (not what is played outside one).
     fn recorded(&mut self) -> Vec<Recorded> {
-        std::iter::from_fn(|| self.parts.handle.pop_recorded()).collect()
+        std::iter::from_fn(|| self.parts.handle.pop_recorded())
+            .filter(|r| !matches!(r, Recorded::Recent { .. } | Recorded::RecentEnd { .. }))
+            .collect()
     }
 }
 

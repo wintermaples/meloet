@@ -119,11 +119,28 @@ fn force_quantum(pw: &private_pw::PrivatePipeWire, quantum: u32) {
 #[test]
 #[ignore = "starts a PipeWire daemon of its own and plays for minutes"]
 fn recorded_keys_land_where_they_were_heard_at_every_quantum() {
+    every_quantum(false);
+}
+
+/// The same keys played while the song only plays, and kept afterwards (「さっきのを残す」):
+/// they land as exactly as recorded ones. Writes under `keep` beside `private`.
+#[test]
+#[ignore = "starts a PipeWire daemon of its own and plays for minutes"]
+fn kept_keys_land_where_they_were_heard_at_every_quantum() {
+    every_quantum(true);
+}
+
+fn every_quantum(keep: bool) {
+    let (tag, take): (_, fn(&Core, &_, &VirtualKeyboard, Run) -> Outcome) = if keep {
+        ("keep", record_timing::play_and_keep)
+    } else {
+        ("private", record_timing::record)
+    };
     let Some(pw) = private_pw::PrivatePipeWire::start() else {
         eprintln!("no pipewire program; skipped");
         return;
     };
-    let (name, midi) = record_timing::private_keyboard("private");
+    let (name, midi) = record_timing::private_keyboard(tag);
     let Ok(keys) = VirtualKeyboard::open(&name) else {
         eprintln!("skipped: the ALSA sequencer cannot be opened here");
         return;
@@ -187,8 +204,8 @@ fn recorded_keys_land_where_they_were_heard_at_every_quantum() {
         }
         for &bpm in &tempos {
             for late_ms in [0.0, 5.0] {
-                let label = format!("private q{quantum}{meter_label} {bpm} +{late_ms}ms");
-                let o = record_timing::record(
+                let label = format!("{tag} q{quantum}{meter_label} {bpm} +{late_ms}ms");
+                let o = take(
                     &core,
                     &latest,
                     &keys,
@@ -206,8 +223,8 @@ fn recorded_keys_land_where_they_were_heard_at_every_quantum() {
         if maps {
             set_changing_timeline(&core);
             for late_ms in [0.0, 5.0] {
-                let label = format!("private q{quantum} map +{late_ms}ms");
-                let o = record_timing::record(
+                let label = format!("{tag} q{quantum} map +{late_ms}ms");
+                let o = take(
                     &core,
                     &latest,
                     &keys,
@@ -226,7 +243,7 @@ fn recorded_keys_land_where_they_were_heard_at_every_quantum() {
     }
 
     record_timing::write(
-        "private",
+        tag,
         &outcomes,
         "Private PipeWire (null sink, quantum set by clock.force-quantum), virtual keyboard \
          through the ALSA sequencer. Error = recorded tick − (beat + dither + late). \

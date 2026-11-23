@@ -99,7 +99,7 @@ describe("menu contents (B-59)", () => {
       "拡大率 ▸",
       "テーマ ▸",
     ]);
-    expect(keyed(3)).toEqual(["再生 Space", "停止 Space", "録音 R", "先頭へ Home", "ループ L", "メトロノーム C", "カウントイン ▸"]);
+    expect(keyed(3)).toEqual(["再生 Space", "停止 Space", "録音 R", "さっきの演奏を残す Shift R", "先頭へ Home", "ループ L", "メトロノーム C", "カウントイン ▸"]);
     expect(keyed(4)).toEqual(["道具 ▸", "クオンタイズ Q", "もとの位置へ戻す", "グリッド ▸", "三連符", "スケール固定 ▸"]);
     // The spec 3 order. Delete take (B-82) is after the previous take.
     expect(keyed(5)).toEqual([

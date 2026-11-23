@@ -25,6 +25,7 @@ use meloet_protocol::{
     TakeNotes, TickSpan, TimelineRef, TrackRef, TransportState, TransportView,
 };
 
+pub use self::recent::{HeardRun, HeldNow, Played, PlayedAt};
 use crate::instruments::Sounds;
 use crate::settings::ClickSettings;
 use crate::state::Effect;
@@ -499,6 +500,9 @@ pub struct Play {
     /// Mod C in the arrange view.
     clip_board: Vec<KeptClip>,
     rec: Option<Rec>,
+    /// 「さっきのを残す」: what was played while not recording.
+    recent: recent::Recent,
+    heard_run: Option<HeardRun>,
     next_recording: u32,
     live_seq: u64,
     now_us: u64,
@@ -592,6 +596,8 @@ impl Play {
             clipboard: Vec::new(),
             clip_board: Vec::new(),
             rec: None,
+            recent: recent::Recent::default(),
+            heard_run: None,
             next_recording: 1,
             live_seq: 0,
             now_us: 0,
@@ -1360,6 +1366,7 @@ impl Play {
             *target = doc.tracks.first().map(|t| t.id);
         }
         self.drop_gone_vocals();
+        self.recent_follow_target();
         let doc = &self.song.doc;
         if doc.timeline != before.timeline {
             effects.push(Effect::Engine(self.tempo_op()));
@@ -1396,6 +1403,7 @@ impl Play {
     /// Everything the engine is told, for a stream that just opened. Whatever it was doing is
     /// stopped there.
     pub fn stream_opened(&mut self, effects: &mut Vec<Effect>) {
+        self.recent.lost_track();
         effects.push(Effect::Engine(EngineOp::Stop { t_us: self.now_us }));
         effects.push(Effect::Engine(EngineOp::Locate {
             tick: self.position,
@@ -1434,6 +1442,8 @@ impl Play {
         }
         self.state = TransportState::Stopped;
         let rec = self.rec.as_ref()?;
+        self.recent.forget();
+        self.recent.lost_track();
         let (tick, lap) = match last {
             Some(h) if h.state == TransportState::Recording => (h.tick, h.lap),
             _ => (rec.from as f64, 0),
@@ -1523,6 +1533,8 @@ impl Play {
                 self.send_live(changed, effects);
             }
             RecordReport::Stopped { tick, lap, .. } => {
+                self.recent.forget();
+                self.recent.lost_track();
                 if self.rec.as_ref().is_some_and(|r| r.recorder.is_some()) {
                     self.finish(tick, lap, effects);
                 } else if let Some(rec) = self.rec.take()
@@ -2028,6 +2040,7 @@ impl Play {
         self.sel_redo.clear();
         self.step_notes = history::StepNotes::default();
         self.rec = None;
+        self.recent.forget();
         self.heard = None;
         self.last_heard = None;
         self.had_clip = self.doc().tracks.iter().any(|t| !t.clips.is_empty());
@@ -2107,8 +2120,7 @@ impl Play {
                 }
             },
             can_play: open,
-            // round12 stub: R1
-            can_keep_played: false,
+            can_keep_played: self.can_keep_played(),
             can_record: open
                 && (self.song.keys_target().is_some()
                     || !self.song.session.armed_vocals.is_empty())
@@ -2872,6 +2884,7 @@ mod patterns;
 mod plugs;
 mod presets;
 mod progression;
+mod recent;
 mod reverse;
 mod seats;
 mod shelf;

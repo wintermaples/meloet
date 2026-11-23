@@ -91,9 +91,9 @@ describe("keyAction", () => {
     expect(keyAction(k("ち", { code: "KeyT", shift: true }), false, "other")).toEqual({ kind: "stepTake", delta: -1 });
   });
 
-  it("Space, R, Delete with Shift and T with Mod do nothing", () => {
+  it("Space, L, Delete with Shift and T with Mod do nothing", () => {
     expect(keyAction(k(" ", { code: "Space", shift: true }), false, "other")).toBeNull();
-    expect(keyAction(k("R", { shift: true }), false, "other")).toBeNull();
+    expect(keyAction(k("L", { shift: true }), false, "other")).toBeNull();
     expect(keyAction(k("Delete", { shift: true }), false, "other")).toBeNull();
     expect(keyAction(k("t", { ctrl: true }), false, "other")).toBeNull();
   });

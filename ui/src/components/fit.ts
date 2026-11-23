@@ -63,6 +63,22 @@ export function transportWithOverdub(
   return { ...transportParts(available, widths, stubs), overdub: false };
 }
 
+/**
+ * The transport with 「さっきのを残す」 too (round 12, R1): it is the first thing to hide, so that nothing that was
+ * there before it gives way to it. keep is the width it adds (with the gap before it).
+ */
+export function transportWithKeep(
+  available: number,
+  widths: TransportWidths,
+  stubs: TransportStubs,
+  overdub: number,
+  keep: number,
+): TransportParts & { overdub: boolean; keepPlayed: boolean } {
+  const rest = transportWithOverdub(available - keep, widths, stubs, overdub);
+  if (rest.overdub && TRANSPORT_ORDER.every((k) => rest[k])) return { ...rest, keepPlayed: true };
+  return { ...transportWithOverdub(available, widths, stubs, overdub), keepPlayed: false };
+}
+
 /** The order of hiding in the piano roll tool row: the tool keys, then the clip text (mock F-PR150). */
 const TOOLBAR_ORDER = ["keys", "info"] as const;
 export type ToolbarPart = (typeof TOOLBAR_ORDER)[number];

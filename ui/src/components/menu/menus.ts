@@ -182,6 +182,7 @@ export function topMenus(state: AppState, deps: KeyDeps, platform: Platform): To
     plain("menu.playStart", tr.state === "stopped" && tr.canPlay, send({ type: "playStop" }), { key: t("key.playStop") }),
     plain("menu.stop", tr.state !== "stopped", send({ type: "playStop" }), { key: t("key.playStop") }),
     act("menu.record", { kind: "record" }, t("key.record")),
+    act("menu.keepPlayed", { kind: "keepPlayed" }, k.shift(t("key.keepLast")), { usable: tr.canKeepPlayed }),
     act("menu.toStart", { kind: "toStart" }, t("key.toStart")),
     act("menu.loop", { kind: "loop" }, t("key.loop"), { checked: state.song.loopOn, usable: !busy }),
     act("menu.metronome", { kind: "metronome" }, t("key.metronome"), { checked: tr.metronome }),

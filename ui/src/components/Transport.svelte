@@ -10,7 +10,7 @@
   import { t } from "../text/ja";
   import ChoiceMenu from "./ChoiceMenu.svelte";
   import MetronomeWindow from "./MetronomeWindow.svelte";
-  import { transportWithOverdub, type TransportParts } from "./fit";
+  import { transportWithKeep, type TransportParts } from "./fit";
   import { PeakHold, peakNumberText, peakText, tempoText } from "./format";
   import { metrics } from "./metrics.svelte";
   import NumberField from "./NumberField.svelte";
@@ -49,7 +49,15 @@
   const COVER: GlSlot = { kind: "cover" };
   let row = $state<HTMLElement>();
   let ruler = $state<HTMLElement>();
-  let parts = $state<TransportParts & { overdub: boolean }>({ keys: true, songName: true, load: true, countIn: true, positionLabels: true, overdub: true });
+  let parts = $state<TransportParts & { overdub: boolean; keepPlayed: boolean }>({
+    keys: true,
+    songName: true,
+    load: true,
+    countIn: true,
+    positionLabels: true,
+    overdub: true,
+    keepPlayed: true,
+  });
 
   // The keys at the right end of buttons (spec 4, mock F-WideArrange). Not on stop and count-in.
   const KEYS = [t("key.toStart"), t("key.playStop"), t("key.record"), t("key.loop"), t("key.metronome")] as const;
@@ -77,8 +85,10 @@
     // The spacer (m-spacer) takes the rest of the width, so its width is not counted, only the gaps on both sides.
     const widths = fixed.reduce((sum, el) => sum + (el.classList.contains("m-spacer") ? 0 : el.offsetWidth), 0);
     const overdub = w("overdub") + metrics.px("space.1");
-    const base = pad + widths + gap * Math.max(0, fixed.length - 1) - shownLabels - shownKeys - (parts.overdub ? overdub : 0);
-    parts = transportWithOverdub(
+    const keep = w("keepPlayed") + metrics.px("space.1");
+    const base =
+      pad + widths + gap * Math.max(0, fixed.length - 1) - shownLabels - shownKeys - (parts.overdub ? overdub : 0) - (parts.keepPlayed ? keep : 0);
+    parts = transportWithKeep(
       row.clientWidth,
       {
         base,
@@ -90,6 +100,7 @@
       },
       { songName: w("songStub") + gap },
       overdub,
+      keep,
     );
   }
 
@@ -382,6 +393,16 @@
         onclick={() => send({ type: "setOverdub", on: !transport.overdub })}>{t("transport.overdub")}</button
       >
     {/if}
+    {#if parts.keepPlayed}
+      <!-- Accent while something waits to be kept (the picture of spec R1); no key on it, as 「重ねる」. -->
+      <button
+        class="m-btn"
+        class:on={transport.canKeepPlayed}
+        aria-disabled={!transport.canKeepPlayed}
+        data-test="transport-keep-played"
+        onclick={() => transport.canKeepPlayed && send({ type: "keepPlayed" })}>{t("transport.keepPlayed")}</button
+      >
+    {/if}
   </div>
 
   <div class="position" class:narrow={!parts.positionLabels}>
@@ -496,6 +517,7 @@
     <span class="m-btn" data-part="countIn">{@render countInLabel()}</span>
     <span class="m-btn counting" data-part="countInCounting">{@render countingIn()}</span>
     <span class="m-btn" data-part="overdub">{t("transport.overdub")}</span>
+    <span class="m-btn" data-part="keepPlayed">{t("transport.keepPlayed")}</span>
     <span class="m-lbl" data-part="label-0">{t("transport.position")}</span>
     <span class="m-readout" data-part="readout-0">{position}</span>
     <span class="m-lbl" data-part="label-1">{t("transport.time")}</span>

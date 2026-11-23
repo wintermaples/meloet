@@ -85,7 +85,6 @@ describe("fake intents", () => {
     const { now, send } = await opened();
     const before = await now();
     const commands: Command[] = [
-      { type: "keepPlayed" },
       { type: "typedKeys", on: true },
       { type: "typedKey", note: 60, down: true, tUs: 1000 },
       { type: "setNoteGlow", on: false },

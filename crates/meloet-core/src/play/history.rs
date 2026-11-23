@@ -20,7 +20,7 @@ use crate::state::Effect;
 
 /// What a row says that neither the step nor the `Doc`s around it hold, by the number of the
 /// step.
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub(super) struct StepNotes {
     /// The name of the parameter of a `StepKind::SetPluginParam`, as the plugin said it
     /// when the step was made.

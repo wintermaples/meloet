@@ -425,3 +425,204 @@ fn a_jump_of_no_steps_changes_nothing() {
     assert_eq!(h.jump(&mut doc, 9), 2);
     assert_eq!(doc.timeline.tempo, tempo(10_000));
 }
+
+fn record(h: &mut History, doc: &mut Doc, origin: u64, key: u8) -> crate::ClipId {
+    let (e, added) = edit::add_recording(doc, T1, vec![take(origin, 2 * Q, key)], 0).unwrap();
+    h.apply(doc, e);
+    added.clip
+}
+
+#[test]
+fn merged_steps_are_one_step_both_ways() {
+    let mut h = History::new();
+    let mut doc = Doc::new_default();
+    set_tempo(&mut h, &mut doc, 10_000);
+    let before = doc.clone();
+    let before_number = h.version();
+    let mark = h.mark();
+    assert_eq!((mark.undo_count(), mark.redo_count()), (1, 0));
+
+    let clip = record(&mut h, &mut doc, 0, 60);
+    let e = edit::rename_track(&doc, T1, "ベース").unwrap();
+    h.apply(&mut doc, e);
+    set_tempo(&mut h, &mut doc, 12_000);
+    let after = doc.clone();
+    let end = h.version();
+    let take_id = doc.clip(clip).unwrap().1.keys()[0].take.id;
+
+    assert_eq!(h.merge(&mark, end), 3);
+    assert_eq!((h.undo_count(), h.redo_count()), (2, 0));
+    assert_eq!(doc, after, "the song stays as it is");
+    assert_ne!(h.version(), end, "another step, another number");
+    let row = h.row(&doc, 1).unwrap();
+    assert!(
+        matches!(row.kind, StepKind::Tempo { .. }),
+        "named as the last"
+    );
+    assert_eq!(row.number, h.version());
+    assert_eq!(held(row.before), held(&before));
+    assert_eq!(held(row.after), held(&after));
+
+    for _ in 0..3 {
+        assert!(matches!(h.undo(&mut doc), Some(StepKind::Tempo { .. })));
+        assert_eq!(held(&doc), held(&before));
+        assert_eq!(h.version(), before_number);
+        assert_eq!((h.undo_count(), h.redo_count()), (1, 1));
+        assert!(doc.clip(clip).is_none());
+        assert!(matches!(h.redo(&mut doc), Some(StepKind::Tempo { .. })));
+        assert_eq!(held(&doc), held(&after));
+        assert_eq!((h.undo_count(), h.redo_count()), (2, 0));
+        // The take made inside the merged step is the same take, with its id.
+        assert_eq!(doc.clip(clip).unwrap().1.keys()[0].take.id, take_id);
+    }
+    // The step before the merged one is as it was.
+    h.undo(&mut doc);
+    assert!(matches!(h.undo(&mut doc), Some(StepKind::Tempo { .. })));
+    assert_eq!(h.undo(&mut doc), None);
+}
+
+#[test]
+fn a_merge_keeps_the_saved_mark_where_the_song_is_the_same() {
+    let mut h = History::new();
+    let mut doc = Doc::new_default();
+    let mark = h.mark();
+    set_tempo(&mut h, &mut doc, 10_000);
+    set_tempo(&mut h, &mut doc, 11_000);
+    h.mark_saved();
+    assert_eq!(h.merge(&mark, h.version()), 2);
+    assert!(!h.has_unsaved_changes(), "the same song as was saved");
+    h.undo(&mut doc);
+    assert!(h.has_unsaved_changes());
+
+    // Saved in the middle: no `Doc` the history can reach is the saved one any more.
+    let mark = h.mark();
+    set_tempo(&mut h, &mut doc, 12_000);
+    h.mark_saved();
+    set_tempo(&mut h, &mut doc, 13_000);
+    assert_eq!(h.merge(&mark, h.version()), 2);
+    assert!(h.has_unsaved_changes());
+    h.undo(&mut doc);
+    assert!(h.has_unsaved_changes());
+}
+
+#[test]
+fn nothing_is_merged_when_the_steps_are_not_the_newest() {
+    let mut h = History::new();
+    let mut doc = Doc::new_default();
+    let mark = h.mark();
+    assert_eq!(h.merge(&mark, h.version()), 0, "no step since the mark");
+    set_tempo(&mut h, &mut doc, 10_000);
+    let one = h.version();
+    assert_eq!(h.merge(&mark, one), 1, "one step is one step already");
+    assert_eq!(h.version(), one);
+    set_tempo(&mut h, &mut doc, 11_000);
+    let end = h.version();
+
+    // A step made by someone else after the last of them.
+    set_tempo(&mut h, &mut doc, 12_000);
+    assert_eq!(h.merge(&mark, end), 0);
+    assert_eq!(h.undo_count(), 3);
+    h.undo(&mut doc);
+    assert_eq!(h.version(), end);
+    assert_eq!(h.merge(&mark, end), 0, "a step could be redone");
+
+    // One of them undone.
+    h.undo(&mut doc);
+    assert_eq!(h.merge(&mark, end), 0);
+    assert_eq!(h.merge(&mark, h.version()), 0);
+    assert_eq!((h.undo_count(), h.redo_count()), (1, 2));
+
+    // Undone below the mark, and another way from there.
+    let mut h = History::new();
+    let mut doc = Doc::new_default();
+    set_tempo(&mut h, &mut doc, 10_000);
+    let mark = h.mark();
+    set_tempo(&mut h, &mut doc, 11_000);
+    h.undo(&mut doc);
+    h.undo(&mut doc);
+    set_tempo(&mut h, &mut doc, 9_000);
+    set_tempo(&mut h, &mut doc, 9_500);
+    assert_eq!(h.merge(&mark, h.version()), 0);
+    assert_eq!(h.undo_count(), 2);
+}
+
+#[test]
+fn a_rewind_leaves_the_history_as_it_was_at_the_mark() {
+    let mut h = History::new();
+    let mut doc = Doc::new_default();
+    set_tempo(&mut h, &mut doc, 10_000);
+    set_tempo(&mut h, &mut doc, 11_000);
+    set_tempo(&mut h, &mut doc, 12_000);
+    h.mark_saved();
+    h.undo(&mut doc);
+    h.undo(&mut doc);
+    let before = doc.clone();
+    let number = h.version();
+    let rows: Vec<u64> = (0..3).map(|i| h.row(&doc, i).unwrap().number).collect();
+    let mark = h.mark();
+    assert_eq!((mark.undo_count(), mark.redo_count()), (1, 2));
+
+    // No step since: nothing to do.
+    assert!(h.rewind(&mut doc, mark.clone(), number));
+    assert_eq!((h.undo_count(), h.redo_count()), (1, 2));
+
+    let clip = record(&mut h, &mut doc, 0, 60);
+    let e = edit::rename_track(&doc, T1, "ベース").unwrap();
+    h.apply(&mut doc, e);
+    assert_eq!((h.undo_count(), h.redo_count()), (3, 0));
+    let given = doc.next_id;
+    let end = h.version();
+
+    assert!(h.rewind(&mut doc, mark, end));
+    assert_eq!(held(&doc), held(&before));
+    assert_eq!(h.version(), number);
+    assert_eq!((h.undo_count(), h.redo_count()), (1, 2));
+    assert!(doc.clip(clip).is_none());
+    assert_eq!(doc.next_id, given, "the ids given out stay given out");
+    let now: Vec<u64> = (0..3).map(|i| h.row(&doc, i).unwrap().number).collect();
+    assert_eq!(now, rows);
+
+    // What could be redone can be redone, up to the song that was saved.
+    assert!(matches!(h.redo(&mut doc), Some(StepKind::Tempo { .. })));
+    assert_eq!(doc.timeline.tempo, tempo(11_000));
+    assert!(h.has_unsaved_changes());
+    assert!(matches!(h.redo(&mut doc), Some(StepKind::Tempo { .. })));
+    assert_eq!(doc.timeline.tempo, tempo(12_000));
+    assert!(!h.has_unsaved_changes());
+    assert_eq!(h.redo(&mut doc), None);
+
+    // A new clip gets an id the rewound steps did not have.
+    let later = record(&mut h, &mut doc, 0, 62);
+    assert!(later.0 >= given);
+}
+
+#[test]
+fn no_rewind_over_what_someone_else_did() {
+    let mut h = History::new();
+    let mut doc = Doc::new_default();
+    set_tempo(&mut h, &mut doc, 10_000);
+    let mark = h.mark();
+    set_tempo(&mut h, &mut doc, 11_000);
+    let end = h.version();
+
+    // A step after the last of them.
+    set_tempo(&mut h, &mut doc, 12_000);
+    let now = doc.clone();
+    assert!(!h.rewind(&mut doc, mark.clone(), end));
+    assert_eq!(doc, now);
+    assert_eq!((h.undo_count(), h.redo_count()), (3, 0));
+
+    // One of them undone: the song is not where the last of them left it.
+    h.undo(&mut doc);
+    h.undo(&mut doc);
+    let now = doc.clone();
+    assert!(!h.rewind(&mut doc, mark.clone(), end));
+    assert_eq!(doc, now);
+    assert_eq!((h.undo_count(), h.redo_count()), (1, 2));
+
+    // Back at the last of them, but a step could be redone after it.
+    h.redo(&mut doc);
+    assert_eq!(h.version(), end);
+    assert!(!h.rewind(&mut doc, mark, end));
+    assert_eq!((h.undo_count(), h.redo_count()), (2, 1));
+}

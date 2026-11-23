@@ -13,6 +13,7 @@ macro_rules! check {
 
 mod arrange;
 mod automation;
+mod batch;
 mod files;
 mod mixer;
 mod notes;
@@ -293,6 +294,17 @@ pub fn refusal_text(r: &AiRefusal) -> String {
         AiRefusal::BadNote => "a note is out of range".into(),
         AiRefusal::BadTempo => "the tempo must be 30 to 300".into(),
         AiRefusal::Unchanged => "that leaves the song as it is; nothing was done".into(),
+        AiRefusal::Cannot(why) => why.clone(),
+        AiRefusal::BatchOpen => {
+            "a batch of another call is changing the song now; try again in a moment".into()
+        }
+        AiRefusal::NotInBatch => "that cannot be a part of a batch: it ends later (a save, an \
+            open, a file brought in, a plugin's parameter), or it is undo or a read; call it by \
+            itself"
+            .into(),
+        AiRefusal::BatchLost => "the batch is not open any more, or someone else changed the \
+            song or its undo history while it ran"
+            .into(),
         AiRefusal::TooManyTracks => "the song has as many tracks as meloet can hold".into(),
         AiRefusal::NothingToUndo => "there is no step to undo".into(),
         AiRefusal::Measuring => "another measurement is running; try again after it".into(),
@@ -347,6 +359,7 @@ fn name_ok(name: &str) -> Result<String, CallToolResult> {
 
 fn done_value(d: &AiDone) -> Value {
     json!({
+        "changed": true,
         "step": d.step,
         "undo_steps": d.undo_count,
         "clip": d.clip,
@@ -396,6 +409,7 @@ impl Tools {
             })),
             scratch,
             tool_router: Self::tool_router()
+                + Self::batch_router()
                 + Self::mixer_router()
                 + Self::notes_router()
                 + Self::automation_router()
@@ -436,10 +450,24 @@ impl Tools {
         let what = ask.name();
         match self.answer(ask).await? {
             AiAnswer::Done(d) => Ok(*d),
+            AiAnswer::Refused(AiRefusal::Unchanged) => Err(self.no_change().await),
             AiAnswer::Refused(AiRefusal::Unsaved) => Err(failed(UNSAVED)),
             AiAnswer::Refused(r) => Err(failed(format!("Could not {what}: {}.", refusal_text(&r)))),
             AiAnswer::Params(_) => Err(closing()),
         }
+    }
+
+    /// The answer when the song is as asked already: not a failure, and no step.
+    async fn no_change(&self) -> CallToolResult {
+        let read = match self.read().await {
+            Ok(read) => read,
+            Err(result) => return result,
+        };
+        let value = json!({ "changed": false, "step": null, "undo_steps": read.undo_count });
+        done(
+            format!("No change: the song already is like that.\n{value}"),
+            value,
+        )
     }
 
     async fn write(&self, ask: AiAsk) -> CallToolResult {

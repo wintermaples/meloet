@@ -3,6 +3,7 @@
 
 use std::collections::VecDeque;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use meloet_model::notes::{self, WriteAt};
 use meloet_model::{
@@ -14,14 +15,29 @@ use meloet_protocol::{AiLinkView, AiPort, SoundRef};
 use super::{Effect, Model};
 use crate::ai::{
     AiAnswer, AiAsk, AiBusy, AiDone, AiEffect, AiInstrument, AiMeasure, AiOutcome, AiRefusal,
-    AiRender, AiRenderWhat, AiSong, screen_allowed, screen_no_step,
+    AiRender, AiRenderWhat, AiSong, batchable, screen_allowed, screen_no_step,
 };
 use crate::export::{ExportJob, ExportTarget};
-use crate::play::ai::{AiPoints, AiPut, AiWrote};
+use crate::play::ai::{AiMark, AiPoints, AiPut, AiWrote};
 use meloet_protocol::ExportTail;
 
 /// Outcomes of asks with a ticket that are kept for the AI link to read.
 const OUTCOMES: usize = 16;
+
+/// A batch with no ask for this long was left open by an asker that is gone: the next ask
+/// of the AI link closes it.
+const BATCH_IDLE: Duration = Duration::from_secs(10);
+
+/// The open batch of the AI link (`AiAsk::Begin`).
+#[derive(Debug)]
+struct Batch {
+    id: u64,
+    mark: AiMark,
+    /// `Play::ai_place` after the batch's last ask: any other place, and someone else has
+    /// changed the song or its history.
+    place: (u32, u64),
+    asked: Instant,
+}
 
 #[derive(Debug, Default)]
 pub(super) struct AiSide {
@@ -35,6 +51,7 @@ pub(super) struct AiSide {
     outcomes: VecDeque<(u64, AiOutcome)>,
     /// Files being brought in for the AI link: the audio side's ticket and the AI's.
     imports: Vec<(u64, u64)>,
+    batch: Option<Batch>,
 }
 
 impl AiSide {
@@ -126,7 +143,7 @@ impl Model {
                 Ok(params) => AiAnswer::Params(params),
                 Err(refused) => AiAnswer::Refused(refused),
             },
-            ask => match self.ai_write(ask, effects) {
+            ask => match self.ai_in_turn(ask, effects) {
                 Ok(done) => AiAnswer::Done(Box::new(done)),
                 Err(refused) => AiAnswer::Refused(refused),
             },
@@ -183,6 +200,88 @@ impl Model {
         }
     }
 
+    /// An answer that names no step.
+    fn ai_done(&self, step: Option<meloet_protocol::HistoryRow>) -> AiDone {
+        AiDone {
+            step,
+            undo_count: self.play.undo_count(),
+            clip: None,
+            take: None,
+            track: None,
+            ticket: None,
+            pending: false,
+        }
+    }
+
+    /// A write, or an ask about the batch: while a batch is open, only its own asks are
+    /// taken.
+    fn ai_in_turn(&mut self, ask: AiAsk, effects: &mut Vec<Effect>) -> Result<AiDone, AiRefusal> {
+        if (self.ai.batch.as_ref()).is_some_and(|b| b.asked.elapsed() >= BATCH_IDLE)
+            && let Some(left) = self.ai.batch.take()
+        {
+            self.play.ai_rewind(left.mark, left.place, effects);
+        }
+        let open = self.ai.batch.as_ref().map(|b| b.id);
+        match ask {
+            AiAsk::Begin { .. } if open.is_some() => Err(AiRefusal::BatchOpen),
+            AiAsk::Begin { batch } => {
+                if let Some(busy) = self.ai_busy() {
+                    return Err(AiRefusal::Busy(busy));
+                }
+                self.ai.batch = Some(Batch {
+                    id: batch,
+                    mark: self.play.ai_mark(),
+                    place: self.play.ai_place(),
+                    asked: Instant::now(),
+                });
+                Ok(self.ai_done(None))
+            }
+            AiAsk::InBatch { batch, ask } => {
+                let place = self.play.ai_place();
+                if (self.ai.batch.as_ref()).is_none_or(|b| b.id != batch || b.place != place) {
+                    return Err(AiRefusal::BatchLost);
+                }
+                if !batchable(&ask) {
+                    return Err(AiRefusal::NotInBatch);
+                }
+                let done = self.ai_write(*ask, effects);
+                if let Some(b) = &mut self.ai.batch {
+                    b.place = self.play.ai_place();
+                    b.asked = Instant::now();
+                }
+                match done {
+                    // It ends later, when the batch is closed.
+                    Ok(d) if d.pending || d.ticket.is_some() => Err(AiRefusal::NotInBatch),
+                    done => done,
+                }
+            }
+            AiAsk::Commit { batch } | AiAsk::Rollback { batch } if open != Some(batch) => {
+                Err(AiRefusal::BatchLost)
+            }
+            AiAsk::Commit { .. } => {
+                let b = self.ai.batch.take().ok_or(AiRefusal::BatchLost)?;
+                let merged = self.play.ai_merge(&b.mark, b.place);
+                let row = b.mark.undo_count() + 1;
+                let step = (merged > 0)
+                    .then(|| self.play.history_rows(row, row).pop())
+                    .flatten();
+                Ok(self.ai_done(step))
+            }
+            AiAsk::Rollback { .. } => {
+                let b = self.ai.batch.take().ok_or(AiRefusal::BatchLost)?;
+                if let Some(busy) = self.ai_busy() {
+                    return Err(AiRefusal::Busy(busy));
+                }
+                if !self.play.ai_rewind(b.mark, b.place, effects) {
+                    return Err(AiRefusal::BatchLost);
+                }
+                Ok(self.ai_done(None))
+            }
+            _ if open.is_some() => Err(AiRefusal::BatchOpen),
+            ask => self.ai_write(ask, effects),
+        }
+    }
+
     fn ai_write(&mut self, ask: AiAsk, effects: &mut Vec<Effect>) -> Result<AiDone, AiRefusal> {
         if let Some(busy) = self.ai_busy() {
             return Err(AiRefusal::Busy(busy));
@@ -219,17 +318,30 @@ impl Model {
                     pending: false,
                 });
             }
+            AiAsk::Begin { .. }
+            | AiAsk::InBatch { .. }
+            | AiAsk::Commit { .. }
+            | AiAsk::Rollback { .. } => return Err(AiRefusal::NotInBatch),
             AiAsk::Screen(command) => {
                 if !screen_allowed(&command) {
-                    return Err(AiRefusal::Unchanged);
+                    return Err(AiRefusal::Cannot("an AI may not send that intent".into()));
                 }
                 no_step = screen_no_step(&command);
-                self.command(command, effects);
-                if !no_step && self.play.undo_count() == before {
-                    return Err(match &self.notice {
-                        Some(notice) => AiRefusal::Said(format!("{notice:?}")),
-                        None => AiRefusal::Unchanged,
-                    });
+                // What the line said before is not what it says of this intent.
+                let said_before = self.notice.take();
+                let was = (self.play.changes(), self.play.ai_session());
+                self.command(command.clone(), effects);
+                let said = self.notice.as_ref().map(|notice| format!("{notice:?}"));
+                if said.is_none() {
+                    self.notice = said_before;
+                }
+                if self.play.undo_count() == before {
+                    if was == (self.play.changes(), self.play.ai_session()) {
+                        return Err(self.play.ai_why_not(&command, said));
+                    }
+                    // The loop switched on by its range, or the name of the marker just
+                    // made: a change that is no step of its own, as solo is.
+                    no_step = true;
                 }
                 AiWrote::default()
             }
@@ -309,7 +421,9 @@ impl Model {
                     pending: true,
                 });
             }
-            AiAsk::PluginParams { .. } => return Err(AiRefusal::Unchanged),
+            AiAsk::PluginParams { .. } => {
+                return Err(AiRefusal::Cannot("that is a read, not a write".into()));
+            }
             AiAsk::Save | AiAsk::SaveAs { .. } | AiAsk::Open { .. } | AiAsk::NewSong => {
                 if !self.song_free() {
                     return Err(AiRefusal::FilesBusy);
@@ -620,6 +734,9 @@ fn clip_doc(song: &Doc, clip: u32, effects: bool) -> Result<(Doc, TickRange), Ai
 }
 
 #[cfg(test)]
+mod batch_tests;
+
+#[cfg(test)]
 mod tests {
     use meloet_model::Note;
     use meloet_protocol::{AiLinkView, AiPort, Command, StripRef};
@@ -813,7 +930,7 @@ mod tests {
             },
         ] {
             let answer = ask(m, AiAsk::Screen(command));
-            assert_eq!(answer, AiAnswer::Refused(AiRefusal::Unchanged));
+            assert!(matches!(answer, AiAnswer::Refused(AiRefusal::Cannot(_))));
         }
         let gain = Command::SetGain {
             strip: StripRef::Track { id: track },
@@ -824,11 +941,11 @@ mod tests {
             panic!("set")
         };
         assert_eq!(done.undo_count, 1);
-        // The same value again is no step, and says why.
-        assert!(matches!(
+        // The same value again is no step, and no failure.
+        assert_eq!(
             ask(m, AiAsk::Screen(gain)),
-            AiAnswer::Refused(AiRefusal::Unchanged | AiRefusal::Said(_))
-        ));
+            AiAnswer::Refused(AiRefusal::Unchanged)
+        );
     }
 
     #[test]

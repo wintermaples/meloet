@@ -504,15 +504,18 @@ fn the_mixer_and_its_effects_are_steps() {
     assert_eq!(mixer["master"]["volume_db"], Value::Null);
     assert_eq!(mixer["returns"][0]["muted"], true);
 
-    // Solo is no step, and the same state again is refused.
+    // Solo is no step, and the same state again changes nothing.
     let at = steps(&r);
     ok(&mut c, "set_solo", json!({ "track": 2, "on": true }));
     assert_eq!(steps(&r), at);
     assert_eq!(r.core.ai_song().unwrap().song.session.soloed.len(), 1);
-    refused(&mut c, "set_solo", json!({ "track": 2, "on": true }));
+    let same = ok(&mut c, "set_solo", json!({ "track": 2, "on": true }));
+    assert_eq!(same["changed"], false);
+    assert_eq!(r.core.ai_song().unwrap().song.session.soloed.len(), 1);
     ok(&mut c, "set_solo", json!({ "track": 2, "on": false }));
+    let same = ok(&mut c, "set_mute", json!({ "track": 2, "on": true }));
+    assert_eq!(same["changed"], false);
     for (tool, args) in [
-        ("set_mute", json!({ "track": 2, "on": true })),
         ("set_mute", json!({ "bus": "master", "on": true })),
         (
             "insert_effect",
@@ -670,8 +673,9 @@ fn automation_and_time_are_steps() {
     let at = steps(&r);
     ok(&mut c, "set_loop_on", json!({ "on": false }));
     assert_eq!(steps(&r), at);
+    let same = ok(&mut c, "set_loop_on", json!({ "on": false }));
+    assert_eq!(same["changed"], false);
     for (tool, args) in [
-        ("set_loop_on", json!({ "on": false })),
         (
             "write_automation",
             json!({ "track": 1, "target": "pan", "points": [{ "tick": 0, "value": 0.5 }] }),

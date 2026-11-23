@@ -1,7 +1,7 @@
-<!-- 取り消しの履歴の帯の行（モック F-History、R10-History、仕様書 2 章「履歴の行 ・ 乗った ・ えらんだ」、3 章 Y19）。
-     新しい手が上。見えている行だけを作り、行は bridge の historyRowBook が見えている所だけ取りにいってためる。
-     行を押すとえらぶ。乗った行とえらんだ行は地 gray.4 で右に「ここまで戻す Enter」。押すか Enter で HistoryJump。
-     キー（↑ ↓ Home Enter Esc）は帯にフォーカスがあるとき keys/attach.ts から来る。 -->
+<!-- The rows of the undo history band (mock F-History, R10-History, spec 2 "History row: hover, chosen", spec 3 (Y19)).
+     The newest step is at the top. Only the visible rows are made; bridge's historyRowBook fetches and keeps only the visible rows.
+     Pressing a row chooses it. A hovered or chosen row has a gray.4 background and 「ここまで戻す Enter」 on the right. Pressing it or Enter sends HistoryJump.
+     Keys (↑ ↓ Home Enter Esc) come from keys/attach.ts while the band has focus. -->
 <script lang="ts">
   import { onMount, untrack } from "svelte";
   import { historyRowBook } from "../../bridge";
@@ -12,7 +12,7 @@
   import { historyJumpCommand, historyUi, pickRow, selectedRow } from "./historyUi.svelte";
   import { historyRowText, stepPlaceText } from "./stepText";
 
-  /** 見えている行の前後に、先に取りにいく行の数。 */
+  /** How many rows before and after the visible rows to fetch early. */
   const AHEAD = 16;
 
   const app = $derived(current.state!);
@@ -23,7 +23,7 @@
 
   let version = $state(0);
   onMount(() => {
-    // えらんだ行は、帯をひらくたびに捨てる（ひらいた所はいまの手）。
+    // The chosen row is dropped each time the band opens (it opens at the current step).
     historyUi.selected = null;
     return book.listen(() => version++);
   });
@@ -51,7 +51,7 @@
     };
   });
 
-  /** 見えている行の番号の範囲（上の行が新しい）。 */
+  /** The range of visible row numbers (the top row is the newest). */
   const shown = $derived.by(() => {
     if (rowH <= 0 || total === 0) return { first: 0, last: -1 };
     const first = Math.max(0, Math.floor(top / rowH));
@@ -85,21 +85,21 @@
     return out;
   });
 
-  /** 見えている所のいちばん下の行より前の手の数（「… 6 手目より前は、下へスクロール」）。 */
+  /** The number of steps before the lowest visible row (「… 6 手目より前は、下へスクロール」). */
   const before = $derived(rowH > 0 ? total - Math.floor((top + viewH) / rowH) : 0);
 
-  /** その行が見えるように送る。 */
+  /** Scrolls so that the row is visible. */
   function reveal(index: number): void {
     const v = viewport;
     if (!v || rowH <= 0) return;
     const y = (total - index) * rowH;
     if (y < v.scrollTop) v.scrollTop = y;
     else if (y + rowH > v.scrollTop + v.clientHeight) v.scrollTop = y + rowH - v.clientHeight;
-    // scroll の知らせを待たずに、同じコマで行を作る。
+    // Makes the rows in the same frame, without waiting for the scroll event.
     top = v.scrollTop;
   }
 
-  // ひらいたときは、いまの手が見えるように。
+  // On open, show the current step.
   let revealed = false;
   $effect(() => {
     if (revealed || !viewport || viewH <= 0) return;
@@ -108,7 +108,7 @@
     if (now >= 1) reveal(now);
   });
 
-  // キーでえらんだ行は、見える所まで送る。
+  // A row chosen with keys is scrolled into view.
   $effect(() => {
     const s = selected;
     if (s !== null && historyUi.byKeys) untrack(() => reveal(s));
@@ -116,7 +116,7 @@
 
   let list = $state<HTMLDivElement>();
 
-  /** 行を押すとえらぶ。フォーカスは行ではなく帯に置く（行は見えなくなると消えるので）。 */
+  /** Pressing a row chooses it. Focus goes to the band, not the row (a row is removed when it is no longer visible). */
   function press(e: PointerEvent, index: number): void {
     if (e.button !== 0) return;
     e.preventDefault();
@@ -206,7 +206,7 @@
   .rows {
     position: relative;
   }
-  /* 行は高さ size.row、左右と欄のあいだは space.3、下に gray.4 の line.hair。左の line.mark は、いまの手だけ accent。 */
+  /* A row is size.row high, with space.3 at the left, right and between fields, and a gray.4 line.hair below. The line.mark on the left is accent only for the current step. */
   .row {
     position: absolute;
     left: 0;

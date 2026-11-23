@@ -1,6 +1,6 @@
-// オートメーションの帯の値（docs/architecture.md 21-5 ・ 21-8）。DOM を知らない純粋な関数。
-// 帯の値は、どれも「人が見ているつまみの位置」0〜1。線は位置でまっすぐ、横はティックでまっすぐ。
-// 画面は、点と再生の線の位置から、自分で線の上の値を出す（値は流れてこない）。
+// Values of automation lanes (docs/architecture.md 21-5, 21-8). Pure functions that do not know the DOM.
+// Every lane value is "the position of the knob the person sees", 0 to 1. The line is straight in position, and sideways straight in ticks.
+// The screen works out the value on the line itself from the points and the play line position (values are not streamed).
 
 import type { AutoTarget, LaneName, LanePoints, LaneRef, LaneView, TrackView } from "../../bridge";
 import { EFFECT_PARAMS, type EffectParam } from "../../bridge/types";
@@ -8,7 +8,7 @@ import { t } from "../../text/ja";
 import { dbToFrac, faderText, fracToDb, panText } from "../mixer/scale";
 import { fractionOf, unitText, valueAt as paramValueAt, valueText as paramValueText } from "../params/paramRows";
 
-/** 線の上の値。最初の点より前は最初の点、最後の点より後は最後の点。階段は、その位置か前のいちばん近い点。点がなければ null。 */
+/** The value on the line. Before the first point, the first point; after the last point, the last point. Stepped: the nearest point at or before the position. Null if there are no points. */
 export function valueAt(p: Pick<LanePoints, "ticks" | "values" | "step">, tick: number): number | null {
   const n = p.ticks.length;
   if (n === 0) return null;
@@ -45,28 +45,28 @@ export const laneKey = (track: number, target: AutoTarget) => `${track}/${target
 export const hasLaneRef = (list: readonly LaneRef[], track: number, target: AutoTarget) =>
   list.some((l) => l.track === track && sameTarget(l.target, target));
 
-/** トラックの、その物の帯。 */
+/** The track's lane for that thing. */
 export const laneOf = (track: Pick<TrackView, "lanes">, target: AutoTarget): LaneView | undefined =>
   track.lanes.find((l) => sameTarget(l.target, target));
 
-/** 最初から入っているエフェクトのパラメータ（帯の名前から）。 */
+/** A parameter of a built-in effect (from the lane name). */
 function builtinSpec(name: LaneName): EffectParam | null {
   return name.kind === "builtin" ? (EFFECT_PARAMS[name.effect][name.param] ?? null) : null;
 }
 
-/** 段階 ・ オン ・ オフの位置は n /（段の数 − 1）（21-5）。 */
+/** The position of steps and on/off is n / (number of steps − 1) (21-5). */
 function stepsOf(p: EffectParam): number {
   return p.shape === "switch" ? 2 : p.steps.length;
 }
 
-/** 位置 → 最初から入っているエフェクトの値（パラメータの欄の棒の位置。段階は段の番号、オン ・ オフは 0 か 1）。 */
+/** Position → value of a built-in effect (the bar position in the params panel; steps are the step index, on/off is 0 or 1). */
 export function paramAt(p: EffectParam, pos: number): number {
   if (p.shape === "continuous") return paramValueAt(p, pos);
   const n = stepsOf(p);
   return Math.max(0, Math.min(n - 1, Math.round(pos * (n - 1))));
 }
 
-/** 最初から入っているエフェクトの値 → 位置。 */
+/** Value of a built-in effect → position. */
 export function paramPosition(p: EffectParam, value: number): number {
   if (p.shape === "continuous") return fractionOf(p, value);
   const n = stepsOf(p);
@@ -76,7 +76,7 @@ export function paramPosition(p: EffectParam, value: number): number {
 export const panAt = (pos: number) => Math.max(-100, Math.min(100, Math.round(pos * 200 - 100)));
 export const panPosition = (pan: number) => (pan + 100) / 200;
 
-/** 位置の文（「−4.8 dB」「L 20」「オン」「−18.0 dB」）。プラグインは画面で出せないので null（値の文字はプラグインが言う）。 */
+/** The text of a position (「−4.8 dB」「L 20」「オン」「−18.0 dB」). Null for plugins, since the screen cannot make it (the plugin gives the value text). */
 export function positionText(name: LaneName, pos: number): string | null {
   switch (name.kind) {
     case "volume":
@@ -97,7 +97,7 @@ export function positionText(name: LaneName, pos: number): string | null {
   }
 }
 
-/** 読み値の「→」の前に書く、単位のない文（「−2.1」）。単位のない値は positionText と同じ。 */
+/** The text without a unit before the 「→」 of the reading (「−2.1」). For values without a unit, the same as positionText. */
 export function bareText(name: LaneName, pos: number): string | null {
   switch (name.kind) {
     case "volume":
@@ -115,8 +115,8 @@ export function bareText(name: LaneName, pos: number): string | null {
 }
 
 /**
- * 手で置いた値の位置（休みのとき、点のない帯の線）。最初から入っているエフェクトの値は、パラメータの欄で見せている枠のときだけ
- * 分かる（`values`）。分からなければ null。
+ * The position of the value set by hand (when resting, the line of a lane with no points). A built-in effect's value is known only while the params panel shows
+ * that slot (`values`). Null if not known.
  */
 export function handPosition(track: TrackView, target: AutoTarget, values: readonly number[] | null): number | null {
   switch (target.kind) {
@@ -140,19 +140,19 @@ export function handPosition(track: TrackView, target: AutoTarget, values: reado
   }
 }
 
-/** その帯が、いま値を動かしているか（休みでも、仮の休みでもなく、点がある）。 */
+/** Whether the lane is moving a value now (not resting, not resting for now, and with points). */
 export function laneMoves(lane: LaneView | undefined, held: readonly LaneRef[], track: number): boolean {
   return lane !== undefined && !lane.resting && lane.points > 0 && !hasLaneRef(held, track, lane.target);
 }
 
-/** オートメーションが動かしているか（moving）、休みか（resting）。null は帯なし（仕様書 2 章「オートメーションで動くつまみ」）。 */
+/** Whether automation is moving it (moving) or it is resting (resting). Null for no lane (spec 2, "Handle moved by automation"). */
 export type AutoLook = "moving" | "resting" | null;
 export interface StripAuto {
   gain: AutoLook;
   pan: AutoLook;
   sends: readonly [AutoLook, AutoLook];
-  /** フェーダーの値の下の行を出すか（どこかのトラックに音量の帯があると、どのストリップにも出して、高さをそろえる）。 */
+  /** Whether to show the line below the fader value (if any track has a gain lane, it is shown in every strip so the heights line up). */
   row: boolean;
-  /** 音量の帯の「もどす」。 */
+  /** 「もどす」 for the gain lane. */
   restore: (() => void) | null;
 }

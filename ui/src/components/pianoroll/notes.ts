@@ -1,5 +1,5 @@
-// ノートの一覧と「選んだノート」の計算。DOM を知らない純粋な関数。
-// ノートは「テイクの id ＋ そのテイクの中の番号（はじまりの順、0 から）」で指す（docs/architecture.md 3-1 の 8）。
+// Calculations for the note list and 「選んだノート」. Pure functions that do not know the DOM.
+// A note is named by "take id + its index in that take (in start order, from 0)" (docs/architecture.md 3-1, item 8).
 
 import type { ClipView, IndexRange, TakeNotes } from "../../bridge";
 import { noteLengthText, notePositionText } from "../format";
@@ -10,7 +10,7 @@ import type { Bars } from "../time";
 type Notes = Pick<TakeNotes, "starts" | "lengths" | "keys" | "velocities">;
 type Placed = Pick<ClipView, "start" | "end" | "takeOffset">;
 
-/** クリップの中に見えているノートの番号（始まりがクリップの範囲の中。鳴る物と同じ。アレンジのクリップの絵とも同じ）。 */
+/** The indexes of notes visible in the clip (starting inside the clip's range; the same as what sounds, and as the clip picture in the arrange). */
 export function clipNoteIndexes(clip: Placed, take: { starts: ArrayLike<number>; lengths: ArrayLike<number> }): Uint32Array {
   const at = clip.start + clip.takeOffset;
   const out = new Uint32Array(take.starts.length);
@@ -23,7 +23,7 @@ export function clipNoteIndexes(clip: Placed, take: { starts: ArrayLike<number>;
   return out.subarray(0, n);
 }
 
-/** 番号 i が、選んだ範囲（はじまりの順、重ならない）に入っているか。 */
+/** Whether index i is inside the selected ranges (in start order, not overlapping). */
 export function inRanges(ranges: readonly IndexRange[], i: number): boolean {
   let lo = 0;
   let hi = ranges.length;
@@ -39,20 +39,20 @@ export function inRanges(ranges: readonly IndexRange[], i: number): boolean {
 
 export interface SelectedSummary {
   count: number;
-  /** いちばん早い位置（「3.1.000」）。2 つ以上なら「〜」をつけるのは見せる側。 */
+  /** The earliest position (「3.1.000」). Adding 「〜」 for two or more is up to the side that shows it. */
   position: string;
-  /** 音名をテイクの順に（「D4 E4 F4」。ドラムは楽器の名前）。多いときは maxKeys まで（欄に入りきらない分は見せる側が切る）。 */
+  /** Note names in take order (「D4 E4 F4」; drum piece names for drums). When there are many, up to maxKeys (the side that shows it cuts what does not fit). */
   keys: string;
-  /** そろっていれば「0.360」、ちがえば null（「ばらばら」）。 */
+  /** 「0.360」 if all the same, null if not (「ばらばら」). */
   length: string | null;
-  /** いちばん小さい・大きいベロシティ。 */
+  /** The smallest and largest velocity. */
   velocityLow: number;
   velocityHigh: number;
 }
 
 /**
- * 選んだノートのまとめ（モック A-PianoRoll の右の欄「選んだノート」）。何も選んでいなければ null。
- * 位置は曲の中（テイクの 0 がクリップの start + takeOffset）。
+ * A summary of the selected notes (the right panel 「選んだノート」 in mock A-PianoRoll). Null if nothing is selected.
+ * Positions are in the song (the take's 0 is the clip's start + takeOffset).
  */
 export function selectedSummary(
   take: Notes,

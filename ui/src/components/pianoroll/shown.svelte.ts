@@ -1,13 +1,13 @@
-// ピアノロールが見せているクリップと、そのテイクの中身（ノート）。ピアノロールの部品（ノートの場所、ベロシティの帯、
-// ノートの一覧、選んだノート、鍵盤の列）はみな、ここを読む。テイクは id でためてある物を `takeNotes` で取る（docs/architecture.md 3-1 の 8）。
+// The clip the piano roll shows, and the content of its take (notes). All parts of the piano roll (note area, velocity lane,
+// note list, selected notes, keyboard column) read this. The take is taken by id from the kept takes with `takeNotes` (docs/architecture.md 3-1, item 8).
 //
-// 使いかた: ピアノロールの帯の部品が、初めに 1 回 `followShownTake()` を呼ぶ（部品の中なので $effect が使える）。
+// Usage: the piano roll band part calls `followShownTake()` once at the start (it is inside a part, so $effect can be used).
 
 import { untrack } from "svelte";
 import { takeNotes, type ClipView, type TakeNotes, type TrackView } from "../../bridge";
 import { current } from "../../state/app.svelte";
 
-// $state.raw: テイクの中身は大きな型つき配列なので、深い proxy にしない。
+// $state.raw: a take's content is large typed arrays, so it is not made a deep proxy.
 let clip = $state.raw<ClipView | null>(null);
 let track = $state.raw<TrackView | null>(null);
 let take = $state.raw<TakeNotes | null>(null);
@@ -15,19 +15,19 @@ let origin = $state.raw<TakeNotes | null>(null);
 let takeSerial = 0;
 
 export const shown = {
-  /** `arrange.pianoRollClip` のクリップ。なければ null（クリップのない曲）。 */
+  /** The clip of `arrange.pianoRollClip`. Null if none (a song without clips). */
   get clip(): ClipView | null {
     return clip;
   },
-  /** そのクリップのトラック。 */
+  /** The clip's track. */
   get track(): TrackView | null {
     return track;
   },
-  /** 見せているテイクの中身。取りにいっている間は、前の物のまま（ちらつかないように）。id は `take.id`。 */
+  /** The content of the shown take. While fetching, the previous one stays (so it does not flicker). id is `take.id`. */
   get take(): TakeNotes | null {
     return take;
   },
-  /** クオンタイズしたテイクの、もとのテイクの中身（そろえる前の位置の枠を描くため）。なければ null。 */
+  /** The content of the original take of a quantized take (to draw the border of the position before aligning). Null if none. */
   get origin(): TakeNotes | null {
     return origin;
   },
@@ -43,7 +43,7 @@ function findClip(id: number | null): { clip: ClipView; track: TrackView } | nul
   return null;
 }
 
-/** 部品の初めに 1 回呼ぶ。状態が変わるたびに `shown` を合わせる。 */
+/** Call once at the start of the part. Keeps `shown` in step each time the state changes. */
 export function followShownTake(): void {
   let asked = 0;
   $effect(() => {
@@ -58,11 +58,11 @@ export function followShownTake(): void {
       origin = null;
       return;
     }
-    // つながる前は取りにいけない（橋が投げる）。つながったら、この $effect がもう一度走る。
-    // いま見せているテイクは読むだけ（ここで null にしても、この $effect をもう一度走らせない）。
+    // Cannot fetch before connecting (the bridge throws). Once connected, this $effect runs again.
+    // The take shown now is only read (setting it to null here does not run this $effect again).
     const now = untrack(() => take);
     if ((now?.id === id && takeSerial === serial) || !current.connected) return;
-    // 「前の物のまま」はちらつかないためだが、別の曲のノートは残さない。
+    // "The previous one stays" is to avoid flicker, but notes of another song are not kept.
     if (now && takeSerial !== serial) {
       take = null;
       origin = null;

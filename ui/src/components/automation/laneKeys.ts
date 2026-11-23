@@ -1,12 +1,12 @@
-// オートメーションの点の Delete（仕様書 3 章 Y16「えらんで Delete で消す」）。DOM を知らない。
-// キーがアレンジに向いていて、最後に押してえらんだのがオートメーションの点のときだけ（timeline/pick.ts）。
-// 文字を打っている最中と、録音中 ・ カウントイン中は送らない。
+// Delete for automation points (spec 3 (Y16) 「えらんで Delete で消す」). Does not know the DOM.
+// Only when keys go to the arrange and the last thing chosen by pressing was an automation point (timeline/pick.ts).
+// Not sent while typing, or while recording or during count-in.
 
 import type { AutomationView, Command } from "../../bridge";
 import { lastPick } from "../timeline/pick";
 import { indexSet } from "./autoGeom";
 
-/** 送る意図。点の Delete でなければ null（ほかの決まりへ）。"none": 受けたが、えらんだ点がないので何もしない。 */
+/** The intent to send. Null if this is not Delete for points (go on to the other rules). "none": taken, but no point is chosen, so nothing is done. */
 export function laneDeleteCommand(
   k: { key: string; ctrl: boolean; meta: boolean; alt: boolean; shift: boolean },
   c: { typing: boolean; busy: boolean; toArrange: boolean },

@@ -1,8 +1,8 @@
-<!-- CC の帯（仕様書 3 章の帯の表「サステイン ・ ピッチベンド ・ モジュレーション」と「第 3 回のための決まり」の CC の帯、モック R3-Lanes）。
-     ベロシティの帯の下に、サステイン ・ ピッチベンド ・ モジュレーション ・ そのほかの CC の順で、ひらいている物だけ。1 本 size.lane。
-     ノートの場所が 10 行を下まわるなら、古くひらいたほうからたたむ。
-     帯は WebGL の pianoRoll の区画に 1 本ずつ（点か見ている範囲が変わったときだけ描く）。
-     ドラッグ中に動く線と点、置く前の点は、pianoRollLive の区画（Roll.svelte の liveHost）に入れた帯 1 本ぶんの面。 -->
+<!-- CC lanes (the 「サステイン ・ ピッチベンド ・ モジュレーション」 row of the band table in spec 3 and the CC lanes in "Rules for round 3 (piano roll and clips)", mock R3-Lanes).
+     Below the velocity lane, only the open ones, in the order sustain, pitch bend, modulation, other CCs. size.lane each.
+     If the note area goes below 10 rows, the ones opened earliest are folded first.
+     Each lane is drawn in the WebGL pianoRoll region (only when the points or the visible range change).
+     The lines and points that move while dragging, and the point before it is placed, are a one-lane surface in the pianoRollLive region (liveHost in Roll.svelte). -->
 <script lang="ts">
   import { onDestroy, onMount, untrack } from "svelte";
   import type { Command } from "../../bridge";
@@ -24,11 +24,11 @@
     g: G.RollGeom;
     meter: Meter;
     step: number;
-    /** 見せているテイク（録っている物を見せているときは null）。 */
+    /** The shown take (null when what is being recorded is shown). */
     take: G.Shown | null;
-    /** ノートの場所の高さ（CSS px）。 */
+    /** The height of the note area (CSS px). */
     areaH: number;
-    /** pianoRollLive の区画の箱（左上がノートの場所の左上）。 */
+    /** The box of the pianoRollLive region (its top left is the note area's top left). */
     liveHost: HTMLElement | undefined;
     onreading?: (at: { x: number; y: number } | null) => void;
   }
@@ -37,7 +37,7 @@
   const pr = $derived(current.state!.pianoRoll);
   const scale = $derived(metrics.scale);
   const laneH = $derived(metrics.px("size.lane"));
-  /** 行の高さ（縦の拡大の段。B-63）。 */
+  /** The row height (the vertical zoom step; B-63). */
   const rowH = $derived(g.rowH);
   const pad = $derived(metrics.px("mock.pianoroll.cc-pad"));
   const point = $derived(metrics.px("part.cc.point"));
@@ -68,11 +68,11 @@
   const selectedRanges = $derived(take && pr.take === take.take.id ? pr.selectedControls : []);
   const selFlags = $derived(take ? G.selectionFlags(take.take.controlTicks.length, selectedRanges) : null);
 
-  // ---- マウス ----
+  // ---- Mouse ----
 
   const heights = $state<Record<LaneTag, number>>({ sustain: 0, pitchBend: 0, modulation: 0, other: 0 });
   const bodies: Partial<Record<LaneTag, HTMLElement>> = {};
-  /** いま乗せているか押している帯。 */
+  /** The lane the mouse is over or pressing now. */
   let active = $state<LaneTag | null>(null);
   let dragVersion = $state(0);
   let eraseHover = $state(-1);
@@ -125,7 +125,7 @@
     placeLive();
   }
 
-  /** active の帯の p でのカーソル。 */
+  /** The cursor at p in the active lane. */
   function cursorAt(p: { x: number; y: number }): CursorKind {
     const d = mouse.drag;
     if (d) return d.kind === "move" ? "move" : d.kind === "add" ? "pencil" : d.kind === "erase" ? "eraser" : "default";
@@ -216,7 +216,7 @@
     };
   }
 
-  /** 大きな絵に関係するドラッグの形（動かしている間の量は、動く面だけが描く）。 */
+  /** The shape of the drag that matters for the large picture (the amount while moving is drawn only by the moving surface). */
   function dragPart(d: LaneDrag): string {
     switch (d.kind) {
       case "move":
@@ -269,7 +269,7 @@
     });
   });
 
-  // 動く面: ドラッグしている帯 1 本ぶん。
+  // The moving surface: one lane, the one being dragged.
   let liveTop = $state(0);
   let liveH = $state(0);
   function placeLive(): void {
@@ -309,7 +309,7 @@
     untrack(() => liveHandle?.update(liveSlot));
   });
 
-  // 囲む枠
+  // The box for choosing
   const boxFrame = $derived.by(() => {
     void dragVersion;
     const d = mouse.drag;

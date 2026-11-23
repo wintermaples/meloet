@@ -1,8 +1,8 @@
-// ピアノロールの目盛のマーカーと拍の数字（仕様書 3 章、モック R11-Answers92）。DOM を知らない。
+// Markers and beat numbers on the piano roll ruler (spec 3, mock R11-Answers92). Does not know the DOM.
 
 /**
- * 出す拍の数字: マーカーの名前（地 gray.3 で数字の上に重ねる）がかかる数字は出さない。幅は CSS px で、まだはかっていない物は 0。
- * 小節の頭の数字にかかるときも、名前のほうを出す。
+ * The beat numbers to show: numbers covered by a marker name (laid over the numbers on a gray.3 background) are not shown. Widths are CSS px; those not measured yet are 0.
+ * When it covers the number at the start of a bar, the name is shown, not the number.
  */
 export function labelsBesideMarkers<L extends { tick: number; x: number }, M extends { id: number; x: number }>(
   labels: readonly L[],

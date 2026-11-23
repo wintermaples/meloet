@@ -1,9 +1,9 @@
-<!-- 「● 書く」で書いている間の、rec の枠の中の線（モック F6-AutoRec）。core は書いた値を離したときに 1 手で入れる
-     （docs/architecture.md 21-9）ので、それまでは画面が、手の位置（handValue.ts）と耳に届いている位置から（ティック、値）をため、
-     枠の中だけを描く。枠の外は帯の線のまま（AutoLane、arrangeLanes の 1 枚）。60 Hz で変わるので、録っているクリップの先と同じ
-     小さな区画（recordingClip）に描く。箱は書きはじめから帯の右はしまでで、帯と上下の端がそろう（CPU で描く WebKit、7 章）。
-     絵は、枠の右はしが画面の画素で動いたときか、手の値が変わったときだけ書きなおす。
-     離したら core の手（新しい laneId）が来て、その点が届いたら、ためた物を捨てる。やめた（同じ laneId のまま終わった）ときは、すぐ捨てる。 -->
+<!-- The line inside the rec border while writing with 「● 書く」 (mock F6-AutoRec). The core puts the written values in as one step on release
+     (docs/architecture.md 21-9), so until then the screen collects (tick, value) from the hand's position (handValue.ts) and the position heard now,
+     and draws only inside the border. Outside the border it stays the lane's line (AutoLane, one canvas of arrangeLanes). It changes at 60 Hz, so it is drawn in the
+     same small region as the tip of the clip being recorded (recordingClip). The box goes from the start of writing to the right end of the lane, and its top and bottom edges line up with the lane (WebKit that paints on the CPU, chapter 7).
+     The picture is redrawn only when the right edge of the border moves by a screen pixel, or when the hand's value changes.
+     On release, the core's step (a new laneId) comes, and when its points arrive, the collected values are dropped. When cancelled (it ends with the same laneId), they are dropped at once. -->
 <script lang="ts">
   import type { LaneView, TrackView } from "../../bridge";
   import { everyGlFrame, glSlot, type GlRect } from "../../gl/slot";
@@ -28,7 +28,7 @@
   const points = $derived(pointsOf(lane.laneId));
   const committed = $derived(points && points.id === lane.laneId ? A.pointList(points) : []);
 
-  /** ためた（ティック、値）。laneId は書きはじめの帯、from は書きはじめのティック。done: 書きおわった（core の手を待つ）。 */
+  /** The collected (tick, value). laneId is the lane at the start of writing, from is the tick at the start of writing. done: writing has ended (waiting for the core's step). */
   let buf = $state.raw<{ laneId: number; from: number; pts: A.Pt[]; range: A.LaneRange; done: boolean } | null>(null);
   let now = $state(0);
 
@@ -56,7 +56,7 @@
     return everyGlFrame(sample);
   });
 
-  // 書きおわったら、core の手の点が届くまで残す。同じ帯のまま（手がなかった）なら、すぐ捨てる。
+  // After writing ends, keep them until the points of the core's step arrive. If the lane stays the same (there was no step), drop them at once.
   $effect(() => {
     const b = buf;
     if (!b) return;
@@ -77,7 +77,7 @@
   });
   const x0 = $derived(buf ? Math.max(0, tickToX(view, buf.from)) : 0);
 
-  /** 線の点は、横に点 2 つぶん以上はなれた物だけ（モック F6-AutoRec の間）。いちばん新しい物は残す。 */
+  /** Only line points that are at least 2 points' width apart sideways (the spacing in mock F6-AutoRec). The newest one is kept. */
   function thinned(pts: readonly A.Pt[], minPx: number): A.Pt[] {
     const out: A.Pt[] = [];
     let lastX = -Infinity;
@@ -98,7 +98,7 @@
     const right = tickToX(view, Math.max(b.from, now)) - x0;
     const innerW = right - 2 * d.hair;
     if (innerW <= 0) return [];
-    // 枠の中の帯の線をかくす地（枠の線は AutoLane の HTML のまま見せる）。
+    // A background that hides the lane's line inside the border (the border line stays as AutoLane's HTML).
     const out: GlRect[] = [{ x: d.hair, y: d.hair, w: innerW, h: d.h - 2 * d.hair - d.hair, color: "color.gray.2" }];
     const v: View = { pxPerTick: view.pxPerTick, scrollX: view.scrollX + x0 + d.hair, width: innerW - d.hair };
     const look: A.LaneLook = { resting: false, armed: false, selected: () => false, hovered: -1, from: [], flat: null };

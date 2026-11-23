@@ -1,6 +1,6 @@
-<!-- アレンジのマーカーの行（仕様書 2 章「マーカーの名札」、3 章 Y18、モック R10-Markers ・ F6-Tempo）。
-     名札は左に line.mark の線と名前。えらんだ名札は線が accent で地が gray.4。押すとその位置へ、2 回押すと名前の枠、
-     押したまま横へ動かすと拍に吸いつく（離して 1 つ送る。もとの所に gray.7 の枠、その場の読み値は位置。Esc でやめる）。 -->
+<!-- The marker row of the arrange (spec 2 "Marker tag", spec 3 (Y18), mock R10-Markers, F6-Tempo).
+     A tag has a line.mark line on the left and the name. A chosen tag has an accent line and a gray.4 background. Pressing goes to its position, pressing twice opens the name box,
+     and holding and moving sideways snaps to beats (one intent on release; a gray.7 border at the original place, the reading in place is the position; Esc cancels). -->
 <script lang="ts">
   import { onMount, tick as nextTick } from "svelte";
   import type { MarkerView, TimelineView } from "../../bridge";
@@ -19,7 +19,7 @@
     view: View;
     map: TempoMap;
     timeline: TimelineView;
-    /** 録音中かカウントイン中: 押すと、えらんでそこへ行くだけ（core もそれしか受けない）。 */
+    /** While recording or during count-in: pressing only chooses and goes there (the core accepts only that). */
     busy: boolean;
   }
   let { view, map, timeline, busy }: Props = $props();
@@ -118,7 +118,7 @@
     ]);
   }
 
-  // ---- 名前の枠（core が持つ renaming。打っている途中の文字は画面だけの物） ----
+  // ---- The name box (the core keeps renaming; the text being typed is only on the screen) ----
 
   let draft = $state("");
   let field = $state<HTMLInputElement>();
@@ -249,7 +249,7 @@
     border: var(--line-hair) solid var(--color-gray-7);
     pointer-events: none;
   }
-  /* 名前の枠（トラックの名前の枠と同じ: 地 gray.0、枠 gray.10、太さ 600）。左の線は accent。 */
+  /* The name box (the same as the track name box: background gray.0, border gray.10, weight 600). The left line is accent. */
   .naming {
     position: absolute;
     z-index: 3;

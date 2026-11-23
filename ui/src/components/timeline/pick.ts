@@ -1,5 +1,5 @@
-// Delete がどれに効くか（棟梁の決め 2026-11-20）: アレンジでは、テンポの点 ・ 拍子の旗 ・ マーカーと、クリップと、
-// オートメーションの点のうち、最後に押してえらんだ物。画面だけが持つ（core はどれの選択も持つ）。
+// What Delete acts on (the lead's decision): in the arrange, whichever of the tempo points, time signature flags, markers, clips
+// and automation points was chosen by pressing last. Only the screen keeps this (the core keeps the selection of each).
 export const lastPick = { kind: "clips" as "clips" | "timeline" | "lane" };
 
 export function pickTimeline(): void {

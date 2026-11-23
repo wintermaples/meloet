@@ -1,6 +1,6 @@
-<!-- 音階の一覧（仕様書 2 章「一覧」: 幅 220、地 gray.3、枠 gray.8、行は高さ 24 で選ぶ印と名前、見出しの行は「hd」）。
-     中身はヤチヨさんの決め（2026-11-15）: 見出し「種類」の下に メジャー ・ マイナー、見出し「主音」の下に C 〜 B。
-     ひらいたら、えらんでいる種類の行にフォーカスを置く。↑ ↓ でえらび、Enter で決める。Esc と外を押したときは、ひらいた側がとじる。 -->
+<!-- The scale list (spec 2 "List": width 220, background gray.3, border gray.8, rows 24 high with a choice mark and a name, heading rows 「hd」).
+     The content is the owner's decision: under the heading 「種類」, 「メジャー」 and 「マイナー」; under the heading 「主音」, C to B.
+     On open, focus goes to the row of the chosen kind. ↑ ↓ choose, Enter decides. On Esc or pressing outside, the side that opened it closes it. -->
 <script lang="ts">
   import { onMount } from "svelte";
   import type { MusicalScale, ScaleMode } from "../../bridge";
@@ -10,7 +10,7 @@
 
   interface Props {
     scale: MusicalScale;
-    /** えらんだ。種類だけ、または主音だけが変わる。 */
+    /** Chosen. Only the kind, or only the root, changes. */
     onpick: (root: number, mode: ScaleMode) => void;
   }
   let { scale, onpick }: Props = $props();
@@ -100,8 +100,8 @@
     border-bottom: var(--line-hair) solid var(--color-gray-4);
     white-space: nowrap;
   }
-  /* 乗った（仕様書 2 章: 枠 gray.8 ・ 文字 gray.10）・押した（bg gray.2 ・ 枠 gray.8）。枠は行の内がわに描き、
-     「選んだ行」（地 gray.4 ・ 左 line.mark の accent）とまざらないようにする（docs/history/design-notes.ja.md A-6）。 */
+  /* Hover (spec 2: border gray.8, text gray.10), pressed (bg gray.2, border gray.8). The border is drawn inside the row,
+     so it does not mix with the 「選んだ行」 (background gray.4, a line.mark accent on the left) (docs/history/design-notes.ja.md A-6). */
   .row:hover:not(:disabled) {
     box-shadow: inset 0 0 0 var(--line-hair) var(--color-gray-8);
   }
@@ -131,7 +131,7 @@
   .choice.selected .dot {
     background: var(--color-accent);
   }
-  /* 文字は状態行の「拡大率」の一覧（ChoiceMenu、モック F-Zoom）と同じ gray.10。 */
+  /* The text is gray.10, the same as the 「拡大率」 list in the status line (ChoiceMenu, mock F-Zoom). */
   .label {
     color: var(--color-gray-10);
   }

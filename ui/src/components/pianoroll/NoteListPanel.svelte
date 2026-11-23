@@ -1,11 +1,11 @@
-<!-- ピアノロールの左の「ノートの一覧」の中身（モック A-PianoRoll・F-WidePR の左の欄）。見出し（▾ ノートの一覧 23）とたたんだ縦の見出しは、
-     帯の部品（PianoRoll.svelte）が描く。これは、ひらいたときの中身だけを、親の箱いっぱいに描く。見せているテイクは `shown`（shown.svelte.ts）。
-     欄の見出しの行（位置 ・ 音 ・ 長さ ・ Vel）と、ノートごとの行（仕様書 2 章「一覧の行」、高さ size.row.s）。ノートが何万あっても重くならないよう、
-     見えている行だけを作る。行を押すとそのノートを選ぶ（Shift で足す）。選ぶのは Rust（selectNotes を送るだけ）。
-     欄を 2 回押すか、行で Enter を押すと、その欄が「入力の枠」になる（仕様書 3 章、モック R3-Lanes）。決めると setNotesField（その行のノート 1 つ）。
-     Tab で右の欄へ、右はしなら次の行の最初の欄へ（Shift Tab は逆）。打っている行は、一覧の何行目かで覚える（決めるとテイクの id が変わるため）。
-     ドラムのトラックでは「長さ」の列を出さず、位置 68 ・ 音（楽器の名前、のこり全部。入りきらなければ「…」、乗せると全部）・ Vel 40（仕様書 3 章）。
-     キットにない鍵のノートは音名で。 -->
+<!-- The content of 「ノートの一覧」 on the left of the piano roll (the left panel of mock A-PianoRoll, F-WidePR). The heading (「▾ ノートの一覧 23」) and the folded vertical heading are
+     drawn by the band part (PianoRoll.svelte). This draws only the open content, filling the parent box. The shown take is `shown` (shown.svelte.ts).
+     A row of field headings (position, note, length, Vel), and a row per note (spec 2 "List row", height size.row.s). So that tens of thousands of notes are not heavy,
+     only the visible rows are made. Pressing a row selects that note (Shift adds). Rust selects (this only sends selectNotes).
+     Pressing a field twice, or Enter on a row, turns that field into an 「入力の枠」 (spec 3, mock R3-Lanes). Deciding sends setNotesField (the one note of that row).
+     Tab goes to the field on the right, and from the right end to the first field of the next row (Shift Tab the other way). The row being typed in is remembered by its row number in the list (deciding changes the take id).
+     On a drum track, the 「長さ」 column is not shown: position 68, note (the drum piece name, all the rest; 「…」 if it does not fit, all on hover), Vel 40 (spec 3).
+     Notes of keys not in the kit use note names. -->
 <script lang="ts">
   import { mapOf, meterAtOf } from "../../time/bars";
   import { tick, untrack } from "svelte";
@@ -32,11 +32,11 @@
   import { shown } from "./shown.svelte";
 
   const app = $derived(current.state!);
-  /** 位置は拍子の変更をたどって数える（長さは、その所の拍子の拍で）。 */
+  /** Positions are counted following time signature changes (lengths in beats of the time signature at that place). */
   const meter = $derived(mapOf(app.timeline));
   const take = $derived(shown.take);
   const clip = $derived(shown.clip);
-  /** 一覧に出すノートの、テイクの中の番号（はじまりの順）。 */
+  /** The indexes in the take of the notes shown in the list (in start order). */
   const indexes = $derived(take && clip ? clipNoteIndexes(clip, take) : new Uint32Array(0));
   const selected = $derived(take && app.pianoRoll.take === take.id ? app.pianoRoll.selectedNotes : []);
   const rowH = $derived(metrics.px("size.row.s"));
@@ -65,13 +65,13 @@
   });
 
   interface Row {
-    /** 一覧の中の何行目か。 */
+    /** The row number in the list. */
     at: number;
-    /** テイクの中の番号。 */
+    /** The index in the take. */
     index: number;
     position: string;
     key: string;
-    /** 音が楽器の名前か（ドラムの、キットにある鍵）。 */
+    /** Whether the note is a drum piece name (for drums, a key the kit has). */
     named: boolean;
     length: string;
     velocity: number;
@@ -105,7 +105,7 @@
     send({ type: "selectNotes", take: take.id, notes: [index], mode: e.shiftKey ? "add" : "replace" });
   }
 
-  // ---- 欄の打ちこみ ----
+  // ---- Typing in fields ----
 
   const LABELS: Record<FieldName, string> = {
     position: t("note.position"),
@@ -114,7 +114,7 @@
     velocity: t("noteList.velocity"),
   };
 
-  /** at: 一覧の何行目か。token: ひらいた枠ごとの番号（前の枠の blur で、次の枠をとじないため）。 */
+  /** at: the row number in the list. token: a number per opened box (so the blur of the previous box does not close the next one). */
   let editing = $state<{ at: number; name: FieldName; draft: string; token: number } | null>(null);
   let tokens = 0;
 
@@ -122,7 +122,7 @@
     take && clip && at >= 0 && at < indexes.length ? noteFieldSpec(name, take, clip, [indexes[at]!], meter, drums) : null;
   const editSpec = $derived(editing ? specAt(editing.at, editing.name) : null);
 
-  /** 打っている行が見えるように送る。 */
+  /** Scrolls so the row being typed in is visible. */
   function reveal(at: number): void {
     const v = viewport;
     if (!v || rowH <= 0) return;
@@ -265,7 +265,7 @@
     background: var(--color-gray-3);
     overflow: hidden;
   }
-  /* 欄の幅はモック A-PianoRoll（76 ・ 40 ・ 52 ・ 残り）。 */
+  /* Field widths are from mock A-PianoRoll (76, 40, 52, the rest). */
   .cols {
     display: grid;
     grid-template-columns: var(--mock-notelist-position) var(--mock-notelist-key) var(--mock-notelist-length) 1fr;
@@ -274,7 +274,7 @@
     flex-shrink: 0;
     white-space: nowrap;
   }
-  /* ドラム（仕様書 3 章）: 位置 68 ・ 音（のこり全部）・ Vel 40。 */
+  /* Drums (spec 3): position 68, note (all the rest), Vel 40. */
   .cols.drums {
     grid-template-columns: var(--part-drum-list-position) 1fr var(--part-drum-list-velocity);
   }
@@ -282,7 +282,7 @@
     padding: 0 var(--mock-notelist-cell-pad);
     overflow: hidden;
   }
-  /* 楽器の名前（モック R7-Drum: 一覧の中でも書体は本文のまま）。入りきらなければ「…」。 */
+  /* Drum piece names (mock R7-Drum: the body face even inside the list). 「…」 if it does not fit. */
   .cols > .name {
     font-family: var(--font-sans);
     text-overflow: ellipsis;
@@ -290,7 +290,7 @@
   .cols > .r {
     text-align: right;
   }
-  /* 打っている欄: 入力の枠が欄いっぱい（モック R3-Lanes）。 */
+  /* The field being typed in: the input box fills the field (mock R3-Lanes). */
   .cols > .cell {
     height: 100%;
     padding: 0;
@@ -301,7 +301,7 @@
   .rows {
     position: relative;
   }
-  /* 一覧の行（仕様書 2 章）: ふつうは地 gray.3、左のふちは地と同じ色。選んだ行は左 line.mark の accent、地 gray.4。 */
+  /* List rows (spec 2): normally background gray.3, with the left edge the same color as the background. A selected row has a line.mark accent on the left and background gray.4. */
   .row {
     position: absolute;
     left: 0;
@@ -317,8 +317,8 @@
     background: var(--color-gray-4);
     border-left-color: var(--color-accent);
   }
-  /* 乗った（枠 gray.8 ・ 文字 gray.10）・押した（bg gray.2 ・ 枠 gray.8）。枠は左のふちの内がわに描くので、
-     選んだ行の左 line.mark の accent とまざらない（docs/history/design-notes.ja.md A-6）。 */
+  /* Hover (border gray.8, text gray.10), pressed (bg gray.2, border gray.8). The border is drawn inside the left edge, so it does not
+     mix with the line.mark accent on the left of a selected row (docs/history/design-notes.ja.md A-6). */
   button.row:hover {
     color: var(--color-gray-10);
     box-shadow: inset 0 0 0 var(--line-hair) var(--color-gray-8);

@@ -1,7 +1,7 @@
-// 帯を足す一覧（仕様書 3 章 92-5 ・ 20-A、94-9 ・ 36-B）: 音量 ・ パン ・ ミュート ・ センド A ・ センド B ／ エフェクトのパラメータ…。
-// 見出しの下の「＋ 帯を足す ▾」の行と、見出しの「帯」のボタン（モック F8-FirstLane）が同じ一覧をひらく。
-// 足してある帯には選ぶ印。行を押すと AddLane（足してある帯がたたんであれば、core がひらく）。「エフェクトのパラメータ…」は
-// 右のパラメータの欄の一覧をひらく（そこの行の右の印で帯を足す）。
+// The list to add a lane (spec 3 (92-5, 20-A), (94-9, 36-B)): gain, pan, mute, send A, send B / effect parameters….
+// The 「＋ 帯を足す ▾」 row below the heading and the 「帯」 button in the head (mock F8-FirstLane) open the same list.
+// Lanes already added have a choice mark. Pressing a row sends AddLane (if the added lane is folded, the core opens it). 「エフェクトのパラメータ…」
+// opens the list in the params panel on the right (a lane is added with the mark on the right of a row there).
 
 import type { AutoTarget, Command, LaneName, TrackView } from "../../bridge";
 import { send } from "../../state/app.svelte";
@@ -17,7 +17,7 @@ const TARGETS: readonly { target: AutoTarget; name: LaneName }[] = [
   { target: { kind: "send", bus: "b" }, name: { kind: "send", bus: "b" } },
 ];
 
-/** パラメータの欄にひらく物: プラグインの音源、なければいちばん上のエフェクト。 */
+/** What to open in the params panel: a plugin instrument, otherwise the top effect. */
 function paramsCommand(track: TrackView): Command | null {
   if (track.sound.kind === "plugin") return { type: "selectInstrument", track: track.id };
   const slot = track.slots.findIndex((s) => s !== null);
@@ -39,11 +39,11 @@ export function laneAddEntries(track: TrackView, busy: boolean): MenuEntry[] {
   return rows;
 }
 
-/** 見出しの「帯」のボタンからひらいた一覧（ひらいている間、ボタンは accent、状態行は F8-FirstLane の文）。 */
+/** The list opened from the 「帯」 button in the head (while open, the button is accent and the status line shows the F8-FirstLane text). */
 const fromHead = $state({ track: null as number | null });
 let headMenu: unknown = null;
 
-/** el のすぐ下に一覧をひらく。head: 見出しの「帯」のボタンから。 */
+/** Opens the list just below el. head: from the 「帯」 button in the head. */
 export function openLaneAdd(el: HTMLElement, track: TrackView, busy: boolean, head: boolean): void {
   const r = el.getBoundingClientRect();
   openContextMenu(r.left, r.bottom, laneAddEntries(track, busy));
@@ -51,7 +51,7 @@ export function openLaneAdd(el: HTMLElement, track: TrackView, busy: boolean, he
   fromHead.track = head && contextMenu.open ? track.id : null;
 }
 
-/** 見出しの「帯」のボタンからひらいた一覧がひらいているトラックの id。なければ null。 */
+/** The id of the track whose list opened from the 「帯」 button in the head is open. Null if none. */
 export function laneAddOpenFor(): number | null {
   const open = contextMenu.open;
   return open !== null && open === headMenu ? fromHead.track : null;

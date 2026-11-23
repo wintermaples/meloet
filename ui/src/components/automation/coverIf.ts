@@ -1,19 +1,19 @@
-// オートメーションが毎コマ動かす物（つまみ、値の字）を、WebKit が小さく描きなおせる形にする道具
-// （docs/architecture.md 7 章「CPU で描く WebKit」「レイアウトでためる Region」）。
+// Tools that let WebKit repaint what automation moves every frame (knobs, value text) in small rectangles
+// (docs/architecture.md 7, "WebKit that paints on the CPU", "The Region collected during layout").
 
 import { glSlot } from "../../gl/slot";
 import { gateTrack, showTrack, watchLive, type StripPart } from "./autoState.svelte";
 
-/** 背景の絵のない箱では、どちらも見た目は同じ。 */
+/** For a box with no background picture, both look the same. */
 const SAME = ["0% 0%", "100% 0%"] as const;
 
 /**
- * 次のスタイルの計算で、WebKit に node まるごとの四角を 1 つ頼ませる（見た目は変えない。背景の絵のない箱に使う）。
- * 同じコマに node の中で動いたつまみや字の小さな四角は、その中に入る。小さな四角を何十もためると、WebKit は上の帯の数字まで入れた
- * 「ぜんぶを囲む四角」にまとめてしまうので、先に大きな四角を 1 つ頼んでおく（スタイルの分は、レイアウトの分より先にたまる）。
+ * Makes WebKit ask for one rectangle of the whole node at the next style calculation (the look does not change. For boxes with no background picture).
+ * Small rectangles of knobs and text that moved inside node in the same frame fall into it. If dozens of small rectangles are collected, WebKit merges them into
+ * "one rectangle around all" that even includes the top band's numbers, so one large rectangle is asked for first (style rectangles are collected before layout ones).
  */
 export function askWhole(node: HTMLElement): void {
-  // 同じコマに 2 回入れかえると、もとの値にもどって四角を頼まない。1 コマに 1 回だけ（コマの仕事が終わったら忘れる）。
+  // Switching twice in the same frame goes back to the first value and asks for no rectangle. Only once a frame (forgotten when the frame's work ends).
   if (askedNow.has(node)) return;
   if (askedNow.size === 0) queueMicrotask(() => askedNow.clear());
   askedNow.add(node);
@@ -21,8 +21,8 @@ export function askWhole(node: HTMLElement): void {
 }
 const askedNow = new Set<HTMLElement>();
 
-/** node いっぱいに置く空の箱（askWhole に渡す）。node は position が static でない箱。左右に出したいときは、node に CSS の変数
- * --ask-left ・ --ask-right、上に出したいときは --ask-top（負の長さ）を決める。 */
+/** An empty box placed to fill node (passed to askWhole). node is a box whose position is not static. To reach out left and right, set the CSS variables
+ * --ask-left and --ask-right on node; to reach up, --ask-top (a negative length). */
 function wholeBox(node: HTMLElement): HTMLElement {
   const whole = document.createElement("span");
   whole.setAttribute("aria-hidden", "true");
@@ -33,13 +33,13 @@ function wholeBox(node: HTMLElement): HTMLElement {
 }
 
 /**
- * track が数のあいだだけ、その箱を区画の canvas の下に入れる（動かない時に canvas を広げない）。フェーダーと値の箱に使う。
- * - canvas の下に入れるのも、四角を頼むのも、node いっぱいに置く空の箱（同じ箱なので、頼む四角は canvas とぴったり重なる。node そのものに
- *   頼ませると、中の字のはみ出しまで入った四角になり、canvas の外へ出る）。
- * - 何も描かないが、WebGL の係がこの箱の上の canvas を描くとき（左右に分けて出す区画では、この箱のある半分の番のとき）に呼ばれるので、
- *   そこでそのトラックの位置を見せる（autoState の showTrack）。つまみと字は、上の canvas と同じコマで変わる。
- * - フェーダーか値の位置を見せるたびに、箱まるごとの四角を頼む（askWhole）。
- * track: 帯が何かを動かしているトラック。動かしていなければ null。
+ * Puts the box under the region's canvas only while track is a number (the canvas is not stretched when nothing moves). Used for faders and value boxes.
+ * - What goes under the canvas and what asks for the rectangle is an empty box placed to fill node (the same box, so the asked rectangle lies exactly on the canvas. If node itself
+ *   asked, the rectangle would include text that sticks out, and would go outside the canvas).
+ * - It draws nothing, but it is called when the WebGL manager draws the canvas above this box (for regions shown in left and right halves, on the turn of the half this box is in),
+ *   and there it shows the track's position (showTrack in autoState). Knobs and text change in the same frame as the canvas above.
+ * - Each time the fader or value position is shown, it asks for the rectangle of the whole box (askWhole).
+ * track: the track where a lane is moving something. Null if nothing is moving.
  */
 export function coverIf(node: HTMLElement, track: number | null) {
   let on: { slot: ReturnType<typeof glSlot>; open: () => void; whole: HTMLElement } | null = null;
@@ -65,8 +65,8 @@ export function coverIf(node: HTMLElement, track: number | null) {
 }
 
 /**
- * canvas の下に入れない箱（パンの行、センドの行）: そのトラックのその組の位置を見せるたびに、箱まるごとの四角を頼む。
- * いつ見せるかは、同じトラックの coverIf の箱が決める。
+ * A box not under a canvas (the pan row, the send row): each time the position of that group of that track is shown, asks for the rectangle of the whole box.
+ * When it is shown is decided by the coverIf box of the same track.
  */
 export function askIf(node: HTMLElement, what: { track: number; part: StripPart } | null) {
   let on: { open: () => void; whole: HTMLElement } | null = null;
@@ -92,8 +92,8 @@ export function askIf(node: HTMLElement, what: { track: number; part: StripPart 
 }
 
 /**
- * canvas の下にある、毎コマ変わる値の字の箱（フェーダーの値）: いちばん新しい位置が変わるたびに、箱まるごとの四角を頼む。
- * その箱の上の canvas が出ないコマでも、となりのストリップの箱とつながった四角 1 つになる。
+ * A box under a canvas with value text that changes every frame (the fader value): each time the newest position changes, asks for the rectangle of the whole box.
+ * Even in a frame where the canvas above it is not shown, it makes one rectangle joined with the boxes of the next strips.
  */
 export function askLive(node: HTMLElement, track: number | null) {
   let on: { close: () => void; whole: HTMLElement } | null = null;
@@ -118,9 +118,9 @@ export function askLive(node: HTMLElement, track: number | null) {
 }
 
 /**
- * node が見えているか（横に送った外でないか）を tell で知らせる。IntersectionObserver のない所（テスト）では、いつも見えているとする。
- * 毎コマ変わる字は、見えている箱にだけ書く: ミキサーのストリップは content-visibility: auto なので、外のストリップの中の字を変えると、
- * WebKit は中を飛ばしていた箱をレイアウトしなおし、ミキサーの行ぜんぶの flex を伸ばしなおす（64 本で 1 コマ 200 ms 余り）。
+ * Tells by tell whether node is visible (not scrolled out sideways). Where there is no IntersectionObserver (tests), it is always treated as visible.
+ * Text that changes every frame is written only into visible boxes: mixer strips have content-visibility: auto, so changing text inside a strip out of view makes
+ * WebKit lay out the box whose inside it had skipped, and stretch the flex of the whole mixer row again (over 200 ms a frame with 64 tracks).
  */
 export function whenSeen(node: HTMLElement, tell: (seen: boolean) => void) {
   if (typeof IntersectionObserver === "undefined") return;

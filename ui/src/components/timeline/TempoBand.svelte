@@ -1,7 +1,7 @@
-<!-- アレンジの「テンポ ・ 拍子の変更」の行の、時間の側（仕様書 3 章 Y17 の 18-C、モック F6-Tempo ・ Opt6-Tempo ・ F6-AutoRec）。
-     たたんだとき: 再生の線がいる所のテンポと拍子。ひらいたとき: 上の段に拍子の旗、下の段にテンポの階段の線と点とだんだん。
-     線と点は WebGL（アレンジの arrangeLanes の区画の 1 枚。区画はふやさない）、文字と旗は HTML。
-     ドラッグ中は画面だけが先に動き、離したときに意図を 1 つ送る。Esc でやめる。 -->
+<!-- The time side of the arrange's 「テンポ ・ 拍子の変更」 row (spec 3 (Y17, 18-C), mock F6-Tempo, Opt6-Tempo, F6-AutoRec).
+     Folded: the tempo and time signature where the play line is. Open: time signature flags in the upper row; in the lower row, the tempo staircase line, points and ramps.
+     Lines and points are WebGL (one canvas of the arrange's arrangeLanes region; no new region), text and flags are HTML.
+     While dragging, only the screen moves first, and one intent is sent on release. Esc cancels. -->
 <script lang="ts">
   import { onMount } from "svelte";
   import type { Command, TimelineRef, TimelineView } from "../../bridge";
@@ -24,9 +24,9 @@
     view: View;
     map: TempoMap;
     timeline: TimelineView;
-    /** たたんだときに出す、再生の線がいる所のテンポと拍子。 */
+    /** Shown when folded: the tempo and time signature where the play line is. */
     now: string;
-    /** 録音中かカウントイン中: えらぶだけ（core もそれしか受けない）。 */
+    /** While recording or during count-in: only chooses (the core accepts only that). */
     busy: boolean;
   }
   let { view, map, timeline, now, busy }: Props = $props();
@@ -40,7 +40,7 @@
   const flagList = $derived(T.flags(timeline, map));
   const selected = $derived(timeline.selected);
 
-  // ---- テンポの点 ----
+  // ---- Tempo points ----
 
   let pointDrag = $state<T.PointDrag | null>(null);
   let hovered = $state(-1);
@@ -71,7 +71,7 @@
   };
   const pointUnder = (p: { x: number; y: number }) => T.pointAt(view, points, scale, p.x, p.y, dims.point);
 
-  /** その場の読み値（位置）。 */
+  /** The reading in place (position). */
   let reading = $state<{ text: string; x: number; y: number } | null>(null);
   function readAt(e: PointerEvent, tick: number): void {
     const r = band!.getBoundingClientRect();
@@ -124,7 +124,7 @@
     if (!pointDrag) hovered = -1;
   }
 
-  /** 2 回押す: 点の上なら値を打ちこむ、ほかの所なら、その拍の頭に点を足す。 */
+  /** Pressing twice: on a point, type its value; elsewhere, add a point at the start of that beat. */
   let editing = $state<{ kind: "tempo"; tick: number } | { kind: "meter"; bar: number } | null>(null);
   function laneDouble(e: MouseEvent): void {
     if (busy) return;
@@ -155,7 +155,7 @@
     openContextMenu(e.clientX, e.clientY, entries);
   }
 
-  // ---- 拍子の旗 ----
+  // ---- Time signature flags ----
 
   let flagDrag = $state<T.FlagDrag | null>(null);
   function flagDown(e: PointerEvent, f: T.Flag): void {
@@ -198,13 +198,13 @@
     const target: TimelineRef = { kind: "meterChange", bar: f.bar };
     pickTimeline();
     if (!isSelected(target)) send({ type: "selectTimeline", target });
-    // 仕様書 3 章 92-17。曲の頭の旗には「消す」がない（92-2）。
+    // spec 3 (92-17). The flag at the start of the song has no 「消す」 (92-2).
     const entries: MenuEntry[] = [{ kind: "row", label: "menu.typeMeter", usable: !busy, run: () => (editing = { kind: "meter", bar: f.bar }) }];
     if (f.bar !== 0) entries.push({ kind: "separator" }, { kind: "row", label: "menu.delete", key: t("key.delete"), usable: !busy, run: () => send({ type: "deleteTimeline", target }) });
     openContextMenu(e.clientX, e.clientY, entries);
   }
 
-  /** 旗を描く所: ドラッグ中は動いた旗をその小節の頭に、もとの所に gray.7 の枠。 */
+  /** Where flags are drawn: while dragging, the moved flag at the start of its bar, with a gray.7 border at the original place. */
   const flagsShown = $derived.by(() => {
     const d = flagDrag?.moved ? flagDrag : null;
     return flagList
@@ -218,7 +218,7 @@
   const flagFrom = $derived(flagDrag?.moved && flagDrag.bar !== 0 ? tickToX(view, map.tickOfBar(flagDrag.bar)) : null);
   let movingFlagW = $state(0);
 
-  // ---- 打ちこむ ----
+  // ---- Typing ----
 
   function commitClamped(command: Command, clamp: ClampNote | null): void {
     send(command);
@@ -236,7 +236,7 @@
     editing = null;
   }
 
-  // ---- やめる ----
+  // ---- Cancel ----
 
   function cancel(): boolean {
     if (!pointDrag && !flagDrag) return false;
@@ -375,7 +375,7 @@
     border-bottom: var(--line-hair) solid var(--color-gray-5);
     touch-action: none;
   }
-  /* ひらいた帯（たたんで 24、ひらいて 72 = 拍子の段 size.row ＋ テンポの段 size.lane。モック F6-Tempo の地は gray.2）。 */
+  /* The open band (folded 24, open 72 = time signature row size.row + tempo row size.lane. The background in mock F6-Tempo is gray.2). */
   .band.open {
     height: auto;
     background: var(--color-gray-2);

@@ -1,7 +1,7 @@
-<!-- オートメーションの帯の見出し（仕様書 2 章「オートメーションの帯の見出し ・ 書く ・ 休み」、モック F6-AutoRec ・ F6-AutoRest ・ F6-ParamMany）。
-     上の段は「▾ オートメーション ・ （何を）」（押すとたたむ）。下の段は「● 書く」と短い文（書いている間は「書いています」、ふだんは
-     いまの値と点の数）。休みのときは「もどす」と「休み ・ （いまの値）」。右クリックで「帯を消す」。
-     いまの値は再生中に毎コマ変わるので、trackMeters の canvas の下に入れる（cover。docs/architecture.md 7 章「CPU で描く WebKit」）。 -->
+<!-- The heading of an automation lane (spec 2 "Automation band heading, write, resting", mock F6-AutoRec, F6-AutoRest, F6-ParamMany).
+     The upper line is 「▾ オートメーション ・ （何を）」 (pressing folds it). The lower line is 「● 書く」 and a short text (「書いています」 while writing, otherwise
+     the current value and the number of points). When resting, 「もどす」 and 「休み ・ （いまの値）」. Right-click gives 「帯を消す」.
+     The current value changes every frame while playing, so it goes under the trackMeters canvas (cover. docs/architecture.md 7, "WebKit that paints on the CPU"). -->
 <script lang="ts">
   import { onMount } from "svelte";
   import type { LaneView, TrackView } from "../../bridge";
@@ -26,17 +26,17 @@
   const writing = $derived(automation.writing.some((w) => w.lane.track === track.id && JSON.stringify(w.lane.target) === JSON.stringify(lane.target)));
   const title = $derived(termParts(t("lane.title", { target: laneNameText(lane.name) }), "オートメーション"));
 
-  /** 最初から入っているエフェクトの手で置いた値は、パラメータの欄が見せている枠のときだけ分かる。 */
+  /** A value set by a step of a built-in effect is known only while the params panel shows that slot. */
   const values = $derived.by(() => {
     const sel = builtinOf(current.state!.params);
     if (!sel || lane.target.kind !== "insert" || sel.insert.strip.kind !== "track" || sel.insert.strip.id !== track.id) return null;
     return track.slots[sel.insert.slot]?.id === lane.target.insert ? sel.values : null;
   });
   const moves = $derived(laneMoves(lane, automation.held, track.id));
-  /** 動かしているときは線の上の値。書く係（AutoClock）がまだ書いていなければ、止まっている所の値をここで出す。 */
+  /** While moving, the value on the line. If the writer (AutoClock) has not written yet, the value at the stopped place is shown here. */
   const position = $derived.by(() => {
     if (!moves) return handPosition(track, lane.target, values);
-    // 見えていない見出しは、毎コマの値を読まない（64 本の曲で、見えない字を毎コマ書きかえないため）。
+    // A heading that is not visible does not read the value every frame (so that hidden text is not rewritten every frame in songs with 64 tracks).
     const live = visible ? livePosition(track.id, lane.target) : null;
     if (live !== null) return live;
     const points = pointsOf(lane.laneId);
@@ -45,7 +45,7 @@
   const value = $derived(position === null ? null : positionText(lane.name, position));
 
   let box = $state<HTMLElement>();
-  // IntersectionObserver のない所（テスト）では、いつも見えているとする。
+  // Where there is no IntersectionObserver (tests), it is always treated as visible.
   let visible = $state(typeof IntersectionObserver === "undefined");
   onMount(() => {
     if (!box || typeof IntersectionObserver === "undefined") return;
@@ -53,9 +53,9 @@
     seen.observe(box);
     return () => seen.disconnect();
   });
-  /** いまの値の字が変わるコマは、上の canvas（trackMeters）も出す: 字の四角が canvas の中に入り、再生の線の四角を切らない。 */
+  /** In a frame where the current value text changes, the canvas above (trackMeters) is also shown: the text rectangle is inside the canvas and does not cut the play line's rectangle. */
   const stamp = $derived(position ?? -1);
-  /** 見えている間だけ、字の箱を canvas の下に入れる（見えない見出しの箱を、WebGL の係が毎コマ測らない）。 */
+  /** Only while visible, the text box goes under the canvas (so the WebGL manager does not measure the boxes of hidden headings every frame). */
   function coverWhile(node: HTMLElement, now: { on: boolean; stamp: number }) {
     let slot = now.on ? glSlot(node, { kind: "cover", stamp: now.stamp }) : null;
     return {
@@ -123,9 +123,9 @@
 </div>
 
 <style>
-  /* 帯の見出し（モック F6-AutoRec: 高さ size.lane、地 gray.2、左のあき space.6）。 */
+  /* The lane heading (mock F6-AutoRec: height size.lane, background gray.2, space.6 on the left). */
   .lane-head {
-    /* 縦に送った外の見出しは、中を描かない ・ レイアウトしない（64 本の曲。高さは決まっている）。 */
+    /* Headings scrolled out of view are not painted or laid out (songs with 64 tracks. The height is fixed). */
     content-visibility: auto;
     height: var(--size-lane);
     display: flex;
@@ -150,8 +150,8 @@
     gap: var(--space-2);
     min-width: 0;
   }
-  /* いまの値の字は、流れの外の箱に入れる: 字が変わっても、見出しのならびはレイアウトしなおされない
-     （docs/architecture.md 7 章「CPU で描く WebKit」）。外の箱は、字と同じ高さとベースラインを幅のない字で保つ。 */
+  /* The current value text goes in an out-of-flow box: when the text changes, the heading is not laid out again
+     (docs/architecture.md 7, "WebKit that paints on the CPU"). The outer box keeps the same height and baseline as the text with a zero-width character. */
   .live {
     position: relative;
     flex: 1;
@@ -171,7 +171,7 @@
     height: var(--part-toggle-size);
     flex-shrink: 0;
   }
-  /* 書くがオン（仕様書 2 章: ボタンは「えらんでいる」の形で、● と文字が rec の色）。 */
+  /* Write is on (spec 2: the button has the 「えらんでいる」 shape, with ● and the text in the rec color). */
   .write.on {
     border-color: var(--color-accent);
     color: var(--color-rec);

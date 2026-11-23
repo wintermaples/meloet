@@ -1,5 +1,5 @@
-// ピアノロールの形の計算（行、方眼、ノートの場所、ドラッグの量、読み値の文）。DOM を知らない純粋な関数。
-// 位置は曲の中のティック。x は「ノートの場所の左はしからの CSS px」、y は「ノートの場所の上はしからの CSS px」。
+// Shape math for the piano roll (rows, grid, note area, drag amounts, reading text). Pure functions that do not know the DOM.
+// Positions are ticks in the song. x is "CSS px from the left edge of the note area", y is "CSS px from the top edge of the note area".
 
 import { CONTROL_CC, CONTROL_PITCH_BEND, NO_FROM, type Grid, type IndexRange, type MusicalScale, type TakeNotes } from "../../bridge";
 import type { ColorName } from "../../design/tokens";
@@ -12,65 +12,65 @@ export const KEY_MIN = 0;
 export const KEY_MAX = 127;
 export const VELOCITY_MIN = 1;
 export const VELOCITY_MAX = 127;
-/** 書く道具で書くノートのベロシティ（仕様書にない。棟梁に聞く所）。 */
+/** The velocity of notes written with the draw tool (not in the spec; a question for the lead). */
 export const DRAW_VELOCITY = 100;
 
-/** ノートの場所の見かた（CSS px）。 */
+/** How the note area is viewed (CSS px). */
 export interface RollGeom {
   scrollTick: number;
-  /** 1 ティックの CSS px */
+  /** CSS px per tick */
   ppt: number;
-  /** いちばん上の行の鍵 */
+  /** The key of the top row */
   topKey: number;
-  /** size.note: 1 行の高さ */
+  /** size.note: the height of one row */
   rowH: number;
   width: number;
   height: number;
-  /** ドラムの行を見せているとき（仕様書 3 章「ドラムのピアノロール」）。topKey は使わない。 */
+  /** When drum rows are shown (spec 3 "Drum piano roll"). topKey is not used. */
   drum?: DrumGeom;
 }
 
-/** ドラムの行: 決まった鍵の行だけを上から。ノートは叩いた所の四角。 */
+/** Drum rows: only the rows of fixed keys, from the top. A note is a square at the place it is hit. */
 export interface DrumGeom {
-  /** 行の鍵（上の行から）。 */
+  /** The row keys (from the top row). */
   keys: readonly number[];
-  /** いちばん上に見えている行（keys の何番目か）。 */
+  /** The top visible row (an index in keys). */
   top: number;
-  /** 四角の幅（CSS px）。グリッドの 1 マス − 2、6 より小さくしない。 */
+  /** The square width (CSS px). One grid cell − 2, not smaller than 6. */
   hitW: number;
-  /** 行の名前の表（最初から入っているキットか、SF2 のキットか）。 */
+  /** The table of row names (a built-in kit or an SF2 kit). */
   names?: "builtin" | "sf2";
 }
 
 export const tickToX = (g: RollGeom, tick: number) => (tick - g.scrollTick) * g.ppt;
 export const xToTick = (g: RollGeom, x: number) => g.scrollTick + x / g.ppt;
-/** 鍵の行の上はし。ドラムの行にない鍵は NaN。 */
+/** The top edge of a key's row. NaN for keys not in the drum rows. */
 export const keyToY = (g: RollGeom, key: number) => {
   if (!g.drum) return (g.topKey - key) * g.rowH;
   const row = g.drum.keys.indexOf(key);
   return row < 0 ? NaN : (row - g.drum.top) * g.rowH;
 };
-/** y の行の鍵。ドラムの行の外（いちばん下の行より下）は -1。 */
+/** The key of the row at y. -1 outside the drum rows (below the bottom row). */
 export const yToKey = (g: RollGeom, y: number) => {
   if (!g.drum) return g.topKey - Math.floor(y / g.rowH);
   return g.drum.keys[g.drum.top + Math.floor(y / g.rowH)] ?? -1;
 };
-/** 四角の幅のティック。 */
+/** The square width in ticks. */
 const hitTicks = (g: RollGeom) => (g.drum ? g.drum.hitW / g.ppt : 0);
-/** 見えている行の数（下のはしの半端な行もふくむ）。 */
+/** The number of visible rows (including the partial row at the bottom edge). */
 export const rowsShown = (g: RollGeom) => Math.ceil(g.height / g.rowH);
-/** 全部が見えている行の数（仕様書 3 章「縦の足し算」の行の数）。 */
+/** The number of fully visible rows (the row count in spec 3 "Adding up the piano roll height"). */
 export const wholeRows = (height: number, rowH: number) => Math.floor(height / rowH);
 
-// ---- 見せているテイクのノート（曲の中の位置で読む） ----
+// ---- Notes of the shown take (read at their positions in the song) ----
 
 export interface Shown {
   take: TakeNotes;
-  /** テイクのティック 0 の、曲の中の位置（クリップの始まり ＋ take_offset）。 */
+  /** The song position of the take's tick 0 (clip start + take_offset). */
   base: number;
-  /** いちばん長いノート（見えている所をさがすため）。 */
+  /** The longest note (to find what is visible). */
   maxLength: number;
-  /** クリップの範囲 [from, to)（曲の中）。始まりがこの外のノート（はしをつめて外に出た物）は見せない。 */
+  /** The clip's range [from, to) (in the song). Notes that start outside it (moved out by trimming the edge) are not shown. */
   from: number;
   to: number;
 }
@@ -81,7 +81,7 @@ export function shownOf(take: TakeNotes, base: number, range: { from: number; to
   return { take, base, maxLength, from: range.from, to: range.to };
 }
 
-/** ノート i を見せるか（始まりがクリップの範囲の中か）。 */
+/** Whether to show note i (whether it starts inside the clip's range). */
 export const noteShown = (n: Shown, i: number) => {
   const s = n.base + n.take.starts[i]!;
   return s >= n.from && s < n.to;
@@ -91,7 +91,7 @@ export const noteStart = (n: Shown, i: number) => n.base + n.take.starts[i]!;
 export const noteEnd = (n: Shown, i: number) => n.base + n.take.starts[i]! + n.take.lengths[i]!;
 export const noteCount = (n: Shown | null) => n?.take.starts.length ?? 0;
 
-/** ティック [from, to) にかかるかもしれないノートの、最初の番号（始まりの順にならんでいるので二分探索）。 */
+/** The first index of the notes that may touch ticks [from, to) (binary search, since they are in start order). */
 export function firstNoteFrom(n: Shown, from: number): number {
   const target = from - n.base - n.maxLength;
   const s = n.take.starts;
@@ -105,7 +105,7 @@ export function firstNoteFrom(n: Shown, from: number): number {
   return lo;
 }
 
-/** ティック [from, to) にかかるノートの番号を、順に each に渡す。クリップの範囲の外に始まるノートは渡さない。 */
+/** Passes the indexes of notes touching ticks [from, to) to each, in order. Notes that start outside the clip's range are not passed. */
 export function eachNoteIn(n: Shown, from: number, to: number, each: (i: number) => void): void {
   const s = n.take.starts;
   const l = n.take.lengths;
@@ -118,22 +118,22 @@ export function eachNoteIn(n: Shown, from: number, to: number, each: (i: number)
 
 export interface Hit {
   note: number;
-  /** はしの 6px（長さを変える所）。 */
+  /** The 6px at the edge (where the length is changed). */
   edge: boolean;
-  /** 左はし（始まりを動かす所。docs/history/design-notes.ja.md B-69）。hitNote を startEdge つきで呼んだときだけ。 */
+  /** The left edge (where the start is moved; docs/history/design-notes.ja.md B-69). Only when hitNote is called with startEdge. */
   start?: true;
 }
 
 /**
- * はしの幅（CSS px）: ふだんは edgePx。左右の両方を見るときに左右の edgePx が重なるほど短いノートは、左右それぞれ幅の 1/3。
- * 右だけを見るときは、幅の半分まで。
+ * The edge width (CSS px): normally edgePx. When both sides are checked and the note is so short that the left and right edgePx overlap, each side gets 1/3 of the width.
+ * When only the right side is checked, up to half the width.
  */
 export function edgeWidth(noteW: number, edgePx: number, both: boolean): number {
   if (!both) return Math.min(edgePx, noteW / 2);
   return 2 * edgePx > noteW ? noteW / 3 : edgePx;
 }
 
-/** (x, y) の下のノート。重なっていたら、あとに描く物（番号の大きい物）。startEdge なら左はしも見る。ドラムは四角だけを見る（はしはない）。 */
+/** The note under (x, y). If notes overlap, the one drawn later (the larger index). With startEdge, the left edge is checked too. For drums, only the square is checked (no edges). */
 export function hitNote(n: Shown | null, g: RollGeom, x: number, y: number, edgePx: number, startEdge = false): Hit | null {
   if (!n || y < 0 || y >= g.height) return null;
   const key = yToKey(g, y);
@@ -161,7 +161,7 @@ export function hitNote(n: Shown | null, g: RollGeom, x: number, y: number, edge
   return found;
 }
 
-/** 囲んだ枠（CSS px、どの向きでも）にかかるノート。 */
+/** Notes touched by the box (CSS px, in any direction). */
 export function notesInBox(n: Shown | null, g: RollGeom, ax: number, ay: number, bx: number, by: number): number[] {
   if (!n) return [];
   const t0 = xToTick(g, Math.min(ax, bx));
@@ -186,7 +186,7 @@ export function notesInBox(n: Shown | null, g: RollGeom, ax: number, ay: number,
   return out;
 }
 
-// ---- 選択 ----
+// ---- Selection ----
 
 export function indexesOf(ranges: readonly IndexRange[]): number[] {
   const out: number[] = [];
@@ -200,9 +200,9 @@ export function selectionFlags(count: number, ranges: readonly IndexRange[]): Ui
   return flags;
 }
 
-// ---- グリッドと音階 ----
+// ---- Grid and scale ----
 
-/** グリッド 1 つのティック。division 0 は 1 小節。三連符は 2/3。 */
+/** The ticks of one grid step. division 0 is one bar. Triplets are 2/3. */
 export function gridTicks(grid: Grid, meter: Meter): number {
   const plain = grid.division === 0 ? ticksPerBar(meter) : (TICKS_PER_QUARTER * 4) / grid.division;
   return Math.max(1, Math.round(grid.triplet ? (plain * 2) / 3 : plain));
@@ -211,14 +211,14 @@ export function gridTicks(grid: Grid, meter: Meter): number {
 export const snapTick = (tick: number, step: number) => Math.round(tick / step) * step;
 
 /**
- * グリッドに吸いつける係（拍子の変更のある曲で、拍子の区間の頭から数える。time/bars.ts の gridTick）。
- * floor なら押した所のグリッドの頭。なければ 0 から step ずつの一様なグリッド。
+ * Snaps to the grid (in songs with time signature changes, counted from the start of the time signature span; gridTick in time/bars.ts).
+ * With floor, the start of the grid step at the pressed place. If not given, an even grid from 0 in steps of step.
  */
 export type Snapper = (tick: number, floor: boolean) => number;
 const snapWith = (grid: Snapper | undefined, tick: number, step: number) => (grid ? grid(tick, false) : snapTick(tick, step));
 export const floorTick = (tick: number, step: number) => Math.floor(tick / step) * step;
 
-/** グリッドの一覧（ヤチヨさんの決め 2026-11-15）。0 は 1 小節。 */
+/** The list of grids (the owner's decision). 0 is one bar. */
 export const GRID_DIVISIONS = [0, 2, 4, 8, 16, 32] as const;
 
 export const SCALE_STEPS = { major: [0, 2, 4, 5, 7, 9, 11], minor: [0, 2, 3, 5, 7, 8, 10] } as const;
@@ -228,31 +228,31 @@ export function inScale(key: number, s: Pick<MusicalScale, "root" | "mode">): bo
   return (SCALE_STEPS[s.mode] as readonly number[]).includes((((key - s.root) % 12) + 12) % 12);
 }
 
-/** スケール固定がオンなら、音階の外の行には書けない。 */
+/** With scale lock on, rows outside the scale cannot be written. */
 export const writable = (key: number, s: MusicalScale) => !s.lock || inScale(key, s);
 
-/** C4 = 60（モック A-PianoRoll の鍵盤の列）。 */
+/** C4 = 60 (the keyboard column in mock A-PianoRoll). */
 export function noteName(key: number): string {
   return `${NOTE_NAMES[((key % 12) + 12) % 12]}${Math.floor(key / 12) - 1}`;
 }
 
-/** 行の地: 白鍵 gray.2、黒鍵 gray.1、書けない行（スケール固定の音階の外）gray.0。 */
+/** Row background: white keys gray.2, black keys gray.1, rows that cannot be written (outside the scale with scale lock) gray.0. */
 export function rowColor(key: number, s: MusicalScale): ColorName {
   if (!writable(key, s)) return "color.gray.0";
   return isBlack(key) ? "color.gray.1" : "color.gray.2";
 }
 
-/** ノートの面（仕様書 2 章「ノート」）: 〜69 gray.8、70〜89 gray.9、90〜 gray.10。 */
+/** The note face (spec 2 "Note"): up to 69 gray.8, 70 to 89 gray.9, 90 and up gray.10. */
 export function velocityColor(v: number): ColorName {
   return v < 70 ? "color.gray.8" : v < 90 ? "color.gray.9" : "color.gray.10";
 }
 
-// ---- ひらいたときの見せかた ----
+// ---- How it looks when opened ----
 
 /**
- * ひらいたときの、いちばん上の行の鍵。いちばん高いノートの上に 4 行あけ、それでいちばん低いノートの下に 3 行が
- * 残らないなら低いほうを見せる（A-PianoRoll は 41 行で E5、F-PR150 は 18 行で D4。どちらも C3〜C5 のノート）。
- * ノートがなければ C4 をまん中に。
+ * The key of the top row when opened. Leave 4 rows above the highest note, and if that does not leave 3 rows below the lowest note,
+ * show the low side (A-PianoRoll is 41 rows with E5, F-PR150 is 18 rows with D4; both have notes C3 to C5).
+ * With no notes, C4 in the middle.
  */
 export function fitTopKey(range: { low: number; high: number } | null, rows: number): number {
   const r = Math.max(1, rows);
@@ -282,8 +282,8 @@ export function openSpan(clip: { start: number; end: number }, loop: { start: nu
 }
 
 /**
- * ひらいたときの横の拡大: クリップがノートの場所に入る、いちばん大きい段（モックは 1280 で 1 拍 40、1920 で 80）。
- * width は拡大率をかけた CSS px、scale は拡大率。
+ * The horizontal zoom when opened: the largest step at which the clip fits in the note area (the mock is 40 per beat at 1280, 80 at 1920).
+ * width is CSS px with the scale applied, scale is the scale.
  */
 export function fitQuarterPx(clipTicks: number, width: number, scale: number): number {
   const quarters = clipTicks / TICKS_PER_QUARTER;
@@ -292,9 +292,9 @@ export function fitQuarterPx(clipTicks: number, width: number, scale: number): n
   return best;
 }
 
-// ---- ドラッグの量 ----
+// ---- Drag amounts ----
 
-/** つかんだノートの始まりがグリッドに吸いつくように動かす量。step が null（Shift）なら吸いつかない。曲の頭より前と、鍵の外へは出ない。 */
+/** The amount to move so the start of the grabbed note snaps to the grid. If step is null (Shift), it does not snap. It does not go before the start of the song or outside the keys. */
 export function moveDelta(
   n: Shown,
   notes: readonly number[],
@@ -321,8 +321,8 @@ export function moveDelta(
 }
 
 /**
- * ドラムの行で、つかんだノートを rows 行（下へ +）動かすときの鍵の差。動かすノートがみな同じ行数だけ動いて、キットの鍵に
- * 入る所まで（入らなければ 0 へ近づける）。ノートはみな同じ鍵の差で動くので、行の間の鍵の差がそろう所にしか動けない。
+ * The key change when moving the grabbed note rows rows (down is +) in drum rows. As far as all moved notes move by the same number of rows and stay in the kit's
+ * keys (if not, it goes toward 0). All notes move by the same key change, so they can only move where the key changes between rows match.
  */
 export function drumMoveKeys(d: Pick<DrumGeom, "keys">, keys: ArrayLike<number>, notes: readonly number[], grab: number, rows: number): number {
   const rowOf = (k: number) => d.keys.indexOf(k);
@@ -337,7 +337,7 @@ export function drumMoveKeys(d: Pick<DrumGeom, "keys">, keys: ArrayLike<number>,
   return 0;
 }
 
-/** つかんだノートの終わりがグリッドに吸いつくように、長さを変える量。どのノートも 1 ティックより短くならない（吸いつくときは、つかんだノートはグリッド 1 つより短くならない）。 */
+/** The amount to change the length so the end of the grabbed note snaps to the grid. No note gets shorter than 1 tick (when snapping, the grabbed note does not get shorter than one grid step). */
 export function resizeDelta(n: Shown, notes: readonly number[], grab: number, dxTicks: number, step: number | null, grid?: Snapper): number {
   const end = noteEnd(n, grab);
   const target = end + dxTicks;
@@ -351,8 +351,8 @@ export function resizeDelta(n: Shown, notes: readonly number[], grab: number, dx
 }
 
 /**
- * つかんだノートの始まりがグリッドに吸いつくように、始まりを動かす量（終わりは動かさない。+ で短くなる。docs/history/design-notes.ja.md B-69）。
- * どのノートも 1 ティックより短くならず（吸いつくときは、つかんだノートはグリッド 1 つより短くならない）、曲の頭より前へは出ない。
+ * The amount to move the start so the start of the grabbed note snaps to the grid (the end does not move; + makes it shorter; docs/history/design-notes.ja.md B-69).
+ * No note gets shorter than 1 tick (when snapping, the grabbed note does not get shorter than one grid step), and none goes before the start of the song.
  */
 export function resizeStartDelta(n: Shown, notes: readonly number[], grab: number, dxTicks: number, step: number | null, grid?: Snapper): number {
   const start = noteStart(n, grab);
@@ -371,17 +371,17 @@ export function resizeStartDelta(n: Shown, notes: readonly number[], grab: numbe
   return ticks === 0 ? 0 : ticks;
 }
 
-/** 書く道具で押した所のノートの始まり。吸いつくときは、押したグリッドの頭。 */
+/** The start of the note at the place pressed with the draw tool. When snapping, the start of the pressed grid step. */
 export function drawStart(tick: number, step: number | null, grid?: Snapper): number {
   return Math.max(0, step ? (grid ? grid(tick, true) : floorTick(tick, step)) : Math.round(tick));
 }
 
-/** 書く道具で押したまま右へ動かしたときの長さ。いちばん短くてグリッド 1 つ（吸いつかないときは 1 ティック）。 */
+/** The length when the draw tool is held and moved right. At least one grid step (1 tick when not snapping). */
 export function drawLength(start: number, tick: number, step: number, snap: boolean, grid?: Snapper): number {
   return snap ? Math.max(step, snapWith(grid, tick, step) - start) : Math.max(1, Math.round(tick) - start);
 }
 
-/** ベロシティの帯で、上へ動かした量（CSS px）を値の差に。full は 127 の棒の高さ（CSS px）。 */
+/** The upward movement (CSS px) in the velocity lane as a change in value. full is the height of the bar at 127 (CSS px). */
 export function velocityDelta(dyUp: number, full: number): number {
   const d = Math.round((dyUp * VELOCITY_MAX) / full);
   return d === 0 ? 0 : d;
@@ -389,7 +389,7 @@ export function velocityDelta(dyUp: number, full: number): number {
 
 export const clampVelocity = (v: number) => Math.min(VELOCITY_MAX, Math.max(VELOCITY_MIN, v));
 
-/** Mod D: 選んだノートの範囲の長さを、グリッドに切り上げた分。 */
+/** Mod D: the length of the selected notes' range, rounded up to the grid. */
 export function duplicateTicks(n: Shown, notes: readonly number[], step: number): number {
   let first = Infinity;
   let last = -Infinity;
@@ -401,7 +401,7 @@ export function duplicateTicks(n: Shown, notes: readonly number[], step: number)
   return Math.max(step, Math.ceil((last - first) / step) * step);
 }
 
-/** クオンタイズしたテイクで、もとのノートと位置か長さか鍵がちがうノートの、もとの番号（ちがわなければ -1）。 */
+/** In a quantized take, the original index of each note whose position, length or key differs from the original note (-1 if the same). */
 export function movedFrom(take: TakeNotes, origin: TakeNotes, i: number): number {
   const j = take.froms[i]!;
   if (j === NO_FROM || j >= origin.starts.length) return -1;
@@ -409,15 +409,15 @@ export function movedFrom(take: TakeNotes, origin: TakeNotes, i: number): number
   return same ? -1 : j;
 }
 
-// ---- 文 ----
+// ---- Text ----
 
-/** 「3.1.0000」（小節 . 拍 . ティック）。 */
+/** 「3.1.0000」 (bar . beat . tick). */
 export function positionText(tick: number, bars: Bars): string {
   const b = barBeatTick(tick, bars);
   return `${b.bar}.${b.beat}.${tickText(b.tick)}`;
 }
 
-/** 「1.0960」（拍 . ティック）。 */
+/** 「1.0960」 (beat . tick). */
 export function lengthText(ticks: number, meter: Meter): string {
   const perBeat = ticksPerBeat(meter);
   const t = Math.max(0, Math.round(Math.abs(ticks)));
@@ -425,12 +425,12 @@ export function lengthText(ticks: number, meter: Meter): string {
   return `${beats}.${tickText(t % perBeat)}`;
 }
 
-/** 「+2」「−2」。0 は「+0」。 */
+/** 「+2」「−2」. 0 is 「+0」. */
 export const signed = (v: number) => `${v < 0 ? "−" : "+"}${Math.abs(v)}`;
 /** 「+0.0960」「−1.0000」。 */
 export const signedLength = (ticks: number, meter: Meter) => `${ticks < 0 ? "−" : "+"}${lengthText(ticks, meter)}`;
 
-/** 「1–4」: クリップの小節（終わりの小節をふくむ）。 */
+/** 「1–4」: the bars of the clip (including the last bar). */
 export function barsText(start: number, end: number, bars: Bars): string {
   const map = barsMap(bars);
   const first = map.meterAt(start).bar + 1;
@@ -439,16 +439,16 @@ export function barsText(start: number, end: number, bars: Bars): string {
   return `${first}–${last}`;
 }
 
-// ---- CC の札の数 ----
+// ---- CC tab counts ----
 
 export interface CcCounts {
-  /** サステインを踏んだ回数（CC 64 が 64 より下から 64 以上になった回数） */
+  /** How many times sustain was pressed (how many times CC 64 went from below 64 to 64 or more) */
   sustain: number;
   pitchBend: number;
   modulation: number;
-  /** 1 と 64 のほかの CC の番号 */
+  /** CC numbers other than 1 and 64 */
   others: number[];
-  /** コントロールの点の数 */
+  /** The number of control points */
   total: number;
 }
 

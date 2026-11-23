@@ -1,6 +1,6 @@
-// アレンジのオートメーションの帯の形（仕様書 2 章「オートメーションの点」、3 章 Y16、モック R10-AutoEdit ・ F6-AutoRec）。DOM を知らない。
-// トラックの行のすぐ下に、ひらいた帯（1 本 size.lane）と「＋ 帯を足す ▾」の行（size.row）が入る。
-// 帯の中の座標は、帯の左上からの CSS px。x は arrangeGeom と同じ「曲の頭からの px − 横のスクロール」。
+// The shape of automation lanes in the arrange (spec 2 "Automation point", spec 3 (Y16), mock R10-AutoEdit, F6-AutoRec). Does not know the DOM.
+// Just below a track's row come the open lanes (size.lane each) and the 「＋ 帯を足す ▾」 row (size.row).
+// Coordinates inside a lane are CSS px from the lane's top left. x is the same as arrangeGeom: "px from the song start − horizontal scroll".
 
 import type { LanePoints, LaneRef, LaneView, TrackView } from "../../bridge";
 import type { ColorName } from "../../design/tokens";
@@ -11,16 +11,16 @@ import { tickToX, xToTick, type View } from "../arrangeGeom";
 import { tickText } from "../time";
 import { hasLaneRef } from "./laneValue";
 
-// ---- トラックの行と帯の並び ----
+// ---- Track rows and the order of lanes ----
 
 export interface RowDims {
   /** size.track */
   trackH: number;
-  /** size.lane: ひらいた帯 1 本 */
+  /** size.lane: one open lane */
   laneH: number;
-  /** size.row: 「＋ 帯を足す ▾」の行 */
+  /** size.row: the 「＋ 帯を足す ▾」 row */
   rowH: number;
-  /** 歌を直している行（ArrangeView.tallTrack）と、その高さ（part.track.vocal）。 */
+  /** The row whose vocal is being edited (ArrangeView.tallTrack), and its height (part.track.vocal). */
   tall?: { track: number | null; h: number };
 }
 
@@ -36,11 +36,11 @@ export interface AddRow {
 }
 
 export interface ArrangeRows {
-  /** トラックの行の上（トラックの順）。 */
+  /** The top of each track row (in track order). */
   tops: number[];
-  /** トラックのかたまり（行と、その下の帯と行）の下。 */
+  /** The bottom of each track block (the row, and the lanes and row below it). */
   bottoms: number[];
-  /** トラックの行の高さ（歌を直している行だけ高い）。 */
+  /** The height of each track row (only the row whose vocal is being edited is taller). */
   heights: number[];
   lanes: OpenLane[];
   rows: AddRow[];
@@ -48,12 +48,12 @@ export interface ArrangeRows {
 }
 
 /**
- * 「＋ 帯を足す ▾」の行を出すトラック: 帯のあるトラックだけ（モック F7-Answers92 ・ F6-AutoRec の 2〜5 には行がない）。
- * 帯がまだないトラックの音量 ・ パンの帯を足す所は、仕様書にもモックにもない（docs/history/design-notes.ja.md B に戻す）。
+ * Tracks that show the 「＋ 帯を足す ▾」 row: only tracks that have lanes (mock F7-Answers92 and F6-AutoRec 2 to 5 have no row).
+ * Where to add a gain or pan lane to a track with no lanes yet is in neither the spec nor the mock (to be sent back in docs/history/design-notes.ja.md B).
  */
 export const showsAddRow = (track: TrackView) => track.lanes.length > 0;
 
-/** 帯は足した順。たたんだ帯は出さない（「＋ 帯を足す ▾」の一覧から、ひらきなおす）。 */
+/** Lanes in the order they were added. Folded lanes are not shown (they are opened again from the 「＋ 帯を足す ▾」 list). */
 export function arrangeRows(tracks: readonly TrackView[], folded: readonly LaneRef[], d: RowDims): ArrangeRows {
   const out: ArrangeRows = { tops: [], bottoms: [], heights: [], lanes: [], rows: [], height: 0 };
   let y = 0;
@@ -77,22 +77,22 @@ export function arrangeRows(tracks: readonly TrackView[], folded: readonly LaneR
   return out;
 }
 
-// ---- 帯の中: 値と高さ ----
+// ---- Inside a lane: values and height ----
 
 export interface LaneDims {
-  /** 帯の高さ（size.lane） */
+  /** The lane height (size.lane) */
   h: number;
-  /** 上下のあき（0 と 1 の点が帯からはみ出さない） */
+  /** The space above and below (so points at 0 and 1 stay inside the lane) */
   pad: number;
   /** line.hair */
   hair: number;
-  /** 点の大きさ（part.cc.point、6×6） */
+  /** The point size (part.cc.point, 6×6) */
   point: number;
-  /** 帯の下から上が見せる位置の範囲（laneRange）。なければ 0〜1。 */
+  /** The range of positions shown from the bottom to the top of the lane (laneRange). 0 to 1 if not given. */
   range?: LaneRange;
 }
 
-/** 帯の縦が見せる位置（0〜1）の範囲。lo が下のはし、hi が上のはし。 */
+/** The range of positions (0 to 1) the lane shows vertically. lo is the bottom edge, hi the top edge. */
 export interface LaneRange {
   lo: number;
   hi: number;
@@ -101,9 +101,9 @@ export interface LaneRange {
 export const FULL_RANGE: LaneRange = { lo: 0, hi: 1 };
 
 /**
- * 帯の縦（仕様書 3 章 92-6 ・ 21-B）: 点のいちばん下からいちばん上まで、上下に 1 割のゆとり。点が 1 つか、どれも同じ値なら、
- * その値のまわりにパラメータの幅の 1 割。オン ・ オフとミュート（階段の帯）は、いつも下〜上。点がないときも下〜上。
- * 0〜1 からはみ出す分は、反対の側へずらす。
+ * The lane's vertical range (spec 3 (92-6, 21-B)): from the lowest point to the highest, with 10 % room above and below. If there is one point, or all have the same value,
+ * 10 % of the parameter's width around that value. On/off and mute (stepped lanes) are always bottom to top. Also bottom to top when there are no points.
+ * What goes outside 0 to 1 is shifted to the other side.
  */
 export function laneRange(pts: readonly Pt[], step: boolean): LaneRange {
   if (step || pts.length === 0) return FULL_RANGE;
@@ -119,7 +119,7 @@ export function laneRange(pts: readonly Pt[], step: boolean): LaneRange {
   return { lo, hi: lo + width };
 }
 
-/** 範囲の上と下の字にする位置（「上 −3.0 dB」「下 −9.0 dB」、モック Opt7-LaneScale）: 点のいちばん上と下。点が 1 つか同じ値なら、範囲のはし。 */
+/** The positions for the top and bottom range text (「上 −3.0 dB」「下 −9.0 dB」, mock Opt7-LaneScale): the highest and lowest points. If there is one point or all are the same, the edges of the range. */
 export function rangeEnds(pts: readonly Pt[], range: LaneRange): LaneRange {
   const values = pts.map((p) => p.value);
   const lo = Math.min(...values);
@@ -133,14 +133,14 @@ const widthOf = (d: LaneDims) => {
   return Math.max(1e-9, r.hi - r.lo);
 };
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
-/** 位置（0〜1）→ y。範囲の上が帯の上。範囲の外は帯のはしで止める。 */
+/** Position (0 to 1) → y. The top of the range is the top of the lane. Outside the range, it stops at the lane's edge. */
 export const valueToY = (d: LaneDims, value: number) => {
   const t = clamp01((clamp01(value) - (d.range?.lo ?? 0)) / widthOf(d));
   return Math.round((d.pad + (1 - t) * span(d)) / d.hair) * d.hair;
 };
-/** y → 位置（0〜1 に入れる）。 */
+/** y → position (clamped to 0 to 1). */
 export const yToValue = (d: LaneDims, y: number) => clamp01((d.range?.lo ?? 0) + (1 - (y - d.pad) / span(d)) * widthOf(d));
-/** 上下に dy px 動かしたときの位置の差。 */
+/** The change in position when moved dy px up or down. */
 export const dyToValue = (d: LaneDims, dy: number) => (-dy / span(d)) * widthOf(d);
 
 export interface Pt {
@@ -154,12 +154,12 @@ export function pointList(p: Pick<LanePoints, "ticks" | "values">): Pt[] {
   return out;
 }
 
-// ---- ドラッグ（画面だけが先に動き、離して意図を 1 つ） ----
+// ---- Dragging (only the screen moves first; one intent on release) ----
 
 export interface PointDrag {
-  /** 動かす点（帯の中の番号、ティックの順）。 */
+  /** The points to move (indexes in the lane, in tick order). */
   points: number[];
-  /** つかんだ点。 */
+  /** The point that was grabbed. */
   grab: number;
   downX: number;
   downY: number;
@@ -168,7 +168,7 @@ export interface PointDrag {
   dValue: number;
 }
 
-/** 横は拍の頭に吸いつき（Shift ならティック）、上下は位置。いちばん前の点が曲の頭で止まる。 */
+/** Sideways it snaps to the start of beats (ticks with Shift); up and down is position. The first point stops at the start of the song. */
 export function dragPoints(drag: PointDrag, pts: readonly Pt[], v: View, d: LaneDims, map: TempoMap, x: number, y: number, still: number, shift: boolean): PointDrag {
   const moved = drag.moved || Math.hypot(x - drag.downX, y - drag.downY) >= still;
   if (!moved) return drag;
@@ -182,7 +182,7 @@ export function dragPoints(drag: PointDrag, pts: readonly Pt[], v: View, d: Lane
   return { ...drag, moved, dTick, dValue };
 }
 
-/** ドラッグ中の点の並び。動かした点がほかの点と同じティックに来たら、そこの点と入れかわる。moved は動かしている点の印。 */
+/** The points while dragging. If a moved point lands on the same tick as another point, it takes that point's place. moved marks the points being moved. */
 export function draggedPoints(pts: readonly Pt[], drag: PointDrag | null): { pts: Pt[]; moving: boolean[] } {
   if (!drag?.moved) return { pts: [...pts], moving: pts.map((_, i) => drag?.points.includes(i) ?? false) };
   const chosen = new Set(drag.points);
@@ -193,19 +193,19 @@ export function draggedPoints(pts: readonly Pt[], drag: PointDrag | null): { pts
   return { pts: all.map((a) => a.p), moving: all.map((a) => a.moving) };
 }
 
-// ---- 絵（arrangeLanes の 1 枚に、ほかの slot と同じく四角で） ----
+// ---- Drawing (on one canvas of arrangeLanes, as rectangles like the other slots) ----
 
 export interface LaneLook {
-  /** 休み、仮の休み: 線が gray.7。 */
+  /** Resting, or resting for now: the line is gray.7. */
   resting: boolean;
-  /** 「● 書く」がオン: 点は accent の枠だけ（書く前）。 */
+  /** 「● 書く」 is on: points are only an accent border (before writing). */
   armed: boolean;
-  /** えらんだ点（帯の中の番号。ドラッグ中は、動かしている点）。 */
+  /** The selected points (indexes in the lane; while dragging, the points being moved). */
   selected: (i: number) => boolean;
   hovered: number;
-  /** ドラッグ中の、点のもとの所（accent の枠）。 */
+  /** While dragging, the original place of the points (accent border). */
   from: readonly Pt[];
-  /** 点がないときの平らな線（手で置いた値）。分からなければ null。 */
+  /** The flat line when there are no points (the value set by hand). Null if not known. */
   flat: number | null;
 }
 
@@ -218,7 +218,7 @@ function lineRun(out: GlRect[], xa: number, ya: number, xb: number, yb: number, 
     out.push({ x: from, y: ya, w: to - from + h, h, color });
     return;
   }
-  // 斜めの線は、高さの同じ所をまとめた hair の四角の列で。
+  // A slanted line as a row of hair rectangles, joining spans of the same height.
   const at = (x: number) => Math.round((ya + ((yb - ya) * (x - xa)) / (xb - xa)) / h) * h;
   let runX = from;
   let runY = at(from);
@@ -233,7 +233,7 @@ function lineRun(out: GlRect[], xa: number, ya: number, xb: number, yb: number, 
   out.push({ x: runX, y: runY, w: to - runX + h, h, color });
 }
 
-/** 線（gray.9 の 1px、休みは gray.7。階段の帯は階段の形）と点（6×6、ふつう gray.10、えらんだ点 accent、乗った点に accent の 1px の枠）。 */
+/** The line (1px gray.9, gray.7 when resting; a staircase for stepped lanes) and points (6×6; normally gray.10, selected points accent, a hovered point with a 1px accent border). */
 export function laneRects(v: View, pts: readonly Pt[], step: boolean, d: LaneDims, look: LaneLook): GlRect[] {
   const out: GlRect[] = [];
   const color: ColorName = look.resting ? "color.gray.7" : "color.gray.9";
@@ -285,9 +285,9 @@ export function laneRects(v: View, pts: readonly Pt[], step: boolean, d: LaneDim
   return out;
 }
 
-// ---- 押した所 ----
+// ---- Where it was pressed ----
 
-/** (x, y) の点（点の四角のまわり grab px まで）。いちばん近い点の番号、なければ -1。 */
+/** The point at (x, y) (up to grab px around the point's square). The nearest point's index, or -1. */
 export function pointAt(v: View, pts: readonly Pt[], d: LaneDims, x: number, y: number, grab: number): number {
   let best = -1;
   let bestD = Infinity;
@@ -302,7 +302,7 @@ export function pointAt(v: View, pts: readonly Pt[], d: LaneDims, x: number, y: 
   return best;
 }
 
-/** 囲んだ四角（どちらの角からでも）の中の点の番号（ティックの順）。 */
+/** The indexes of the points inside the box (dragged from either corner), in tick order. */
 export function pointsInBox(v: View, pts: readonly Pt[], d: LaneDims, ax: number, ay: number, bx: number, by: number): number[] {
   const x0 = Math.min(ax, bx);
   const x1 = Math.max(ax, bx);
@@ -317,20 +317,20 @@ export function pointsInBox(v: View, pts: readonly Pt[], d: LaneDims, ax: number
   return out;
 }
 
-/** 空いた所を押して足す点のティック（拍の頭。Shift ならティック）。 */
+/** The tick of a point added by pressing an empty place (the start of a beat; a tick with Shift). */
 export function addTick(v: View, map: TempoMap, x: number, shift: boolean): number {
   const at = Math.max(0, xToTick(v, x));
   return shift ? Math.round(at) : nearestBeatTick(map, at);
 }
 
-/** 番号の範囲（[start, end) の列）を番号の Set に。 */
+/** A range of indexes (a list of [start, end)) to a Set of indexes. */
 export function indexSet(ranges: readonly { start: number; end: number }[]): Set<number> {
   const out = new Set<number>();
   for (const r of ranges) for (let i = r.start; i < r.end; i++) out.add(i);
   return out;
 }
 
-/** 読み値の位置の差「+0. 1. 0000」（小節 . 拍 . ティック。もとの所の拍子で数える）。 */
+/** The position change for the reading, 「+0. 1. 0000」 (bar . beat . tick, counted in the time signature at the original place). */
 export function deltaText(ticks: number, perBar: number, perBeat: number): string {
   const a = Math.abs(Math.round(ticks));
   const bars = Math.floor(a / perBar);

@@ -1,5 +1,5 @@
-<!-- トラックの帯の下の「＋ 帯を足す ▾」の行（仕様書 3 章 92-5 ・ 20-A、モック Opt7-AddLane ・ F7-Answers92）。
-     押すと帯を足す一覧（laneAdd.svelte.ts）。右はしの数は、たたんでいるパラメータの帯の数（モック F6-ParamMany の 2）。 -->
+<!-- The 「＋ 帯を足す ▾」 row below a track's lanes (spec 3 (92-5, 20-A), mock Opt7-AddLane, F7-Answers92).
+     Pressing it opens the list to add a lane (laneAdd.svelte.ts). The number at the right end is how many parameter lanes are folded (2 in mock F6-ParamMany). -->
 <script lang="ts">
   import type { TrackView } from "../../bridge";
   import { current } from "../../state/app.svelte";

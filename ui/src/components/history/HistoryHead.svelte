@@ -1,4 +1,4 @@
-<!-- 取り消しの履歴の帯の見出しの行の、名前より右（モック F-History）: 手の数といまの手、取り消す ・ やりなおすのボタン。 -->
+<!-- The right side of the undo history band's heading row, after the name (mock F-History): the step count, the current step, and the undo and redo buttons. -->
 <script lang="ts">
   import { platformOf } from "../../keys/keys";
   import { current, send } from "../../state/app.svelte";
@@ -7,7 +7,7 @@
 
   const history = $derived(current.state!.history);
   const mod = platformOf(navigator) === "mac" ? t("key.cmd") : t("key.ctrl");
-  // 見出しの文（仕様書 6 章「履歴の見出し」）。キーの名前だけ等幅（モック R11-Answers92）。
+  // The heading text (spec 6, "History heading"). Only the key names use the digit face (mock R11-Answers92).
   const head = $derived.by((): TextPart[] => {
     const { total, current: now, redo } = history;
     if (total === 0) return textParts("history.headEmpty", {});

@@ -1,7 +1,7 @@
-<!-- ピアノロールの道具の列（モック A-PianoRoll・F-PRPlay・F-PRRec の帯のいちばん上の行）。
-     「▾ ピアノロール」（押すとたたむ。B-74）、クリップの文、テイクの切りかえの札、道具（選ぶ ・ 書く ・ 消す。右はしにキー）、横の − ＋（R3-Arrange と同じ形）、
-     グリッド（一覧）、三連符、スケール固定と音階の ▾（B-65）。ドラムのトラックでは、スケール固定と ▾ は「使えない」（仕様書 3 章、6 章）。横が足りなければ、道具のキー、クリップの文の順に引っこめる（F-PR150、B-73）。
-     キーがピアノロールに向いているときは、上辺に accent の線（B-72）。 -->
+<!-- The piano roll toolbar (the top row of the band in mock A-PianoRoll, F-PRPlay, F-PRRec).
+     「▾ ピアノロール」 (pressing folds it; B-74), the clip text, the take switch tag, the tools (select, draw, erase, with keys at the right end), horizontal − ＋ (the same shape as R3-Arrange),
+     grid (a list), triplet, scale lock and the scale ▾ (B-65). On a drum track, scale lock and ▾ are 「使えない」 (spec 3, spec 6). If there is not enough width, the tool keys and then the clip text are hidden (F-PR150, B-73).
+     When keys go to the piano roll, an accent line on the top edge (B-72). -->
 <script lang="ts">
   import { onMount, untrack } from "svelte";
   import { liveNotes, type Command, type ScaleMode } from "../../bridge";
@@ -34,7 +34,7 @@
   const selectedCount = $derived(G.indexesOf(pr.selectedNotes).length);
   const drums = $derived(rollShowsDrums(app, clip, track));
 
-  // 録音中のノートの数は、録っている物の数（F-PRRec「録音中 ・ ノート 22」）。
+  // While recording, the note count is the number of notes being recorded (F-PRRec 「録音中 ・ ノート 22」).
   let liveCount = $state(0);
   $effect(() => {
     const r = rec;
@@ -52,7 +52,7 @@
 
   const info = $derived.by((): { key: TextKey; values: Record<string, string | number> } | null => {
     if (!clip || !track) {
-      // クリップがない所（仕様書 3 章）: 弾くと鳴る先のトラック。
+      // Where there is no clip (spec 3): the track of 「弾くと鳴る先」.
       const target = app.song.tracks.find((x) => x.id === app.song.keysTarget);
       return !clip && target && app.transport.recording === null ? { key: "pr.noClip", values: { number: target.number, track: target.name } } : null;
     }
@@ -64,8 +64,8 @@
   });
   const MONO = new Set(["number", "bars", "count"]);
 
-  // 横が足りなければ、道具のキー、クリップの文の順に出さない。クリップの文の幅は、出していなくても scrollWidth で測れる。
-  // キーの幅は、見えない写し（ruler）で測る。
+  // If there is not enough width, the tool keys and then the clip text are not shown. The clip text width can be measured with scrollWidth even when not shown.
+  // The key width is measured with a hidden copy (ruler).
   let row = $state<HTMLElement>();
   let ruler = $state<HTMLElement>();
   let infoNode = $state<HTMLElement>();
@@ -114,7 +114,7 @@
     send({ type: "setGrid", division, triplet: pr.grid.triplet });
     closeMenu();
   }
-  // 音階の ▾ でえらんだら、スケール固定をオンにする（B-65）。
+  // Choosing with the scale ▾ turns scale lock on (B-65).
   function pickScale(root: number, mode: ScaleMode): void {
     send({ type: "setMusicalScale", root, mode, lock: true } satisfies Command);
     closeMenu();
@@ -131,7 +131,7 @@
     closeMenu();
   }
 
-  // グリッドの一覧と音階の一覧（仕様書 2 章「一覧」。押した物のすぐ下か上にひらく。Esc か外を押すと、とじる）。
+  // The grid list and the scale list (spec 2 "List"; opens just below or above what was pressed; Esc or pressing outside closes it).
   type Menu = "grid" | "scale" | "chord";
   let menu = $state<Menu | null>(null);
   const menuOpen = $derived(menu === "grid");
@@ -148,7 +148,7 @@
   });
   const gridRows = $derived(G.GRID_DIVISIONS.map((d) => ({ value: d as number, label: gridText(d, false) })));
 
-  /** グリッドの一覧はすぐ下（はみ出せば一覧が窓の中へずれる）。音階の一覧は長いので、右の欄と同じく、すぐ下か上の広いほうに入る高さで。 */
+  /** The grid list opens just below (if it sticks out, the list moves inside the window). The scale list is long, so like the right panel, it fits just below or above, whichever has more room. */
   function place(): void {
     const button = menuButton;
     if (!button) return;
@@ -159,7 +159,7 @@
     }
     const below = window.innerHeight - r.bottom;
     const above = r.top;
-    // 道具の列の右はしにあるので、窓の右からはみ出すときは窓の中へ寄せる。
+    // It is at the right end of the toolbar, so if it sticks out of the window on the right, it is moved inside the window.
     const left = Math.max(0, Math.min(r.left, window.innerWidth - metrics.px("part.list.width")));
     anchor =
       below >= above
@@ -177,7 +177,7 @@
     if (hadFocus) button?.focus();
   }
   const toggleMenu = (which: Menu) => (menu = menu === which ? null : which);
-  // ドラムに切りかわったら、音階の一覧はとじる（▾ が「使えない」になる）。
+  // When it switches to drums, the scale list closes (▾ becomes 「使えない」).
   $effect(() => {
     const open = untrack(() => menu);
     if (drums && (open === "scale" || open === "chord")) menu = null;
@@ -356,7 +356,7 @@
     white-space: nowrap;
     overflow: hidden;
   }
-  /* キーが向く帯の印（B-72）: 上辺に accent の line.mark。高さは変えず、重ねて描く。 */
+  /* The mark of the band that keys go to (B-72): a line.mark accent on the top edge. Drawn on top without changing the height. */
   .focus-mark {
     position: absolute;
     left: 0;
@@ -366,14 +366,14 @@
     background: var(--color-accent);
     pointer-events: none;
   }
-  /* 「▾ ピアノロール」: 押すとたたむ。状態は仕様書 2 章のボタン（枠は内がわに描く）。 */
+  /* 「▾ ピアノロール」: pressing folds it. States are those of the button in spec 2 (the border is drawn inside). */
   .head {
     flex-shrink: 0;
     align-self: stretch;
     display: flex;
     align-items: center;
     gap: var(--space-3);
-    /* 押せる所は帯の左はしから。右どなりとの間は、ほかの物と同じ space.3 のまま。 */
+    /* The pressable area starts at the band's left edge. The gap to the right neighbor stays space.3 like the others. */
     margin: 0 calc(-1 * var(--space-2)) 0 calc(-1 * var(--space-3));
     padding: 0 var(--space-2) 0 var(--space-3);
   }
@@ -449,7 +449,7 @@
   .m-btn.on .m-num {
     color: var(--color-accent);
   }
-  /* キーは、オンでも gray.8 のまま（再生まわりと同じ）。 */
+  /* Keys stay gray.8 even when on (the same as the transport). */
   .m-btn .key {
     color: var(--color-gray-8);
   }
@@ -459,7 +459,7 @@
     padding: 0;
     border-left: 0;
   }
-  /* 音階の ▾（B-65）: メトロノームの ▾ と同じ形。幅 20 で、スケール固定のボタンの右にすきまなく。間の線は 1 本。 */
+  /* The scale ▾ (B-65): the same shape as the metronome ▾. 20 wide, right after the scale lock button with no gap. One line between. */
   .scale-stub {
     width: calc(var(--part-metronomemenu-width) - var(--line-hair));
     padding: 0;
@@ -474,7 +474,7 @@
     visibility: hidden;
     pointer-events: none;
   }
-  /* 重なり: ダイアログ（30）より上、用語の説明（1000）より下。 */
+  /* Stacking: above dialogs (30), below term tips (1000). */
   .popup {
     position: fixed;
     z-index: 40;

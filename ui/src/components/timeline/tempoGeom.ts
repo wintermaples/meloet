@@ -1,5 +1,5 @@
-// アレンジの「テンポ ・ 拍子の変更」の帯の形（仕様書 3 章 Y17 の 18-C、モック F6-Tempo ・ Opt6-Tempo）。DOM を知らない。
-// 下の段（テンポ）の座標は段の左上からの CSS px。x は arrangeGeom と同じ「曲の頭からの px − 横のスクロール」。
+// The shape of the arrange's 「テンポ ・ 拍子の変更」 band (spec 3 (Y17, 18-C), mock F6-Tempo, Opt6-Tempo). Does not know the DOM.
+// Coordinates of the lower (tempo) row are CSS px from the row's top left. x is the same as arrangeGeom: "px from the song start − horizontal scroll".
 
 import type { TimelineRef, TimelineView } from "../../bridge";
 import type { ColorName } from "../../design/tokens";
@@ -11,19 +11,19 @@ import { tickToX, xToTick, type View } from "../arrangeGeom";
 import { tempoText } from "../format";
 import { TEMPO_MAX, TEMPO_MIN } from "../time";
 
-/** 曲の頭（ティック 0）もふくめた、テンポの点。 */
+/** A tempo point, including the start of the song (tick 0). */
 export interface TempoPt {
   tick: number;
   bpm: number;
   ramp: boolean;
 }
 
-/** 曲の頭の点と、変更の点（ティックの順）。 */
+/** The point at the start of the song and the change points (in tick order). */
 export function tempoPoints(t: Pick<TimelineView, "tempoBpm" | "headRamp" | "tempoPoints">): TempoPt[] {
   return [{ tick: 0, bpm: t.tempoBpm, ramp: t.headRamp }, ...t.tempoPoints.map((p) => ({ tick: p.tick, bpm: p.tempoBpm, ramp: p.ramp }))];
 }
 
-/** 拍子の旗（曲の頭の小節 0 もふくめる）。 */
+/** Time signature flags (including bar 0 at the start of the song). */
 export interface Flag {
   bar: number;
   tick: number;
@@ -38,7 +38,7 @@ export function flags(t: Pick<TimelineView, "meterNum" | "meterDen" | "meterChan
   ];
 }
 
-/** 変更の件数: 変わる所（ティック）の数。同じ所のテンポの点と拍子の旗は 1 件（docs/history/design-notes.ja.md B-92）。 */
+/** The number of changes: the number of places (ticks) where something changes. A tempo point and a time signature flag at the same place count as 1 (docs/history/design-notes.ja.md B-92). */
 export function changeCount(t: Pick<TimelineView, "tempoPoints" | "meterChanges">, map: TempoMap): number {
   const at = new Set<number>(t.tempoPoints.map((p) => p.tick));
   for (const c of t.meterChanges) at.add(map.tickOfBar(c.bar));
@@ -46,11 +46,11 @@ export function changeCount(t: Pick<TimelineView, "tempoPoints" | "meterChanges"
   return at.size;
 }
 
-/** テンポを高さに: いちばん高いテンポが上から pad、いちばん低いテンポが下から pad。全部同じなら、まん中。 */
+/** Tempo to height: the highest tempo is pad from the top, the lowest is pad from the bottom. If all are the same, the middle. */
 export interface TempoScale {
   hi: number;
   lo: number;
-  /** 1.00 の px（上へ）。全部同じテンポなら fallback。 */
+  /** px per 1.00 (upward). fallback if all tempos are the same. */
   pxPerBpm: number;
   height: number;
   pad: number;
@@ -71,22 +71,22 @@ export function bpmToY(s: TempoScale, bpm: number): number {
   return s.hi > s.lo ? s.pad + (s.hi - bpm) * s.pxPerBpm : s.height / 2 - (bpm - s.hi) * s.pxPerBpm;
 }
 
-/** 0.01 にまるめて、30.00〜300.00 に入れる。 */
+/** Rounds to 0.01 and clamps to 30.00 to 300.00. */
 export function tidyBpm(bpm: number): number {
   return Math.min(TEMPO_MAX, Math.max(TEMPO_MIN, Math.round(bpm * 100) / 100));
 }
 
-/** その場所の線の上のテンポ（点を足すときの値）。 */
+/** The tempo on the line at that place (the value for a new point). */
 export const bpmAt = (map: TempoMap, tick: number) => tidyBpm(map.tempoAt(tick));
 
 export interface BandDims {
   /** line.hair */
   hair: number;
-  /** 点の大きさ（6×6） */
+  /** The size of a point (6×6) */
   point: number;
 }
 
-/** 点の印。 */
+/** A point mark. */
 export interface PointLook {
   selected: boolean;
   hovered: boolean;
@@ -94,7 +94,7 @@ export interface PointLook {
 
 const LINE: ColorName = "color.gray.9";
 
-/** 斜めの線を、高さの同じ所をまとめた hair の四角の列で（見えている幅の外は描かない）。 */
+/** A slanted line as a row of hair rectangles, joining spans of the same height (nothing is drawn outside the visible width). */
 function slope(out: GlRect[], xa: number, ya: number, xb: number, yb: number, d: BandDims, width: number): void {
   const h = d.hair;
   const from = Math.max(xa, -h);
@@ -114,7 +114,7 @@ function slope(out: GlRect[], xa: number, ya: number, xb: number, yb: number, d:
   out.push({ x: runX, y: runY, w: to - runX + h, h, color: LINE });
 }
 
-/** 横の線（見えている幅の中だけ）。 */
+/** A horizontal line (only inside the visible width). */
 function flat(out: GlRect[], x0: number, x1: number, y: number, d: BandDims, width: number): void {
   const a = Math.max(x0, -d.hair);
   const b = Math.min(x1, width + d.hair);
@@ -124,8 +124,8 @@ function flat(out: GlRect[], x0: number, x1: number, y: number, d: BandDims, wid
 const clampY = (y: number, s: TempoScale, d: BandDims) => Math.min(Math.max(y, 0), s.height - d.hair);
 
 /**
- * テンポの階段の線と、だんだんの斜めの線、点（6×6、ふつう gray.10、えらんだ点は accent、乗った点は accent の 1px の枠）。
- * from: ドラッグ中なら、点のもとの所（accent の枠）。
+ * The tempo staircase line, the slanted ramp lines, and points (6×6; normally gray.10, a selected point accent, a hovered point with a 1px accent border).
+ * from: while dragging, the original place of the point (accent border).
  */
 export function tempoRects(
   v: View,
@@ -182,7 +182,7 @@ export function tempoRects(
   return out;
 }
 
-/** 点の値の文字を置く所（点の右下）と、だんだんの文字を置く所（斜めの線のまん中の上）。 */
+/** Where to put a point's value text (below right of the point) and the ramp text (above the middle of the slanted line). */
 export interface TempoLabel {
   tick: number;
   x: number;
@@ -196,7 +196,7 @@ export function tempoLabels(v: View, points: readonly TempoPt[], s: TempoScale, 
     .filter((l) => l.x < v.width && l.x > -v.width);
 }
 
-/** だんだんの区間（見えている所にかかる物）。x は線のまん中。 */
+/** Ramp spans (those touching the visible part). x is the middle of the line. */
 export function rampSpans(v: View, points: readonly TempoPt[]): { tick: number; x0: number; x1: number }[] {
   const out: { tick: number; x0: number; x1: number }[] = [];
   for (let i = 0; i + 1 < points.length; i++) {
@@ -211,7 +211,7 @@ export function rampSpans(v: View, points: readonly TempoPt[]): { tick: number; 
   return out;
 }
 
-/** (x, y) の点（点の四角のまわり grab px まで）。いちばん近い点の番号、なければ -1。 */
+/** The point at (x, y) (up to grab px around the point's square). The nearest point's index, or -1. */
 export function pointAt(v: View, points: readonly TempoPt[], s: TempoScale, x: number, y: number, grab: number): number {
   let best = -1;
   let bestD = Infinity;
@@ -226,7 +226,7 @@ export function pointAt(v: View, points: readonly TempoPt[], s: TempoScale, x: n
   return best;
 }
 
-/** x の旗（左はしの線から右へ w px まで、旗の文字の所）。なければ -1。 */
+/** The flag at x (from its left edge line up to w px to the right, where the flag text is). -1 if none. */
 export function flagAt(v: View, fs: readonly Flag[], x: number, widths: readonly number[]): number {
   for (let i = fs.length - 1; i >= 0; i--) {
     const fx = tickToX(v, fs[i]!.tick);
@@ -235,10 +235,10 @@ export function flagAt(v: View, fs: readonly Flag[], x: number, widths: readonly
   return -1;
 }
 
-// ---- ドラッグ（画面だけが先に動き、離して意図を 1 つ） ----
+// ---- Dragging (only the screen moves first; one intent on release) ----
 
 export interface PointDrag {
-  /** もとの点のティック（点の名前）。 */
+  /** The tick of the original point (the point's name). */
   tick: number;
   fromBpm: number;
   toTick: number;
@@ -248,7 +248,7 @@ export interface PointDrag {
   moved: boolean;
 }
 
-/** 横は拍の頭に吸いつき（Shift ならティック）、上下はテンポ。曲の頭の点は横に動かない。 */
+/** Sideways it snaps to the start of beats (ticks with Shift); up and down is tempo. The point at the start of the song does not move sideways. */
 export function dragPoint(d: PointDrag, v: View, s: TempoScale, map: TempoMap, x: number, y: number, still: number, shift: boolean): PointDrag {
   const moved = d.moved || Math.hypot(x - d.downX, y - d.downY) >= still;
   if (!moved) return d;
@@ -258,7 +258,7 @@ export function dragPoint(d: PointDrag, v: View, s: TempoScale, map: TempoMap, x
   return { ...d, moved, toTick, bpm };
 }
 
-/** ドラッグ中の点の並び（動かした点が、ほかの点と同じ所に来たら、そこの点と入れかわる）。 */
+/** The points while dragging (if the moved point lands on the same place as another point, it takes that point's place). */
 export function draggedPoints(points: readonly TempoPt[], d: PointDrag | null): TempoPt[] {
   if (!d || !d.moved) return [...points];
   const moving = points.find((p) => p.tick === d.tick);
@@ -273,7 +273,7 @@ export interface FlagDrag {
   moved: boolean;
 }
 
-/** 旗は小節の頭に吸いつく。曲の頭の旗は動かない。 */
+/** A flag snaps to the start of bars. The flag at the start of the song does not move. */
 export function dragFlag(d: FlagDrag, v: View, map: TempoMap, x: number, still: number): FlagDrag {
   const moved = d.moved || Math.abs(x - d.downX) >= still;
   if (!moved || d.bar === 0) return moved === d.moved ? d : { ...d, moved };
@@ -281,7 +281,7 @@ export function dragFlag(d: FlagDrag, v: View, map: TempoMap, x: number, still: 
   return { ...d, moved, toBar: Math.max(1, nearestBarLine(map, at) - 1) };
 }
 
-/** 2 回押した所に足す物: 下の段はその拍の頭のテンポの点、上の段はその小節の頭の拍子の旗。 */
+/** What a double press adds: in the lower row, a tempo point at the start of that beat; in the upper row, a time signature flag at the start of that bar. */
 export function addAt(v: View, map: TempoMap, x: number, row: "tempo" | "meter"): { tick: number; bpm: number } | { bar: number; num: number; den: number } {
   const at = Math.max(0, xToTick(v, x));
   if (row === "tempo") {
@@ -298,7 +298,7 @@ export const sameRef = (a: TimelineRef | null, b: TimelineRef | null): boolean =
   a.kind === b.kind &&
   (a.kind === "tempoPoint" ? a.tick === (b as { tick: number }).tick : a.kind === "meterChange" ? a.bar === (b as { bar: number }).bar : a.id === (b as { id: number }).id);
 
-/** ひらいた帯の見出しの 2 行（「テンポ 96.00 ほか 3」「拍子 4/4 ほか 2」。変更がなければ「ほか」なし）。 */
+/** The two lines of the open band's heading (「テンポ 96.00 ほか 3」「拍子 4/4 ほか 2」. Without changes, no 「ほか」). */
 export function summaries(tl: Pick<TimelineView, "tempoBpm" | "meterNum" | "meterDen" | "tempoPoints" | "meterChanges">): { tempo: string; meter: string } {
   const tempo = tempoText(tl.tempoBpm);
   const signature = `${tl.meterNum}/${tl.meterDen}`;

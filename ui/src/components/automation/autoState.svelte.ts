@@ -1,8 +1,8 @@
-// オートメーションの帯の点と、線の上のいまの値（docs/architecture.md 21-8）。
-// 点は LaneStore（ui/src/bridge/lane.ts）が laneId ごとに 1 回だけ取る。ここは、届いたら描きなおすための数と、
-// 帯が動かしている物（音量、パン、センド、ミュート、最初から入っているエフェクトのパラメータ）のいまの位置を持つ。
-// 位置は AutoClock が、止まっているときは状態が変わったときに、動いているときは WebGL の係のコマごとに書く。
-// 書くのは値が変わったときだけで、読んでいる所（ミキサー、帯の見出し、パラメータの欄）だけが動く。
+// The points of automation lanes, and the current value on the line (docs/architecture.md 21-8).
+// LaneStore (ui/src/bridge/lane.ts) fetches the points only once per laneId. This keeps a counter for redrawing when they arrive, and
+// the current position of what lanes move (gain, pan, send, mute, parameters of built-in effects).
+// AutoClock writes the position: when stopped, when the state changes; when moving, every frame of the WebGL manager.
+// It is written only when the value changes, so only the places that read it (mixer, lane headings, params panel) move.
 
 import { clockOffsetUs, lanePoints, peekLanePoints, type AppState, type AutoTarget, type LanePoints, type TrackView } from "../../bridge";
 import { current } from "../../state/app.svelte";
@@ -13,7 +13,7 @@ let version = $state(0);
 const RETRY_MS = 100;
 const asking = new Set<number>();
 
-/** 帯の点。まだなければ取りにいき、届いたら、これを読んでいた所が描きなおす。 */
+/** The lane's points. If not here yet, they are fetched, and on arrival the places that read this redraw. */
 export function pointsOf(laneId: number): LanePoints | undefined {
   void version;
   const had = peekLanePoints(laneId);
@@ -28,18 +28,18 @@ export function pointsOf(laneId: number): LanePoints | undefined {
       () => asking.delete(laneId),
     );
   } catch {
-    // つながる前（最初の状態は、つながりきる少し前に来る）。少しあとで、読んでいる所にもう一度取りにいかせる。
+    // Before connecting (the first state comes a little before the connection is complete). A little later, the readers are made to fetch again.
     asking.delete(laneId);
     setTimeout(() => (version += 1), RETRY_MS);
   }
   return undefined;
 }
 
-// ---- いまの位置 ----
+// ---- Current position ----
 
-// 位置はふつうの Map に持ち、変わったらトラックごとの数を 1 つ進める（読む所はこの数で読みなおす）。トラックごとなので、
-// 64 本の曲でも、読みなおすのは動いたトラックを見せている所だけ。数（$state）は書く側が先に作る: 読む所（$derived の中）で初めて
-// 作った $state は、その $derived の依存にならない。まだない数を読んだ所は made で読みなおす。
+// Positions are kept in a plain Map, and when one changes, the per-track counter goes up by 1 (readers read again by this counter). It is per track, so
+// even in a song with 64 tracks, only the places showing the moved track read again. The writer makes the counter ($state) first: a $state first
+// made by a reader (inside a $derived) does not become a dependency of that $derived. A reader that read a counter that did not exist yet reads again by made.
 class Tick {
   n = $state(0);
 }
@@ -58,71 +58,71 @@ function bump(ticks: Map<number, Tick>, track: number): void {
   }
 }
 
-/** 線の上のいちばん新しい位置（トラック → 何を（targetKey）→ 位置）。帯の見出し、パラメータの欄、ミキサーの値の字が読む。 */
+/** The newest position on the line (track → what (targetKey) → position). Read by lane headings, the params panel and the mixer's value text. */
 const latest = new Map<number, Map<string, number>>();
 const latestTicks = new Map<number, Tick>();
-/** ミキサーのストリップに見せている位置。待つトラックでは、latest よりおくれる。 */
+/** The position shown in mixer strips. For waiting tracks, it lags behind latest. */
 const shown = new Map<number, Map<string, number>>();
 const shownTicks = new Map<number, Tick>();
-/** 位置を画面に書いた回数（書いたあとに何かする所が読む）。 */
+/** How many times positions were written to the screen (read by places that do something after writing). */
 let wrote = $state(0);
 let any = false;
 
-// ミキサーのストリップは、自分の上の canvas が出るコマにだけ動かす（docs/architecture.md 7 章「CPU で描く WebKit」: 同じコマで変わる物は
-// 1 枚の canvas の下）。ミキサーの canvas は左右の半分ずつ 1 コマおきに出るので、出ない半分のつまみと字を同じコマで動かすと、
-// よごれた四角が 11 個をこえて窓ぜんぶの描きなおしになる。
-/** ストリップの中の、帯が動かす物の組。 */
+// A mixer strip moves only in a frame where the canvas above it is shown (docs/architecture.md 7, "WebKit that paints on the CPU": things that change in the same frame go
+// under one canvas). The mixer's canvas shows its left and right halves in turns, one per frame, so moving the knobs and text of the half not shown in the same frame
+// makes more than 11 dirty rectangles and repaints the whole window.
+/** A group of things that lanes move in a strip. */
 export type StripPart = "gain" | "pan" | "sends";
 const PARTS: readonly StripPart[] = ["gain", "pan", "sends"];
-/** ストリップが見せない物（エフェクトや音源のパラメータ）は null。 */
+/** Null for things a strip does not show (effect and instrument parameters). */
 function partOf(key: string): StripPart | null {
   if (key === "volume" || key === "mute") return "gain";
   if (key === "pan") return "pan";
   return key.startsWith("send:") ? "sends" : null;
 }
-/** 待つトラック → 組ごとの、位置を見せたときに呼んでほしい関数（coverIf ・ askIf）。 */
+/** Waiting track → per group, the functions to call when the position is shown (coverIf, askIf). */
 const gates = new Map<number, Map<StripPart, Set<() => void>>>();
 /**
- * 待つトラックのパンとセンドは、1 回に片方ずつ見せる: パンの行とセンドの行は canvas の外にあるので、同じコマに両方の四角を足すと、
- * 1 コマに描きなおす広さが 25 % の決まりに近づく。どちらの番かは、どのトラックも同じ（コマ 2 つごとに入れかわる。canvas は左右の半分を
- * 1 コマおきに出すので、どちらの半分にも、パンの番とセンドの番が交互に来る）。そろえないと、行の四角がストリップごとにばらばらになる。
+ * For a waiting track, pan and send are shown one at a time: the pan row and the send row are outside the canvas, so adding both rectangles in the same frame
+ * brings the area repainted in one frame close to the 25 % rule. Whose turn it is is the same for every track (it switches every 2 frames. The canvas shows its left and right halves
+ * in turns, one per frame, so each half gets the pan turn and the send turn in turns). If they were not lined up, the row rectangles would be scattered per strip.
  */
 const rowTurn = (): StripPart => ((frameNo >> 1) & 1 ? "pan" : "sends");
-/** いちばん新しい位置をまだ見せていない、待つトラック → 待ったコマの数。 */
+/** Waiting tracks whose newest position is not shown yet → the number of frames waited. */
 const waiting = new Map<number, number>();
 /**
- * 上の canvas が描かれないまま待つコマの数の上限。メーターの知らせが来ないコマは canvas が描かれないので、次の番まで待つ。
- * 待たずに見せると、左右の半分のつまみが同じコマで動いて、窓ぜんぶの描きなおしになる。
- * ほかのトラックの canvas は描かれているのに自分の番が来ないトラックは、見えていない（横に送った外）ので、見えるまで待つ。
+ * The most frames to wait while the canvas above is not drawn. In frames with no meter message the canvas is not drawn, so it waits for the next turn.
+ * Showing without waiting would move the knobs of both halves in the same frame and repaint the whole window.
+ * A track whose turn does not come while the other tracks' canvases are drawn is not visible (scrolled out sideways), so it waits until it is visible.
  */
 export const MAX_WAIT_FRAMES = 3;
 let frameNo = 0;
-/** どれかの箱の上の canvas が、最後に描かれたコマ。 */
+/** The frame in which the canvas above any box was last drawn. */
 let paintedAt = -Infinity;
 
-/** 帯が動かしている物の、線の上のいまの位置（0〜1）。動かしていなければ null（手で置いた値のまま）。 */
+/** The current position (0 to 1) on the line of what a lane moves. Null if it is not moving it (it stays at the value set by hand). */
 export function livePosition(track: number, target: AutoTarget): number | null {
   reads(latestTicks, track);
   return latest.get(track)?.get(targetKey(target)) ?? null;
 }
 
-/** ミキサーのストリップに見せる位置（待つトラックでは、その上の canvas を描いたコマの位置）。 */
+/** The position shown in a mixer strip (for waiting tracks, the position in the frame where the canvas above it was drawn). */
 export function shownPosition(track: number, target: AutoTarget): number | null {
   reads(shownTicks, track);
   return shown.get(track)?.get(targetKey(target)) ?? null;
 }
 
-/** 位置を書く細かさ（つまみの長さの 1/4096）。同じなら書かない。 */
+/** How finely positions are written (1/4096 of a knob's length). Not written if the same. */
 const STEP = 1 / 4096;
 
 const seenTracks = new Set<number>();
 const seenKeys = new Set<string>();
-/** 帯の番号 → 何を（毎コマ文字を作らない）。 */
+/** Lane index → what (so text is not made every frame). */
 const laneKeys = new Map<number, string>();
 
 /**
- * tick の所の線の上の位置を書く。動かしていない帯と、なくなった帯は null に。
- * inFrame: WebGL の係のコマの中。待つトラックの位置は、その上の canvas を描くとき（showTrack）に見せる。
+ * Writes the position on the line at tick. Lanes that are not moving anything, and lanes that are gone, get null.
+ * inFrame: inside a frame of the WebGL manager. The position of a waiting track is shown when the canvas above it is drawn (showTrack).
  */
 export function refreshPositions(state: AppState, tick: number, inFrame = false): void {
   any = false;
@@ -187,8 +187,8 @@ function refreshTrack(track: TrackView, held: AppState["automation"]["held"], ti
 const differs: Record<StripPart, boolean> = { gain: false, pan: false, sends: false };
 
 /**
- * そのトラックのいちばん新しい位置を、ストリップに見せる。変わったら、読んでいる所と、待たせていた箱に知らせる。
- * turn: canvas を描くコマの 1 回分。パンとセンドは、番のほうだけ見せる。番でないほうが残っていれば true を返す。
+ * Shows the track's newest position in its strip. If it changed, tells the readers and the boxes that were kept waiting.
+ * turn: one turn of drawing the canvas. Of pan and send, only the one whose turn it is is shown. Returns true if the other one is left.
  */
 function show(track: number, turn = false): boolean {
   const from = latest.get(track);
@@ -229,7 +229,7 @@ function show(track: number, turn = false): boolean {
   return left;
 }
 
-/** 待っていたトラックの、いちばん新しい位置を見せる（そのトラックの箱の上の canvas を描くとき）。 */
+/** Shows the newest position of a waiting track (when the canvas above that track's box is drawn). */
 export function showTrack(track: number): void {
   paintedAt = frameNo;
   if (!waiting.has(track)) return;
@@ -240,8 +240,8 @@ export function showTrack(track: number): void {
 }
 
 /**
- * そのトラックを待たせる（箱が canvas の下か、そのとなりにある間）。told は、そのトラックの、その組の見せる位置が変わるたびに呼ぶ。
- * 返す関数でやめる。
+ * Makes the track wait (while its box is under the canvas or next to it). told is called each time the shown position of that group of that track changes.
+ * Stop with the returned function.
  */
 export function gateTrack(track: number, part: StripPart, told: () => void): () => void {
   const parts = gates.get(track) ?? new Map<StripPart, Set<() => void>>();
@@ -261,11 +261,11 @@ export function gateTrack(track: number, part: StripPart, told: () => void): () 
   };
 }
 
-// ミキサーの値の字は毎コマ（仕様書 3 章「オートメーションで動くつまみ」）。ただし帯の見出しの字と同じ書きかえ（同じレイアウト）に入れない:
-// 見出しの字とミキサーの行が 1 回のレイアウトにたまると、WebKit の Region がこみ入って「ぜんぶを囲む四角」になる（7 章「レイアウトで
-// ためる Region」）。見出しを書いたあとの次の小さな仕事で書き、書いたあとにもレイアウトをすませる（AutoClock の wroteVersion）。
+// The mixer's value text changes every frame (spec 3, "Knobs moved by automation"). But it is not put in the same rewrite (same layout) as the lane heading text:
+// if the heading text and the mixer row are collected in one layout, WebKit's Region gets complex and becomes "one rectangle around all" (chapter 7, "The Region collected
+// during layout"). It is written in the next small task after the heading is written, and layout is finished after writing too (AutoClock's wroteVersion).
 
-/** トラック → いちばん新しい位置が変わるたびに呼ぶ関数（毎コマ変わる値の字のまわりの箱。coverIf の askLive）。 */
+/** Track → functions to call each time the newest position changes (the boxes around value text that changes every frame; askLive in coverIf). */
 const liveWatchers = new Map<number, Set<() => void>>();
 const mixerTicks = new Map<number, Tick>();
 const mixerPending = new Set<number>();
@@ -283,13 +283,13 @@ function writeMixer(): void {
   wrote += 1;
 }
 
-/** ミキサーの値の字に出す、いちばん新しい位置（帯の見出しより 1 つあとの書きかえで変わる）。動かしていなければ null。 */
+/** The newest position for the mixer's value text (it changes one rewrite after the lane heading). Null if not moving. */
 export function mixerLivePosition(track: number, target: AutoTarget): number | null {
   reads(mixerTicks, track);
   return latest.get(track)?.get(targetKey(target)) ?? null;
 }
 
-/** そのトラックのいちばん新しい位置が変わるたびに told を呼ぶ。返す関数でやめる。 */
+/** Calls told each time the track's newest position changes. Stop with the returned function. */
 export function watchLive(track: number, told: () => void): () => void {
   const set = liveWatchers.get(track) ?? new Set();
   liveWatchers.set(track, set);
@@ -300,18 +300,18 @@ export function watchLive(track: number, told: () => void): () => void {
   };
 }
 
-/** 位置を画面に書いた回数（書いたあとに何かするために読む）。 */
+/** How many times positions were written to the screen (read to do something after writing). */
 export const wroteVersion = () => wrote;
 
-/** 帯があるか（コマごとに値を出すかどうか）。 */
+/** Whether any lane exists (whether to put out values per frame). */
 export const anyLane = (state: AppState) => state.song.tracks.some((t) => t.lanes.length > 0);
 
-// ---- 再生の線の位置 ----
+// ---- The play line position ----
 
 let offsetUs: number | null = null;
 let askingOffset = false;
 
-/** 再生の線がいる所（再生まわりの数字と同じ。docs: components/time.ts の shownTick）。 */
+/** Where the play line is (the same as the transport numbers. docs: shownTick in components/time.ts). */
 export function playTick(): number {
   const state = current.state;
   if (!state) return 0;
@@ -325,5 +325,5 @@ export function playTick(): number {
   return shownTick(state.transport, current.telemetry, offsetUs === null ? null : performance.now() * 1000 + offsetUs);
 }
 
-/** 点が届いた数（描きなおしのきっかけに読む）。 */
+/** How many times points arrived (read as the cue to redraw). */
 export const pointsVersion = () => version;

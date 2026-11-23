@@ -1,26 +1,26 @@
-// ドラムの音源（仕様書 3 章「ドラムの音源（Y4）」「ドラムのピアノロール」「SF2 のドラムのキット」）。DOM を知らない純粋な関数。
-// 最初から入っているキットの行は DRUM_ROWS の 12 の音（上から）。SF2 のキットの行は、そのキットが音を持つ鍵（TrackView.drumKeys）。
-// 名前は楽器の名前（最初から入っているキットは DRUM_ROWS の名前、SF2 は GM の鍵の番号の表）、表にない鍵は音名。
+// Drum instruments (spec 3 "Drum instruments (Y4)", "Drum piano roll", "SF2 drum kits"). Pure functions that do not know the DOM.
+// The rows of the built-in kits are the 12 sounds of DRUM_ROWS (from the top). The rows of an SF2 kit are the keys that kit has sounds for (TrackView.drumKeys).
+// Names are drum piece names (DRUM_ROWS names for built-in kits, the GM key number table for SF2); keys not in the table use note names.
 
 import { DRUM_ROWS, INSTRUMENT_GROUPS, type AppState, type ClipView, type InstrumentKind, type KeyCount, type TrackView } from "../../bridge";
 import { t, type TextKey } from "../../text/ja";
 import { noteName } from "../meterFormat";
 import { gmDrumName } from "../sounds";
 
-/** 最初から入っているキットの行の鍵（上の行から）。 */
+/** The keys of the built-in kit rows (from the top row). */
 export const DRUM_KEYS: readonly number[] = DRUM_ROWS.map((r) => r.key);
 
-/** どのキットの行を見せるか。false はドラムではない。 */
+/** Which kit's rows to show. false means not drums. */
 export type Drums = false | "builtin" | "sf2";
 
 const DRUM_INSTRUMENTS: readonly InstrumentKind[] = INSTRUMENT_GROUPS.find((g) => g.group === "drums")?.instruments ?? [];
 
-/** ドラムのグループの音源か（スタジオキット、エレクトロキット、ブラシキット）。 */
+/** Whether the instrument is in the drum group (「スタジオキット」「エレクトロキット」「ブラシキット」). */
 export function isDrumKit(instrument: InstrumentKind | null | undefined): boolean {
   return instrument != null && DRUM_INSTRUMENTS.includes(instrument);
 }
 
-/** トラックの音源がドラムのキットか。 */
+/** Whether the track's instrument is a drum kit. */
 export function trackDrums(track: Pick<TrackView, "sound"> | null | undefined): Drums {
   const s = track?.sound;
   if (!s) return false;
@@ -28,40 +28,40 @@ export function trackDrums(track: Pick<TrackView, "sound"> | null | undefined): 
   return s.kind === "sf2" && s.family === "drumKit" ? "sf2" : false;
 }
 
-/** ドラムの行の鍵（上の行から）。SF2 のキットを読んでいる間は、最初から入っているキットの行。 */
+/** The keys of the drum rows (from the top row). While an SF2 kit is loading, the built-in kit rows. */
 export function drumKeysOf(track: Pick<TrackView, "drumKeys"> | null | undefined, drums: Drums): readonly number[] {
   return drums === "sf2" && track?.drumKeys ? track.drumKeys : DRUM_KEYS;
 }
 
 /**
- * ピアノロールがドラムの行を見せるか: 見せているクリップのトラックの音源がドラムのキット。クリップのない所では、書くと
- * クリップができる先（鍵盤の行き先 keysTarget。ふだんは選んだトラック）の音源で決める。
+ * Whether the piano roll shows drum rows: the instrument of the shown clip's track is a drum kit. Where there is no clip, decided by the instrument
+ * where writing makes a clip (the keyboard's target keysTarget; usually the selected track).
  */
 export function rollShowsDrums(app: Pick<AppState, "song">, clip: ClipView | null, track: TrackView | null): Drums {
   if (clip) return trackDrums(track);
   return trackDrums(app.song.tracks.find((x) => x.id === app.song.keysTarget));
 }
 
-/** ピアノロールが見せているクリップ（なければ鍵盤の行き先 keysTarget）のトラック。 */
+/** The track of the clip the piano roll shows (or of the keyboard's target keysTarget if none). */
 export function pianoRollTrack(app: Pick<AppState, "song" | "arrange">): TrackView | null {
   const id = app.arrange.pianoRollClip;
   if (id === null) return app.song.tracks.find((x) => x.id === app.song.keysTarget) ?? null;
   return app.song.tracks.find((x) => x.clips.some((c) => c.id === id)) ?? null;
 }
 
-/** ピアノロールが見せているクリップ（なければ選んだトラック）の音源がドラムか。部品の外（キーの係）から使う。 */
+/** Whether the instrument of the clip the piano roll shows (or of the selected track if none) is drums. Used from outside the part (the key handler). */
 export function pianoRollDrums(app: Pick<AppState, "song" | "arrange">): Drums {
   return trackDrums(pianoRollTrack(app));
 }
 
-/** 楽器の名前。キットにない鍵は null。 */
+/** The drum piece name. Null for keys not in the kit. */
 export function drumName(key: number, drums: Drums = "builtin"): string | null {
   if (drums === "sf2") return gmDrumName(key);
   const row = DRUM_ROWS.find((r) => r.key === key);
   return row ? t(`drum.${row.id}` as TextKey) : null;
 }
 
-/** 打ちこんだ楽器の名前（前後の空白は見ない）の鍵。名前でなければ null。 */
+/** The key of a typed drum piece name (spaces before and after are ignored). Null if it is not a name. */
 export function drumKeyOf(text: string, drums: Drums = "builtin"): number | null {
   const name = text.normalize("NFKC").trim();
   if (drums === "sf2") {
@@ -71,13 +71,13 @@ export function drumKeyOf(text: string, drums: Drums = "builtin"): number | null
   return DRUM_ROWS.find((r) => t(`drum.${r.id}` as TextKey) === name)?.key ?? null;
 }
 
-/** 音の名前: ドラムなら楽器の名前（キットにない鍵は音名）、ほかは音名。 */
+/** The sound name: for drums, the piece name (note name for keys not in the kit); otherwise the note name. */
 export function keyLabel(key: number, drums: Drums | boolean): string {
   const kind: Drums = drums === true ? "builtin" : drums;
   return (kind ? drumName(key, kind) : null) ?? noteName(key);
 }
 
-/** 押している鍵を低い順に「キック スネア」「C4 E4 G4」。 */
+/** The held keys, lowest first: 「キック スネア」「C4 E4 G4」. */
 export function keysLabel(keys: Iterable<number>, drums: Drums | boolean): string {
   return [...keys]
     .sort((a, b) => a - b)
@@ -85,7 +85,7 @@ export function keysLabel(keys: Iterable<number>, drums: Drums | boolean): strin
     .join(" ");
 }
 
-/** 楽器の名前の中で、用語の説明（仕様書 5 章）のある言葉。長い物を先に見る（「サイドスティック」）。 */
+/** Words in drum piece names that have a term tip (spec 5). Longer ones are checked first (「サイドスティック」). */
 const DRUM_TERMS = ["サイドスティック", "ハイハット", "クラッシュ", "キック", "スネア", "クラップ", "タム", "ライド"] as const;
 
 export function drumTerm(name: string): string | null {
@@ -93,8 +93,8 @@ export function drumTerm(name: string): string | null {
 }
 
 /**
- * 鍵を弾くと鳴る先がドラムか: 棚のためし弾き（録音中でなければ）、録っているトラック、選んだトラックの順（入力計の「弾くと鳴る先」と同じ）。
- * ためし弾きの SF2 の音色は、棚の SF2 の仲間で決める。
+ * Whether the keys sound drums: the shelf audition (unless recording), the track being recorded, then the selected track (the same as 「弾くと鳴る先」 in the input meter).
+ * The SF2 sound of an audition is decided by its SF2 family on the shelf.
  */
 export function keysDrums(app: Pick<AppState, "shelf" | "transport" | "song" | "library">): Drums {
   const rec = app.transport.recording;
@@ -109,14 +109,14 @@ export function keysDrums(app: Pick<AppState, "shelf" | "transport" | "song" | "
   return trackDrums(app.song.tracks.find((x) => x.id === id));
 }
 
-/** 同じ名前をまとめた「キック ×4 スネア ×2」「C4 ×2 E4」（仕様書 3 章 85。低い音から）。 */
+/** 「キック ×4 スネア ×2」「C4 ×2 E4」 with the same names grouped (spec 3 (85); from the lowest). */
 export function keyCountsText(names: readonly KeyCount[], drums: Drums | boolean): string {
   return names
     .map((c) => (c.count > 1 ? t("note.keyCount", { name: keyLabel(c.key, drums), count: c.count }) : keyLabel(c.key, drums)))
     .join(" ");
 }
 
-/** 選んだノートの鍵から「キック ×4 スネア ×2」。名前が 5 つ以上なら、4 つのあとに「…」（右の欄の「音」）。 */
+/** 「キック ×4 スネア ×2」 from the keys of the selected notes. If there are 5 or more names, 「…」 after 4 (「音」 in the right panel). */
 export function selectedKeysText(keys: Iterable<number>, drums: Drums | boolean): string {
   const names = countKeys(keys);
   const text = keyCountsText(names.slice(0, 4), drums);

@@ -1,5 +1,5 @@
-<!-- 帯が動かしている物のいまの位置を書く係（autoState.svelte.ts）。何も描かない。
-     止まっているときは、状態か点が変わったときに再生の線の所で 1 回。動いているときは、帯があるあいだ WebGL の係のコマごと。 -->
+<!-- Writes the current position of what lanes move (autoState.svelte.ts). Draws nothing.
+     When stopped, once at the play line when the state or the points change. When moving, every frame of the WebGL manager while a lane exists. -->
 <script lang="ts">
   import { untrack } from "svelte";
   import { everyGlFrame } from "../../gl/slot";
@@ -26,10 +26,10 @@
     });
   });
 
-  // WebKit は、1 回のレイアウトの間に頼まれた描きなおしの四角をひとまとめにためて、こみ入ると「ぜんぶを囲む四角」にする
-  // （docs/architecture.md 7 章「レイアウトでためる Region」）。帯が動かした物（つまみ、値の字）が、同じコマのほかの変化（上の帯の数字）と
-  // 同じまとまりに入ると、囲む四角は上の帯からミキサーまでになる。だから、位置を書く前と、書いた物が画面にのったあとに、そこまでの
-  // レイアウトをすませて、まとまりを分ける。
+  // WebKit collects the repaint rectangles asked for during one layout, and when they get complex, makes them "one rectangle around all"
+  // (docs/architecture.md 7, "The Region collected during layout"). If what lanes moved (knobs, value text) falls into the same group as other
+  // changes in the same frame (the numbers in the top band), the bounding rectangle reaches from the top band to the mixer. So layout is
+  // finished before writing positions and after what was written is on screen, to keep the groups apart.
   function layoutNow(): void {
     void document.documentElement.scrollTop;
   }

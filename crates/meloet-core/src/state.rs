@@ -2481,8 +2481,7 @@ impl Model {
             Command::OpenReleasePage => self.open_release_page(effects),
             Command::DismissNewVersion => self.dismiss_new_version(),
 
-            // round12 stub: E2
-            Command::SetArp { .. } => {}
+            Command::SetArp { track, arp } => self.play.set_arp(track, arp, effects),
 
             // round12 stub: E3
             Command::SetSoundKnob { .. } => {}

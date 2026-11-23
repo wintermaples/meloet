@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use meloet_engine::{Effect, EngineCommand, MixStrip};
 use meloet_model::mixer::move_slot;
-use meloet_model::{Gain, INSERT_SLOTS, Insert, Inserts, Pan, Sends};
+use meloet_model::{Arp, Gain, INSERT_SLOTS, Insert, Inserts, Pan, Sends};
 use meloet_sound::effects;
 
 use crate::play::{EngineOp, StripSeat};
@@ -16,6 +16,9 @@ struct Strip {
     inserts: Inserts,
     /// The slots that are passed by, whatever they hold (a plugin is not in `inserts`).
     bypassed: [bool; INSERT_SLOTS],
+    /// 「アルペジオ」 of the track on the seat: not the mixer's, but the engine keeps it with
+    /// the seat as it keeps the strip.
+    arp: Option<Arp>,
 }
 
 /// What the engine was told about each strip, to tell an engine made anew.
@@ -76,6 +79,10 @@ impl MixBook {
                 move_slot(&mut strip.inserts, *from, *to);
                 move_slot(&mut strip.bypassed, *from, *to);
             }
+            EngineOp::Arp { seat, arp } => {
+                let strip = self.strips.entry(StripSeat::Track(*seat)).or_default();
+                strip.arp = Some(*arp);
+            }
             // The engine empties the strip with the seat. Not a mixer op: the seats see it.
             EngineOp::ClearSeat { seat } => {
                 self.strips.remove(&StripSeat::Track(*seat));
@@ -95,6 +102,9 @@ impl MixBook {
             }
             if let (StripSeat::Track(seat), Some(sends)) = (strip, s.sends) {
                 ops.push(EngineOp::Sends { seat, sends });
+            }
+            if let (StripSeat::Track(seat), Some(arp)) = (strip, s.arp) {
+                ops.push(EngineOp::Arp { seat, arp });
             }
             for (slot, insert) in s.inserts.iter().enumerate() {
                 if insert.is_some() {
@@ -174,6 +184,7 @@ pub(crate) fn command(op: &EngineOp) -> Option<EngineCommand> {
             from,
             to,
         },
+        EngineOp::Arp { seat, arp } => EngineCommand::SetArp { track: seat, arp },
         _ => return None,
     })
 }

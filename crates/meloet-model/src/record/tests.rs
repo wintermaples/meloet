@@ -577,3 +577,123 @@ fn closed_passes_are_given_once_and_late_keys_go_on() {
     assert!(plain.close_laps(5).is_empty(), "without a loop");
     assert_eq!(plain.finish(100, 0).unwrap().takes.len(), 1);
 }
+
+/// As the core does when the engine says where the person stopped.
+fn run_stopped(
+    start: u64,
+    loop_range: Option<TickRange>,
+    events: &[RecEvent],
+    stop: (i64, u32),
+) -> Option<Recorded> {
+    let mut r = Recorder::new(start, loop_range, HeldControls::default());
+    for &e in events {
+        r.push(e);
+    }
+    r.drop_after(stop.0, stop.1);
+    r.finish(stop.0, stop.1)
+}
+
+#[test]
+fn notes_said_ahead_of_the_stop_are_not_kept() {
+    // An arpeggio's notes are said when rendered: two of them lie past where the stop was
+    // heard, and one reaches past it.
+    let events = [
+        on(0, 0, 60),
+        off(384, 0, 60),
+        on(480, 0, 64),
+        off(864, 0, 64),
+        on(960, 0, 67),
+        off(1344, 0, 67),
+        on(1440, 0, 60),
+    ];
+    let r = run_stopped(0, None, &events, (500, 0)).unwrap();
+    assert_eq!(r.takes.len(), 1);
+    assert_eq!(notes(&r.takes[0]), [(0, 384, 60), (480, 20, 64)]);
+    assert_eq!(r.takes[0].length, 500);
+    // Without the cut the take would reach to the last note.
+    let r = run(0, None, &events, (500, 0)).unwrap();
+    assert_eq!(notes(&r.takes[0]).len(), 4);
+
+    // What a person played is never after the stop: nothing changes for it.
+    let played = [on(10, 0, 60), off(200, 0, 60), on(300, 0, 62)];
+    assert_eq!(
+        run_stopped(0, None, &played, (400, 0)),
+        run(0, None, &played, (400, 0))
+    );
+    // A key pressed at the very tick of the stop keeps its one tick.
+    let at_stop = [on(0, 0, 60), off(100, 0, 60), on(400, 0, 62)];
+    assert_eq!(
+        run_stopped(0, None, &at_stop, (400, 0)),
+        run(0, None, &at_stop, (400, 0))
+    );
+}
+
+#[test]
+fn a_pass_said_ahead_of_the_stop_is_not_a_take() {
+    // The engine went round the loop and said the next pass's first note; the stop was
+    // heard just before the loop's end.
+    let events = [
+        on(B, 0, 60),
+        off(B + 384, 0, 60),
+        on(2 * B - 480, 0, 64),
+        off(B, 1, 64),
+        on(B, 1, 60),
+    ];
+    let r = run_stopped(BAR, bars_2_3(), &events, (2 * B - 10, 0)).unwrap();
+    assert_eq!(r.takes.len(), 1);
+    assert_eq!(notes(&r.takes[0]), [(0, 384, 60), (BAR - 480, 470, 64)]);
+    assert_eq!(r.takes[0].length, BAR - 10);
+    // Stopped a pass later, both are takes.
+    let r = run_stopped(BAR, bars_2_3(), &events, (B + 100, 1)).unwrap();
+    assert_eq!(r.takes.len(), 2);
+    assert_eq!(notes(&r.takes[1]), [(0, 100, 60)]);
+}
+
+#[test]
+fn a_pedal_of_a_pass_goes_there_though_notes_of_the_next_pass_came_first() {
+    // The arpeggio's first note of pass 1 is said before the pedal, which the person let
+    // go of at the end of pass 0, is heard.
+    let events = [
+        on(B, 0, 60),
+        cc(B + 100, 0, CC_SUSTAIN, 127),
+        off(B + 384, 0, 60),
+        on(B, 1, 60),
+        cc(2 * B - 30, 0, CC_SUSTAIN, 0),
+        bend(2 * B - 20, 0, 500),
+        cc(2 * B - 10, 0, 7, 99),
+        off(B + 384, 1, 60),
+    ];
+    let r = run(BAR, bars_2_3(), &events, (B + 500, 1)).unwrap();
+    assert_eq!(r.takes.len(), 2);
+    assert_eq!(
+        controls(&r.takes[0]),
+        [
+            (100, sustain(127)),
+            (BAR - 30, sustain(0)),
+            (BAR - 20, ControlValue::PitchBend(500)),
+            (
+                BAR - 10,
+                ControlValue::Cc {
+                    number: 7,
+                    value: 99
+                }
+            ),
+        ]
+    );
+    // Pass 1 starts with the pedal up and the wheel where it was left.
+    assert_eq!(controls(&r.takes[1]), [(0, ControlValue::PitchBend(500))]);
+
+    // Once the pass was ended, what comes late for it goes into the pass going on.
+    let mut rec = Recorder::new(BAR, bars_2_3(), HeldControls::default());
+    for &e in &events[..4] {
+        rec.push(e);
+    }
+    assert_eq!(rec.close_laps(0).len(), 1);
+    rec.push(events[4]);
+    rec.push(events[7]);
+    let r = rec.finish(B + 500, 1).unwrap();
+    assert_eq!(
+        controls(&r.takes[0]),
+        [(0, sustain(127)), (499, sustain(0))]
+    );
+}

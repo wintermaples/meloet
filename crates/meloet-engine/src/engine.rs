@@ -23,8 +23,11 @@ use crate::probe::probe_wave;
 use crate::rt;
 use crate::stream::{STREAM_CHANNELS, StreamReader, StreamWant, want_ring};
 use crate::transport::{Click, ClickSound, Lane, Sequence, TrackSet};
-use meloet_model::{AutoTarget, Beat, Meter, TICKS_PER_QUARTER, Tempo, TempoMap, Timeline};
+use meloet_model::{Arp, AutoTarget, Beat, Meter, TICKS_PER_QUARTER, Tempo, TempoMap, Timeline};
 use meloet_plugin::ipc::Transport as PluginTransport;
+
+mod arp;
+use arp::ArpPlayer;
 
 const COMMAND_RING: usize = 256;
 const MIDI_RING: usize = 1024;
@@ -297,6 +300,15 @@ pub enum EngineCommand {
     },
     Locate {
         tick: u64,
+    },
+    /// 「アルペジオ」 of a track. While it is on and the track is the play target, the keys
+    /// of the keyboards do not sound: they are the chord, whose notes sound one at a time on
+    /// the song's grid (while it stands still, from the first key on at the tempo there),
+    /// and those notes are what is written down as played. Sequences, auditions and
+    /// controllers are left alone. Turning it or its hold off lets go of what it holds.
+    SetArp {
+        track: usize,
+        arp: Arp,
     },
 }
 
@@ -683,6 +695,8 @@ struct Track {
     voice: Option<VoiceState>,
     /// The vocal clips of the track.
     clips: ClipPlayer,
+    /// 「アルペジオ」 of the track; it runs while the track is the play target.
+    arp: Arp,
 }
 
 struct VoiceState {
@@ -835,6 +849,7 @@ impl Track {
             mute_due: u64::MAX,
             voice: None,
             clips: ClipPlayer::new(),
+            arp: Arp::default(),
         }
     }
 
@@ -1361,6 +1376,8 @@ pub struct Engine {
     /// The sample seat ([`EngineCommand::PlaySample`]); only its instrument and its fade are used.
     sample: Track,
     play_target: Option<usize>,
+    /// The arpeggio of the play target.
+    arp: ArpPlayer,
     commands: Consumer<EngineCommand>,
     retired: Producer<Box<dyn Instrument>>,
     retired_effects: Producer<Box<dyn Effect>>,
@@ -1471,6 +1488,7 @@ impl Engine {
             tracks: (0..=config.max_tracks).map(|_| Track::empty()).collect(),
             sample: Track::empty(),
             play_target: Some(0),
+            arp: ArpPlayer::new(),
             commands: command_rx,
             retired: retired_tx,
             retired_effects: effects_tx,
@@ -1632,6 +1650,7 @@ impl Engine {
         self.tone = TestTone::idle();
         self.probe = Probe::new(sample_rate.max(1));
         self.audition = None;
+        self.arp_reset();
         self.click = Click::idle();
         self.last_callback = None;
     }
@@ -1641,6 +1660,7 @@ impl Engine {
     /// change without a stream. It stops early while the retired rings are full; empty them
     /// ([`EngineHandle::drop_retired`]) and call again.
     pub fn settle(&mut self) {
+        self.arp_reset();
         self.read_commands(BlockTiming::default());
         for track in self.tracks.iter_mut().chain([&mut self.sample]) {
             track.end_fades(&mut self.retired);
@@ -1963,6 +1983,7 @@ impl Engine {
                     }
                     if self.play_target == Some(from) {
                         self.play_target = Some(to);
+                        self.arp_forget();
                     }
                     self.replay_lane(to);
                 }
@@ -1979,6 +2000,7 @@ impl Engine {
                     slot.sends_steered = [false; 2];
                     slot.mute_due = u64::MAX;
                     slot.voice = None;
+                    slot.arp = Arp::default();
                     if let Some(old) = slot.clips.clear(&mut self.retired_clips) {
                         let _ = self.retired_streams.push(old);
                     }
@@ -2000,6 +2022,9 @@ impl Engine {
                     if self.audition.is_some_and(|(t, _)| t == track) {
                         self.audition = None;
                     }
+                    if self.play_target == Some(track) {
+                        self.arp_forget();
+                    }
                 }
                 EngineCommand::PlaySample { instrument } => {
                     if let Some(old) = self.sample.instrument.replace(instrument) {
@@ -2013,6 +2038,7 @@ impl Engine {
                 }
                 EngineCommand::TestTone => self.tone.start(self.sample_rate),
                 EngineCommand::AllNotesOff => {
+                    self.arp_all_off(timing);
                     self.audition = None;
                     for instrument in self.tracks.iter_mut().filter_map(|t| t.instrument.as_mut()) {
                         instrument.event(InstrumentEvent::AllNotesOff);
@@ -2209,6 +2235,7 @@ impl Engine {
                         self.seek_lanes();
                     }
                 }
+                EngineCommand::SetArp { track, arp } => self.set_arp(track, arp, timing),
             }
         }
     }
@@ -2224,6 +2251,7 @@ impl Engine {
             instrument.event(InstrumentEvent::AllNotesOff);
         }
         self.play_target = target;
+        self.arp_forget();
     }
 
     /// After a track got another instrument: its sequence picks up at the position.
@@ -2512,6 +2540,9 @@ impl Engine {
 
     /// One event of a keyboard: it sounds on the play target and is written down as played.
     fn key_in(&mut self, midi: MidiIn, timing: BlockTiming, record_until: u64) {
+        if self.arp_key(midi, timing) {
+            return;
+        }
         if let Some(instrument) = self
             .play_target
             .and_then(|t| self.tracks[t].instrument.as_mut())
@@ -2815,7 +2846,10 @@ impl Engine {
         let mut from = 0;
         while from < frames {
             self.step_at(offset + from, timing);
-            let to = from + self.frames_to_next_point(frames - from);
+            self.arp_at(offset + from, timing);
+            let arp_left = self.arp_frames_left(offset + from).max(1);
+            let next_point = self.frames_to_next_point(frames - from) as u64;
+            let to = from + next_point.min(arp_left) as usize;
             let told = self.transport.for_plugins();
             self.plugin_block.set_transport(&told);
             let ctx = EffectContext {

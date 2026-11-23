@@ -287,7 +287,9 @@ impl ExportEngine {
             | EngineOp::PlayPattern { .. }
             | EngineOp::StopSample
             | EngineOp::HoldLane { .. }
-            | EngineOp::Voice { .. } => {}
+            | EngineOp::Voice { .. }
+            // Only the keyboards go through an arpeggio, and an export has none.
+            | EngineOp::Arp { .. } => {}
         }
     }
 

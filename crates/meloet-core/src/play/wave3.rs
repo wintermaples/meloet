@@ -43,6 +43,27 @@ pub(crate) fn arp_view(arp: &meloet_model::Arp) -> Arp {
     }
 }
 
+pub(crate) fn arp_of(arp: &Arp) -> meloet_model::Arp {
+    meloet_model::Arp {
+        on: arp.on,
+        shape: match arp.shape {
+            ArpShape::Up => meloet_model::ArpShape::Up,
+            ArpShape::Down => meloet_model::ArpShape::Down,
+            ArpShape::UpDown => meloet_model::ArpShape::UpDown,
+            ArpShape::Random => meloet_model::ArpShape::Random,
+        },
+        rate: match arp.rate {
+            ArpRate::Quarter => meloet_model::ArpRate::Quarter,
+            ArpRate::Eighth => meloet_model::ArpRate::Eighth,
+            ArpRate::Sixteenth => meloet_model::ArpRate::Sixteenth,
+            ArpRate::ThirtySecond => meloet_model::ArpRate::ThirtySecond,
+        },
+        triplet: arp.triplet,
+        octaves: arp.octaves,
+        hold: arp.hold,
+    }
+}
+
 /// `ClipView::comp`: the pieces, each naming its take by id.
 pub(crate) fn comp_view(clip: &Clip) -> Vec<CompPiece> {
     (clip.comp.iter())

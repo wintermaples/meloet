@@ -2,8 +2,8 @@
 //! built it changes nothing, as an intent with an old id.
 
 use meloet_protocol::{
-    Arp, ArpRate, ArpShape, AutoTarget, CompPiece, InstrumentKind, LaneHome, Language, SoundKnob,
-    StretchChange, TickSpan,
+    Arp, AutoTarget, CompPiece, InstrumentKind, LaneHome, Language, SoundKnob, StretchChange,
+    TickSpan,
 };
 
 use super::*;
@@ -27,18 +27,9 @@ fn the_commands_of_round_12_waves_3_and_4_are_taken_and_change_nothing_yet() {
     assert!(!before.workspace.mono_listen);
     assert_eq!(before.workspace.language, Language::Ja);
     assert_eq!(before.audio_work.bounce, None);
-    let arp = Arp {
-        on: true,
-        shape: ArpShape::UpDown,
-        rate: ArpRate::Eighth,
-        triplet: true,
-        octaves: 2,
-        hold: true,
-    };
     let master = LaneHome::Master;
     let volume = AutoTarget::Volume;
     let commands = [
-        Command::SetArp { track, arp },
         Command::SetSoundKnob {
             track,
             instrument: InstrumentKind::GrandPiano,

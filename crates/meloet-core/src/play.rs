@@ -195,6 +195,11 @@ pub enum EngineOp {
     PlayTarget {
         seat: Option<usize>,
     },
+    /// 「アルペジオ」 of the track on the seat.
+    Arp {
+        seat: usize,
+        arp: meloet_model::Arp,
+    },
     /// The fader and the pan of a strip. A muted return has the gain −∞.
     Strip {
         strip: StripSeat,
@@ -1535,6 +1540,11 @@ impl Play {
             RecordReport::Stopped { tick, lap, .. } => {
                 self.recent.forget();
                 self.recent.lost_track();
+                // The engine says an arpeggio's notes when it renders them: the ones not
+                // yet heard when the person stopped are not the take's.
+                if let Some(recorder) = self.rec.as_mut().and_then(|r| r.recorder.as_mut()) {
+                    recorder.drop_after(tick.round() as i64, lap);
+                }
                 if self.rec.as_ref().is_some_and(|r| r.recorder.is_some()) {
                     self.finish(tick, lap, effects);
                 } else if let Some(rec) = self.rec.take()
@@ -2870,6 +2880,7 @@ fn index_ranges(sorted: &[u32]) -> Vec<IndexRange> {
 }
 
 pub(crate) mod ai;
+mod arp;
 mod audio;
 mod audiosync;
 mod automation;

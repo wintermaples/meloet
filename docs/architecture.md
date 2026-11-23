@@ -1,607 +1,626 @@
-# meloet の骨組み
+# The structure of meloet
 
-> 前の「ヤチヨさん」はオーナーさん（デザインと方向を決める人）のこと（2026-11-21 に呼び名を直した。前に書いた所は書きかえていない）。
+This document explains how meloet is built inside and why it was built that way: what the code does now, the reasons, and where in the code it is.
 
-この書類は、meloet の中の作りと、そう決めた理由をまとめたものです。
-検証の結果は [`report.md`](report.md)、デザインの決まりは [`design/spec.html`](design/spec.html)（仕様書）と [`design/mock/`](design/mock/)（モック 37 枚）にあります。
-モックと仕様書が食いちがったら、仕様書が正しい。
+- The section numbers (`3-2`, `19-7`, `22-18 A1`, `23-10`, …) and their order are the same as in the old Japanese document, because comments in the code point to them by number ("architecture 23-10", "chapter 20"). Some numbers appear twice; they are kept as they were.
+- Chapters 1–18 describe the frame of the app. Chapters 19–23 record what was decided in each round of work, with the round in brackets.
+- The full Japanese text, with every measurement and the step-by-step story of each round, is in [`history/architecture.ja.md`](history/architecture.ja.md). Measurements are in `docs/history/measurements/`, research notes in `docs/history/research/`.
+- The design rules are the spec ([`spec/`](spec/), one file per chapter) and the mocks ([`design/mock/`](design/mock/)). When a mock and the spec disagree, the spec is right. The first study is in [`history/report.md`](history/report.md).
 
 ---
 
-## 1. クレートと役目
+## 1. Crates and their jobs
 
-報告書の 7-1 の分けかたに、状態の持ち主の `meloet-core` を 1 つ足しました。
+The split follows section 7-1 of the report, with one crate added: `meloet-core`, the owner of the state.
 
-| クレート | 役目 | 中に入れないもの |
+| Crate | Job | What it must not hold |
 |---|---|---|
-| `crates/meloet-model` | 曲・トラック・音源の指定。純粋なデータと操作 | 入出力、スレッド |
-| `crates/meloet-protocol` | Rust と画面の約束（型と版、計器のバイナリの並び）。TS の型もここから作る | Tauri |
-| `crates/meloet-engine` | 音の流れ、音源の口、メーター、cpal の出口。音のスレッドはメモリ確保なし・鍵なし | 画面、プラグインの形式、鍵（Mutex） |
-| `crates/meloet-midi` | 鍵盤の入力とぬきさし（Linux は ALSA シーケンサ） | 音 |
-| `crates/meloet-devices` | 音の出入口の人の言葉の名前（Linux は PipeWire の Route）、PC 全体の quantum の固定を読む | 音の処理、設定の書きかえ |
-| `crates/meloet-core` | 状態の持ち主。意図のコマンドを受けて状態を変え、rev つきの差分を出す。帯の決まり、状態行の知らせ、設定の保存 | Tauri、画面の見た目 |
-| `crates/meloet-app` | Tauri の殻。コマンドと Channel の受けわたしだけ | 状態の持ち主になること |
-| `ui/` | 画面（Svelte 5 ＋ TS）。`ui/src/bridge/` だけが Tauri を知る | Tauri の API の直接呼び出し |
+| `crates/meloet-model` | Song, tracks, instrument choice. Pure data and operations | I/O, threads |
+| `crates/meloet-protocol` | The contract between Rust and the screen (types, version, the byte layout of the telemetry). The TS types are made from here | Tauri |
+| `crates/meloet-engine` | The sound flow, the instrument interface, meters, the cpal output. The audio thread takes no memory and no locks | The screen, plugin formats, locks (Mutex) |
+| `crates/meloet-midi` | Keyboard input and plugging in/out (on Linux, the ALSA sequencer) | Sound |
+| `crates/meloet-devices` | Human names of the audio outputs and inputs (on Linux, PipeWire Routes); reads the quantum the PC has fixed | Sound processing, changing settings |
+| `crates/meloet-core` | Owner of the state. Takes intent commands, changes the state, sends changes with a `rev`. Band rules, status line notices, saved settings | Tauri, how the screen looks |
+| `crates/meloet-app` | The Tauri shell. Only passes commands and Channels | Owning state |
+| `ui/` | The screen (Svelte 5 + TS). Only `ui/src/bridge/` knows Tauri | Calling the Tauri API directly |
 
-あとで足すもの（今回は作らない）: `meloet-plugin`、`meloet-vst3`、`meloet-lv2`、`meloet-plughost`。プラグインは最初から別のプロセスで動かす（報告書の「v1 は同じプロセス」の案は使わない）。
+Crates added later: `meloet-sound` (samplers, SF2, built-in effects and synths; 19-6), `meloet-plugin` (keys, shared memory and the wire to plugin hosts) and `meloet-plughost` (the plugin host process, with VST3 and LV2 in `formats/`; chapter 20), and `meloet-stretch` (time stretch and pitch; 22-8, 22-19). There are no separate `meloet-vst3` or `meloet-lv2` crates. Plugins have run in another process from the start (the report's idea of "v1 in the same process" was not used).
 
-**理由**: 報告書の 7-1 は `meloet-app` に状態を持たせず、`meloet-model` に入出力を持たせない。そうすると、曲・装置・帯をまとめて持ち、コマンドを受ける場所が要る。それが `meloet-core` です。画面なしで、約束と帯の決まりをテストできます。
+**Why**: report 7-1 gives `meloet-app` no state and `meloet-model` no I/O. Then some place must hold the song, the devices and the bands together and take the commands. That is `meloet-core`. It lets us test the contract and the band rules with no screen.
 
-`spikes/` はワークスペースに残しますが、`default-members` から外しています。ふだんの `cargo build` と `cargo test` は `crates/` だけを相手にします。
+`spikes/` stays in the workspace but is left out of `default-members`. A plain `cargo build` or `cargo test` only works on `crates/`.
 
 ---
 
-## 2. スレッドとプロセス
+## 2. Threads and processes
 
 ```mermaid
 flowchart LR
-  subgraph App["meloet（1 つのプロセス）"]
-    GTK["主スレッド: GTK / WebView（Tauri）"]
-    Core["core のスレッド: 状態・コマンド・差分"]
-    Tick["計器のスレッド: 60 Hz で最新だけ"]
-    MIDI["MIDI のスレッド: ALSA シーケンサ"]
-    PW["装置のスレッド: PipeWire の Route と settings"]
-    RT["音のスレッド: cpal（PipeWire）のコールバック"]
+  subgraph App["meloet (one process)"]
+    GTK["main thread: GTK / WebView (Tauri)"]
+    Core["core thread: state, commands, changes"]
+    Tick["telemetry thread: newest only, 60 Hz"]
+    MIDI["MIDI thread: ALSA sequencer"]
+    PW["device thread: PipeWire Routes and settings"]
+    RT["audio thread: cpal (PipeWire) callback"]
   end
-  Web["WebView（Svelte）"]
+  Web["WebView (Svelte)"]
   Web -- "invoke: hello / subscribe / snapshot / send" --> GTK
-  GTK -- "コマンド" --> Core
-  Core -- "Channel（JSON）: 差分" --> Web
-  MIDI -- "Channel（JSON）: 鍵の on/off をすぐ" --> Web
-  Tick -- "Channel（バイナリ）: 計器" --> Web
-  MIDI -- "rtrb（待たないリング）" --> RT
-  Core -- "rtrb: 音源の差しかえ・テスト音" --> RT
-  RT -- "rtrb: 古い音源を返す（音のスレッドで捨てない）" --> Core
-  RT -- "原子変数: メーター・負荷・動いているバッファ" --> Tick
-  MIDI -- "原子変数: 押している鍵・ペダル・ベンド" --> Tick
-  MIDI -- "鍵盤のぬきさし" --> Core
-  PW -- "出口の一覧・固定の quantum" --> Core
+  GTK -- "commands" --> Core
+  Core -- "Channel (JSON): changes" --> Web
+  MIDI -- "Channel (JSON): key on/off at once" --> Web
+  Tick -- "Channel (binary): telemetry" --> Web
+  MIDI -- "rtrb (lock-free ring)" --> RT
+  Core -- "rtrb: swap instruments, test tone" --> RT
+  RT -- "rtrb: give back old instruments (not dropped on the audio thread)" --> Core
+  RT -- "atomics: meters, load, the buffer in use" --> Tick
+  MIDI -- "atomics: held keys, pedals, bend" --> Tick
+  MIDI -- "keyboards plugged in/out" --> Core
+  PW -- "list of outputs, fixed quantum" --> Core
 ```
 
-- 鍵の on/off は、MIDI のスレッドから直接、画面の Channel へ送る。core を通さない（鍵 → 画面を短くするため）。押している鍵の一覧は、計器のバイナリにも毎回入れるので、1 つ取りこぼしても次の計器で戻る。
-- 鍵盤のぬきさしは core の状態を変え、差分として、すぐ送る。
-- 音のスレッドは、メモリを取りにいかない、鍵を待たない。入ってくる物も出ていく物も、待たないリング（rtrb）と原子変数だけ。
-- 第 2 回で足した道（図にはない）: core → 音のスレッドへ「曲のノートの列」（`Sequence`。古い列はリングで返す）と再生まわりの命令。音のスレッド → core へ「録った出来事」のリング（耳に届いていた位置と周つき）。音のスレッドが書く「区切りの輪」（`TransportClock`。512 こま、こまごとに seqlock、中身は原子変数だけ）を、計器のスレッドと core が鍵を待たずに読む。
-- MIDI のスレッドと装置の見はり（PipeWire）は、core のスレッドが持ち主。止まったら core に知らせが来て、core が間をあけて起こしなおす（4-2）。
+- Key on/off goes from the MIDI thread straight to the screen's Channel, not through the core (to keep key → screen short). The held keys are also in every telemetry message, so if one message is lost, the next one puts it right.
+- Plugging a keyboard in or out changes the core state and is sent at once as a change.
+- The audio thread takes no memory and waits on no lock. Everything in and out goes through lock-free rings (rtrb) and atomics.
+- Paths added in round 2 (not in the picture): core → audio thread, the song's note list (`Sequence`; the old list comes back through a ring) and transport commands. Audio thread → core, a ring of recorded events (with the position the listener was hearing, and the loop pass). The audio thread writes a ring of segments (`TransportClock`: 512 slots, a seqlock per slot, only atomics inside) that the telemetry thread and the core read without waiting on a lock.
+- The core thread owns the MIDI thread and the PipeWire watcher. When one stops, the core is told and starts it again after a pause (4-2).
+- Plugin hosts are separate processes (chapter 20).
 
 ---
 
-## 3. Rust と画面の約束（報告書 7-3）
+## 3. The contract between Rust and the screen (report 7-3)
 
-### 3-1. 手順
+### 3-1. Steps
 
-1. **あいさつ**: 画面は起動したら `hello(protocolVersion)` を呼ぶ。版がちがえば止まる。
-2. **先に聞く**: `subscribe(messages, telemetry)` で Channel を 2 本わたす。ここから先の差分は取りこぼさない。
-3. **丸ごと取りにいく**: `snapshot()` で `{ rev, state }` を受けとる。2 の後に届いた差分のうち、`rev` が snapshot 以下の物は捨て、上の物を順に当てる。
-4. **差分**: `{ rev, changes }`。`rev` は 1 ずつふえる。画面が持つ rev + 1 でない差分が来たら、画面は `snapshot()` を取りなおす。
-5. **画面 → Rust は意図だけ**: `send(command)`。Rust が確かめて状態を変え、差分を出す。画面は自分で状態を決めない（テキストの入力中や、ドラッグ中の見た目だけは先に動かしてよい）。
-6. **すぐ知らせること**: 鍵の on/off、ペダル、ベンド、モジュレーションは、届いた瞬間に messages の Channel で送る。
-7. **計器**: telemetry の Channel でバイナリ。60 Hz で最新だけ。前と同じ中身なら送らない（何も鳴っていないときは止まる）。
+1. **Hello**: when the screen starts, it calls `hello(protocolVersion)`. If the versions differ, it stops.
+2. **Listen first**: `subscribe(messages, telemetry)` hands over two Channels. From here on, no change is missed.
+3. **Fetch the whole state**: `snapshot()` returns `{ rev, state }`. Of the changes that came after step 2, those with `rev` ≤ the snapshot's are dropped; the rest are applied in order.
+4. **Changes**: `{ rev, changes }`. `rev` goes up by 1. If a change comes whose `rev` is not the screen's `rev` + 1, the screen fetches `snapshot()` again.
+5. **Screen → Rust is intents only**: `send(command)`. Rust checks it, changes the state and sends the changes. The screen does not decide state itself (only text being typed and the look during a drag may move first).
+6. **Things told at once**: key on/off, pedals, bend and modulation are sent on the messages Channel the moment they arrive.
+7. **Telemetry**: binary on the telemetry Channel, 60 Hz, newest only. If the content is the same as last time, nothing is sent (when nothing sounds, it stops).
+8. **The content of a take** (round 2): a finished take never changes. The state holds, per clip, only the id and note count of the take it shows. The content is fetched as binary with `take_notes(id)` (3-4). The screen caches it by id.
+   - **Edited takes** (round 3): an edit to notes makes a new take (new id) and puts it in the same place in the clip's takes (the place of the shown take). The number of takes does not change; undo goes back to the old id. The screen points to a note by "take id + its index in that take (in order of start, from 0)". If the id is not the shown take, Rust does nothing. A quantized take holds the id of its origin take (the take as recorded) and, for each note, which note of the origin it came from. The screen fetches `take_notes(origin id)` and draws the positions before quantizing as gray.7 outlines.
+9. **Notes being recorded** (round 2): on the messages Channel as `liveNotes {seq, recording, notes}`. `seq` goes up by 1 for as long as the app runs. A note with the same `(lap, index)` replaces the old one (no length when pressed, a length when let go). After listening, the screen fetches all of them with `live_notes()` and drops messages with a lower `seq`. If a number is skipped, it fetches everything again.
+   - **Why**: ten minutes of recording makes thousands of notes. Under the rule that a section is replaced whole, putting them in the state would send all of them with every change.
+10. **Plugin parameters** (round 5, contract 18): when the params panel shows a plugin, the state (`params`) holds only "the table number (`table`) and the count". Names, groups, kinds and current values are fetched once with `plugin_params(table)` (JSON `ParamTable`). After that only changed values come on the messages Channel as `paramValues {table, seq, values}` (at most 30 a second, only changed ones, only for the table the panel shows). `seq` goes up by 1 per table; if one is skipped, the table is fetched again. When the choice changes, the plugin changes its list, or the whole state is put back (undo), the core hands out a new `table` and the screen fetches again. The screen side is `ui/src/bridge/paramTable.ts`.
+    - **Why**: Surge XT (VST3) has 2855 parameters, and turning a knob in a plugin window changes values all the time. Under the whole-section rule, every value change and every row choice would send 2855 rows again (the same idea as take content and live notes).
 
-8. **テイクの中身**（第 2 回）: 録り終わったテイクは中身が変わらない。状態にはクリップごとに「見せているテイクの id とノートの数」だけを入れ、中身は `take_notes(id)` でバイナリ（3-4）を取りにいく。画面は id ごとにためる。
-   - **直したテイク**（第 3 回）: ノートを直す操作は、新しいテイク（新しい id）を作り、クリップのテイクの同じ場所（見せているテイクの場所）に入れかえる（テイクの数は変わらない。取り消すと前の id に戻る）。画面はノートを「テイクの id ＋ そのテイクの中の番号（始まりの順、0 から）」で指し、id が見せているテイクでなければ Rust は何もしない。クオンタイズしたテイクは「もとのテイク」（録った位置のテイク）の id と、ノートごとにもとのテイクの何番目から来たかを持つ。画面は `take_notes(もとの id)` で取って、そろえる前の位置を gray.7 の枠で描く。
-9. **録っている最中のノート**（第 2 回）: messages の Channel で `liveNotes {seq, recording, notes}`。`seq` はアプリが動いているあいだ 1 ずつふえる。`(lap, index)` が同じノートは入れかえる（押したときは長さなし、離したときに長さつき）。画面は聞く準備のあと `live_notes()` で丸ごと取り、それ以下の `seq` を捨てる。番号が飛んだら丸ごと取りなおす。
-   - **理由**: 10 分録るとノートは何千になる。区画を丸ごと入れかえる決まりのまま状態に入れると、差分のたびに全部を送ることになるため。
+There is one messages Channel. It carries changes (`patch`), things told at once (`event`), notes being recorded (`liveNotes`) and plugin parameter values (`paramValues`), in the order they happen.
 
-10. **プラグインのパラメータ**（第 5 回 区切り3、約束 18）: パラメータの欄がプラグインを見せるとき、状態（`params`）には「一覧の番号（`table`）と数」だけを入れる。名前 ・ グループ ・ 種類 ・ いまの値は `plugin_params(table)` で 1 回だけ取りにいき（JSON の `ParamTable`）、そのあと変わった値だけが messages の Channel で `paramValues {table, seq, values}` として届く（多くて 1 秒に 30、変わった物だけ、欄が見せている一覧の分だけ）。`seq` は一覧ごとに 1 ずつふえ、飛んだら一覧を取りなおす。えらびなおす ・ プラグインが一覧を変えた ・ 状態をまるごと戻した（取り消し）ときは、core が新しい `table` を配り、画面は取りなおす。画面の係は `ui/src/bridge/paramTable.ts`。
-    - **理由**: Surge XT（VST3）は 2855 個。プラグインの窓でつまみを回すと値が続けて変わる。区画を丸ごと入れかえる決まりのまま状態に入れると、値が 1 つ変わるたび、行をえらぶたびに、2855 行を送りなおすことになる（テイクの中身と録っている最中のノートと同じ考え）。
+### 3-2. The state (units of snapshot and change)
 
-messages の Channel は 1 本で、差分（`patch`）、すぐ知らせること（`event`）、録っている最中のノート（`liveNotes`）、プラグインのパラメータの値（`paramValues`）を、着いた順に運ぶ。
+The state is split into sections. A change replaces a changed section whole (no partial changes inside a section). While sections are small, this is the simplest and hardest to get wrong. Sections are split so that something that changes often does not send a large section again.
 
-### 3-2. 状態（snapshot と差分の単位）
-
-状態は、次の区画に分ける（第 2 回で `transport` と `arrange` を足した。窓の大きさが変わるたびに、えらんだ物まで送りなおさないため）。差分は、変わった区画を丸ごと入れかえる（区画の中の一部だけの差分は作らない）。区画が小さいうちはこれがいちばん素直で、まちがえにくい。
-
-| 区画 | 中身 |
+| Section | Content |
 |---|---|
-| `song` | 曲の名前、トラック（番号、名前、色の番号、音源の名前、音量 dB、録音待機、クリップ〔id、範囲、名前、見せているテイクの番号と数と id と位置、ノートの数〕）、取り消せる手とやりなおせる手の数、弾くと鳴る先のトラック、ループ（範囲のティックとオン・オフ）、帯札「ピアノロール ノート ○」の数、曲のファイルの様子（一度も保存していない・保存済み・変更あり）。（第 4 回 区切り3）トラックごとに パン（−100〜100）、センド A ・ B（dB。`null` は −∞）、インサートの 4 つの枠（エフェクトの種類か空き）、ミュート。`returns`（戻り A ・ B: フェーダー、パン、ミュート、インサート）と `master`（フェーダー、パン、インサート）。どれも手でだけ変わる値で、ドラッグの途中の値（プレビュー）は入らない |
-| `timeline` | （約束 20、第 6 回）曲の頭のテンポと拍子、曲の頭からのだんだん、テンポの点（ティック、テンポ、だんだん）、拍子の旗（小節の番号、拍子）、マーカー（id、ティック、名前）、えらんでいる物（点はティック、旗は小節、マーカーは id で指す）、名前の枠がひらいているマーカー、アレンジの「テンポ ・ 拍子の変更」の行がひらいているか。テンポと拍子は、ここにだけある（`song` から移した）。画面のテンポの地図（`ui/src/time/tempoMap.ts`）はここから作る（21 章） |
-| `params` | （第 4 回 区切り3）パラメータのパネルが見せるインサート（どのストリップの何番の枠か、エフェクトの種類、値のならび、えらんだ行）。インサートや行をえらぶのは手ではないので、そのたびに `song` を送りなおさないために分けた（`pianoRoll` と同じ考え）。（約束 18）見せる物は「最初から入っているエフェクト」か「プラグイン（インサートか、トラックの音源）」。プラグインは、居場所、窓の型（ひらける ・ まだひらけない ・ 持たない）、一覧の番号と数、えらんだ行、オートメーションに書いている行（第 6 回まで空）だけで、行そのものは入れない（3-1 の 10） |
-| `windows` | （約束 18）ひらいているプラグインの窓の一覧（居場所、プラグインの名前、大きさ、画面より大きいか）。状態行の「窓 N」と、枠 ・ 音源の名前の「窓がひらいている印」は、画面がここから作る。窓がひらく ・ とじるのは手ではなく、ほかの区画に関わらないので分けた |
-| `transport` | 止まっている・カウントイン・再生・録音、止まっている時の位置、メトロノーム、カウントインの小節と拍の数、再生と録音が使えるか、録っているあいだの物（録音の番号、トラック、始まり、何番のテイクになるか、まとまる先のクリップ、周）。動いている位置は計器で来る |
-| `arrange` | えらんでいるクリップ、ピアノロールが見せるクリップ |
-| `pianoRoll` | （第 3 回）ピアノロールが見せているテイクの id、選んだノートと CC の点（テイクの中の番号の範囲 `[start, end)` のならび）、グリッド、スケール（主音、メジャー・マイナー、固定）、クオンタイズのパネルの設定（グリッド、三連符、強さ、スウィング、そろえる所）、貼りつけられるノートの数。選択はよく変わるので、`song` を送りなおさないために分けた |
-| `workspace` | 拡大率、いまの画面に入らない拡大率（`unfitScales`）、窓の大きさ、帯のひらき具合と高さ（`layout`）、右の欄、音の設定のダイアログ、出口えらび（流れ 2）、アレンジの上の案内、曲のダイアログ（保存していない・保存できない・こわれている。id、見出し、1 つ前があるか） |
-| `keyboards` | 見えている鍵盤（名前、ALSA の番地）、いま使っている鍵盤、最後に抜けた鍵盤 |
-| `outputs` | 出口の一覧（本物の名前、やさしい言いかえの種類、ささっているか、つながりの種類）、えらんだ出口、その出口の様子 |
-| `inputs` | 歌の入口の一覧（今回は見せるだけ。使えない） |
-| `audio` | 動いているか、サンプルレート、頼んだバッファ、動いているバッファ、PC 全体で固定された quantum、遅れの見積もり、音のしくみの名前、出口のデバイス名、MIDI の入口の名前 |
-| `status` | 状態行の左の知らせ（文の種類と、うめこむ値） |
+| `song` | Song name; tracks (number, name, color index, instrument name, gain dB, clips [id, range, name, shown take's index, count, id and position, note count]); counts of undo and redo steps; where the keys sound; loop (range in ticks, on/off); the count for the band tab 「ピアノロール ノート ○」; the song file's state (never saved, saved, changed). (Round 4) per track: pan (−100…100), sends A and B (dB; `null` is −∞), four insert slots (an effect kind or empty), mute. `returns` (returns A and B: fader, pan, mute, inserts) and `master` (fader, pan, inserts). All of these change only by hand; the value during a drag (preview) is not in it. Track kinds, inputs, ● and monitor of vocal tracks, `keysTarget`, audio clips: 22-15, 22-17 |
+| `timeline` | (Contract 20, round 6) the tempo and time signature at the song's start and the ramp from the start, tempo points (tick, tempo, ramp), time signature flags (bar number, signature), markers (id, tick, name), what is selected (a point by tick, a flag by bar, a marker by id), the marker whose name box is open, whether the arrange's 「テンポ ・ 拍子の変更」 row is open. Tempo and time signature live only here (moved from `song`). The screen's tempo map (`ui/src/time/tempoMap.ts`) is made from it (chapter 21) |
+| `automation` | (Contract 21) what of the automation lanes is not an undo step: folded, armed, being written, held, selected points (21-15) |
+| `history` | (Round 6) the rows of the undo history band (21-12) |
+| `transport` | Stopped, count-in, playing or recording; the position when stopped; metronome; count-in bars and beats; whether play and record can be used; while recording: recording number, track, start, which take it will be, the clip it joins, the loop pass. The moving position comes in the telemetry |
+| `arrange` | The selected clips, the clip the piano roll shows |
+| `pianoRoll` | (Round 3) the take id the piano roll shows, the selected notes and control points (lists of index ranges `[start, end)` in the take), grid, musical scale (root, major/minor, lock), the quantize panel's settings (grid, triplet, strength, swing, what to align), the count of notes that can be pasted. Selection changes often, so it is apart from `song` |
+| `workspace` | Scale, scales that do not fit the screen now (`unfitScales`), window size, which bands are open and their heights (`layout`), the right panel, the sound settings dialog, the output chooser (flow 2), the hint above the arrange, the song dialogs (unsaved, cannot save, broken: id, heading, whether a previous version exists) |
+| `shelf`, `library` | (Rounds 4–5) the shelf: its mode, the instruments and effects to choose; `library` is the list of SF2 files and plugins the shelf shows (20-11) |
+| `params` | (Round 4) the insert the params panel shows (which strip and slot, effect kind, values, selected row). Choosing an insert or row is not an undo step, so it is apart from `song` (the same idea as `pianoRoll`). (Contract 18) what it shows is a built-in effect or a plugin (an insert, or a track's instrument). For a plugin: where it is, the window kind (can open, cannot open yet, has none), the table number and count, the selected row, and the rows written by automation — not the rows themselves (3-1, item 10) |
+| `plugins` | (Round 5) the plugin scan, what it could not read, where it looks. Apart because the count changes with every bundle during a scan |
+| `windows` | (Contract 18) the open plugin windows (where, plugin name, size, whether larger than the screen). The status line's 「窓 N」 and the window marks on slots and instrument names are made from it. Windows opening and closing is not an undo step and touches nothing else, so it is apart |
+| `keyboards` | The keyboards seen (name, ALSA address), the one in use, the last one pulled out |
+| `outputs` | The outputs (real name, kind of easy name, plugged in or not, kind of link), the chosen output and its state |
+| `inputs` | The audio inputs (22-15) |
+| `audio` | Running or not, sample rate, buffer asked for, buffer in use, the quantum fixed for the whole PC, latency estimate, the name of the sound system, the output device name, the MIDI input name. Later: buffer and sample rate choices, record format, latency (22-15) |
+| `audioWork` | (Round 7) audio being made ready, with a percent (apart so a percent does not send the song again) |
+| `export` | (Round 7) export (22-11, 22-20) |
+| `sounds` | (Round 8) the sound pack as this PC has it, and its fetch (23-7) |
+| `status` | The notice on the left of the status line (kind of text and the values to put in) |
 
-画面の文面は Rust に置かない。Rust は「文の種類（ID）とうめこむ値」だけを送り、画面が `ui/src/text/` の文に当てる。
+The screen's wording is not kept in Rust. Rust sends only "the kind of text (ID) and the values to put in", and the screen matches it to the text in `ui/src/text/`.
 
-### 3-3. 計器のバイナリ（版 4、リトルエンディアン）
+The full list of sections is `AppState` in `crates/meloet-protocol/src/lib.rs`.
 
-| 位置 | 型 | 中身 |
+### 3-3. The telemetry binary (version 4, little-endian)
+
+| Offset | Type | Content |
 |---|---|---|
-| 0 | u8 | 種類 = 1（計器） |
-| 1 | u8 | 版 = 4 |
-| 2 | u16 | トラックの数 n |
-| 4 | u32 | 通し番号 |
-| 8 | u64 | Rust が送った時刻（CLOCK_MONOTONIC、ns） |
-| 16 | u64 | 押している鍵 0〜63 のビット |
-| 24 | u64 | 押している鍵 64〜127 のビット |
-| 32 | u8 | 最後のベロシティ（0 はまだ無し） |
-| 33 | u8 | サステイン（CC 64 の値） |
-| 34 | u8 | モジュレーション（CC 1 の値） |
-| 35 | u8 | 旗（bit0: 音が動いている、bit1: マスターが割れた、bit2: 再生の位置がある） |
-| 36 | i16 | ピッチベンド（−8192〜8191） |
-| 38 | u16 | 処理の負荷（千分率） |
-| 40 | f32 × 2 | マスターの最大値 左・右（前に送ってからの最大。1.0 = 0 dBFS） |
-| 48 | f64 | 送った時刻に耳に届いている曲の位置（ティック、小数。カウントイン中は負もある） |
-| 56 | f64 | 1 µs あたりのティック（止まっているときは 0） |
-| 64 | u8 | 状態（0 停止、1 カウントイン、2 再生、3 録音） |
-| 65 | u8 | 0（あき） |
-| 66 | u16 | カウントインの残りの拍（鳴っている拍もふくむ。外では 0） |
-| 68 | u32 | 録音中のループの周（最初が 0） |
-| 72 | f32 × 4 | 戻り A の最大値 左・右、戻り B の最大値 左・右（戻りの出口: インサート、フェーダー、パンの後。第 4 回 区切り3） |
-| 88 | u16 | マイクの計の数 m（第 7 回 区切り2。入口をひらいていない間は 0） |
-| 90 | u16 | 0（あき） |
-| 92 | f32 × 2n | トラックごとの最大値 左・右（フェーダーとパンの後） |
-| 92 + 8n | 16 × m | マイクの計（歌のトラックごと、トラックの順）: トラックの id u32、入ってくる音の最大値 左・右 f32 × 2（フェーダーの前。モノは左右同じ）、旗 u8（bit0: 0 dB に届いた、bit1: ステレオ）、0 が 3 つ |
+| 0 | u8 | kind = 1 (telemetry) |
+| 1 | u8 | version = 4 |
+| 2 | u16 | number of tracks n |
+| 4 | u32 | serial number |
+| 8 | u64 | the time Rust sent it (CLOCK_MONOTONIC, ns) |
+| 16 | u64 | bits of held keys 0–63 |
+| 24 | u64 | bits of held keys 64–127 |
+| 32 | u8 | last velocity (0 = none yet) |
+| 33 | u8 | sustain (value of CC 64) |
+| 34 | u8 | modulation (value of CC 1) |
+| 35 | u8 | flags (bit0: sound is running, bit1: master clipped, bit2: there is a play position) |
+| 36 | i16 | pitch bend (−8192…8191) |
+| 38 | u16 | processing load (per mille) |
+| 40 | f32 × 2 | master peak left, right (max since the last send; 1.0 = 0 dBFS) |
+| 48 | f64 | song position the listener hears at the send time (ticks, with fraction; can be negative during a count-in) |
+| 56 | f64 | ticks per µs (0 when stopped) |
+| 64 | u8 | state (0 stopped, 1 count-in, 2 playing, 3 recording) |
+| 65 | u8 | 0 (spare) |
+| 66 | u16 | count-in beats left (the one sounding included; 0 outside a count-in) |
+| 68 | u32 | loop pass while recording (first is 0) |
+| 72 | f32 × 4 | return A peak left, right; return B peak left, right (after inserts, fader and pan; round 4) |
+| 88 | u16 | number of mic meters m (round 7; 0 while no input is open) |
+| 90 | u16 | 0 (spare) |
+| 92 | f32 × 2n | per-track peak left, right (after fader and pan) |
+| 92 + 8n | 16 × m | mic meters (one per vocal track, in track order): track id u32; input peak left, right f32 × 2 (before the fader; mono has the same value in both); flags u8 (bit0: reached 0 dB, bit1: stereo); three 0 bytes |
 
-画面の位置 = `tick + (Rust の今 − 送った時刻) × 1 µs あたりのティック`。bit2 が 0 の間（音がまだ動いていない）、48〜71 は 0 で、画面は `transport.position` を使う。止まっているときは、再生まわりの数字も再生の位置の線も `transport.position`（差分ですぐ届く）、動いているときは計器の位置（`ui/src/components/time.ts` の `shownTick`）。
+Screen position = `tick + (Rust's now − send time) × ticks per µs`. While bit2 is 0 (sound not running yet), bytes 48–71 are 0 and the screen uses `transport.position`. When stopped, the transport's numbers and the play line use `transport.position` (it comes at once as a change); when moving, the telemetry position (`shownTick` in `ui/src/components/time.ts`). The layout is fixed in one place, `crates/meloet-protocol/src/telemetry.rs`.
 
-### 3-4. テイクの中身のバイナリ（版 2、リトルエンディアン）
+### 3-4. The take content binary (version 2, little-endian)
 
-| 位置 | 型 | 中身 |
+| Offset | Type | Content |
 |---|---|---|
-| 0 | u8 | 種類 = 2（テイク） |
-| 1 | u8 | 版 = 2 |
-| 2 | u16 | 0（あき） |
-| 4 | u32 | テイクの id |
-| 8 | u32 | 長さ（ティック） |
-| 12 | u32 | ノートの数 n |
-| 16 | u32 | コントロールの数 m |
-| 20 | u32 | もとのテイクの id（0 はなし。id は 1 から） |
-| 24 | 16 × n | ノート: 始まり u32、長さ u32、鍵 u8、ベロシティ u8、0 が 2 つ、もとのテイクの何番目のノートから来たか u32（0xFFFFFFFF はなし） |
-| 24+16n | 8 × m | コントロール: ティック u32、種類 u8（0 CC、1 ピッチベンド）、CC の番号 u8（ベンドは 0）、値 i16 |
+| 0 | u8 | kind = 2 (take) |
+| 1 | u8 | version = 2 |
+| 2 | u16 | 0 (spare) |
+| 4 | u32 | take id |
+| 8 | u32 | length (ticks) |
+| 12 | u32 | number of notes n |
+| 16 | u32 | number of controls m |
+| 20 | u32 | origin take id (0 = none; ids start at 1) |
+| 24 | 16 × n | notes: start u32, length u32, key u8, velocity u8, two 0 bytes, index of the origin note it came from u32 (0xFFFFFFFF = none) |
+| 24 + 16n | 8 × m | controls: tick u32, kind u8 (0 CC, 1 pitch bend), CC number u8 (0 for bend), value i16 |
 
-位置はテイクの 0 から数える。u32 のティックは、300 BPM でも約 20 日ぶんある。
+Positions count from the take's 0. With 1920 ticks to a quarter note, u32 ticks last 124 hours at 300 BPM (22-1).
 
-並びは `meloet-protocol` の 1 か所で決め、Rust で書いて TS で読むテストで食いちがいを見はる。
-
----
-
-- **曲の通し番号**（約束 9、第 3 回の続き）: テイクの id は曲ごとに 1 から配られる。`song.serial` は、core が `Doc` を外から入れかえるたび（新しい曲、ひらく、1 つ前をひらく、なおすためのファイルから戻す、戻さない）と、「なおすためのファイルから戻す」「戻さない」の手を取り消し・やりなおしでまたぐときに 1 ふえる。ふつうの取り消し・やりなおしではふえない。画面は通し番号が変わると、ためたテイクを全部手放し、取りにいっている途中の答えも捨てる（`TakeStore.clear`）。ピアノロールも、通し番号が変われば同じ id のテイクを取りなおす。テイクは（通し番号, id）で見分ける。
-
-## 4. 音の流れ
-
-- 出口は cpal の PipeWire。頼むバッファは 256。**動いている数は、コールバックが受けとったフレーム数から読む**。
-- PC 全体の `clock.force-quantum` は、PipeWire の `settings` メタデータを**読むだけ**。0 でなく、動いている数が頼んだ数とちがうときに「PC 全体の設定で固定されている」と言う。
-- 遅れの見積もり: 検証の計測（バッファ 256 で平均 13.2 ms、1024 で 53.2 ms、48 kHz）から、鍵 → 音 ≒ 2.5 × バッファ ÷ サンプルレート。動いている間は、実際に測った値（鍵を受けた時刻と、その音が DAC に届く予定の時刻の差）の平均を使う。
-- 音源の口（`Instrument`）: 1 つのトラックが 1 つの音源を持つ。音源は「準備（音のスレッドの外）」「出来事（ノート、CC、ベンド）」「描く（ステレオのバッファ）」「止める」を持つ。差しかえは、core が音のスレッドの外で新しい音源を作り、リングで音のスレッドへ送る。音のスレッドは入れかえて、古い物をリングで返す（音のスレッドで捨てると、メモリを返す処理が走るため）。
-- 今回の音源は「仮の音」（やわらかい合成の音）。次の回に、サンプルのピアノが同じ口に入る。プラグインも、別のプロセスとのやりとりを同じ口の向こうに隠す。
-- メーターは、ブロックごとの最大値を原子変数に「前より大きければ書く」。計器のスレッドが読むときに 0 に戻す。トラック、戻り A ・ B、マスターにある（どこで測るかは 19-11）。
-- ミキサーの音の道（インサート、フェーダー、パン、センド、戻り、マスター）は 19-11。
-- 処理の負荷は、コールバックの中でかかった時間 ÷ そのブロックの長さ。
-- 出口を変えるときは、古いストリームを止め、曲から音源を作りなおして新しいストリームを作る。今回は再生の位置などの「流れの中の状態」がないので、作りなおしで足りる。
-
-### 4-1. 音のスレッドの見はり
-
-- `meloet-engine` は `std::sync::Mutex` などの鍵を使わない。`clippy.toml` の `disallowed-types` と `disallowed-methods` で機械的に止める。
-- メモリ確保は、テストのときに、数える割り当て器（global allocator）で見はる。音のスレッドの区間に入ったら旗を立て、その間に確保か解放があればテストを落とす。オフラインで曲を描くテストと、実際のストリームを 2 秒回すテスト（装置があるときだけ）の両方で。
-
-
-### 4-2. 止まったときと、つなぎなおし（第 2 回）
-
-- 出口のストリームのエラーは 3 つに分けて数える: xrun、ストリームが自分で終わった（PipeWire が消えた、出口がなくなった。1 本のストリームで 1 回）、そのほか。こちらから止めるときに cpal が出す `DeviceNotAvailable` は数えない。
-- PipeWire が消えると、cpal は `StreamInvalidated` を 1 回出してコールバックが止まり（気づくまで 1.4〜37 ms）、装置の見はり（pipewire-rs）も core の error で終わる（0.6〜10 ms）。どちらも core に知らせる。ストリームを閉じると、エンジンは `Carrier` の Drop で戻る。戻らなかったときに備えて、エンジンを作りなおせる（`EngineHandle::rebuild`。MIDI のリングと区切りの輪も新しくなり、core が配りなおす）。
-- MIDI のスレッドは、自分で止まるとき最後に `Stopped` を送り、sink を返す。core は同じ sink で起こしなおす。押していた鍵とペダルは、止まった時点で離したことにする。
-- つなぎなおしの間隔: 0.5・1・2・4 秒、そのあとは 5 秒ごと。PipeWire と MIDI はあきらめない（ほかに取りもどす道がなく、1 回試すのは安い。最初は早いので、すぐ戻るデーモンならすぐ戻る）。ストリームだけが落ちたとき（PipeWire は動いている）は 4 回まで。そのあとは出口の一覧が変わるか人が操作するまで待つ（毎回すぐ落ちる出口を開いたり閉じたりし続けないため）。起動したときに PipeWire がないときも、同じ間隔で黙って試す（一度も動いていないので「止まりました」は出さない）。
-- 録っている最中に音が止まったら、そのときの耳に届いていた最後の位置で録音を閉じ、録れた分をテイクに残して文を出す。鍵盤の入力が止まっても録音は止めない。
-- 試験: 自分用の PipeWire と WirePlumber（`crates/meloet-engine/tests/private_pw/`）を立てて落とし、戻す（`--devices`）。ヤチヨさんの PipeWire にはさわらない。
----
-
-## 5. 鍵盤
-
-- ALSA シーケンサに `meloet` という名前で入り、System:Announce を購読する。起動したときに、すでにある鍵盤を全部数えてから、ぬきさしを待つ。
-- 鍵盤とみなす物: 種類が HARDWARE で、読める（READ ＋ SUBS_READ）口を持つクライアント。1 つのクライアントからは、いちばん番号の小さい読める口だけを聞く（Keystation 49 MK3 の 2 つめの口「Transport」はボタン用で、ノートとまちがえるため）。
-- 鍵盤の名前は、ALSA のクライアント名（例「Keystation 49 MK3」）。
-- 試験のための仮想の鍵盤（`meloet-vkeys`）は、環境変数 `MELOET_ACCEPT_VIRTUAL=1` のときだけ鍵盤とみなす。`MELOET_VKEYS_NAME=名前[,名前…]` があれば、その名前（`meloet-vkeys --name`）の仮想の鍵盤だけを受ける（同じ PC でほかの試験や測定の仮想の鍵盤がまざらないように）。`MELOET_ONLY_VIRTUAL=1` では、本物の鍵盤を見ず、仮想の鍵盤だけを見る（鍵盤がささったまま「鍵盤がない」画面を撮るため）。
-- 鍵盤がぬけたら、音のスレッドへ全部の音を止める知らせを送り、押している鍵とペダルの記録を消す（押したまま抜いたときに、音と光が残らないように）。
-- 2 台以上つながっているときは、全部の鍵を聞く。名前は最後に弾いた鍵盤（鍵を押したときだけ数える。弾く前は最後にさした鍵盤）で、入力計では「+1」のように残りの台数をそえる（仕様書 3 章）。どの鍵盤の鍵かは MIDI の知らせについてくる。MIDI のスレッドは、画面へ知らせたあとで、鍵盤が前とちがうときだけ core に伝える。
+The layout is fixed in one place in `meloet-protocol` (`take.rs`), and a test that writes in Rust and reads in TS watches for differences.
 
 ---
 
-## 6. 出口と入口の名前
-
-- PipeWire の Device の Route（`EnumRoute` と `Route`）を読む。Route の `description` が本物の名前（「アナログヘッドフォン」など）、`available` がささっているか、`info` の `port.type` が型。
-- 出口 1 つ = Sink のノード 1 つ ＋ そのデバイスの出力の Route 1 つ。Route を持たない Sink（Bluetooth など）は、ノードの説明を名前にする。
-- 出口の ID は「デバイスの名前 ＋ Route の名前」（Route がなければノードの名前）。これを設定に保存する。
-- **meloet は、デバイスの Route を切りかえない**（それは PC 全体の設定を変えることになるため）。えらんだ Route が、いまささっていなければ、その文面を出す。
-- やさしい言いかえは、型がわかるときだけ（モックの 4 つ: ヘッドホン → 「ヘッドホンの穴」、HDMI → 「画面のスピーカー」、ライン出力 → 「うしろのスピーカーの穴」、うしろのマイク → 「うしろのマイクの穴」）。
-- 装置の名前は、PipeWire の Device の `device.description` をそのまま出す（例「GB206 High Definition Audio Controller」。ヤチヨさんの決め）。えらべない出口の行と、名前が同じ出口が 2 つ以上ならぶときに使う。
-- えらべない出口（`unusable`）は 2 種類。ノードはあるが、PC がそのデバイスで別の Route を使っている → 「PC が切りかえる」（`switchedByPc`）。ノードがない → 「PC の設定で止まっている」（`stoppedByPc`。同じデバイスにノードのある穴があっても）。
-- ならべる順: えらべる出口が先（ささっている → わからない → ささっていない。ささっている中ではヘッドホンが先）、そのあとにえらべない出口。
+- **The song serial** (contract 9, end of round 3): take ids are handed out from 1 per song. `song.serial` goes up by 1 each time the core replaces the `Doc` from outside (new song, open, open the previous version, restore from the recovery file, do not restore), and when undo/redo crosses the "restore from the recovery file" or "do not restore" steps. Normal undo/redo does not change it. When the serial changes, the screen lets go of all cached takes and drops answers still on the way (`TakeStore.clear`). The piano roll also fetches a take with the same id again. Takes are known by (serial, id).
 
 ---
 
-## 7. 画面
+## 4. Sound flow
 
-- Svelte 5 ＋ TypeScript ＋ Vite。SvelteKit は使わない（1 枚の画面で足り、橋を薄く保てるため）。
-- **数値**: `ui/src/design/tokens.ts` に、仕様書の表の名前のまま入れる（`color.gray.4`、`size.meter.slim`、`space.3` など）。仕様書の文の中にしかない部品の寸法（ボタンの高さ 24 など）は `part.*`、モックにしかない寸法は `mock.*` として、出どころを書いて入れる。部品はここから作った CSS の変数だけを使う。部品の中に色の 16 進数や px を直接書くと、テストが落ちる。
-- **拡大率**: 100・125・150%。`tokens.ts` が率ごとの値を出す。`line.hair` は、どの率でも画面の物理 1px（`1px / devicePixelRatio`）。`line.mark`・`line.track` は表の値。文字の表の「太さ」の列は、その大きさで使ってよい太さの組と読む（text.s は 400・500・600、text.m は 400・500、text.l は 600。率では変わらない）。仕様書の文の中の寸法（part.*）は、率をかけて整数にならなければ四捨五入する。
-- **文面**: `ui/src/text/ja.ts` の 1 か所。仕様書の文面は一字も変えない（テストで仕様書から抜いた文と照らし合わせる）。モックにだけある文は、モックの文のまま、出どころ（ボードの名前）をつけて入れる。
-- **大きな面は WebGL（区画ごとに 1 枚、使いまわし）**: 部品は、描く場所に `use:glSlot={...}` をつけ、そのまわりの箱（同じ箱でもよい）に `use:glRegion={"名前"}` をつける。WebGL の係（`ui/src/gl/engine.ts`）は、区画の箱ごとに canvas を 1 枚入れる（箱の中、`pointer-events: none`）。canvas の広さは「その区画の slot のある所 ∩ 箱 ∩ 窓」で、はしは画面の画素に合わせる。区画の中の slot は、全部その 1 枚に、ページの順（あとの物が上）で描く。描くのは、四角の並びが前と変わった区画だけ。60 Hz で変わる物（メーター、録っているクリップ）は小さな区画に分け、変わらない大きな区画（アレンジの線やクリップ）に入れない。再生の位置の線のように動くだけの物は、描きなおさず HTML の線を CSS の transform で動かす。文字と小さな部品は HTML。Canvas 2D は使わない。
-  - 理由: WebKitGTK（NVIDIA）では、面を 1 回出すたびに、画面のプロセスの主スレッドが「0.25 ms ＋ 3.9 ms × 百万画素」ほど止まり、鍵の知らせはその後ろで待つ（2026-11-15 の測定、RTX 5060 Ti、WebKitGTK 2.52.6）。16 本のメーターを slot ごとに出すと 4.4 ms、1 枚にまとめると 1.4 ms。アレンジの面くらいの大きさは 1036×576 で 3.3 ms、1676×856 で 6.5 ms。transform で動かすだけなら 0.35 ms。第 1 回に、窓いっぱいの面を 60 Hz で出して鍵 → 画面の p95 が 8〜12 ms になったのも同じ理由（`docs/measurements/`）。この式は、下に HTML のない面を 1 枚だけ出したときの数。本物の画面では、次の「CPU で描く WebKit」の決まりが先に効く。
-  - **2026-11-22 の注意**: この PC の WebKitGTK が 2026-11-21 に `2.52.6-0ubuntu0.26.04.1` → `.2` に上がり、**いまは合成の層の道で描いている**（ThreadedCompositor、Skia。1 コマによごれた物をぜんぶ囲む四角 1 つを描きなおす。`docs/measurements/2026-11-22-round8-webkit-2.52.6-2.md`）。下の「CPU で描く WebKit」の決まり（11 個 ・ 25 %、`cover`、`SHOWN_WITH`）は `.1` の時の物で、合成の道ではそのままの形では効かない（合成の道で効くのは「離れた所を同じコマに変えない」）。`WEBKIT_DISABLE_COMPOSITING_MODE=1` で CPU の道にもどる。**決めた（2026-11-22、棟梁）: CPU の道**。meloet は起動のいちばん初めに `WEBKIT_DISABLE_COMPOSITING_MODE=1` を決める（`crates/meloet-app/src/main.rs` の `JSC_OPTIONS`。外から決めた値が勝つ）。理由: 合成の道では rAF が合成係の時計にそろい、鍵 → 描いた の p50 がどの場面でも 8〜10 ms 長く、ミキサーをひらいた再生で「2 コマ以内」が 92.5〜95 % に落ち、WebKit の CPU も 115 %（CPU の道は 71 %）だった（`docs/measurements/2026-11-22-round8-quiet.md`）。引きかえ: アレンジの横の送り ・ 拡大が 1 コマ 20〜24 ms（合成の道は 5〜8 ms）で 60 Hz を保てない（宿題）。下の決まりは、この道でそのまま効く。
-  - **CPU で描く WebKit**（第 4 回にわかった事。`docs/measurements/2026-11-19-round4-mixer.md` の 6 ・ 7 章）: NVIDIA ＋ Ubuntu の WebKitGTK では、合成の層がなく、ページは CPU で描かれる。
-    - canvas を出すと、その canvas ぜんたいが「よごれた四角」になる。WebKit は canvas を GPU から 2 回読みもどし（`readPixels`）、その四角の中の HTML（地、枠、文字）も描きなおして、ビットマップを画面のプロセスへ送る。だから重さは「出した canvas の数」と「四角の広さと、その下の HTML の多さ」で決まる。文字が多い所の上の canvas は高い。
-    - 1 コマでよごれた所は、「y の帯 × x の区間」の四角に切られる。上下の端がそろっていない四角は、たがいの端で切りあって数がふえる（上下がずれた 3 つの数字とメーター 1 本で、10 個をこえる）。
-    - **四角が 11 個以上か、四角の面積の合計が「ぜんぶを囲む四角」の 25 % 以上だと、WebKit は囲む四角 1 つをまるごと描きなおす**（WebKitGTK 2.52.6、`DrawingAreaCoordinatedGraphics.cpp` の `shouldPaintBoundsRect`）。上の帯と下のミキサーが同じコマでよごれると、囲む四角は窓のほとんどになり、主スレッドが 12〜16 ms ふさがる（1 つずつなら 5〜7 ms）。
-    - 決めた形（2 つ）:
-      1. **同じコマで変わる物は、1 枚の canvas の下に入れる**。`use:glSlot={{ kind: "cover" }}` は、何も描かず、区画の canvas をその箱までひろげる。上の帯では、位置 ・ 時間 ・ 処理の負荷 ・ マスターの dB の数字の箱とマスターのメーターが、`masterMeter` の 1 枚（1920 幅で 1437×36）の下にある。数字がいくつ変わっても、よごれた四角は 1 つ。
-      2. **ミキサーのメーターを出すコマは、マスターの面も出す**（`ui/src/gl/budget.ts` の `SHOWN_WITH`）。ミキサーの面は広くて下にあるので、右上のマスターの面がいつも入っていれば、囲む四角が窓の幅になり、25 % の決まりにかからない。
-    - **あとから 60 Hz で動く物を足す人が守る事**: (a) 上の帯に足すなら、その箱に `cover` をつける（`masterMeter` の区画の中）。(b) ほかの所に足すなら、同じコマで変わる近くの物と上下の端をそろえるか、同じ canvas の下に入れる。(c) 1 コマの四角は 10 個まで、面積の合計は囲む四角の 25 % 未満。足したら `tools/measure/webkit-damage.sh` で、四角の並びと「囲む四角 1 つ」になっていない事を見る。(d) canvas の下に文字をふやさない。(e) **毎コマ変わる物は、レイアウトを走らせない**: 位置や長さは `transform` だけで動かす（`top` ・ `left` ・ `width` を変えない。はしは `Math.round(px × dpr) / dpr` で画素に合わせる）。**字を毎コマ変えない**。どうしても毎コマ変わる字は、流れの外の箱（`position: absolute`、大きさは字によらない）に入れる。(f) 同じコマで小さな四角が何個も変わる所（ストリップごとのつまみと字）は、それを囲む箱の四角を先に 1 つ頼む（`askWhole`）。足したら `tools/measure/webkit-layout.sh` で、1 回のレイアウトが頼む四角の数と「one rectangle around all」になっていない事を見る（次の項）。
-    - **レイアウトでためる Region**（第 6 回にわかった事。`docs/measurements/2026-11-20-round6-step2-3.md` の 3 章、`2026-11-20-round6-fix-redraw.md`）: 上の「11 個 ・ 25 %」より**前**に効く、WebKit のもう 1 つの決まり。
-      - 1 回のスタイルの計算とレイアウト（`Document::updateLayout`、`resolveStyle`、`performLayout` の外がわの 1 つ）の間に頼まれた描きなおしの四角は、1 つの Region にためる。四角を足すたびに、その Region の **`gridSize()`（y の境目の数 × x の境目の数の合計）が 256 をこえたら、そこまでの四角を「ぜんぶを囲む四角」1 つにする**。その四角が見えている範囲の 75 % 以上なら、窓ぜんぶにする（出どころ: WebKit の枝 `webkitglib/2.52` の `Source/WebCore/rendering/RenderView.cpp` の `accumulateRepaintRect`（`maximumRepaintRegionGridSize = 16 * 16`、`dirtyEntireViewThreshold = 0.75f`）と `Source/WebCore/platform/graphics/Region.h` の `gridSize`（`m_spans.size() * m_segments.size()`）。確かさ A。この PC の WebKitGTK 2.52.6 が同じコードかは、gdb の呼び出しの列と、下の数え方が測りと合う事でしか確かめていない）。
-      - 数え方: たがいに離れた、高さのちがう四角 N 個で 4N²（**9 個でこえる**）。同じ高さで横にならんだ四角は N 個で 4N（64 個まで）。同じコマに上の帯の数字（2〜4 個）もたまるので、縦にずれた小さな四角は 6〜7 個が限り。
-      - こえると、囲む四角は**そのときまでにたまった物ぜんぶ**（上の帯の数字、アレンジの見出し、ミキサー）を囲むので、窓のほとんどになる。`cover` は、あとの決まり（11 個 ・ 25 %）にしか効かない。
-      - たまる順: スタイルだけで決まる描きなおし（色や背景）→ レイアウトの中の字の箱 → レイアウトのあとの層（`transform` で動いた物、古い位置と新しい位置）。JavaScript が `getBoundingClientRect()` などでレイアウトを強制すると、そこまでの分は別の Region になる。
-      - `position: absolute` の箱は自分の層を持ち、四角も別に頼む（フェーダーのつまみと、その中の線で 2 個、古い位置と新しい位置で 4 個）。
-      - レイアウトそのもの: `top` や幅や字が変わると、その箱の親をたどって flex がレイアウトしなおされ、動かなかった兄弟の箱まで四角を頼む（ミキサーのストリップ 8 本で 376 個）。流れの外の箱（`position: absolute`）の中の字は、親には「位置の決まった子だけ」の軽いレイアウトしか頼まない（`contain: strict` や `overflow: hidden` ＋決まった大きさの「流れの中の箱」では軽くならなかった）。
-      - **決めた形**（`ui/src/components/automation/coverIf.ts`、`autoState.svelte.ts`）:
-        1. つまみと棒は `transform`（`mixer/Fader.svelte`、`SendBar.svelte`、`params/ParamRow.svelte`）。値の字は、流れの外の箱 `.live > .in`（外の箱は幅のない字 `\200b` で高さとベースラインを保つ。`mixer/Strip.svelte`、`PanKnob.svelte`、`SendBar.svelte`、`automation/LaneHead.svelte`、`params/ParamRow.svelte`）。
-        2. **囲む箱の四角を先に頼む**（`askWhole`）: 帯が動かす物を囲む箱の `background-position` を、見た目の同じ 2 つの値の間で入れかえる。スタイルだけの描きなおしなので、いちばん先にたまり、中のつまみや字の四角はその中に入る（Region はふえない）。`transform` や `outline-color` や `box-shadow` の入れかえは、四角を頼まなかった（WebKitGTK 2.52.6 でためした）。
-          - ミキサーのストリップ（`mixer/Strip.svelte`）: フェーダーと値の箱 `.gain-box` は、帯がそのストリップの何かを動かしている間、canvas の下に入れる（`coverIf`）。canvas の下に入れるのも、四角を頼むのも、箱いっぱいに `coverIf` が置く同じ空の箱（箱そのものに頼ませると、中の字のはみ出しまで入って canvas の外へ出る）。メーターとほぼ同じ高さなので、canvas は広がらない。パンの行 `.pan-box` とセンドの 2 行 `.sends-box` は canvas の下に入れず、動いた行の四角だけを頼む（`askIf`）。どの空の箱もストリップの幅いっぱいまで左右に出すので、となりとつながって、四角は半分ごとに 1 つになる。
-          - アレンジの帯の見出し（`automation/LaneHead.svelte`）: いまの値の字の箱は `trackMeters` の canvas の下（`cover`）。字が変わるコマは canvas も出す（`cover` の `stamp`。`gl/engine.ts`）ので、字の四角は canvas の中に入り、再生の線の四角を切らない。見えていない見出しは、毎コマの値を読まない（`IntersectionObserver`）。
-        3. **ストリップのつまみと字は、上の canvas を描くコマに見せる**（`coverIf` の印は `paint`。WebGL の係が、その箱の上の canvas の絵を組み立てるときに呼ぶので、そこで `showTrack`）。ミキサーの canvas は左右の半分を 1 コマおきに出す。出ない半分のつまみを同じコマで動かすと、四角が 11 個をこえて窓ぜんぶになる（16 本で 25 ms）。canvas が描かれないコマ（メーターの知らせが来なかったコマ）は次の番まで待ち、どの canvas も 3 コマ描かれなければ見せる（`MAX_WAIT_FRAMES`）。ほかの canvas は描かれているのに番が来ないトラックは、横に送った外なので、見えるまで待つ（64 本の曲で、見えないストリップを書きかえない）。位置は 2 つ持つ: いちばん新しい位置（`livePosition`。帯の見出し、パラメータの欄）と、ストリップに見せている位置（`shownPosition`）。どちらもトラックごとの数で読みなおすので、動いていないトラックを見せている所は読みなおさない。
-        4. **パンとセンドは、1 回に片方ずつ**（`autoState` の `rowTurn`）: パンの行とセンドの行は canvas の外にあるので、同じコマに両方の四角を足すと、下の「広さ」に近づく。コマ 2 つごとに番を入れかえ、どのトラックも同じ番にする（そろえないと、行の四角がストリップごとにばらばらになって 11 個に近づく）。パンとセンドのつまみは 1 秒 15 回、フェーダーは 30 回。
-        5. **ほかの変化と、レイアウトを分ける**（`automation/AutoClock.svelte` の `layoutNow`）: 位置を書く前と、書いた物が画面にのったあとに、`scrollTop` を読んでレイアウトをすませる。帯が動かした物の四角が、上の帯の数字と同じ Region に入らない（入ると、縦にならんだ帯の見出しが 7 つほどで、囲む四角が上の帯からアレンジの下までになる）。動いている間だけ。
-      - **広さ**（7 章の 25 % の決まり）: 1920×1080 で、囲む四角は約 179 万 px、25 % は約 44.7 万 px。1 コマに描きなおすのは、マスターの面 5.2 万 ＋ 見出しのメーター 3 万 ＋ ミキサーの半分（幅 948 × 高さ 271 ＝ 25.7 万）＋ パンの行（948×24 ＝ 2.3 万）かセンドの 2 行（948×50 ＝ 4.7 万）で、多い時 38.4 万 px（21.5 %）。センドの行まで canvas の下に入れると 948×356 ＝ 33.7 万で、合計 42 万（23.5 %）になり、こえるコマが出た。
-      - 測った数は `docs/measurements/2026-11-20-round6-fix-redraw.md`。
-      - 残る天井: ぜんぶのメーターが止まっている（無音）と canvas が出ないので、動いた箱がそのまま四角になる。1 コマの四角は 8 個ほど（マスター、見出しのメーター、再生の線 4、ミキサーの半分、行）で、10 個まであと 2。パラメータの欄（canvas がない）で 2 行以上が同時に動く時は、まだ測っていない。64 本ぜんぶに帯 4 本が動く曲のミキサーは 1 秒 57〜59 コマ（測りの書類）。
-    - **天井**: ミキサーの面は「ストリップの数 × メーターの高さ」の 1 つの四角。1920×1080 で、8 トラック（11 本、1110×264）のとき、四角の合計は囲む四角の 21 %。計算では、トラックが 10 本（13 本のストリップ）で 24 %、11 本で 26 %。トラックが 10 本をこえるか、ミキサーの帯を高くすると 25 % をこえ、ミキサーをひらいた再生は、また囲む四角になる（宿題。メーターを HTML の棒にしても、棒が 11 本で 11 個の決まりにかかる）。
-    - **ミキサーのメーターは、いつも 30 Hz。左半分と右半分に分けて、1 コマに片方ずつ出す**（`ui/src/gl/budget.ts` の `regionHz`、`engine.ts` の `Tile`。トラックの数によらない: user:2026-11-20「メーターは 60Hz で見ることを求められないので、いっそのこと統一するために常に 30fps でいい」。第 5 回 区切り3 では 10 本をこえる時だけだった。アレンジのトラックのメーター、マスターのメーター、鍵、再生の線は 60 Hz のまま）。分けるのは 2 つまで（3 つにすると、1 つの部分が 30 Hz を下まわる）。左右は、見えている幅のまん中で分ける（slot のまん中がどちらにあるか。数で分けると、戻りとマスターのある右が広くなる）。
-      - トラック 16 本（ストリップ 19 本）では、メーターの面が 1807×264 になり、上の帯の面と合わせて囲む四角の 27 % になる。30 Hz にしても、出すコマは毎回、囲む四角（1896×938、約 178 万 px）をまるごと描きなおし、1 コマが 18〜22 ms かかっていた（`docs/measurements/2026-11-20-round5-step3-app.md` の 7 章）。
-      - 形: WebGL の文脈は区画に 1 つのまま。その canvas はページの外に置き、見えている slot を左から順に 2 つの組に分け、組ごとに「写しを見せるだけの canvas」（`bitmaprenderer`。WebGL の文脈ではないので、予算の数に入らない）を区画の箱に置く。1 コマに 1 組だけ WebGL で描き、`createImageBitmap(canvas, 0, 0, 幅, 高さ)` で写して `transferFromImageBitmap` で見せる（WebKitGTK 2.52.6 で、900×264 の写しは 0.9 ms、同じコマの中で届く）。どのメーターも 30 Hz（仕様書 3 章 第 8 版）で、ページは毎コマ、半分の四角（770×264 か 878×264）だけを描きなおす。組の間のすきま（左の組の最後のメーターから右の組の最初のメーターまで）は、どちらの面にも入らない。
-      - スクロールや大きさが変わったコマ（`urgent`）は、置き場がずれないように 2 組とも同じコマで出す（そのコマだけは囲む四角になる）。`createImageBitmap` か `bitmaprenderer` がない所では、分けずに 33 ms に 1 回描く（前の形）。
-      - 測った数（1920×1080、再生中、25 秒）: 16 本で busyMs 平均 12.2 → 6.1 ms、p95 21 → 7 ms、描きなおしは「囲む四角」151 回中 151 回 → 138 回中 0 回（1 回 28.6〜31.4 万 px）。10 本は変わらず 6.1 ms。
-      - 残る天井: 半分の面が囲む四角の 25 % をこえる時（ミキサーの帯がとても高い時）。
-    - 合成の層がある PC（Intel、AMD）では、canvas は GPU の層になり、この決まりは関係しない（`cover` と `SHOWN_WITH` は、面を少し広く ・ 多く出すだけ）。確かめてはいない。
-  - 限り: WebKitGTK 2.52 では、WebGL の文脈は 1 ページ 16 個まで。17 個めで、いちばん古い文脈が失われ、戻らない。**捨てた canvas の文脈も、GC されるまで数に入る**（`loseContext()` を呼んでも同じ）。作って捨てる形のままだと、音の設定の「くわしく」を 40 回切りかえるだけで、生きている文脈が 15 個失われた。だから canvas は作ったら手放さず、`ui/src/gl/pool.ts` で次の区画に使いまわす（同じ 40 回で、作ったのは 7 個、失われたのは 0 個）。
-  - 文脈は区画の箱が来たときに作る（第 3 回の直し）: `getContext("webgl2")` 1 回で、主スレッドが 50 ms か 200 ms 止まる（シェーダーのコンパイルとリンクは 1 ms、最初の描画は 1 ms 以下。2026-11-15、RTX 5060 Ti、WebKitGTK 2.52.6、`frame-profile.json` の `made`。`docs/measurements/2026-11-15-round3-fix-glcontext.md`）。だから区画は、slot が初めて入ったときではなく、`use:glRegion` の箱が来たとき（起動、帯をひらいたとき）に canvas を取り、箱があるうちは slot がなくても持つ（大きさ 0）。鍵・録り始め・ドラッグの瞬間には作らない。そのため、のびる物の区画の箱は、使っていない間もおく（`recordingClip` はアレンジのレーンいっぱいの `.rec-host`、`pianoRollLive` はノートの場所いっぱいの `.live-host`）。数の最大は下の表のとおりで変わらない（どちらも表で 1 と数えていた）。帯をひらくコマは、作る文脈の数だけ重くなる（1920×1080 で 360〜410 ms）。
-  - 予算: 作ってよい文脈は 12 個（限りの 16 から 4 つ残す）。こえそうになったら、開発とテストでは落とし、本番では console に書く。区画の外の slot も同じ。区画を足すときは `ui/src/gl/budget.ts` の `REGIONS` に 1 行足す（表にない名前は型で通らない）。
+- The output is cpal's PipeWire host. **The buffer in use is read from the frame count the callback receives.** The buffer and sample rate asked for are settings (22-16; at first it was always 256).
+- The PC-wide `clock.force-quantum` is **only read** from PipeWire's `settings` metadata. When it is not 0 and the buffer in use differs from the one asked for, the screen says "fixed by the PC-wide setting".
+- Latency estimate: from the first study's measurements (mean 13.2 ms with buffer 256, 53.2 ms with 1024, 48 kHz), key → sound ≈ 2.5 × buffer ÷ sample rate. While running, the measured value is used (the mean of the time between receiving a key and the time its sound is due at the DAC). Latency numbers shown in the sound settings: 22-15.
+- The instrument interface (`Instrument`): each track has one instrument. An instrument has "prepare (off the audio thread)", "events (notes, CC, bend)", "render (a stereo buffer)" and "stop". To swap, the core makes the new instrument off the audio thread and sends it through a ring. The audio thread swaps and sends the old one back through a ring (dropping it on the audio thread would run code that frees memory).
+- The first instrument was a placeholder (a soft synth tone). Superseded by 19-7 and 19-10: sample instruments, built-in synths, SF2 and plugins all sit behind the same interface (plugins hide the talk with another process behind it).
+- Meters: per block, the peak is written to an atomic only if larger than before. The telemetry thread sets it back to 0 when reading. There are meters for tracks, returns A and B, and the master (where they measure: 19-11).
+- The mixer's sound path (inserts, fader, pan, sends, returns, master): 19-11.
+- Processing load = time spent in the callback ÷ the length of that block.
+- To change output, the old stream is stopped, instruments are made again from the song, and a new stream is made.
 
-  | 区画 | どこ | 不透明 | 変わる速さ | 文脈 |
+### 4-1. Watching the audio thread
+
+- `meloet-engine` (and `meloet-sound`) use no locks such as `std::sync::Mutex`. `disallowed-types` and `disallowed-methods` in `clippy.toml` stop them by machine.
+- Memory use is watched in tests by a counting global allocator. When the audio thread section starts, a flag is set; any allocation or free while it is set fails the test. This runs both in offline render tests and in a test that runs a real stream for 2 seconds (only when a device exists).
+
+### 4-2. When things stop, and connecting again (round 2)
+
+- Output stream errors are counted in three kinds: xrun; the stream ended by itself (PipeWire gone, output gone; once per stream); other. The `DeviceNotAvailable` that cpal gives when we stop the stream ourselves is not counted.
+- When PipeWire goes away, cpal gives `StreamInvalidated` once and the callback stops (1.4–37 ms to notice), and the device watcher (pipewire-rs) ends with a core error (0.6–10 ms). Both tell the core. When the stream is closed, the engine comes back through `Carrier`'s Drop. In case it does not, the engine can be made again (`EngineHandle::rebuild`; the MIDI ring and the segment ring are new too, and the core hands them out again).
+- The MIDI thread, when it stops by itself, sends `Stopped` last and gives back its sink. The core starts it again with the same sink. Held keys and pedals are taken as let go at the moment it stopped.
+- Wait between tries: 0.5, 1, 2, 4 seconds, then every 5 seconds. For PipeWire and MIDI it never gives up (there is no other way back, and one try is cheap; the early tries are fast, so a daemon that comes back quickly is found quickly). When only the stream fell (PipeWire still running), up to 4 tries; after that it waits until the output list changes or the person does something (so it does not keep opening and closing an output that falls every time). If PipeWire is missing at start, it tries quietly at the same pace (it never ran, so 「止まりました」 is not shown).
+- If the sound stops while recording, the recording is closed at the last position the listener heard, what was recorded is kept as a take, and a notice is shown. If keyboard input stops, recording does not stop.
+- Tests: start a private PipeWire and WirePlumber (`crates/meloet-engine/tests/private_pw/`), kill it, and bring it back (`--devices`). The owner's PipeWire is never touched.
+
+---
+
+## 5. Keyboards
+
+- meloet joins the ALSA sequencer with the name `meloet` and subscribes to System:Announce. At start it counts all keyboards already there, then waits for plug in/out.
+- What counts as a keyboard: a client of type HARDWARE with a readable port (READ + SUBS_READ). From one client, only the readable port with the lowest number is heard (the second port of the Keystation 49 MK3, "Transport", is for buttons and could be taken for notes).
+- The keyboard's name is the ALSA client name (e.g. 「Keystation 49 MK3」).
+- The virtual keyboard for tests (`meloet-vkeys`) counts as a keyboard only with `MELOET_ACCEPT_VIRTUAL=1`. With `MELOET_VKEYS_NAME=name[,name…]`, only virtual keyboards of those names (`meloet-vkeys --name`) are taken (so other tests' virtual keyboards on the same PC do not mix in). With `MELOET_ONLY_VIRTUAL=1`, real keyboards are ignored and only virtual ones are seen (to take pictures of the "no keyboard" screen with a keyboard plugged in).
+- When a keyboard is pulled out, a "stop all sound" message goes to the audio thread and the record of held keys and pedals is cleared (so sound and lights do not stay after pulling it out with a key held).
+- With two or more keyboards, all keys are heard. The name shown is the keyboard played last (counted only on key presses; before any playing, the one plugged in last), and the input meter adds the count of the others like 「+1」 (spec chapter 3). Which keyboard a key came from comes with the MIDI message. The MIDI thread tells the core only when the keyboard differs from before, after telling the screen.
+
+---
+
+## 6. Names of outputs and inputs
+
+- meloet reads the Routes of PipeWire Devices (`EnumRoute` and `Route`). A Route's `description` is the real name (「アナログヘッドフォン」 etc.), `available` is whether something is plugged in, and `port.type` in `info` is the kind.
+- One output = one Sink node + one output Route of its device. A Sink with no Route (Bluetooth etc.) uses the node's description as its name.
+- An output's ID is "device name + Route name" (the node name if there is no Route). This is saved in the settings.
+- **meloet does not switch a device's Route** (that would change a PC-wide setting). If the chosen Route is not plugged in now, the text for that is shown.
+- Easy names are used only when the kind is known (the four in the mocks: headphones → 「ヘッドホンの穴」, HDMI → 「画面のスピーカー」, line out → 「うしろのスピーカーの穴」, rear mic → 「うしろのマイクの穴」).
+- The device name is the PipeWire Device's `device.description` as it is (e.g. 「GB206 High Definition Audio Controller」; the owner's decision). It is used on rows of outputs that cannot be chosen, and when two or more outputs have the same name.
+- Outputs that cannot be chosen (`unusable`) are of two kinds. The node exists but the PC uses another Route on that device → 「PC が切りかえる」 (`switchedByPc`). There is no node → 「PC の設定で止まっている」 (`stoppedByPc`, even if another jack on the same device has a node).
+- Order: outputs that can be chosen first (plugged in → unknown → not plugged in; among plugged in, headphones first), then those that cannot.
+
+---
+
+## 7. The screen
+
+- Svelte 5 + TypeScript + Vite. No SvelteKit (one screen is enough, and the bridge stays thin).
+- **Values**: `ui/src/design/tokens.ts` holds them under the spec's table names (`color.gray.4`, `size.meter.slim`, `space.3`, …). Part sizes that are only in the spec's text (a button's height 24, etc.) are `part.*`; sizes only in the mocks are `mock.*`, with their source. Parts use only the CSS variables made from here. A hex color or px written directly in a part fails a test.
+- **Scale**: 100, 125, 150 %. `tokens.ts` gives the values per scale. `line.hair` is one physical screen pixel at every scale (`1px / devicePixelRatio`). `line.mark` and `line.track` are the table's values. The "weight" column of the text table is read as the set of weights allowed at that size (text.s 400, 500, 600; text.m 400, 500; text.l 600; not changed by scale). Sizes in the spec's text (part.*) are rounded when the scale does not give a whole number.
+- **Wording**: one place, `ui/src/text/ja.ts`. The spec's wording is never changed by even one character (a test checks it against text taken from the spec). Text only in a mock is used as in the mock, with its source (the board name).
+- **Large surfaces are WebGL (one per region, reused)**: a part puts `use:glSlot={...}` where it draws, and a box around it (it can be the same box) gets `use:glRegion={"name"}`. The WebGL manager (`ui/src/gl/engine.ts`) puts one canvas in each region box (inside the box, `pointer-events: none`). The canvas covers "where the region's slots are ∩ the box ∩ the window", with edges on screen pixels. All slots in a region are drawn on that one canvas, in page order (later on top). Only regions whose list of rectangles changed are drawn. Things that change at 60 Hz (meters, the clip being recorded) are in small regions, not in large regions that do not change (the arrange's lines and clips). Things that only move, like the play line, are not redrawn: an HTML line is moved with CSS `transform`. Text and small parts are HTML. Canvas 2D is not used.
+  - Why: on WebKitGTK (NVIDIA), each surface put on screen blocks the web process's main thread for about "0.25 ms + 3.9 ms × megapixels", and key messages wait behind it (2026-11-15, RTX 5060 Ti, WebKitGTK 2.52.6). 16 meters as one surface each took 4.4 ms; on one surface, 1.4 ms. Moving with `transform` only: 0.35 ms. In round 1, a full-window surface at 60 Hz made key → screen p95 8–12 ms for this reason. This formula is for one surface with no HTML under it; in the real screen, the rules of "WebKit that paints on the CPU" below come first.
+  - **WebKit's drawing path (2026-11-22)**: WebKitGTK `2.52.6-0ubuntu0.26.04.2` started drawing through the compositing path (ThreadedCompositor, Skia), where the rules below do not work as written. **meloet sets `WEBKIT_DISABLE_COMPOSITING_MODE=1` at the very start** (`JSC_OPTIONS` in `crates/meloet-app/src/main.rs`; a value set from outside wins) and so paints on the CPU. Why: on the compositing path, key → drawn p50 was 8–10 ms longer in every case, and with the mixer open while playing, "within 2 frames" fell to 92.5–95 %. The cost: scrolling and zooming the arrange take 20–24 ms a frame (see 23-13). Details: `docs/history/measurements/2026-11-22-round8-quiet.md`, `2026-11-22-round8-webkit-2.52.6-2.md`.
+  - **WebKit that paints on the CPU** (found in round 4; `docs/history/measurements/2026-11-19-round4-mixer.md`, chapters 6–7): with NVIDIA + Ubuntu WebKitGTK on this path, there are no compositing layers and the page is painted on the CPU.
+    - When a canvas is shown, the whole canvas becomes a "dirty rectangle". WebKit reads the canvas back from the GPU twice (`readPixels`), paints the HTML inside that rectangle again (background, borders, text), and sends the bitmap to the UI process. So the cost depends on "how many canvases" and "how large the rectangles are and how much HTML is under them". A canvas over a lot of text is expensive.
+    - What got dirty in one frame is cut into rectangles of "a y band × an x range". Rectangles whose top and bottom edges do not line up cut each other and grow in number (three numbers and one meter with uneven edges go over 10).
+    - **If there are 11 or more rectangles, or their total area is 25 % or more of the rectangle around them all, WebKit repaints that one bounding rectangle whole** (WebKitGTK 2.52.6, `shouldPaintBoundsRect` in `DrawingAreaCoordinatedGraphics.cpp`). If the top band and the mixer at the bottom get dirty in the same frame, the bounding rectangle is most of the window and the main thread is busy for 12–16 ms (5–7 ms each alone).
+    - The two rules decided:
+      1. **Things that change in the same frame go under one canvas.** `use:glSlot={{ kind: "cover" }}` draws nothing but stretches the region's canvas over that box. In the top band, the boxes of position, time, load and master dB and the master meter are under the one `masterMeter` canvas (1437×36 at 1920 width). However many numbers change, it is one dirty rectangle.
+      2. **A frame that shows the mixer meters also shows the master surface** (`SHOWN_WITH` in `ui/src/gl/budget.ts`). The mixer surface is wide and low, so with the top-right master surface always in, the bounding rectangle is the window's width and the 25 % rule does not trigger.
+    - **Rules for anyone who adds something that moves at 60 Hz**: (a) in the top band, give its box `cover` (inside the `masterMeter` region). (b) elsewhere, line up its top and bottom edges with nearby things that change in the same frame, or put it under the same canvas. (c) at most 10 rectangles a frame, and total area under 25 % of the bounding rectangle. Check with `tools/measure/webkit-damage.sh` that the rectangles are as expected and not "one rectangle around all". (d) do not add text under a canvas. (e) **things that change every frame must not run layout**: move position and length with `transform` only (do not change `top`, `left`, `width`; snap edges with `Math.round(px × dpr) / dpr`). **Do not change text every frame.** Text that must change every frame goes in an out-of-flow box (`position: absolute`, with a size that does not depend on the text). (f) where many small rectangles change in one frame (knobs and text per strip), first ask for one rectangle around them all (`askWhole`). Check with `tools/measure/webkit-layout.sh` how many rectangles one layout asks for, and that it is not "one rectangle around all" (next item).
+    - **The Region collected during layout** (found in round 6; `docs/history/measurements/2026-11-20-round6-step2-3.md` chapter 3, `2026-11-20-round6-fix-redraw.md`): another WebKit rule that works **before** the "11 / 25 %" rule above.
+      - Repaint rectangles asked for during one style recalculation and layout (one outer `Document::updateLayout`, `resolveStyle`, `performLayout`) are collected in one Region. Each time a rectangle is added, **if the Region's `gridSize()` (number of y edges × number of x edges) goes over 256, everything so far becomes one bounding rectangle**. If that rectangle is 75 % or more of the visible area, the whole window is repainted. (Source: WebKit branch `webkitglib/2.52`, `Source/WebCore/rendering/RenderView.cpp` `accumulateRepaintRect` with `maximumRepaintRegionGridSize = 16 * 16` and `dirtyEntireViewThreshold = 0.75f`, and `Source/WebCore/platform/graphics/Region.h` `gridSize`. Confidence A for the source; that this PC's build runs the same code is only checked by gdb call stacks and by the counts matching the measurements.)
+      - Counting: N separate rectangles of different heights give 4N² (**over at 9**). N rectangles side by side at the same height give 4N (up to 64). The top band's numbers (2–4) are in the same frame, so 6–7 small rectangles at different heights are the limit.
+      - When it goes over, the bounding rectangle wraps **everything collected so far** (top band numbers, arrange lane headings, mixer), so it is most of the window. `cover` only helps with the later rule (11 / 25 %).
+      - Order of collection: repaints from style only (color, background) → text boxes during layout → layers after layout (things moved by `transform`, old and new place). When JavaScript forces layout with `getBoundingClientRect()` etc., what came before goes into a separate Region.
+      - A `position: absolute` box has its own layer and asks for its own rectangles (a fader handle and the line in it: 2; old and new place: 4).
+      - Layout itself: when `top`, a width or text changes, flex layout runs again up the box's parents, and sibling boxes that did not move also ask for rectangles (376 for 8 mixer strips). Text in an out-of-flow box (`position: absolute`) asks its parent only for a light "positioned children only" layout (`contain: strict`, or `overflow: hidden` with a fixed size on an in-flow box, did not make it light).
+      - **The shape decided** (`ui/src/components/automation/coverIf.ts`, `autoState.svelte.ts`):
+        1. Handles and bars move by `transform` (`mixer/Fader.svelte`, `SendBar.svelte`, `params/ParamRow.svelte`). Value text is in an out-of-flow box `.live > .in` (the outer box keeps height and baseline with a zero-width character `\200b`; `mixer/Strip.svelte`, `PanKnob.svelte`, `SendBar.svelte`, `automation/LaneHead.svelte`, `params/ParamRow.svelte`).
+        2. **Ask first for the rectangle of the box around them** (`askWhole`): switch the `background-position` of the box around what a lane moves between two values that look the same. It is a style-only repaint, so it is collected first, and the handles and text inside fall into it (the Region does not grow). Switching `transform`, `outline-color` or `box-shadow` did not ask for a rectangle (tried on WebKitGTK 2.52.6).
+           - Mixer strip (`mixer/Strip.svelte`): while a lane moves anything of that strip, the fader and the value box `.gain-box` go under the canvas (`coverIf`). Both going under the canvas and asking for the rectangle are done by the same empty box that `coverIf` places over the whole box (if the box itself asked, the text that sticks out would be included and go outside the canvas). It is about as tall as the meter, so the canvas does not grow. The pan row `.pan-box` and the two send rows `.sends-box` do not go under the canvas; only the moved row asks for its rectangle (`askIf`). Every empty box reaches the full width of the strip, so neighbors join and there is one rectangle per half.
+           - Arrange lane headings (`automation/LaneHead.svelte`): the current value's text box is under the `trackMeters` canvas (`cover`). In a frame where the text changes, the canvas is shown too (`cover`'s `stamp`; `gl/engine.ts`), so the text's rectangle is inside the canvas and does not cut the play line's rectangle. Headings not in view do not read the per-frame value (`IntersectionObserver`).
+        3. **Strip handles and text are shown in the frame that draws the canvas above them** (`coverIf`'s mark is `paint`; the WebGL manager calls it while building that canvas's picture, and `showTrack` runs there). The mixer canvas shows its left and right halves on alternate frames. Moving the handles of the half not shown in the same frame goes over 11 rectangles and repaints the whole window (25 ms with 16 tracks). In a frame where no canvas is drawn (no meter message came), it waits for its turn; if no canvas has been drawn for 3 frames, it shows anyway (`MAX_WAIT_FRAMES`). A track whose turn never comes while other canvases are drawn is scrolled out of view, so it waits until seen (in a 64-track song, hidden strips are not rewritten). Two positions are kept: the newest (`livePosition`; lane headings, params panel) and the one shown on the strip (`shownPosition`). Both are re-read by a per-track counter, so places showing a track that did not move are not re-read.
+        4. **Pan and sends take turns** (`rowTurn` in `autoState`): the pan row and the send rows are outside the canvas, so adding both in the same frame approaches the "area" limit below. The turn switches every 2 frames, the same for every track (otherwise row rectangles go out of step per strip and approach 11). Pan and send handles move 15 times a second, faders 30.
+        5. **Keep layout apart from other changes** (`layoutNow` in `automation/AutoClock.svelte`): before writing positions, and after what was written is on screen, read `scrollTop` to finish layout. Then the rectangles of what lanes moved do not go into the same Region as the top band's numbers (if they did, about 7 lane headings in a column would make the bounding rectangle reach from the top band to the bottom of the arrange). Only while moving.
+      - **Area** (the 25 % rule): at 1920×1080 the bounding rectangle is about 1.79 M px; 25 % is about 447 k px. Per frame: master 52 k + heading meters 30 k + half the mixer (948 × 271 = 257 k) + the pan row (23 k) or the two send rows (47 k), at most 384 k px (21.5 %). Putting the send rows under the canvas as well (948 × 356 = 337 k) made 420 k (23.5 %), and some frames went over.
+      - Left over: when all meters are still (silence), no canvas is shown, so moved boxes become rectangles as they are. About 8 per frame (master, heading meters, play line 4, half the mixer, a row), 2 away from 10. The params panel (no canvas) with 2 or more rows moving at once is not measured yet. A song with 64 tracks and 4 lanes each moving runs the mixer at 57–59 frames a second.
+    - **Ceiling**: the mixer surface is one rectangle of "number of strips × meter height". At 1920×1080 with 8 tracks (11 strips, 1110×264), the total is 21 % of the bounding rectangle. By calculation, 10 tracks (13 strips) give 24 %, 11 tracks 26 %. Over 10 tracks, or with a taller mixer band, it goes over 25 %. This is handled by splitting the mixer meters in halves (next item).
+    - **Mixer meters always run at 30 Hz, split into a left and a right half, one half per frame** (`regionHz` in `ui/src/gl/budget.ts`, `Tile` in `engine.ts`; for any number of tracks — the owner: meters need not be seen at 60 Hz, so always 30). Arrange track meters, the master meter, keys and the play line stay at 60 Hz. At most 2 parts (with 3, a part falls below 30 Hz). The split is at the middle of the visible width (which side a slot's middle is on), not by count (the right side, with returns and master, would be wider).
+      - With 16 tracks (19 strips) the meter surface was 1807×264, 27 % together with the top band, and every frame repainted the whole bounding rectangle (18–22 ms a frame).
+      - Shape: one WebGL context per region as before. That canvas sits off the page; the visible slots are split from the left into 2 groups, and each group gets a "show a copy only" canvas (`bitmaprenderer`; not a WebGL context, so not counted in the budget) in the region box. Each frame, one group is drawn with WebGL, copied with `createImageBitmap(canvas, 0, 0, w, h)` and shown with `transferFromImageBitmap` (a 900×264 copy took 0.9 ms and arrives in the same frame on WebKitGTK 2.52.6). The page repaints only half a rectangle each frame (770×264 or 878×264). The gap between the groups is in neither surface.
+      - In a frame where scrolling or size changed (`urgent`), both groups are shown in the same frame so they do not get out of place (only that frame repaints the bounding rectangle). Where `createImageBitmap` or `bitmaprenderer` is missing, it is not split and draws once every 33 ms.
+      - Result (1920×1080, playing, 25 s): with 16 tracks busyMs mean 12.2 → 6.1 ms, p95 21 → 7 ms; bounding-rectangle repaints 151 of 151 → 0 of 138. Details: `docs/history/measurements/2026-11-20-round5-step3-app.md` chapter 7.
+      - Left over: when half the surface is over 25 % of the bounding rectangle (a very tall mixer band).
+    - On PCs with compositing layers (Intel, AMD), a canvas becomes a GPU layer and these rules do not matter (`cover` and `SHOWN_WITH` only make surfaces a little larger or more frequent). Not checked.
+  - Limit: WebKitGTK 2.52 allows 16 WebGL contexts per page. At the 17th, the oldest is lost and does not come back. **Contexts of thrown-away canvases count until GC** (even after `loseContext()`). With "make and throw away", switching 「くわしく」 in the sound settings 40 times lost 15 live contexts. So a canvas, once made, is never let go: `ui/src/gl/pool.ts` reuses it for the next region (the same 40 times made 7 and lost 0).
+  - Contexts are made when the region box arrives (fixed in round 3): one `getContext("webgl2")` blocks the main thread for 50 or 200 ms (shader compile and link 1 ms, first draw under 1 ms; `docs/history/measurements/2026-11-15-round3-fix-glcontext.md`). So a region takes its canvas when its `use:glRegion` box arrives (start-up, opening a band), not when a slot first comes in, and keeps it while the box exists even with no slot (size 0). Nothing is made at the moment of a key, the start of recording or a drag. So boxes of regions that grow are kept even when unused (`recordingClip` is `.rec-host` over the whole arrange lane area, `pianoRollLive` is `.live-host` over the whole note area). The frame that opens a band is heavier by the contexts it makes (360–410 ms at 1920×1080).
+  - Budget: 12 contexts may be made (4 below the limit of 16). Going over fails in development and tests and writes to the console in release. Slots outside a region too. To add a region, add one line to `REGIONS` in `ui/src/gl/budget.ts` (a name not in it does not type-check).
+
+  | Region | Where | Opaque | How often it changes | Contexts |
   |---|---|---|---|---|
-  | inputMeter | 入力計の鍵盤とベロシティの棒（間の文字の所は描かず、すける。箱は入力計ぜんたい） | いいえ | 鍵ごと | 1 |
-  | masterMeter | 再生まわりのマスターのメーター。箱は再生まわりの帯ぜんたいで、面は位置の数字からマスターまで（数字の箱は cover。描くのはメーターだけで、ほかはすける） | いいえ | 〜60 Hz | 1 |
-  | trackMeters | トラックの見出しのメーター（何本でも 1 枚） | いいえ | 〜60 Hz | 1 |
-  | arrangeLanes | 小節の線とクリップ | いいえ | 曲、大きさ、スクロールが変わったとき | 1 |
-  | overview | ちぢんだアレンジ（trackMeters と arrangeLanes の代わり。使いまわし） | いいえ | 同上 | 0〜1 |
-  | settings | 音の設定のテスト音の横のメーターと、光る鍵盤（箱はスクロールする中身ぜんたい。「くわしく」をひらいて slot がなくなっても持つ） | いいえ | 〜60 Hz、鍵ごと | 0〜1 |
-  | （第 2 回）recordingClip | 録っているクリップだけ | いいえ | 〜60 Hz | 1 |
-  | （第 3 回）pianoRoll | ピアノロールの行の地、拍と小節の線、ノート、そろえる前の位置とドラッグのもとの位置の枠、ベロシティの帯 | いいえ | ノート・選択・見ている範囲が変わったとき | 1 |
-  | （第 3 回）pianoRollKeys | ピアノロールの左の鍵盤の列（鳴っている音・弾いている鍵が光る） | はい | 鍵ごと、再生中は毎コマ（42 四角ほど） | 1 |
-  | （第 3 回）pianoRollLive | ドラッグ中のノート、録音中にのびるノート（動いている物だけを囲む箱。ノートを動かすドラッグは箱を transform で動かすだけ） | いいえ | 〜60 Hz | 0〜1 |
-  | （第 4 回）mixerMeters | ミキサーのメーター（トラック ・ 戻り A ・ B ・ マスターの縦の 2 本ずつを 1 枚に。箱は横にスクロールする箱で、送っても 1 枚のまま。この 1 枚の写しを左右 2 つの canvas に 1 コマずつ出す） | いいえ | 30 Hz | 0〜1 |
-  | 再生の位置の線 | HTML（transform） | — | 60 Hz | 0 |
+  | inputMeter | the input meter's keys and velocity bar (the text part between is not drawn and shows through; the box is the whole input meter) | no | per key | 1 |
+  | masterMeter | the transport's master meter. The box is the whole transport band; the surface runs from the position numbers to the master (the number boxes are `cover`; only the meter is drawn, the rest shows through) | no | ~60 Hz | 1 |
+  | trackMeters | meters in the track heads (one surface for any number) | no | ~60 Hz | 1 |
+  | arrangeLanes | bar lines and clips | no | when the song, size or scroll changes | 1 |
+  | overview | the shrunk arrange (instead of trackMeters and arrangeLanes; reused) | no | as above | 0–1 |
+  | settings | the meter next to the test tone and the lit keyboard in the sound settings (the box is the whole scrolling content; kept when 「くわしく」 is opened and the slots go) | no | ~60 Hz, per key | 0–1 |
+  | (round 2) recordingClip | only the clip being recorded | no | ~60 Hz | 1 |
+  | (round 3) pianoRoll | the piano roll's row background, beat and bar lines, notes, outlines of positions before quantizing and of the drag's starting place, the velocity lane | no | when notes, selection or view change | 1 |
+  | (round 3) pianoRollKeys | the keyboard column on the left of the piano roll (sounding notes and played keys light up) | yes | per key; every frame while playing (about 42 rectangles) | 1 |
+  | (round 3) pianoRollLive | notes being dragged, notes growing while recording (a box around only what moves; dragging notes only moves the box by `transform`) | no | ~60 Hz | 0–1 |
+  | (round 4) mixerMeters | mixer meters (two vertical bars each for tracks, returns A and B, master, on one surface; the box scrolls sideways and stays one surface; its copy is shown on two canvases, left and right, one per frame) | no | 30 Hz | 0–1 |
+  | play line | HTML (`transform`) | — | 60 Hz | 0 |
 
-  最大は 10 個（第 4 回、19-5: 窓が高くてアレンジがトラックの行のまま、ピアノロールとミキサーをひらき、その上に音の設定）。内わけは inputMeter、masterMeter、trackMeters、arrangeLanes、recordingClip、pianoRoll、pianoRollKeys、pianoRollLive、mixerMeters、settings。予算まで、あと 2。不透明なのは pianoRollKeys だけなので、帯の組み合わせをどう渡り歩いても、作る文脈も 10 個（`ui/tests/gl.surface.test.ts` の「区画の数」）。
-- **アレンジのトラックの行は、縦に送る**（仮の形、user:2026-11-20。`ui/src/components/Arrange.svelte` の「トラックの行を縦に送る」）:
-  - 送るのは 2 つの箱の `scrollTop`: 見出しの列の `.heads-view`（`TrackHeads` を入れる）と、レーンの `.lanes-view`（中身は `.lanes`）。どちらも `overflow: hidden` で、`Arrange` が同じ数を書く。上の目盛 ・ マーカー ・ テンポの行は、箱の外なので動かない。送った位置は画面だけが持つ（曲にも取り消しにも入らない）。
-  - ふつうのホイール（`deltaY`）で送る。Shift ＋ ホイールは横、Mod ＋ ホイールは拡大のまま。クリップのドラッグ中と囲んでえらぶ間は送らない。右はしに縦の棒（`mixer/VScrollbar.svelte` を使う。横の棒といっしょに `.lanes-box` に重ねる）。えらんだトラックが変わった時と、トラックが足された時は、その行と帯が見える所まで送る（`revealRange`）。
-  - 行ぜんぶの高さは `rows.height` ＋「＋ トラック」の行（見出しの列のいちばん下にあるので、レーンの側も同じだけあける）。
-  - **WebGL**: 区画も文脈もふやしていない。クリップの絵の印（`.fill`）や帯の印（`AutoLane`）は、行といっしょに箱ごと動く。区画の箱 `.lanes-wrap` は送らない（テンポの帯も同じ区画）ので、**中身を送る箱に `data-gl-clip` をつける**と、WebGL の係（`gl/engine.ts` の `measure` ・ `build` ・ `place`）は、その中の印を「箱が見せている所」で切る（面の広さも、描く四角も）。小節の線の印は、送らない `.lanes-view` そのもの。`trackMeters` の区画の箱は `.head` から `.heads-view` に移した（送った行のメーターが、上の 3 行にかぶらない）。
-  - 送ったコマは、行の場所ぜんぶ（1896×836）を描きなおす（スクロールは、CPU で描く WebKit では描きなおし）。64 本 ・ 帯 4 本ずつで 1 コマ 18 ms、16 本で 13 ms（測りの書類）。
-- **WebKitGTK の GC と 60 Hz の仕事**（第 3 回にわかった事）: JavaScriptCore は、ひまな時に Eden の GC（若い物だけ）をくり返し、そのとき生きている物を古い側に上げる。古い側は Full の GC でしか返さないが、1 ページのまま 60 Hz で動く meloet では Full がほぼ来ない（録音でも再生だけでも、10 分で Eden 7000 回こえ、Full 0 回。`docs/measurements/2026-11-15-round3-fix-memory.md`）。60 Hz の仕事が一瞬持つ物が、たまりつづける。決めた事: 毎コマの仕事は、変わる物（押している鍵、のびている先）の数に比例させ、たまった物の数に比例させない。たまった物から作る物（`LiveNotesBook.notesOf`、鍵の範囲）は、変わったときだけ作って同じ物を返す。60 Hz の計器で `$state` に同じ中身の新しい配列を入れない。これだけでは止まらないので、`meloet-app` が起動のいちばん初めに環境変数 `JSC_useGenerationalGC=0` を決める（`main.rs` の `JSC_OPTIONS`。外から決めてあればそちらが勝つ）。ウェブのプロセスはこの環境を受けつぎ、JSC はひまな時の GC を全部 Full で回す（1 秒に約 3 回、止まりはふだん 1〜3 ms）。ピアノロールをひらいたままの 10 分の録音で 347 → 410 MB、鍵 → 画面の線は変わらない（測定の文書の g）。曲が大きくなると Full 1 回が重くなるので、大きな曲で止まりを見なおす。
-- **帯の決まりは Rust**: どの帯がひらいているか、高さ、入力計が 52 か 24 か、Esc でどれを閉じるかは、`meloet-core` の純粋な関数で決める（画面なしでテストできる）。画面は窓の大きさと拡大率を送り、返ってきた高さに率をかけて描く。画面の使える広さ（作業領域から窓の枠を引いた物）は、画面からは送らない。殻（`meloet-app`）だけが `Core::set_screen_space` で知らせる。
-- **用語の説明**: マウスを 0.6 秒止めると出る。幅 248、内がわ 8、地 gray.10、文字 gray.0、角 1、影なし。形は「用語 — 説明」（用語は太字）。
-- **キー**: 一文字のキーは、文字を打っている最中には効かない。Esc・Enter・Mod つきは効く。Esc は、文字の枠 → 用語の説明やメニュー → （ここから Rust の `Back`）ダイアログ → 右の欄 → いちばん新しい下の帯。
+  The most is 10 (round 4, 19-5: a tall window with the arrange in track rows, piano roll and mixer open, and the sound settings over them): inputMeter, masterMeter, trackMeters, arrangeLanes, recordingClip, pianoRoll, pianoRollKeys, pianoRollLive, mixerMeters, settings. 2 left before the budget. Only pianoRollKeys is opaque, so however the bands are combined, at most 10 contexts are made (「区画の数」 in `ui/tests/gl.surface.test.ts`).
+- **The arrange's track rows scroll up and down** (a provisional shape, the owner 2026-11-20; 「トラックの行を縦に送る」 in `ui/src/components/Arrange.svelte`):
+  - What scrolls is the `scrollTop` of two boxes: the head column `.heads-view` (holding `TrackHeads`) and the lanes `.lanes-view` (content `.lanes`). Both are `overflow: hidden`; `Arrange` writes the same number to both. The ruler, markers and tempo rows above are outside the boxes and do not move. The scroll position is kept only by the screen (not in the song, not in undo).
+  - A plain wheel (`deltaY`) scrolls. Shift + wheel is sideways and Mod + wheel is zoom, as before. No scrolling during a clip drag or a box selection. A vertical scroll bar on the right edge (`mixer/VScrollbar.svelte`, laid over `.lanes-box` with the horizontal one). When the selected track changes or a track is added, it scrolls until that row and its lanes are in view (`revealRange`).
+  - The full height of the rows is `rows.height` + the 「＋ トラック」 row (it is at the bottom of the head column, so the lane side leaves the same room).
+  - **WebGL**: no new regions or contexts. Clip marks (`.fill`) and lane marks (`AutoLane`) move with the rows in their box. The region box `.lanes-wrap` does not scroll (the tempo lane is in the same region), so **the box whose content scrolls gets `data-gl-clip`**, and the WebGL manager (`measure`, `build`, `place` in `gl/engine.ts`) cuts the marks inside it to "what the box shows" (both the surface size and the drawn rectangles). The bar line mark is on `.lanes-view`, which does not scroll. The `trackMeters` region box moved from `.head` to `.heads-view` (so meters of scrolled rows do not cover the three rows above).
+  - A scrolled frame repaints the whole row area (1896×836) (scrolling is a repaint on CPU-painting WebKit). 64 tracks with 4 lanes each: 18 ms a frame; 16 tracks: 13 ms. Sideways scrolling of the arrange: 23-13.
+- **WebKitGTK GC and work at 60 Hz** (found in round 3): JavaScriptCore runs Eden GC (young objects only) again and again when idle and moves the objects still alive to the old side. The old side is freed only by a Full GC, but meloet, one page running at 60 Hz, almost never gets one (10 minutes of recording or playing: over 7000 Eden, 0 Full; `docs/history/measurements/2026-11-15-round3-fix-memory.md`). What 60 Hz work holds for a moment keeps piling up. Decided: per-frame work is in proportion to what changes (held keys, growing ends), not to what has piled up. Things made from piled-up data (`LiveNotesBook.notesOf`, key ranges) are made only when something changes and the same object is returned otherwise. The 60 Hz telemetry does not put a new array with the same content into `$state`. That alone does not stop it, so `meloet-app` sets `JSC_useGenerationalGC=0` at the very start (`JSC_OPTIONS` in `main.rs`; a value set from outside wins). The web process inherits it, and JSC runs every idle GC as Full (about 3 a second, usually 1–3 ms pauses). 10 minutes of recording with the piano roll open: 347 → 410 MB, key → screen unchanged. A bigger song makes one Full GC heavier, so pauses should be checked again with big songs. (Memory of the CPU path: 23-12, 23-15.)
+- **Band rules are in Rust**: which bands are open, their heights, whether the input meter is 52 or 24, and which band Esc closes are decided by pure functions in `meloet-core` (testable with no screen; `layout.rs`). The screen sends the window size and the scale, and draws the returned heights times the scale. The usable screen area (the work area minus the window frame) is not sent from the screen; only the shell (`meloet-app`) tells it through `Core::set_screen_space`.
+- **Term tips**: shown when the mouse stays still for 0.6 s. Width 248, padding 8, background gray.10, text gray.0, corner 1, no shadow. Shape 「用語 — 説明」 (the term in bold).
+- **Keys**: single-letter keys do not work while text is being typed. Esc, Enter and keys with Mod do. Esc order: text box → term tip or menu → (from here on Rust's `Back`) dialog → right panel → the newest lower band.
 
 ---
 
-## 8. 設定の保存
+## 8. Saved settings
 
-`$MELOET_CONFIG_DIR`（試験用）、なければ `$XDG_CONFIG_HOME/meloet`、なければ `~/.config/meloet` の `settings.json`。
+`settings.json` in `$MELOET_CONFIG_DIR` (for tests), else `$XDG_CONFIG_HOME/meloet`, else `~/.config/meloet`.
 
 ```json
-{ "version": 1, "output": "<出口の id>", "output_name": "アナログヘッドフォン", "scale": 100, "metronome": false, "count_in_bars": 1 }
+{ "version": 1, "output": "<output id>", "output_name": "アナログヘッドフォン", "scale": 100, "metronome": false, "count_in_bars": 1 }
 ```
 
-- えらんだ出口があれば、次からは出口えらびを出さない。
-- メトロノームとカウントインの小節数は、曲ではなく設定（第 2 回）。欄がないとき・範囲の外は既定値（オフ、1 小節）。欄がふえても版は 1 のまま読める。
-- `output_name` は、えらんだときの名前。覚えた出口が一覧にまったくないとき（USB の音の箱をぬいて起動した、など）に、状態行に出す名前がないので持っている。
-- 書くときは一時ファイルに書いてから rename。読めない・こわれていたら既定値で始める。
-
-## 8-1. 出口の様子
-
-- Ready（ひらいて鳴らす）: 覚えた出口がいまあり、えらべて（ノードがあり、PC がその Route を使っている）、ささっている。
-- NotPlugged（ひらかない）: 起動したとき、覚えた出口がない・ささっていない・えらべない。ささったら、そのまま鳴らす。
-- Missing（とじる）: 動いている最中に、鳴らしていた出口が消えた・ぬけた・えらべなくなった。PC が別の Route に切りかえて、えらんでいないスピーカーから鳴るのをさけるため。もどったら、またひらく。
-- テスト音で、えらんでいない出口をひらくのは、出口えらびか音の設定がひらいている間だけ。とじたら、えらんだ出口にもどる。
-- 音がひらいていない間の鍵は、音のスレッドへ送らない（あとでまとめて鳴らないように）。画面には光る。
+- If an output has been chosen, the output chooser is not shown from then on.
+- Metronome and count-in bars are settings, not part of the song (round 2). A missing field or a value out of range gives the default (off, 1 bar). New fields can be added and version 1 still reads.
+- `output_name` is the name when it was chosen. It is kept because, when the remembered output is not in the list at all (started with a USB audio box pulled out, etc.), the status line has no other name to show.
+- Written to a temp file and then renamed. If it cannot be read or is broken, start with the defaults.
+- Fields added later (still version 1): `velocity_fixed`, `fixed_velocity` (18), shelf favorites and plugin places (20-11), `plugin_formats`, `input`, `buffer`, `sample_rate`, `record_bits`, `manual_latency_us`, `measured_latency` (22-16), and others. The full list is `OnDisk` in `crates/meloet-core/src/settings.rs`.
 
 ---
 
-## 9. テストと見はり
+## 8-1. Output states
 
-- `scripts/check-all.sh` 1 つで、`cargo fmt --check`、`cargo clippy -D warnings`、`cargo test`、`npm run check`（svelte-check と tsc）、`npm test`（vitest）、`node licenses/check.mjs` が全部走る。
-- 画面なしのテスト: 曲のデータ、約束（rev が飛んだら丸ごと取りなおす、を含む）、帯の決まり、状態行の知らせ、音の流れ（オフラインで描いて音とメーターを確かめる）、音のスレッドのメモリ確保。
-- 装置が要るテスト（実際の鍵盤、PipeWire）は `#[ignore]` にして、`scripts/check-all.sh --devices` で走らせる。
-- 見た目: `tools/design/shoot_ui.py`（偽物の状態をブラウザで撮り、モックと左右にならべる）と `tools/design/shoot_app.py`（本物のアプリを開発用の環境変数で動かして撮る）。撮った物は `docs/screenshots/`。
-- 速さ: `tools/measure/latency.sh`（release でアプリと仮想の鍵盤を動かし、鍵 → 画面、鍵 → 音を測って `summary.md` にする。`--state stopped|playing|recording` で再生中・録音中も）。本物の鍵盤は `tools/measure/real-keys.sh`（ヤチヨさんが弾いて窓を閉じる）。結果は `docs/measurements/`。
-- 和音と速い打鍵（第 3 回）: `latency.sh --pattern mixed` は、1 つずつの鍵、2〜4 音の和音（鍵どうし 0〜6 ms）、20〜150 ms あけた 2〜4 鍵の速い打鍵をまぜて弾く（`meloet-vkeys play --pattern spaced|fast|mixed --chord N --spread-ms N --fast-ms A-B`）。`summarize.py` は鍵 → 画面を、Rust が受けた押す鍵どうしの間で「間をあけた鍵」（前の鍵から 1 コマより後。線は 2 コマ）と「すぐあとの鍵」（1 コマ以内。線は 3 コマ）に分け、前の鍵からの間ごと（0〜16.7、16.7〜33.3、33.3〜150、150 ms〜）の表も出す。本物の鍵盤の記録も同じ形で読める。確かめは `python3 -I tools/measure/test_summarize.py`。
-- 録った位置（第 2 回）: `tools/measure/record-timing.sh private`（自分用の PipeWire で quantum 64〜1024）と `live <出口の id>`（本物の出口）。計器から拍が DAC に届く時刻を出し、その時刻に名前つきの仮想の鍵盤で押して、テイクの位置と拍をくらべる。ループ中の録音は `crates/meloet-core/tests/record_loop_private.rs`。
-- 長い録音（第 2 回）: `tools/measure/long-record.sh`（600 秒弾きつづけ、xrun、RSS、GC の目安を見る）。
-- 保存の途中で落とす試験（第 2 回）: `crates/meloet-core/src/songfile/tests.rs`。子のプロセスに保存させ、いろいろな瞬間に SIGKILL して、ファイルが前のか新しいかのどちらかで読めることを 120 回確かめる。
-- 画面のコマの時間（第 2 回）: `MELOET_MEASURE_DIR` があると、画面が `frame-profile.json`（WebGL のコマごとの仕事と、そのコマで主スレッドがふさがった時間）を書く。
-- 曲をひらいて測る（第 3 回）: `MELOET_OPEN_SONG=<曲>` は、ページが読めたときに Mod O と同じ道で、PC の窓の代わりにその曲をひらく（殻の `devhooks.rs`）。試験用の曲は `tools/measure/make_song.py`（ノートの数、小節、テンポ、CC の点）。`latency.sh --piano-roll [--song]` と `long-record.sh --piano-roll` は、ピアノロールをひらいたまま測る。
-- ピアノロールを自動で動かす（第 3 回）: `MELOET_MEASURE_DIR` と `MELOET_UI_SCRIPT=pr-scroll:100,pr-zoom:100,pr-drag:1000` があるときだけ、画面が `ui/src/dev/`（`import()` で読む）を動かし、Shift ＋ ホイール、Mod ＋ ホイール、ノートのドラッグ（押す・動かす 4 回・離す）を本物の DOM のできごととしてノートの場所に送る。段ごとの時刻と RSS の印を `ui-script.json` に書く。まとめて動かすのは `tools/measure/ui-script.sh`（RSS は `rss_watch.py`、表は `ui_script_summary.py`）。測らないときに読みこまれないことは `ui/tests/dev.surface.test.ts` が見はる。
+- Ready (open and play): the remembered output exists now, can be chosen (a node exists and the PC uses that Route), and is plugged in.
+- NotPlugged (do not open): at start, the remembered output is missing, not plugged in, or cannot be chosen. When it is plugged in, it plays.
+- Missing (close): while running, the output in use went away, was pulled out, or can no longer be chosen. This avoids sound coming from a speaker that was not chosen when the PC switches Routes. When it comes back, it opens again.
+- The test tone opens an output that is not the chosen one only while the output chooser or sound settings are open. When they close, it goes back to the chosen output.
+- Keys while no sound is open are not sent to the audio thread (so they do not all sound later at once). They still light up on the screen.
 
 ---
 
-## 10. 仕様書にない所で、仮に決めたこと
+## 9. Tests and watchers
 
-ここは、デザイン係やヤチヨさんの答えで変わりうる所です。決めたら `docs/progress.md` にも書く。
+- `scripts/check-all.sh` runs everything: `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test`, `npm run check` (svelte-check and tsc), `npm test` (vitest), `node licenses/check.mjs`.
+- Tests with no screen: song data, the contract (including "fetch everything again when `rev` skips"), band rules, status line notices, the sound flow (render offline and check sound and meters), memory use on the audio thread.
+- Tests that need devices (a real keyboard, PipeWire) are `#[ignore]` and run with `scripts/check-all.sh --devices`.
+- Looks: `tools/design/shoot_ui.py` (takes a fake state in a browser and puts it next to the mock) and `tools/design/shoot_app.py` (runs the real app with development env variables and takes pictures). Pictures go to `docs/screenshots/`.
+- Speed: `tools/measure/latency.sh` (runs the app in release with a virtual keyboard, measures key → screen and key → sound into `summary.md`; `--state stopped|playing|recording`). Real keyboard: `tools/measure/real-keys.sh` (the owner plays and closes the window). Results go to `docs/measurements/` (older ones: `docs/history/measurements/`).
+- Chords and fast notes (round 3): `latency.sh --pattern mixed` mixes single keys, 2–4 note chords (0–6 ms between keys) and fast runs of 2–4 keys 20–150 ms apart (`meloet-vkeys play --pattern spaced|fast|mixed --chord N --spread-ms N --fast-ms A-B`). `summarize.py` splits key → screen by the gap between presses as Rust received them: "spaced keys" (more than 1 frame after the previous; the line is 2 frames) and "following keys" (within 1 frame; the line is 3 frames), with a table per gap (0–16.7, 16.7–33.3, 33.3–150, 150 ms–). Real keyboard logs read the same way. Check with `python3 -I tools/measure/test_summarize.py`.
+- Recorded position (round 2): `tools/measure/record-timing.sh private` (a private PipeWire, quantum 64–1024) and `live <output id>` (a real output). It works out from the telemetry the time a beat reaches the DAC, presses a named virtual key at that time, and compares the take's position with the beat. Recording in a loop: `crates/meloet-core/tests/record_loop_private.rs`.
+- Long recording (round 2): `tools/measure/long-record.sh` (plays for 600 s; watches xruns, RSS and GC).
+- Killing in the middle of a save (round 2): `crates/meloet-core/src/songfile/tests.rs`. A child process saves and is SIGKILLed at many moments; 120 times it checks that the file reads as either the old or the new one.
+- Screen frame time (round 2): with `MELOET_MEASURE_DIR`, the screen writes `frame-profile.json` (WebGL work per frame and how long the main thread was busy in that frame).
+- Measuring with a song open (round 3): `MELOET_OPEN_SONG=<song>` opens that song when the page is ready, through the same path as Mod O, instead of the PC file window (the shell's `devhooks.rs`). Test songs: `tools/measure/make_song.py` (notes, bars, tempo, control points). `latency.sh --piano-roll [--song]` and `long-record.sh --piano-roll` measure with the piano roll open.
+- Driving the piano roll automatically (round 3): only with `MELOET_MEASURE_DIR` and `MELOET_UI_SCRIPT=pr-scroll:100,pr-zoom:100,pr-drag:1000`, the screen runs `ui/src/dev/` (loaded with `import()`) and sends Shift + wheel, Mod + wheel and note drags (press, 4 moves, let go) to the note area as real DOM events. It writes the time of each step and RSS marks to `ui-script.json`. Run it all with `tools/measure/ui-script.sh` (RSS: `rss_watch.py`, table: `ui_script_summary.py`). `ui/tests/dev.surface.test.ts` checks that it is not loaded when not measuring. These development hooks are only in builds made with `dev-hooks` (23-4, 23-11).
 
-| 所 | 決めたこと | 理由 |
+---
+
+## 10. Decisions made where the spec says nothing
+
+These may change with answers from the designer or the owner. Decisions are also written in `docs/progress.md`.
+
+| Where | Decision | Why |
 |---|---|---|
-| 状態の持ち主 | `meloet-core` を足した | 7-1 の「app は状態を持たない」「model は入出力を持たない」を両方守るため |
-| 鍵盤の口 | 1 台につき、いちばん番号の小さい読める口だけ | 2 つめの口がボタン用の鍵盤があるため |
-| 2 台の鍵盤 | 全部聞く。名前は最後に弾いた物（鍵を押したときだけ数える） | 仕様書 3 章。「弾いた」の数えかただけ仕様書にない |
-| 窓のいちばん小さい大きさ | 853×448 に拡大率をかける（125 % で 1067×560、150 % で 1280×672）。起動したときと率が変わったときに meloet-app が決めなおす | 仕様書 1 章（第 3 版）。150 % でも高さ 768 の画面に入る |
-| 出口の Route | meloet は切りかえない | PC 全体の設定を変えないため |
-| 遅れの見積もり | 2.5 × バッファ ÷ サンプルレート | 検証の 2 点の計測から |
-| 鍵 → 画面の道 | 鍵の on/off は MIDI のスレッドから直接 Channel へ。core の状態の鍵（hub）を、差分の配りと同じ順を守るために使う | 実測で p95 約 1 ms に収まっている |
-| WebGL の面 | 区画ごとに 1 枚の canvas、変わったときだけ描く。canvas は使いまわす | 7 章の理由 |
-| 処理の負荷 | 前に送った値から 1% 未満の動きなら送らない | 無音でも負荷は少し動くので、そのままだと計器が止まらない |
-| 状態行の「起きた事」の知らせ（帯をたたんだ、拡大率） | 「設定がひらいている」「出口が消えた／ささっていない」「鍵盤が抜けた」の下、「鍵盤をさがしている」より上に出す。次の人の操作（窓の大きさの変化は数えない）か、新しい知らせで消える | 人が何かしないと直らない知らせを先に。窓を動かしている最中に読めなくなると困るので、大きさの変化では消さない |
-| 知らせが 2 つ重なったとき | 拡大率を上げて、窓が広がり、帯もたたまれたら、帯の知らせ（第 3 回から `bandFoldedScale`）だけを出す | 状態行は 1 文。見えていた物が消えたほうが、人には大事 |
-| 1 つの操作で 2 つの帯がたたまれたとき（第 3 回） | 3 つ目の帯で 1 つ、そのあと高さが入りきらずにもう 1 つたたむときは、あとのほうの文（「入りきらない帯をひらいた」）を出す | 状態行は 1 文。仕様書の 4 つの場合（3 章）のどれかを、かならず言う |
-| 拡大率を変えて窓が広がるとき | core は、殻が広げたあとの大きさで、すぐに帯を決める。殻は `set_min_size` のあと、中身がいちばん小さい大きさに足りなければ `set_size` もする | 広がる前の小さい窓で決めると、帯が一度ちぢんで見える。GTK が窓の枠を自分で描くとき（Wayland）、`set_min_size` だけでは枠のぶん足りない |
-| 画面の使える広さ | いま窓がある画面の作業領域から、窓のまわりの物（外の大きさ − WebView の大きさ）を引く。わかる前は、どの率も入るとみなす。100 % はいつも入るとみなす | Wayland では作業領域が画面全体になり、枠には影も入るので、おおよその数。100 % は、いちばん小さい率なので、えらべないと困る |
-| 窓のいちばん小さい大きさに足す枠のぶん | 殻は、GTK の窓の大きさ − WebView の大きさ（同じ並べなおしの回の数）を、`set_min_size` に足す。窓が出る前は 0 で始め、窓の大きさが変わるたびに見なおして、変わったら決めなおす | GTK が枠を自分で描くとき（Wayland）、いちばん小さい大きさは題の帯と影（この PC で 52×89）も数える。足さないと、中身が 853×448 より小さくなる。窓のマネージャが枠を描くときは 0 になる |
-
-| 録音中に鳴らすもの（第 2 回） | 録音待機のトラックの前のテイクは鳴らさない。カウントインのあいだは曲を鳴らさない（クリックだけ） | 取りかえる物を聞かせない。はじめての人に、カウントインは合図だけのほうがわかりやすい |
-| どこから再生・録音するか（第 2 回） | 再生は止めた位置から（ループがオンで外なら、ループの始まりから）。録音はループがオンならループの始まり、オフなら止めた位置から、カウントインのあと。再生中の録音は、描いている位置のまま、すぐ録音に変わる（音を戻さない）。止めた位置はそのまま残す。先頭へは 0。目盛を押すと、その小節の頭 | 仕様書にない。音が戻ると、はじめての人は「こわれた」と思う |
-| カウントインの最後の半拍の鍵（第 2 回） | 拾う（テイクの頭を前へ広げる。0 より前へは広げない） | 早めに押した頭の音を落とさない。弾いたとおりの位置に残す |
-| 録音中・カウントイン中の操作（第 2 回、第 4 回で変えた） | テンポ、拍子、ループ、位置、録音待機、消す、テイクの切りかえ、取り消し・やりなおし、保存・ひらく・新しい曲、音源のためし弾きは受けない（再生中は受ける）。**ミキサーは受ける**（第 4 回、棟梁の決め）: フェーダー、パン、センド、パラメータ（プレビューも手も）、戻りのミュート、エフェクトを入れる・外す、トラックのミュート。ソロも受ける | 受けないのは、録音の位置と周の数えかたが途中で変わらないように。ミキサーとミュートは、録る位置にも周にも関わらない。録りながら音量を直せないと、弾きにくい |
-| ノートのない録音（第 2 回） | クリップも手も作らない | 仕様書の「ノートのない周はテイクにしない」に合わせた |
-| テイクの切りかえ（第 2 回） | T・▸ は最後の次で最初へ、Shift T・◂ は最初の前で最後へ回る | 仕様書にない |
-| ループのない周の線（第 2 回） | ループがオフのときは、範囲を覚えたまま、目盛にも見出しにも出さない | B-42 |
-| メトロノームの音（第 2 回） | 小節の頭 1760 Hz、ほかの拍 1046.5 Hz、35 ms。マスターのメーターを測ったあとで出口に足す（第 5 回、19-11） | 仕様書にない。トラックのメーターにもマスターのメーターにも入れない |
-| アレンジの横（第 2 回） | スクロールの位置はティックで持つ（拡大率を変えても同じ所）。画面の中の見た目なので Rust に送らない | 拡大率で見える所が変わらないように |
-| 曲の名前とファイル（第 2 回） | 曲の名前は手（取り消しの対象）ではない。最初の保存で「はじめての曲 2」になっても、取り消しで戻らない。1 つ前の状態から開いた曲は、取り消しても「変更あり」のまま | 名前はファイルの名前と同じなので、取り消すとファイルと食いちがう |
-| 保存まわりのダイアログの見出し（第 2 回） | 曲の名前（こわれたファイルのときはファイルの名前） | ヤチヨさんの決め |
-| PC のファイルの窓（第 2 回） | GTK の `FileChooserNative`（殻が出す）。題は「ひらく」「場所をえらぶ」。文は殻の 1 か所の定数（画面の文面は ja.ts の 1 か所、の決まりの例外） | 依存を足さずにすむ。Windows と Mac は第 9 回 |
-| 閉じるとき（第 2 回） | 殻は窓の閉じる要求をいつも止めて core に聞く。終わると決まってから web プロセスを止め、core を止める。順はいつも「保存 → web プロセスを止める → 終わる」 | 曲の安全を web プロセスに頼らない（宿題 2） |
-| PC が終わるとき（第 2 回、第 3 回で変えた） | SIGTERM・SIGINT・SIGHUP と logind の `PrepareForShutdown(true)` で、なおすためのファイルを書いてから終わる（15 章） | ダイアログを待てない。この PC ではアプリの scope は SIGTERM から 5 秒で SIGKILL |
+| Owner of the state | Added `meloet-core` | To keep both rules of 7-1: "app holds no state" and "model has no I/O" |
+| Keyboard ports | Only the readable port with the lowest number, per keyboard | Some keyboards use the second port for buttons |
+| Two keyboards | Hear all. The name is the one played last (counted only on key presses) | Spec chapter 3. Only how "played" is counted is not in the spec |
+| Smallest window size | 853×448 times the scale (1067×560 at 125 %, 1280×672 at 150 %). `meloet-app` sets it again at start and when the scale changes | Spec chapter 1 (3rd edition). Even 150 % fits a screen 768 high |
+| Output Route | meloet does not switch it | Not to change a PC-wide setting |
+| Latency estimate | 2.5 × buffer ÷ sample rate | From two measurements in the first study |
+| Key → screen path | Key on/off goes from the MIDI thread straight to the Channel. The lock on the core's state (hub) is used to keep the same order as the sending of changes | Measured p95 about 1 ms |
+| WebGL surfaces | One canvas per region, drawn only when changed. Canvases are reused | Chapter 7 |
+| Processing load | Not sent if it moved less than 1 % from the last sent value | Load moves a little even in silence; otherwise the telemetry would never stop |
+| Status line notices of "what happened" (a band folded, scale) | Shown below 「設定がひらいている」, 「出口が消えた／ささっていない」 and 「鍵盤が抜けた」, above 「鍵盤をさがしている」. Cleared by the person's next action (window size changes do not count) or by a new notice | Notices that need the person to act come first. Changing size does not clear it, so it can still be read while moving the window |
+| Two notices at once | When raising the scale widens the window and also folds a band, only the band notice (`bandFoldedScale` from round 3) is shown | The status line is one sentence. Something that was visible going away matters more |
+| Two bands folded by one action (round 3) | When a third band folds one, and then another is folded because the height does not fit, the later text (「入りきらない帯をひらいた」) is shown | The status line is one sentence, and it must always say one of the spec's four cases (chapter 3) |
+| Window grows with the scale | The core decides the bands at once with the size after the shell has grown the window. After `set_min_size`, the shell also calls `set_size` if the content is smaller than the minimum | Deciding on the small window before it grows makes bands shrink once. When GTK draws the window frame itself (Wayland), `set_min_size` alone is short by the frame |
+| Usable screen area | The work area of the screen the window is on, minus what is around the content (outer size − WebView size). Before it is known, every scale is taken to fit. 100 % always fits | On Wayland the work area is the whole screen and the frame includes shadows, so it is rough. 100 % is the smallest scale and must be choosable |
+| Frame added to the smallest window size | The shell adds GTK window size − WebView size (measured in the same layout pass) to `set_min_size`. Starts at 0 before the window shows, checked again on every size change and set again when it changes | When GTK draws the frame (Wayland), the minimum includes the title bar and shadow (52×89 on this PC). Without it, the content gets smaller than 853×448. When the window manager draws the frame, it is 0 |
+| What sounds while recording (round 2) | The earlier takes of the track being recorded do not sound. During the count-in the song does not sound (clicks only) | Do not play what is being replaced. For a beginner, a count-in that is only a signal is easier |
+| Where play and record start (round 2) | Play from the stop position (if the loop is on and the position is outside it, from the loop start). Record from the loop start if the loop is on, else from the stop position, after the count-in. Record while playing switches to recording at once at the drawn position (the sound does not jump back). The stop position stays. Home goes to 0. Clicking the ruler goes to the start of that bar | Not in the spec. If the sound jumps back, a beginner thinks it is broken |
+| Keys in the last half beat of the count-in (round 2) | Taken (the take's start is moved earlier; not before 0) | Do not lose the first note played a little early. Keep it where it was played |
+| Actions during recording and count-in (round 2, changed in round 4) | Not taken: tempo, time signature, loop, position, record arm, delete, switch take, undo/redo, save/open/new song, trying out an instrument (all taken while playing). **The mixer is taken** (round 4): fader, pan, send, parameters (preview and step), return mute, adding/removing effects, track mute. Solo too | What is not taken would change the recording position or how passes are counted. The mixer and mute touch neither. Not being able to fix volume while recording makes playing hard |
+| A recording with no notes (round 2) | Makes no clip and no step | Matches the spec's "a pass with no notes is not a take" |
+| Switching takes (round 2) | T and ▸ go from the last to the first; Shift T and ◂ from the first to the last | Not in the spec |
+| Loop lines when the loop is off (round 2) | The range is kept but not shown on the ruler or the heads | B-42 |
+| Metronome sound (round 2) | 1760 Hz on the bar, 1046.5 Hz on other beats, 35 ms. Added to the output after the master meter is measured (round 5, 19-11) | Not in the spec. Not in the track meters or the master meter |
+| Arrange sideways (round 2) | The scroll position is kept in ticks (the same place after zooming). It is how the screen looks, so it is not sent to Rust | So zooming does not change what is in view |
+| Song name and file (round 2) | The song name is not an undo step. Even if the first save makes 「はじめての曲 2」, undo does not change it back. A song opened from the previous version stays "changed" after undo | The name is the file name; undoing it would not match the file |
+| Heading of the save dialogs (round 2) | The song name (the file name for a broken file) | The owner's decision |
+| The PC file window (round 2) | GTK's `FileChooserNative` (shown by the shell). Titles 「ひらく」, 「場所をえらぶ」. The text is a constant in one place in the shell (an exception to "all wording in ja.ts") | No new dependency. Windows and Mac: round 9 |
+| Closing (round 2) | The shell always stops the window's close request and asks the core. Only when it is decided to end does it stop the web process, then the core. The order is always "save → stop the web process → end" | The song's safety does not depend on the web process |
+| When the PC shuts down (round 2, changed in round 3) | On SIGTERM, SIGINT, SIGHUP and logind's `PrepareForShutdown(true)`, write the recovery file and end (chapter 15) | There is no time for a dialog. On this PC the app's scope gets SIGKILL 5 s after SIGTERM |
 
 ---
 
-## 11. 時間の持ちかた（第 2 回）
+## 11. Keeping time (round 2)
 
-- 曲の中の位置は、ティックの整数（`u64`）。**4 分音符 1 つ = 480 ティック**（`meloet_model::TICKS_PER_QUARTER`）。1 拍は拍子の下の数の音符なので、1 拍のティックは 4/4 で 480、6/8 で 240、2/2 で 960。
-- 表示の「小節 . 拍 . ティック」の「ティック」は、拍の中を 480 に分けた数（仕様書 5 章「ティックは 1 拍を 480 に分けた細かい目盛り」）。4/4 なら中のティックそのまま、6/8 なら 2 倍、2/2 なら半分にして見せる。
-- テンポは「1 分間の拍の数」（仕様書 5 章）。0.01 きざみの整数で持つ（`Tempo`、9600 = 96.00）。使える範囲はテンポ 30.00〜300.00、拍子の上 1〜12、下 2・4・8・16（ヤチヨさんの決め）。
-- 秒との換算は、いまは曲の頭のテンポと拍子だけ（テンポ・拍子の変更は第 6 回）。
-- 録った位置は、耳に届いていた位置（小数）を、いちばん近いティックの整数にまるめる。96.00 の 4/4 で 1 ティックは 1.30 ms なので、まるめの誤差は ±0.65 ms まで。
+Superseded by 22-1 and 22-2: there are now **1920 ticks to a quarter note**, the displayed tick is the tick inside the beat with no conversion (always 4 digits), and the tempo is always **quarter notes per minute**, whatever the time signature. What still holds from the first shape:
 
-**理由**: 中の単位を 4 分音符にそろえると、拍子の下の数を変えても、ノートは音楽として同じ所に残る。あとで拍子の変更が入っても、位置の意味が変わらない。MIDI の書き出しも 4 分音符の分解能で書ける。表示だけを拍に直せば、仕様書の「1 拍を 480」とも合う。テンポを整数で持つのは、0.01 きざみの値が往復で変わらないようにするため。
+- A position in the song is a whole number of ticks (`u64`; `meloet_model::TICKS_PER_QUARTER`). One beat is the note of the time signature's lower number, so a beat is 1920 ticks in 4/4, 960 in 6/8 and 3840 in 2/2.
+- The tempo is held as a whole number in steps of 0.01 (`Tempo`; 9600 = 96.00). Range: tempo 30.00–300.00; time signature upper 1–12, lower 2, 4, 8, 16 (the owner's decision). Tempo and time signature changes: chapter 21 (the tempo map).
+- A recorded position is the heard position (a fraction) rounded to the nearest tick. The rounding error is at most ± 0.52 ms at any time signature (22-1).
 
-## 12. 録音の位置（遅れの補正）
+**Why**: with the inner unit tied to the quarter note, changing the time signature's lower number leaves notes in the same musical place, and the meaning of a position does not change when time signature changes are added. MIDI export can use quarter-note resolution. The tempo is a whole number so values in steps of 0.01 do not change on a round trip.
 
-**決まり**: 録った鍵は「その鍵を押した瞬間に、耳に届いていた曲の位置」に置く（ヤチヨさんの決め。仕様書 5 章「遅れの補正 — 録った音を、遅れのぶんだけ前へ戻して置くこと」）。クオンタイズはしない。
+---
 
-- **時計**: 鍵の時刻は、MIDI のスレッドが ALSA のシーケンサから読んだ瞬間の CLOCK_MONOTONIC（`MidiIn.t_us`）。音の時刻は、cpal の `OutputCallbackInfo` の `playback`（PipeWire の `pw_time.now + delay`）。どちらも同じ時計。
-- **耳に届いていた位置**: 音のスレッドは、ブロック（ループで飛ぶなら、その前後で分けた区切り）ごとに「最初のこまが DAC に届く時刻、こまの数、最初のこまの曲の位置、1 こまあたりのティック、状態、周」を、決まった大きさの輪にためる。鍵の時刻 t をふくむ区切りから、t のときの位置を出す。止める操作も、その操作の時刻に耳に届いていた位置で止める。画面の再生の位置の線も、同じ輪から「いま耳に届いている位置」を出す。
-- **カウントイン**: カウントインの最後の半拍に押した鍵は拾う（早めに押した頭の音）。それより前は録らない（弾く前の準備の音）。
-- **録っているあいだ**: 録音待機のトラックの前のテイクは鳴らさない（取りかえる物を聞かせない）。
-- **入っていない遅れ**: PipeWire の `delay` には、グラフの遅れと ALSA の headroom が入るが、DAC・コーデック・USB の音の箱の中の遅れは入らない（調べ物。PipeWire 1.4 のソース、確かさ A）。その分だけ、録った位置は遅めに出る（人はエンジンが思うより遅く音を聞き、その分遅く押すため。2026-11-21 に向きを直した。`research/audio-input-and-latency.md` の 5 章）。鍵盤の中と USB MIDI の遅れ（鍵を押してから ALSA に届くまで）も入らない（これも遅めに出る）。どちらもソフトだけでは測れない（出口から入口への線でつなぐ測りかたが要る）。
+## 12. Recorded position (latency correction)
 
-**理由**: 区切りごとに位置と時刻を組にして持てば、バッファの大きさや PipeWire の遅れが変わっても、計算は同じ形で正しい。鍵が音のスレッドに着いた時刻ではなく、鍵を読んだ時刻で引くので、ブロックの境目のどこで鍵が来ても位置がぶれない。
+**Rule**: a recorded key is placed at "the song position the listener was hearing at the moment the key was pressed" (the owner's decision; spec chapter 5, 「遅れの補正」). No quantizing.
 
-## 13. 取り消しの形
+- **Clocks**: a key's time is CLOCK_MONOTONIC at the moment the MIDI thread read it from the ALSA sequencer (`MidiIn.t_us`). The sound's time is `playback` in cpal's `OutputCallbackInfo` (PipeWire's `pw_time.now + delay`). Both are the same clock.
+- **The position the listener was hearing**: per block (split before and after a loop jump), the audio thread puts "the time the first frame reaches the DAC, the number of frames, the song position of the first frame, ticks per frame, state, pass" in a ring of fixed size. From the segment that holds the key's time t, the position at t is worked out. A stop is also made at the position heard at the time of the stop action. The screen's play line also gets "the position heard now" from the same ring. With tempo changes: 21-3, 21-4; after an output falls: 22-26.
+- **Count-in**: keys in the last half beat of the count-in are taken (a first note played early). Keys before that are not recorded (getting ready).
+- **While recording**: the earlier takes of the track being recorded do not sound (do not play what is being replaced).
+- **Latency not included**: PipeWire's `delay` includes the graph's latency and ALSA's headroom, but not the latency inside the DAC, codec or USB audio box (research of the PipeWire 1.4 source, confidence A). By that much, recorded positions come out late (the person hears the sound later than the engine thinks and presses that much later; the direction was corrected on 2026-11-21, `docs/history/research/audio-input-and-latency.md` chapter 5). The latency inside the keyboard and USB MIDI (from pressing to reaching ALSA) is not included either (also late). Neither can be measured by software alone (it needs a cable from an output to an input). The latency settings for vocal recording: 22-5, 22-6.
 
-- 曲（`Song`）を、取り消しの対象の `Doc` と、対象でない `Session` に分ける。
-  - `Doc`: 名前、テンポ、拍子、トラック（→ クリップ → テイク。第 4 回からフェーダー、パン、センド、インサートも）、戻り A ・ B、マスター。
-  - `Session`: 弾くと鳴る先、録音待機のトラック、ループのオン・オフ（ループの範囲は第 6 回から `Doc`。21-12）。
-  - **理由**: 録音待機やループの範囲を変えたあとで取り消すと、それまで戻ってしまうのを防ぐため。
-- 手（`History`）は、その手の前の `Doc` の写し（スナップショット）を持つ。`Doc` の中は トラック → クリップ → テイク が `Arc` なので、変えていない所は前の手と共有される。測った重さは、1000 手で 録音 約 965 KB、テイクの切りかえ 約 831 KB、テンポ 約 205 KB（8 トラック）。上限は今は設けない。
-  - **理由**: 逆の操作を書く形より、写しのほうが「何度往復しても同じ所にもどる」をまちがえにくい。共有で軽いので、写しでも足りる。
-- テイクは、一度できたら中身を変えない（画面はテイクの id でノートの絵をためておける）。クリップの中では `offset` でテイクの位置を決めるので、クリップをまとめても、テイクの中身は変わらない。
-- 手になる操作: 録音 1 回（ループの周が何本でもまとめて 1 手）、テイクの切りかえ、クリップを消す、テンポ、拍子。何も変わらない操作は手にしない。
-- **ミキサーの手**（第 4 回 区切り3）: フェーダー（`SetGain`）、パン（`SetPan`。マスターにもある）、センド（`SetSend`）、パラメータ（`SetParam`）、エフェクトを入れる（`AddEffect`）・外す（`RemoveEffect`）、戻りのミュート（`MuteReturn`）。ドラッグ 1 回が 1 手: 動かしている間の値は「プレビュー」として core が曲の外に持ち（`Play::mix_previews`）、音にだけかぶせる。離したとき（`commit`）に手になる。Esc（`CancelMixPreview`）、ほかの手、取り消し、曲の入れかえでプレビューは終わる。値が変わらない commit は手にしない。トラック ・ 戻り ・ マスターは `Arc` なので、1 本のフェーダーの手は、そのストリップだけを写す。録音中も受ける（10 章の表）。
-- 保存の印は `Doc` の版の番号。保存した版と今の版がちがえば「保存していない変更がある」。取り消して保存した所に戻れば、変更はない。
-- **録音を足す決まり**: 新しいテイクたちの範囲と重なる、同じトラックのクリップを全部集めて、1 つのクリップにまとめる（範囲は全部を合わせた物、テイクは前からの物のあとに新しい物、名前と id はいちばん前のクリップの物）。重ならなければ新しいクリップ（名前はトラックの名前。ヤチヨさんの決め）。端が触れるだけは重ならない。ノートが 1 つもない録音は、クリップも手も作らない。
-- **ループ中の録音**（仕様書 3 章）: 周ごとに新しいテイク。周をまたいで押していた鍵は押した周に入れ、ループの終わりで切る。踏んだままのペダルは次の周の頭に書く（ベンドとモジュレーションが 0 でないままのときも同じ。棟梁の決め）。ノートのない周はテイクにしない。止めたときに見せるのは、ノートのある最後の周。最初の周だけは、録りはじめる直前に押した鍵の位置まで前へ広げる（0 より前へは広げない）。
-- **鳴らしかた**: クリップの範囲の外は鳴らさない（第 3 回から、はしをつめたクリップも同じ。つめた頭の中で押されて範囲の中まで続くノートは鳴らさない。ペダル・モジュレーション・ベンドは、始まりより前の最後の値が 0 でなければ、クリップの始まりに置く。途中から再生を始めたときと同じ考え）。クリップの終わりで、ペダル・ベンド・モジュレーションが動いたままなら 0 に戻す。止めたとき、ループが折り返すとき、列を入れかえたときも、列が鳴らしている音を離し、列が動かした物を 0 に戻す。
+**Why**: keeping position and time as a pair per segment keeps the calculation the same and correct when the buffer size or PipeWire's latency changes. Since the time the key was read is used, not the time it reached the audio thread, the position does not shift wherever in a block the key arrives.
 
-- **一度配った id は二度と配らない**（第 3 回の続き）: 取り消しとやりなおしは `Doc` を丸ごと入れかえるが、`next_id` だけは今までにいちばん進んだ所より戻さない（`History` が覚えていて、入れかえと新しい手のたびに上げる）。
-  - **理由**: 画面はテイクを id でためていて、手放したテイクも新しい 16 個はとっておく。core も「古い id の意図は何もしない」で守っている。取り消しのあとの新しい手が同じ id をもらうと、ちがう中身を描いたり、古い意図が新しいテイクに当たったりする（第 3 回から残っていた不具合）。
-  - 保存するのも上げたあとの `next_id` なので、ひらいたあともかぶらない。取り消しで戻した曲は、`next_id` のほかは前と同じ（試験は `next_id` をのぞいて比べ、配った id の帳面で毎回見はる）。
-  - 手の名前（`StepKind`）は、クリップの手では数を持つ（`MoveClips { count, copy }`、`DuplicateClips`、`PasteClips`、`DeleteClips { count, cut }`）。帯に出す名前の案は `StepKind` のコメント（帯の中身は第 6 回）。
+---
 
-## 14. 保存の形（第 2 回）
+## 13. The shape of undo
 
-- **置き場所**: 曲は「曲のフォルダ」。`<音楽>/<曲の名前>/<曲の名前>.meloet`。`<音楽>` は `MELOET_SONGS_DIR`（試験用）→ `dirs::audio_dir()`（Linux は `user-dirs.dirs` の `XDG_MUSIC_DIR`。日本語の環境では「ミュージック」。Windows は `FOLDERID_Music`、macOS は `~/Music`）→ `~/Music` の順。最初の保存は聞かずにここへ置く（ヤチヨさんの決め）。同じ名前のフォルダがあれば（中身が何でも）「 2」「 3」…をつけ、曲の名前もそれに合わせる。フォルダの名前に使えない字（`/ \ : * ? " < > |` と制御文字）は `_`。あとで入る物（プラグインの状態、歌の音）は、このフォルダの下の `plugins/`、`audio/` に置く。
-- **形**: UTF-8 の JSON を 1 行につめ、最後に改行。形を決めるのは `crates/meloet-core/src/songfile.rs`（model に serde を入れない）。
+- The song (`Song`) is split into `Doc`, which undo covers, and `Session`, which it does not.
+  - `Doc`: name, tempo and time signature (`timeline`, chapter 21), tracks (→ clips → takes; from round 4 also fader, pan, sends, inserts; from round 6 automation lanes), returns A and B, master, markers, the loop range (moved here in round 6), the audio table (22-10).
+  - `Session`: the selected track (`play_target`), loop on/off, piano roll settings, solo, folded lanes, and for vocal tracks ● and monitor (`armed_vocals`, `monitored`, 22-10). The record arm is the selected track (19-9); the old `Session::armed` is gone.
+  - **Why**: so that undoing does not also undo a change of record arm.
+- A step (`History`) holds a copy (snapshot) of the `Doc` before that step. Inside `Doc`, tracks → clips → takes are `Arc`, so unchanged parts are shared with the step before. Measured: 1000 steps of recording about 965 KB, take switching about 831 KB, tempo about 205 KB (8 tracks). No limit for now (see also 16, "memory of the undo history").
+  - **Why**: copies make "any number of round trips comes back to the same place" harder to get wrong than writing reverse operations. Sharing makes them light enough.
+- A take never changes once made (the screen can cache note pictures by take id). Inside a clip, `offset` sets the take's place, so joining clips does not change take content.
+- Actions that make a step: one recording (one step however many loop passes), switching takes, deleting a clip, tempo, time signature. An action that changes nothing makes no step. Others are named in `StepKind` (`crates/meloet-model/src/history.rs`).
+- **Mixer steps** (round 4): fader (`SetGain`), pan (`SetPan`; the master has one too), send (`SetSend`), parameter (`SetParam`), adding (`AddEffect`) and removing (`RemoveEffect`) an effect, return mute (`MuteReturn`). One drag is one step: values while moving are a "preview" the core keeps outside the song (`Play::mix_previews`) and lays only over the sound. Letting go (`commit`) makes the step. Esc (`CancelMixPreview`), another step, undo, or replacing the song ends the preview. A commit that changes no value makes no step. Tracks, returns and master are `Arc`, so a step for one fader copies only that strip. Taken while recording too (the table in chapter 10).
+- The save mark is the `Doc`'s version number. If the saved version and the current one differ, there are unsaved changes. Undoing back to the saved place means no changes.
+- **Rule for adding a recording**: all clips on the same track that overlap the range of the new takes are joined into one clip (the range covers them all; takes are the old ones followed by the new; name and id from the earliest clip). If nothing overlaps, a new clip (named after the track; the owner's decision). Edges only touching do not overlap. A recording with no notes makes no clip and no step.
+- **Recording in a loop** (spec chapter 3): a new take per pass. A key held across a pass boundary goes into the pass where it was pressed and is cut at the loop end. A pedal still held is written at the start of the next pass (the same for bend and modulation not at 0). A pass with no notes is not a take. When stopped, the last pass with notes is shown. Only the first pass is extended earlier to a key pressed just before recording started (not before 0).
+- **How clips play**: nothing outside a clip's range sounds (also for trimmed clips from round 3: a note pressed in the trimmed head and lasting into the range does not sound; pedal, modulation and bend take the last value before the start, placed at the clip start if it is not 0 — the same idea as starting playback in the middle). At the clip end, pedal, bend and modulation still active go back to 0. On stop, loop wrap and list replacement too, the list lets go of the notes it is sounding and puts back what it moved to 0.
+- **An id handed out is never handed out again** (end of round 3): undo and redo replace the `Doc` whole, but `next_id` never goes back below the highest it has ever been (`History` remembers it and raises it on every replacement and every new step).
+  - **Why**: the screen caches takes by id, and keeps the newest 16 of the ones it let go. The core also relies on "an intent with an old id does nothing". If a new step after an undo got the same id, the screen would draw different content, or an old intent would hit the new take.
+  - The saved `next_id` is the raised one, so ids do not collide after opening either. A song put back by undo is the same as before except for `next_id` (tests compare everything but `next_id`, and check a ledger of handed-out ids every time).
+  - Step names (`StepKind`) carry counts for clip steps (`MoveClips { count, copy }`, `DuplicateClips`, `PasteClips`, `DeleteClips { count, cut }`). The names shown in the history band: 21-12.
+
+---
+
+## 14. The save format (round 2)
+
+- **Where**: a song is a "song folder": `<music>/<song name>/<song name>.meloet`. `<music>` is `MELOET_SONGS_DIR` (for tests) → `dirs::audio_dir()` (on Linux `XDG_MUSIC_DIR` from `user-dirs.dirs`, 「ミュージック」 on a Japanese desktop; Windows `FOLDERID_Music`; macOS `~/Music`) → `~/Music`. The first save goes here without asking (the owner's decision). If a folder of the same name exists (whatever is in it), 「 2」, 「 3」, … is added and the song name follows. Characters not allowed in folder names (`/ \ : * ? " < > |` and control characters) become `_`. Superseded in part by 22-4: recorded and imported audio goes in the folder `音/` next to the song file; plugin state is inside the song file (base64, from version 4), so there is no `plugins/` folder.
+- **Shape**: UTF-8 JSON on one line, with a newline at the end. The shape is fixed in `crates/meloet-core/src/songfile.rs` (no serde in the model).
+
+An example in the current version 6 (shortened; fields that are empty or default are left out when written):
 
 ```json
 {"format": "meloet-song", "version": 6, "app": "meloet 0.1.0",
- "song": {"name": "はじめての曲", "tempo": 9600, "meter": [4, 4], "tempoChanges": [], "nextId": 8,
-   "tracks": [{"id": 1, "name": "ピアノ", "color": 1, "instrument": {"kind": "placeholder"}, "gainDb": 0.0,
-     "clips": [{"id": 3, "name": "ピアノ", "start": 7680, "end": 15360, "active": 1,
-                "takes": [{"take": 5, "offset": 0}, {"take": 6, "offset": 480}]}],
+ "song": {"name": "はじめての曲", "tempo": 9600, "meter": [4, 4], "nextId": 8,
+   "tracks": [{"id": 1, "name": "ピアノ", "color": 1, "instrument": {"kind": "builtin", "name": "grandPiano"}, "gainDb": 0.0,
+     "clips": [{"id": 3, "name": "ピアノ", "start": 30720, "end": 61440, "active": 1,
+                "takes": [{"take": 5, "offset": 0}, {"take": 6, "offset": 1920}]}],
      "plugins": [], "automation": []}],
    "audio": []},
- "takes": [{"id": 5, "length": 7680, "notes": [[0, 30, 60, 100]],
-            "controls": [[0, 64, 127], [240, "bend", -8192], [240, 1, 12]]}],
- "session": {"playTarget": 1, "armed": 1, "loop": {"start": 0, "end": 3840}, "loopOn": false}}
+ "takes": [{"id": 5, "length": 30720, "notes": [[0, 120, 60, 100]],
+            "controls": [[0, 64, 127], [960, "bend", -8192], [960, 1, 12]]}],
+ "session": {"playTarget": 1, "loopOn": false}}
 ```
 
-  - テイクは id ごとの表にし、クリップからは id と offset で指す。**理由**: テイクは変わらない物で、あとで同じテイクを 2 つのクリップから指すこともある。1 回だけ書けて、読むと 1 つの `Arc` を分けあう形に戻る。
-  - ノートは `[始まり, 長さ, 鍵, 強さ]`。**理由**: 何千と並ぶので、欄の名前をくり返さない。
-  - CC とベンドは 1 本の `controls`（CC は `[ティック, 番号, 値]`、ベンドは `[ティック, "bend", 値]`）。**理由**: 別の配列にすると、同じティックの CC とベンドの順が、読んだあとで変わる（往復で同じ曲に戻らない）。
-  - テンポは 0.01 の整数、拍子は `[上, 下]`。model と同じ持ちかた。
-  - あとで来る物の席（トラックごとの `plugins`・`automation`、曲の `audio`）は、いまは空の配列。読むときは、なくてもよい。知らない欄は読み飛ばす（新しい meloet が欄を足しても、同じ版なら古い meloet で開ける）。`version` がこの meloet より新しいファイルは読めない物として扱う。
-  - **版 2**（第 3 回）: クオンタイズしたテイクを書けるようにした。版 1 のファイルも読める（版 1 には、この 2 つがないだけ）。書くのはいつも版 2。
-    - テイクに `"origin": {"take": 8, "division": 16, "triplet": false, "strength": 75, "swing": 0, "align": "start"}`（もとのテイクの id と、最後にかけた設定）。もとのテイクは、どのクリップからも指されていなくても、テイクの表に入れる（そのテイクより前に書く）。
-    - ノートは、もとのテイクから来た物だけ 5 つめに、もとのテイクの中の番号: `[始まり, 長さ, 鍵, 強さ, もとの番号]`。
-    - 読めない物にする（足した分）: もとのテイクがない、もとのテイクがもとのテイクを持つ、もとの番号がもとのテイクのノートの数をこえる、もとのテイクを持たないテイクのノートにもとの番号がある、設定が範囲の外。
-    - クリップの `offset` は符号つき（区切り3）。負なら、テイクの頭がクリップの始まりより前にしまわれている（はしをつめたとき）。まだ外に出していない版なので、版 2 のまま。版 1 のファイルの offset はいつも 0 以上。クリップの終わりの上限は `MAX_TICK`（i64::MAX / 2）で、こえるファイルは読めない物として扱う。
-  - **版 3**（第 4 回）: 音源の名前、トラックのない曲、ミキサー。形は 19-4。
-  - **版 4**（第 5 回）: プラグインと SF2。形は 20-6。
-  - **版 5**（第 6 回）: テンポの点、拍子の旗、マーカー、ループの範囲（session から song へ）。形は 21-13。
-  - 読めない物にする: `format` がちがう、版が新しい、model の決まりを破る（テンポ・拍子の範囲、id の重なり、クリップの重なり、ないテイクを指す、ノートの長さ 0 など）。録音待機や弾くと鳴る先が、ないトラックを指すときだけは、曲を捨てずに直す。
-- **書きかた**（どの瞬間に落ちても `<名前>.meloet` は前のか新しいかのどちらかで、こわれていない）:
-  1. 同じフォルダの一時ファイルに書いて `sync_all`。
-  2. 今のファイルがあり、しかも曲として読めるときだけ、それを `.prev` の一時ファイルへコピーして `sync_all` し、`<名前>.meloet.prev` へ rename（これが仕様書の「自動で残してある 1 つ前の状態」）。
-  3. 一時ファイルを `<名前>.meloet` へ rename。
-  4. フォルダを `sync_all`（Unix）。しくじったら一時ファイルを消す。
-  - **理由**: rename は同じフォルダの中では原子的。1 つ前は hard link でなくコピー（USB メモリの FAT・exFAT に hard link はない）。読めないファイルを `.prev` にしないのは、こわれたファイルの上に保存したときに良い `.prev` を押し出さないため。
-  - 確かめ: 子のプロセスに保存させて 120 回 SIGKILL し、毎回 `<名前>.meloet` も `.prev` も読めて、保存した曲のどれかと一致した。電源が落ちたときは `sync_all` と rename の順だけが頼りで、試験はしていない（ソフトだけではできない）。
-- **流れ**:
-  - 新しい曲・ひらく・閉じる: 変更があれば「保存していない変更があります」（保存する / 保存しない / やめる）。保存して失敗したら「保存できない」へ。
-  - 保存できない: 場所をえらぶ → フォルダの窓 → `<えらんだ所>/<名前>/<名前>.meloet` に保存し、待っていた事（閉じる・新しい曲・ひらく）に続く。
-  - こわれている: `.prev` が読めれば「1 つ前を開く」。開いた曲は「変更あり」（次の保存で `<名前>.meloet` を書きなおす）。`.prev` がなければ仕様書の文の 1 文目と「やめる」だけ。
-  - 録音中・カウントイン中は、保存・ひらく・新しい曲を受けない。閉じる要求は、録音を止めて、録れた分を曲に入れてから判断する。
-  - 開いた・新しくしたとき: 手を空にし、位置を 0 にし、えらびを外し、エンジンへ全部送りなおす。
-  - ダイアログの答えには、そのダイアログの id をつける（「保存しない → ファイルの窓 → こわれている」のようにダイアログが続けて入れかわるとき、前のダイアログへのおそい答えが次に当たらないように）。
+  - Takes are a table by id; clips point to them by id and offset. **Why**: takes do not change, and one take may be pointed to by two clips. It is written once and reads back into one shared `Arc`.
+  - A note is `[start, length, key, velocity]`. **Why**: there are thousands, so field names are not repeated.
+  - CC and bend are one `controls` list (CC `[tick, number, value]`, bend `[tick, "bend", value]`). **Why**: in separate arrays, the order of a CC and a bend at the same tick would change after reading (a round trip would not give the same song).
+  - The tempo is a whole number in 0.01 steps (quarter notes per minute); the time signature is `[upper, lower]`. The same as the model.
+  - Unknown fields are skipped (a newer meloet can add fields, and an older one of the same version still opens it). A file with a `version` newer than this meloet does not read.
+  - Quantized takes (from version 2): a take has `"origin": {"take": 8, "division": 16, "triplet": false, "strength": 75, "swing": 0, "align": "start"}` (the origin take's id and the last settings used). The origin take is written in the take table even if no clip points to it (before the take that uses it). Notes that came from the origin have a 5th item, their index in the origin: `[start, length, key, velocity, origin index]`. Does not read (in addition): a missing origin take; an origin take that has an origin; an origin index past the origin's note count; an origin index on a note of a take with no origin; settings out of range.
+  - A clip's `offset` is signed. Negative means the take's head is tucked before the clip start (after trimming). A clip end above `MAX_TICK` (`i64::MAX / 2`) does not read.
+  - Versions: 3 (round 4) instrument names, songs with no tracks, the mixer (19-4); 4 (round 5) plugins and SF2 (20-6); 5 (round 6) tempo points, time signature flags, markers, the loop range moved from session to song (21-13); 6 (round 7) 1920 ticks and quarter-note tempo, track kinds and inputs, the audio table and audio clips, stretch and pitch (22-3, 22-10). **Since 22-3, only version 6 reads; versions 1–5 take the "does not read" path.** From version 6 on, versions are kept readable.
+  - Does not read: a different `format`, a newer version, a break of a model rule (tempo or time signature out of range, repeated ids, overlapping clips, a take that does not exist, a note of length 0, etc.). Only when the record arm or the selected track points to a missing track is the song fixed instead of thrown away.
+- **How it is written** (whatever moment it crashes, `<name>.meloet` is either the old or the new one, not broken):
+  1. Write a temp file in the same folder and `sync_all`.
+  2. Only if the current file exists and reads as a song, copy it to a `.prev` temp file, `sync_all`, and rename to `<name>.meloet.prev` (this is the spec's 「自動で残してある 1 つ前の状態」).
+  3. Rename the temp file to `<name>.meloet`.
+  4. `sync_all` the folder (Unix). On failure, remove the temp file.
+  - **Why**: rename is atomic inside one folder. The previous version is a copy, not a hard link (FAT and exFAT USB sticks have no hard links). An unreadable file is not made `.prev`, so saving over a broken file does not push out a good `.prev`.
+  - Checked: a child process saves and is SIGKILLed 120 times; each time both `<name>.meloet` and `.prev` read and match one of the saved songs. For a power cut, only the order of `sync_all` and rename helps; it is not tested (software alone cannot).
+- **Flow**:
+  - New song, open, close: if there are changes, 「保存していない変更があります」 (save / don't save / cancel). If saving fails, go to 「保存できない」.
+  - Cannot save: choose a place → folder window → save to `<chosen>/<name>/<name>.meloet`, then go on with what was waiting (close, new song, open).
+  - Broken: if `.prev` reads, 「1 つ前を開く」. The opened song is "changed" (the next save rewrites `<name>.meloet`). If there is no `.prev`, only the spec's first sentence and 「やめる」.
+  - During recording and count-in, save, open and new song are not taken. A close request stops recording, puts what was recorded into the song, and then decides.
+  - After opening or a new song: clear the steps, position to 0, clear selections, send everything to the engine again.
+  - Answers to a dialog carry that dialog's id (when dialogs replace each other in a row, like "don't save → file window → broken", a late answer to the earlier dialog must not hit the next one).
 
-## 15. なおすためのファイル（第 3 回、デザインの 48 番 7-B）
+---
 
-**決まり**: 保存していない変更を、なおすためのファイルに書いておく。次に起動したら、何もたずねずに戻した曲でひらき、アレンジの上に案内を出す（仕様書 3 章・6 章、モック F-Recover1〜3）。
+## 15. The recovery file (round 3, design no. 48, 7-B)
 
-- **書く時機は 2 つ**（ヤチヨさんの決め 2026-11-15）:
-  - PC が終わるとき: SIGTERM・SIGINT・SIGHUP（殻の `webprocess.rs` が別のスレッドで core に書かせ、書き終わるのを 3 秒まで待ってから終わる）と、logind の `PrepareForShutdown(true)`（殻の `logind.rs`。起動したときに delay ロック `Inhibit("shutdown", "meloet", …, "delay")` を取り、知らせで書いてから放す。`false` で取りなおす。logind がない PC では、なしで動く）。
-  - ふだん: 曲が変わってから 2 秒、手が止まったら（`state/recovery.rs` の `QUIET_US`）。録音中・カウントイン中は書かず、録った物が曲に入ってから。中身が前に書いた物と同じなら書かない。
-  - **理由**: この PC（Ubuntu 26.04、GNOME 50）では、アプリの scope は SIGTERM から 5 秒で SIGKILL。GTK3 の Wayland はコンポジタが先に消えると `_exit(1)` するので、SIGTERM が届かないこともありうる（推論）。電源の長押しと停電では何も届かない。ほかのアプリ（GNOME Text Editor の 3 秒、Ardour、LibreOffice、Inkscape）も、みな、ふだんから書いている（meloet-research、2026-11-15）。
-- **置き場所と形**: `$MELOET_STATE_DIR`（試験用）→ `$XDG_STATE_HOME/meloet` → `~/.local/state/meloet` の `recovery.json`。`{"format":"meloet-recovery","version":2,"writtenMs":…,"cause":"pcEnding|sudden","path":<もとの曲のファイル>|null,"song":<曲のファイルの形そのまま>}`。曲を最後に置くので、曲が読めなくても頭は読める。書きかたは 14 章と同じ（一時ファイル → sync_all → rename → フォルダの sync_all）。書くのは core の外のスレッド（`recovery::Writer`。Doc を写してわたすだけなので core は止まらない）。
-- **消すとき**: 保存できたとき、ふつうに閉じたとき（閉じるダイアログの「保存しない」もふくむ。人が捨てるとえらんだため）、新しい曲・ひらいた曲に入れかわったとき。PC が終わるときは消さない。
-- **戻すとき**: もとの曲（保存したことのない曲ならからっぽの新しい曲）を手の前の Doc にし、戻した Doc を取り消しの 1 手目（「なおすためのファイルから戻す」）として入れる。保存の印は手の前（ファイルと同じ形）なので、戻した直後は「変更あり」、帯札 1 / 1（モック F-Recover1・F-Recover2 の読み）。「戻さない」は 2 手目で、そのあとは「保存済み」の扱い（保存の印は 1 つなので、2 つ目の印を持つ）。手の前の Doc の `next_id` は戻した曲と大きいほうにそろえる（画面がテイクを id でためているため）。案内は、保存するか、戻さない・閉じるを押すまで出す。出口えらび（流れ 2）が出ているあいだは待つ（同じ場所に重なるため。棟梁の決め）。
-- **読めないとき**: 最後に保存した曲（なければ新しい曲）でひらき、ファイルは `recovery-unreadable-<日時>.json` に名前をかえて残す（次の起動でまた出ないように）。「ファイルの場所をひらく」は `org.freedesktop.FileManager1.ShowItems`、だめなら `xdg-open`（殻の `pcwindow.rs`）。
-- 確かめ: core のテスト 14 本、子のプロセスに書かせて 60 回 SIGKILL（毎回読めて、書いた曲のどれかと一致。33 回は書いている途中）。本物のアプリで SIGTERM から終わるまで 76〜119 ms（debug）、ノート 1 万個の曲を書くのは 4.6〜5.2 ms（debug）。本当に電源を切る試験はしていない。
+**Rule**: unsaved changes are written to a recovery file. At the next start, the song is opened restored without asking, and a hint is shown above the arrange (spec chapters 3 and 6, mocks F-Recover1–3).
 
-## 16. ピアノロールと直したテイク（第 3 回）
+- **Written at two times** (the owner's decision):
+  - When the PC shuts down: SIGTERM, SIGINT, SIGHUP (the shell's `webprocess.rs` has the core write it on another thread and waits up to 3 s for it to finish before ending), and logind's `PrepareForShutdown(true)` (the shell's `logind.rs`: at start it takes a delay lock `Inhibit("shutdown", "meloet", …, "delay")`, writes on the signal and then lets the lock go; takes it again on `false`. On a PC without logind, it runs without).
+  - Normally: 2 seconds after the song changed, once the hands stop (`QUIET_US` in `state/recovery.rs`). Not during recording or count-in; after what was recorded is in the song. Not written if the content is the same as last written.
+  - **Why**: on this PC (Ubuntu 26.04, GNOME 50) an app's scope gets SIGKILL 5 s after SIGTERM. GTK3 on Wayland calls `_exit(1)` if the compositor goes first, so SIGTERM may never come (a guess). A long press of the power button or a power cut sends nothing. Other apps (GNOME Text Editor every 3 s, Ardour, LibreOffice, Inkscape) all write as they go.
+- **Place and shape**: `recovery.json` in `$MELOET_STATE_DIR` (for tests) → `$XDG_STATE_HOME/meloet` → `~/.local/state/meloet`. `{"format":"meloet-recovery","version":2,"writtenMs":…,"cause":"pcEnding|sudden","path":<the original song file>|null,"song":<the song file's shape as it is>}`. The song is last, so the head reads even if the song does not. Written the same way as chapter 14 (temp file → sync_all → rename → folder sync_all). Written by a thread outside the core (`recovery::Writer`; the core only copies the Doc and hands it over, so it is not blocked). Version 2 holds a version 6 song (22-3); version 1 takes the "cannot read" path.
+- **Removed when**: a save succeeds; the app closes normally (including 「保存しない」 in the close dialog, since the person chose to throw it away); the song is replaced by a new or opened song. Not removed when the PC shuts down.
+- **Restoring**: the original song (an empty new song if it was never saved) becomes the Doc before the steps, and the restored Doc goes in as the first undo step (「なおすためのファイルから戻す」). The save mark is before the steps (same as the file), so right after restoring it is "changed", band tab 1 / 1 (how mocks F-Recover1 and F-Recover2 read). 「戻さない」 is a second step, after which it counts as "saved" (there is one save mark, so a second mark is kept). The `next_id` of the Doc before the steps is set to the larger of it and the restored song's (the screen caches takes by id). The hint stays until the person saves or presses 「戻さない」 or close. While the output chooser (flow 2) is up, the hint waits (they would be in the same place).
+- **When it cannot be read**: open the last saved song (or a new song), and rename the file to `recovery-unreadable-<date>.json` (so it does not come up again at the next start). 「ファイルの場所をひらく」 uses `org.freedesktop.FileManager1.ShowItems`, else `xdg-open` (the shell's `pcwindow.rs`).
+- Checked: core tests; a child process writes and is SIGKILLed 60 times (each time it reads and matches one of the written songs; 33 times it was in the middle of writing). In the real app, SIGTERM to end takes 76–119 ms (debug); writing a song of 10,000 notes takes 4.6–5.2 ms (debug). A real power-off test has not been done.
 
-- **直すと新しいテイク**: ノートを直す意図（書く、動かす、複製、長さ、消す、切り取り、ベロシティ、貼りつけ）は、見せているテイクを新しい id のテイクにして、クリップの `takes` の同じ場所に入れかえる（`meloet-model` の `notes.rs`）。テイクの数は増えない（「2/3」を直しても「2/3」）。取り消しは前の Doc に戻るので、前の id に戻る。テイクは一度できたら中身を変えない、の決まりはそのまま。
-  - **理由**: 画面はテイクの中身を id でためている（3-1 の 8）。中身を変えずに id を変えれば、ためている物がまちがいにならない。テイクの場所を入れかえるだけなので、人から見たテイクの数は変わらない。
-- **ノートの順と指しかた**: テイクのノートは「始まり → 鍵 → 前からの順」（安定ソート）。意図はテイクの id とその中の番号で指す。id がいま見せているテイクでなければ、Rust は何もしない（ドラッグを離した直後にキーを押したときなど、古い番号で別のノートを直さないため）。
-- **ノートが動ける所**: クリップの範囲 [start, end) と鍵 0〜127。動かすのはまとまり全体が入る所で止める。長さはノートごとに 1 ティック以上・クリップの終わりまで。テイクの外に出るときは、新しいテイクの 0 と長さを広げ、offset と CC の位置を合わせる（縮めることはしない）。
-- **クリップがないときに書く**（ヤチヨさんの決め 2026-11-15）: `AddNote { take: None }`。弾くと鳴る先のトラックに、小節の頭（前のクリップの終わりのほうが遅ければ、そこ）から 4 小節（次のクリップがあれば、その手前まで）のクリップを作り、そこに書く。作るのと書くのとで 1 手。
-- **選択は core が持つ**（`PianoRollView.selectedNotes`、番号の範囲の列）。直したあとは直したノートを選ぶ。取り消し・やりなおしは、その手の前・あとの選択に戻す（取り消しの手と同じ長さの選択の列を `Play` が持つ）。見せるクリップかテイクが変わったら消す。
-  - **理由**: 直すたびにテイクの id と番号が変わる。番号をつけなおせるのは、直した側の Rust だけ。状態行の「選択 3 ノート ・ D4 E4 F4」も Rust が出す。
-- **ドラッグは画面だけが先に動き、離して 1 手**: ドラッグ中は画面がもとの位置に gray.7 の枠を残し、動かしているノートを小さな区画（`pianoRollLive`）で描く。Rust には何も送らない。離したときに意図を 1 つだけ送り、答えの新しいテイクが見えるまでドラッグの見た目を残す（ちらつかないように）。Esc はキーの順のいちばん前でドラッグをやめる（`view.svelte.ts` の `cancelDrag`）。
-  - **理由**: 毎コマ曲を作りなおして送ると、取り消しの手がドラッグの長さだけ増え、テイクの id も毎コマ増える。1 回のドラッグが 1 手なら、取り消しも人の感じかたと合う。
-- **画面のテイクのため場所**（`ui/src/bridge/take.ts` の `keepOnly`）: 状態の `song` が変わるたびに、いまのクリップが見せているテイクとその origin（もとのテイク）だけを残し、ほかは手放す。手放した物のうち新しい 16 個だけは小さくためておく（取り消しですぐ戻ることが多いので）。それより前の物は、要ればまた Rust から取る。1000 回入れかえても数が一定のテストがある。
-  - **理由**: 取り消しで戻れるテイクは Rust の取り消しの履歴が持っている。画面が全部ためる必要はない。
-- **取り消しの履歴のメモリ**（ヤチヨさんの決め 2026-11-18: 手の数に上限はつけない。変わっていない所を分けあう）: テイクのノートと CC の点、オートメーションの帯の点（21-5）は `ChunkedVec`（`crates/meloet-model/src/chunked.rs`）。中身を標準の `Arc<[T]>` のかたまりに切って持つ。切れ目は中身で決める（64 個より後で、要素のハッシュの下の位が決まった形になった所。平均 192 個、多くて 512 個）ので、同じ並びはリストのどこにあっても同じように切れる。直したテイクを作るときは、前のテイクのかたまりのうち中身が同じ物をそのまま使う（`ChunkedVec::sharing`。ハッシュが合っても中身を全部くらべてから使う）。書く・消すで後ろの番号がずれても、かたまりは見つかる。外から見たテイクは今までどおり変わらず、取り消しは前の Doc に戻るだけ。ノート 1 万個のテイクで、ノート 1 つを動かす 1 手は約 8.3 KB（前は約 240 KB。`crates/meloet-model/tests/note_memory.rs`、release、2026-11-18）。view を作るのも少し速くなった（`Clip::note_count` を二分探索に。ノートが start の順の決まりにたよる）。
-  - **理由**: 前の形からの差分を持つ形は、取り消しの数がふえるほど読むのが重くなる。決まった番号で切る形は、番号のずれる手（書く・消す・並びの変わる移動）で後ろが全部写しになる。中身で切れば、標準の `Arc` だけで、どの手でも変わった所だけが新しくなる。
-  - **例外**: ノートがテイクの 0 より前へ出る直しは、全部のノートの位置がずれるので、その手だけは丸ごと写しになる（`notes.rs` の `put_take`）。保存とテイクのバイナリ（3-4）は今までどおり丸ごと。
-- **view の作りなおし**（第 2 回の宿題）: 測って、変えないことにした。16 トラック × 100 クリップ（うち 1 つがノート 1 万個）で、view を作るのが約 41 µs、2 つをくらべるのが約 4 µs。15 ms ごとでも 1 コアの約 0.3 %。
-- **グリッド・音階・クオンタイズの設定**: 曲の `Session`（取り消しの外）に持ち、曲のファイルの session に保存する。欄がない・知らない値・範囲の外は、その設定だけ既定（1/16、三連符なし、C メジャー、固定オフ）にして、曲は捨てない。変えても「保存していない変更」にしない（ループの範囲と同じ扱い）。グリッドは 0（1 小節）・2・4・8・16・32（ヤチヨさんの決め）。
-- **クオンタイズ**（`meloet-model` の `quantize.rs`。申し送り: 録った位置は変えず、直す操作として新しいテイクを作る）:
-  - グリッド g は、division 0 が 1 小節（拍子から）、ほかは全音符 1920 ÷ division。三連符は 2/3。そろえる先は、曲の頭からの g の倍数のいちばん近い所（ちょうど半分は後ろへ）。奇数番目の倍数は、スウィング s % で g × s / 300 だけ後ろへ（100 % で 3 連のはね）。強さ p % で、もとの位置から (そろえる先 − もとの位置) × p / 100（ティックへ、0 から遠いほうへまるめる）。「はじまりと終わり」は終わりも同じ式で、長さが 1 ティックに足りなければ g。
-  - もとの位置は、ノートにもとの番号があればもとのテイクのそのノート（「かけなおす」はいつも録った位置から。手で動かしたあとでも）、なければ今の位置（書いた・複製した・貼りつけたノート）。
-  - 新しいテイクのもとのテイクは、今のテイクがもとのテイクを持っていればそれ、なければ今のテイク（そのときは全部のノートが自分の番号をもとの番号にする）。もとのテイクは、もとのテイクを持たない（いつも録った物）。
-  - もとのテイクの 0 は、いつもそのテイクの 0 と同じ所（画面が同じ所から描くため。3-1 の 8）。直してテイクが前へ広がるときは、もとのテイクを同じだけずらした写し（新しい id）にする。**理由**: テイクの中のノートの位置は 0 以上なので、ノートがテイクの 0 より前へ出ると、テイクの 0 を前へ動かすしかない（区切り3 で offset を符号つきにしても同じ）。写しにすれば、もとのテイクの 0 をテイクの 0 にそろえる画面への約束（3-4 のバイナリ）を変えずにすむ。
-  - ノートはクリップの中に止める（はじまりだけのときは長さをたもったまま入る所へ、はじまりと終わりのときは終わりをクリップの終わりで切る）。ノートごとに行き先がちがうので、「まとまりで止める」はしない（係の決め。棟梁に確かめてもらう所）。
-  - 位置も長さも変わらないなら手にしない（状態行にも出さない）。ノートを指したときは、かけたノートを選ぶ。指さない（ぜんぶ）ときは選ばない。
-  - 「もとの位置へ戻す」は、もとの番号を持つノートの始まりと長さだけをもとに戻す（鍵とベロシティは今のまま）。戻したあと、もとの番号を持つノートがぜんぶもとと同じなら、もとのテイクを外し、もとの番号も消す。
-  - 直す操作（動かす、長さ、ベロシティ、消す、欄、CC の点）は、もとのテイクともとの番号を持ちこす。
-- **CC の点**（`controls.rs`）: 点はテイクの `controls` の番号（ティックの順、同じティックは前からの順。足した点は同じティックのいちばんうしろ）。点はクリップの中。動かすときは、まとまりで止める。値は CC 0〜127、ベンド −8192〜8191、オン・オフの CC 64〜69 は 64 以上が 127、ほかは 0。選択はノートと同じく core が持ち、取り消しで戻る。ノートを直すと点の選択はそのまま（点の並びは変わらないため）、点を直すとノートの選択はそのまま。
-- **欄の打ちこみ**（`notes.rs` の `set_notes_field`）: 長さ・ベロシティはぜんぶ同じ値、位置はいちばん早いノートを値へ、鍵はいちばん低いノートを値へ、ほかは間をたもつ。範囲の外は止める（位置と鍵は「動かす」と同じく、まとまりで止まる）。
-- **スケール固定**: 書く道具（`AddNote`）だけに効く（仕様書 3 章が「書く道具で」と言うため）。メジャーは 0・2・4・5・7・9・11、マイナーは自然的短音階 0・2・3・5・7・8・10。動かす・↑↓ は固定に関係なく動く。
-- **試聴**（書く道具で押した瞬間に鳴る、モック R3-PRMouse）: core → 音のスレッドのリングで `Audition`・`AuditionOff`。音のスレッドが最後に鳴らした 1 鍵を覚えて止める。キーボードの道を通らないので録音に入らない。
-- **見ている範囲**は画面だけが持つ（`view.svelte.ts`。アレンジの横のスクロールと同じ）。横の拡大の段は √2 きざみ（ピアノロールは 4 分音符 1 つで 10〜320 px、アレンジは 1 小節で 8〜256 px、どちらも拡大率 100 % の px）。ひらいたときは、クリップが入るいちばん大きい段にして、クリップのはじまりまで送り、縦はノートが見える所。Mod ＋ ・ Mod − は、最後に押した所（`prView.focus`）がピアノロールならピアノロール、そうでなければアレンジ。全体図の「見えている範囲の枠」は、ピアノロールがひらいていればピアノロールで見えている範囲。
-- **鳴っている音の光**: 画面が、見せているクリップのノートと耳に届いている位置から出す（Rust から送らない）。弾いている鍵は計器の押している鍵。
+---
 
+## 16. The piano roll and edited takes (round 3)
 
-## 17. アレンジのクリップを動かす（第 3 回、区切り3）
+- **An edit makes a new take**: intents that edit notes (draw, move, duplicate, length, delete, cut, velocity, paste) turn the shown take into a new take with a new id and put it in the same place in the clip's `takes` (`notes.rs` in `meloet-model`). The number of takes does not grow (editing 「2/3」 is still 「2/3」). Undo goes back to the earlier Doc, so to the earlier id. "A take never changes once made" still holds.
+  - **Why**: the screen caches take content by id (3-1, item 8). Changing the id without changing content keeps the cache correct. Only the take in that place is replaced, so the number of takes the person sees does not change.
+- **Note order and how notes are pointed to**: a take's notes are ordered "start → key → earlier first" (stable sort). An intent points by take id and index in that take. If the id is not the shown take, Rust does nothing (so an old index does not edit another note, e.g. when a key is pressed right after letting go of a drag).
+- **Where a note can move**: within the clip range [start, end) and keys 0–127. A move stops where the whole group still fits. Length is at least 1 tick per note and up to the clip end. When a note goes outside the take, the new take's 0 and length are widened, and offset and control positions are adjusted (never shrunk).
+- **Drawing with no clip** (the owner's decision): `AddNote { take: None }`. On the track where keys sound, a clip is made from the start of the bar (or from the end of the previous clip if later) for 4 bars (up to the next clip if there is one), and the note is written there. Making and writing is one step.
+- **The core owns the selection** (`PianoRollView.selectedNotes`, a list of index ranges). After an edit, the edited notes are selected. Undo and redo put back the selection before or after that step (`Play` keeps a list of selections as long as the undo steps). It is cleared when the shown clip or take changes.
+  - **Why**: each edit changes the take id and indices. Only Rust, which made the edit, can renumber. The status line's 「選択 3 ノート ・ D4 E4 F4」 also comes from Rust.
+- **A drag moves only the screen first; letting go is one step**: during a drag, the screen leaves a gray.7 outline at the starting place and draws the moving notes in a small region (`pianoRollLive`). Nothing is sent to Rust. On letting go, one intent is sent, and the drag's look stays until the answer's new take is visible (so it does not flicker). Esc stops the drag, first in the key order (`cancelDrag` in `view.svelte.ts`).
+  - **Why**: rebuilding and sending the song every frame would add undo steps for the length of the drag and new take ids every frame. One drag = one step matches how the person feels undo.
+- **The screen's take cache** (`keepOnly` in `ui/src/bridge/take.ts`): each time the `song` state changes, only the takes the current clips show and their origins are kept; others are let go. Of those let go, only the newest 16 are kept in a small cache (undo often goes straight back). Older ones are fetched from Rust again when needed. A test switches 1000 times and checks the count stays the same.
+  - **Why**: the takes undo can go back to are held by Rust's undo history. The screen need not keep them all.
+- **Memory of the undo history** (the owner's decision: no limit on the number of steps; share what did not change): take notes, control points and automation lane points (21-5) are `ChunkedVec` (`crates/meloet-model/src/chunked.rs`). The content is cut into chunks of plain `Arc<[T]>`. Cut points are chosen by content (after 64 items, where the low bits of an item's hash have a set pattern; 192 on average, at most 512), so the same run is cut the same way wherever it is in the list. When an edited take is made, chunks of the previous take with the same content are reused (`ChunkedVec::sharing`; even when hashes match, the full content is compared first). Chunks are still found when later indices shift after a draw or delete. From outside, takes still never change, and undo just goes back to the earlier Doc. In a take of 10,000 notes, one step moving one note is about 8.3 KB (it was about 240 KB; `crates/meloet-model/tests/note_memory.rs`, release). Making views also got a little faster (`Clip::note_count` by binary search; this relies on notes being in start order).
+  - **Why**: a shape that keeps differences from the previous one gets slower to read the more steps there are. A shape cut at fixed indices copies everything after an edit that shifts indices (draw, delete, a move that changes order). Cutting by content uses only standard `Arc`, and only the changed part is new for any edit.
+  - **Exception**: an edit that moves a note before the take's 0 shifts every note's position, so only that step is a whole copy (`put_take` in `notes.rs`). Saving and the take binary (3-4) are whole as before.
+- **Rebuilding views** (left from round 2): measured and left as it is. With 16 tracks × 100 clips (one with 10,000 notes), making a view takes about 41 µs and comparing two about 4 µs. Even every 15 ms, about 0.3 % of one core.
+- **Grid, musical scale and quantize settings**: kept in the song's `Session` (outside undo) and saved in the song file's session. A missing field, an unknown value or a value out of range gives the default for that setting only (1/16, no triplet, C major, lock off); the song is not thrown away. Changing them is not an "unsaved change" (like the loop range was then). Grids: 0 (1 bar), 2, 4, 8, 16, 32 (the owner's decision).
+- **Quantize** (`quantize.rs` in `meloet-model`; the recorded position is not changed — quantizing is an edit that makes a new take):
+  - Grid g: division 0 is 1 bar (from the time signature); otherwise a whole note (4 quarter notes, 7680 ticks) ÷ division (`roll.rs`). A triplet is 2/3 of that. The target is the nearest multiple of g from the song's start (exactly half goes later). Odd multiples move later by g × s / 300 for swing s % (100 % is a triplet swing). With strength p %, the note moves from its origin position by (target − origin) × p / 100 (to ticks, rounded away from 0). "Start and end" uses the same formula for the end; if the length is less than 1 tick, it is g.
+  - The origin position is that note in the origin take if the note has an origin index ("quantize again" always starts from the recorded position, even after a hand move); otherwise the current position (drawn, duplicated or pasted notes).
+  - The new take's origin is the current take's origin if it has one; otherwise the current take (then every note uses its own index as origin index). An origin take never has an origin (it is always recorded material).
+  - An origin take's 0 is always at the same place as the take's 0 (the screen draws both from the same place; 3-1, item 8). When an edit widens a take earlier, the origin take is copied shifted by the same amount (new id). **Why**: note positions inside a take are 0 or more, so when a note moves before the take's 0, the take's 0 must move earlier (a signed offset does not change this). A copy keeps the promise to the screen that the origin's 0 lines up with the take's 0 (the binary of 3-4) unchanged.
+  - Notes stay inside the clip (start only: moved to where it fits keeping its length; start and end: the end is cut at the clip end). Each note has its own target, so there is no "stop as a group".
+  - If no position or length changes, no step (and nothing in the status line). When notes are given, the quantized notes are selected. When none are given (all), nothing is selected.
+  - 「もとの位置へ戻す」 puts back only start and length of notes with an origin index (key and velocity stay). If after that every note with an origin index matches its origin, the origin take is removed and the origin indices cleared.
+  - Edits (move, length, velocity, delete, fields, control points) carry over the origin take and origin indices.
+- **Control points** (`controls.rs`): a point is an index in the take's `controls` (in tick order; at the same tick, earlier first; an added point goes last at its tick). Points stay inside the clip and move as a group. Values: CC 0–127, bend −8192…8191; on/off CCs 64–69 become 127 at 64 or more, else 0. The selection is owned by the core like notes and comes back with undo. Editing notes keeps the point selection (the point order does not change), and editing points keeps the note selection.
+- **Typing in fields** (`set_notes_field` in `notes.rs`): length and velocity set all to the same value; position moves the earliest note to the value; key moves the lowest note to the value; the others keep their distance. Out of range stops (position and key stop as a group, like a move).
+- **Scale lock**: works only for the draw tool (`AddNote`) (spec chapter 3 says "with the draw tool"). Major is 0, 2, 4, 5, 7, 9, 11; minor is natural minor 0, 2, 3, 5, 7, 8, 10. Move and ↑↓ ignore the lock.
+- **Audition** (sounds the moment the draw tool presses; mock R3-PRMouse): core → audio thread ring with `Audition` and `AuditionOff`. The audio thread remembers the last key it sounded and stops it. It does not go through the keyboard path, so it is not recorded. (Chords: 18.)
+- **The view range** is kept only by the screen (`view.svelte.ts`; like the arrange's sideways scroll). Horizontal zoom steps are √2 apart (piano roll: 10–320 px per quarter note; arrange: 8–256 px per bar; both in px at 100 % scale). On opening, the largest step that fits the clip is used, scrolled to the clip start, and vertically to where the notes are. Mod + and Mod − act on the piano roll if the last place clicked (`prView.focus`) was the piano roll, else on the arrange. The overview's "visible range" frame shows the piano roll's visible range when the piano roll is open.
+- **Lit sounding notes**: the screen works them out from the shown clip's notes and the heard position (not sent from Rust). Played keys come from the held keys in the telemetry.
 
-- **意図**: `MoveClip { clip, ticks, track, copy }`（ドラッグ。画面がグリッド（ふだん 1 小節、Shift で吸いつかない）に合わせた量を送る）、`DuplicateClip { clip }`（Mod D、すぐうしろに）、`TrimClip { clip, edge, ticks }`（左右のはし 6px）。どれも 1 手。録音中・カウントイン中は受けない。再生中は受け、曲の列を送りなおす。
-- **重ならない**: クリップは同じトラックで重ならない決まり（13 章）のまま。動かす・写す・複製で重なるときは何もしない（画面は「できない」のカーソル）。端が触れるだけは重ならない。曲の頭より前へは行かない（0 で止める）。はしをつめる・のばすのは、となりのクリップの手前と、1 ティック以上で止める。
-- **写し**（Alt ＋ ドラッグ、Mod D）: 新しいクリップの id。テイクは同じ `Arc<Take>` を分けあう（テイクは変わらない物なので分けあってよい。片方のノートを直すと、そちらだけ新しいテイクになる）。保存の形も、テイクの表を 1 回だけ書いて id で指す（14 章）。
-- **はしをつめる**: 始まりを動かすときは、全部のテイクの offset を同じだけ動かし、ノートは曲の中の同じ位置に残る。つめた所の中身は消えない（テイクはそのまま、範囲の外は鳴らさない・見せない）。のばすと戻る。テイクの中身より外へのばしてもよい（空いた所になる）。
-- **曲の頭より前のテイクの 0**: 頭をつめたクリップを曲の頭まで動かすと、テイクの 0 が曲の 0 より前に来る。動かせる所はせまくしない（録音の前のすき間をつめて 1 小節めへ動かすのは、よくある操作のため）。ノートを直す処理は、そのクリップを、曲の頭より前にあるぶん（`lift`）だけ後ろへずらした写しで計算し、外から来る曲の位置には `lift` を足す（クオンタイズのグリッドは曲の頭からのまま）。
-- 動かしたクリップ（写しなら写し）をえらび、ピアノロールもそれを見せる。つめたときは、えらびを変えない（画面は押した時にえらぶ）。
+---
 
-**第 3 回の続き（B-61 ・ 71）**
-- **何個も選ぶ**: core が「選んだクリップの集まり」と「最後に押した 1 つ」（`selected_clip`）を持つ。押す・Shift ＋ 押す（`SelectClips` の `Add` か `Toggle` で 1 個）は、そのクリップをピアノロールに出し、そのトラックを選ぶ（＝弾くと鳴る先）。囲みと Mod A は、ピアノロールもトラックも変えない（Shift ＋ 囲みでちょうど 1 個を囲んだときは、約束の形では区別できないので「押した」と同じになる）。
-- **まとめて動かす・複製・切り取り・貼りつけ**: どれも 1 手。まとまりは距離と行の差をたもち、曲の頭でまとめて止まる。まとまりの外のクリップ（写しのときは元のクリップも）と重なるなら何もせず、状態行で言う（B-71 の 3 つの文。Alt ＋ ドラッグの写しが重なるときは「複製できませんでした」）。トラックの外に出るなら、何もせず何も言わない（画面は「できない」のカーソル）。置いたクリップを選ぶ。録音中・カウントイン中は、コピーのほかは受けない。
-- **貼りつけ**: Rust がクリップを覚える（行と距離ごと、テイクは `Arc` で分けあうだけ）。Mod V は選んだトラックの、再生の線がいる小節の頭へ（再生中は耳に届いている位置）。右クリックは押した所へ（寄せるのは画面）。曲を入れかえたら覚えた物を捨てる。
-- **選択の取り消し**: クリップの選択も、ノートの選択と同じく、手の前とあとの物に戻す（消したクリップを取り消すと、選ばれて戻る）。ピアノロールが見せるクリップは、取り消しで動かさない（消えたときだけ外す）。
-- **再生の位置**（B-61）: `Locate` は送られた tick のまま。吸いつきは画面（アレンジは目盛に見えている線、ピアノロールはグリッド、Shift で吸いつかない）。
+## 17. Moving clips in the arrange (round 3, step 3)
 
-## 18. ミュートとソロ、ベロシティ固定、名前をつけて保存（第 3 回の続き）
+- **Intents**: `MoveClip { clip, ticks, track, copy }` (a drag; the screen sends an amount snapped to the grid — normally 1 bar, no snapping with Shift), `DuplicateClip { clip }` (Mod D, right after it), `TrimClip { clip, edge, ticks }` (the left or right 6 px edge). Each is one step. Not taken during recording or count-in. Taken while playing, and the song's list is sent again.
+- **No overlap**: clips on the same track still must not overlap (chapter 13). If a move, copy or duplicate would overlap, nothing happens (the screen shows a "not allowed" cursor). Edges only touching do not overlap. A clip cannot go before the song start (stops at 0). Trimming and extending stop before the neighbor clip, and at 1 tick or more.
+- **Copy** (Alt + drag, Mod D): a new clip id. Takes share the same `Arc<Take>` (takes do not change, so sharing is safe; editing notes in one makes a new take only there). The save format also writes the take table once and points by id (chapter 14).
+- **Trimming**: moving the start moves every take's offset by the same amount, so notes stay at the same place in the song. The trimmed part is not deleted (the takes stay; outside the range they do not sound and are not shown). Extending brings it back. A clip may be extended past its take content (empty space).
+- **A take's 0 before the song start**: moving a head-trimmed clip to the song start puts the take's 0 before the song's 0. The allowed area is not narrowed (trimming the gap before a recording and moving it to bar 1 is common). Note edits work on a copy of that clip shifted later by the amount before the song start (`lift`), and `lift` is added to song positions coming from outside (the quantize grid still counts from the song start).
+- The moved clip (or the copy) is selected and the piano roll shows it. Trimming does not change the selection (the screen selects on press).
 
-**ミュートとソロ**（design-notes B-70）
-- ミュートはトラックの `muted`。曲に保存し、取り消せる 1 手（`StepKind::Mute`）。録音中・カウントイン中も受ける（第 4 回で変えた。録る位置と周に関わらないので。10 章の表）。ソロは `Session::soloed` で、保存しない・手にしない（聞くための切りかえ。録音中も受ける）。新しい曲・ひらく・戻すで消える。
-- 鳴らすのは `!muted && (ソロのトラックがない || soloed)`（`Doc::plays` の 1 か所）。両方ならミュートが勝つ（ヤチヨさんの決め 2026-11-18）。
-- エンジンへは、鳴らさないトラックの集まり（`EngineCommand::SetSilentTracks`、`TrackSet` は u64 が 4 つの `Copy`）を送る。音のスレッドはメモリを取らない。鳴らさなくなったら列の音を離し、ペダル・ホイール・ベンドを戻す（`lane.silence`）。戻ったら今の位置に合わせる（`seek_lane`）。弾いた音とためしの音は、この集まりを見ないので鳴る。`Engine::prepare` で空になる。
-- core は `Model::handle` の最後に、前に送った集まりと比べて違えば送る（`Play::sync_silent`）。出口をひらいた時と曲を入れかえた時はいつも送る。だから取り消し・ひらく・戻すのあとも、エンジンは曲と合う。
-- 曲のファイルは版 2 のまま `muted` を足した（偽の時は書かないので、ミュートのない曲は前と同じバイト）。知らない欄は読み飛ばす決まり（14 章）なので、前の meloet も読める。
+**End of round 3 (B-61, 71)**
+- **Selecting many**: the core holds "the set of selected clips" and "the last one clicked" (`selected_clip`). Click and Shift + click (`SelectClips` with `Add` or `Toggle` for one) show that clip in the piano roll and select its track (= where keys sound). Box selection and Mod A change neither the piano roll nor the track (Shift + a box around exactly one clip cannot be told apart in the contract and acts like a click).
+- **Moving, duplicating, cutting and pasting many**: each is one step. The group keeps its distances and row differences and stops together at the song start. If it would overlap a clip outside the group (for a copy, the originals too), nothing happens and the status line says so (the three texts of B-71; for an overlapping Alt + drag copy, 「複製できませんでした」). If it would go outside the tracks, nothing happens and nothing is said (the screen shows a "not allowed" cursor). The placed clips are selected. During recording and count-in, only copy is taken.
+- **Paste**: Rust remembers the clips (with rows and distances; takes are only shared by `Arc`). Mod V pastes on the selected track at the start of the bar where the play line is (while playing, the heard position). Right-click pastes where clicked (the screen snaps). Replacing the song drops what was remembered.
+- **Undoing selection**: clip selection, like note selection, goes back to the one before or after the step (undoing a delete brings the clips back selected). The clip the piano roll shows is not moved by undo (only removed when it disappears).
+- **Play position** (B-61): `Locate` uses the sent tick as it is. Snapping is done by the screen (the arrange to visible ruler lines, the piano roll to the grid, no snapping with Shift).
 
-**ベロシティ固定**（B-66）
-- meloet の設定（`settings.json` の `velocity_fixed` と `fixed_velocity`。設定の版は 1 のまま、欄がなければオフと 100）。値は 1〜127 に入れる。
-- core のスレッドが `Shared::fixed_velocity`（`AtomicU8`、0 はオフ）に書き、MIDI のスレッドが鍵を受けたいちばん最初（`Links::midi_sink`）に NoteOn のベロシティを置きかえる。NoteOff はそのまま。だから鳴る音・録ったテイク・入力計の読み値・画面の `Event::Note` がそろって同じ値になる。鍵 → 音でふえる仕事は原子変数を 1 つ読むだけ。
-- 書く道具のノートと、ピアノロールの鍵盤のためしの音の強さは、画面が固定の値を送る。
+---
 
-**ためしの音**（B-62）
-- `Audition { keys }` は 16 個までの和音（エンジンの `Chord` は `[u8; 16]` と長さ。メモリを取らない）。前の和音を離してから鳴らす。空なら止めるだけ。スケール固定の外の鍵も鳴らす（鍵盤の列とノートの試聴のため。書く道具は画面が音階の外を押させない）。止める時間をはかるのは画面。
+## 18. Mute and solo, fixed velocity, save as (end of round 3)
 
-**名前をつけて保存**（B-59）
-- 殻が GTK の保存の窓（題「名前をつけて保存」は `pcwindow.rs` の定数、今の曲の名前が入っている、上書きの確認なし）を出す。返った道の親を置き場所、最後の部分（`.meloet` は外す）を名前にする。
-- 最初の保存と同じ `save_new` で `<名前>/<名前>.meloet` を作る（使えない字は `_`、同じ名前は「 2」…で、曲の名前もそれになる）。書きかた・保存できないとき・なおすためのファイルを消すのは、ふつうの保存と同じ。そのあとの保存は新しいファイルへ。「保存できない」→ 場所をえらぶ、のときも打った名前を使う。窓でやめたら何もしない。録音中・カウントイン中は受けない。
-- あとの回で曲のフォルダに `audio/`・`plugins/` が入ったら、名前をつけて保存はそれらも写す（`state/songs.rs` の `save()` にコメント）。
+**Mute and solo** (`docs/history/design-notes.ja.md` B-70)
+- Mute is a track's `muted`. Saved in the song, one undo step (`StepKind::Mute`). Taken during recording and count-in too (changed in round 4: it touches neither the recording position nor the passes; the table in chapter 10). Solo is `Session::soloed`: not saved, not a step (a switch for listening; taken while recording). Cleared by new song, open and restore.
+- What plays is `!muted && (no track is soloed || soloed)` (one place, `Doc::plays`). If both, mute wins (the owner's decision).
+- The engine gets the set of tracks that must not sound (`EngineCommand::SetSilentTracks`; `TrackSet` is a `Copy` of four u64). The audio thread takes no memory. When a track stops sounding, its list lets go of notes and puts back pedal, wheel and bend (`lane.silence`). When it sounds again, it is moved to the current position (`seek_lane`). Played notes and auditions do not look at this set, so they sound. `Engine::prepare` empties it.
+- At the end of `Model::handle`, the core compares with the set it sent last and sends it if different (`sync_silent`). It is always sent when the output opens and when the song is replaced. So after undo, open or restore, the engine matches the song.
+- `muted` is written only when true, so a song with no mutes has the same bytes as before. Older readers skip it as an unknown field (chapter 14).
 
-## 19. 第 4 回で決めたこと（バンドになる）
+**Fixed velocity** (B-66)
+- A meloet setting (`velocity_fixed` and `fixed_velocity` in `settings.json`; settings stay version 1; missing means off and 100). The value is kept in 1–127.
+- The core thread writes `Shared::fixed_velocity` (`AtomicU8`, 0 = off), and the MIDI thread replaces a NoteOn's velocity at the very first place a key is received (`Links::midi_sink`). NoteOff is left as it is. So the sound, the recorded take, the input meter's reading and the screen's `Event::Note` all show the same value. The extra work on key → sound is reading one atomic.
+- Notes from the draw tool and the auditions of the piano roll keyboard get the fixed value from the screen.
 
-### 19-1. 音の素材の置き場所（ヤチヨさんの決め 2026-11-18）
+**Audition** (B-62)
+- `Audition { keys }` is a chord of up to 16 keys (the engine's `Chord` is `[u8; 16]` and a length; no memory taken). The earlier chord is let go before sounding. Empty only stops. Keys outside a scale lock also sound (for the keyboard column and note audition; the draw tool cannot press outside the scale). How long it sounds is timed by the screen.
 
-> 第 8 回で 23-1 ・ 23-9 の形に変えた（包みは音色ごとの tar と目録、置き場所は `$XDG_DATA_HOME/meloet/sounds/`、`scripts/fetch-sounds.sh` は消した）。下は第 4 回の形のまま。
+**Save as** (B-59)
+- The shell shows GTK's save window (title 「名前をつけて保存」 is a constant in `pcwindow.rs`; the current song name is filled in; no overwrite check). The parent of the returned path is the place, and the last part (without `.meloet`) is the name.
+- The same `save_new` as the first save makes `<name>/<name>.meloet` (characters not allowed become `_`; the same name gets 「 2」…, and so does the song name). How it is written, "cannot save", and removing the recovery file are as for a normal save. Later saves go to the new file. In 「保存できない」 → choose a place, the typed name is used too. Cancelling the window does nothing. Not taken during recording or count-in.
+- Superseded in part by 22-4: save as also copies the audio the saved `Doc` points to into the new folder's `音/` (the old folder is not touched).
 
-- リポジトリには**作りかただけ**を置く（`tools/sounds/`）: 元の配布の URL と sha256、取り出す範囲（どの段、どの鍵、どのマイク）、間引き・長さの切りかた・形式の変換のスクリプト、帰属表示の文（`licenses/sounds.json`）。
-- 作った**包み**（音色ごとのフォルダをまとめた 1 ファイル）は GitHub の Release に置く。`scripts/fetch-sounds.sh` が取ってきて sha256 で確かめ、`~/.cache/meloet/sounds/<包みの版>/` にほどく。包みがなくても、作りかたから同じ物を作れる。
-- `cargo build` は、ネットにつながない（`build.rs` で取ってこない）。meloet は起動のとき、`MELOET_SOUNDS_DIR`（試験用・開発用）→ 実行ファイルのそばの `sounds/`（配る形。第 8 回）→ `~/.cache/meloet/sounds/<版>/` の順にさがす。見つからない音色は棚に出さない（仕様書「素材がなかった音色は、棚に出さない」）。
-- **理由**: Git LFS は、無料の枠（転送量 月 10 GiB）が clone のたびに持ち主の分から減り、公開のリポジトリではすぐ止まる。リポジトリにそのまま入れると、ずっと重くなる（100 MB のファイルは push できない）。配布元から毎回取ると、配布元の負担になり、配布元の都合でこわれる。Release の添付は、1 ファイル 2 GiB 未満、合計と転送量の上限が書かれていない（`docs/research/effects-decoders-hosting.md`）。`build.rs` でネットにつなぐと、ネットなしで作る所（docs.rs、Nix、Debian）でこける。
+---
 
-### 19-2. 最初から入っているエフェクトは自分で書く
+## 19. Sound, effects, sampler and mixer (round 4)
 
-- EQ 4 バンド、コンプレッサー、リバーブ、ディレイ、コーラス、リミッターを、新しいクレート（19-6）に自分で書く。設計は公開の物: EQ は RBJ の式（W3C Note「Audio EQ Cookbook」）か Simper の SVF、コンプレッサーは Giannoulis ら（JAES 2012）の形、リバーブは FDN か Freeverb（パブリックドメイン）の形。GPL の部品のコード（synfx-dsp、nih-plug の plugins/ など）は写さない。
-- **理由**: 借りられる部品（fundsp、freeverb など）は、どれも「パラメータをなめらかに変える」「デノーマルの守り」「音のスレッドで allocate しない」のどれかが足りず、足す手間が書く手間とほぼ同じ。ライセンスと音のスレッドの決まりを、自分で全部見はれる。
-- 決まり: 処理の中でメモリを取らない（遅延の輪は作るときに最大の長さで取る）。パラメータは目標の値を受けとり、音のスレッドで 10〜30 ms かけてなめらかに近づける（プチッとしない）。デノーマルは、エフェクトと音色が自分で守る（くり返しの道とフィルタの中身で、1e-18 より小さい値を 0 にする。エンベロープは −80 dB で止める）。音のスレッドの入口で FTZ ・ DAZ を立てる形は、作ってから外した: Rust の文書は MXCSR の denormals-are-zero を変えることを「すぐに未定義の動き」と書く（`core::arch::x86_64::_mm_setcsr`。最適化がはじめの値を前提にするため。rust-lang/rust #123123 はまだ決まっていない）。守りだけで、デノーマルを入れる試験は通り、速さも変わらなかった（リバーブ 8.6 µs ／ 256 こま）。ブロックの出口に NaN ・ 無限が出たら、そのエフェクトの中身を 0 に戻して、そのブロックは無音にする（音のスレッドは止めない）。
-- **リミッターは先読みしない**: 先読みは、マスターを通る全部の音を遅らせ、鍵 → 音が先読みの長さだけ遅れる（1 ms で 48 こま）。かわりに、上がるときはすぐ、もどるときはなめらかに下げる形にし、最後に上限で切る（上限をこえる物は出さない）。
+### 19-1. Where the sound material lives
 
-### 19-3. エフェクトのパラメータ（仕様書にない 4 つ。ヤチヨさんの決め 2026-11-18）
+> Superseded by 23-1 and 23-9: the sound pack is one tar per sound plus a catalog, stored in `$XDG_DATA_HOME/meloet/sounds/` and fetched by meloet itself; `scripts/fetch-sounds.sh` is gone. The reasons below still hold.
 
-名前は仕様書の決まり（日本語で何が変わるか、値は数と単位、世の中の呼び名は用語の説明に）に合わせた。リバーブとディレイは仕様書 3 章のとおり。
+- The repository holds only **how to build** the sounds (`tools/sounds/`: source URLs and sha256, what to take, the scripts, the attribution text in `licenses/sounds.json`). The built sound pack goes on a GitHub Release. `cargo build` never uses the network. Sounds that are not found are not shown on the shelf (spec: 「素材がなかった音色は、棚に出さない」).
+- **Why not elsewhere**: Git LFS takes the owner's free transfer quota on every clone and soon stops on a public repository. In the repository itself it stays heavy for ever (and files of 100 MB cannot be pushed). Fetching from the original sites loads them and breaks when they change. Release assets allow up to 2 GiB per file with no stated total limit (`docs/history/research/effects-decoders-hosting.md`). A download in `build.rs` breaks offline builds (docs.rs, Nix, Debian).
 
-| エフェクト | 見出し | 名前 | 範囲 | はじめ | 世の中の呼び名 |
+### 19-2. The built-in effects are our own code
+
+- 4-band EQ, compressor, reverb, delay, chorus and limiter live in `crates/meloet-sound/src/effects/`, built from public designs (RBJ "Audio EQ Cookbook" or Simper's SVF, Giannoulis et al. JAES 2012, FDN or Freeverb). No code is copied from GPL parts (synfx-dsp, nih-plug's `plugins/`).
+- **Why**: the borrowable crates (fundsp, freeverb, …) each lack smoothing, denormal guards, or no-allocation on the audio thread; adding those costs as much as writing the effect, and we keep full control of licenses and audio-thread rules.
+- Rules: no allocation while processing (delay lines are allocated at full length up front). Parameters move to their target over 10–30 ms on the audio thread. Each effect and instrument guards denormals itself (values below 1e-18 in feedback and filter state become 0; envelopes stop at −80 dB). If a block ends with NaN or infinity, the effect resets to 0 and that block is silent; the audio thread goes on.
+- **FTZ/DAZ is not set**: the Rust docs call changing MXCSR denormals-are-zero immediate undefined behaviour (`core::arch::x86_64::_mm_setcsr`; rust-lang/rust #123123 is open). The guards alone pass the denormal tests at the same speed.
+- **The limiter does not look ahead**: look-ahead would delay everything through the master, and so key → sound. It attacks at once, releases smoothly and finally clips at the ceiling.
+
+### 19-3. Effect parameters (four effects not in the spec; the owner's decision)
+
+Names follow the spec's naming rules; reverb and delay are as in spec chapter 3 (`docs/spec/3-bands.md`). Code: `meloet_model::effects`.
+
+| Effect | Heading | Name | Range | Default | Common name |
 |---|---|---|---|---|---|
-| EQ 4 バンド | 低い音 | 高さ | 20〜1000 Hz | 100 Hz | 周波数 |
-| | | 上げ下げ | −18.0〜+18.0 dB | 0.0 dB | ゲイン |
-| | 中の低い音 | 高さ | 100〜5000 Hz | 500 Hz | |
-| | | 上げ下げ | −18.0〜+18.0 dB | 0.0 dB | |
-| | | 幅 | 0.2〜4.0 oct | 1.0 oct | Q |
-| | 中の高い音 | 高さ | 500〜16000 Hz | 3000 Hz | |
-| | | 上げ下げ | −18.0〜+18.0 dB | 0.0 dB | |
-| | | 幅 | 0.2〜4.0 oct | 1.0 oct | |
-| | 高い音 | 高さ | 1000〜20000 Hz | 8000 Hz | |
-| | | 上げ下げ | −18.0〜+18.0 dB | 0.0 dB | |
-| コンプレッサー | — | おさえはじめ | −60.0〜0.0 dB | −18.0 dB | スレッショルド |
-| | | おさえる強さ | 1.0〜20.0 : 1 | 4.0 : 1 | レシオ |
-| | | おさえるまで | 0.1〜100.0 ms | 10.0 ms | アタック |
-| | | もどるまで | 10〜1000 ms | 100 ms | リリース |
-| | | 持ち上げ | 0.0〜24.0 dB | 0.0 dB | メイクアップゲイン |
-| コーラス | — | ゆれの速さ | 0.05〜5.00 Hz | 0.80 Hz | レート |
-| | | ゆれの深さ | 0〜100 % | 50 % | デプス |
-| | | 広がり | 0〜100 % | 100 % | |
-| | | ミックス | 0〜100 % | 50 % | |
-| リミッター | — | 上限 | −12.0〜0.0 dB | −0.3 dB | シーリング |
-| | | 持ち上げ | 0.0〜12.0 dB | 0.0 dB | ゲイン |
-| | | もどるまで | 1〜1000 ms | 100 ms | リリース |
+| 4-band EQ | 低い音 | 高さ | 20–1000 Hz | 100 Hz | frequency |
+| | | 上げ下げ | −18.0–+18.0 dB | 0.0 dB | gain |
+| | 中の低い音 | 高さ | 100–5000 Hz | 500 Hz | |
+| | | 上げ下げ | −18.0–+18.0 dB | 0.0 dB | |
+| | | 幅 | 0.2–4.0 oct | 1.0 oct | Q |
+| | 中の高い音 | 高さ | 500–16000 Hz | 3000 Hz | |
+| | | 上げ下げ | −18.0–+18.0 dB | 0.0 dB | |
+| | | 幅 | 0.2–4.0 oct | 1.0 oct | |
+| | 高い音 | 高さ | 1000–20000 Hz | 8000 Hz | |
+| | | 上げ下げ | −18.0–+18.0 dB | 0.0 dB | |
+| Compressor | — | おさえはじめ | −60.0–0.0 dB | −18.0 dB | threshold |
+| | | おさえる強さ | 1.0–20.0 : 1 | 4.0 : 1 | ratio |
+| | | おさえるまで | 0.1–100.0 ms | 10.0 ms | attack |
+| | | もどるまで | 10–1000 ms | 100 ms | release |
+| | | 持ち上げ | 0.0–24.0 dB | 0.0 dB | makeup gain |
+| Chorus | — | ゆれの速さ | 0.05–5.00 Hz | 0.80 Hz | rate |
+| | | ゆれの深さ | 0–100 % | 50 % | depth |
+| | | 広がり | 0–100 % | 100 % | |
+| | | ミックス | 0–100 % | 50 % | |
+| Limiter | — | 上限 | −12.0–0.0 dB | −0.3 dB | ceiling |
+| | | 持ち上げ | 0.0–12.0 dB | 0.0 dB | gain |
+| | | もどるまで | 1–1000 ms | 100 ms | release |
 
-### 19-4. 曲のファイルの版 3
+### 19-4. Song file version 3: the mixer
 
-- トラック、音源（`{"kind": "builtin", "name": "grandPiano"}`）、ミキサー（パン、センド、インサート、戻り A ・ B、マスター）が入るので、版を 3 に上げる。まだ外に出していない版なので、第 4 回のあいだは版 3 のまま欄を足す（区切り1 で音源、区切り3 でミキサー）。
-- 版 1 ・ 2 の曲は、戻り A にリバーブ、B にディレイ、マスターにリミッター（上限 −0.3 dB）を入れた新しい曲の形でひらく。前からあるトラックのセンドは −∞（保存したときと同じ響き。ヤチヨさんの決め 2026-11-18）。`{"kind": "placeholder"}` は「サイン波」（仕様書 3 章）。session の `armed` は読み飛ばす（録音待機は選んだトラック、12-A）。
-- 知らない音源の名前は、曲を捨てずにサイン波にする（あとの meloet が音色を足しても、ノートと並びは残す）。
-- **ミキサーの形**（区切り3）:
+> Superseded by 20-6, 21-13 and 22-3: the file is now version 6, and versions 1–5 can no longer be read. The mixer shape and reading rules below are still those of version 6.
 
 ```json
 {"song": {
@@ -613,2225 +632,1841 @@ messages の Channel は 1 本で、差分（`patch`）、すぐ知らせるこ�
      "master": {"gainDb": 0.0, "pan": 0, "inserts": [{"effect": "limiter", "params": {"ceiling": -0.3, "…": 0}}, null, null, null]}}}}
 ```
 
-  - フェーダーとセンドは dB（`null` は −∞）、パンは −100〜100。インサートは枠の数だけならべ、空きは `null`。パラメータは表（19-3、`meloet_model::effects`）の**名前**で書く（表に足しても、順を変えても読めるように）。段のある物は段の名前、切りかえは `true` / `false`。`muted` は偽のとき書かない。
-  - 読むとき: ない欄 ・ 読めない欄は、はじめの値（パンはまん中、センドは −∞、パラメータは表のはじめの値）。範囲の外は範囲に入れる。知らないエフェクトの枠は空き。`mixer` がない ・ 読めないときは、新しい曲の戻りとマスター。**マスターのパン**（モック F4-Mixer にある。区切り3 の 2 回目に足した）は、ない ・ 整数でないとき、まん中（ほかのマスターの値は残す）。
+- Faders and sends in dB (`null` = −∞), pan −100…100. One entry per insert slot, `null` when empty. Parameters are written by **name** (so the table can grow or be reordered); steps by step name, switches as `true`/`false`. `muted` only when true.
+- Reading: missing or unreadable fields take defaults; out-of-range values are clamped; an unknown effect leaves its slot empty; no readable `mixer` gives a new song's returns and master; a bad master pan becomes centre. An unknown instrument name becomes the sine stand-in (the song is kept).
 
-### 19-5. WebGL の予算（ミキサーの前に）
+### 19-5. WebGL budget before the mixer
 
-- まとめる前の最大は 11。ミキサーのメーターを 1 枚足すと、窓がとても高い（1676 以上でアレンジがトラックの行のまま、ピアノロールとミキサーをひらく）ときに 12 で、予算いっぱいになるところだった。
-- 決めた形（区切り3 で入れた）: (1) 入力計の鍵盤とベロシティの棒を 1 つの区画 `inputMeter` に、(2) 音の設定のメーターと光る鍵盤を 1 つの区画 `settings` に、(3) ミキサーのメーターは、トラック ・ 戻り ・ マスターのストリップぜんぶで 1 枚（`mixerMeters`。横にスクロールしても 1 枚）。最大は 10 で、あと 2 残る。
-- まとめた区画は、間に HTML の文字があるので不透明にしない（面は 2 つの slot を囲む四角で、slot の所だけをぬり、ほかはすける）。面の広さは、入力計で 349×32 と 64×4 の 2 枚から 1 枚（鍵盤の左から棒の右まで × 32）に、音の設定でメーターから鍵盤までの四角になる。
-- ミキサーの縦のメーターは、横のメーターと同じ関数（`paintMeter` の `vertical`）で、目盛 ・ 落ちかた ・ 音割れの印（上はしに rec）を同じにする。戻り A ・ B のレベルは、計器の `returnPeaks` を `Levels` のマスターとトラックの間の 4 本に入れる（`ui/src/gl/levels.ts`）。
-- **理由**: まとめる 2 組は、どちらも同じ箱の中のとなりどうしで、同じ瞬間（鍵、テスト音）に変わる。1 枚にすると、鍵のたびに出す面が 2 枚から 1 枚にへり、鍵 → 画面にもよい（7 章: 面を 1 回出すたびに主スレッドが止まる）。遠くにある区画どうし（トラックの見出しのメーターとミキサーのメーター）をまとめると、canvas が大きくなり、60 Hz で出す画素がふえるので、まとめない。
+- One more context for the mixer meters would have filled the budget of 12. So: the input meter's keys and velocity bar share area `inputMeter`; the sound settings' meter and keys share `settings`; all mixer strip meters are one canvas `mixerMeters` (even when scrolled). Today's count: chapter 7.
+- A merged area is not opaque (HTML text sits between its slots): it paints only the slots and is clear elsewhere.
+- Vertical mixer meters use the same `paintMeter` (with `vertical`) as horizontal ones. Return A/B levels come from `returnPeaks` and sit in `Levels` between master and tracks (`ui/src/gl/levels.ts`).
+- **Why**: each merged pair are neighbours that change at the same moment, so one canvas means one surface shown per key instead of two (chapter 7: each one blocks the main thread). Far-apart areas are not merged: a bigger canvas sends more pixels at 60 Hz.
 
-### 19-6. 音の部品の新しいクレート
+### 19-6. The `meloet-sound` crate
 
-- `crates/meloet-sound`: サンプルを鳴らす係、素材の読みこみ、シンセの音色、エレクトロキット、最初から入っているエフェクト。`meloet-engine` の `Instrument`（と区切り3 で足す `Effect`）を使う側。スレッドを持たない（読みこむスレッドは core が持つ）。
-- **理由**: エンジンは「道（だれがどこへ流れるか）」と「時間」、音を作る物は別にすると、音のスレッドの見はり（割り当て器のテスト）を同じ形で両方にかけられ、エンジンが大きくなりすぎない。1 章の分けかたに 1 つ足す形。
+- Sampler, material loading, synth sounds, electro kit and built-in effects. It implements the engine's `Instrument` and `Effect` and owns no threads (core owns the loading thread).
+- **Why**: the engine keeps routing and time; sound makers live apart, and the same audio-thread allocator watch runs on both.
 
-### 19-7. サンプルを鳴らす係（測ってから決めた）
+### 19-7. The sampler
 
-測った数は `docs/measurements/2026-11-18-round4-sample-load.md`（試作 `spikes/sample-load/`）。Salamander の 4 段 ＋ リリース音・共鳴・ペダル（281 本、音 1,860 秒）で、FLAC 16 bit から i16 にのせるのが 1 本のスレッドで 0.88 秒、8 本で 0.12 秒（キャッシュの外でも 0.16 秒、NVMe）。メモリは i16 341 MiB、f32 681 MiB。「音が消えた所で切る」は −60 dB で 2〜3 % しか減らない（素材がもう切ってある）。
+Numbers: `docs/history/measurements/2026-11-18-round4-sample-load.md` (spike `spikes/sample-load/`). Today's memory picture: 23-12.
 
-- **メモリに全部のせる**。サンプルは i16 で持ち、鳴らすときに f32 にする。音のスレッドは配列を読むだけ（ファイルにも mmap にもさわらない）。
-  - **理由**: 読む時間は短く、決め手はメモリだけ。少しずつ読む形（頭だけのせて、残りをディスクの係から流す）は、メモリが 20 分の 1 になるが、間にあわなかった声の扱い、オフラインで曲を描くときの別の道、声ごとのリングと起こしかたが要り、機械で見はりにくい。i16 の 341 MiB は RAM 8 GB の PC で 4 %。同じ音色のトラックが何本あっても、`Arc` で 1 つを分けあう。足りなくなったら、段を 3 つに、共鳴を外す、の順で減らし、それでも足りなければ少しずつ読む形にする。しっぽを切る案（−40 dB で 341 → 255 MiB）は、オーナーさんが聞きくらべて、とらないと決めた（2026-11-23。違和感がないのは −50 dB までで、それでは 28 MiB しか減らない）。
-- **グランドピアノは 4 段**（v2 ・ v8 ・ v12 ・ v16。境は 1–34 ・ 35–64 ・ 65–96 ・ 97–127。サンプルを録ったときより強く鳴らさない選びかた）＋ リリース音 88 ＋ 共鳴 69 ＋ ペダル 4。段の数はヤチヨさんの耳で確かめて変える（5 段で +74 MiB）。
-- **配る形は FLAC 16 bit**（4 段で 55 MiB）。Vorbis は 23 MiB 小さいが、音が変わり、読むのが 1.5 倍おそい。FLAC 16 bit はメモリの i16 と 1 ビットも変わらない。
-- **頭の無音を切る**: メインの音は、ピークから −40 dB に届くまで中央 8.9 ms、最大 28.5 ms ある。そのまま鳴らすと、鍵 → 音にそのぶん足される。包みを作るときに、音が始まる少し前（2 ms）から切り、短くフェードインする。
-- **読みこむのは core の外のスレッド**（2〜4 本。人が弾いている最中に 8 コアを使いきらない）。読みこんだ音色（`SampleBank`）は `Arc` でためておき、トラックの音源はそれを指す。曲で使っていない音色は、棚でえらぶ（ためし弾き・サンプルの ▶）まで読まない。読みこみ中は、仕様書 6 章の「（名前）を読みこんでいます…」。
-- 気をつける所（いまは入れない）: メモリが足りずに OS がサンプルをスワップに出すと、音のスレッドがディスクを待つ。`mlock` で止められる（この PC の `ulimit -l` は unlimited。ほかの PC は確かめていない）。宿題にする。
+- **All samples are kept in memory as i16** and turned into f32 while playing; the audio thread only reads arrays (no files, no mmap). **Why**: loading is fast (the grand piano, 281 FLAC files, in 0.12 s on 8 threads); memory (341 MiB) is the only cost. Streaming would need late-voice handling, a separate offline-render path and per-voice rings, which are hard to watch by machine. Tracks with the same sound share one `Arc`. If memory runs short: 3 layers, then no resonance, and only then streaming. Cutting sample tails was rejected by the owner after listening (only −50 dB sounds right, saving 28 MiB).
+- **Grand piano**: 4 velocity layers (v2, v8, v12, v16; split 1–34, 35–64, 65–96, 97–127, never louder than recorded) + 88 release + 69 resonance + 4 pedal samples. A 5th layer costs +74 MiB.
+- **The pack is FLAC 16-bit**: bit-exact with the i16 in memory. Vorbis is smaller but changes the sound and loads 1.5× slower.
+- **Leading silence is cut** when the pack is built (19-8); it would add straight to key → sound (median 8.9 ms on the piano).
+- **Loading is off the core thread** on 2–4 threads (not every core while someone plays). Unused sounds load only when chosen on the shelf. While loading: 「（名前）を読みこんでいます…」 (spec chapter 6).
+- Open issue: if the OS swaps samples out, the audio thread waits on the disk. `mlock` would prevent it; not done for samples.
 
-### 19-8. 音の素材の包み（tools と鳴らす係の継ぎ目）
+### 19-8. The sound pack format (tools ↔ sampler)
 
-素材の中身は `docs/measurements/2026-11-18-round4-sources.md`、出どころは `tools/sounds/sources.json`。包みは `tools/sounds/` の道具が作り、`meloet-sound` のサンプルを鳴らす係が読む。
-
-**包みの形**（1 つのフォルダ。配るときは tar にして sha256 をつける）:
+> Superseded in part by 23-1 and 23-9: shipped packs are one tar per sound plus `common-<version>.tar` and `catalog.json`. The folder below is what `tools/sounds/build.py` makes for development (`target/sounds/dev`), and each sound's tar holds the same `instrument.json` and `samples/`.
 
 ```
-meloet-sounds-<包みの版>/
-  pack.json          {"format": "meloet-sounds", "version": 1, "pack": "2026.11.0",
-                      "instruments": {"grandPiano": "grand-piano/instrument.json", …},
-                      "credits": "credits.json"}
-  credits.json       [{"id": "salamander-grand-piano", "title": …, "authors": […], "source": <URI>,
-                       "license": "CC-BY-3.0", "licenseUrl": …, "changes": <英語の 1 文。NOTICE 用>}, …]
-  licenses/<id>/     素材についてきたライセンスの文（licenses/sounds/ の写し）
+meloet-sounds-<pack version>/
+  pack.json          {"format": "meloet-sounds", "version": 1, "pack": "…",
+                      "instruments": {"grandPiano": "grand-piano/instrument.json", …}, "credits": "credits.json"}
+  credits.json       [{"id", "title", "authors", "source", "license", "licenseUrl", "changes" (one English sentence for NOTICE)}, …]
+  licenses/<id>/     license texts that came with the material
   grand-piano/instrument.json, grand-piano/samples/*.flac
-  …
 ```
 
-**instrument.json**（版 1）: `{"format": "meloet-instrument", "version": 1, "kind": "grandPiano", "credits": ["salamander-grand-piano"], "gainDb": 0, "polyphony": 64, "sustainPedal": true, "regions": [ … ]}`。リージョンの欄（`sample`・`keyLo`・`keyHi`・`root` のほかは、ないときの値で）:
+**instrument.json** (version 1): `{"format": "meloet-instrument", "version": 1, "kind", "credits", "gainDb", "polyphony", "sustainPedal", "regions": [ … ]}`. Region fields (`crates/meloet-sound/src/sampler/bank.rs`):
 
-| 欄 | 意味 | ないとき |
+| Field | Meaning | Default |
 |---|---|---|
-| `sample` | instrument.json からの道。FLAC 16 bit、モノかステレオ、サンプルレートはファイルのまま（44.1 kHz も 48 kHz も） | — |
-| `keyLo` `keyHi` `root` `tuneCents` | 鳴らす鍵の範囲、そのファイルが鳴っている高さの鍵（**鍵の番号 ＝ 鳴る高さ**。GM と同じ）、こまかい高さ | tune 0 |
-| `velLo` `velHi` | ベロシティの範囲 | 1・127 |
-| `trigger` | `attack`（押した）・`release`（離した。ハンマーや弦の音）・`pedalDown`・`pedalUp`（CC 64） | `attack` |
-| `gainDb` | そのファイルの大きさ（包みを作るときにファイルをピーク −1 dBFS まで持ち上げて 16 bit にし、その分をここで下げる。弱い音の雑音を増やさないため） | 0 |
-| `ampVeltrack` | SFZ の `amp_veltrack` と同じ意味（%） | 100 |
-| `pitchKeytrack` | SFZ の `pitch_keytrack` と同じ（リリース音は 0） | 100 |
-| `attackMs` `releaseMs` | 音量のエンベロープ | 0・楽器ごと |
-| `rtDecayDbPerS` | リリースで鳴らす音を、押していた時間だけ小さくする（SFZ の `rt_decay`） | 0 |
-| `loopStart` `loopEnd` | ループ（こま。交差のなめらかさは包みを作るときにファイルに焼きこんである）。押している間ここをくり返す | なし |
-| `loopDecayDbPerS` | ループに入ってから小さくなる速さ（エレクトリックピアノの自然な減り） | 0 |
-| `oneShot` | 離しても最後まで鳴らす（ドラム） | false |
-| `rrIndex` `rrCount` | ラウンドロビン（同じ鍵・強さの別テイクを順に） | なし |
-| `chokeGroup` `chokedBy` | 同時に鳴らさない組（ハイハット: 42 ・ 44 が 46 を止める） | なし |
-| `pan` | −1〜1（ドラムで、まぜたあとのステレオでないファイルに） | 0 |
+| `sample` | Path to a FLAC 16-bit file, mono or stereo, any sample rate | required |
+| `keyLo` `keyHi` `root` `tuneCents` | Key range; the key the file sounds at (**key number = pitch heard**); fine tune | required; 0 |
+| `velLo` `velHi` | Velocity range | 1, 127 |
+| `trigger` | `attack`, `release`, `pedalDown`, `pedalUp` (CC 64) | `attack` |
+| `gainDb` | File level (files are raised to −1 dBFS before 16-bit, lowered here, so quiet samples gain no noise) | 0 |
+| `ampVeltrack`, `pitchKeytrack` | As in SFZ (%) | 100 |
+| `attackMs` `releaseMs` | Volume envelope | 0, 200 ms |
+| `rtDecayDbPerS` | Release sample quieter the longer the key was held (SFZ `rt_decay`) | 0 |
+| `loopStart` `loopEnd` | Loop in frames, crossfade baked in; `loopEnd` is one past the last frame, at least 8 frames; also loops during release | none |
+| `loopDecayDbPerS` | Fade while looping | 0 |
+| `oneShot` | Plays to the end after key up | false |
+| `rrIndex` `rrCount` | Round robin, 1…`rrCount` (SFZ `seq_position`) | none |
+| `chokeGroup` (0–63) `chokedBy` (array) | Sounds that cannot ring together (hi-hats) | none |
+| `pan` | −1…1 | 0 |
 
-**読みかたの細かい所**（鳴らす係が実物に合わせて決め、棟梁が確かめた 2026-11-18）: `rrIndex` は 1 から `rrCount` まで（SFZ の seq_position と同じ）。`chokeGroup` は数 1 つ（0〜63）、`chokedBy` は数の配列。`loopEnd` は最後に鳴らすこまの次（`loopStart..loopEnd`、こまの数をこえない、8 こま以上）。ループは離したあとのリリースの間もくり返す（ファイルが `loopEnd` で終わっているため）。`releaseMs` がないときは 200 ms。リージョンの知らない欄はエラー（つづりのまちがいを見つけるため）、楽器のいちばん上の知らない欄は読み飛ばす。ベロシティの大きさは SFZ の `amp_veltrack` の式（https://sfzformat.com/opcodes/amp_veltrack 、sfizz の `velocityCurve`）。高さは 4 点の 3 次の補間（Catmull-Rom）。ボイスが足りないときは、だれも押さえていない音（離した音、oneShot、リリース音）のいちばん古い物から 3 ms でフェードしてゆずり、新しい音は待たずに鳴る。
+- An unknown region field is an error (catches typos); unknown top-level fields are skipped. Velocity → level follows SFZ `amp_veltrack`; pitch uses Catmull-Rom interpolation. When voices run out, the oldest voice nobody holds fades over 3 ms and the new note plays at once.
+- Building the pack: every file starts 2 ms before it first passes −50 dB from peak, with a 1 ms fade-in. Each sound's `gainDb` makes C4 (kick for drums) at velocity 100 peak near −12 dBFS, as the synth sounds do. Per-sound handling (missing loops made by crossfade, the finger bass's octave shift of `root`, the drum kit's 16 mics mixed to stereo, round-robin counts) lives in `tools/sounds/build.py`; sources in `tools/sounds/sources.json` and `docs/history/measurements/2026-11-18-round4-sources.md`.
 
-**包みを作るときの決め**（棟梁の決め 2026-11-18。音はヤチヨさんの耳で確かめて直す）:
-- どのファイルも、頭の無音を切る（ピークから −50 dB をこえる 2 ms 前から。1 ms のフェードイン）。鍵 → 音を遅らせないため（19-7）。
-- グランドピアノ: 19-7 のとおり（4 段 ＋ リリース音 ＋ 共鳴 ＋ ペダル）。
-- エレクトリックピアノ（Wurlitzer）: 42 ファイルがどれも音の途中で切れている（SFZ にするときにループが落ちた読み）。作者のもとの .gig（同じ作者、同じサイト、CC BY 4.0）からループ点を取る。取れなければ、包みを作るときに交差のループを作る。ループの間は `loopDecayDbPerS` で自然に小さくする。
-- フィンガーベース（Black And Blue Basses、黒の指弾き）: 素材は鍵の番号より 1 オクターブ低く鳴るので、`root` を 1 オクターブずらして「鍵 ＝ 鳴る高さ」にする（範囲は B0〜E4）。どのファイルも 5.00 秒で切れているので、最後の 100 ms を短くフェードする（ベースを 5 秒より長くのばすことは少ない）。4 段 × テイク 4 から、段はそのまま、テイクは 2 つに。
-- スタジオキット（Naked Drums ＋ VCSL のクラップ）: 鳴らすときに 16 本のマイクをまぜる作りなので、作者の GM の組み（直のマイク ＋ オーバーヘッド、作者の量とパン）を包みを作るときにステレオにまぜて焼きこむ。クローズ HH は Tight（作者の GM の当てかた）、タムはハイ 50 ＝ Tom1、ミッド 47 ＝ Tom3、ロー 45 ＝ Tom5。テイクは 10 から 4 つに。クラップは VCSL の Clap_rr1〜6（テイク 6）。
-- ストリングス（VSCO 2 CE のヴァイオリン・ヴィオラ・チェロのセクションとソロのコントラバス）: ループがないので、包みを作るときに交差のループを作る（6〜17 秒の、音が落ちついた所から）。ベロシティは素材どおり 2 段。
-- オルガン（VCSL のパイプオルガン）: Loud と Quiet は同じ音の強弱ではなく別の音栓なので、ベロシティで切りかえない。両方の包みを作ってヤチヨさんが聞き、1 つにする。ループを作る。
-- 大きさのそろえかた: C4（ドラムはキック）を ベロシティ 100 で 1 つ鳴らしたピークが、およそ −12 dBFS（シンセの音色と同じ目安）になるように、楽器ごとの `gainDb` を決める。
+### 19-9. Tracks and engine seats
 
-### 19-9. トラックと席（区切り1）
+- **Tracks are pointed to by id**; the number shown is only order.
+- **The record-armed track is the selected track** (spec 12-A). It cannot change during recording or count-in.
+- **Engine seats are per track id** (`crates/meloet-core/src/play/seats.rs`): 0–63 are tracks (`MAX_TRACKS`), 64 is the audition seat (`AUDITION_SEAT`). A track keeps its seat; a new one takes the lowest free seat; reordering sends nothing. A seat is rebuilt only when its instrument kind changes, an undo brings back a deleted track, or the song is replaced. **Why**: rebuilding on reorder or delete would cut notes and reverb tails.
+- **The keyboard plays into the selected track's seat** (`EngineCommand::SetPlayTarget`; `ClearPlayTarget` when there are no tracks).
+- **Audition**: for a new track the instrument goes into the audition seat; Enter moves it, still sounding, to the new seat (`MoveInstrument`: held chords survive, nothing is built twice). For replace, the engine sets the track's instrument aside (`TryInstrument`); Enter keeps the new one (`EndTrial { keep: true }`, one undo step); cancel, Esc, closing the shelf, replacing the song or an output change restore it (`keep: false`). Setting aside happens inside the engine so a quick cancel never waits for the return ring. No recording during audition.
+- **Meters**: read per seat, sent in track order. The core thread writes the order → seat table; the meter thread reads it under a `Mutex` (not the audio thread).
+- **A track id is never reused**: new id = `max(next_id, highest id + 1)`, and deleting moves `next_id` past the deleted id.
+- At most 64 tracks; the 65th is not added (the spec has no text for it).
 
-- **トラックは id で指す**（約束 13）。番号（並びの順、1 から）は見せるだけ。足す・消す・並べかえで番号は変わるので、意図は id で送る。
-- **録音待機は選んだトラック**（12-A）。`Session::armed` はなくした。録音中・カウントイン中は、選んだトラックを変えない（録る先と鳴る先がずれないように）。
-- **エンジンの席はトラックの id ごと**（`crates/meloet-core/src/play/seats.rs`）。0〜63 がトラック、64 がためし弾きの席。トラックは曲にいる間、同じ席を持つ。新しいトラックは空いているいちばん小さい席。並べかえではエンジンに何も送らない。席の音源を作りなおすのは、その席の音源の種類が変わったとき、消したトラックが取り消しで戻ったとき、曲を入れかえたときだけ。
-  - **理由**: 並べかえやほかのトラックを消すたびに音源やエフェクトを作りなおすと、鳴っている音やリバーブの響きが切れる。区切り3 でインサートのエフェクトが席に入る。
-- **鍵盤は選んだトラックの席で鳴る**（`EngineCommand::SetPlayTarget`。選んだトラックが変わるたびと、出口をひらいたとき）。トラックがない曲では `ClearPlayTarget`。
-- **ためし弾き**: newTrack は、ためし弾きの席に音源を入れ、鍵盤をそこへ向ける。Enter で、その音源を鳴ったまま新しいトラックの席へ移す（`MoveInstrument`。押したままの和音が切れず、音源を 2 回作らない）。replace は、トラックの席の音源をエンジンの中でわきに取っておき（`TryInstrument`）、ためしの音源を入れる。Enter でそのまま（`EndTrial { keep: true }`、曲には 1 手）、やめる・Esc・棚をとじる・曲を入れかえる・出口が変わる、で戻す（`keep: false`）。取っておくのがエンジンの中なのは、すぐやめたときに、返す輪をまだ通っていない音源を待たないため。ためし弾きの間は録音できない。
-- **計器**: トラックのメーターは席ごとに読み、並びの順にならべて送る（約束 3-3 の形は同じ）。並び → 席の表は core のスレッドが書き、計器のスレッドが鍵（Mutex）で読む（音のスレッドではない）。
-- **一度出したトラックの id は二度と出さない**（13 章と同じ考え）。新しいトラックの id は `max(next_id, いちばん大きいトラックの id + 1)`、トラックを消すときは `next_id` をその id より先へ進める（いちばん大きい id のトラックを消して足すと、同じ id がまた出る不具合があった。乱数の試験で見つけた）。
-- 64 本まで（エンジンの席）。65 本目は足さない（状態行の文はない）。
+### 19-10. Sounds in core
 
-### 19-10. 音色を core につなぐ（区切り2）
+> Pack locations and the loading thread setup are superseded by 23-1 and 23-9. `MELOET_SOUNDS_DIR` exists only in dev-hooks builds (23-11).
 
-> 第 8 回で 23-1 ・ 23-9 の形に変えた（下の「包みの場所」の `~/.cache` と `pack.json` の版、読みこみの係のスレッドを作る時は、今とちがう）。
+- **Sounds are made in one place** (`crates/meloet-core/src/instruments.rs`). Sine, synth lead, synth bass, warm pad and electro kit always exist; sample sounds only when present. A track whose sound is missing plays the sine stand-in and keeps its name, so no notes are lost.
+- **Loading** (`crates/meloet-core/src/sounds.rs`, `play/sounds.rs`): one thread outside core, one sound at a time, 2–4 threads inside `load_instrument`. A loading seat gets a silent instrument and is rebuilt when the sound is ready (one path, no separate waiting state). Kept sounds: the song's, the audition row, the previous row while the shelf is open, and sample ▶ sounds. The last `Arc` is dropped on the core thread, never on the audio thread (tests count them). A sound that fails to load leaves the shelf and its tracks play sine.
+- **A key on a track whose sound is loading** shows a status line text (the owner's decision; `StatusMessage::InstrumentLoading`). While loading, core sets `wants_loading_key` and the MIDI thread reports only the first key (`Input::KeyWhileLoading`); piano roll keys (`Command::Audition`) too. Not during audition (the shelf row says it). **Why**: the status line table lives in one place in core (`Model::status`); the screen has no status texts of its own.
+- **The sample ▶**: one extra engine seat holding a `meloet_sound::phrases::PhrasePlayer` (it sends the phrase's notes at frame positions it counts itself). It feeds only the master sum and has nothing to do with meters, keys, lanes, mute, solo or recording. It plays only while the shelf and output are open; 4 s + 2 s tail.
+- **Replacing an instrument fades**: the old one ramps down over 10 ms on top of the new one, then returns through the return ring (`SwapInstrument`, `TryInstrument`, `EndTrial`, sample).
+- **Drums**: when the target track's instrument is in the drums group, the draw tool does not apply scale lock (spec chapter 3).
 
-- **音色を作る所は 1 か所**（`crates/meloet-core/src/instruments.rs`）。サイン波、シンセリード ・ シンセベース ・ あたたかいパッド、エレクトロキットはいつも使える。サンプルの音色（グランドピアノ、エレクトリックピアノ、オルガン、フィンガーベース、スタジオキット、ストリングス）は、包みにあるときだけ。棚の `available` は使える物だけ。包みにない音色のトラック（包みを取っていない PC で前の曲をひらいた）は、サイン波で代わりに鳴らす（ノートを消さないため。画面の音源の名前はそのまま）。
-- **包みの場所**（19-1）: `MELOET_SOUNDS_DIR` → 実行ファイルのそばの `sounds/` → `~/.cache/meloet/sounds/<版>/`（`<版>` は `tools/sounds/pack.json` の版をビルドのときに取りこむ。いまは空なので、3 つ目はさがさない）。`MELOET_SOUNDS_DIR` を決めたら、ほかはさがさない（試験がこの PC の包みをひろわないため）。ふだんの開発は `MELOET_SOUNDS_DIR=~/.cache/meloet/sounds/dev`（README）。
-- **読みこみの係**（`crates/meloet-core/src/sounds.rs`）: core の外のスレッド 1 本。音色を 1 つずつ、`load_instrument` を 2〜4 本（コアの半分）で読む。包みがなければスレッドを作らない。読めた `Arc<SampleBank>` を core がためる。
-  - 読みこみ中の席には、音を出さない音源を入れ、読めたらその音色の席を全部作りなおす（「待ち」の状態を別に持たず、1 つの道にするため）。ためし弾き中は `ShelfView.loading`。
-  - 残す音色: 曲のトラックの音色、ためし弾き中の行、その 1 つ前の行（棚がひらいている間）、鳴っている ・ 待っているサンプル。ほかは手放す。最後の `Arc` は、返す輪で戻った音源を core のスレッドが捨てるときに消える（音のスレッドでは捨てない。試験で `Arc` の数を見ている）。
-  - 読めなかった音色は棚から消し、そのトラックはサイン波で鳴らす（画面に出す文は仕様書にない）。
-  - **読みこみ中のトラックで鍵を弾いたら、状態行に文**（ヤチヨさんの決め 2026-11-19。`StatusMessage::InstrumentLoading`、文は `msg.auditionLoading`）。決めるのは core: 弾くと鳴る先のトラックの音源が読みこみ中の間だけ、core が `wants_loading_key` を立て、MIDI のスレッドは最初の 1 つの鍵だけを `Input::KeyWhileLoading` で知らせる（`wants_sound` と同じ形。ふだんの鍵は core を通らないまま）。ピアノロールの鍵（`Command::Audition`）も同じ。読みおわるか、鳴る先が変わると消える。ためし弾き中は出さない（棚の行の下が言う）。
-    - **理由**: 状態行のどの文を出すかの表は core の 1 か所（`Model::status`）にあり、画面は自分の状態行の文を持たない。約束に「読みこみ中」を足して画面が鍵と合わせる形だと、その表が 2 か所になる。いま弾いた鍵への答えなので、知らせ（次の操作で消える）より前に置く。
-- **サンプルの ▶**: エンジンにサンプルの席（トラックでもためし弾きでもない）を 1 つ足し、`meloet_sound::phrases::PhrasePlayer`（音源を包んで、自分で数えたこまの位置でフレーズのノートを送る。出来事の表は `prepare` で作る）を入れる。マスターに足すだけで、トラックのメーター ・ 鍵 ・ 列 ・ ミュート ・ ソロ ・ 録音に関わらない。棚がひらいていて出口がひらいているときだけ鳴らす。4 秒 ＋ 余韻 2 秒で終わる。
-- **音源を入れかえるときのフェード**: 入れかえられた古い音源は 10 ms まっすぐ下げながら新しい音源に重ね、そのあと返す輪で返す（`SwapInstrument`、`TryInstrument`、やめるときの `EndTrial`、サンプル）。プチッとしないため。
-- **ドラム**: 書く先のトラックの音源がドラムのグループなら、書く道具にスケール固定を当てない（仕様書 3 章）。
-- 起動の時間は、包みがあっても約 0.05 秒ふえるだけ（読みこみは起動のあと、裏で 0.28〜0.30 秒）。RSS はグランドピアノを読んだあと 555 MiB（前 212 MiB）。どちらも PC がこんでいたときの数で、静かな PC で測りなおす（区切り3 のあとの測定で）。
-
-### 19-11. ミキサーの音の道（区切り3）
+### 19-11. The mixer signal path
 
 ```mermaid
 flowchart LR
-  subgraph T["トラックの席 0〜63、ためし弾きの席 64"]
-    I["音源"] --> TI["インサート 1〜4"] --> TF["フェーダー → パン"]
+  subgraph T["Track seats 0–63, audition seat 64"]
+    I["Instrument"] --> TI["Inserts 1–4"] --> TF["Fader → pan"]
   end
-  TF -- "メーター" --> M0(("マスターの和"))
-  TF -- "センド A ・ B" --> RA["戻り A ・ B: 和 → インサート 1〜4 → フェーダー → パン"]
-  RA -- "メーター" --> M0
-  S["サンプル（▶）の席"] --> M0
-  M0 --> MF["フェーダー → パン"] --> MI["インサート 1〜4"] --> MM["マスターのメーター"] --> O["出口（−1〜1 に切る）"]
-  K["メトロノーム"] --> O
-  TT["テスト音"] --> O
+  TF -- "meter" --> M0(("Master sum"))
+  TF -- "sends A, B" --> RA["Returns A, B: sum → inserts 1–4 → fader → pan"]
+  RA -- "meter" --> M0
+  S["Sample (▶) seat"] --> M0
+  M0 --> MF["Fader → pan"] --> MI["Inserts 1–4"] --> MM["Master meter"] --> O["Output (clipped to −1…1)"]
+  K["Metronome"] --> O
+  TT["Test tone"] --> O
 ```
 
-- **トラック**: 音源 → インサート 1〜4（上から順）→ フェーダー → パン → マスターの和。メーターはフェーダーとパンの後（マスターの和に入る音。パンをふるとメーターも片方に寄る）。
-- **センドはフェーダーとパンの後で取る**。フェーダーの後は仕様書 3 章（「フェーダーを下げると、響きも下がる」）。パンの後は棟梁の決め: 聞こえている音をそのまま送るので、左にふった楽器の響きも左に寄る。
-- **ミュート ・ ソロ**は、いままでと同じく「その席の列を鳴らさない」（18 章）。列が鳴らなければ送る音もないので、センドも黙る。席ごとに 1 回見るだけで、席の数の 2 乗の仕事はない。戻りはソロで黙らない。戻りのミュートは、core がその戻りのフェーダーを 0 として送る（その戻りだけが黙る。エフェクトは回しつづけるので、戻したときに響きが続いている）。
-- **戻り A ・ B**: センドの和 → インサート 1〜4 → フェーダー → パン → マスターの和。メーターは戻りの出口（計器の 72〜87）。
-- **マスターだけ、インサートをフェーダーとパンの後に置く**（棟梁の決め）。仕様書はマスターのリミッターを「音割れを防ぐ」ために置いているので、マスターのフェーダーを +6 dB に上げても上限をこえないように。マスターのメーターは出口の音（−1〜1 に切る前）。
-- **ためし弾きの席**（64）もふつうのストリップを持つ。新しいトラックのためし弾きの間、core は「そのグループのトラックが足されたときのセンド」（`meloet_model::mixer::new_track_sends`）を送る（フェーダー 0 dB、パンまん中、インサートなし）。Enter では、手（新しい席にフェーダーとセンドを送る）を先に、`MoveInstrument` を後に送る。空の席は値をすぐ取るので、Enter の前と後で響きが変わらない。入れかえのためし弾きはトラックの席で鳴るので、そのトラックの道のまま。
-- **サンプル（▶）の席**はマスターの和へ入るだけ（センドなし、ミュート ・ ソロに関わらない）。**メトロノーム**は、マスターのメーターを測ったあとで出口に足す（マスターのフェーダーとリミッターを通らない。メーターには曲の音だけが出る。ヤチヨさんが「メトロノームとカウントインがマスターのメーターに出る」と見つけた、2026-11-19。前はマスターの和へ入れていた）。**テスト音**はマスターのストリップの後に足す（棟梁への申し送り: 音の設定の「音が出るか」を、曲のマスターを下げていても確かめられるように、係が決めた）。
-- **パンの法則**（前のコードになかったので決めた。`meloet_engine::pan_gains`）: バランス。まん中は左右とも 1.0、片方へふると反対がわだけを cos の 4 分の 1 周で 0 まで下げる。
-  - **理由**: まん中で音量が変わらない（パンのなかった曲 ・ ためし弾きと同じ響き）。どちらのがわも 1.0 より大きくならない（パンで音割れしない）。ステレオの音色の左右をまぜない。−3 dB の法則（まん中で下がる）は、前の曲の音量を変えてしまう。
-- **なめらかに**: フェーダー ・ パン ・ センドは、左右それぞれのゲインを音のスレッドで 20 ms（`RAMP_S`）まっすぐ近づける。こまを数えるので、ちょうど 20 ms で目標の値になる。音源のない席（新しいトラック、曲をひらいたところ）と、ストリームのないとき（`Engine::settle`）は、すぐその値にする。
-- **エフェクトを入れる ・ 外す ・ 入れかえる**: core が音のスレッドの外で `meloet_sound::effects::create` で作り、値を `set_param` で入れ、`EngineHandle::set_effect` が `prepare` してからリングで送る。枠は、前の音（前のエフェクトを通した音、なければ素通しの音）から今の音へ 10 ms（`FADE_S`、音源の入れかえと同じ）重ねて移る。前のエフェクトは、重ねおわったら返す輪（エフェクト用。席の数 × 8 個ぶん）で返し、core のスレッドが捨てる。重ねている間にまた変わったら、前の前の物はすぐ返す。パラメータは `SetEffectParam` → `Effect::set_param`（エフェクトが自分でなめらかに近づく）。
-- **インサートをとばす**（13-A ・ 86-1、第 5 回 区切り3）: `EngineCommand::SetBypass`。枠は、エフェクトを通した音と素通しの音を 10 ms（`FADE_S`）で入れかえる。**とばしている間もエフェクトは動かしたまま**（同じ入力を処理させて、出た音は捨てる）。
-  - **理由**: 「とばす」は聞きくらべの道具なので、もどした瞬間にリバーブの響きやコンプレッサーのかかりが「ずっとかけていた時」と同じ所にあるほうがよい。止めると、もどした時に古い響きが出るか、`reset` して何もない所から始まる。戻りのミュートと同じ考え（エフェクトは回しつづける）。重さは、とばす前と同じ（減らない）。プラグインも同じ（とばしている間も係のプロセスへブロックを送る）。
-  - 印は**枠の物**（エフェクトの物ではない）。空きの枠に印をつけておけば、あとから入ったエフェクトはとばされた形で入る（エンジンを作りなおした時、プラグインが読みこまれる前に印を送れる）。エフェクトの入れかえの重ねと、とばす重ねは、同時に走れる（素通しの音の入れ物を 1 組足した）。
-  - とばしている枠の遅れ（レイテンシ）は、ストリップの遅れに数えない。
-- **インサートを並べかえる**（86-2）: `EngineCommand::MoveEffect {from, to}`。枠を、エフェクトも印もそのまま回す（作りなおさない、返す輪も使わない）。同じエフェクトは 2 か所で同時に鳴らせないので、前の順と後の順をそのまま重ねることはできない。そこで **動く 1 つだけを 10 ms で道から外す → 外れている間に枠を回す（ほかのエフェクトの順は変わらないので、何も聞こえない）→ 新しい場所で 10 ms かけて道に戻す**。どちらの重ねも、まるごとの音どうしの間。エフェクトはその間も動かしたまま。
-  - 動く枠がとばされている ・ 空いている、または、通りこす枠がどれも聞こえていない（空き ・ とばした枠）ときは、聞こえる順が変わらないので、すぐ回す。ストリームのないとき ・ 音源のない席も、すぐ。
-  - 着くまでの間に来たパラメータ ・ とばす印は、着いた後の番号で届く（エンジンが読みかえる）。着く前にもう 1 回並べかえ ・ エフェクトの入れかえが来たら、先の並べかえをその場で終わらせる（外れかけた所から新しい場所で戻る）。
-  - 宿題: 枠を回した瞬間、動いたエフェクトの入力は「前の場所の音」から「新しい場所の音」へ飛ぶ（そのとき出口は 0 なので、飛びそのものは聞こえない。リバーブのように覚えの長いエフェクトは、その飛びを響きの中に少し持ちこむ）。新しく入れたエフェクトが音の途中から始まるのと同じ種類で、それより小さい。
-- **core の並べかえ**（第 6 回から `play/mixsync.rs` の `inserts_follow`、21-12）: `after_change` の最初に、ストリップごとに「エンジンに最後に伝えた物」と新しい曲の枠を `InsertId` でくらべ（`meloet_model::mixer::insert_moves`）、出た「回す」ごとに、伝えた物、とばす印、プラグインの帳面の場所、えらんでいる枠、棚がひらいている枠を同じように回してから、`EngineOp::MoveInsert` を送る。手をかけた時 ・ 取り消し ・ やりなおし ・ 履歴のとびが、この 1 つの道を通る。そのあとの `sync_mix` は同じ `InsertId` を同じ枠に見つけるので、エフェクトは作りなおされない。とばす印は `EngineOp::Bypass`（ストリップごとの「伝えた印」とくらべて、ちがう枠だけ）。
-- **出口を変えた ・ サンプルレートが変わった**: 音源と同じ。`Engine::prepare` がどのエフェクトも `prepare` しなおす（響きは切れる。値は残る）。エンジンを作りなおしたとき（ストリームがエンジンを返さなかった）は、core のスレッドの帳面（`crates/meloet-core/src/mixbook.rs`）から送りなおす。
-- **数でない物（NaN ・ 無限）**: エフェクトは自分で守る（19-2）。和の段でも守ることにした: トラック ・ 戻りの音がフェーダーの後で数でなければ、そのブロックは和（マスター、戻り）にもメーターにも入れない。出口でも、数でないこまは 0 にする。
-  - **理由**: インサートのないトラックの音源が NaN を出すと、マスターの和が NaN になり、マスターのリミッターが「入力が数でない」と見て全部を黙らせる。1 本のトラックで曲ぜんぶが黙らないように。フェーダーをかけるループの中で見るので、ふえる仕事は 1 こまに比べ 1 つ。
-- **core が送る物**（`crates/meloet-core/src/play/mixsync.rs`）: 曲の値に `mix_previews()` をかぶせた値と、「エンジンに最後に伝えた値」をストリップごとに比べ、ちがう所だけ送る（`EngineOp::Strip` ・ `Sends` ・ `Insert` ・ `Param`）。手、取り消し、やりなおし、曲の入れかえ、プレビュー、`CancelMixPreview` のどれでも同じ 1 つの道（入力のたびの最後と、`Doc` が変わったとき）。エフェクトを作りなおすのは、枠のエフェクトの種類が変わったときだけ（同じ種類なら値だけ送る。曲を入れかえても、同じ枠の同じ種類のエフェクトは使いつづける）。並べかえでは何も送らない（19-9）。消したトラックの席は `ClearSeat` でストリップごと空になり、エフェクトが返る。取り消しで戻ったら作りなおす。
-  - ミキサーの命令は、音源の命令と同じく、ストリームがなくてもエンジンに届く（エンジンは 1 つを使いまわす）。起動のときの分は `Model::engine_seats` に入る。
-  - トラックの列（ノート）を送りなおすのは、そのトラックのクリップが変わったときだけにした（前は、トラックの何が変わっても送りなおしていた。フェーダーを動かすたびに、鳴っているノートが切れてしまう）。
-- **リバーブとディレイのミックスのはじめの値**（ヤチヨさんの決め 2026-11-18）: トラックかマスターのインサートに入れたときは 30 %、戻り A ・ B に入れたときは表のとおり 100 %（新しい曲の戻り A のリバーブ ・ B のディレイも 100 %）。決める所は `meloet_model::mixer::Insert::new_on` の 1 か所（`add_effect` が使う）。
-- **見はり**: 音のスレッドでメモリを取らない ・ 捨てない試験に、ミキサーを足した。にせのエフェクトで道の決まりを 1 こまずつ確かめる `crates/meloet-engine/tests/mixer.rs` と、本物のエフェクトで 16 トラックにインサート 4 つ ・ 戻り ・ マスター ・ 入れる ・ 外す ・ パラメータ ・ ドラッグを回す `crates/meloet-sound/tests/mixer_rt.rs`。
-- **重さ**（`docs/measurements/2026-11-18-round4-mixer-cpu.md`。PC はこんでいた）: 16 トラック（計算の音色）、256 こま 48 kHz で、ミキサーなし 平均 316 µs（ブロックの 5.9 %）、全トラックに EQ とコンプ ・ 戻りにリバーブとディレイ ・ マスターにリミッターで 平均 450 µs（8.4 %）。
-
-## 20. 第 5 回で決めたこと（プラグインと SF2）
-
-調べ物は `docs/research/plugin-formats.md`、`plugin-ipc.md`、`sf2-playback.md`。この PC で測った数は `docs/measurements/2026-11-19-round5-ipc.md`（試作 `spikes/plugins/ipcbench/`）。
-
-### 20-1. プラグイン係のプロセスの分けかた（区切り0）
-
-- **同じプラグイン（同じ形式の同じ ID）の物を、1 つのプロセス（`meloet-plughost`）にまとめる**。16 トラックの Surge XT は 1 つのプロセスに 16 個。DSP と窓は同じプロセス（LV2 の instance-access。`docs/report.md` 3-4）。
-- **理由**:
-  - メモリ: 16 トラック ×（Surge XT ＋ エフェクト 4）＝ 80 個を立てて PSS の合計が、1 つずつ 688 MB、同じプラグインでまとめて 385 MB、トラックごと 545 MB、全部まとめて 380 MB。まとめると「全部まとめる」とほぼ同じ軽さ。
-  - リアルタイムの優先度: rtkit のはじめの値は 1 ユーザーでプロセス 15 ・ スレッド 25 まで（`plugin-ipc.md`）。子は親のリアルタイムを受けつがない。リアルタイムを取れない子は、PC が重いとブロックをこえる（測って、子 1 つで最大 3〜13.5 ms）。まとめれば、プロセスの数は「使っているプラグインの種類の数」になり、15 に入りやすい。
-  - LV2 は、lilv で包みを読むだけで重い物がある（LSP の包みで 1 秒、約 119 MB）。1 つのプロセスで world を使いまわす。
-  - 止まったときにまきこむのは、同じプラグインの全部。仕様書の「（名前）が止まりました…」は名前ごとの文なので、そのまま合う。
-- この PC は `audio` グループの limits で、親も子も SCHED_FIFO が取れた。`audio` グループでない PC（rtkit だけ）は測っていない。ただし meloet 本体の音のスレッド（cpal の `pw_out`）は、第 8 回 区切り4 まで上げていなかった（ふつうの優先度で回っていた。いまの形は 23-10）。
-- あとで足せる形: 落ちたことのあるプラグインや人が決めたプラグインを「1 つずつ」のプロセスへ移す（Bitwig の「Individually」）。いまは作らない。
-
-### 20-2. 音のやりとり（区切り0）
-
-- **共有メモリ（memfd、`F_SEAL_SHRINK` ・ `F_SEAL_GROW`）と futex（共有メモリの上、`FUTEX_PRIVATE_FLAG` なし）。同じブロックの中で往復する**。音のスレッドが入力と出来事（MIDI、パラメータの変化、再生の位置）を書いて子を起こし、子が書きおわった印（ブロックの通し番号）を立てて起こしかえす。spin はしない。
-- **理由**: 往復は親も子も SCHED_FIFO で p50 8〜13 µs、80 個を順にして p99 0.63〜0.74 ms（ブロック 5.33 ms の 12〜14 %）。1 ブロックおくらせる形は、プロセスをまたぐたびに 5.33 ms ずつ遅れが足され（音源 ＋ エフェクト 4 で 27 ms）、弾く人の返事がおそくなる。Carla と yabridge も同じブロックで往復する。futex と eventfd の差は測りのゆれの中で、futex は fd がいらず、共有メモリの番号と同じ場所で待てる。spin は子がリアルタイムでないと逆に悪くなった。
-- **音のスレッドの決まりとの折りあい**: 音のスレッドがメモリを取らないのは今のまま（共有メモリと輪は、枠を作るときに core のスレッドで用意する）。**待つのは、子の返事を時間切れつきの futex で待つ所だけ**。これは鍵ではなく、ほかのスレッドが持つ物を待つのでもない。待つ長さは、ブロックの中の残りの時間から決めた上限をこえない。前のブロックの返事がまだなら、待たずにその枠をとばす。
-- **止まったとき**: その枠は、そのブロックだけとばす（音源は音なし、エフェクトは前の音を素通し）。**2 ブロック続けて返事がなければ「止まった」**（仕様書）とし、その枠はもう待たない。見はり役のスレッドが pidfd で子の終わりを知り、返事のない子は `pidfd_send_signal` で止める。子が書いた長さや位置は信用せず、範囲を調べる。数でないこまは和の所で止める（19-11）。
-- **「止まった」の読みかた（区切り1 で直した）**: しめきりに間に合わなかった枠は、そのブロックは音なし（エフェクトは素通し）にし、次のブロックでもう一度しめきりまで待つ。止まった物にするのは、だれもその頼み事を取らず、プラグイン係の「仕事が進んだ数」も 2 回のしめきりのあいだ動かないとき、または 1 本のスレッドが 5 秒（`HANG_MS`）より長く持っているとき（前は 1 ブロック半。重いパッチを読む Surge XT を止めていたので 2026-11-20 に変えた。20-14）。取られていないが進んだ数が動いているのは「手いっぱい」で、止めない。同じ plughost の枠は、ヘッダの印でいっしょに止まる。
-  - **理由**: 16 トラックの Surge XT が同じ拍で鳴りはじめると、Surge XT は和音の頭のブロックに 1 個 5.2 ms かかり、16 個で 21 ms（4 ブロック）になった。これは CPU の限界で「おそいだけ」。前の読みかた（次のブロックの頭で返事がなければ止まった）では、元気な 16 個がぜんぶ止まった物にされた。音はそのブロックだけとぎれるが、止めてしまうと、もう一度読みこむまで鳴らない。
-- **同じプロセスの中は同時に回す**: plughost の音のスレッドは「枠の数 ・ CPU の数の半分 ・ 4」のいちばん小さい数（この PC で 4 本）。枠ごとの席を、空いているスレッドが取る（待たない）。足したスレッドがリアルタイムを取れなければ、そのスレッドは終わり、少ない本数で回す。エンジンは、区切りごとにプラグインの音源を全部先に頼み（`Instrument::ask`）、トラックを順に回して、音が要る所で待つ。インサートはトラックの中で順。
-  - 測り（`docs/measurements/2026-11-19-round5-plughost.md` の 2 回目、16 トラックの Surge XT ＋ コンプ、256 こま、ずらして弾く）: ブロックの p50 0.30〜0.36 ms、p99 1.7〜1.8 ms（直す前 0.9〜1.1 ・ 2.4〜2.7 ms）、返事なし 0。`PLUGIN_WAIT_SHARE` は 0.9 のまま。
-- **遅れの和はエンジンが数える**: `Instrument::latency()` と `Effect::latency()` をトラックごとに毎ブロック足し、先に読むこま数にする（20-8）。core を通さないので、次のブロックから効く。
-- 子の標準出力 ・ 標準エラーは、起動の前に `/dev/null` かログのファイルへつなぎかえる。やりとりには使わない（プラグインが勝手に書く）。
-- 子の音のスレッドは、自分でリアルタイムの優先度をもらう（`RLIMIT_RTPRIO` があれば `sched_setscheduler`、なければ rtkit）。取れなかった事は、ログに残す（画面の文は仕様書にない）。
-
-### 20-3. プラグインの状態を写す重さ（15-C、区切り0）
-
-- 状態を 1 回とる時間は、Surge XT で 1.2 ms（最大 2.0 ms、50〜67 KB）、LSP と Zam は 0.1 ms より下。窓に入る前と出たあとに 1 回ずつとっても、画面は固まらない。とるのはプラグイン係の主スレッド（窓のスレッド）で、音のスレッドではない。
-- 戻すと、Surge XT は次の `process` の中でパッチを読みなおし、その 1 ブロックが 1.6 ms（最大 2.0 ms、ブロックの 38 %）かかった。取り消しで状態を戻すときは、同じプロセスの中で 1 ブロックに 1 つずつ戻す。
-
-### 20-4. スキャン（区切り0）
-
-- **1 つの包み（VST3 の包み、LV2 の包み、CLAP のファイル）に 1 つの子のプロセス**で調べる。時間切れは包みごとに 30 秒（仕様書 Y13）。前の試作は LV2 のプラグインごとに子を起こし、LSP の TTL（1 秒強）を 194 回読みなおしていた（670 個で 243 秒のうち 224.5 秒）。
-- VST3 の `moduleinfo.json`（この PC では LSP の 1 つ、音のクラスの 91 %）があれば、読みこまずにクラスの一覧がわかる。
-- 結果は、場所 ・ 更新の時 ・ 大きさで覚え、2 回目からは変わった包みだけ調べる（仕様書 Y13）。
-- スキャンの子は、調べたプラグインを 1 つずつ片づける。片づけないと速い（この PC の 309 の包みで 16.7 秒）が、子 1 つで最大 1.5 GB（LSP）になり、子を 4 つ同時に走らせると危ない。片づけると 38.1 秒、子 1 つで最大 0.33 GB。メモリを取った。
-- 記録の版（`SCAN_CACHE_VERSION`）がちがう記録は捨てて、全部を調べなおす（版 2: VST3 ・ LV2 を読めるようになった）。
-
-
-### 20-5. 同じプラグインの形式をまとめる鍵（区切り0）
-
-- **曲の中で使う鍵は形式ごとの正確な物だけ**: `vst3:<Audio Module Class の cid>`、`lv2:<URI>`（、`clap:<id>`）。同じ Surge XT でも VST3 のつまみは 2855 個、LV2 は 775 個で、状態は形式をまたいで使えない。
-- **棚で 1 行にまとめる鍵は見せるためだけ**: 「音源かエフェクトか」＋ 整えた名前 ＋ 整えた作った人。名前は小文字にして、形式の名と、うしろの「(Stereo)」などを外す。作った人は小文字にして、うしろの「VST3」「LV2」などを外す。名前と作った人の両方が一致したときだけまとめる。前方一致だけ、種類がちがう、ではまとめない（「Surge XT」と「Surge XT Effects」）。
-- **理由**: どの形式にも、形式をまたぐ共通の ID がない。この PC の実物で、Surge XT と ZamComp は名前と作った人が 3 形式で同じ。LSP は名前（「LSP Compressor Stereo」と「Compressor Stereo」）も作った人（「LSP LV2」と「LSP VST3」）もちがう。まちがえてまとめると別の子が同じ行になるので、まとめそこなう（2 行になる）ほうを選ぶ。
-
-### 20-6. 曲のファイルの版 4（区切り0）
-
-- プラグインの状態、SF2 の音色、インサートをとばした印（13-A）が入るので、**版 4** にする。版 1〜3 も開ける（とばした印はなし、音源は今の名前）。
-- トラックの音源は 3 つの形: 最初から入っている音色（今の名前の文字）、プラグイン（形式、20-5 の正確な鍵、名前、作った人、状態）、SF2（ファイルの名前、sha256、バンク、プログラム、音色の名前）。インサートは、最初から入っているエフェクトかプラグインと、とばした印。
-- プラグインの状態は、曲の JSON の中に base64 で入れる（Surge XT で 50〜67 KB）。曲は 1 つのファイルのまま、こわれない書きかたと `.prev`（14 章）をそのまま使う。
-- **見つからないプラグインや SF2 の欄は、読んだ形のまま持ちつづけ、保存でも書きもどす**（仕様書「曲の中の設定は消さずに残す」）。
-- 版 4 の形（区切り2 の 1 回目）: 音源は `{"kind": "builtin" | "plugin" | "sf2", …}`。プラグインは鍵（`vst3:…` ・ `lv2:…` の文字。形式は鍵が言うので別に書かない）、名前、作った人、**場所**（6 章の「前はここにありました: （場所）」のため）、状態。SF2 はファイルの名前、sha256、バンク、プログラム、音色の名前。インサートは `{"effect": …}` か `{"plugin": …}` と `bypassed`（偽なら書かない）。プラグインと SF2 の中の知らない欄は `kept` に入れて保存で戻す。鍵のないプラグイン、ファイル名のない SF2、ありえないバンクやプログラムは、今までの「知らない音色」と同じくサイン波（曲は捨てない）。版 5 以上は「新しすぎる」。
-- 約束の版 17 は**足すだけ**にした（古い欄は「最初から入っているもの」の写しとして残る）。画面が新しい欄へ移ったら、古い欄は版 18 で消す。棚の「あとから入れたもの」（SF2 のファイルとプラグインのまとめた行）は、何百行になってめったに変わらないので、`shelf` と分けた区画 `library` で送る。
-
-### 20-7. SF2（区切り0）
-
-- **読む所は自分で書く**（`tools/sounds/sf2.py` を Rust に写す。`meloet-sound` の中）。使う人が持ってくるファイルなので、こわれたファイルで落ちない作りにし、乱れたファイルの試験をする。えらんだプリセットが使うサンプルだけを読む。`soundfont` クレート（MIT）は予備の案。
-- **鳴らす所は、サンプルを鳴らす係（`meloet-sound/src/sampler/`）を広げる**: 音量のエンベロープ 6 段（delay ・ attack ・ hold ・ decay ・ sustain ・ release。decay と release は dB でまっすぐ、幅 96 dB）、キーによる hold ・ decay、モジュレーションのエンベロープ、2 つの LFO、2 次の低域通過のフィルター、exclusiveClass、ループの 0 ・ 1 ・ 3。SF2 は読みこみのときに今の `Region` の形（足した欄つき）に変え、音のスレッドは SF2 を知らない。
-- **理由**: FluidR3 の 189 のプリセットのうち 125 がフィルター、84 がモジュレーションのエンベロープ → フィルター、125 がサステインを使う（`sf2-playback.md`）。減衰 → サステインがないと、ピアノやギターのような減る音が鳴りつづける。`rustysynth`（MIT）は 1 本の完成したシンセで、モジュレーターを捨て、減衰の幅が 80 dB、ファイルをまるごとメモリに持つので入れない（読む参考にする）。`oxisynth` ・ `xsynth` ・ `fluidlite` は LGPL なので入れない。
-- **FluidSynth に合わせる所**: initialAttenuation を 0.4 倍（定数 1 つで切りかえられる形）、強さ → フィルターのデフォルトのモジュレーターは入れない、減衰と release の幅 96 dB。**理由**: FluidR3 は Linux ではふつう FluidSynth で鳴らされる。FluidSynth は LGPL なので、ソースは動きを知るために読むだけで写さない。聞きくらべは、この PC の `/usr/bin/fluidsynth` を別のプロセスで動かして `-F` でファイルに書く（リンクも同梱もしない）。
-- 一般のモジュレーター（FluidR3 では強さ → フィルターだけ）、sm24、SF3 は作らない。SF3 は「読めない」として状態行で言う（6 章の「…読めませんでした」）。
-- 足したファイルは `$XDG_DATA_HOME/meloet/sf2/`（ふつうは `~/.local/share/meloet/sf2/`）に写す（仕様書「meloet の中にうつす」）。曲とファイルをつなぐ鍵はファイルの名前（仕様書「同じ名前の SF2 を足すと、つながる」）。同じ名前で中身のちがうファイルを足したら、新しいほうに入れかえる。 写すときに sha256 を数え、写しのとなりに覚え書き `<名前>.sf2.sha256`（hex と長さ）を置く（起動のたびに大きなファイルを数えなおさないため。長さが合わない ・ 覚え書きがない物は空のまま）。曲とのつなぎは名前 ・ バンク ・ プログラムで、sha256 は記録だけ（ちがっても鳴らす）。
-
-### 20-8. プラグインの遅れ（レイテンシ）を合わせる（ヤチヨさんの決め 2026-11-19）
-
-- **合わせる**。プラグインが知らせてくる遅れ（VST3 の `getLatencySamples`、LV2 の `lv2:latency` のポート）で、再生がほかのトラックとずれないようにする。弾いている音は、そのトラックのプラグインの遅れのぶんだけおそくなる。
-- **合わせかた: 音を遅らせるのではなく、ノートを先に送る**。トラック t の遅れ L_t（音源とインサートの遅れの和）のぶん、そのトラックの再生のノートと CC を L_t こま先に読んで音源へ送る。トラックの音は、遅れのないトラックと同じ時にマスターの和へ届く。
-- **理由**: meloet のトラックはいまどれも MIDI（歌のトラックは第 7 回）。音を遅らせる形（ふつうの DAW の形）だと、いちばん遅いトラックに全部を合わせるので、弾いているトラックの音も、ほかのトラックの遅れのぶんおそくなる。ノートを先に送れば、弾いた音がおそくなるのは自分のトラックの遅れだけで、遅らせる入れ物（ディレイの線）もいらない。
-- マスターのインサートの遅れは、全部に同じだけかかるので、合わせずに「耳に届いている位置」（11 章の時計）に足す。録った位置の決まりは今のまま（耳に届いていた位置）。
-- 戻り A ・ B のインサートの遅れは、響きが遅れるだけなので合わせない（第 5 回）。
-- 再生を始めたところのノートは、先に送れないぶん遅れる（始めの L_t こまだけ）。遅れが変わったとき（VST3 の `kLatencyChanged` など）は、次のブロックから新しい L_t で読む。
-
-### 20-9. CLAP（ヤチヨさんの決め 2026-11-19）
-
-- **第 5 回は入れない**（VST3 と LV2 だけ）。見つもりは VST3 の 5〜7 割の重さ（`plugin-formats.md` 4 章）。この PC の CLAP の 20 個（Surge XT、Zam 系）は、どれも VST3 か LV2 の形もあるので、いまは失う物がない。
-- 棚の形式の印、「＋数」、使う形式の順（曲で使っている形式 → 窓をひらける形式 → CLAP → VST3 → LV2）は、あとで CLAP を足せる形で作る。スキャンは `.clap` を見ない。
-
-### 20-10. スキャンの係とプラグイン係のプロセスの係（区切り1、`crates/meloet-core/src/plugins/`）
-
-- **スキャンの係**（`plugins/scanner.rs`、後ろのスレッド）: 包みごとに子 1 つ（`meloet-plughost scan`）。同時に走らせる子は CPU の数の半分、多くて 4（半分は画面とほかの仕事に残す。大きな包みはディスクから読むので、増やしても速くならない）。子は nice 19 で起こす。SCHED_IDLE にしなかったのは、30 秒は壁時計の時間なので、PC がいそがしいと遅いだけのプラグインを「30 秒たっても…」とまちがえるため。meloet の音のスレッドはリアルタイム（PC が許せば。23-10）なので、どちらでも前に出ない。
-  - 時間切れは「最後の `Probing` から 30 秒」（最初の `Probing` までは起こした時から）。`Probing` のあと落ちた ・ だまったら、そのプラグインだけ止まった物にして、`--skip`（もう見つけた物も入れる）で同じ包みの続きを調べる。だまった子は kill して wait する。
-  - 記録（`$XDG_CACHE_HOME/meloet/plugins/scan.json`）は、スキャン中 2 秒ごとと終わったときに書く。記録のファイルがなければ「はじめて」（全部を調べ、帯を出す）。あれば、変わった包みだけを帯なしで調べ、新しいプラグインがあったときだけ状態行。はじめてのスキャンの途中で終わると、次の起動は「2 回目」になる（残りは帯なしで調べる）。
-  - **スキャンは、画面が core にあいさつしてきた（`subscribe`）あとで始める**（来なければ 10 秒で始める。`PluginOptions::wait_for_screen`）。前のスキャンの記録はすぐ読む。**子のプロセスは meloet 全体で 1 つずつ起こす**（`meloet_plugin::launch::spawn`。1 つ約 1 ms）。**理由**: VS Code の CodeLLDB 1.12.3 の下で、4 つのスレッドが同時に子を起こすと lldb-server が meloet を止めたまま回りつづけ、窓が出なかった。1 つずつにしたあとも、WebKit がライブラリを読みこむ時と子の終わりが重なると、LLDB が内部の止め所（`_dl_debug_state`）を一時停止として見せた（ヤチヨさんが見つけた、2026-11-19。gdb とデバッガなしでは起きない）。窓が先に出るので、はじめての起動にもよい。
-  - スキャンは 1 つずつ。はじめてのスキャン中の「もう一度ためす」「場所を足す」は、前のスキャンが終わるまで待つ（同じ包みを 2 つのスキャンが同時に書かない）。「もう一度スキャン」は、止まった物をとばす（3 章 Y13）。
-  - 包みまるごとの「もう一度ためす」は、1 個でも入ったか何も止まらなかったら「今度は入りました」。中の 1 個が止まると、その 1 個が新しい行になる。
-- **プラグイン係のプロセスの係**（`plugins/hosts.rs` の `Hosts`）: 長生きのスレッド 1 本（`meloet-plugins`）が、子を起こす ・ 話す ・ 見はるを全部する（`PR_SET_PDEATHSIG` は起こしたスレッドが終わると効くため）。同じ `PluginKey` は 1 つのプロセスに 16 枠まで（17 個目は次のプロセス）。口はどれも答えをコールバックで返し、core のスレッドは待たない。
-  - 見はり: 10 ms ごとに pidfd（子が終わった）と `PluginWatch::stopped()` を見る。止まっていたら `pidfd_send_signal(SIGKILL)` → wait → その子の全部の枠を止まった物にする。ソケットの返事が 5 秒（Load は 30 秒）来ないプロセスも止まった物にする。
-  - 気づくまで（256 こまのブロック、試験のスレッドはリアルタイムでない、ほかの係のビルドが動いていたかもしれない）: kill 10 ms、segv 1〜2 ms、返事なし 11 ms。録音中に止まっても、録音は続き、止まったあとの鍵も録れる。
-  - もう一度読みこむ: 新しいプロセスに入れ、最後にとった ・ 戻した状態と、そのあと動かしたパラメータを戻す。外す: エフェクトは枠を空に、音源はサイン波に（取り消せる 1 手）。録音中は音源を変えない（今の決まり）。
-  - 外すときは、先にエンジンから `PluginSlot` を外して捨ててから `Hosts::unload`（逆だと、外した枠が「止まった」に見える）。
-- **子は posix_spawn で起こす**（`pre_exec` を使わない。fd は子の標準入出力としてわたし、子が最初に別の番号へ移して、標準の 3 つには `/dev/null` かログをはる。nice と `PR_SET_PDEATHSIG` は子が自分で）。**理由**: 566 MB の meloet を fork して子を起こすと、はじめての起動が 0.6〜0.8 秒おそくなり（スキャンの子 300 回）、再生中にプラグインを入れる瞬間には、写しのページフォルトが親の音のスレッドに当たるおそれがある。直したあと、はじめての起動の最初のコマは 809〜823 ms（2 回目は 716〜762 ms）。`Command` はわたす fd の写しを持つので、spawn のあと捨てないと、子が落ちてもソケットが閉じて見えない。
-- スキャンの子だけ `QT_QPA_PLATFORM=offscreen`（X の画面がない所でも Qt のプラグインが調べられる。窓を出す本番の子には決めない）。
-- plughost の実行ファイルは meloet の実行ファイルのとなり。なければ、プラグインなしで動く（ログに 1 行）。`unsafe` は `meloet-plugin`（`ipc`、`launch.rs`）にまとめ、core には置かない。
-
-### 20-11. 棚、プラグインと SF2 の音源、保存（区切り2、`crates/meloet-core/src/{catalog.rs,sf2store.rs,play/plugs.rs,plugins/housed.rs}`）
-
-- **棚の「あとから入れたもの」**（`catalog.rs`）: スキャンの記録を 20-5 の `MergeKey` でまとめる。使う形式は「人がえらんだ（設定に覚える）→ 曲で使っている → 窓をひらける → VST3 → LV2」。棚がスキャンの記録を取りこむのは、起動のとき、スキャンが終わったとき、スキャン中に記録を書くとき（2 秒ごと）だけ（何百行を包みごとに送りなおさない）。お気に入り（SF2 の音色、プラグイン、エフェクト。エフェクトのはじめはリバーブとディレイ）は設定に。
-- **SF2 を足す**（`sf2store.rs`）: PC の窓（`*.sf2`）か、窓に落とした最初の 1 つ。後ろのスレッドで `Sf2File::open` で確かめてから、一時ファイル → sync → rename → フォルダの sync で `$XDG_DATA_HOME/meloet/sf2/` に写す（同じ名前は入れかえ）。読めない物 ・ SF3 は足さない。録音中は受けない。
-- **プラグインの読みこみは「チケット」**（`play/plugs.rs`）: 規則が場所（トラックの音源 ・ インサートの枠）ごとの帳面を持ち、`Effect::LoadPlugin` → 後ろで `Hosts::load_with`（読みこみと状態を 1 回で）→ `Input::PluginLoaded` ・ `PluginUnreadable` → `EngineOp::Plug`。もう一度読みこんだ物は同じ id なので、回数の番号で古い返りを見分ける。読みこみ中の席は無音。
-- **外すのは、エンジンが返したとき**（`plugins/housed.rs`）: エンジンへ渡す物を包みに入れ、core のスレッドがそれを捨てたときに `Hosts::unload`（20-10 の順）。
-- **保存**: 曲にプラグインがあるときだけ、全部の状態を並べて頼み、別のスレッド（`meloet-save`）が 3 秒まで待って書く。間に合わない物 ・ 止まった物は、曲が知っている状態。core のスレッドは止まらない。保存のあいだに曲を変えたら「変更あり」のまま（保存を始めた版を覚える）。**なおすためのファイルは、プラグインに聞かず、曲が最後に知っていた状態**（2 秒ごとに全部のプラグインへ聞くと重いので。窓で変えた所は 15-C の 1 手で曲に入る）。
-- **見つからないとき**: 包みがない → 棚はサイン波だけ、トラックは「サイン波で代わり」。SF2 がない → サイン波、同じ名前の SF2 を足すとつながる、「曲から外す」は 1 手。プラグインがない → 音源はサイン波、エフェクトの枠は空のまま、曲の中の設定は残す。あとのスキャンで見つかれば自動で読みこむ。
-- 本物の Surge XT（VST3）で、つまみを変えて保存し、新しい曲にしてからひらくと、同じ音に戻る（rms と高さで確かめた。`cargo test -p meloet-core --lib -- --ignored surge_xt_sounds`）。
-
-### 20-12. 約束の版 18: 窓、プラグインのパラメータ、ミキサーの 86 の残り（区切り3 の 1 回目）
-
-- **消した欄**（版 17 の「写し」）: `TrackView::instrument`、`TrackView` ・ `ReturnView` ・ `MasterView` の `inserts` と `InsertsView`、`ShelfView` の `favorites` ・ `selected` ・ `current` ・ `loading` ・ `sample` ・ `selected_effect` と `SampleView`。画面は `sound` ・ `slots` ・ `selected_sound` … だけを読む。意図（`ShelfSelect` ・ `PlaySample` ・ `ToggleFavorite` ・ `ShelfSelectEffect`）と状態行の文（`AuditionNewTrack` など）の「最初から入っているものだけ」の形は残っている（宿題）。
-- **窓は居場所で指す**: 窓はプラグイン 1 つに多くて 1 つなので、番号を配らず、居場所（`Option<PluginSlotRef>`。`None` は棚のためし弾き中のプラグイン）で指す。「窓をひらく」「窓を前に出す」「一覧の 1 行」は、どれも同じ意図 `OpenPluginWindow`（ひらいていれば前に出す）。インサートを並べかえたら、core が窓の居場所もえらんだ枠も中身について行かせる。
-- **状態行の「窓」の一覧をひらく ・ とじるのは画面だけ**: メニューと同じ番でとじる物（仕様書 3 章）で、ほかのメニューも画面だけが持っている。core は知らなくてよい。一覧をひらいている間の「プラグインの窓が N つひらいています」も、画面が `windows` から作る。
-- **さがすのとグループをたたむのは画面だけ**: 名前は一覧（`ParamTable`）で画面に全部ある。2855 個の名前を 1 文字ごとに調べても軽い。最初から入っているエフェクトの欄と棚が、もうこの形（さがす文字とたたんだ見出しは画面が持ち、えらぶ子が変わるとはじめに戻す）。状態行の「パラメータをさがしています ・「cutoff」・ 24 個」も画面が作る（棚の状態行と同じ）。「40 個をこえる子はたたんで始める」は、画面が数から決める。
-- **値は 0〜1**: プラグインのパラメータの値は、種類によらず範囲の中の 0.0〜1.0（VST3 の normalized。LV2 はプラグイン係が範囲で割る）。段階は n /（段の数 − 1）。値の文字（「523.25 Hz」）はプラグインが作った物を運ぶ。値も文字も「わからない」（`None`）がある（Surge XT の LV2 は `patch:Get` に答えない）。
-- **プラグインのパラメータを動かす**: `SetPluginParam {slot, table, param, value, commit}`。`commit` は最初から入っているエフェクトと同じ（`false` は音だけ、`true` で 1 手、Esc は `CancelMixPreview`）。`false` でも、値と文字は `paramValues` で返る（ドラッグ中の行の文字をプラグインが作るため）。
-- **値を打ちこむ**（86-6）: `TypeParam {param, text}`。文字のまま送り、最初から入っているエフェクトは core が数を読み、プラグインはプラグインが読む。はみ出したら端に合わせて `StatusMessage::ParamClamped`。
-- **フェーダー ・ パン ・ センドのキー**（86-7）: 約束は足さない。キー 1 回ごとに `commit: false`、最後のキーを離して 1 秒たったら（フォーカスが外れたら）画面が同じ値を `commit: true` で送る。Home のセンドの値のために `TrackView::send_defaults` を足した。
-- **出口がないマスター**（86-8）: 足さない。`outputs.chosen` が `null`、または `outputs.chosen_state` が `missing` のとき「出口なし ▸」。
-- **15-C**（窓にいた間を 1 手）: 約束は足さない。`song.undo_count` が 1 ふえる。手の名前（「（プラグイン）の窓で変えた所」）は、履歴の帯（第 6 回）で要る。いまの状態行には、取り消した手の名前を言う文がない。
-- **偽物**（`ui/src/bridge/fake.ts`）は、場面と意図を「最初から入っているもの」の欄（`instrument` ・ `inserts` ・ 棚の `selected` …）で書いたままで、約束の欄はそこから作る。その欄は約束から消えたので、偽物だけの型（`FakeState` ・ `FakeTrack` ・ `FakeShelf`）として持つ（宿題: 偽物を約束の欄だけで書きなおす）。
-
-### 20-13. とばす ・ 並べかえ ・ 入れかえ ・ 打ちこみ（区切り3 の 2 回目の前半、core とエンジン）
-
-- **手**: `StepKind::Bypass` ・ `MoveInsert` ・ `ReplaceEffect`。曲のファイルは版 4 のまま（とばした印はもう入っていて、並びは枠の順）。入れかえた新しいエフェクトは、とばさない形で入る（前の枠がとばされていても。取り消すと、前のエフェクトが前の設定と印ごと戻る）。同じ種類 ・ 同じ鍵のプラグインへの入れかえは手にしない。音の道は 19-11。
-- **えらんでいる物**（`play/mixer.rs` の `Picked`）: 最初から入っているエフェクトの枠か、プラグイン（枠か、トラックの音源。鍵で覚える）。並べかえでは中身について行き、取り消し ・ やりなおし ・ 履歴のとびでも同じ道（第 6 回から `inserts_follow`）で戻る。プラグインは、いまは `table: None`（一覧と行は後半）。窓の種類は、スキャンの記録（`EditorKind`）から出す（X11 → ひらける、ほかの窓 → まだひらけない、なし → 持たない）。
-- **棚の「入れかえる」**（`Mode::ReplaceEffect`）: 「空き ＋」と同じ道で、決めるときだけ `replace_effect`。枠が空になったら「新しいトラック」に戻る。録音中もひらく。
-- **値を打ちこむ**（86-6、最初から入っているエフェクト）: 読むのは `meloet_model::effects::ParamSpec::read`。文字の頭の数（全角の数字と「−」も）を、そのパラメータの単位の数として読む。単位が別の大きさを言っていれば合わせる（秒のパラメータに「500 ms」、ms に「1.5 s」、Hz に「2 kHz」）。数で始まらなければ読めない（何も変えず `ParamRejected`）。はみ出したら端に合わせ、値が変わらなくても `ParamClamped` を言う。
-- **状態行**: 入れた ・ 外した ・ 並べかえた ・ 入れかえた ・ とばした ・ もどした（86-9）を、どれも core の知らせ（次の操作で消える）として出す。ミキサーの帯をひらいた時のまとめ（`MixerPassesBy`）は `ToggleBand` でミキサーがひらいた時だけ。とばした枠が止まってもいるときは「止まった」のほうにだけ入れる。ミキサーをひらくために別の帯がたたまれたときは、たたんだ知らせのほうを出す（係の決め。棟梁に確かめてもらう所）。
-- **止まった知らせと、見せてと頼んだ答え**（区切り3 の直し）: `PluginStopped` は、もう一度読みこむか外すまで言いつづける文で、ふつうの知らせより先（10 章「人が何かしないと直らない知らせを先に」）。ただし、人がいま「見せて」と頼んだ答えの 3 つ（ミキサーをひらいた時のまとめ `MixerPassesBy`、窓がひらいた `PluginWindowsOpen` ・ `PluginWindowLarge`）は、その上に 1 回出す。次の操作で止まった知らせに戻る。この 3 つが出ている間に別のプラグインが止まったら、止まったほうを出す（新しい知らせなので）。**理由**: ミキサーのまとめは止まった枠の名前を自分で言う文で（ヤチヨさんの決め 2026-11-19）、止まった知らせの下にあると「止まっています」の半分は一度も出ない。窓の文は、いま押した事の答え。ほかの知らせ（入れた、並べかえた、端に合わせた …）は、今までどおり止まった知らせの下（`state.rs` の `asked_to_see`）。
-- **スキャンの記録を書く係**（20-10 の「スキャン中 2 秒ごと」）: 記録を書く頼みは、スキャンの仕事と同じ 1 本のスレッドの列に入っていたので、仕事（はじめてのスキャンは 1 つの長い仕事）が終わるまで待たされていた。書くのを別のスレッド（`meloet-scan-save`）にした。たまった頼みは、いちばん新しい物だけ書く（どれもファイルまるごとなので）。
-
-**後半: 窓 ・ 15-C ・ プラグインのパラメータ（core。`crates/meloet-core/src/play/{windows.rs,params.rs,plugs.rs}`、`service.rs`）**
-
-- **規則とプラグイン係の間**: 規則は `Effect::AskPlugin {ticket, ask}`（窓をひらく ・ 閉じる、一覧、値を決める、状態を聞く、文字を読む）を出し、core のスレッドが `Hosts` に頼む。答えと、プラグインが自分で言った事（窓がひらいた ・ 入った ・ 出た、つまみが動いた）は、hosts のスレッドから `Input::PluginSaid {ticket, said}` で戻る。規則は待たない。同じプラグインへの頼み事は、頼んだ順に答えが来る（hosts のスレッドは 1 本）。
-- **窓はチケットで覚える**（`windows.rs`）: 窓は「読みこんだプラグイン」の物なので、居場所ではなくチケットで持ち、画面に出すときに居場所へ直す。並べかえ ・ ためし弾きからトラックになる時は、何もしなくても居場所がついて行く。プラグインがいなくなる ・ 止まる ・ 別のチケットで読みこみなおされると、入力のたびの見なおし（`sync_windows`）で窓の行が消える（知らせが来ないため）。頼んでいない窓の「ひらいた」は捨てる。
-- **窓の型**は、読みこんだプラグインが自分で言った物（`PluginSaid::Editor`）。読みこむ前はスキャンの記録。
-- **0.2 秒**は、意図を受けた時から数える（プラグイン係が聞いた返事を待たない。差は 1 ms ほどで、同じプロセスの別の窓で主スレッドがふさがっている時は、その待ちも「ひらくのに時間がかかる」に入れる）。core のスレッドは、規則の言う時刻（`Model::wake_at_us`）に起きて `Tick` を入れる。
-- **15-C の「訪問」**: `WindowEntered` で状態を聞き（前）、`WindowLeft` ・ × ・ `ClosePluginWindow` で聞き（後）、バイトがちがえば `set_plugin_state(…, PluginChange::Window)` の 1 手。プラグインはもうその状態なので、手を当てる時は何も戻さない（帳面の `Plug::plugin` を先に新しくして `want_plug` が「同じ」と見るようにする）。取り消し ・ やりなおしは `Effect::SetPluginState`。ためし弾き中のプラグイン（曲にいない）は訪問にしない。
-- **「最初のまま」（曲の状態が空）へ戻す**: 取り消しの先が空の状態だと、前半の形ではプラグインを読みこみなおしていた（窓も閉じる）。最初の変更の前（訪問の入口、欄の最初の値）にプラグインの状態を 1 回聞いて帳面に覚え（`Plug::base`）、空へ戻る時はそれを `SetPluginState` で戻す。聞けていなければ、前と同じく読みこみなおす。
-- **答えが遅れて来る間の決まり**（乱数の試験 300 種 × 800 回で、曲とプラグインが同じ事を確かめた）:
-  - 状態を戻したら（取り消し ・ やりなおし）、その前に聞いた答えは使わない。訪問は戻した後の状態から始めなおし（`visit_overtaken`）、欄の手の答えは「戻した回数」（`StateAsk::Param::puts`）で見分ける。
-  - 欄がプラグインを変える前に、訪問を切る（`cut_visit`: 出口の状態を聞き、同じ時に次の訪問を始める）。これで「その時までの窓の分を 1 手、それから欄の 1 手」になる。欄の手ができたら、続いている訪問の「前」をその状態にする（`visit_goes_on_from`）。
-  - 欄のドラッグは 1 つだけ。別のパラメータを動かす ・ 打ちこむ ・ 曲が変わると、前のドラッグは終わって値を戻す（最初から入っているエフェクトのプレビューと同じ）。ドラッグ中に来た「窓から出た」は、遅れて来た知らせとして、手にしない。
-  - 訪問の途中でプロセスが止まると、状態を聞けない。訪問は待ち、「もう一度読みこむ」でプラグインが窓で変えた値つきで戻った時（`Hosts` が覚えている）に、そこで終わって 1 手になる。ドラッグの途中で止まったプラグインは、戻った時にドラッグの前の値を返す。
-- **20-3 の「1 ブロックに 1 つずつ」**は `Hosts` の中（`space_states`）: 同じプロセスへの `set_state` は、いちばん長い 1 ブロック（1024 こま。48 kHz で 21 ms）あける。hosts のスレッドがその間だけ待つので、順番は変わらない。
-- **一覧の番号**（`params.rs`）: えらんだプラグインがチケットで決まり、鳴っていれば一覧を頼む。答えが来た時に新しい番号の一覧になる（来るまでは前の一覧のまま。取り消しのたびに欄が空にならない）。古くなる時: えらびなおす、`ParamsChanged`、状態を戻した、もう一度読みこんだ。止まったプラグインの一覧は残る。グループは、名前の出てきた順に 1 つずつ（同じ名前が離れて出ても 1 つ）。
-- **値の送り**: 変わった行に印をつけ、入力のたびに「前に送ってから 33.334 ms たっていれば」まとめて `Effect::ParamValues`。たっていなければ `wake_at_us` がその時刻を言う。窓で動いた値 ・ `SetPluginParam` の答え ・ 打ちこみの答えが同じ道を通る。一覧にない番号は読みとばす。
-- **打ちこみ**は 2 回の頼み事: `ReadText` の答えが来てから、端に合わせた値を決めて状態を聞く。状態行の文（`ParamClamped` ・ `ParamRejected`）は答えと一緒に出る。プラグインが文字を言わないときは、0〜1 の数を小数 2 けたで。
-- **`ClosePluginWindow`** は画面から送られない（ヤチヨさんの決め）。画面の偽物（`ui/src/bridge/fake.ts`）がまだ意図を受けているので約束には残し、core は「窓の × と同じ」（訪問を終わらせてから閉じる）にした。
-- 本物の Surge XT（VST3）: 窓に入って出るだけなら手にならない（同じ状態を 2 回言う）。オシレーター A のオクターブを変えて出ると 1 手、取り消しで戻り、窓もプロセスもそのまま（`cargo test -p meloet-core --lib -- --ignored surge_xt_a_visit`、`DISPLAY` が要る）。Surge XT は段のあるパラメータを状態から戻すと段の少し内側（1 が 0.995）で返す。
-
-### 20-14. プラグインの窓とパラメータ（区切り3 の 2 回目、`crates/meloet-plughost/src/{window.rs,control.rs,formats/}`、`crates/meloet-core/src/plugins/hosts.rs`）
-
-- **窓は plughost の主スレッド**。上の窓（X11、Wayland では Xwayland の上）を plughost が自分で作り、その中にプラグインの窓を入れる（VST3 は `IPlugView::attached` に `kPlatformTypeX11EmbedWindowID`、LV2 は X11UI に `ui:parent`）。主スレッドは `poll` 1 つで、ソケット ・ 窓の X の接続 ・ VST3 の `IRunLoop` に頼まれた fd とタイマーを待ち、LV2 の `ui:idleInterface` を 16 ms ごとに呼ぶ。音のスレッド（`rt.rs`）は主スレッドを待たないので、窓が固まっても音は続く。
-  - X の接続は x11rb を libxcb 経由で（`docs/report.md` 3-1: ファイルのソケットがない X にも入れる）。最初の窓のときに 1 回だけつなぐ。プラグインは自分の接続を持つ。
-  - `IRunLoop` はプロセスに 1 つ（`formats/vst3/runloop.rs`）。プラグインはホストの文脈からも、view の枠（`IPlugFrame`）からも同じ物をもらう。
-  - 窓の題はプラグインの名前だけ（core がわたす）。前に出すのは `_NET_ACTIVE_WINDOW`（「人が頼んだ」の印 2）と raise。
-- **ひらき始めと、ひらき終えたは別**。`OpenEditor` の返事（`Opening`）は窓を作る前に書く。`EditorOpened` は、デスクトップが窓を画面に出したとき（自分の窓の MapNotify。0.5 秒来なければ、そこで知らせる）。core は `Opening` から 0.2 秒を数える。**理由**: 窓を作るのはプラグインの中で 10〜200 ms 止まる仕事で、その間、主スレッドは返事を書けない。
-- **大きさ**: VST3 は `getSize` と `IPlugFrame::resizeView`（その中で `onSize` を呼ぶ）。`canResize` の view は、人が窓を引っぱったら `checkSizeConstraint` → `onSize`。LV2 は `ui:resize`、言ってこない物（Dragonfly）は、プラグインが中に作った窓の大きさに合わせる（`SubstructureNotify`）。LV2 の窓は人が大きさを変えられない形にした（min = max）。「画面より大きい」は、窓の左上があるモニタ（RandR）とくらべる。
-- **窓に入った ・ 出た**: 自分の窓の FocusIn ・ FocusOut をきっかけに、X に「いまキーボードはどこ」を聞いて決める。プラグインが自分で出すメニューやダイアログ（同じ X のクライアントの別の窓）にいる間は「まだ中」。その間は 0.1 秒ごとに聞きなおす（そこからよそへ行っても、自分の窓には何も来ないため）。
-- **閉じる**: 先にプラグインに窓を外させてから（`removed`、LV2 は `cleanup`）、上の窓をこわす。逆だと、プラグインの Xlib がエラーでプロセスごと終わる。人が × で閉じたときだけ `EditorClosed`（中にいたら、その前に `EditorLeft`）。meloet が閉じた ・ 外したときは何も知らせない。
-- **パラメータの一覧**（`Params`）は、名前 ・ グループ ・ 型 ・ 段の文字 ・ はじめの値に、いまの値と文字もつけて 1 回で返す（Surge XT の VST3 2854 個で 33 ms）。値は 0〜1。
-  - VST3: `kIsHidden` ・ `kIsReadOnly` ・ `kIsBypass` は出さない。`stepCount` 1 はオン ・ オフ、2〜128 は段（文字は `getParamStringByValue`）、ほかはなめらか。グループは `IUnitInfo` の木のいちばん上の段。**根の下に段が 1 つだけあって、その下に段がある木（JUCE の「Root」）は、その 1 つを根として読む**（そうしないと、全部が「Root」になる）。
-  - LV2: control の入力ポートと `patch:writable`。`notOnGUI` と、ホストのスイッチ（`lv2:enabled` ・ `lv2:freeWheeling`）は出さない（窓からは書ける）。グループは `pg:group` を `pg:subGroupOf` でたどった、根のすぐ下の段。文字は scale point の名前か、数と `units:unit`。
-  - **わからない値**: LV2 の `patch` のパラメータは、meloet が決めるか、プラグインが自分で言うまで `None`（Surge XT の LV2 は `patch:Get` に答えない）。状態には、わかっている値だけを入れる。
-- **文字 → 値**（`ReadText`）: VST3 は `getParamValueByString`（単位つきと単位なしの両方をためす）。LV2 は scale point の名前、on ・ off、数。「はみ出した」は、LV2 は範囲から、VST3 は 0〜1 の外の答えか、打った数と両端の文字の数をくらべて決める（プラグインは、はみ出した数をだまって端に合わせるため）。
-- **窓で動かした値**: VST3 は `IComponentHandler` の `beginEdit` ・ `performEdit` ・ `endEdit`。LV2 は窓の `write_function`（control のポート、`patch:Set`）と `ui:touch`。どれも次のブロックで音のスレッドへ行き（間引かない）、core への知らせは同じパラメータで 33 ms に 1 つまで（最後の値は、手を離す前に必ず知らせる）。知らせにはプラグインの文字をつける。
-- **LV2 の窓と DSP の間**: 窓が送る、パラメータでないメッセージ（atom）と、DSP が出すメッセージ ・ control の出力は、バイトの輪 2 本で運ぶ。音のスレッドが輪に書くのは、窓がひらいている間だけ。メモリは取らない（見はりの試験に入れた）。
-- **オートメーションが動かした値**は、meloet が「見ている」と言った枠だけ知らせる（`Request::Watch`、`Notice::ParamAutomated`。21-8）。
-- **Hosts** は、頼み事のないときも 10 ms ごとに子のソケットを読む（前は、次の頼み事の返事を待つ間しか読まなかった）。窓の知らせは `HostNews` の `Window…`、パラメータの知らせは今までの `HostNews::Notice`。窓で動かした値は、もう一度読みこむときのために覚える。
-- **打った文字を確かめる（VST3、区切り3 の直し）**: JUCE の VST3（Surge XT）の `getParamValueByString` は、どんな文字にも `kResultOk` を返し、読めない文字やはみ出した数を端（近いほうとは限らない。「3 dB」が −48 dB）にする。プラグインの答えをそのまま信じず、打った文字を先に自分で読む（`formats::judge_typed`）。
-  - 数で始まり、単位がないか両端の文字（`getParamStringByValue(0)` ・ `(1)`）と同じ単位: 両端の数とくらべ、外なら近い端にして「はみ出した」。中ならプラグインの答え。
-  - 数で始まり、単位が別（「2 kHz」）: プラグインの答え（今までどおり、端に行った時だけ両端の数とくらべる）。
-  - 数で始まらない: プラグインの答えの値を文字に戻し、打った文字と同じ（大文字 ・ 小文字は見ない）ときだけ読めた事にする（段の名前「Hall」、「On」）。ほかは「読めない」。Surge XT が音名（「c4」）を読むのは、この形では通らない（「abc」も A♭ として 25.96 Hz に読むプラグインなので、見分けられない）。
-  - LV2 は範囲を自分で知っているので、この道を通らない。
-- **全角の数字**: `ReadText` は、どの型のプラグインにも、全角の数字 ・ 小数点 ・ ＋ ・ －（「−」も）を半角にしてからわたす（`formats::half_width`。最初から入っているエフェクトの `ParamSpec::read` と同じ字）。
-- **コントローラの値を取りなおす（VST3、区切り3 の直し）**: JUCE の VST3 のコントローラは、値を自分で覚えていて、`setComponentState` のときにだけプロセッサの値を写す。Surge XT は状態（パッチ）を音のスレッドの次のブロックで読みこむので、`setState` のすぐあとの `setComponentState` は 1 つ前の値を写す（取り消しのたびに欄が 1 つ前）。窓の中でパッチを変えたときも、値の `performEdit` は来ず、`restartComponent(kParamTitlesChanged)` だけが来る。そこで、次の 3 つのあと、音のスレッドが 2 ブロック進んだら（音が止まっていれば 0.2 秒で）、コンポーネントの `getState` をコントローラの `setComponentState` にわたしなおす（`Vst3Controller::resync`）: 状態を戻した、`kParamTitlesChanged`、人が窓から出た。一覧の値が 1 つでも変わったら（`kParamTitlesChanged` のときは変わらなくても）`ParamsChanged` を知らせ、core が一覧を取りなおす。変わらなければ何も言わない（窓に入って出るだけでは一覧の番号は変わらない）。`setComponentState` の中からプラグインが言う `kParamValuesChanged` は、meloet が自分で頼んだ分なので聞かない。
-  - 2 ブロック待つのは、窓で動かした値（次のブロックで音のスレッドへ行く）がコンポーネントに入ってから写すため。待たないと、行儀のよいプラグインのコントローラを古い値に戻してしまう。
-  - 状態を戻した直後に core が頼む一覧は、まだ古い値（Surge XT）。2 ブロック後の `ParamsChanged` で正しい一覧になる（一覧の番号が 2 つ進む）。
-- **スキャンと X の画面**: スキャンの子に `DISPLAY` があると、`lsp-plugins.vst3`（194 個）が 8 秒から 38 秒になる（窓の型を聞く `createView` のたびに X につなぐ）。はじめてのスキャン全体は 11 秒 → 40 秒。`DISPLAY` を外すと速いが、194 個とも窓の型が「なし」と記録されるので、外さない。区切り1 ・ 2 の 17.5〜19 秒は、`DISPLAY` のない所で測った数だった。
-- **1 ブロックに長くかかるプラグインは「止まった」にしない（2026-11-20 の直し、20-2 の「1 本のスレッドが 1 ブロック半より長く持っているとき」を置きかえる）**: Surge XT は、パッチを音のコールバックの中で読む。ウェーブテーブルつきのパッチ（サードパーティ → A.Liv → Plucks → Taped Plucks）は、VST3 でも LV2 でも 1 ブロックに 112 ms かかった。前の決まりでは 8 ms（1 ブロック半）で「固まった」とされ、Hosts がプロセスごと止めていた（窓が消え、「…が止まりました」。プラグインが落ちたのではなく、meloet が止めていた）。
-  - 1 本のスレッドが同じ頼み事を `HANG_MS`（5 秒、`crates/meloet-plugin/src/ipc/ends.rs`）持ちつづけたら「固まった」。それより短い間は「おそいだけ」で、その枠は音なし（エフェクトは素通し）のまま続き、返事が来た次のブロックから鳴る。
-  - 1 ブロック半より長く持たれている頼み事は、エンジンはもう眠って待たない（返事が来たかを見るだけ）。待つと、その間じゅう、毎ブロックしめきりまで眠り、ほかのトラックまでおくれる。
-  - プロセスが落ちた時は、今までどおり Hosts が pidfd で 10 ms のうちに知り、共有メモリの印でエンジンに伝える。だれも頼み事を取らず、進んだ数も動かない時の決まりは変えていない。
-  - 本物の試験: `real_windows` の `surge_xt_{vst3,lv2}_patch_that_takes_many_blocks_to_read`（エンジンと同じしめきりでブロックを頼みながら、窓の矢印でそのパッチまで進む）。
-- 測った数は `docs/measurements/2026-11-19-round5-windows.md`。
-
-## 21. 第 6 回で決めたこと（テンポの地図、マーカー、オートメーション、履歴の帯）
-
-調べ物は `docs/research/automation-vst3.md`、`automation-lv2.md`、`tempo-and-automation.md`（2026-11-20）。区切り0 で棟梁と meloet-hard で決めた。「測って決める」と書いた数は、区切り1 ・ 2 で測って決めなおす。画面に見える所で仕様書にない物は `design-notes.md` の A-19 ・ B-92。
-
-いちばん大事な決まり: **録った鍵の位置は 1 ms もずれない。10 分録っても 1 こまもずれない。テンポが動いてもそれを守る**。そのために、位置はどこでも「区間の頭からの式」で出し、ブロックごとに足しあわせない。
-
-### 21-1. テンポの地図（`crates/meloet-model/src/tempo_map.rs`、新しいファイル）
-
-- **曲が持つ形**（`Doc` の中。`TempoChange` と `Doc::tempo_changes` は消して作りなおす）:
-
-```rust
-pub struct TempoPoint { pub tick: u64, pub tempo: Tempo, pub ramp: bool } // ramp: 次の点まで、だんだん
-pub struct MeterChange { pub bar: u32, pub meter: Meter }                 // bar: 0 始まりの小節の番号。1 以上
-pub struct Timeline {
-    pub tempo: Tempo,                    // 曲の頭（いまの Doc::tempo）
-    pub meter: Meter,                    // 曲の頭（いまの Doc::meter）
-    pub head_ramp: bool,                 // 曲の頭から最初の点まで、だんだん
-    pub tempo_points: Vec<TempoPoint>,   // tick の順。tick は 1 以上、同じ tick は 1 つ
-    pub meter_changes: Vec<MeterChange>, // bar の順。同じ bar は 1 つ
-}
-// Doc { timeline: Arc<Timeline>, markers: Vec<Marker>, loop_range: Option<TickRange>, … }
-```
-
-  - 曲の頭のテンポと拍子は、点の列に入れずに別に持つ。**理由**: 仕様書の「変更の件数（曲の頭は数えない）」と同じ数えかたになり、いまの `doc.tempo` ・ `doc.meter` を読むコードの直しが小さい。
-- **テンポの数の意味は 11 章のまま**: 「その所の拍子の 1 拍（下の数の音符）の、1 分間の数」。1 分のティック = テンポ × その拍子の 1 拍のティック。4/4 → 6/8 でテンポの数が同じなら、メトロノームの速さは続き、4 分音符で見た速さは半分になる（画面に見える事なので、ヤチヨさんに聞いている。B-92）。
-- **だんだんはティックに対してまっすぐ**（調べ物: Ardour と同じ。仕様書の 5 小節目 104 → 9 小節目 120 で 7 小節目 112.00 は、この形でだけ合う）。最後の点の `ramp` は効かない（次の点がない）。
-- **作った地図**（`TempoMap`。`Timeline` から作る、変えない物。エンジン ・ core ・ 計器のスレッドが同じ物を使う）: 「テンポの区間 ∩ 拍子の区間」の**かけら**の列。かけらは、頭のティック `tick0`、頭の時間 `sec0`、1 拍のティック `tpb`、頭のテンポ `a`（1 分の拍の数。だんだんの途中なら線の上の値）、傾き `s`（1 ティックあたりのテンポの増え。だんだんでなければ 0）を持つ。
-- **式**（かけらの頭から u ティック、時間は分。秒は × 60）:
-  - ティック → 時間: `t(u) = u / (tpb·a) · L(s·u/a)`、`L(x) = ln_1p(x) / x`、`L(0) = 1`
-  - 時間 → ティック: `u(t) = a·tpb·t · E(s·tpb·t)`、`E(y) = exp_m1(y) / y`、`E(0) = 1`
-  - その所のテンポ: `a + s·u`。プラグインとディレイに言う「4 分音符の 1 分の数」は `(a + s·u) · tpb / 480`。
-  - 手計算: 104 → 120 を 7680 ティック（4/4 の 4 小節）で、全体は `ln(120/104)` 分 = 8.586 秒（調べ物の数と同じ）。
-- **「テンポがほぼ同じかけらは、まっすぐの式に切りかえる」は、しきい値がいらない**。`ln_1p(x)/x` と `exp_m1(y)/y` の形にすれば、x や y がどんなに小さくても正しい（`ln_1p` と `exp_m1` は小さい数で桁を落とさない。割るだけ）。分けるのは、ちょうど 0 のときだけ。**理由**: しきい値の前後で式が変わると、そこに小さな段ができる。段のない形のほうが試験もしやすい。
-- **かけらの頭の時間 `sec0`** は、地図を作るときに前から順に足す（f64）。数百かけらでも誤差は 1e-13 秒ほどで、1 こま（2e-5 秒）にとどかない。地図は作ったら変えないので、エンジンも core も同じ `sec0` を見る（ずれる相手がいない）。
-- **0 より前**（カウントインと、録りはじめの直前の鍵）は、曲の頭のテンポと拍子がそのまま前へ続くものとする（だんだんは 0 より前へのばさない）。
-- **入れる関数**（どれもメモリを取らない。かけらは二分さがし）:
-
-```rust
-impl TempoMap {
-    pub fn new(timeline: &Timeline) -> TempoMap;
-    pub fn seconds_at(&self, tick: f64) -> f64;
-    pub fn tick_at(&self, seconds: f64) -> f64;
-    pub fn tempo_at(&self, tick: f64) -> f64;        // 運びの数字（7 小節目で 112.00）
-    pub fn next_click(&self, tick: f64) -> Beat;     // メトロノームの鳴る拍（22-2）。プラグインとディレイは tempo_at を読む
-    pub fn meter_at(&self, tick: u64) -> MeterAt;    // 拍子、その小節の頭のティック、小節の番号
-    pub fn tick_of_bar(&self, bar: u32) -> u64;
-    pub fn bar_beat_tick(&self, tick: u64) -> BarBeatTick;
-    pub fn next_beat(&self, tick: f64) -> Beat;      // 次の拍の頭と、1 拍目か
-    /// from_seconds から数えて、tick に着く（か通りこす）最初のこま。
-    pub fn frame_of(&self, tick: f64, from_seconds: f64, sample_rate: f64) -> u64;
-}
-```
-
-  - `frame_of` は `ceil((seconds_at(tick) − from_seconds) · sample_rate − 1e-6)`。**1e-6 こまの守り**は、本当はちょうどこまの上にある位置（48 kHz で 96.00 の 1 拍 = 30000 こま など）が、f64 の最後の桁で 1 こま遅れないため。この守りがまちがえても、ずれは 1 こま（21 µs）で止まり、たまらない。
-- **置き場所**: `meloet-model`。**`meloet-engine` が `meloet-model` に頼るようにする（新しい）**。報告書 7-1 の決まり（model に入出力とスレッドを入れない、engine に画面とプラグインの形式を入れない）は破らない。**理由**: 計算を 1 か所にする、がヤチヨさんの頼み。エンジンが自分の写しを持つと、2 つがずれる。
-- **画面の TS**（`ui/src/time/tempoMap.ts`。Tauri を知らないので bridge の外）: 時間の表示、グリッドの時刻、運びのテンポ（60 Hz、差分なし）に同じ式がいる。Rust の試験が表（いくつかの地図 × ティックと秒と小節 ・ 拍）を `ui/src/time/tempoMap.table.json` に書き出し、TS の試験がその表と合うか見る（JS の `Math.log1p` ・ `Math.expm1` は最後の桁がちがうことがあるので、相対 1e-9 まで）。Rust の試験は「コミットしてある表が古くないか」も見る。
-- **試験**:
-  - 仕様書の例（7 小節目 112.00、全体 8.586 秒）。
-  - テンポ一定の地図で、`frame_of` が、いまの整数の式（`engine.rs` の `frames_between`。試験の中に写して残す）と**全部同じ**: テンポ 30.00〜300.00 を全部 × 44.1 ・ 48 ・ 96 kHz × 10 分ぶんの拍。2 時間でも同じか見る。
-  - だんだんの中: f64 で 100 万きざみに足しあわせた値と 1e-9 秒まで合う。`s` を 0 に近づけても（1e-3 〜 1e-300）なめらかにつながる。
-  - 往復: どの整数のティック k でも `tick_at(seconds_at(k))` をまるめると k（かけらの境目の前後も、乱数の地図で）。
-  - `frame_of` はティックが進めば戻らない。
-
-### 21-2. 前のほうに拍子の変更を足したとき
-
-- **ヤチヨさんのおすすめのとおり**: ノート ・ クリップ ・ オートメーションの点 ・ マーカー ・ テンポの点 ・ ループの範囲は**ティックのまま動かさない**。拍子の変更は小節の番号で持ち、いつも小節の頭にいる（前に拍子の変更を足すと、後ろの旗はティックで見ると動く。小節の番号は同じ）。
-  - **理由**: 11 章「位置の意味が変わらない」の続き。録った鍵のティックは、何をしても書きかえない。
-- **x/8 の拍の頭は、下の数の音符**（6/8 は 6 拍。いまのメトロノームと同じ）。
-- **気をつける所（ちがう、ではなく足す事）**: 「テンポの点は拍の頭」は、**置くときと動かすときの吸いつきの決まり**で、いつも守られる形ではない。前に 7/8 や 1/16 の小節を足すと、後ろの小節の線がずれて、前からあるテンポの点は拍の途中に見える（表示は「12. 3. 240」）。式は、点がどこにあっても正しい。マーカーも同じ。点を拍の頭に合わせて動かすと、ノートとの間が変わるので、しない。
-- 小節の番号 → ティックは、旗を前から順に足す整数の計算（`tick_of_bar`）。拍子の旗はいつも小節の頭なので、半端な小節はできない。
-- **試験**: 前に旗を足す ・ 消す ・ 動かす前後で、ノート ・ クリップ ・ 点 ・ マーカーのティックが同じ。後ろの旗の小節の番号が同じ。
-
-### 21-3. エンジンの位置（`crates/meloet-engine/src/{engine.rs,clock.rs}`）
-
-- **錨（いかり）**: 再生を始めた所、ループで戻った所、位置を変えた所、カウントインが終わった所、地図が入れかわった所、サンプルレートが変わった所。`Transport` は「錨の時間 `anchor_sec`（地図の上の秒）」と「錨からのこま数 `frames`（整数）」を持つ。位置は、いつも `map.tick_at(anchor_sec + frames / sample_rate)`。**こま数を足すだけで、ティックは足さない**。いまの `pos`（ティック × scale の整数）と `step()` はなくなる。
-- **ノート ・ 拍 ・ ループの終わりのこま**は `map.frame_of(tick, anchor_sec, sample_rate)`。錨から 1 回で出すので、何分たっても同じ答え。先に読むトラック（20-8）は「`frame_of(tick) ≤ frames + L_t`」で、こまの世界でくらべる（いまよりやさしくなる）。
-- **地図のわたしかた**: core が `Box<TempoMap>` を作り、`Sequence` と同じく輪で送り、古い物は輪で返す（音のスレッドで捨てない）。地図には通し番号 `map_gen` をつける。入れかえた瞬間のティック（小数）を新しい地図の秒に直して、そこを錨にする（ティックは続く）。
-- **ループ**: 終わりは `frame_of(loop_end)`。戻る所は、いまと同じく「ループの始まり、ちょうど」を新しい錨にする（1 周ごとに 1 こまより短い端数を捨てる。いまと同じ動き。本当の位置は区間に書くので、録った鍵はずれない）。
-- **メトロノーム**: 次の拍は `map.next_beat`。1 拍目の強い音は、その拍子の区間の小節の頭から数える（拍子が変わったら、新しい拍子の 1 拍目）。
-- **カウントイン**: 録りはじめる所（`record_from`）の**テンポと拍子で、テンポは一定**（だんだんの中でも、その点の値のまま）。地図には乗せず、「終わりのティック、1 秒のティック（一定）」のまっすぐな区間として持つ。拍の線は、その拍子の線を前へのばす。最後の半拍の鍵（12 章）のティックも、このまっすぐな式で出す。
-- **`clock.rs` の区間（`Segment`）**: `sec0`（最初のこまの、地図の上の秒）と `map_gen` を足す。読むほうは `map.tick_at(sec0 + (t − start_us) / 1e6)`。`tick` と `ticks_per_frame`（最初のこまでの速さ）も残す。
-  - **まっすぐの式（`tick + 経った時間 × 速さ`）を使うのは 3 つだけ**: カウントイン、止まっている区間、読む人の地図の `map_gen` が区間のとちがうとき（テンポを直した直後の 1〜2 ブロック）。
-  - **理由**: 区間はブロックごとで、テンポの点では切れない。96 → 192 の点をまたぐ 256 こまの区間をまっすぐで読むと、4 ティック（3 ms）ずれる。だんだんの中でも、1024 こまのブロックで 0.8 ティックまでずれる（30 → 240 を 1 拍で、のような強い例）。
-  - 計器のスレッドも地図を持つ（core が入れかえのたびに `Arc<TempoMap>` をわたす。音のスレッドではないので鍵でよい）。計器の「位置」と「1 µs あたりのティック」は、送る時刻の正しい値。画面は今までどおり 1 コマぶんだけまっすぐのばす（16 ms なので誤差は見えない）。計器のバイナリは変えない。
-- **区切り（1 回の render の中の切れ目）にテンポの点と拍子の旗を足す**（だんだんの中は切らない）。まれな出来事なので重さはなく、プラグインとディレイが、点の所でちょうど新しいテンポを聞ける。
-- **プラグインへ**（`PluginTransport`。形は変えない）: 区切りの頭の値。`tempo_bpm = tempo_at`、`position_quarters = tick / TICKS_PER_QUARTER`、`bar_start_quarters = その小節の頭 / TICKS_PER_QUARTER`（第 7 回の 22-2 で 1920 と 4 分音符のテンポに。前は `quarter_bpm_at` と 480）、拍子は上と下をそのまま（6/8 は 6 と 8）、`position_frames = round(seconds_at(tick) × サンプルレート)`（調べ物: 本当のこまの位置。いまのコメント「いまのテンポでの」は直す）。だんだんの中でも平均はとらない（調べ物: Ardour と同じ、Surge XT は頭の値から自分で進む）。
-- **LV2 の `time:Position`**（いまは送っていない。第 6 回で足す）: 受ける口（`atom:supports time:Position`）のあるプラグインに、**毎ブロック、時刻 0 に 1 つ**（JUCE の LV2 の包みは毎ブロックの頭で位置を忘れ、そのブロックに来た物だけを使う）。欄は `frame`、`speed`、`bar`、`barBeat`、`beat`、`beatUnit`、`beatsPerBar`、`beatsPerMinute` を全部。区切りで分けて呼ぶときは、区切りの頭ごとに 1 つ。拍は **LV2 の仕様どおり `beatUnit` の音符で数える**（テンポの数の意味と同じ）。JUCE の LV2 の包みは `time:beat` と `beatsPerMinute` を 4 分音符の数として読むので、下の数が 4 でない拍子では、JUCE の LV2 のプラグイン（Surge XT の LV2 など）のテンポ合わせが 2 倍 ・ 半分にずれる（VST3 は 4 分音符で渡すので起きない）。**理由**: 仕様に合わせておけば、仕様どおりのプラグインは正しい。JUCE に合わせると、ほかのプラグインがずれる（**第 7 回の 22-2 で取り消した**: 4 分音符の数で送る）。control ポートの `lv2:designation time:beatsPerMinute` ・ `time:speed` には毎ブロック値を入れる（jalv ・ Ardour と同じ）。
-- **最初から入っているディレイ**: `EffectContext::tempo_bpm` に区切りの頭の `tempo_at`（第 7 回から。前は `quarter_bpm_at`）。形は変えない。戻りとマスターは区切りで分けていないので、1 回の render（多くて 1024 こま）の頭の値。
-- **試験**（`crates/meloet-engine/tests/`）: だんだんと拍子の変更のある地図で 10 分回し、ノートとメトロノームの鳴ったこまを `frame_of` の答えと 1 つずつくらべる（ブロックの大きさを 64 ・ 256 ・ 1024 ・ ばらばらに変えても同じこま）。ループ 1000 周。再生中に地図を入れかえてもティックがとばない。音のスレッドでメモリを取らない見はりに、地図の入れかえを足す。
-
-- **入れた形（区切り1 の 2 回目、エンジンの係）**:
-  - 地図は `Box` でなく `Arc<TempoMap>` で送る（`EngineCommand::SetTempoMap { map, map_gen }`。エンジンと読む人（core、計器のスレッド）が同じ 1 つを持ち、写しを作らない。古い物は輪で返す）。core は `EngineOp::Timeline { timeline: Arc<Timeline> }` を、`Doc` の地図が変わるたびに送り、殻の側（`service.rs`）で `TempoMap` を作る。
-  - `map_gen` は `EngineHandle::set_tempo_map` が配る。作りなおしたエンジンでも番号は続きから。
-  - 読む人の地図はエンジンの中に置けない（`crates/meloet-engine/clippy.toml` が Mutex を禁じる）。`TransportClock::heard_at(t_us, map, map_gen)` は地図と番号を引数でもらい、core が鍵つきで持つ（`Shared::tempo_map`）。
-  - `PluginTransport` の空き欄を `bar`（小節の番号）にした（LV2 の `time:bar` は、拍子が変わる曲では小節の頭の位置から出せないため。大きさは同じ）。
-  - LV2 の `time:beat` は「位置をいまの拍子の拍で数えた数」（4 分音符の位置 × 下の数 ÷ 4）。拍子が変わる曲での「通しの拍の数」は仕様があいまいなので。
-  - **LV2 の control ポートの `time:beatsPerMinute` ・ `time:speed` は「ホストの物」**（パラメータの一覧に出さず、オートメーションにもしない）。毎ブロック meloet が書くので、人が動かしても戻るため。qmidiarp や gx_digital_delay の BPM のつまみは、欄に見えなくなる。
-  - 地図を入れかえた瞬間の位置は、整数のティックから 1e-6 ティック以内なら、その整数にする（ちょうどそのこまの拍やノートが、f64 の最後の桁で「もう過ぎた」にならないため）。入れかえたこまに鳴るはずだった拍は、そのこまで鳴らす（前のコードは落としていた）。
-  - サンプルレートが変わったとき、0 より前の位置は 0 にする。
-  - 確かめた数: だんだんと拍子の変更のある地図で 10 分 × 5 通り（ブロック 64 ・ 256 ・ 1024 ・ ばらばら 1〜2048、44.1 ・ 48 kHz）、ノート 31970 とメトロノーム 6810 の鳴ったこまが `frame_of` と全部同じ。ループ 1000 周も同じ。録った鍵は式から最大 1.6e-10 ティック（10 分め、1500 周めもふくむ）。16 トラックのブロックの重さは前と同じ（452.9 µs）。本物の Surge XT の LV2 で、テンポに合わせたステップシーケンサーのくり返しが 75 ・ 90 ・ 100 ・ 150 で合う。
-
-### 21-4. 録った鍵の位置
-
-- 決まりは 12 章のまま。**こま → ティックは地図の式**: `stamp()` は、鍵の時刻をふくむ区間を見つけ、`map.tick_at(sec0 + (t − start_us) / 1e6)`。テンポの点をまたぐ区間でも、だんだんの中でも同じ式。
-- 音のスレッドは自分の地図と区間の `map_gen` をくらべ、ちがえばまっすぐの式（21-3）。
-- 止める操作の位置（core の `heard_at`）も同じ道。
-- **試験**: 作り物の時計で、テンポの点の前後 ・ だんだんの中 ・ 拍子の旗の前後 ・ ループの折り返しの前後に鍵を置き、出たティックを式の答えとくらべる（誤差 0.01 ティックまで）。10 分めの鍵も同じ。`tools/measure/record-timing.sh` を、だんだんのある曲でも回す。
-- **見つけた事（前からある。B-92）**: ティックにまるめる誤差は、おそいテンポで 1 ms をこえる。30.00 の 4/4 は 1 ティック 4.17 ms（± 2.08 ms）、30.00 の x/16 は 16.7 ms。96.00 の 4/4 は ± 0.65 ms（11 章のとおり）。
-
-### 21-5. オートメーションの形（`crates/meloet-model/src/automation.rs`、新しいファイル）
-
-```rust
-pub struct InsertId(pub u32);            // 枠に入れた物の番号。next_id から配る
-pub enum AutoTarget {
-    Volume, Pan, Send(Bus), Mute,
-    Instrument { param: u32 },                    // プラグインの音源。プラグインの自分の番号
-    Insert { insert: InsertId, param: u32 },      // 最初から入っている物は表の番号、プラグインは自分の番号
-}
-pub struct AutoPoint { pub tick: u64, pub value: f32 }   // value: つまみの位置 0〜1
-pub struct LaneId(pub u32);
-pub struct Lane {
-    pub id: LaneId,             // 点が変わるたびに新しい番号（テイクと同じ考え）
-    pub target: AutoTarget,
-    pub step: bool,             // 階段（段階、オン ・ オフ、ミュート）
-    pub points: ChunkedVec<AutoPoint>, // tick の順。同じ tick は 1 つ
-    pub resting: bool,          // 休み
-}
-// Track { automation: Vec<Arc<Lane>>, … }  足した順
-```
-
-- **何を動かすかの鍵**: トラックは `TrackId`。インサートは**枠の番号ではなく、入れた物の番号 `InsertId`**（`Insert` に足す。入れたときに配り、並べかえても同じ、入れかえたら新しい番号）。パラメータは、最初から入っている物は表の番号（ファイルでは名前）、プラグインは自分の番号（いまの `SetPluginParam` と同じ）。
-  - **理由**: 枠の番号は並べかえで変わる。入れた物の番号なら、帯はだまってついて行く。
-  - エフェクトを外す ・ 入れかえる、音源を入れかえると、そのパラメータの帯は**同じ 1 手で消える**（取り消すと戻る）。model の `remove_effect` ・ `replace_effect` ・ `set_instrument` ・ `RemoveMissing` が守り、「どの帯にも相手がいる」を `Doc` の試験で見はる。見つからないプラグインの帯は、読んだまま持つ。
-- **値は、どれも「人が見ているつまみの位置」0〜1**。線はその位置でまっすぐ、横はティックでまっすぐ（帯は横がティックなので、見えている線と同じ）。
-  - 音量とセンド: 仕様書 2 章「メーターとフェーダーの目盛」の長さ（+6 = 1.0、0 dB = 0.8、−60 = 0。位置 0 は −∞）。
-  - パン: `(pan + 100) / 200`。プラグイン: そのまま。
-  - 最初から入っているエフェクト: パラメータの欄の棒の位置。この式はいま TS にだけある（`ui/src/components/params/paramRows.ts` の `fractionOf` ・ `valueAt`、`ui/src/components/mixer/scale.ts` の `dbToFrac` ・ `fracToDb`）。**model に同じ式を置き**（`ParamSpec::position` ・ `value_at`、`Gain::position` ・ `from_position`）、Rust の表で TS をためす（21-1 と同じやりかた）。
-  - 階段: 段階は n /（段の数 − 1）、オン ・ オフとミュートは 0 と 1。値は「その位置か前の、いちばん近い点」。
-  - 最初の点より前は最初の点の値、最後の点より後は最後の点の値。
-- **いまの値（手で置いた値）は、今までの場所にそのまま持つ**（`Channel` のフェーダー、`Insert` の値、プラグインの状態 …）。
-  - 帯があって休みでない → 鳴るのは帯の値（**止まっていても**、再生の線の所の値）。
-  - 休み → 手で置いた値（仕様書「値は手で置いた所のまま」）。
-  - 点が 1 つもない帯 → 手で置いた値（平らな線）。
-  - **理由**: 「休み」のために値の置き場を足さなくてよい。手で動かす意図（`SetGain` など）は、今までどおり同じ場所を書く。
-- **とびは、1 ティックちがいの 2 点**（同じティックに 2 点は置かない）。**理由**: 「同じティックの点は 1 つ」にすると、順番と指しかた（番号の範囲）があいまいにならない。音は 20 ms でなめらかにするので、1 ティック（約 1 ms）の坂は聞こえない。
-- **「● 書く」は曲に入れない**（取り消しの外、保存しない、止めるとオフ）。core の `Play` が持つ。**「休み」は曲に入れる**（仕様書: 取り消せる 1 手、保存する）。帯のたたみは `Session`（取り消しの外。保存するかは B-92）。
-- **点の選択は core が持つ**（16 章のノートと同じ。直すと `LaneId` が変わるので）。意図は `LaneId` と番号の範囲で指し、古い `LaneId` の意図は何もしない。
-- **戻り A ・ B とマスターの帯は作らない**。形は `Track` にだけ置く。
-- **手**: `StepKind::{AddLane, DeleteLane, AddAutoPoint, MoveAutoPoints, DeleteAutoPoints, WriteAutomation, RestLane, RestoreLane}`（どれも `track` と `target` つき。数のある物は `count`）。
-- **曲のファイル（版 5）**: トラックに `"automation": [{ "target": {…}, "step": false, "resting": false, "points": [[tick, value], …] }]`、インサートに `"id"`。`LaneId` は書かない（読むときに配る）。
-- **点の多い帯**（書いた帯）: 帯の点はノートと同じ `ChunkedVec`（16 章）。はじめは手ごとに点の列を写していたが、本物のアプリで音量を 10 分書いた（手 282、帯の点 25002）ところ、履歴の写しの和が 353 万点 = 53.9 MiB になった（`docs/measurements/2026-11-20-round6-step2-3.md` 4 章）ので変えた（棟梁の決め 2026-11-20）。点を変える手（書く、押して書く、点を足す ・ 動かす ・ 消す）はどれも `with_points` を通り、新しい帯は前の帯のかたまりのうち中身が同じ物を分けあう（`ChunkedVec::sharing`）。帯を足す ・ 消す、休ませる ・ もどすは点にさわらない（`Arc<Lane>` ごと、またはかたまりごと分けあう）。`AutoPoint` の `Eq` は「帯の値は NaN にならない」（`clamp_value`、`check_lanes`、曲のファイルの読みこみ）にたよる。`Hash` は tick と値のビットで、0.0 と −0.0 だけ同じにそろえる（`==` で等しいので）。測った数（`crates/meloet-model/tests/lane_memory.rs`、debug と release で同じ、2026-11-20）: 点 25000 の帯に 2 秒ぶん（90 点）を書く 1 手で、前の帯と分けあわない量は、まん中で 12.2 KB、終わりで 6.8 KB（写すと 400 KB）。点 1 つを足す 15.7 KB、動かす 10.0 KB、消す 7.1 KB。10 分書いた形（手 282、1 手 89 点、帯が 25098 点にのびる）で、履歴が持つ量は 1.34 MB（1 手 4.7 KB）。手ごとに写すと 56.4 MB（53.8 MiB）なので、約 1/42。1 手の量は帯の長さに少しだけ比例する（かたまりの一覧が 1 かたまり 32 バイト）。
-- **試験**: 線の上の値（まっすぐ、階段、端）、Rust の表で TS、並べかえ ・ 入れかえ ・ 外す ・ 取り消しで「どの帯にも相手がいる」（乱数の試験）、版 5 の往復。
-
-### 21-6. 先に読む量は枠ごとにちがう
-
-- **ヤチヨさんの計算は、1 つをのぞいて合っている**。
-  - 音源のパラメータ: `L_t`（音源とインサートの遅れの和）。ノートと同じだけ先。
-  - k 番めのインサートのパラメータ: 「その枠と、それより後ろの枠の遅れの和」。その枠に入ってくる音が、曲の位置よりそれだけ先の音だから。ふつうの DAW（音を遅らせる形）がパラメータを「枠に入る音の位置」で読むのと同じになる。
-  - フェーダー ・ パン ・ センド: 先に読まない。
-- **ちがう所: ミュートは先に読む（`L_t` だけ）**。meloet のミュートは「その席の列（ノート）を鳴らさない」（18 章、19-11）で、効く場所は出口ではなく**音源の入口**。ノートは `L_t` 先に送っているので、ミュートも同じだけ先の位置で読まないと、切りかわりが `L_t` 遅れて聞こえる。エンジンでは、列を読む位置（`lane_pos`）で階段を見るだけ。
-- **とばした枠**: 遅れは和に入れない（19-11 のまま）。とばしている枠のパラメータは、音が捨てられるので、後ろの枠の和だけで読む（自分の遅れは足さない）。もどした次のブロックから、ふつうの和。
-- 遅れが変わったら次のブロックから新しい和（20-8 と同じ）。ループの中では、先に読む位置もループの中で回す（列と同じ）。再生の始めの `L` こまは、先に読めない（20-8 と同じ）。
-- **試験**: 遅れ 100 こまのにせのエフェクトを 2 つならべ、「パラメータの階段が、入ってくる音のちょうどその位置に当たる」を 1 こまずつ見る。ミュートの階段が、遅れのあるトラックで出口の正しい位置に当たる。
-
-### 21-7. どのくらい細かく動かすか
-
-- **エンジンの持ちかた**: core がトラックごとに「休みでない帯の点」を 1 つの箱（`AutoSet`）にして輪で送り、古い箱は輪で返す（`Sequence` と同じ道。音のスレッドでメモリを取らない）。インサートのパラメータの帯は枠といっしょに持ち、`MoveEffect` で枠といっしょに回る。「人が押している」帯は `HoldLane {track, target, on}` で止める（21-9）。
-- **区切りは、オートメーションのために細かくしない**。区切りは全トラックで 1 つなので、細かくすると、プラグインの音源の往復（20-2）がその回数だけふえる。足す切れ目は、ミュートの階段と、21-3 のテンポの点 ・ 拍子の旗だけ。
-- **音量 ・ パン ・ センド**: 区切りの中を 32 こまごとに分け、その先の位置の正しい値（地図の式 → 線 → ゲイン）を出し、そこまでゲインでまっすぐ（いまの `Ramp`。16 か 32 かは測って決める）。32 こまごとのティックは、区切りごとに 1 回作る表（先に取った 33 個）を、先に読まない帯ぜんぶで使う。
-  - **とび**は、速さの上限で丸める: 1 歩で動けるのは「端から端まで 20 ms」の速さまで（19-11 の `RAMP_S`）。1 ティックの坂も、階段も、書きはじめと離した所も、20 ms の坂になる。
-- **最初から入っているエフェクト**: 帯のある枠だけ、その枠の `process` を 64 こまごとに分け、頭で `set_param`（同じプロセスの中なので、分けても往復はふえない）。エフェクトが自分で 30 ms かけて近づく（`Effect` の約束）ので、音は線より少し遅れて追う。**宿題**: この遅れを測り、気になれば、そのぶん先に読む。
-- **VST3**: 点をブロックの中の位置つきで（`ToPlugin::Param {frame, id, value}` はもう位置を持ち、`com.rs` の入れ物は 1 パラメータ 16 点 ・ 1 ブロック 128 パラメータ。あふれたら最後の点を上書きして、終わりの値を守る）。
-  - なめらかな線: 区切りの**最後のこま**に、そのこまの値の点を 1 つ（JUCE は最後の点だけ使う。点の間を読むプラグインにも合う）。線の折れ目が区切りの中にあれば、そのこまにも点。とびは 2 点。
-  - 値が前に送った値と同じなら送らない。錨が変わったとき（再生の始め、ループ、位置を変えた）と、プラグインの状態を戻したあとは、「前に送った値」を忘れて送りなおす。
-  - **「ブロックは分けない」は、言いなおす**: エンジンはいまも、ノート ・ 拍 ・ ループの終わりで区切りを分け、区切りごとにプラグインを 1 回呼んでいる（`engine.rs` の `frames_to_next_point` が、次の拍、カウントインの終わり、ループの終わり、どれかのトラックの次のノート ・ CC で切り、`render` の `while` が区切りごとに `set_transport` と `ask` をする。戻り A ・ B とマスターのインサートは、1 回の render をまとめて回すので分けていない）。オートメーションの点のためには分けない、が決め。
-- **LV2**: 親からの形は VST3 と同じ（位置つきの点）。変えるのは plughost の中だけ。
-  - control のポート: 点のあるブロックだけ `run` を分ける。1 回は 32 こま以上（数は測って決める）、分けた 1 回の値は、そのまん中のこまの線の値。`bufsz:coarseBlockLength`（と、決まった長さを求める物）は分けず、ブロックのまん中の値を 1 つ。
-  - `patch:Set`: 時刻つきで、同じパラメータは 1 ブロックに最後の 1 つ（いまのまま。JUCE は時刻を見ない）。
-- **数の上限**: プラグインへの輪は 1 枠 256 個（`hosts.rs` の `to_plugin_events`）。オートメーションの点は 1 区切り 1 プラグインに 128 個まで。あふれたら、途中の点を先に捨てて各パラメータの最後の点を残し、それでも入らない帯は次の区切りへ回す（毎回ちがう帯から始めて、同じ帯が待ちつづけないように）。
-- **試験**: 見はりの試験（音のスレッドでメモリを取らない）に、帯 200 本 ・ 点 1 万個 ・ 箱の入れかえを足す。にせのプラグインで、点の位置と値、あふれたときに最後の値が残ること。フェーダーの線と出た音のゲインを 1 こまずつくらべる（とびの所は 20 ms の坂）。重さを 16 トラック × 帯 8 本で測る。
-
-### 21-8. 画面への値
-
-- **最初から入っている物（音量、パン、センド、ミュート、エフェクトのパラメータ）は、画面が自分で出す**: 帯の点 ＋ 計器の位置 → 線の上の値 → つまみ。差分でも計器でも値は流さない。
-- **点は、状態に入れずに、テイクと同じく `LaneId` で取りにいく**（バイナリ。3-4 と同じ考え）。`song` には、トラックごとに帯の見出しだけ（何を、`LaneId`、点の数、階段か、休みか）。画面は、いまある帯の点だけためる（`keepOnly` と同じ形）。ミキサーが見せているトラックの音量 ・ パン ・ センド ・ ミュートの帯は、帯をたたんでいても取る。
-  - **理由**: 書いた帯は点が何千にもなる。`song` は手のたびに丸ごと送る区画なので、点を入れると重い。
-- **プラグインの値の文字は `paramValues`（33 ms に 1 つ）**: オートメーションが動かした値も、plughost が今の道（値が変わった知らせ）で返す。ただし**パラメータの欄が見せているプラグインだけ**（core が「見ている」と伝える。帯 100 本ぶんを毎回送らないため）。
-  - **形（2026-11-20、本物のアプリで字が動かなかったので作った。それまでは決めだけで、道がなかった）**:
-    - core は、パラメータの欄が見せているプラグインが鳴っている間だけ、そのプラグインに `PluginAsk::Watch { on: true }` を言う（`play/params.rs` の `sync_panel`。欄が別の物を見せた ・ プラグインが止まったら `on: false`）。`Hosts::watch` がプラグイン係に `Request::Watch { slot, on }` を送り、もう一度読みこむ（`reload`）ときのために覚える。
-    - plughost の音のスレッドは、見られている枠だけ、エンジンから来たパラメータの点（＝ オートメーション。人が窓でつかんでいるパラメータの点は 21-10 で先に捨てている）を枠ごとの輪（`rt.rs` の `Moved`、512 個、あふれたら新しい物を捨てる）に入れる。席の鍵は取らない（主スレッドが席を持つと、音のスレッドはその枠のブロックを 1 回見送るため）。主スレッドは 33 ms ごとに輪を空にして、パラメータごとに最後の値だけを、プラグインの文字（`Controller::text`）つきで `Notice::ParamAutomated { slot, id, value, text }` にする。
-    - `ParamChanged` は使わない。あれは「人が窓で動かした」で、core が休み ・ 書く（21-10）にするため。`ParamAutomated` は core で `PluginSaid::Param` になり、今までの `paramValues` の道（33 ms に 1 つ）に入る。もう一度読みこむときの値（`Hosts` の `params`）にも入れない（帯が送りなおす）。
-    - プラグイン係とのやりとりの版（`WIRE_VERSION`）は 3 → 4。meloet と `meloet-plughost` はいつも同じ版から作るので、古い版との話し合いはしない（あいさつで版がちがえば、その子を使わない。今までどおり）。
-    - **`params.selected.automated`**: 欄が見せているプラグインのパラメータのうち、そのトラックに帯がある物（休みの帯も入る。画面の印と同じ）を、一覧の順で（`play/params.rs` の `automated_rows`）。約束の形は変えていない（版 18 からある席）。
-- **帯のパラメータの名前（2026-11-20）**: 帯の見出し ・ 状態行 ・ 履歴の行の「プラグインのパラメータの名前」は、core が**帯のあるパラメータの分だけ**覚える（`play/automation.rs` の `LaneNames`。鍵はプラグインの鍵とパラメータの番号）。
-  - 入口は 2 つ。欄が同じ鍵のプラグインの表を持っていれば、そこから。持っていなければ、その鍵の鳴っているプラグイン 1 つに一覧を 1 回だけ頼む（`PluginAsk::Params { ask: NAMES_ASK }`。欄の頼み事は 1 から数えるので、答えは番号で見分ける）。答えから帯のあるパラメータの名前だけ取り、一覧は捨てる。一覧にないパラメータは「名前なし」と覚え、もう頼まない。
-  - **理由**: 前は欄が**いま見せている**プラグインの表しか見なかったので、欄が別の物を見せていると null だった。全部のプラグインの表を持つと、Surge XT 16 本で 4.5 万行になる。鍵をプラグインの鍵にしたのは、同じ鍵のプラグインはパラメータの名前が同じで、16 本あっても頼むのは 1 回で済むから。曲が変わっても、帯が消えても忘れない（履歴の行が、消えた帯の名前を出せる）。
-  - 見出しと状態行は、毎回この表から作るので、名前が届いた次の差分で `song` が出なおす。履歴の行（`history_rows`）は、行を作るときにこの表を見る（`play/history.rs`）。
-- **プラグインの自分の窓**: VST3 は主スレッドで `setParamNormalized`。いまの輪（`to_controller`、1024 個）には、**1 ブロックにパラメータごと最後の値 1 つ**だけ入れる（調べ物のとおり）。LV2 は `port_event`。
-- 運びのテンポと拍子の数字も、画面が地図（TS）と計器の位置から出す。
-- 書いている所の rec の枠は、core が `automation` の区画で「書いている帯と、書きはじめのティック」を言い、画面が再生の線まで描く。
-- **試験**: TS の線の値を Rust の表で。動いているフェーダーを足したら、`tools/measure/webkit-damage.sh`（CLAUDE.md の決まり）と、差分がふえないこと。
-  - **core から本物のプラグインまで**（`crates/meloet-core/src/service/window_tests.rs`）: `lanes_move_the_parameters_of_plugins_through_the_core`（にせの音源 `sine` とにせのエフェクト `gain`。いつも走る）と、`surge_xt_and_zamcomp_{vst3,lv2}_follow_their_lanes_through_the_core`（本物、`--ignored`、X の画面が要る）。音源とインサートに帯をつけ、止まったまま再生の線を動かす ・ 再生する、の両方で、プラグインの値が線のとおりかを見る。欄が見せているプラグインの値と文字が 1 秒に約 30 回届くこと、帯の名前が出ることも見る。ストリームのない core は帯と運びをエンジンに送らない（`service.rs`）ので、試験がストリームの代わりに、core の作った帯（`send_automation`）とテンポの地図と Play ・ Locate をエンジンに渡す。`housed.rs` の包みが `set_param_at` ・ `takes_points` を渡さないと落ちる（確かめた）。
-
-### 21-9. 書いた点の置き場所（`crates/meloet-core/src/play/automation.rs`、新しいファイル）
-
-- **決まり**: 「● 書く」で書いた値は「動かした瞬間に耳に届いていた位置」に置く（鍵と同じ）。
-- **エンジンでは記録せず、core が時刻から置く**（ヤチヨさんのおすすめは「エンジンが自分の位置で記録する」だったが、次の理由で変えた）: 動かした時刻（CLOCK_MONOTONIC）を、core が `TransportClock` と地図で、耳に届いていた位置にする。
-  - ミキサーとパラメータの欄: core が意図を受けとった時刻。
-  - プラグインの窓: plughost が `performEdit`（LV2 は窓からの書きこみ）の所でつけた時刻を、知らせにつけて運ぶ。
-  - **理由 1**: エンジンの「自分の位置」は、いま作っているこまの位置で、耳より出口の遅れのぶん（10〜20 ms 以上）先にある。そのうえ、値がエンジンに着くのは次のブロック。エンジンで正しく置くには、けっきょく動かした時刻と `TransportClock` がいる。それなら core で足りる。
-  - **理由 2**: 鍵と同じ式（21-4）を 1 つ使うだけ。音のスレッドから core への新しい輪がいらない。
-  - **理由 3**: 手にするのは core。
-  - 輪は 512 区間（256 こまで 2.7 秒）覚えている。core は入力のたびにすぐ直すので足りる。古すぎて見つからない値は捨てる。
-- **書いている間**: core は帯を `HoldLane` で止め、値は今までの「音だけ変える」道（プレビュー）で鳴らす。値と位置の組は core がためる（音のスレッドではないので、ためてよい）。
-- **離したとき（1 手、`WriteAutomation`）**: 書いた範囲 [最初の位置, 最後の位置] の前の点を消し、書いた点を入れる。両はしはとび: 最初の位置の 1 ティック前に前の線の値、最後の位置の 1 ティック後に前の線の値（仕様書「離すと、線のとおりに戻る」）。
-- **ループをまたいだとき**: 周ごとに範囲を分け、古い周から順に同じ決まりで入れる（重なった所は新しい周が勝つ）。それでも 1 手。
-- **間引き**: 離したときに 1 回。位置（0〜1）のたての差で Ramer–Douglas–Peucker、許す差は 0.005（つまみの長さの 0.5 %。仮の数、測って決める）。階段の帯は、値が変わった所だけ残す。取る細かさは、ミキサーが 1 コマに 1 つ（いまの決まり）、プラグインの窓が 33 ms に 1 つ（いまの知らせ。Ardour は 30 ms）。
-- **止めたとき**: そこまでを 1 手にして、「書く」をオフにする。押したままの残りの動きは曲に入れず、離すと線の値に戻る（仮。B-92）。
-- **試験**: 作り物の時計で「時刻 t に動かした値が、t に耳に届いていた位置に入る」（出口の遅れを変えても同じ。テンポの点をまたいでも）。間引きの前後の線の差が許す差の中。ループをまたぐ。書いて取り消すと前の `LaneId` に戻る。
-
-### 21-10. 15-C と書く ・ 休み（`play/windows.rs`、`crates/meloet-plughost/src/`）
-
-- **窓にいた間の 1 手にするのは、人の手が来たときだけ**: plughost が「人の手の回数」を数え（VST3 は `performEdit`、LV2 は窓からの書きこみ、どちらもプリセットを読んだ知らせ `kParamValuesChanged` ・ `kParamTitlesChanged`）、「窓から出た」で core に言う。手が 0 回なら、状態のバイトがちがっていても手にしない。**理由**: オートメーションが値を動かすと、バイトはいつもちがう。
-- 手が来たときの 1 手に入る状態には、その瞬間のオートメーションの値もまざる。害はない（休みでない帯は、次のブロックで自分の値を送りなおす）。**そのために**: プラグインの状態を戻した（取り消し、やりなおし、履歴のとび、もう一度読みこむ）あと、エンジンは、そのプラグインの帯の「前に送った値」を忘れて送りなおす（21-7）。
-- **窓の中で、帯のあるパラメータを手で動かした**:
-  - plughost は、さわっている間（VST3 は `beginEdit` 〜 `endEdit`。LV2 の control は `ui:touch`、なければ最後の書きこみから 0.5 秒。`patch` は 0.5 秒。数は調べ物の案、仮）、そのパラメータへのオートメーションの点を**自分で捨てる**。core の返事を待たないので、手とオートメーションがけんかしない。
-  - 「書く」がオフ、または止まっている → **休み**。core は知らせを受けたらすぐエンジンでその帯を止め（曲の外の「仮の休み」。ミキサーのプレビューと同じ考え）、**窓から出たときの 1 手に、休みもいっしょに入れる**（2 手に分けない）。
-  - 「書く」がオンで再生中 → **書く**。さわりはじめから離すまでが 1 手（`WriteAutomation`、21-9）。これは窓の 1 手とは別で、すぐ手になる。この動きは「人の手の回数」に数えない（窓から出たときに、もう 1 手できないように）。
-- パラメータの欄のドラッグ（`SetPluginParam`、`SetParam`）は、21-11 のミキサーと同じ。
-- **試験**: 20-13 の乱数の試験（曲とプラグインが同じ事）に、帯 ・ 書く ・ 休みを足す。窓にいる間に帯が値を動かしても手が 0。手で動かすと、休み ＋ 窓の 1 手が 1 つ、取り消すと両方戻る。
-
-### 21-11. ミキサーのドラッグと書く（`play/mixer.rs`、`ui/src/components/mixer/mixDrag.ts`）
-
-いまの「音だけ変える（`commit: false`）→ 離して決める（`commit: true`）→ Esc は `CancelMixPreview`」に乗せる。**約束は足さない**（core が、帯があるか、書くがオンか、動いているかで決める）。
-
-| 帯 | 書く | 最初の `commit: false` | `commit: true` | Esc |
-|---|---|---|---|---|
-| ない | — | 今のまま | 今のまま（`SetGain` など 1 手） | 今のまま |
-| ある ・ 休みでない | オフ、または止まっている | 帯を止めて、プレビュー | **値 ＋ 休みを 1 手**（`SetGain {…, rested: true}`） | 帯を動かしなおす。手なし |
-| ある ・ 休みでない | オンで動いている | 帯を止めて、プレビュー。値と位置をためる | **書いた点を 1 手**（`WriteAutomation`）。手で置いた値は変えない | ためた物を捨てる。手なし |
-| ある ・ 休み | — | 今のまま | 今のまま（1 手） | 今のまま |
-
-- 「もどす」は `RestoreLane`（1 手）。休みになった帯は、「書く」の待ちも外れる（仕様書: 休みのときは、ボタンが「もどす」になる）。
-- 値を打ちこむ（`TypeParam`、フェーダーの数字）は「離す」がないので、書くがオンでも**休み**にする。
-- キーで動かす（86-7。キーごとに `commit: false`、1 秒後に `commit: true`）は、ドラッグと同じ表。
-- **試験**: 表の行ごとに、手の数と取り消しのあとの曲。
-
-### 21-12. 履歴の帯（`meloet-model/src/history.rs`、`play.rs`、`play/mixsync.rs`）
-
-- **N 手とぶ**: `History::jump(&mut doc, to)` が、中で入れかえを N 回して（`Arc` の入れかえだけ）、`Doc` を 1 回で変える。core は**そのあとで 1 回だけ**:
-  - エンジンへの送り: `sync_mix` は、もう「エンジンに最後に伝えた値」との差だけを送る形なので、そのまま 1 回。列は、クリップが変わったトラックだけ。地図も 1 回。
-  - **インサートの並べかえは、枠の番号ではなく `InsertId` で合わせる**: 伝えた物と新しい曲で、同じ `InsertId` が別の枠にいれば「回す」、いなければ作る ・ 返す。いまの `insert_moved`（手 1 つごとに帳面を回す）は、N 手とびでは使えない。`InsertId` で合わせれば、1 手の取り消しも N 手とびも同じ 1 つの道になる。窓、えらんでいる枠、棚がひらいている枠も `InsertId` で覚えなおす。
-  - プラグインの状態: とぶ前と後の両方にいるプラグインで、バイトがちがう物だけ 1 回 `SetPluginState`。訪問の切りかた（`visit_overtaken`）も 1 回。「1 ブロックに 1 つずつ」（20-3）は `Hosts` の中のまま。
-  - 選択: とんだ先の手の選択（いまの「手と同じ長さの選択の列」から 1 つ）。
-- **手ごとの文の中身**: `StepKind` に足りない数や名前を足す。名前（トラック、クリップ、プラグイン、マーカー）は、**その手の前と後の `Doc`** から core が出す（`History` は手ごとに前の `Doc` を持ち、後の `Doc` は次の手の「前」か、いまの曲）。画面には「文の種類と、うめこむ値」（3-2 の決まり）。
-- **行は取りにいく**: `history` の区画は数だけ（手の数、いまの番号、いちばん新しい手の番号）。行は `history_rows(from, to)` で見えている所だけ取る。新しい手はいつも最後に入り、その後ろを消すだけなので、画面は「最後の行から後ろ」だけ取りなおす。取り消し ・ やりなおし ・ とびでは、行は変わらず、いまの番号だけ動く。**理由**: 1000 手の行を、手のたびに丸ごと送らない（矢印キーでノートを動かすと 1 秒に 30 手）。
-- **ループの範囲は `Doc` へ（手 `SetLoop`）、オン ・ オフは `Session` のまま**。「ここから次のマーカーまでをループに」は、範囲の 1 手 ＋ オン（手でない）。ループをオンにしたとき範囲がなくて作る（`play.rs` の `DEFAULT_LOOP_BARS`）のも、範囲の 1 手になる。
-- **ソロは手にしない**（`Session` のまま。ヤチヨさんのおすすめ）。仕様書の「手の名前」の「ソロ」は B-92 で戻す。
-- **「曲の終わり」**: いちばん後ろのクリップの終わりを小節の頭へ切り上げた所。マーカーより前なら、マーカーから 4 小節。
-- **試験**: 乱数の手の列で、「1 手ずつ N 回戻す」と「N 手とぶ」のあと、曲、エンジンに伝えた値、プラグインの状態が同じ。とびでは `SetPluginState` がプラグインごとに多くて 1 回、エフェクトを作りなおす数が 0（並べかえだけのとき）。
-
-- **入れた形（区切り3 の 2 回目、core の係）**:
-  - `History::jump(&mut doc, to)` は、`to` 手が済んだ形になるまで中で入れかえ（`next_id` の決まりは 1 手のときと同じ `swap` の道）、とんだ手の数を返す。core の `undo` ・ `redo` ・ `history_jump` は 1 つの道（`play/history.rs` の `travel`）を通る。
-  - 5000 手の曲で、`history_rows` の 100 行は 6〜8 µs、500 手とぶのはエンジンへの送りまで 75 µs（中央。1 手ずつ 500 回は約 10 ms。PC はこんでいた）。
-  - **同じ枠 ・ 同じ種類で `InsertId` だけちがうエフェクトは、とびでも作りなおさず使いつづける**（19-11 の「曲を入れかえても同じ枠の同じ種類は使いつづける」に合わせた。値は差だけ送るので、鳴る音は同じ）。
-  - オートメーションの箱は、席ごとに多くて 2 回（プラグインの状態を戻した席には、21-10 の送りなおしがもう 1 回来る）。
-  - プラグインのパラメータの手の名前（「（パラメータ）を変える」）は、手ができた時の一覧の名前を、core が手の番号で覚える（`StepKind` は名前を持てない）。曲のファイルには入らないので、曲をひらきなおすと名前なしになる。
-  - 状態行: 取り消し ・ やりなおし ・ とびで 6 章の文。やりなおす手がないときは「やりなおせる手がありません。」（仮、`builder:2026-11-20`）。
-  - 本物の Surge XT（VST3）で、15-C の手をまたいで 2〜7 手とんでも、とんだ先の行の状態に戻る（約 35〜37 ms）。プロセスと窓はそのまま。
-
-### 21-13. 約束（版 20）と曲のファイル（版 5）
-
-- **曲のファイル 版 5**（`songfile.rs`。こわれない書きかたと `.prev` は 14 章のまま。なおすためのファイルも同じ形）:
-  - `tempoPoints: [{tick, tempo, ramp}]`、`headRamp`、`meterChanges: [{bar, meter: [上, 下]}]`（`tempo` ・ `meter` は曲の頭のまま）
-  - `markers: [{id, tick, name}]`
-  - `loop`（範囲）を取り消しの対象の側へ移す。`loop_on` は今の場所のまま
-  - トラックの `automation`（21-5）、インサートの `id`
-  - **版 1〜4 を読むとき**: `tempo_changes` は使われていなかった席なので、空のはず。空でなければ、テンポはテンポの点に、拍子は、小節の頭にある物だけ旗にする（ほかは捨てる）。`loop` は今の場所から読む。インサートの `id` は配る。帯とマーカーはなし。
-  - 版 5 は、第 6 回の中で形が増えても版を上げず、1 つにまとめる。区切りの途中で書いた版 5 の曲は、第 6 回の終わりの版 5 で読めなくてよい、と決めておく。
-- **約束 版 20** は、下の「区切り1 の 1 回目の案」。
-
-- **入れた形（区切り1 の 2 回目、core の係）**:
-  - `Doc` は `timeline: Arc<Timeline>`、`markers: Arc<Vec<Marker>>`（手ごとに `Doc` を写すので、名前の文字列を写さないため `Arc`）、`loop_range`。`doc.tempo` ・ `doc.meter` ・ `TempoChange` ・ `Session::loop_range` はなくなった。手は `crates/meloet-model/src/timeline.rs`、意図は `crates/meloet-core/src/play/timeline.rs`。
-  - `StepKind` に 14（テンポの点を足す ・ 動かす ・ 値 ・ だんだん ・ 消す、拍子の旗を足す ・ 動かす ・ 値 ・ 消す、マーカーを足す ・ 名前 ・ 動かす ・ 消す、ループの範囲）。曲の頭の値は今までの `Tempo` ・ `Meter`。
-  - 版 5 の形: `song` に `headRamp`、`tempoPoints: [{tick, tempo（0.01 の整数）, ramp}]`、`meterChanges: [{bar（0 から）, meter: [上, 下]}]`、`markers: [{id, tick, name}]`、`loop: {start, end} | null`。`session` から `loop` を外した。読めない物: 点のティック 0 ・ 順が逆 ・ 同じティック ・ 範囲の外、旗の小節 0 ・ 順が逆 ・ 同じ小節、マーカーの id の重なり、空のループ。
-  - **クオンタイズのグリッドは、拍子の区間の頭から数える**（小節ごとではない）。旗のない曲は前と同じ答えで、3/4 の曲の 2 分音符のグリッドのような今の動きを変えないため。次の旗をこえる段は、その旗の小節の頭。
-  - **だんだんの中に足した点は、だんだんを受けつぐ**（画面は線の上の値を送るので、受けつがないと後ろ半分の線が変わる）。
-  - **取り消しでループの範囲がなくなったら、ループをオフにする**。範囲のないときに L を押すと「範囲の 1 手 ＋ オン」。
-  - **マーカーを足して、ひらいた枠で名前を打つまでを 1 手**（`History::amend`。K で足して、枠がひらいたまま、ほかの手も取り消しもない間だけ）。
-  - カウントインの拍の数は、録りはじめる所の拍子。
-
-### 21-14. 鍵盤のつまみを受けるだけのパラメータ（91-3、区切り0、`crates/meloet-plughost/src/formats/{vst3.rs,mod.rs,lv2.rs}`、`crates/meloet-core/src/play/params.rs`）
-
-- VST3 では、パラメータの一覧を作るたびに、コントローラの `IMidiMapping` に「MIDI の入口 0 の、16 チャンネル × 130 個のコントローラ（CC 0〜127、アフタータッチ、ピッチベンド）は、どのパラメータにつながっているか」を聞く。つながっていて、しかもオートメーションに書けない物（`kCanAutomate` がない物）を「鍵盤のつまみを受けるだけ」とする。名前が「MIDI CC 数|数」の形の物も同じに扱う（`IMidiMapping` のないプラグインと LV2 のため）。
-  - **理由**: 名前だけにたよると JUCE でないプラグインに当たらない。`IMidiMapping` は、音のパラメータに CC をつないだだけの物（CC 7 → 音量など）も指すので、オートメーションに書ける物はふつうに出す（この PC には、そういうプラグインがなく、本物では確かめていない）。
-- Surge XT（VST3）では、どちらの見分けかたでも同じ 2080 個（`MIDI CC 0|0` 〜 `MIDI CC 15|129`）が見つかり、残りは 774 個。Surge XT の LV2 は 775 個で 0。LSP と ZamComp は 0。聞くのにかかるのは 0.87 ms（debug。一覧を作る残りは 8.2 ms）。
-- 見分けた行は plughost が `ParamInfo::midi_cc` を立て、core が `ParamTable::keyboard_knobs` に分ける（`groups` にも `SelectedPlugin::count` にも入れない）。core の表では、ふつうの行と同じにえらべて動かせる（さがして出した行のため）。
-
-### 21-15. 約束の版 20 と 21（区切り1 の 1 回目で決めた形と、区切り2 ・ 3 の 1 回目で決めた形）
-
-`timeline` の区画、テンポと拍子とマーカーの意図、その状態行の文は、区切り1 の 1 回目で決めて入れた（`crates/meloet-protocol/src/timeline.rs`、`lib.rs`）。`lanes` ・ `automation` ・ `history` と、その意図 ・ 文は、区切り2 ・ 3 の 1 回目で**約束 版 21** として入れた（`crates/meloet-protocol/src/{automation.rs,history.rs,lib.rs}`）。core は区画を出すだけ（帯は空、履歴は数と行が正しい）で、意図は何もしない腕。
-
-**状態の区画**
-
-| 区画 | 入れる物 |
-|---|---|
-| `song` | （版 21）トラックに `lanes: [{ target, name, laneId, points（数）, step, resting }]`（足した順。`name` は帯の見出し ・ 文の「何を」: `volume` ・ `pan` ・ `send {bus}` ・ `mute` ・ `builtin {effect, param}` ・ `plugin {plugin, param?}`）、インサートに `id`（`InsertId`）。ループの範囲は今のまま（手になるだけ）。（入れた）`tempoBpm` ・ `meterNum` ・ `meterDen` ・ `tempoChanges` は消して `timeline` へ |
-| `timeline`（入れた） | 曲の頭の `tempoBpm` ・ `meterNum` ・ `meterDen`、`headRamp`、`tempoPoints: [{tick, tempoBpm, ramp}]`（tick の順、1 以上）、`meterChanges: [{bar, meterNum, meterDen}]`（bar は 0 から数える小節の番号、1 以上）、`markers: [{id, tick, name}]`（tick の順、同じ tick は id の順）、`selected`（えらんでいる物。テンポの点 ・ 旗 ・ マーカーを通して 1 つまで: `{kind: "tempoPoint", tick}` ・ `{kind: "meterChange", bar}` ・ `{kind: "marker", id}`）、`renaming`（名前の枠がひらいているマーカーの id）、`open`（アレンジの「テンポ ・ 拍子の変更」の行がひらいているか）。画面の地図（`ui/src/time/tempoMap.ts`）はここから作る |
-| `automation`（版 21。手でない物） | `folded: LaneRef[]`（たたんだ帯）、`armed: LaneRef[]`（「● 書く」がオン）、`writing: [{lane, fromTick}]`（書いている最中と書きはじめ）、`held: LaneRef[]`（仮の休み。プラグインの窓で動かしている間、21-10）、`selected: {laneId, points: IndexRange[]} \| null`（えらんだ点、1 つの帯だけ）。`LaneRef` は `{track, target}`。どの列にもない帯は、ひらいていて、書かず、書いていない |
-| `history`（版 21） | `total`（手の数）、`redo`（やりなおせる数）、`current`（いまここの行、`total − redo`。手がないか全部取り消すと 0）、`newest`（行 `total` の手の番号、なければ 0）。行は入れない。画面がためた行は `index` と `step` で決まり、`newest` が変われば最後の行だけ、`total` より後ろは消える |
-| `transport` | 変えない（テンポと拍子の数字は、画面が `timeline` と計器の位置から出す） |
-| `params` | プラグインの「オートメーションに書いている行」（版 18 からある空の席 `automated`）を使う。席は変えない |
-
-**取りにいく物**（invoke。差分ではない）:
-
-- `lane(laneId)` → 点のバイナリ、版 1、リトルエンディアン（`LanePoints`、読むのは `ui/src/bridge/lane.ts`。Rust で書いた `ui/tests/fixtures/lane-v1.bin` を TS で読む試験）。頭 16 バイト: `u8` 型 = 3、`u8` 版 = 1、`u8` 旗（1 = 階段）、`u8` 0、`u32` laneId、`u32` 点の数、4 バイト 0。点ごとに 16 バイト: `u64` ティック、`f32` 値（0〜1）、4 バイト 0。長さが数と合わなければ読まない。今の `laneId` でなければ答えなし。画面はテイクと同じに、いま曲にある帯と新しい 16 個だけためる（`LaneStore.keepOnly`）。
-  - **案から変えた所**: 頭に `laneId` と階段の旗を入れ、点を 16 バイトにそろえた。**理由**: 答えだけで、どの帯の、どの線の形の点かが分かる（取りにいく間に帯が変わっても取りちがえない）。点の頭を 8 バイトの区切りにそろえた（`u64` の位置がそろう）。
-- `history_rows(from, to)` → 行 `from..=to`（あるだけ、古い順）: `{index（1 から）, step（手の番号、0 でない）, name: StepName, what: StepWhat, place: StepPlace | null}`。`name` は手の名前の種類（仕様書 3 章「手の名前」と B-92 の仮。`SetParam {effect, param}`、`SetPluginParam {plugin, param?}`、`PluginWindow {plugin}` だけ値を持つ）、`what` は「何を」のうめこむ値（ノートの数、クリップの数、テイク、トラック、ストリップ、場所、名前、テンポ ・ 拍子の前と後、ループの小節、dB の前と後、パン、センド、エフェクト、音色、帯と点の数、外した数）、`place` は右の列（アレンジ ・ ピアノロール ・ ミキサー ・ トラック ・ プラグインの窓）。文は画面（`ui/src/components/history/stepText.ts`、`ja.ts`）。
-  - 手の名前は `StepName::every_kind()` の 1 か所。Rust は「どの `StepKind` も `StepName` になる」、TS は「どの `StepName` にも `ja.ts` の名前がある」を見はり、1 つでもなければ落ちる。
-
-**意図**
-
-- テンポと拍子（入れた）: `SetTimelineOpen {open}`、`AddTempoPoint {tick, bpm}`、`MoveTempoPoint {tick, toTick, bpm}`（ドラッグ 1 回で位置と値の両方。値を打ったときは `toTick = tick`）、`SetTempoRamp {tick, on}`、`AddMeterChange {bar, num, den}`、`MoveMeterChange {bar, toBar}`、`SetMeterChange {bar, num, den}`、`SelectTimeline {target?}`、`DeleteTimeline {target}`（`target` は `selected` と同じ形。マーカーもこれでえらぶ ・ 消す）。再生まわりの `SetTempo` ・ `SetMeter` は、再生の線がいる所で効いている点 ・ 旗（だんだんの中なら始めの点、なければ曲の頭）を変える
-- マーカー（入れた）: `AddMarker {name}`（再生の線の所、core がいちばん近い拍の頭へ）、`OpenMarkerName {id}`、`RenameMarker {id, name}`、`CloseMarkerName`、`MoveMarker {id, tick}`、`GoToMarker {id}`（押した: えらんで、そこへ行く）、`StepMarker {forward}`（Alt → ・ ←）、`LoopFromMarker {id}`
-- **テンポの点と旗の指しかた: 番号でも id でもなく、点はティック、旗は小節の番号**。同じ所に点は 1 つ、旗は 1 つなので、それが名前になる。ティック 0 ・ 小節 0 は曲の頭（いつもあり、えらべて値を変えられ、動かせず消せない。`index` なしの形はいらなくなった）。そこに何もなければ、意図は何もしない（16 章の「古い id の意図は何もしない」と同じ考え）。
-  - **理由**: 番号は、取り消しや別の点の出し入れでずれて、直前に送った意図がとなりの点に当たる。id は、`Timeline`（21-1）と曲のファイルの点に id の欄を足すことになり、地図を作る物（エンジン ・ 計器も持つ）に、えらぶためだけの欄が入る。ティックと小節なら、古い意図は「人がねらった所にいま居る点」に当たるか、何もしないかのどちらかで、別の所の点には当たらない。
-  - 点を動かすと名前（ティック）も変わる。core は動かした点をえらびなおし、画面は離したあとの `selected` を読む。
-- **テンポの数は、どこでも f64 の BPM（0.01 のきざみに乗った数）**: 区画（`tempoBpm`）、意図（`bpm`）、状態行（`tempoBpm`）。**理由**: いまの約束（`SetTempo {bpm}`、`NewSong {tempoBpm}`）と答えの表（`tempoMap.table.json`）がこの形で、画面の地図は f64 のまま式に入れる。Rust の `Tempo::bpm()`（0.01 の整数 ÷ 100）と、JSON を読んだ JS の数は、同じ f64 になる。0.01 の整数にするのは core の中（`Tempo::from_bpm`）だけ。
-- **拍に吸いつくのは、画面と core の両方**: 画面はドラッグ中の見た目のために地図（`nextBeat`）で吸いつけてから送り、core は同じ決まり（いちばん近い拍の頭、まん中なら後ろ）でもう一度吸いつける。K のマーカーは位置を送らない（再生中の「耳に届いている位置」は core が持つ）。
-- **マーカーの名前「マーカー 4」は画面が作って送る**（`AddMarker {name}`。文面は `ui/src/text/ja.ts` の `marker.newName`。数は、いまのマーカーの数 + 1）。**理由**: 画面の文面を Rust に置かない（3-2）。
-- **名前の枠は core が持つ**（`renaming`）。足した直後にひらくのは core にしか分からないので、2 回押す ・ F2 ・ 右クリックも同じ道（`OpenMarkerName`）にそろえた。打っている途中の文字は画面だけの物。
-- オートメーション: `AddLane {track, target}`、`DeleteLane {track, target}`、`FoldLane {track, target, folded}`、`AddAutoPoint {lane, tick, value?}`（`value` なしは線の上の値）、`MoveAutoPoints {lane, points, dTick, dValue}`、`DeleteAutoPoints {lane, points}`、`SelectAutoPoints {lane, points}`、`SetLaneWrite {track, target, on}`、`RestoreLane {track, target}`
-- 履歴: `HistoryJump {index, step}`（`step` は手の番号。古ければ何もしない。カウントイン ・ 録音中は取り消しと同じに何もしない）
-- ループ: 今の意図のまま（手になる）。ミキサーとパラメータの意図は変えない（21-11）
-- 状態行の文（入れた）: `TempoRampSelected {bar, beat, tempoBpm, toBar, toBeat, toTempoBpm}` ・ `MarkerAdded {name}`（仕様書 6 章）、`TempoPointSelected {bar, beat, tempoBpm}` ・ `MeterChangeSelected {bar, meterNum, meterDen}` ・ `TempoPointSet {bar, beat, tempoBpm}` ・ `MeterChangeSet {bar, meterNum, meterDen}`（B-92 の仮）。`bar` と `beat` は見せる数（1 から）で、1 小節目の 1 拍目は曲の頭。最後の点の「だんだん」は効かないので、`TempoPointSelected` で言う
-- 状態行の文（版 21）: `Undone {name, what}` ・ `Redone {name, what}`（Mod Z ・ Mod Shift Z も手の名前を言う。`what` が `none` ならかっこなし）、`HistoryJumped {index, name, steps, forward}`（`forward` は「やりなおしました」、B-92 の仮）、`NothingToUndo`、`AutomationWriting {track, target}`、`AutomationRested {track, target}`、`AutomationRestored {track, target}`（仕様書 6 章）、`AutomationMoving {tracks}`（モック F6-MixerAuto の文。`MixerPassesBy` のときは言わない）。`target` は `LaneName`
-
-`target` は `{kind: "volume" | "pan" | "send" | "mute" | "instrument" | "insert", bus?, insert?, param?}`（`insert` は `InsertView.id`、`param` は最初から入っている物は表の番号、プラグインは `ParamRow.id`）。点の意図の `points` は帯の中の番号（ティックの順、0 から）の列、えらんだ点は番号の範囲。
-
-**model の手（版 21 で足した物）**: 21-5 の 8 つに加えて `RemoveInstrument {track}`（止まったプラグインの音源を「外す」。名前の種類だけ置いた。いまの core は `SetInstrument` の手で入れている〔`play/tracks.rs`〕ので、2 回目で切りかえる）。`SetNotesField` に `field`（始め ・ 鍵 ・ 長さ ・ ベロシティ。手の名前を分けるため）。
+- **Track**: instrument → inserts → fader → pan → master sum; the meter is after the pan.
+- **Sends are post-fader** (spec: 「フェーダーを下げると、響きも下がる」) **and post-pan** (the send carries what you hear; a reverb of a left-panned part leans left).
+- **Mute and solo** stop the seat's lane (chapter 18), so sends go quiet too, at one check per seat. Returns ignore solo. A muted return is sent as fader 0; its effects keep running, so the tail is there when unmuted.
+- **Returns A/B**: sends → inserts → fader → pan → master sum; meters at the return output.
+- **Only the master puts its inserts after fader and pan**, so the limiter still holds the ceiling when the master fader is at +6 dB. The master meter shows the output before clipping.
+- **Audition seat**: a normal strip. During new-track audition core sends the sends a new track of that group gets (`meloet_model::mixer::new_track_sends`). On Enter the step is sent before `MoveInstrument`; an empty seat takes values at once, so nothing changes across Enter.
+- **Sample seat**: master sum only. **Metronome**: added after the master meter (skips master fader and limiter; the meter shows only the song). **Test tone**: added after the master strip, so 「音が出るか」 works with the master down.
+- **Pan law** (`meloet_engine::pan_gains`): balance; centre is 1.0 both sides, panning lowers only the far side along a quarter cosine. **Why**: no level change at centre (older songs sound the same), no side above 1.0, stereo sides never mixed. A −3 dB law would change older songs.
+- **Smoothing**: fader, pan and send gains ramp linearly over exactly 20 ms (`RAMP_S`, `crates/meloet-engine/src/mixer.rs`). Seats with no instrument and an engine with no stream (`Engine::settle`) jump at once.
+- **Adding, removing, replacing effects**: core builds them off the audio thread (`meloet_sound::effects::create`, `set_param`); `EngineHandle::set_effect` calls `prepare` and sends them through the ring. The slot crossfades old → new over 10 ms (`FADE_S`). The old effect goes back through the effects return ring (seats × 8) and core drops it. Parameters: `SetEffectParam` → `Effect::set_param` (the effect smooths).
+- **Bypass** (spec 13-A, 86-1): `EngineCommand::SetBypass`, a 10 ms swap between processed and dry. **The effect keeps running while bypassed.** **Why**: bypass is for comparing, so on return the reverb tail and compressor state are where they would be had it stayed on. Plugins too (blocks still go to the plugin host). The mark belongs to the slot, so an effect that arrives later (engine rebuilt, plugin loading) starts bypassed. A bypassed slot's latency is not counted.
+- **Reordering inserts** (86-2): `EngineCommand::MoveEffect {from, to}` rotates slots with their effects and marks (no rebuild). One effect cannot sound in two places, so **the moving effect fades out over 10 ms, the slots rotate while it is out, and it fades back in at its new place**. If the move cannot change what is heard (moving slot empty or bypassed, or every slot passed is silent), it rotates at once. Values arriving during the move use the new index; a new move or replace finishes the old one on the spot.
+  - Open issue: at the rotation the moved effect's input jumps; its output is 0 then, but long-memory effects (reverb) carry a little of the jump into the tail.
+- **Core side of reordering** (`inserts_follow` in `play/mixsync.rs`, 21-12): at the start of `after_change`, each strip compares "what the engine was last told" with the song by `InsertId` (`meloet_model::mixer::insert_moves`), rotates its own records (told values, bypass marks, plugin ledger places, selected slot, shelf slot) and sends `EngineOp::MoveInsert`. Steps, undo, redo and history jumps all use this path; `sync_mix` then finds the same ids in place, so nothing is rebuilt.
+- **What core sends** (`play/mixsync.rs`): song values with `mix_previews()` on top, compared per strip with what the engine was last told; only differences go out (`EngineOp::Strip`, `Sends`, `Insert`, `Param`, `Bypass`). Every change (step, undo, redo, song replace, preview, `CancelMixPreview`) takes this one path. An effect is rebuilt only when its kind in a slot changes (also kept across song replacement). A deleted track's seat is emptied with `ClearSeat`. Mixer commands reach the engine even with no stream. A track's lane is resent only when its clips change (resending on every change cut notes when a fader moved).
+- **Output or sample rate change**: `Engine::prepare` re-prepares every effect (tails cut, values kept). If the engine was rebuilt, core resends from its ledger (`crates/meloet-core/src/mixbook.rs`).
+- **NaN and infinity at the sums**: a track or return that is not a number after its fader is left out of the sums and meters for that block, and the output zeroes non-number frames. **Why**: otherwise one NaN instrument makes the master sum NaN and the limiter silences the whole song. One extra check per frame.
+- **Default mix of reverb and delay** (the owner's decision): 30 % on track or master inserts, 100 % on returns. One place: `meloet_model::mixer::Insert::new_on`.
+- **Watches**: `crates/meloet-engine/tests/mixer.rs` (routing, frame by frame, fake effects) and `crates/meloet-sound/tests/mixer_rt.rs` (no allocation with real effects on 16 tracks while editing).
+- **Cost**: 16 synth tracks with EQ + compressor each, reverb, delay and limiter: 450 µs per 256-frame block at 48 kHz (8.4 %) against 316 µs without the mixer (busy PC; `docs/history/measurements/2026-11-18-round4-mixer-cpu.md`).
 
 ---
 
-## 22. 第 7 回で決めたこと（1920 のティック、4 分音符のテンポ、歌と音のファイル、書き出し）
+## 20. Plugins and SF2 (round 5)
 
-調べ物は `docs/research/audio-input-and-latency.md`、`audio-files-and-export.md`、`stretch-and-pitch.md`、`drop-and-tempo-x8.md`（2026-11-21）。区切り0 で棟梁と meloet-hard で決めた（2026-11-21。meloet-hard が下書きし、棟梁が読んで決めた。棟梁の決めは 22-14）。デザインの第 10 版の仕様書とモックは、書いた時点で読めていない。仕様書の文や見た目に頼る所は【第 10 版で確かめる】、棟梁かオーナーさんが決める所は【棟梁が決める】【オーナーさんに聞く】の印をつけた。「測って決める」と書いた数は、その区切りで測って決めなおす。
+Research: `docs/history/research/plugin-formats.md`, `plugin-ipc.md`, `sf2-playback.md`. Measurements: `docs/history/measurements/2026-11-19-round5-ipc.md` (spike `spikes/plugins/ipcbench/`).
 
-いちばん大事な決まりは 21 章と同じで、声にも広げる: **録った歌は、歌った瞬間に耳に届いていた位置に置く。10 分録っても 1 こまもずれない。音のスレッドは、メモリを取りにいかない、鍵を待たない、ファイルにさわらない**。
+### 20-1. One plugin host process per plugin
 
-### 22-1. ティックを 1920 に（32-B）
+- **Instances with the same key (format + ID) share one `meloet-plughost` process.** DSP and window live in the same process (LV2 instance-access; `docs/history/report.md` 3-4).
+- **Why**: memory (80 instances: 688 MB PSS one per process, 385 MB grouped by plugin, 380 MB all in one); real-time limits (rtkit allows 15 processes and 25 threads per user by default, and children do not inherit real-time; grouping makes the count the number of plugin kinds); heavy LV2 bundles are read once per world (an LSP bundle: 1 s, 119 MB); and a crash takes down one plugin's instances, which matches the spec's per-name 「（名前）が止まりました…」.
+- meloet's own audio thread priority: 23-10. More busy instances than audio threads in one process: 23-14.
+- Possible later: a separate process for a plugin that crashed or that the user picks. Not built.
 
-- **決め**: `meloet_model::TICKS_PER_QUARTER` を 1920 にする。`DISPLAY_TICKS_PER_BEAT` は消す。表示の「ティック」は、その拍の中のティックそのまま（かけ算も割り算もしない）で、いつも 4 けたに 0 でうめる（「5. 2. 0960」）。拍は今までどおり拍子の下の数の音符なので、4/4 は 0〜1919、6/8 は 0〜0959、x/16 は 0〜0479、2/2 は 0〜3839。
-  - **理由**: 表示のための換算（6/8 で 2 倍、2/2 で半分）がなくなり、見える数と中の数が同じになる。1920 は 3 連も 64 分も割りきれる（64 分の 3 連で 80）。
-  - 【第 10 版で確かめる】2/2 の 0〜3839 でよいか（仕様書が「1 拍 0〜1919」と言い切っていないか）。位置の枠の幅、6 章の文。
-- **まるめの誤差**（11 章 ・ 21-4 の続き）: 1 ティックは `60 ÷ (テンポ × 1920)` 秒。テンポ 30.00 で 1.04 ms（± 0.52 ms）、96.00 で 0.33 ms（± 0.16 ms）。22-2 でテンポが拍子によらなくなるので、**どの拍子でも ± 0.52 ms 以内**。B-92 の「x/8 で 1 ms をこえるまるめ」は消える（区切り1 で測って確かめる）。
-- **変える所**（`grep -w 480` で数えた行の数。2026-11-21、`foundation` の `5022d22`）:
+### 20-2. Audio between processes
 
-| 場所 | 本体 | 試験 | おもな所 |
-|---|---|---|---|
-| `crates/meloet-model` | 5 行（`time.rs` 3、`tempo_map.rs` 2） | 72 行 ・ 11 ファイル（`notes/tests.rs` 25、`quantize/tests.rs` 9、`tests/tempo_map.rs` 9 …） | 定数、表示の式（`bar_beat_tick`）、グリッド（`roll.rs` は定数から作るので式はそのまま） |
-| `crates/meloet-protocol` | 1 行（`lib.rs` の説明） | 8 行（`tests.rs`） | 形は変わらない。数の意味だけ |
-| `crates/meloet-engine` | 3 行（`engine.rs` の `record_beat: 480` と `let quarter = 480.0`、`transport.rs` の説明） | 33 行 ・ 4 ファイル | **`engine.rs` の `TICKS_PER_S_PER_BPM = 8.0`（480 ÷ 60。32.0 になる）は 480 と書いていない** |
-| `crates/meloet-sound` | 0（`synth/dsp.rs` の 480 はティックでない） | 17 行 ・ 7 ファイル | **ほとんどはこま数（48 kHz の 10 ms）のはず**。1 つずつ見て、ティックだけ直す |
-| `crates/meloet-plughost` | 0（`window.rs` ・ `control.rs` の 480 は窓の高さ） | 2 行（`tests/engine.rs`） | `formats/lv2.rs` の拍の計算（22-2） |
-| `crates/meloet-core` | 0 | 60 行 ・ 12 ファイル（`play/timeline/tests.rs` 19、`songfile/tests.rs` 13、`play/roll_tests.rs` 12 …） | `songfile.rs`（版 6）、`recovery.rs` |
-| `ui/src` | 11 行（`time/tempoMap.ts` 3、`time/bars.ts` 2、`components/time.ts` 2、`pianoroll/audition.ts` 2、`pianoroll/view.svelte.ts` 1、`text/ja.ts` 1） | `bridge/fake.ts` 7、`time/tempoMap.table.json` 約 11 | **`time/bars.ts` の `const WHOLE = 1920`（全音符。7680 になる）は 480 と書いていない**。`design/tokens.ts` の 480 は幅なので変えない |
-| `ui/tests` | — | 127 行 ・ 36 ファイル | |
-| `tools/measure` | 7 行 ・ 5 ファイル（`make_song.py` 3、`tempo_map.py`、`long_record_ticks.py`、`auto-write.py`、`plugin_stop_summary.py`） | — | `make_song.py` の `LENGTHS = [120, 240, 480, 960]` |
+- **Shared memory (memfd sealed with `F_SEAL_SHRINK`/`F_SEAL_GROW`) and futexes in it (no `FUTEX_PRIVATE_FLAG`), round-tripping inside the same block.** The audio thread writes input and events (MIDI, parameter changes, position) and wakes the child; the child marks the block serial as done and wakes it back. No spinning.
+- **Why**: with both sides SCHED_FIFO a round trip is p50 8–13 µs and 80 in a row p99 under 0.75 ms. Delaying a block per process would add 5.33 ms per crossing (27 ms for an instrument with 4 effect plugins). Carla and yabridge do the same. Futex vs eventfd was within noise; a futex needs no fd. Spinning was worse without real-time.
+- **Audio-thread rules**: still no allocation (memory and rings are made on the core thread). **The only wait is a futex wait with a timeout** for the child's answer: not a lock, not something another thread holds, and never longer than a limit taken from the time left in the block. If the previous block's answer is missing, the slot is skipped without waiting.
+- **Missed deadline**: that block is silent (instrument) or dry (effect); the next block waits again. A slot is **stopped** only when nobody took the request and the host's progress counter did not move across two deadlines (and no host thread is inside a plugin, 23-14), or one thread held the request longer than `HANG_MS` (5 s, `crates/meloet-plugin/src/ipc/ends.rs`, 20-14). Progress still moving means "busy", not stopped. All slots of one host stop together through a mark in the shared header. **Why**: 16 Surge XTs starting a chord together take 4 blocks; that is only slow, and a stopped plugin stays silent until reloaded.
+- A watcher learns of a child's exit by pidfd and kills an unresponsive child with `pidfd_send_signal`. Lengths and positions written by the child are range-checked. Non-number frames stop at the sums (19-11).
+- **Instances in one process run in parallel** on `min(slots, CPUs / 2, 4)` audio threads that take slots without waiting; a thread that cannot get real-time ends. The engine first asks every plugin instrument in a slice (`Instrument::ask`), then runs tracks in order and waits only where the sound is needed. `PLUGIN_WAIT_SHARE` is 0.9. (16 Surge XT + compressor: block p99 1.7–1.8 ms; `docs/history/measurements/2026-11-19-round5-plughost.md`.)
+- **The engine sums latencies** (`Instrument::latency()`, `Effect::latency()`) per track every block for read-ahead (20-8), without core.
+- Children's stdout and stderr go to `/dev/null` or a log before start and are never used to talk.
+- A child's audio threads get real-time themselves (`sched_setscheduler` with `RLIMIT_RTPRIO`, else rtkit); failure is logged only.
 
-  - 480 から作った数（120 ・ 240 ・ 960 ・ 1920 ・ 3840 ・ 7680）は、同じ grep で model 241 行、protocol 54、engine 85、sound 48、core 157、`ui/src` 73、`ui/tests` 366、`tools` 43（テンポの 120 や画面の幅 1920 もまざった、上の限りの数）。**grep では直しきれない**。
-- **直しかたは 2 歩**:
-  1. **数に名前をつける**（定数は 480 のまま）: 試験と道具と画面の中のティックの数を、定数から作る式に書きかえる（Rust の試験は `q(1)` ・ `q(4) + 240` のような小さな関数、TS は `TICKS_PER_QUARTER`、Python は `TICKS_PER_QUARTER`）。答えは変わらないので、試験がぜんぶ通ることで書きまちがいが見える。コミット。
-  2. **定数を 1920 にする**。落ちた試験が、まだ数のまま残っていた所。
-  - **理由**: 500 行をこえる数を 1 回で 4 倍にすると、こま数や px の 480 をまちがえて直しても、直しわすれても、気づけない。
-- **32 ビット以下でティックを持つ所と、あふれるか**（読んで数えた）:
+### 20-3. Cost of copying plugin state (15-C)
 
-| 所 | 型 | 4 倍のあと | 判定 |
-|---|---|---|---|
-| テイクのバイナリ（`meloet-protocol/src/take.rs` の `TakeNote.start` ・ `length`、`TakeControl.tick`、`TakeNotes.length`。画面は `bridge/take.ts` の `Uint32Array`） | `u32`、**テイクの頭から**のティック | 2³² ÷ 1920 = 4 分音符 223 万個。テンポ 300.00 で 124 時間、120 で 310 時間 | あふれない（1 本のテイクが 124 時間をこえたら、core の `u32::try_from` が `None` を返し、そのテイクは画面に出ない。前は 497 時間） |
-| `BarBeatTick.tick`（`time.rs`）、`Segment.ticks_per_beat`（`clock.rs`） | `u32` | 1 拍の中の数（多くて 7680） | あふれない |
-| 曲の中の位置（ノート、クリップ、帯の点 `LanePoint.tick`、マーカー、計器の `tick`） | `u64` ・ `i64` ・ `f64` | `MAX_TICK` は `i64::MAX / 2` のまま。`f64` と JSON と JS の数は 2⁵³ まで整数（4 分音符 4.7 兆個） | あふれない |
-| `f32` でティックを持つ所 | — | 見つからなかった（`f32` は帯の値 ・ 音 ・ px だけ。WebGL の頂点は px で、`gl/batch.ts` の口まで見た） | なし |
+- Getting state takes 1.2 ms on Surge XT (50–67 KB), under 0.1 ms on LSP and Zam, on the plugin host's main thread; a visit takes it twice without freezing anything.
+- Restoring: Surge XT reloads its patch in the next `process` (up to 38 % of a block). So restores to one process are spaced one block apart (`space_states`, 20-13).
 
-  - テイクのバイナリ（`TAKE_VERSION` 2）と帯の点のバイナリ（`LANE_VERSION` 1）は、ならびが同じなので版を上げない。数の意味が変わった事は、約束の版（22-12）で見分ける（画面はテイクをメモリにしか持たない）。
+### 20-4. Scanning
 
-### 22-2. テンポはいつも 4 分音符の数（22-B）
+- **One child process per bundle**, 30 s timeout per bundle (spec Y13). VST3 `moduleinfo.json` gives the class list without loading the module.
+- Results are remembered by path, modified time and size; later scans look only at changed bundles.
+- The scan child unloads each plugin after probing: slower (38 s vs 17 s for 309 bundles) but at most 0.33 GB per child instead of 1.5 GB (LSP). Memory won. (With an X display it is slower still: 20-14.)
+- A cache with another `SCAN_CACHE_VERSION` (now 2, `crates/meloet-plugin/src/scan.rs`) is dropped and everything is rescanned.
 
-- **決め**: `Tempo` は「1 分間の 4 分音符の数」（0.01 きざみの整数は同じ）。拍子が何でも、同じ数なら 4 分音符の速さは同じ。
-  - 範囲 30.00〜300.00 は数のまま【第 10 版で確かめる】。
-- **地図の式**（21-1 の式の `tpb` が、定数 `Q = 1920` になるだけ）:
-  - ティック → 時間: `t(u) = u / (Q·a) · L(s·u/a)`、`L(x) = ln_1p(x) / x`
-  - 時間 → ティック: `u(t) = a·Q·t · E(s·Q·t)`、`E(y) = exp_m1(y) / y`
-  - だんだんは今までどおりティックにまっすぐ。ティックは 4 分音符を分けた物なので、「4 分音符にまっすぐ」と同じ意味になり、拍子の旗をまたいでも線は折れない（前は 4/4 → 6/8 の旗で、4 分音符で見た速さが半分になった）。
-  - 仕様書の例（104 → 120 を 4/4 の 4 小節、7 小節目 112.00、全体 8.586 秒）は同じ答え。
-  - かけらは「テンポの区間 ∩ 拍子の区間」のまま（小節と拍をさがすのに使う）。かけらの `tpb` は時間の式から外し、拍を数える所だけで使う。
-  - **`quarter_bpm_at` は消す**（`tempo_at` と同じ答えになる。プラグインもディレイも `tempo_at` を読む）。
-- **答えの表**（`ui/src/time/tempoMap.table.json`）: `crates/meloet-model/tests/tempo_map.rs` が書き出すしくみはそのまま。地図に 6/8 ・ 9/8 ・ 12/8 ・ 5/8 ・ 7/8 ・ 2/2 と、だんだんの中の拍子の旗を足して作りなおす。表に「鳴る拍」（下）の列を足す。TS の式（`tempoMap.ts`）も同じ直し。
-- **試験**: 21-1 の試験をぜんぶ（テンポ一定で `frame_of` が整数の式と同じ、だんだんの足しあわせ、往復）。足す物: 6/8 のテンポ 120.00 で 1 小節が 1.5 秒、拍子の旗の前後で `tempo_at` が変わらない。
-- **メトロノーム**（「鳴る拍」）: 拍子の下が 8 で上が 6 ・ 9 ・ 12 のときは付点 4 分ごと（8 分 3 つ、2880 ティック）。そのほか（5/8 ・ 7/8 は 8 分ごと、x/4 ・ x/2 ・ x/16 も）は今までどおり下の数の音符ごと。強い音は小節の頭。
-  - 形: `TempoMap::next_click(tick) -> Beat` を足し、エンジンのメトロノームはこれを読む。`next_beat`（拍。吸いつきと表示が使う）は変えない。
-  - 3/8、6/16 ・ 12/16 は「今までどおり」に入れた【第 10 版で確かめる】。
-- **カウントイン**: 長さは今までどおり「録りはじめる所の拍子の N 小節」、テンポは録りはじめる所の値で一定（21-3）。**四角の数は「鳴る数」**（6/8 は 2、5/8 は 5、4/4 は 4）。計器の `count_in_beats_left` は鳴る拍で数える（`Segment.ticks_per_beat` は鳴る拍の長さを入れる）。
-  - **理由**: 四角は音といっしょに光る。音が 2 回で四角が 6 つだと、光らない四角が残るか、音なしで光る。
-  - 仕様書にない所なので、仮の形として B に（頼みの 3）。最後の半拍の鍵（12 章）の「半拍」は、今までどおり下の数の音符の半分。
-- **プラグインへのテンポ**: `drop-and-tempo-x8.md` の 7-3 の表のとおりにする。**21-3 の「LV2 の拍は仕様どおり `beatUnit` の音符で数える」は、ここで取り消す**。
-  - VST3: `tempo` = 4 分音符の数、`projectTimeMusic` ・ `barPositionMusic` = 4 分音符の数、拍子は本当の数（今と同じ）。
-  - LV2 `time:Position`: `beatsPerMinute` = 4 分音符の数、`beat` = 4 分音符で数えた位置（VST3 の `projectTimeMusic` と同じ値）、`beatUnit` ・ `beatsPerBar` = 本当の拍子（6/8 なら 8 と 6）、`barBeat` = 小節の中を `beatUnit` の音符で数えた数。control ポートの `time:beatsPerMinute` も 4 分音符の数。
-  - **LV2 の仕様どおりでない所**: 下の数が 4 でない拍子のとき、`beatsPerMinute` と `beat` は仕様の文では `beatUnit` の音符の数（6/8 で 4 分音符 120 なら 240）。meloet は 120 を送る。同じ 1 つの知らせの中で `beat` は 4 分音符、`barBeat` は `beatUnit` の音符と、単位がまざる。
-  - **理由**: JUCE の LV2 の包み（Surge XT）は `beatsPerMinute` と `beat` を割らずに 4 分音符として使い、Ardour の既定も 4 分音符の数（調べ物、A）。仕様の文のとおりに読むプラグインは見つかっていない。21-3 で分かっていた「x/8 で Surge XT の LV2 が 2 倍 ・ 半分にずれる」が消える。
-  - 確かめ: 第 6 回と同じく、本物の Surge XT の LV2 と VST3 で、6/8 のテンポに合わせたくり返しの周期を測る。
-- 最初から入っているディレイの `EffectContext::tempo_bpm` は `tempo_at`。値の意味は前から 4 分音符なので変わらない。
+### 20-5. Keys for one plugin in several formats
 
-### 22-3. 曲のファイルの版 6
+- **The key stored in songs is exact per format**: `vst3:<Audio Module Class cid>` or `lv2:<URI>`. Parameters and state differ between formats (Surge XT: 2855 VST3 vs 775 LV2 parameters).
+- **The shelf merges rows by a display-only key** (`MergeKey`, `crates/meloet-plugin/src/key.rs`): instrument-or-effect + name + vendor, lower-cased, with format names and tails like "(Stereo)", "VST3", "LV2" removed. Both name and vendor must match; prefixes or different kinds never merge ("Surge XT" vs "Surge XT Effects").
+- **Why**: no format has a cross-format ID, and real plugins disagree (LSP's names and vendors differ by format). A wrong merge mixes different plugins, so failing to merge (two rows) is the safer error.
 
-- **決め: 版 1〜5 は読めなくする**（棟梁の向きのとおり）。`songfile.rs` の版 1〜5 を読む所と、その試験、`tempo_changes` の読みかえを消す。版 5 までのファイルは「読めない物」として、いまの読めないファイルの道（14 章）を通す。
-  - **理由**: 曲はまだ誰も作っていない（オーナーさんの OK）。4 倍するだけでは直らない（x/8 と x/2 の曲はテンポの数の意味も変わる）ので、読みかえを書くと試験の組み合わせが増える。消すほうが小さい。
-  - **反対の理由をさがした結果**: (a) オーナーさんの PC に前の版の `recovery.json` が残っていると、次の起動で 1 回だけ「読めなかった」の案内が出る（15 章の道。害はないが、報告で伝える）。(b) `docs/screenshots` と測りに使った曲は `make_song.py` で作りなおせる。(c) 版 5 の曲を `.prev` にする道は、もともと「読めるファイルだけ `.prev` にする」なので、前の版のファイルは `.prev` を押し出さない。止める理由にはならない。
-  - **版 6 からは、読めるままにする**（第 8 回で配るので、ここから先の版は捨てない）。第 7 回の中では、形がふえても版 6 のまま 1 つにまとめる（21-13 と同じ。区切りの途中の版 6 の曲は、終わりの版 6 で読めなくてよい）。
-- **版 6 の中身**: 区切り1 では版 5 と同じ形で、ティックが 1920、テンポが 4 分音符。区切り2 でトラックの種類と入口、区切り3 で音の表と歌のクリップ（22-10）、区切り4 でのび縮みと高さを足す。
-- **なおすためのファイル**（15 章）: `recovery.rs` の版を 2 に。中の `song` が版 6 の形になるため。版 1 は読めない物の道（名前をかえて残す）。
-- **道具と試験の曲**: `tools/measure/make_song.py` はいつも版 6 を書く（`--tracks` なしの版 1 の形もやめる）。`tempo_map.py` ・ `long_record_ticks.py` ・ `auto-write.py` ・ `plugin_stop_summary.py` の 480。コミットしてある試験の曲があれば作りなおす。
-- **`CLAUDE.md` の直し**（棟梁が書く）: 「曲の中の位置はティック（4 分音符 = 1920）」「テンポはいつも 4 分音符の数」「曲のファイルは版つきの JSON（いまは版 6。版 5 までは読めない）」。骨組みの `meloet-protocol` の版の数も。
+### 20-6. Song file version 4
 
-### 22-4. 曲のフォルダ（26-A）
+> The file is now version 6 (22-3; versions 1–5 cannot be read) and the protocol version 27. The shapes below are still those of version 6.
 
-- **形**: `<音楽>/はじめての曲/はじめての曲.meloet` と、そのとなりの `音/`（14 章の置き場所のまま。14 章に `audio/` と書いた所は `音/` に読みかえる。フォルダの名前は【第 10 版で確かめる】）。プラグインの状態は曲のファイルの中（版 4 から base64）なので、`plugins/` は作らない。
-- **曲は音のファイルを名前で指す**: 曲の「音の表」は `音/` の中のファイルの名前だけを持つ（道は持たない）。フォルダごと動かしても写しても、そのまま開ける。
-- **作業の場所**: `$MELOET_STATE_DIR` → `$XDG_STATE_HOME/meloet` → `~/.local/state/meloet` の下の `work/音/`（なおすためのファイルと同じ親）。**録った音も、入れた音の写しも、保存してある曲でも、まずここに書く**。
-- **音のファイルをさがす所は 2 つ**: 曲のフォルダの `音/`、なければ作業の場所。どちらにもなければ「見つからない」（F7-AudioMissing）。
-- **保存のとき**（14 章の手順の前に足す）:
-  1. 保存する `Doc` が指す音のうち、まだ `音/` にない物を作業の場所から移す。同じファイルシステムなら rename。ちがえば `音/` の一時ファイルに写して `sync_all` → rename → もとを消す。
-  2. `音/` のフォルダを `sync_all`。
-  3. そのあと、14 章のとおり `.meloet` を書く（一時ファイル → `.prev` → rename → フォルダの `sync_all`）。
-  - **理由**: どの瞬間に落ちても、(a) 前の `.meloet` と `.prev` が指す音は `音/` にある（meloet は `音/` のファイルを自分では消さない）、(b) 新しい音は 2 つの場所のどちらかに丸ごとある、(c) なおすためのファイルも名前で指すので、さがす所が 2 つなら読める。
-  - 取り消しの履歴だけが指す音（録って、取り消した歌）は、移さずに作業の場所に残す。保存のあとでやりなおしても、さがす所が 2 つなので鳴る。
-- **くらべた案**: 保存してある曲では `音/` にじかに録る。保存が速い（移す物がない）かわりに、取り消した録音や「保存しない」で閉じた録音が `音/` に残り、「この回に作って、どこからも指されていないファイル」を閉じるときに消す決まりが要る。人のフォルダの中を自動で消す決まりは持ちたくないので、とらない。
-  - とった案の弱い所: 曲が別のファイルシステム（USB メモリなど）にあると、録ったあとの最初の保存で写す時間がかかる（48 kHz ・ 24 ビット ・ ステレオの 10 分で 173 MB）。進みを状態行に出す【第 10 版で確かめる】。
-- **名前をつけて保存**: 新しいフォルダを作り、保存する `Doc` が指す音を `音/` へ**写す**（もとの曲のフォルダはさわらない。作業の場所にある物は上と同じく移す）。そのあと `.meloet` を書く。もとのフォルダにある、指されていない音は写さない。
-- **なおすためのファイル**（15 章）: 形は同じ（`song` が名前で指す）。作業の場所は「なおすためのファイルを消すとき」と同じ時に空にする（保存できてふつうに閉じたとき、「保存しない」で閉じたとき、新しい曲 ・ ひらいた曲に入れかわったとき）。PC が終わるときは消さない。起動のとき、なおすためのファイルも録りかけの書きつけ（22-7）もないのに作業の場所に物があれば、消す（どこからも指されていない）。
-- **取り消しのために残す音**: 曲をひらいている間は、どの音のファイルも消さない（取り消しの履歴は名前で指しているだけ）。
-- **閉じたときの片づけ**: 作業の場所だけ（上）。`音/` に残った「どこからも指されていない音」は、人が頼んだとき（区切り3 の「使っていない音の片づけ」）にだけ片づける。そのとき `.meloet` と `.prev` と、ひらいている `Doc` と履歴が指す物は残す。消すのか、ごみ箱か、文は【第 10 版で確かめる】。
-- **ファイルの名前**: 録った音は `<トラックの名前> <音の id>.wav`（id は二度と配らないので、かぶらない）。入れた音はもとの名前のまま写し（中身は変えない。mp3 は mp3 のまま）、同じ名前でちがう中身があれば「 2」をつける。【第 10 版で確かめる】
-- **meloet を 2 つ同時に動かしたとき**は、なおすためのファイルと同じく、作業の場所を取りあう（今の 15 章の限りと同じ）。あとの宿題。
+- A track's instrument: `{"kind": "builtin" | "plugin" | "sf2", …}`. Plugin: key (it names the format), name, vendor, **path** (for 「前はここにありました: （場所）」, spec chapter 6) and state. SF2: file name, sha256, bank, program, sound name. An insert: `{"effect": …}` or `{"plugin": …}`, plus `bypassed` when true.
+- Plugin state is base64 inside the song JSON (Surge XT: 50–67 KB); the song stays one file with the safe write and `.prev` (chapter 14).
+- **Entries for plugins and SF2s that are not found are kept as read and written back** (spec 「曲の中の設定は消さずに残す」); unknown fields inside them go into `kept`. A plugin without a key, an SF2 without a file name, or an impossible bank/program becomes the sine stand-in.
+- The shelf's 「あとから入れたもの」 (hundreds of rows, rarely changing) is sent in its own protocol section `library`, apart from `shelf`.
 
-### 22-5. 音の入口と出口の時刻
+### 20-7. SF2
 
-調べ物（`audio-input-and-latency.md`、cpal 0.18.2 と PipeWire 1.6.2 のソース、確かさ A）: 入口の流れは出口と別のスレッド（`pw_in`）と別の接続で立つ。cpal は両方に同じ `node.group = cpal-<pid>` をつけるので、同じ driver の同じコマで動き、`capture = now − delay`、`playback = now + delay` の `now` は同じ `CLOCK_MONOTONIC`。鍵の時刻（`MidiIn.t_us`）とも同じ時計。
+- **Our own reader** (`crates/meloet-sound/src/sf2/`, ported from `tools/sounds/sf2.py`): user files must never crash us, so damaged files are tested. Only the chosen preset's samples are read.
+- **Playback extends the sampler**: 6-stage volume envelope (decay and release linear in dB over 96 dB), key-scaled hold and decay, mod envelope, two LFOs, 2-pole low-pass, exclusiveClass, loop modes 0/1/3. SF2 data becomes `Region`s at load; the audio thread never sees SF2.
+- **Why**: most FluidR3 presets use the filter, mod envelope and sustain; without decay → sustain, pianos ring for ever. `rustysynth` (MIT) drops modulators, has an 80 dB range and keeps the whole file in memory (reference only). `oxisynth`, `xsynth`, `fluidlite` are LGPL.
+- **Matching FluidSynth** (how FluidR3 is usually heard on Linux): initialAttenuation × 0.4 (one constant), no default velocity → filter modulator, 96 dB range. FluidSynth (LGPL) source is only read; comparisons run `/usr/bin/fluidsynth -F` as a separate process.
+- Not built: general modulators, sm24, SF3 (reported as 「…読めませんでした」).
+- Added files are copied to `$XDG_DATA_HOME/meloet/sf2/` (spec 「meloet の中にうつす」). Songs link to files by **name**, bank and program (spec 「同じ名前の SF2 を足すと、つながる」); a new file with the same name replaces the old. sha256 is computed on copy and kept in `<name>.sf2.sha256` (hex and length) so big files are not hashed on every start; it is only recorded (a mismatch still plays).
 
-- **入口をひらく形**: `crates/meloet-engine/src/input.rs` を足す（`output.rs` と同じ形。`Host` を作りなおしてから `build_input_stream`、`play()`）。サンプルレートは出口と同じ数を頼み、チャンネルの数は装置の数（`default_input_config()`）。形は F32。一覧は `direction() == Input` だけ（出口のモニターをまぜない）。
-- **入口のコールバックも「音のスレッド」**: メモリを取らない、鍵を待たない。同じ見はり（数える割り当て器）に入れる。する事は、`capture` の時刻とこま数とサンプルを、前もって取った輪（rtrb）に入れるだけ。輪は 2 本: モニターのための輪（→ 出口のコールバック）と、録るための輪（→ ディスクの係。22-7）。入口と出口のコールバックは順の約束がないので、モニターは輪を通って 1 ブロックほど遅れる（区切り2 で測る）。
-  - 1 回の呼び出しのこま数は毎回同じとは限らない（0 もありうる）。輪は、長さの変わる書きこみを受ける。
-- **入口をひらいている間**: 入口をえらんだ歌のトラックが 1 本でもある間（入力計がいつも動くように）。この間、GNOME のマイクの印がつく。● がついた時だけにするかは【第 10 版で確かめる】（入力計がいつ動くと書いてあるか）。
-- **そろえかた**: 何もしない（PipeWire が同じ driver にする）。入口と出口が別の装置でも、PipeWire が driver のこまに合わせて渡す。meloet は PipeWire の設定を書かない（`node.latency` を頼むだけ。今の出口と同じ）。
-- **ずれの見はり**:
-  - 録る位置は、**頭を 1 回だけ時刻から決め、あとはこまを数える**（22-6）。ブロックごとに時刻から置くと、装置の時計と `CLOCK_MONOTONIC` の差（測った数 +6.5〜6.9 ppm、10 分で 3.9 ms）がそのまま入る。
-  - 見はる物は「入口のこまが抜けていないか」: 録っている間、入口の `capture` の進み（`capture(n) − capture(0)`）と、受けとったこまの数 ÷ サンプルレートをくらべる。半ブロックより大きく開いたら、入口が抜けた（xrun）と見て、開いた分だけ音なしを入れて後ろの位置を守り、数えて、状態行に知らせる。ppm のずれは 10 分で 4 ms なので、くらべる窓は 10 秒ごとに取りなおす。しきい値は区切り2 で測って決める（装置が別のときに 1 回のこま数がゆれる分を見る）。
-- **PC が言う遅れ**: cpal の時刻にもう入っている（入口は `callback − capture`、出口は `playback − callback`）。画面には、この 2 つの平均を「PC が言う遅れ」として出せる。
-- **「遅れを測る」の数 `X`**: PipeWire が知らない外の遅れの合計（DAC ・ ADC ・ USB の箱。`X = D_in_ext + D_out_ext`）。出口から入口へ回したカチッという音で、`X = c − p`（`p` = 出したこまの `playback` の時刻、`c` = 返ってきたこまの `capture` の時刻）。cpal の時刻どうしの差なので、ほかの引き算はいらない。
-  - 測りかた: 短い音を 5 回（頼みのとおり）。出した波との相関のいちばん高い所を、放物線でこまより細かく読む。5 回の中央値を出し、ばらつきが 1 こまをこえたら「もう一度」。**1 回めのカチッは、入口がこまを送りはじめてから 1 秒待って鳴らす**（3 秒たっても送ってこなければ、そのまま鳴らす。2 回めからは答えのすぐあと）。ひらいたばかりの入口は、はじめの間に音が入らず、1 回めが測れない事が多かった（オーナーさん 2026-11-22。`service/input.rs` の `CLICK_SETTLE`）。作りかたは自分で書く（Ardour と jack_delay の測りは GPL なので写さない）。文と見た目は【第 10 版で確かめる】。
-  - **しまう所**: `settings.json`（PC につく。曲には入れない）。**鍵は（出口の id、入口の id、サンプルレート）**。値は `X` のマイクロ秒と、測った日時。
-  - quantum は鍵に入れない。**理由**: `X` は外の箱の遅れで、quantum では変わらないはず。変わるなら cpal の時刻の約束のずれ（22-6 の確かめ）で、それは測った数ではなく式で直す。
-  - 鍵に合う数がなければ `X = 0`（今までと同じ動き）で、設定に「まだ測っていない」と出す。手で足す数（33-A の「遅れの合わせ」）は `X` に足す【第 10 版で確かめる: 範囲と向き】。
-- **鍵（MIDI）には、まだ `X` を使わない**（棟梁の決め、22-14）。鍵に要るのは出口の分 `D_out_ext` だけだが、音を回す測りでは合計しか出ない。案: (a) 使わない（今のまま）、(b) 半分（`X ÷ 2`。jack_delay の案内と同じ）を引く。(a) をすすめる。**理由**: 半分は当て推量で、鍵盤から ALSA までの遅れも分からないまま。第 2〜6 回の鍵の測りと数が変わらない。
+### 20-8. Plugin latency compensation (the owner's decision)
 
-### 22-6. 録った歌の位置
+- **Notes are sent early instead of delaying audio**: track t with latency L_t (instrument + inserts, as reported by VST3 `getLatencySamples` or the LV2 `lv2:latency` port) reads its notes and CCs L_t frames ahead, so its audio reaches the master sum in time.
+- **Why**: delaying audio (the usual DAW way) aligns everything to the slowest track, so the track being played would also be late by the others' latency. Early notes make live playing late only by its own track, with no delay lines. (Audio clips are read ahead the same way: 22-8.)
+- Master insert latency is the same for everything: not compensated, but added to the position at the ear (chapter 11). Return insert latency only delays tails: not compensated.
+- The first L_t frames after play starts cannot be early. A latency change applies from the next block.
 
-- **式**（鍵と同じ「耳に届いていた位置」。`heard_at` は 21-3 の `TransportClock`）:
-  - 録りはじめのブロックの最初のこまの時刻を `c0`（`capture`）とする。ファイルの 0 番めのこまが耳に届いていた時の、地図の上の秒は **`S0 = heard_at(c0 − X)` の秒**（区間の `sec0 + (t − start_us) ÷ 10⁶`）。
-  - ファイルの k 番めのこまは `S0 + k ÷ サンプルレート`。**時刻を使うのは頭だけ**。あとはこまを数える（エンジンの位置も「錨の秒 ＋ こま数」なので、同じ装置の時計で進み、10 分たってもずれない）。
-  - クリップの頭のティック `T` は、録りはじめの位置より後ろのいちばん近い整数のティック。テイクが「`T` に当たるファイルのこま」`first_frame = round((seconds_at(T) − S0) × サンプルレート)` を持つ（22-10）。**ずれは半こま（48 kHz で 10 µs）まで**。ティックにまるめる誤差（± 0.52 ms）は、歌には入らない。
-  - `c0` 1 つの時刻には `now` のゆれ（数十 µs）が入る。**頭の 32 ブロックまでの `capture(n) − それまでのこま数 ÷ サンプルレート` の中央値**を `c0` に使う（位置を決めるのは止めたときなので、間に合う）。
-- **鍵の式との関係**: 鍵は `heard_at(t_key)` を出来事ごとに。歌は `heard_at(c0 − X)` を頭に 1 回。同じ輪、同じ地図、同じ時計。`X = 0` なら、同じ瞬間の鍵と歌は同じ位置になる。
-- **ループ中の録音**: ファイルは 1 本のまま書きつづけ、周ごとのテイクは同じファイルの別の所を指す。周の境目は、エンジンが言う境目（ループの終わりのこま）を、頭で決めた「ファイルのこま ↔ エンジンのこま」の差で写す。そのために、区間（`Segment`）とエンジンの知らせ（録りはじめ、周、止め）に「流れの頭からのこまの通し番号」を足す。
-- **止めたとき**: 鍵と同じく、止める操作の時刻に耳に届いていた位置で切る。
-- **録りはじめの前**: ファイルは、カウントインの最後の半拍の頭から書く（12 章の鍵の決まりと同じ長さ）。クリップは録りはじめの位置から。早く歌いだした頭は、クリップの左のはしを広げると出てくる（仮の形。B に）。
-- **`capture` が最初のこまか最後のこまか**（cpal も PipeWire も文書で決めていない。差は 1 ブロック、256 こまで 5.3 ms）と、非同期のつなぎの 1 コマが `delay` に入っているか:
-  - **確かめかた**: 自分用の PipeWire（`crates/meloet-engine/tests/private_pw/`）で、出口のモニターを入口にする（cpal は sink を入口にえらぶと `stream.capture.sink` をつける）。カチッという音を決まったこまに出し、返ってきたこまとくらべて `X_sw = c − p` を出す。外の遅れがないので 0 のはず。quantum 64 ・ 128 ・ 256 ・ 512 ・ 1024 で回す。
-  - 0 なら式はそのまま。quantum に比例するずれ（1 ブロック分など）が出たら、そのぶんを**式の中の決まった直し**として入れ、この試験で見はる（`--devices`）。比例しないずれが残ったら、止まって棟梁に報告。
-  - 同じ仕掛けで「歌の `record-timing.sh`」を作る: 決まった位置に音を出して録り、置かれた位置とくらべる。合格の線は 1 こま以内（区切り2 で測って決める）。
-- 本物のマイクとヘッドホンでの `X` は、オーナーさんに 1 回ためしてもらう（出口と入口を線でつなぐ手順を書いて頼む）。
+### 20-9. CLAP (the owner's decision)
 
-### 22-7. 録る流れ
+- **Not supported**; VST3 and LV2 only. Every CLAP plugin on this PC also exists as VST3 or LV2. The shelf's format mark, 「＋数」 and format order leave room for CLAP; the scan ignores `.clap`.
 
-- **道**: 入口のコールバック →（輪。前もって 4 秒ぶん。48 kHz ・ ステレオで 1.5 MB）→ **ディスクに書く係**（ふつうの優先度のスレッド 1 本。core が録りはじめる前に起こし、ファイルもそこで作る）→ `work/音/<名前>.wav`。
-  - 輪がいっぱい（ディスクが止まった）なら、コールバックは待たずにそのブロックを捨てて数える。書く係は、捨てた数だけ音なしを書いて位置を守り、状態行に知らせる。
-  - 何本もの歌のトラックを同時に録るときも、入口の流れは 1 本（装置のチャンネルぜんぶ）。書く係が、トラックがえらんだチャンネルごとのファイルに分ける。
-- **形は wav**（自分で書く。頭は 44 バイトほどで、部品を足さない）。
-  - 16 ビット ・ 24 ビットは整数、**32 ビットは小数（IEEE float）**。**理由**: PipeWire から来るのが F32 なので、32 ビット小数は受けとった物そのまま（まるめも、音割れの切りすてもない）。32 ビット整数は 24 ビットの AD では得がない。
-  - 16 ビットのときは三角形のディザー（TPDF、± 1 LSB）。24 と 32 にはかけない。
-  - はじめの形は【第 10 版で確かめる】（なければ 24 ビットをすすめる）。
-- **途中で終わっても読める形**:
-  - 頭を最初に書く。長さの 2 つの欄は `0xFFFFFFFF`（「流れているので長さは分からない」の印。symphonia 0.6.1 はこれをファイルの終わりまでと読む: `symphonia-format-riff-0.6.1/src/wave/chunks.rs` 613〜615 行、`wave/mod.rs` 91 行）。
-  - 輪から来た分をすぐ `write` し、1 秒ごとに `fdatasync`。SIGKILL やアプリが落ちたときは `write` した所まで残る（なくなるのは輪の中の 0.1 秒ほど）。電源が落ちたときは最後の `fdatasync` まで（1 秒以内）。
-  - ふつうに止めたら、本当の長さを頭に書いて `sync_all`。
-  - **録りかけの書きつけ**（`work/rec.json`。録りはじめに 14 章の書きかたで書き、録音が曲に入ったら消す）: ファイルの名前、トラックの id、サンプルレート、形、録りはじめのティックと、分かっていれば `S0`。次の起動でこれがあれば、頭の長さを本当のファイルの長さに直し（半端なこまは切る）、案内を出して、歌のクリップとして入れる【第 10 版で確かめる: 案内の文と、位置が分からないときの置き場所】。`S0` を書く前に終わったときは、録りはじめのティックに置く（ずれうる、と案内で言う）。
-- **4 GB の限り**（wav の長さの欄は 32 ビット。48 kHz ・ 24 ビット ・ ステレオで 4 時間 8 分、96 kHz ・ 32 ビット ・ ステレオで 93 分）: 限りの手前で録音を止めて、録れた分を残す（4-2 の「音が止まったとき」と同じ道）。文は B に。RF64 は symphonia 0.6.1 が読まないので使わない。
-- **波形のピーク**は、書く係が書きながら作る（22-9）。
-- 試験: 10 分録って、輪のあふれ 0、書く係の遅れ（輪のいちばん深い所）、メモリ、終わりの位置。録っている途中で SIGKILL して、次の起動で残っているか。音のスレッドのメモリ 0。
+### 20-10. Scanner and plugin host manager (`crates/meloet-core/src/plugins/`)
 
-### 22-8. 歌のクリップを鳴らす流れ
+- **Scanner** (`scanner.rs`): one `meloet-plughost scan` child per bundle, at most half the CPUs and 4 at once, at nice 19. Not SCHED_IDLE: the 30 s timeout is wall-clock and a busy PC would make slow plugins look hung.
+  - Timeout: 30 s since the last `Probing`. If the child dies or goes silent after `Probing`, only that plugin is marked stopped and the rest of the bundle is scanned with `--skip`.
+  - The cache (`$XDG_CACHE_HOME/meloet/plugins/scan.json`) is written every 2 s and at the end by its own thread `meloet-scan-save` (newest request only). No cache = first scan (everything, with the band); otherwise changed bundles only, without the band, and the status line speaks only about new plugins.
+  - **The scan starts after the screen's hello (`subscribe`)**, or after 10 s (`PluginOptions::wait_for_screen`). **Child processes are started one at a time, app-wide** (`meloet_plugin::launch::spawn`). **Why**: under VS Code's CodeLLDB, concurrent spawns left meloet stopped with no window, and spawns overlapping WebKit's library loading showed as pauses; the window also comes up sooner.
+  - One scan at a time; 「もう一度ためす」 and 「場所を足す」 wait for the running scan. 「もう一度スキャン」 skips stopped plugins (spec Y13). Retrying a bundle says 「今度は入りました」 if anything got in or nothing stopped.
+- **Plugin host manager** (`Hosts`, `hosts.rs`): one long-lived thread `meloet-plugins` spawns, talks to and watches every child (`PR_SET_PDEATHSIG` fires when the spawning thread ends). Up to 16 slots of one `PluginKey` per process; the 17th opens a new process. Calls answer by callback; the core thread never waits.
+  - Every 10 ms it checks pidfds and `PluginWatch::stopped()`; a stopped host gets `SIGKILL` → wait → all its slots stopped. No socket answer in 5 s (30 s for Load) also means stopped. Detection takes about 1–11 ms. Recording goes on when a plugin stops.
+  - Reload: a new process, restoring the last known state plus parameters moved since. Remove: the effect slot empties, the instrument becomes sine (one undo step).
+  - Removal order: take the `PluginSlot` out of the engine and drop it first, then `Hosts::unload` (the other order makes the slot look stopped).
+- **Children start with posix_spawn, not `pre_exec`**: fds are passed as stdio and moved by the child, which also sets nice and `PR_SET_PDEATHSIG` itself. **Why**: forking a large meloet slowed first start by 0.6–0.8 s and could cause copy-on-write faults on the audio thread when a plugin is added during playback. The fd copies held by `Command` must be dropped after spawn, or a crashed child's socket never looks closed.
+- Only scan children get `QT_QPA_PLATFORM=offscreen`.
+- `meloet-plughost` sits next to the meloet executable; without it meloet runs with no plugins. `unsafe` stays in `meloet-plugin` (`ipc`, `launch.rs`), not core.
 
-- **音のスレッドはファイルを読まない**。**ディスクから先読みする係**（ふつうの優先度のスレッド 1 本）が、歌のトラックごとの輪（rtrb、2 秒ぶん。1 秒を切ったら足す）に、**鳴る順にならべた、そのトラックの音**を入れる。エンジンは 1 ブロックごとに、要るこま数を輪から取るだけ。
-  - クリップの間は音なし（重ねない決まり〔82〕があるので、1 トラックに 1 本の流れで足りる）。
-  - **決め（区切り3、棟梁）: クリップの音量とフェードはエンジンがかける。係は、もとの音（区切り4 からは作った音）とクリップの間の音なしを入れるだけ。** エンジンは、トラックごとの「クリップの区切りの表」（曲の上のこまの頭と終わり、フェードの長さのこま数、音量）を core からもらう（地図やクリップが変わったら作りなおして送る。今のテイクの出来事と同じ道）。クリップの境目では、その場で次のクリップの値にする。同じクリップの値が変わった時だけ 20 ms でなめらかに。フェードの形は、こまの位置から毎こま計算する。
-    - **理由**: 再生中に音量やフェードを変えても、先読みした 2 秒を入れなおさずにすむ（世代を上げると、そのトラックが数十 ms とぎれる）。音のスレッドの仕事は、こま 1 つに掛け算 1 つか 2 つ。書き出し（22-11）も同じエンジンのコードなので、出口の音と同じになる。
-    - くらべた案: 係が音量とフェードをかけて入れ、変えたら世代を上げる（音のスレッドは写すだけ）。編集のたびにとぎれるので、とらない。
-  - こまの数えかたはエンジンと同じ関数（`TempoMap::frame_of`、同じ錨）。係は地図（`Arc<TempoMap>`）と錨をもらう。
-- **ループ**: 係がループの範囲を知っていて、折り返しを先にならべる（終わり → 始まり、とつなげて輪に入れる）。エンジンは折り返しで何もしない。1 周ごとに 1 こまより短い端数を捨てる決まり（21-3）も、係が同じ式でなぞる。
-- **位置のとび**（位置を変えた、止めてから再生、ループのオン ・ オフ、地図やクリップが変わった）: エンジンが「世代」の番号を上げ、係は新しい位置から入れなおす。古い世代の中身は捨てる。**止まっている間は、いまの位置からの 2 秒をいつも入れておく**ので、再生の頭は待たない。再生中のとびは、係が追いつくまでそのトラックだけ音なし（数十 ms の見こみ。入ってきたら 10 ms でなめらかに）。
-- **間に合わなかったとき**: 輪が空なら、そのトラックは音なしにして、足りなかったこまを数える。係は同じ数だけ先へとんでから入れる（位置はずれない）。数は計器に出し、測りで見る。
-- **プラグインの遅れ**（20-8 の先に読むトラック）: 係は、そのトラックの先読みのこま数だけ先の音を入れる（エンジンが世代といっしょに言う）。
-- **何本まで間に合うかの見こみ**: 48 kHz ・ ステレオの 24 ビットで 1 本 288 KB/秒、16 本で 4.6 MB/秒（F32 で 6.1 MB/秒）。SSD の 1 % ほど。輪は 16 本で 12 MB。再生の頭の 2 秒ぶんは 12 MB の読み。**64 本でも間に合う見こみ**（18 MB/秒）。区切り3 で、16 本の長い wav と、ほかの係のビルド中（ディスクが遅いとき）で測る。
-- **鳴らすファイルは、いつも「エンジンのサンプルレートの PCM」**:
-  - `音/` の wav がエンジンと同じサンプルレートなら、そのまま読む。
-  - mp3 ・ ogg ・ flac と、サンプルレートのちがう wav は、**読むときに全部**ほどいて（symphonia 0.6.1。`mp3` ・ `ogg` ・ `vorbis` の feature を足す。どれも MPL-2.0 で、ファイルは書きかえない）、rubato 5.1.0（MIT OR Apache-2.0。比が決まっているので `Fft`、`process_all_into_buffer`）でエンジンのサンプルレートにし、F32 の wav として**しまっておく所**（`$XDG_CACHE_HOME/meloet/audio/`）に置く。作っている間は、先にクリップを置いて「読みこんでいます 40 %」（鳴らさない）。
-  - しまっておく所の鍵は、音の表の `uid`（22-10）とサンプルレート。消えても作りなおせる。出口の装置が変わってサンプルレートが変わったら、作りなおす。
-  - **理由**: 鳴らす道が 1 つになり、音のスレッドにも先読みの係にも、ほどく仕事やサンプルレートの変換を持ちこまない。長い mp3 を全部メモリに持たない。
-  - mp3 の頭の無音（LAME ・ ffmpeg のタグがない mp3 は約 25 ms 残る。調べ物）は、区切り3 で LAME と ffmpeg の mp3 を読んで測る。opus は読まない。
-- **のび縮みと音の高さ**（区切り4）: **Signalsmith Stretch（MIT）で、あとから作ってしまっておく**。
-  - 作る係（別のスレッド）が、クリップ 1 つ分の音を作り、しまっておく所に F32 の wav で置く。先読みの係は、できていればそれを読む。
-  - **作っている間は、もとの音で鳴らす**（速さも高さも変えない音）。できたら世代を上げて入れかえる（10 ms 重ねる）。進みは「音を作っています 34 %」。
-  - **だんだんのテンポについていく形**: 出るこま j の時刻 → いまの地図でティック → テイクの「この音のテンポ」（22-10 の `sync`）でファイルのこま `p(j)`。ブロックごとに、入る長さ `p(j1) − p(j0)`、出る長さ `j1 − j0` を `process()` にわたす。端数は足しあわせた位置で持つ（ブロックごとにまるめた数を足さない。21 章と同じ考え）。
-  - **何もしなくてよいクリップは、作らない**: クリップの端から端まで `p` がまっすぐ（比が 1）で、高さも 0 なら、もとのファイルをそのまま鳴らす。録った歌は、地図を変えないかぎり 1 ビットも変わらない。
-  - 鍵（しまっておく所）: 音の `uid`、ファイルの中の範囲、`sync`、クリップにかかる地図のかけら、半音、セント、声の感じ、サンプルレート、部品の版。地図の点をドラッグしている間は作らず、離して少し待ってから。再生の位置に近いクリップから作る。作りかけはやめられる。
-  - 声の感じを保つ: `setFormantFactor(1.0, true)`（調べ物の読み。聞いて確かめる）。聞きくらべは `target/listen/round7-stretch/`。
-  - 包みかた: Rust の包み `signalsmith-stretch` 0.1.3 は、本体の古いコミット（`c598726`）を取りこんだままなので使わない。**ヘッダ（書きかえない）と、小さな C の口を `cc` で作る自分の薄い包み**。置き場所は新しいクレート `crates/meloet-stretch`（C++ のビルドと unsafe をここに閉じこめる）（新しいクレートにする。棟梁の決め、22-14）。meloet のビルドに C++ のコンパイラが要るようになる（いまの `cc` と `bindgen` は、`cargo tree -i` で見たかぎり libspa の C と Tauri の道具だけ）。`NOTICE` と `node licenses/check.mjs`。
-  - その場で鳴らす形は、今回は作らない（作者が音のスレッドで安全とは言っていない。重さの数もない）。
-  - しまっておく所の大きさの上限と、古い物から消す決まりは、区切り4 で測って決める。
-  - 「この音のテンポ」をさがす: 区切り4 で決める。向きは、まずファイルの長さから「1 ・ 2 ・ 4 ・ 8 小節でテンポ 60〜180 に入る数」を出し、人が直せる形にする（歌には拍がないので、部品でさがしても当たらない。調べ物）。`stratum-dsp`（MIT OR Apache-2.0）は、足りなければ。
+### 20-11. Shelf, plugin and SF2 instruments, saving (`crates/meloet-core/src/{catalog.rs,sf2store.rs,play/plugs.rs,plugins/housed.rs}`)
 
-#### 区切り4 の 1 回目: meloet-stretch（2026-11-21、meloet-hard）
+- **The shelf's 「あとから入れたもの」** (`catalog.rs`): scan results merged by `MergeKey`. Format used: the user's choice (kept in settings) → used in the song → can open a window → VST3 → LV2. The shelf re-reads the scan cache only at start, at scan end, and on the 2 s cache writes. Favourites live in settings (reverb and delay by default).
+- **Adding an SF2** (`sf2store.rs`): from the PC file window or the first file dropped. A background thread checks it (`Sf2File::open`), then copies it with temp file → sync → rename → folder sync. Unreadable files and SF3 are refused; not accepted while recording.
+- **Plugin loading by ticket** (`play/plugs.rs`): a ledger per place (track instrument, insert slot). `Effect::LoadPlugin` → `Hosts::load_with` (load + state in one go) → `Input::PluginLoaded` / `PluginUnreadable` → `EngineOp::Plug`. A load counter tells stale answers apart. A seat is silent while loading.
+- **Unload when the engine gives the slot back** (`plugins/housed.rs`): dropping the wrapper on the core thread calls `Hosts::unload`.
+- **Saving**: only if the song has plugins, all states are requested and the thread `meloet-save` waits up to 3 s, then writes; late or stopped plugins keep the state the song knows. The core thread never stops. A change during the save leaves the song "changed". **The recovery file never asks plugins**; it uses the last known state (window changes reach the song as 15-C steps).
+- **Missing things**: no pack → sine stand-in. No SF2 → sine; adding one with the same name links it; 「曲から外す」 is one step. No plugin → instrument sine, effect slot empty, settings kept; a later scan that finds it loads it automatically.
+- Real-plugin test: `cargo test -p meloet-core --lib -- --ignored surge_xt_sounds` (Surge XT VST3 saves and reopens with the same sound).
 
-のび縮みの部品を包む新しいクレート `crates/meloet-stretch`。C++ と unsafe は、ここにだけある。ほかのクレートには、まだつないでいない（core の作る係は 2 回目）。
+### 20-12. Protocol version 18: windows, plugin parameters, the rest of design item 86
 
-- **写した物**（`vendor/`、書きかえない。くわしくは `vendor/VENDOR.md`）
-  - Signalsmith Stretch **版札 1.4.0**（コミット `a670068`、2026-09-25。いちばん新しい版札）。`signalsmith-stretch.h` と `LICENSE.txt`。main は 1 コミット先だが、変わったのは `CMakeLists.txt` だけ。
-  - Signalsmith Linear **版札 0.6.4**（コミット `de55e6a`。Stretch 1.4.0 の `CMakeLists.txt` が指す版）。`stft.h`、`fft.h`、`include/signalsmith-linear/stft.h`、`LICENSE.txt`。`#include` をたどると、要るのはこれだけ（`linear.h`・`approx.h`・`platform/` は、`SIGNALSMITH_USE_*` を決めないかぎり読まれない。FFT は組みこみの物）。
-  - どちらも MIT。ヘッダの中にライセンスの行はなく、ほかのライセンスの名前も出てこない（自分で読んだ）。
-- **ビルド**: `build.rs` が `cc`（1.11.2）で `src/shim.cpp` を作る。C++17、いつも `-O3`（debug でも）、`-ffast-math` なし。bindgen なし（口は `src/ffi.rs` に手で書いた）。はじめからのビルドは数秒。
-- **C の口**（`shim.cpp`）: どの関数も `noexcept` で、中で全部の例外をつかまえる（失敗は −1）。部品は**決まった種（seed）で作る**（そのままだと `std::random_device` で、2 倍をこえてのばすときの位相が毎回かわる。しまっておく音は、同じ入力で同じ出力にしたい）。split computation はいつも切る（音のスレッドのために計算をならす形で、遅れが 1 間隔ふえるだけなので）。
-- **Rust の口**（`src/lib.rs`）
-  - `Stretcher`（`Send`、`!Sync`）: `new(channels, sample_rate, Preset)`、`configure`、`channels`、`block_samples`、`interval_samples`、`input_latency`、`output_latency`、`seek_length`、`latency`、`set_transpose_semitones(半音, tonality limit)`、`set_formant_factor(倍率, compensate_pitch)`、`set_formant_base`、`reset`、`seek`、`output_seek`、`process(入口, 出口)`（長さがちがってよい）、`flush`。
-  - `Preset`: `Default`（区切り 0.12 秒、間隔 0.03 秒）、`Cheaper`（0.1 秒、0.04 秒）、`Blocks { block, interval }`。**`Cheaper` を使う**（オーナーさんの聞きくらべの答え 2026-11-22。はじめは `Default` だった）。1.4.0 の README には、声に向く preset の勧めはなかった（「声には短い区切り」は調べ物の C の話だけ）。聞きくらべに短い区切り（0.08 秒、0.02 秒）も入れた。
-  - `STRETCH_VERSION`（"1.4.0"）は、しまっておく音の鍵に入れる。
-  - メモリ（ソースの読み）: `new` と `configure` が取る。`process`・`seek`・`output_seek`・`flush`・`reset` は、`configure` が決めた大きさの中で `resize`・`assign` するだけで、取らない。**機械では見はっていない**（このクレートは音のスレッドで使わない）。
-- **ついていく形**（`src/follow.rs` の `Follower`。数だけ、FFI なし）
-  - 部品は、区切りの**まん中**を「いま」として動く。入口は「いま」より `input_latency` こま先まで入っていて、出口は「いま」より `output_latency` こま遅れて出る（`Default` の 48 kHz で、どちらも 2880 こま = 60 ms）。
-  - だから、ファイルのこま `p(j)` を出るこま `j` に出すには、**出るこま `j` を読む前に、入口を `round(p(j + output_latency)) + input_latency` まで入れておく**。この数は、毎回 `p` から出す（まるめた長さを足していかない）。
-  - **頭**: クリップの頭より `block + output_latency` こま前から回しはじめ、その分の出口は捨てる。クリップの頭にかかる区切りが、全部そろってから音が出る（頭がだんだん大きくなる、がない）。その間のファイルは、クリップより前の所を本当に読む（ファイルの頭より前は無音）。**尻**も同じで、クリップの終わりより先のファイルを `output_latency + input_latency` こま分読む。切ったクリップの継ぎ目に、前後の本当の音がうつる。
-    - 部品の `outputSeek`（無音から始めたことにして、頭を折りかえして直す）と `flush` は、`render` では使わない。理由は、まん中で切ったクリップの頭を「無音から」にしたくないから。口には残してある。
-  - `p` はクリップの中（`0..=out_frames`）でしか呼ばない。外は、その端のかたむきで、まっすぐのばす。
-- **1 つ分を作る**（`src/render.rs`）: `render(stretcher, out_frames, p, read, write, progress, cancel)`。
-  - `read(start, channels)`: ファイルのこまを読む口。`start` は負にも、ファイルの終わりより先にもなる（そこは 0 でうめる）。前へ進むだけで、とばない。
-  - `write(channels)`: クリップのこまが順に来る。1 回に `RENDER_STEP`（256 こま）まで。
-  - `progress(0〜100)`、`cancel`（`AtomicBool`。1 ステップごとに見る）。
-  - **中のステップは 256 こまに決めてある**。ステップの大きさを変えると、区切りの位置が 1 こまずれて、出る音が変わる（位置は式どおりだが、波形は同じにならない）。だから呼ぶ側に選ばせない。同じ入力なら、何度作っても 1 ビットも変わらない。
-- **測った数**（`cargo test -p meloet-stretch -- --nocapture`。48 kHz）
-  - のび縮みだけ（0.75 ・ 0.8 ・ 1.25 ・ 1.5 倍）: 440 Hz のサインは 440.00 Hz のまま、大きさも 0.1 % 以内。出る長さは `out_frames` ちょうど。
-  - **位置**: 短いクリックが、式の位置から**いちばん悪くて 40.5 こま（0.84 ms）**。ほとんどは 5 こま以内。比を変えても、高さを変えても、だんだん（0.8 → 1.25）でも。試験の決めた数は 1 ms。
-  - 比 1 ・ 高さ 0 は、もとの音と −127 dB まで同じ（ずれがない事のしるし。meloet は、この形のクリップを作らない）。
-  - **高さの正しさ**: 高さを変えたサインは、ねらいの周波数から少しずれる。`Default` でいちばん悪くて 1.35 Hz（220 Hz を −3 半音で +10.8 セント）、`Cheaper` で 3.3 Hz（220 Hz を −12 で −23.8 セント）。部品が山ごとにずらす数を、ならしたエネルギーからさがすため、と読んだ（推測）。1000 Hz では 0〜3 セント。**±50 セントの細かい直しには、このずれがひびくかもしれない**。聞いて確かめる。
-  - 声の感じを保つ: 150 Hz の倍音に 1 kHz の山をつけた音を +7 半音。1 kHz と 1.5 kHz のエネルギーの比は、切 0.07、入（基音を部品がさがす）2.0、入（基音 150 Hz を教える）4779。**基音を教えると、山がずっとよく残る**。声でどうかは聞きくらべ（`keep` と `keep200`）。入のとき、音が 4〜5 dB 小さくなる事がある（歌声 +12 で見た）。
-  - NaN ・ Inf は出ない（比 0.1〜4、±24 半音、雑音）。無音は無音（1e-6 より小さい）。ステレオの左右はまざらない。
-  - **速さ**（release、ステレオ 60 秒、PC はほかの係が動いていて少しにごっている）: `Default` で実時間の 108 倍（のび縮みだけ）、82 倍（＋高さ＋声の感じ）。`Cheaper` で 167 倍、127 倍。debug でも C++ は `-O3`、クレートは opt-level 3。
-- **気をつける事**
-  - 2 倍より速くする（`p` のかたむきが 2 より大きい）と、部品の中の位相の計算で比が 2 に止められる（位置は式どおりのまま）。無音が区切り 2 つ分つづくと、部品は入口をそのまま出口に流す道に入る（速くしすぎていると、前の音の尻が残る事がある、とソースから読める）。0.75〜1.5 倍の中で使う。
-  - Linux の g++ 15 で確かめた。作者は「Mac の Clang と Windows の MSVC でおもに試した」と書く。Windows は第 9 回で。
-- **ライセンスの表示**: `licenses/upstream.json` に 2 つ（`vendored` の欄に、写したファイルと sha256）。`licenses/check.mjs` が、ライセンス、写しの文、**写したファイルが 1 バイトも変わっていない事**を見はる。`NOTICE` は `tools/licenses/inventory.mjs` が作る（`vendored` のある物は、いつも入れる）。文の写しは `licenses/rust/meloet-stretch/`。「meloet について」は、まだこの 2 つを出さない（一覧は Rust の部品と npm の部品だけを見せるので）。2 回目に足す。
-- **聞きくらべ**: `python3 -I crates/meloet-stretch/listen/fetch.py`（素材を `~/.cache/meloet/listen-src` に取り、使う所を切る。出どころは `listen/sources.json`）→ `cargo run -p meloet-stretch --release --example listen -- ~/.cache/meloet/listen-src/wav target/listen/round7-stretch`。声 5 つ × 41 ファイル。
+> The protocol is now version 27 (`crates/meloet-protocol/src/lib.rs`, 22-12, 23-7). The rules below still hold.
 
-### 22-9. 波形
+- Version 18 removed the builtin-only copies (`TrackView::instrument`, the old `inserts`/`InsertsView`, `ShelfView`'s `favorites`, `selected`, `current`, `loading`, `sample`, `selected_effect`, `SampleView`). Open: the builtin-only intents (`ShelfSelect`, `PlaySample`, `ToggleFavorite`, `ShelfSelectEffect`) and status texts (`AuditionNewTrack`, …) are still in the protocol.
+- **A window is pointed to by its place** (`Option<PluginSlotRef>`; `None` = the plugin on audition): one plugin has at most one window. Opening, bringing to front and the list row are all `OpenPluginWindow`. Reordering moves the window's place and the selection with the content.
+- **Screen-only**: opening and closing the status line's window list (it closes with menus, spec chapter 3), its 「プラグインの窓が N つひらいています」, parameter search, folding groups (all names are in `ParamTable`), the search status text, and starting folded above 40 items.
+- **Values are 0–1** for every plugin parameter (VST3 normalized; the host scales LV2 by range); steps are n / (steps − 1). Value text comes from the plugin. Value and text may be unknown (`None`).
+- **Moving a parameter**: `SetPluginParam {slot, table, param, value, commit}`, with `commit` as for built-in effects (`false` sound only, `true` one step, Esc `CancelMixPreview`). Even `false` returns value and text in `paramValues` (the plugin writes the dragged row's text).
+- **Typing** (86-6): `TypeParam {param, text}`; core reads numbers for built-in effects, the plugin for plugins. Clamped input says `StatusMessage::ParamClamped`.
+- **Keys on faders, pan, sends** (86-7): each press sends `commit: false`; one second after the last key is released (or focus leaves) the screen sends `commit: true`. `TrackView::send_defaults` serves Home on sends.
+- **Master with no output** (86-8): 「出口なし ▸」 when `outputs.chosen` is `null` or `outputs.chosen_state` is `missing`.
+- **15-C** (a window visit = one step) needs no protocol change: `song.undo_count` goes up by one.
+- Open issue: `ui/src/bridge/fake.ts` still builds scenes from builtin-only fields with its own types (`FakeState`, `FakeTrack`, `FakeShelf`); it should use protocol fields only.
 
-- **ピーク**: チャンネルごとの最小と最大（i16 ずつ）。**5 段**: 256 ・ 1024 ・ 4096 ・ 16384 ・ 65536 こまに 1 つ（4 倍ずつ）。48 kHz ・ ステレオの 10 分で、いちばん細かい段が 0.9 MB、5 段で 1.2 MB。
-  - 256 こま（5.3 ms）より細かくは持たない。それより拡大したら、同じピークを横にのばす（仮。足りなければ区切り3 で 64 こまの段を足す）。
-- **いつ作る**: 録った音は、書く係が書きながら（録っている間の波形もこれで出す）。入れた音は、読むときに全部ほどく所（22-8）か、wav ならいちど読んで。しまってある物が見つからなければ作りなおす。
-- **どこにしまう**: `$XDG_CACHE_HOME/meloet/peaks/<uid>.peaks`（頭に型と版）。曲のフォルダには置かない。**理由**: 作りなおせる物で、曲のフォルダは「曲と `音/`」だけにしておく（はじめての人が見て分かる）。
-- **画面へ**: テイクのノートと同じ形の、バイナリの答え（`peaks` の invoke。リトルエンディアン、先頭に型 4 と版 1、音の id、段、最初の番号、数、チャンネルの数、あとは i16 のならび）。音のファイルは中身が変わらないので、画面は（音の id、段）でためておける。ためる数に上限をつける（テイクの `keepOnly` と同じ考え）。
-- **描く所**: アレンジの `arrangeLanes` の区画の中。**区画も文脈もふやさない**（最大 10、予算 12 のまま）。録っているクリップの波形は `recordingClip` の区画（60 Hz の小さな区画。今と同じ）。
-  - **形: クリップ 1 つに四角 1 つ。ピークはテクスチャ**（同じ文脈の中の 2 つめのシェーダー。フラグメントシェーダーが x からピークを読んで、最小〜最大の間をぬる）。テクスチャの形（RG8 か RG16F）と、長い音を何行かに折る形は区切り3 で測って決める。
-  - **理由**: 横に送るコマの仕事が、見えているクリップの数だけになる（7 章「毎コマの仕事は、たまった物の数に比例させない」）。px の列ごとに四角を作る形（今のシェーダーのまま）は、1900 列 × 16 本で 3 万個の四角を、送るコマごとに作りなおす。
-  - クリップの音量を変えたときは、テクスチャはそのまま、シェーダーの倍率だけ変える。のび縮みしたクリップは、もとのピークを横にのばして見せる（作った音のピークは作らない。仮）。
-  - 足したら `tools/measure/webkit-damage.sh` と `webkit-layout.sh`。`arrangeLanes` の面は変わったときだけ出すので、止まっている画面の重さはふえないはず（測る）。
-- 波形がモノの 1 本かチャンネルごとか、色、音量の線との重なりは【第 10 版で確かめる】。
+### 20-13. Bypass, reorder, replace, typing; windows and parameters in core
 
-### 22-10. 歌のクリップのデータ（`meloet-model`）
+- **Steps**: `StepKind::Bypass`, `MoveInsert`, `ReplaceEffect`. A replaced-in effect starts unbypassed; undo brings back the old effect with its settings and mark. Replacing with the same kind or plugin key is not a step.
+- **What is picked** (`Picked`, `play/mixer.rs`): a built-in effect slot or a plugin (by key); it follows reorders, undo, redo and history jumps (`inserts_follow`). Window kind comes from the scan cache (`EditorKind`).
+- **The shelf's 「入れかえる」** (`Mode::ReplaceEffect`): the 「空き ＋」 path ending in `replace_effect`; works while recording.
+- **Typing for built-in effects**: `meloet_model::effects::ParamSpec::read` reads the leading number (full-width digits and 「−」 too) in the parameter's unit, converting 「500 ms」, 「1.5 s」, 「2 kHz」. No leading number → `ParamRejected`, no change. Out of range → clamped and `ParamClamped`, even when the value is unchanged.
+- **Status line**: add, remove, reorder, replace, bypass, restore (86-9) are core notices. `MixerPassesBy` shows only when `ToggleBand` opens the mixer; a slot both bypassed and stopped is listed as stopped.
+- **Stopped notices vs. "show me" answers**: `PluginStopped` stays until reload or removal and ranks above ordinary notices (chapter 10). But `MixerPassesBy`, `PluginWindowsOpen` and `PluginWindowLarge` — answers to what the user just asked to see — show once above it (`asked_to_see` in `state.rs`); a newly stopped plugin still wins. **Why**: the mixer summary names stopped slots itself (the owner's decision) and would otherwise never be seen.
+- **Rules ↔ plugin host** (`play/{windows.rs,params.rs,plugs.rs}`, `service.rs`): rules emit `Effect::AskPlugin {ticket, ask}`; answers and the plugin's own news return as `Input::PluginSaid {ticket, said}`. Rules never wait; answers to one plugin come in order (one hosts thread).
+- **Windows are kept by ticket** (`windows.rs`) and turned into places when shown, so reorders and audition → track need nothing. `sync_windows` drops rows of plugins that went away, stopped or reloaded. Unrequested "opened" news is ignored. Window kind: from the loaded plugin (`PluginSaid::Editor`), before that from the scan cache.
+- **The 0.2 s** for 「ひらくのに時間がかかる」 counts from the intent; core wakes at `Model::wake_at_us` and feeds a `Tick`.
+- **A 15-C visit**: state is asked on `WindowEntered` and again on `WindowLeft`, × or `ClosePluginWindow`; different bytes make one step `set_plugin_state(…, PluginChange::Window)`. The plugin already has that state, so the ledger (`Plug::plugin`) is updated first and nothing is restored. Undo/redo use `Effect::SetPluginState`. Plugins on audition make no visits.
+- **Undo to "as first loaded"**: before the first change, the plugin's state is asked once and kept (`Plug::base`), and restored when the song state goes back to empty; if unknown, the plugin is reloaded.
+- **Late answers** (a random test, 300 seeds × 800 actions, checks that song and plugin agree): answers asked before a restore are not used (`visit_overtaken`; panel steps matched by `StateAsk::Param::puts`). Before the panel changes the plugin, the visit is cut (`cut_visit`), giving "window step, then panel step"; the ongoing visit continues from the new state (`visit_goes_on_from`). One panel drag at a time; others end it and restore its value. A visit interrupted by a stopped process ends as one step when 「もう一度読みこむ」 brings the plugin back with its window changes (`Hosts` remembers them).
+- **Spacing restores** (20-3) lives in `Hosts::space_states`: `set_state` to one process waits one longest block (1024 frames) between calls, keeping order.
+- **Parameter lists** (`params.rs`): requested for the picked, sounding plugin; the new list replaces the old only on arrival (no empty panel on undo). Stale after re-picking, `ParamsChanged`, a restore, or a reload. Groups follow first appearance of their names.
+- **Values out**: changed rows are sent together as `Effect::ParamValues` at most every 33.334 ms (`wake_at_us` names the next time). Window moves, `SetPluginParam` answers and typing share the path.
+- **Typing for plugins**: `ReadText`, then the clamped value is set and state asked; the status text comes with the answer. With no text from the plugin, the 0–1 value with two decimals is shown.
+- **`ClosePluginWindow`** is not sent by the screen (the owner's decision); it stays for the fake, and core treats it like the window's ×.
+- Real-plugin test: `cargo test -p meloet-core --lib -- --ignored surge_xt_a_visit` (needs `DISPLAY`). Surge XT returns restored stepped values just inside the step (1 → 0.995).
 
-入出力もスレッドも入れない。model が持つのは、名前と数だけ。
+### 20-14. Windows and parameters in the plugin host (`crates/meloet-plughost/src/{window.rs,control.rs,formats/}`, `crates/meloet-core/src/plugins/hosts.rs`)
+
+- **Windows live on the plughost main thread**, which makes its own X11 top window (Xwayland under Wayland) and embeds the plugin view (VST3 `IPlugView::attached` with `kPlatformTypeX11EmbedWindowID`; LV2 X11UI with `ui:parent`). One `poll` waits on the socket, the X connection, and VST3 `IRunLoop` fds and timers; LV2 `ui:idleInterface` runs every 16 ms. Audio threads (`rt.rs`) never wait on it, so a frozen window does not stop sound.
+  - X via x11rb over libxcb (`docs/history/report.md` 3-1), connected at the first window. One `IRunLoop` per process (`formats/vst3/runloop.rs`). Title = plugin name; front via `_NET_ACTIVE_WINDOW` (source 2) and raise.
+- **`Opening` and `EditorOpened` are separate**: `Opening` is written before the window is made; `EditorOpened` on our MapNotify (or after 0.5 s). **Why**: making the view blocks in the plugin for 10–200 ms.
+- **Size**: VST3 `getSize`, `IPlugFrame::resizeView`, and `checkSizeConstraint` → `onSize` for resizable views. LV2 `ui:resize`, or follow the plugin's child window (`SubstructureNotify`, e.g. Dragonfly); LV2 windows are not user-resizable. "Larger than the screen" uses the monitor (RandR) of the window's top-left.
+- **Enter and leave**: on FocusIn/FocusOut, X is asked where focus is. Menus and dialogs of the same X client count as inside, re-checked every 0.1 s.
+- **Closing**: the plugin detaches first (`removed`; LV2 `cleanup`), then the top window is destroyed (the other order crashes the process in Xlib). `EditorClosed` only when the user presses × (after `EditorLeft` if inside).
+- **Parameter list** (`Params`): names, groups, types, step texts, defaults, current values and texts in one reply (2854 Surge XT parameters in 33 ms).
+  - VST3: hidden, read-only and bypass parameters are left out; `stepCount` 1 = switch, 2–128 = steps, else continuous. Groups = top level of the `IUnitInfo` tree, except that **a single unit under the root with its own children (JUCE's "Root") is read as the root**.
+  - LV2: control input ports and `patch:writable`, without `notOnGUI` and host switches (`lv2:enabled`, `lv2:freeWheeling`). Groups = the level under the root via `pg:subGroupOf`. Text from scale points or number + `units:unit`.
+  - LV2 `patch` values stay `None` until set or reported (Surge XT's LV2 ignores `patch:Get`). State includes only known values.
+- **Text → value** (`ReadText`): VST3 `getParamValueByString` (with and without the unit); LV2 by scale points, on/off, numbers and the known range.
+- **Checking typed text for VST3** (`formats::judge_typed`): JUCE's VST3 (Surge XT) accepts any text and silently moves bad input to an end (「3 dB」 became −48 dB), so meloet reads the text first. A number with no unit or the ends' unit is compared with the numbers in `getParamStringByValue(0)` and `(1)`: outside → nearest end, "clamped"; inside → the plugin's value. A number with another unit (「2 kHz」) → the plugin's value. Text without a number counts only if the plugin's value turned back into text equals it, ignoring case (「Hall」, 「On」); else unreadable. LV2 skips this.
+- **Full-width input** is turned to ASCII for every plugin first (`formats::half_width`, the same characters as `ParamSpec::read`).
+- **Values moved in the window**: VST3 `beginEdit`/`performEdit`/`endEdit`; LV2 `write_function` (control ports, `patch:Set`) and `ui:touch`. They reach the audio thread next block, unthinned; core hears at most one per parameter per 33 ms, always including the last value, with the plugin's text. Automation-moved values are reported only for watched slots (`Request::Watch`, `Notice::ParamAutomated`; 21-8).
+- **LV2 window ↔ DSP**: atom messages and control outputs travel in two byte rings; the audio thread writes only while the window is open, without allocation.
+- **Hosts** reads each child's socket every 10 ms even with nothing pending (`HostNews::Window…`, `HostNews::Notice`) and remembers window-moved values for reloads.
+- **Re-syncing the VST3 controller** (`Vst3Controller::resync`): JUCE controllers copy processor values only in `setComponentState`, and Surge XT loads state in the next audio block, so the panel lagged one undo behind; patch changes in the window send only `restartComponent(kParamTitlesChanged)`. After a restore, `kParamTitlesChanged`, or the user leaving the window, once the audio thread has gone 2 blocks further (0.2 s when stopped), the component's `getState` is fed again to the controller. If listed values changed (always for `kParamTitlesChanged`), `ParamsChanged` makes core fetch the list again. Waiting 2 blocks lets window-moved values reach the component first. `kParamValuesChanged` raised inside our own `setComponentState` is ignored.
+- **Scanning with an X display** is slower (LSP's 194 VST3 plugins: 8 s → 38 s, as each `createView` connects to X) but `DISPLAY` is kept: without it every one is recorded as having no window.
+- **A plugin that takes many blocks is slow, not stopped**: Surge XT loads wavetable patches inside the audio callback (112 ms in one block). The old 1.5-block rule made meloet kill healthy processes. Now: hung = one thread held a request for `HANG_MS` (5 s); until then the slot is silent or dry and plays again after the answer. A request held over 1.5 blocks is no longer slept on (the engine only checks it), so other tracks are not delayed. Crashes are still found by pidfd within 10 ms. Extended by 23-14. Real tests: `real_windows`, `surge_xt_{vst3,lv2}_patch_that_takes_many_blocks_to_read`.
+- Measurements: `docs/history/measurements/2026-11-19-round5-windows.md`.
+
+---
+
+## 21. Tempo map, markers, automation and the undo history band (round 6)
+
+Research: `docs/history/research/automation-vst3.md`, `automation-lv2.md`, `tempo-and-automation.md`. What shows on the screen but is not in the spec is listed in `docs/history/design-notes.ja.md` (A-19, B-92).
+
+The first rule: **a recorded key is never off by 1 ms, even after 10 minutes of recording, even when the tempo moves.** So every position is worked out by a formula from the head of its stretch, never by adding block after block.
+
+### 21-1. The tempo map (`crates/meloet-model/src/tempo_map.rs`)
+
+- **What the song keeps** (inside `Doc`):
 
 ```rust
-pub enum TrackKind { Keys, Vocal }                    // 23-A。歌のトラックは音源を持たず、入口（チャンネル、モノかステレオ）を持つ
+pub struct TempoPoint { pub tick: u64, pub tempo: Tempo, pub ramp: bool } // ramp: straight line to the next point
+pub struct MeterChange { pub bar: u32, pub meter: Meter }                 // bar counts from 0; always 1 or more
+pub struct Timeline {
+    pub tempo: Tempo,                    // at the head of the song
+    pub meter: Meter,                    // at the head of the song
+    pub head_ramp: bool,                 // ramp from the head to the first point
+    pub tempo_points: Vec<TempoPoint>,   // in tick order; tick >= 1; one per tick
+    pub meter_changes: Vec<MeterChange>, // in bar order; one per bar
+}
+// Doc { timeline: Arc<Timeline>, markers: Arc<Vec<Marker>>, loop_range: Option<TickRange>, … }
+```
 
-/// 音のファイル 1 つ。Doc の「音の表」に Arc で持つ。中身を変えない。
+  - The head's tempo and time signature are kept apart from the lists. Reason: this counts changes the way the spec does ("the head is not counted"), and code that read the old `doc.tempo` / `doc.meter` changed little. `Timeline::check` says what is well formed; `TempoMap::new` still makes the same map from a timeline that is not.
+- ~~The tempo number is beats of the time signature's lower note per minute.~~ **Superseded by 22-2**: a tempo is always quarter notes per minute, whatever the time signature, and a quarter note is 1920 ticks (22-1).
+- **A ramp is a straight line over ticks** (as Ardour does; it is the only form that gives the spec's example: 104 at bar 5 → 120 at bar 9 gives 112.00 at bar 7). `ramp` on the last point does nothing.
+- **The built map** (`TempoMap`, made from a `Timeline` and never changed; the engine, the core and the meter thread share one): a list of **pieces**, each the overlap of a tempo stretch and a time signature stretch. A piece has its first tick `tick0`, its first time `sec0`, its tempo at the head `a` (the value on the line if inside a ramp) and its slope `s` (tempo per tick; 0 without a ramp).
+- **Formulas** (u ticks from the head of the piece; time in minutes, × 60 for seconds; `Q = TICKS_PER_QUARTER` since 22-2):
+  - tick → time: `t(u) = u / (Q·a) · L(s·u/a)`, `L(x) = ln_1p(x) / x`, `L(0) = 1`
+  - time → tick: `u(t) = a·Q·t · E(s·Q·t)`, `E(y) = exp_m1(y) / y`, `E(0) = 1`
+  - tempo there: `a + s·u`.
+  - Check by hand: 104 → 120 over four 4/4 bars takes `ln(120/104)` min = 8.586 s.
+- **No threshold for "almost flat" pieces.** In the `ln_1p(x)/x` and `exp_m1(y)/y` form the answer is right however small x or y is; only exactly 0 is split off. Reason: a threshold makes a small step in the line where the formula changes, and a form without steps is easier to test.
+- **`sec0`** is summed from the front once, when the map is made (f64). With hundreds of pieces the error is about 1e-13 s, far under one frame (2e-5 s). Everybody reads the same `sec0`, so there is nobody to drift from.
+- **Before tick 0** (count-in, keys just before recording starts) the head's tempo and time signature go on backwards; a ramp is not carried back.
+- **Functions** (none allocates; pieces are found by binary search): `new`, `seconds_at`, `tick_at`, `tempo_at` (the transport's number, 112.00 at bar 7), `meter_at`, `tick_of_bar`, `bar_beat_tick`, `nearest_beat`, `bar_at_or_after`, `next_beat` (next beat and whether it is beat 1), `next_click` (the metronome's beat, 22-2), `next_change`, and
+  - `frame_of(tick, from_seconds, sample_rate)` = `ceil((seconds_at(tick) − from_seconds) · sample_rate − 1e-6)`: the first frame at or past `tick`. The **1e-6 frame guard** stops a position that is exactly on a frame (one beat at 96.00 and 48 kHz = 30000 frames) from coming out one frame late from the last bit of the f64. If the guard is ever wrong, the error is one frame (21 µs) and does not add up.
+- **Where it lives**: `meloet-model`. **`meloet-engine` depends on `meloet-model`** (new in round 6). It does not break report 7-1 (no I/O or threads in model; no screen or plugin formats in engine). Reason: one place for the maths. If the engine had its own copy, the two would drift.
+- **Screen side** (`ui/src/time/tempoMap.ts`; outside the bridge since it knows nothing of Tauri): time display, grid times and the transport's tempo (60 Hz, no diff) need the same formulas. A Rust test writes a table (several maps × ticks, seconds, bar and beat) to `ui/src/time/tempoMap.table.json`; a TS test checks against it to a relative 1e-9 (JS `Math.log1p` / `Math.expm1` can differ in the last bit). The Rust test also fails if the committed table is out of date.
+- **Tests**: the spec's example; at a constant tempo `frame_of` equals the old integer formula for every tempo, at 44.1 / 48 / 96 kHz, over 2 hours; ramps agree with a fine f64 sum to 1e-9 s and stay smooth as `s` → 0; `tick_at(seconds_at(k))` rounds back to k; `frame_of` never goes back.
+
+### 21-2. Adding a time signature change earlier in the song
+
+- Notes, clips, automation points, markers, tempo points and the loop range **keep their ticks**. A time signature change is kept by bar number and always sits on a bar line, so adding one earlier moves later changes in ticks but not in bar number.
+  - Reason: chapter 11, "the meaning of a position does not change". A recorded key's tick is never rewritten.
+- In x/8 a beat is the lower note (6/8 has 6 beats).
+- Note: "a tempo point is on a beat" is a **snapping rule for placing and moving**, not something always true. After adding a 7/8 or 1/16 bar earlier, an old tempo point can sit inside a beat (shown as「12. 3. 240」). The formulas are right wherever a point is. Markers are the same. Points are not moved back onto beats, since that would change their distance to the notes.
+- Bar number → tick (`tick_of_bar`) is integer arithmetic adding bars from the front. Changes are always on bar lines, so there are no part bars.
+- Tests: before and after adding, deleting or moving an earlier change, the ticks of notes, clips, points and markers are the same, and the bar numbers of later changes are the same.
+
+### 21-3. The engine's position (`crates/meloet-engine/src/{engine.rs,clock.rs}`)
+
+- **Anchor**: where play started, where the loop went back, where the position was set, where the count-in ended, where the map changed, where the sample rate changed. `Transport` (in `engine.rs`) keeps `anchor_tick`, `anchor_sec` (the anchor in the map's seconds) and `frames` since the anchor (an integer). The position is always `map.tick_at(anchor_sec + frames / sample_rate)`. **Only frames are added, never ticks.**
+- **The frame of a note, a beat or the loop end** is `map.frame_of(tick, anchor_sec, sample_rate)`: one step from the anchor, so the answer is the same however many minutes have passed. Track look-ahead (20-8) compares in frames: `frame_of(tick) ≤ frames + L_t`.
+- **Handing over the map**: the core sends an `Arc<TempoMap>` (`EngineCommand::SetTempoMap { map, map_gen }`) through a ring, and old maps come back through a ring (nothing is freed on the audio thread). The engine and its readers (the core, the meter thread) share the one `Arc`. The core sends `EngineOp::Timeline { timeline: Arc<Timeline> }` whenever the `Doc`'s timeline changes, and `service.rs` builds the `TempoMap`. `map_gen` is given out by `EngineHandle::set_tempo_map`, and goes on counting in a rebuilt engine. At the swap, the current tick (a fraction) is turned into seconds on the new map and becomes the new anchor, so ticks run on without a jump. A position within 1e-6 ticks of an integer is snapped to it, so a note or beat at exactly that frame is not "already past" from the last bit of the f64; a beat due in the frame of the swap is played in that frame.
+- **Loop**: the end is `frame_of(loop_end)`. Going back makes "the loop start, exactly" the new anchor (each turn drops less than one frame, as before; the real position is written to the clock stretch, so recorded keys do not drift).
+- **Metronome**: the next beat is `map.next_click` (22-2). The strong click counts from the head of the bar in the current time signature stretch.
+- **Count-in**: the tempo and time signature **at `record_from`**, with a constant tempo (inside a ramp, the value at that point). It is not put on the map; it is a straight stretch of "end tick, ticks per second". The last-half-beat key (chapter 12) uses this straight formula too.
+- **Clock stretches (`Segment` in `clock.rs`)** carry `sec0` (the map seconds of their first frame) and `map_gen`. A reader uses `map.tick_at(sec0 + (t − start_us) / 1e6)`. `tick` and `ticks_per_frame` stay.
+  - **The straight formula (`tick + elapsed × speed`) is used only for**: the count-in, stopped stretches, and when the reader's `map_gen` differs from the stretch's (1–2 blocks right after a tempo edit).
+  - Reason: stretches follow blocks and are not cut at tempo points. Reading a 256-frame stretch across a 96 → 192 point with the straight formula is 4 ticks (3 ms) off; inside a strong ramp (30 → 240 in one beat) a 1024-frame block is up to 0.8 tick off.
+  - The meter thread also holds the map (`Arc` from the core at each swap; a lock is fine there). The position and "ticks per µs" in the meter data are exact for the send time. The screen still extends them straight for one frame (16 ms, the error does not show). The meter binary did not change.
+  - The engine cannot keep the readers' map (`crates/meloet-engine/clippy.toml` bans Mutex). `TransportClock::heard_at(t_us, map, map_gen)` takes the map as an argument; the core keeps it under a lock (`Shared::tempo_map`).
+- **Render cuts** (the split points inside one render) also fall on tempo points and time signature changes (not inside ramps). They are rare, so they cost nothing, and plugins and the delay hear the new tempo exactly at the point.
+- **To plugins** (`PluginTransport`): the values at the head of the cut: `tempo_bpm = tempo_at`, `position_quarters = tick / TICKS_PER_QUARTER`, `bar_start_quarters` = head of that bar / `TICKS_PER_QUARTER`, time signature as written (6/8 is 6 and 8), `bar` (the spare field became the bar number, because LV2 `time:bar` cannot be found from the bar's start position when the time signature changes), `position_frames = round(seconds_at(tick) × sample rate)` (the real frame position). No averaging inside ramps (as Ardour; Surge XT runs on from the head value).
+- **LV2 `time:Position`**: sent to plugins that support it (`atom:supports time:Position`), **every block, once at time 0** (the JUCE LV2 wrapper forgets the position at the head of each block), and once at the head of each cut when a block is split. All fields: `frame`, `speed`, `bar`, `barBeat`, `beat`, `beatUnit`, `beatsPerBar`, `beatsPerMinute`. Control ports with `lv2:designation time:beatsPerMinute` / `time:speed` are written every block (as jalv and Ardour). These ports belong to the host: not shown in the parameter list, not automated (meloet writes them each block, so a hand change would jump back). Knobs such as the BPM of qmidiarp or gx_digital_delay are no longer shown in the panel.
+  - ~~Beats are counted in `beatUnit` notes as the LV2 spec says.~~ **Superseded by 22-2**: `beatsPerMinute` and `beat` are in quarter notes (as JUCE and Ardour read them).
+- **Built-in delay**: `EffectContext::tempo_bpm` = `tempo_at` at the head of the cut. Returns and the master are not split by cuts, so they get the value at the head of the render (at most 1024 frames).
+- When the sample rate changes, a position before 0 becomes 0.
+- **Tests** (`crates/meloet-engine/tests/`): 10 minutes with ramps and time signature changes; every note and click is on the frame `frame_of` gives, for any block size. 1000 loop turns. Map swaps during play do not jump the tick and do not allocate.
+
+### 21-4. The position of recorded keys
+
+- The rule of chapter 12 holds. **Frame → tick uses the map**: `stamp()` finds the clock stretch with the key's time and returns `map.tick_at(sec0 + (t − start_us) / 1e6)`, across tempo points and inside ramps alike.
+- The audio thread compares its map's `map_gen` with the stretch's; if they differ, it uses the straight formula (21-3).
+- The stop position (the core's `heard_at`) uses the same path.
+- Tests: a fake clock with keys around tempo points, inside ramps, around time signature changes and around the loop turn, all within 0.01 tick of the formula, also at 10 minutes. `tools/measure/record-timing.sh` also runs on a song with a ramp.
+- ~~Tick rounding goes over 1 ms at slow tempos and in x/16.~~ **Superseded by 22-1**: with 1920 ticks per quarter and quarter-note tempos, rounding is within ±0.52 ms in every time signature.
+
+### 21-5. Automation data (`crates/meloet-model/src/automation.rs`)
+
+```rust
+pub struct InsertId(pub u32);            // id of what was put in a slot; from next_id
+pub enum AutoTarget {
+    Volume, Pan, Send(Bus), Mute,
+    Instrument { param: u32 },                    // plugin instrument: the plugin's own id
+    Insert { insert: InsertId, param: u32 },      // built-in: table index; plugin: its own id
+}
+pub struct AutoPoint { pub tick: u64, pub value: f32 }   // value: knob position 0–1
+pub struct LaneId(pub u32);
+pub struct Lane {
+    pub id: LaneId,             // new id whenever the points change (like a take)
+    pub target: AutoTarget,
+    pub step: bool,             // steps (stepped values, on/off, mute)
+    pub points: ChunkedVec<AutoPoint>, // tick order; one per tick
+    pub resting: bool,
+}
+// Track { automation: Vec<Arc<Lane>>, … } in the order added
+```
+
+- **Keys**: the track by `TrackId`; an insert by **`InsertId`, not by slot number** (given when put in, kept when reordered, new when replaced); a parameter by table index for built-in effects (by name in the file) and the plugin's own id for plugins (as `SetPluginParam`).
+  - Reason: slot numbers change on reordering; with `InsertId` the lane just follows.
+  - Removing or replacing an effect, or replacing the instrument, removes that parameter's lanes **in the same undo step** (undo brings them back). `remove_effect`, `replace_effect`, `set_instrument` and `RemoveMissing` in model do this, and a `Doc` test checks "every lane has its target". Lanes of plugins that are not found are kept as read.
+- **Every value is the knob position the user sees, 0–1.** The line is straight in that position, and straight in ticks across (the lane's x axis is ticks, so it is the line on the screen).
+  - Volume and send: the fader scale of spec chapter 2 (+6 = 1.0, 0 dB = 0.8, −60 = 0; position 0 is −∞).
+  - Pan: `(pan + 100) / 200`. Plugins: as is.
+  - Built-in effects: the bar position in the params panel. These formulas were only in TS (`ui/src/components/params/paramRows.ts` `fractionOf` / `valueAt`, `ui/src/components/mixer/scale.ts` `dbToFrac` / `fracToDb`); the same formulas are in model (`ParamSpec::position` / `value_at`, `Gain::position` / `from_position`), and a Rust table tests the TS (as in 21-1).
+  - Steps: a stepped value is n / (steps − 1); on/off and mute are 0 and 1. The value is that of the nearest point at or before the position.
+  - Before the first point: the first value. After the last: the last value.
+- **The hand-set value stays where it always was** (`Channel` fader, `Insert` values, plugin state …).
+  - A lane that is not resting → the lane's value sounds (**also when stopped**, at the play line).
+  - Resting → the hand-set value (spec: "the value stays where it was set by hand").
+  - A lane with no points → the hand-set value (a flat line).
+  - Reason: resting needs no new place for values, and hand intents (`SetGain` …) write the same place as before.
+- **A jump is two points one tick apart** (never two points on one tick). Reason: one point per tick keeps order and index ranges clear. Sound is smoothed over 20 ms, so a 1-tick slope cannot be heard.
+- **"● write" is not in the song** (outside undo, not saved, off on stop; the core's `Play` keeps it). **Resting is in the song** (spec: one undo step, saved). Folding a lane is in `Session`.
+- **Point selection is kept by the core** (like notes, chapter 16: editing changes the `LaneId`). Intents name a `LaneId` and index ranges; an intent with an old `LaneId` does nothing.
+- **No lanes for returns A/B or the master.** Lanes live only on `Track`.
+- **Undo steps**: `StepKind::{AddLane, DeleteLane, AddAutoPoint, MoveAutoPoints, DeleteAutoPoints, WriteAutomation, RestLane, RestoreLane}` (all with `track` and `target`, and `count` where there is a number).
+- **Song file**: each track has `"automation": [{ "target": {…}, "step": false, "resting": false, "points": [[tick, value], …] }]`, each insert an `"id"`. `LaneId` is not written (given out on load). (Added in version 5; **now version 6, 22-3**.)
+- **Points are a `ChunkedVec`** like notes (chapter 16). Copying the list per step made 10 minutes of written volume hold 53.9 MiB of history; sharing chunks makes it 1.34 MB. Every step that changes points goes through `with_points`, which shares unchanged chunks (`ChunkedVec::sharing`); lane add / delete / rest / restore share the `Arc<Lane>` or chunks. `AutoPoint`'s `Eq` relies on "values are never NaN" (`clamp_value`, `check_lanes`, file loading); `Hash` treats 0.0 and −0.0 alike. See `crates/meloet-model/tests/lane_memory.rs` and `docs/history/measurements/2026-11-20-round6-step2-3.md`.
+
+### 21-6. How far ahead each slot reads
+
+- Instrument parameters: `L_t` (the sum of instrument and insert latencies), as far ahead as notes.
+- A parameter of insert k: the sum of the latencies of that slot and every slot after it, because the sound entering that slot is that far ahead of the song position. This is the same as a usual DAW (which delays the sound) reading the parameter at "the position of the sound entering the slot".
+- Fader, pan, send: not read ahead.
+- **Mute is read ahead by `L_t`.** meloet's mute stops the seat's notes (chapter 18, 19-11), so it acts at the **instrument's input**. Notes are sent `L_t` early, so mute must be read at the same place or the change is heard `L_t` late. The engine reads the steps at the note lane position (`lane_pos`).
+- **Bypassed slots**: their latency is not in the sum (19-11). A bypassed slot's own parameters are read with only the later slots' sum. From the block after un-bypass, the normal sum.
+- A latency change takes effect from the next block (20-8). Inside a loop, the read-ahead position wraps too. The first `L` frames of play cannot be read ahead (20-8).
+- Tests: two fake effects with 100 frames of latency each; parameter steps land exactly on the matching sound, frame by frame. Mute steps on a track with latency land at the right output frame.
+
+### 21-7. How finely values move
+
+- **What the engine holds**: the core packs each track's non-resting lane points into one box (`AutoSet`), sends it through a ring, and old boxes come back through a ring (as with `Sequence`; no allocation on the audio thread). Insert parameter lanes are kept with their slot and move with it on `MoveEffect`. A lane the user is holding is paused with `HoldLane {track, target, on}` (21-9; up to `HOLDS` = 16).
+- **Render cuts are not made finer for automation.** One set of cuts serves all tracks, and finer cuts would add round trips to plugin instruments (20-2). The only extra cuts are mute steps and the tempo points and time signature changes of 21-3.
+- **Volume, pan, send**: the cut is split into steps of `MIX_STEP` = 32 frames; at the end of each step the exact value (map → line → gain) is found, and the gain ramps straight to it (the existing `Ramp`). The ticks of these steps are worked out once per cut (33 values) and shared by all lanes that are not read ahead (`crates/meloet-engine/src/automation.rs`).
+  - **Jumps** are limited by speed: at most "end to end in 20 ms" per step (`RAMP_S` of 19-11). A 1-tick slope, a step, and the start and end of writing all become 20 ms ramps.
+- **Built-in effects**: only slots with lanes have their `process` split every `EFFECT_STEP` = 64 frames with `set_param` at the head (same process, so no extra round trips). Effects glide 30 ms to a new value themselves (the `Effect` contract), so the sound follows the line a little late. **Open**: measure that delay and read ahead by it if it matters.
+- **VST3**: points with their place in the block (`ToPlugin::Param {frame, id, value}`; the buffer in `com.rs` holds 16 points per parameter and 128 parameters per block; on overflow the last point is overwritten, so the final value is kept).
+  - Smooth lines: one point at the **last frame** of the cut with that frame's value (JUCE uses only the last point; it also suits plugins that read between points), plus a point at any bend of the line inside the cut. A jump is two points.
+  - A value equal to the last one sent is not sent. On a new anchor (play start, loop, locate) and after a plugin's state is restored, the "last sent" values are forgotten and sent again.
+- **LV2**: the same points come from the parent; only plughost differs.
+  - Control ports: `run` is split only in blocks with points, each piece at least `SHORTEST_PIECE` = 32 frames, with the line's value at the middle frame of the piece. Plugins that want blocks of their own length (`bufsz:coarseBlockLength` and the like) are not split; they get the value at the middle of the block (`crates/meloet-plughost/src/formats/lv2.rs`).
+  - `patch:Set`: with time; one per parameter per block, the last (JUCE ignores the time).
+- **Limits**: the ring to a plugin holds 256 events per slot (`to_plugin_events` in `hosts.rs`). Automation points: at most `PLUGIN_POINTS` = 128 per plugin per cut. On overflow, middle points are dropped first, keeping each parameter's last point; lanes that still do not fit go to the next cut (starting from a different lane each time so no lane waits forever).
+- Tests: the no-allocation guard with 200 lanes and 10000 points; a fake plugin for point places and overflow; fader line against output gain, frame by frame.
+
+### 21-8. Values on the screen
+
+- **Built-in values (volume, pan, send, mute, effect parameters) are worked out by the screen**: lane points + meter position → value on the line → knob. No values flow in diffs or meters.
+- **Points are not in the state; they are fetched by `LaneId` like takes** (binary; same idea as 3-4). `song` has only each track's lane headers (target, `LaneId`, point count, steps, resting). The screen keeps points only for lanes that exist (`keepOnly`). The volume / pan / send / mute lanes of tracks the mixer shows are fetched even when folded.
+  - Reason: written lanes have thousands of points, and `song` is resent whole on every step.
+- **Plugin value text comes in `paramValues` (one per 33 ms)**, also for values moved by automation, but **only for the plugin the params panel shows** (so 100 lanes' worth is not sent every time).
+  - The core says `PluginAsk::Watch { on: true }` to that plugin while it is running (`sync_panel` in `play/params.rs`; `on: false` when the panel shows something else or the plugin stops). `Hosts::watch` sends `Request::Watch { slot, on }` to the plugin host and remembers it for `reload`.
+  - On plughost's audio thread, only watched slots put engine parameter points (= automation; points for parameters the user is holding in the window were already dropped, 21-10) into a per-slot ring (`Moved` in `rt.rs`, 512, newest dropped on overflow). No seat lock is taken (if the main thread held it, the audio thread would skip that slot's block). Every 33 ms the main thread empties the ring and sends the last value per parameter with the plugin's text (`Controller::text`) as `Notice::ParamAutomated { slot, id, value, text }`.
+  - `ParamChanged` is not used for this: it means "the user moved it in the window", which makes the core rest or write (21-10). `ParamAutomated` becomes `PluginSaid::Param` in the core and joins the `paramValues` path. It is not stored as a value for reload (`Hosts::params`); the lane sends it again.
+  - `WIRE_VERSION` went to 4 here (**now 5, 22-12**). meloet and `meloet-plughost` are always built together, so there is no version negotiation: a child with a different version in the greeting is not used.
+  - **`params.selected.automated`**: the parameters of the shown plugin that have a lane on that track (resting lanes too, like the mark on the screen), in list order (`automated_rows` in `play/params.rs`).
+- **Names of plugin parameters in lanes**: the lane heading, the status line and history rows need the parameter name. The core remembers names **only for parameters with lanes** (`LaneNames` in `play/automation.rs`, keyed by plugin key and parameter id).
+  - Two sources: the panel's table if it has the same plugin key; otherwise one running plugin with that key is asked once for its list (`PluginAsk::Params { ask: NAMES_ASK }`; panel requests count from 1, so the answer is told apart by number). Only the needed names are kept; a parameter not in the list is remembered as "no name" and not asked again.
+  - Reason: before, only the table of the plugin the panel **currently** showed was used, so other plugins' names were null. Keeping every plugin's table would be 45 000 rows for 16 Surge XT. Keying by plugin key means 16 copies of one plugin need one request. Names are not forgotten when the song changes or a lane is deleted (history rows can still name a deleted lane).
+  - Headings and the status line are built from this table each time, so `song` is resent with the next diff after a name arrives. History rows (`history_rows`) read the table when made (`play/history.rs`).
+- **Plugin windows**: VST3 uses `setParamNormalized` on the main thread; only **the last value per parameter per block** goes into the `to_controller` ring (1024). LV2 uses `port_event`.
+- The transport's tempo and time signature numbers are also worked out by the screen from the map (TS) and the meter position.
+- The `rec` border of a lane being written: the core gives "the lane being written and the tick writing started" in `automation`, and the screen draws up to the play line.
+- Tests: TS line values against the Rust table. A new moving fader needs `tools/measure/webkit-damage.sh`. Core to plugins: `crates/meloet-core/src/service/window_tests.rs` (`lanes_move_the_parameters_of_plugins_through_the_core` with fake plugins, always run; `surge_xt_and_zamcomp_{vst3,lv2}_follow_their_lanes_through_the_core`, `--ignored`, needs X). A core without a stream sends nothing to the engine, so these tests hand the lanes (`send_automation`), map and Play/Locate to the engine themselves. They fail if the `housed.rs` wrapper drops `set_param_at` / `takes_points`.
+
+### 21-9. Where written points go (`crates/meloet-core/src/play/automation.rs`)
+
+- **Rule**: a value written with "● write" goes to the position that was reaching the ear at the moment it was moved (as with keys).
+- **The core places it from the time; the engine does not record it.** The core turns the move time (CLOCK_MONOTONIC) into the heard position with `TransportClock` and the map.
+  - Mixer and params panel: the time the core received the intent.
+  - Plugin windows: plughost stamps the time at `performEdit` (LV2: a write from the window) and sends it with the notice.
+  - Reason 1: the engine's own position is the frame it is making now, ahead of the ear by the output latency (10–20 ms or more), and the value reaches the engine only in the next block. Placing it right in the engine would need the move time and `TransportClock` anyway, and the core has them.
+  - Reason 2: it is the same formula as keys (21-4); no new ring from the audio thread to the core.
+  - Reason 3: the core makes the undo step.
+  - The clock ring keeps 512 stretches (2.7 s at 256 frames); the core handles input at once, so that is enough. A value too old to find is dropped.
+- **While writing**: the core pauses the lane with `HoldLane` and plays values through the existing "sound only" preview path. The core collects value/position pairs (not the audio thread, so allocating is fine).
+- **On release (one step, `WriteAutomation`)**: points in [first position, last position] are removed and the written ones put in. Both ends are jumps: one tick before the first position, the old line's value; one tick after the last, the old line's value (spec: "on release, it goes back to the line").
+- **Across a loop turn**: the range is split per turn and put in from the oldest turn (the newer turn wins where they overlap). Still one step.
+- **Thinning**: once, on release (`thin` in `crates/meloet-model/src/automation.rs`). Ramer–Douglas–Peucker on the value (0–1) with `THIN_TOLERANCE` = 0.005 (0.5 % of the knob; provisional). Step lanes keep only the points where the value changes. Input rate: the mixer gives one value per frame (existing rule), plugin windows one per 33 ms (existing notice; Ardour uses 30 ms).
+- **On stop**: what was written so far becomes one step and write turns off. Moves while still holding are not put in the song; on release the value goes back to the line (provisional, B-92).
+- Tests: with a fake clock, "a value moved at time t goes to the position heard at t" (also with other output latencies and across tempo points); the thinned line stays within the tolerance; across a loop; undo after writing gives back the old `LaneId`.
+
+### 21-10. 15-C with write and rest (`play/windows.rs`, `crates/meloet-plughost/src/`)
+
+- **The undo step for "time in the window" is made only if the user did something**: plughost counts user actions (VST3 `performEdit`, LV2 writes from the window, and in both the preset-loaded notices `kParamValuesChanged` / `kParamTitlesChanged`) and tells the core when the window is left. With 0 actions there is no step even if the state bytes differ. Reason: automation moving values always changes the bytes.
+- When there is a step, its state also holds the automation values of that moment. That is harmless: lanes that are not resting resend their values in the next block. **For that**: after a plugin's state is restored (undo, redo, history jump, reload), the engine forgets the "last sent" values of that plugin's lanes and sends them again (21-7).
+- **Moving a parameter with a lane by hand in the window**:
+  - While it is held (VST3 `beginEdit` … `endEdit`; LV2 control `ui:touch`, or 0.5 s after the last write without it; `patch` 0.5 s; provisional numbers), plughost **drops automation points for that parameter itself**. It does not wait for the core, so hand and automation do not fight.
+  - Write off, or stopped → **rest**. On the notice the core at once holds the lane in the engine (a "temporary rest" outside the song, like the mixer preview), and **puts the rest into the same step as leaving the window** (not two steps).
+  - Write on and playing → **write**. From touch to release is one step (`WriteAutomation`, 21-9), made at once, separate from the window step. These moves are not counted as user actions (so leaving the window does not make another step).
+- Dragging in the params panel (`SetPluginParam`, `SetParam`) follows the mixer table in 21-11.
+- Tests: the random test of 20-13 (song and plugin agree) with lanes, write and rest. Lanes moving values while the window is open make 0 steps. A hand move gives one rest + window step; undo brings both back.
+
+### 21-11. Mixer drags and writing (`play/mixer.rs`, `ui/src/components/mixer/mixDrag.ts`)
+
+Built on the existing "sound only (`commit: false`) → commit on release (`commit: true`) → Esc sends `CancelMixPreview`". **No new intents**: the core decides from whether there is a lane, whether write is on, and whether it is playing.
+
+| Lane | Write | First `commit: false` | `commit: true` | Esc |
+|---|---|---|---|---|
+| none | — | as before | as before (one `SetGain`-like step) | as before |
+| yes, not resting | off, or stopped | hold the lane, preview | **value + rest in one step** (`SetGain {…, rested: true}`) | lane runs again; no step |
+| yes, not resting | on and playing | hold the lane, preview; collect values and positions | **the written points as one step** (`WriteAutomation`); hand-set value unchanged | drop what was collected; no step |
+| yes, resting | — | as before | as before (one step) | as before |
+
+- 「もどす」 is `RestoreLane` (one step). A lane that went to rest also loses its armed write (spec: when resting, the button becomes 「もどす」).
+- Typing a value (`TypeParam`, the fader number) has no release, so it **rests** even with write on.
+- Key moves (86-7: `commit: false` per key, `commit: true` after 1 s) follow the same table.
+- Tests: per table row, the step count and the song after undo.
+
+### 21-12. The undo history band (`meloet-model/src/history.rs`, `play.rs`, `play/mixsync.rs`)
+
+- **Jumping N steps**: `History::jump(&mut doc, to)` swaps N times inside (only `Arc` swaps, through the same `swap` path and `next_id` rule as one step), changes `Doc` once and returns the number of steps. Undo, redo and history jump all go through one path (`travel` in `play/history.rs`). **After it, once**:
+  - Engine sync: `sync_mix` sends only the difference from "what the engine was last told", so one call. Sequences only for tracks whose clips changed. The map once.
+  - **Insert reordering matches by `InsertId`, not slot number**: if the same `InsertId` is in another slot, rotate; if it is missing, create or return. (The old per-step `insert_moved` could not do N steps.) One path for one step and for N. Windows, the chosen slot and the slot the shelf is open for are remapped by `InsertId` too. See also the core's reorder in 19-11 (`inserts_follow` in `play/mixsync.rs`).
+  - **An effect in the same slot of the same kind with only a different `InsertId` is kept, not rebuilt** (as in 19-11; values are sent as differences, so the sound is the same).
+  - Plugin state: `SetPluginState` once, only for plugins present before and after whose bytes differ. The visit cut (`visit_overtaken`) once. "One per block" (20-3) stays inside `Hosts`.
+  - Automation boxes: at most twice per seat (a seat whose plugin state was restored gets the resend of 21-10).
+  - Selection: the selection of the step jumped to.
+- **What each row says**: `StepKind` carries the numbers and names it needs. Names (track, clip, plugin, marker) are taken by the core from **the `Doc` before and after the step** (`History` keeps the `Doc` before each step; the one after is the next step's "before" or the current song). The screen gets "kind of text + values to fill in" (rule of 3-2). Names of plugin parameter steps (「（パラメータ）を変える」) are remembered by the core by step number from the list at the time (`StepKind` cannot hold names); they are not in the song file, so after reopening they have no name.
+- **Rows are fetched**: the `history` part has only counts. Rows come from `history_rows(from, to)` for what is visible. New steps always go at the end and only cut what follows, so the screen refetches only "from the last row on". Undo, redo and jump do not change rows, only the current index. Reason: 1000 rows are not resent on every step (arrow keys on notes make 30 steps a second). 100 rows of a 5000-step song take 6–8 µs; a 500-step jump including engine sync about 75 µs.
+- **The loop range is in `Doc` (step `SetLoop`); on/off stays in `Session`.** 「ここから次のマーカーまでをループに」 is one range step + on (not a step). Turning loop on with no range makes one (`DEFAULT_LOOP_BARS` = 4 in `play.rs`), which is a range step.
+- **Solo is not a step** (stays in `Session`). The spec's step name 「ソロ」 went back to the design as B-92.
+- **"End of song"**: the end of the last clip, rounded up to a bar line. If a marker is later, 4 bars after the marker.
+- Status line: undo, redo and jump use the chapter 6 texts. With nothing to redo:「やりなおせる手がありません。」 (first provisional; now the spec's text, `msg.nothingToRedo` in `ja.ts`).
+- Tests: random step lists; "undo N times" and "jump N" give the same song, engine state and plugin states; a jump does `SetPluginState` at most once per plugin and rebuilds no effect when only the order changed.
+
+### 21-13. Song file and data
+
+- **Song file** (`songfile.rs`; safe writes and `.prev` as chapter 14; the recovery file has the same form):
+  - `headRamp`, `tempoPoints: [{tick, tempo (integer, 0.01 units), ramp}]`, `meterChanges: [{bar (from 0), meter: [top, bottom]}]` (`tempo` / `meter` stay as the head's values)
+  - `markers: [{id, tick, name}]`
+  - `loop: {start, end} | null` moved out of `session` into the undoable song; `loop_on` stays where it was
+  - each track's `automation` (21-5) and each insert's `id`
+  - Not readable: a point at tick 0, points out of order or on the same tick, out of range; a change at bar 0, out of order or on the same bar; repeated marker ids; an empty loop.
+  - This was version 5. ~~Reading versions 1–4~~ **Superseded by 22-3**: the file is now version 6 and versions 1–5 are not read.
+- **`Doc`**: `timeline: Arc<Timeline>`, `markers: Arc<Vec<Marker>>` (each step copies the `Doc`, so the `Arc` avoids copying name strings), `loop_range`. The old `doc.tempo`, `doc.meter`, `TempoChange` and `Session::loop_range` are gone. Steps: `crates/meloet-model/src/timeline.rs`; intents: `crates/meloet-core/src/play/timeline.rs`.
+- `StepKind` has 14 timeline steps (tempo point add / move / value / ramp / delete; time signature change add / move / value / delete; marker add / rename / move / delete; loop range). Head values use the old `Tempo` / `Meter` steps.
+- **The quantize grid counts from the head of the time signature stretch** (not from each bar). A song without changes gives the same answer as before (so a half-note grid in 3/4 does not change). A step that would cross the next change stops at that change's bar line.
+- **A point added inside a ramp takes on the ramp** (the screen sends the value on the line; without that, the second half of the line would change).
+- **If undo removes the loop range, loop turns off.** L with no range is "range step + on".
+- **Adding a marker and typing its name in the open box is one step** (`History::amend`: only while the box from K is still open and no other step or undo came between).
+- The count-in counts beats in the time signature at the record start.
+
+### 21-14. Parameters that only take keyboard knobs (91-3; `crates/meloet-plughost/src/formats/{vst3.rs,mod.rs,lv2.rs}`, `crates/meloet-core/src/play/params.rs`)
+
+- On VST3, each time the parameter list is built, the controller's `IMidiMapping` is asked which parameter each of 16 channels × 130 controllers (CC 0–127, aftertouch, pitch bend) on MIDI input 0 maps to. Those mapped **and** not automatable (no `kCanAutomate`) are "keyboard knobs only". Names of the form "MIDI CC n|n" are treated the same (for plugins without `IMidiMapping`, and LV2).
+  - Reason: names alone miss non-JUCE plugins. `IMidiMapping` also points at real sound parameters mapped to a CC (CC 7 → volume), so automatable ones are shown as usual (no such plugin on this PC; not checked with a real one).
+- Surge XT VST3: both ways find the same 2080 (`MIDI CC 0|0` … `MIDI CC 15|129`), leaving 774. Surge XT LV2 (775), LSP and ZamComp have none. Asking takes 0.87 ms (debug).
+- plughost sets `ParamInfo::midi_cc`; the core puts those rows in `ParamTable::keyboard_knobs` (not in `groups` nor `SelectedPlugin::count`). In the core's table they can still be chosen and moved like other rows (for rows found by search).
+
+### 21-15. Protocol versions 20 and 21
+
+The `timeline` part, tempo / time signature / marker intents and their status line texts came in version 20 (`crates/meloet-protocol/src/timeline.rs`, `lib.rs`); `lanes`, `automation`, `history` and their intents and texts in **version 21** (`crates/meloet-protocol/src/{automation.rs,history.rs,lib.rs}`). (The protocol is now version 27: 22-12, 23-7.)
+
+**State parts**
+
+| Part | Holds |
+|---|---|
+| `song` | each track's `lanes: [{ target, name, laneId, points (count), step, resting }]` in the order added (`name` is the lane heading / the "what" of texts: `volume` / `pan` / `send {bus}` / `mute` / `builtin {effect, param}` / `plugin {plugin, param?}`); each insert's `id` (`InsertId`). `tempoBpm`, `meterNum`, `meterDen`, `tempoChanges` moved to `timeline` |
+| `timeline` | the head's `tempoBpm` / `meterNum` / `meterDen`, `headRamp`, `tempoPoints: [{tick, tempoBpm, ramp}]` (tick order, ≥ 1), `meterChanges: [{bar, meterNum, meterDen}]` (bar from 0, ≥ 1), `markers: [{id, tick, name}]` (tick order, then id), `selected` (at most one of: `{kind: "tempoPoint", tick}`, `{kind: "meterChange", bar}`, `{kind: "marker", id}`), `renaming` (id of the marker whose name box is open), `open` (whether the arrange's 「テンポ ・ 拍子の変更」 row is open). The screen's map (`ui/src/time/tempoMap.ts`) is built from this |
+| `automation` (not undoable) | `folded: LaneRef[]`, `armed: LaneRef[]` (「● 書く」 on), `writing: [{lane, fromTick}]`, `held: LaneRef[]` (temporary rest while moved in a plugin window, 21-10), `selected: {laneId, points: IndexRange[]} \| null` (one lane only). `LaneRef` is `{track, target}`. A lane in no list is open, not armed and not writing |
+| `history` | `total`, `redo`, `current` (`total − redo`; 0 with no steps or all undone), `newest` (step number of row `total`, or 0). No rows. Rows the screen keeps are fixed by `index` and `step`; if `newest` changes only the last row is refetched, rows after `total` are dropped |
+| `transport` | unchanged (tempo and time signature numbers come from `timeline` and the meter position) |
+| `params` | uses the existing `automated` field of the plugin view |
+
+**Fetched (invoke, not diffs)**
+
+- `lane(laneId)` → binary points, version 1, little endian (`LanePoints`; read by `ui/src/bridge/lane.ts`; a TS test reads `ui/tests/fixtures/lane-v1.bin` written by Rust). 16-byte head: `u8` type = 3, `u8` version = 1, `u8` flags (1 = steps), `u8` 0, `u32` laneId, `u32` point count, 4 bytes 0. 16 bytes per point: `u64` tick, `f32` value (0–1), 4 bytes 0. Not read if the length does not match the count. No answer unless it is a current `laneId`. The screen keeps lanes in the song plus the newest 16 (`LaneStore.keepOnly`).
+  - The head carries `laneId` and the step flag so the answer alone says which lane and which line shape (no mix-up if the lane changes while fetching). Points are 16 bytes so `u64` positions are 8-byte aligned.
+- `history_rows(from, to)` → rows `from..=to` (as many as exist, oldest first): `{index (from 1), step (step number, not 0), name: StepName, what: StepWhat, place: StepPlace | null}`. `name` is the kind of step name (spec chapter 3 and B-92; only `SetParam {effect, param}`, `SetPluginParam {plugin, param?}`, `PluginWindow {plugin}` carry values); `what` holds the values for 「何を」 (note count, clip count, take, track, strip, place, name, tempo / time signature before and after, loop bars, dB before and after, pan, send, effect, sound, lane and point count, count removed); `place` is the right column (arrange / piano roll / mixer / track / plugin window). Texts are on the screen (`ui/src/components/history/stepText.ts`, `ja.ts`).
+  - Step names are in one place, `StepName::every_kind()`. Rust checks "every `StepKind` maps to a `StepName`", TS checks "every `StepName` has a name in `ja.ts`"; one missing fails.
+
+**Intents**
+
+- Tempo and time signature: `SetTimelineOpen {open}`, `AddTempoPoint {tick, bpm}`, `MoveTempoPoint {tick, toTick, bpm}` (one drag moves place and value; typing a value sends `toTick = tick`), `SetTempoRamp {tick, on}`, `AddMeterChange {bar, num, den}`, `MoveMeterChange {bar, toBar}`, `SetMeterChange {bar, num, den}`, `SelectTimeline {target?}`, `DeleteTimeline {target}` (`target` has the same form as `selected`; markers are chosen and deleted with these too). The transport's `SetTempo` / `SetMeter` change the point or change in effect at the play line (the start point inside a ramp, else the head).
+- Markers: `AddMarker {name}` (at the play line; the core snaps to the nearest beat), `OpenMarkerName {id}`, `RenameMarker {id, name}`, `CloseMarkerName`, `MoveMarker {id, tick}`, `GoToMarker {id}`, `StepMarker {forward}` (Alt → / ←), `LoopFromMarker {id}`.
+- **Tempo points are named by tick and time signature changes by bar number**, not by index or id. There is one per place, so the place is the name. Tick 0 / bar 0 is the head (always there; can be chosen and changed, not moved or deleted). If nothing is there, the intent does nothing (as "an intent with an old id does nothing", chapter 16).
+  - Reason: indexes shift with undo or other points coming and going, so an intent just sent could hit the neighbour. Ids would add an id field to `Timeline` (21-1) and the file, and the map (held by the engine and meters too) would carry a field used only for choosing. With tick and bar, an old intent either hits the point now at the place the user aimed at, or does nothing; never a point elsewhere.
+  - Moving a point changes its name (tick). The core reselects the moved point; the screen reads `selected` after release.
+- **Tempos are f64 BPM on a 0.01 grid everywhere**: in the part (`tempoBpm`), intents (`bpm`) and status line (`tempoBpm`). Reason: the existing protocol (`SetTempo {bpm}`, `NewSong {tempoBpm}`) and the answer table (`tempoMap.table.json`) use this form and the screen's map puts the f64 straight into the formulas. Rust `Tempo::bpm()` (integer ÷ 100) and the JS number read from JSON are the same f64. Only the core turns it into a 0.01 integer (`Tempo::from_bpm`).
+- **Snapping to beats is done by both**: the screen snaps with the map (`nextBeat`) for the look while dragging, and the core snaps again by the same rule (nearest beat; at exactly half, the later). K for a marker sends no position (only the core knows the heard position while playing).
+- **The name 「マーカー 4」 is made by the screen** (`AddMarker {name}`; text `marker.newName` in `ui/src/text/ja.ts`; number = current marker count + 1). Reason: screen text is not kept in Rust (3-2).
+- **The core owns the name box** (`renaming`): only the core knows to open it right after adding, so double-click, F2 and the context menu all go the same way (`OpenMarkerName`). The text being typed is only on the screen.
+- Automation: `AddLane {track, target}`, `DeleteLane {track, target}`, `FoldLane {track, target, folded}`, `AddAutoPoint {lane, tick, value?}` (no `value` = the value on the line), `MoveAutoPoints {lane, points, dTick, dValue}`, `DeleteAutoPoints {lane, points}`, `SelectAutoPoints {lane, points}`, `SetLaneWrite {track, target, on}`, `RestoreLane {track, target}`.
+- History: `HistoryJump {index, step}` (`step` is the step number; does nothing if stale, or during count-in / recording, like undo).
+- Loop: existing intents (now steps). Mixer and params intents unchanged (21-11).
+- Status line texts (`StatusMessage` in `crates/meloet-protocol/src/lib.rs`): tempo / time signature / marker selections and edits, `Undone` / `Redone` (Mod Z / Mod Shift Z name the step), `HistoryJumped`, `NothingToUndo`, `AutomationWriting` / `Rested` / `Restored` (spec chapter 6), `AutomationMoving` (mock F6-MixerAuto). `bar` and `beat` are shown numbers (from 1). A ramp on the last point does nothing, so it is told with `TempoPointSelected`.
+
+`target` is `{kind: "volume" | "pan" | "send" | "mute" | "instrument" | "insert", bus?, insert?, param?}` (`insert` is `InsertView.id`; `param` is the table index for built-ins and `ParamRow.id` for plugins). `points` in point intents are indexes in the lane (tick order, from 0); chosen points are index ranges.
+
+**Model steps added in version 21**: the 8 of 21-5, plus `RemoveInstrument {track}` (「外す」 a stopped plugin instrument; made in `crates/meloet-model/src/edit.rs`), and `field` on `SetNotesField` (start / key / length / velocity, to tell step names apart).
+
+---
+
+## 22. Ticks of 1920, quarter-note tempo, audio clips, stretch and export (round 7)
+
+Research: `docs/history/research/audio-input-and-latency.md`, `audio-files-and-export.md`, `stretch-and-pitch.md`, `drop-and-tempo-x8.md`. Many points were first written as temporary shapes while the spec (version 10) could not be read yet; the ones that stayed temporary are listed as B-94 in `docs/history/design-notes.ja.md`.
+
+The main rule of chapter 21 also covers the voice: **a recorded voice is placed where it was heard at the moment it was sung. Ten minutes of recording do not move it by one frame. The audio thread does not take memory, does not wait on locks, and does not touch files.**
+
+### 22-1. Ticks of 1920 (32-B)
+
+- **Now**: `meloet_model::TICKS_PER_QUARTER` is 1920 (`crates/meloet-model/src/time.rs`). `DISPLAY_TICKS_PER_BEAT` is gone. The shown tick is the tick inside the beat as it is, always 4 digits with zeros («5. 2. 0960»). A beat is still the note of the lower number of the time signature: 4/4 shows 0–1919, 6/8 0–0959, x/16 0–0479, 2/2 0–3839.
+  - **Why**: no more change of scale for display (×2 in 6/8, ÷2 in 2/2); the number seen is the number inside. 1920 divides into triplets and 64ths (a 64th triplet is 80).
+- **Rounding**: one tick is `60 ÷ (tempo × 1920)` s: 1.04 ms at tempo 30.00 (±0.52 ms). Since the tempo no longer depends on the time signature (22-2), the error is within ±0.52 ms in every signature.
+- **How it was changed**: first give every tick number in tests, tools and UI a name built from the constant (still 480), so all tests pass unchanged; then change the constant. Why: over 500 lines of 480-derived numbers mixed with frame counts (480 = 10 ms at 48 kHz) and px widths; one big ×4 edit would hide mistakes. Watch out for numbers that are not written as 480: `TICKS_PER_S_PER_BPM` in the engine and `WHOLE` in `ui/src/time/bars.ts`.
+- **Overflow check** of places that hold ticks in 32 bits or less:
+  - Take binary (`meloet-protocol/src/take.rs`: `TakeNote.start`/`length`, `TakeControl.tick`, `TakeNotes.length`; UI `bridge/take.ts` `Uint32Array`): `u32` ticks **from the head of the take**. 2³² ÷ 1920 is 124 hours at tempo 300. A longer take gives `None` from `u32::try_from` in core and is not shown.
+  - `BarBeatTick.tick`, `Segment.ticks_per_beat` (`clock.rs`): ticks inside one beat (at most 7680).
+  - Song positions (notes, clips, `LanePoint.tick`, markers, meter `tick`): `u64`/`i64`/`f64`; `MAX_TICK` is `i64::MAX / 2`. JSON and JS numbers are exact to 2⁵³.
+  - No `f32` holds ticks (WebGL vertices are px).
+  - `TAKE_VERSION` (2) and `LANE_VERSION` (1) were not raised: the layout is the same. The new meaning is told apart by the protocol version (22-12).
+
+### 22-2. Tempo is always quarter notes per minute (22-B)
+
+- **Now**: `Tempo` is quarter notes per minute (an integer in steps of 0.01), whatever the time signature. Range 30.00–300.00.
+- **Map formulas** (21-1 with `tpb` replaced by the constant `Q = 1920`):
+  - tick → time: `t(u) = u / (Q·a) · L(s·u/a)`, `L(x) = ln_1p(x) / x`
+  - time → tick: `u(t) = a·Q·t · E(s·Q·t)`, `E(y) = exp_m1(y) / y`
+  - Ramps are straight in ticks, i.e. straight in quarter notes, so a ramp does not bend at a time-signature flag.
+  - Pieces are still "tempo span ∩ signature span" (used to find bars and beats); `tpb` of a piece is only used to count beats.
+  - `quarter_bpm_at` is gone (it equals `tempo_at`; plugins and the delay read `tempo_at`).
+- **Answer table** `ui/src/time/tempoMap.table.json`, written by `crates/meloet-model/tests/tempo_map.rs`, now has 6/8, 9/8, 12/8, 5/8, 7/8, 2/2, signature flags inside ramps, and a "clicking beat" column. `ui/src/time/tempoMap.ts` uses the same formulas.
+- **Metronome** (clicking beat): with lower number 8 and upper 6, 9 or 12, one click per dotted quarter (2880 ticks). All other signatures (5/8, 7/8, x/4, x/2, x/16, also 3/8, 6/16, 12/16) click on the note of the lower number. The strong click is on the bar head. `TempoMap::next_click(tick) -> Beat` gives clicks; `next_beat` (snapping and display) is unchanged.
+- **Count-in**: length is N bars of the signature where recording starts, tempo fixed at that point (21-3). **The number of squares is the number of clicks** (6/8 shows 2, 5/8 shows 5). `count_in_beats_left` counts clicking beats; `Segment.ticks_per_beat` holds the clicking-beat length. Why: the squares light with the sound; 2 clicks and 6 squares would leave squares that never light. The "last half beat" key rule (12) still uses half the note of the lower number.
+- **Tempo to plugins** (follows `drop-and-tempo-x8.md` 7-3; this cancels the 21-3 rule "LV2 beats count in `beatUnit`"):
+  - VST3: `tempo`, `projectTimeMusic`, `barPositionMusic` in quarter notes; the real time signature.
+  - LV2 `time:Position`: `beatsPerMinute` and `beat` in quarter notes; `beatUnit`/`beatsPerBar` are the real signature; `barBeat` counts in `beatUnit` notes inside the bar. The control port `time:beatsPerMinute` is also quarter notes.
+  - **This is not what the LV2 text says** for signatures whose lower number is not 4 (it says `beatUnit` notes), and units mix in one message. Why: JUCE's LV2 wrapper (Surge XT) and Ardour's default treat these as quarter notes; no plugin was found that follows the text. The old ×2/÷2 drift of Surge XT LV2 in x/8 is gone.
+- The built-in delay's `EffectContext::tempo_bpm` is `tempo_at` (always meant quarter notes).
+
+### 22-3. Song file version 6
+
+- **Versions 1–5 cannot be read**; they take the normal unreadable-file path (14). Why: no one had made songs yet (the owner agreed), and converting x/8 and x/2 songs would also need the tempo meaning changed; removing was smaller. Side effect: an old `recovery.json` gives a one-time "could not read" hint at start.
+- **From version 6 on, files stay readable** (round 8 ships). During round 7 the shape grew while staying version 6 (a mid-round version-6 song did not have to open at the end of the round).
+- Contents: version-5 shape with 1920 ticks and quarter-note tempo; then track kind and input (step 2), audio table and audio clips (step 3, 22-10/22-15), stretch and pitch (step 4).
+- Recovery file (15): version 2 (its `song` is version 6). Version 1 takes the unreadable path.
+- `tools/measure/make_song.py` always writes version 6.
+
+### 22-4. The song folder (26-A)
+
+- **Shape**: `<Music>/はじめての曲/はじめての曲.meloet` with `音/` next to it (read `audio/` in chapter 14 as `音/`). Plugin states are inside the song file (base64), so there is no `plugins/`.
+- **The song names audio files by name only** (no path). A folder can be moved or copied and still opens.
+- **Work place**: `work/音/` under `$MELOET_STATE_DIR` → `$XDG_STATE_HOME/meloet` → `~/.local/state/meloet` (same parent as the recovery file). **Recorded audio and copies of imported audio are always written here first**, even for a saved song.
+- **Two places are searched**: the song folder's `音/`, then the work place (22-18 A2 adds the earlier folder after "save as"). Not found → F7-AudioMissing.
+- **Save** (before the steps of 14): (1) move each sound the saved `Doc` uses and that is not yet in `音/` from the work place (rename; across file systems: copy to a temp file in `音/`, `sync_all`, rename, delete the source); (2) `sync_all` the `音/` folder; (3) write `.meloet` as in 14.
+  - **Why**: at any moment of a crash, (a) what the old `.meloet` and `.prev` point to is in `音/` (meloet never deletes files in `音/`), (b) a new sound is whole in one of the two places, (c) the recovery file also names by name.
+  - Rejected: recording straight into `音/` for saved songs. Faster saves, but undone or unsaved recordings would stay in the person's folder, and meloet would need a rule to delete files there automatically. We do not want that.
+  - Weak point: a song on another file system (USB stick) needs a copy on the first save after recording (173 MB for 10 min, 48 kHz, 24-bit stereo).
+- **Save as**: make the new folder, **copy** the used sounds into its `音/` (the old folder is not touched; work-place files are moved), then write `.meloet`. Unused sounds of the old folder are not copied.
+- **Cleaning the work place**: at the same times the recovery file is deleted (saved and closed normally, closed with "don't save", replaced by a new or opened song). Not at PC shutdown. At start, if there is neither a recovery file nor a half-recorded note (22-7), anything in the work place is deleted.
+- While a song is open, no audio file is deleted (undo history points to them by name).
+- Unused files in `音/` are only cleaned when the person asks (not built yet).
+- **File names**: recorded audio is `<track name> <audio id>.wav` (ids are never given twice). Imported audio keeps its name and contents (an mp3 stays mp3); a different file with the same name gets « 2».
+- Two meloet processes at once fight over the work place, as with the recovery file (open issue).
+
+### 22-5. Input and output times
+
+cpal opens the input stream on its own thread (`pw_in`) and connection, but gives both streams the same `node.group = cpal-<pid>`, so they run in the same cycle of the same driver. `capture = now − delay` and `playback = now + delay` share `now` on `CLOCK_MONOTONIC`, the same clock as key times (`MidiIn.t_us`).
+
+- **Opening**: `crates/meloet-engine/src/input.rs` (same shape as `output.rs`: rebuild the `Host`, `build_input_stream`, `play()`). Same sample rate as the output, device channel count, F32. The list shows only `direction() == Input` (no output monitors).
+- **The input callback is an audio thread**: no memory, no locks, same allocation watch. It only puts the capture time, frame count and samples into pre-made rings (rtrb): one for the monitor (→ output callback), one for recording (→ disk writer, 22-7). Frame counts per call vary (0 is possible).
+- **When the input is open**: see 22-16 (while a vocal track is selected or armed, and while the latency dialog is open).
+- **Sync**: nothing to do; PipeWire puts both in one driver. meloet writes no PipeWire settings (only asks `node.latency`).
+- **Drift**: the recording position is **set once from a time at the head, then frames are counted** (22-6). Setting each block from its time would add the device clock vs `CLOCK_MONOTONIC` drift (+6.5 to 6.9 ppm measured, 3.9 ms in 10 min). Missing input cycles are found and filled (22-16, 22-18 D, 22-21, 22-26).
+- **"PC-reported latency"**: already in cpal's times (input `callback − capture`, output `playback − callback`). Exact formula: 22-16, corrected by 22-26.
+- **Measured latency `X`**: the total outside delay PipeWire does not know (DAC, ADC, USB box): `X = D_in_ext + D_out_ext`. A click goes out and comes back through a cable; `X = c − p` (`p` = `playback` time of the sent frame, `c` = `capture` time of the returning frame). Only cpal times, no other subtraction.
+  - Method: 5 short clicks, peak of correlation with the sent wave, read finer than a frame with a parabola, median of 5; spread over 1 frame → "again". **The first click waits 1 s after the input starts sending frames** (sent anyway after 3 s): a just-opened input often lost the first click (`CLICK_SETTLE` in `crates/meloet-core/src/service/input.rs`). Written by us (Ardour and jack_delay are GPL, not copied).
+  - **Stored** in `settings.json` (belongs to the PC, not the song). **Key: (output id, input id, sample rate)**, value: `X` in µs and the time measured. Field name is now `measured_latency_2` (22-26).
+  - Quantum is not in the key: `X` is the outside box's delay. A quantum-dependent error would be a formula error, fixed in the formula (22-16, 22-26).
+  - No matching value → `X = 0` and the settings say "not measured yet". The manual offset (33-A) adds to `X`.
+- **Keys (MIDI) do not use `X`**. Keys need only `D_out_ext`, but a loop measurement only gives the sum; halving it is a guess, and the time from keyboard to ALSA is unknown anyway. Key measurements of rounds 2–6 stay valid.
+
+### 22-6. Position of a recorded voice
+
+- **Formula** (same "heard position" as keys; `heard_at` is 21-3's `TransportClock`):
+  - With `c0` = time of the first frame of the first recorded block, frame 0 of the file was heard at map second `S0 = heard_at(c0 − X)`.
+  - Frame k of the file is at `S0 + k ÷ rate`. **Only the head uses a time**; after that frames are counted (the engine position is also "anchor second + frames", on the same device clock, so no drift).
+  - The clip head tick `T` is the nearest whole tick after the record start. The take stores `first_frame = round((seconds_at(T) − S0) × rate)` (22-10). **Error is at most half a frame** (10 µs at 48 kHz); tick rounding (±0.52 ms) does not touch audio.
+  - A single `c0` has tens of µs of jitter, so a median over blocks is used. Superseded by 22-16 (`DiskWriter::mark`, newest 32 blocks) and 22-26 (read from the file ↔ engine frame line).
+- Same ring, map and clock as keys: with `X = 0`, a key and a voice at the same moment get the same position.
+- **Loop recording**: one file is written the whole time; each lap's take points to another part of the same file. Lap borders come from the engine (end-of-loop frame), mapped through the head's file-frame ↔ engine-frame offset. For this, `Segment` and engine messages (start, lap, stop) carry a running frame number from the stream head.
+- **Stop**: cut where the stop was heard, as with keys.
+- **Before the start**: the file is written from the head of the last half beat of the count-in (same length as the key rule of 12). The clip starts at the record start; an early start of singing appears when the left edge is pulled out (temporary, B).
+- Whether cpal's `capture` is the first or last frame of a block was checked in 22-16 (and fixed for real inputs in 22-26).
+
+### 22-7. Recording flow
+
+- **Path**: input callback → ring (4 s, 1.5 MB for 48 kHz stereo) → **disk writer** (one normal-priority thread, started by core before recording; the file is made there) → `work/音/<name>.wav`.
+  - Ring full (disk stalled): the callback drops the block without waiting and counts it; the writer writes the same length of silence to keep positions, and the status line is told.
+  - Several vocal tracks at once: one input stream (all device channels); the writer splits per track's chosen channels.
+- **Format: wav**, written by us (44-byte header, no extra part).
+  - 16 and 24 bits are integers; **32 bits is float**. Why: PipeWire gives F32, so 32-bit float is what was received (no rounding, no clipping). 32-bit integer has no gain with a 24-bit ADC.
+  - 16 bits gets TPDF dither (±1 LSB); 24 and 32 do not.
+- **Readable even if cut short**:
+  - The header is written first with both length fields `0xFFFFFFFF` ("streaming, length unknown"; symphonia 0.6.1 reads this to the end of the file: `symphonia-format-riff-0.6.1/src/wave/chunks.rs` 613–615, `wave/mod.rs` 91).
+  - Data is written as soon as it comes, `fdatasync` every second. After SIGKILL or a crash, what was `write`n stays (about 0.1 s in the ring is lost); after power loss, up to the last `fdatasync`.
+  - A normal stop writes the true length and `sync_all`.
+  - **Half-recorded note** `work/rec.json` (written the safe way of 14 at record start, deleted when the recording enters the song). Contents and recovery flow: 22-16.
+- **4 GB limit** (32-bit size field; 4 h 8 min at 48 kHz/24-bit/stereo, 93 min at 96 kHz/32-bit/stereo): stop recording before the limit and keep what was recorded (same path as "the sound stopped", 4-2). RF64 is not used (symphonia 0.6.1 does not read it).
+- Waveform peaks are made by the writer while writing (22-9, 22-18 A1).
+
+### 22-8. Playing audio clips
+
+- **The audio thread never reads files**. One **read-ahead thread** (normal priority) fills a ring per vocal track (rtrb, 2 s; refilled under 1 s) with **that track's sound in play order**. Each block, the engine takes the frames it needs.
+  - Silence between clips; one stream per track is enough because clips do not overlap ([82]).
+  - **Clip gain and fades are applied by the engine**, not by the reader. The reader only lays out source audio (or rendered audio, 22-19) and silence. The engine gets a per-track clip table from core (song-frame start/end, fade lengths in frames, gain) and rebuilds it when the map or clips change.
+    - **Why**: changing gain or fades while playing does not need the 2 s in the ring to be refilled (a new generation drops that track for tens of ms). The audio thread work is one or two multiplies per frame. Export uses the same engine code (22-11), so it matches the output.
+    - Rejected: the reader applies gain and fades and refills on each edit (a gap on every edit).
+  - Frames are counted with the engine's functions (same anchor); the reader gets `Arc<TempoMap>`.
+- **Loop**: the reader knows the loop range and lays out the wrap ahead (end → start in the ring). The engine does nothing at the wrap. The rule of dropping a sub-frame remainder per lap (21-3) is followed with the same formula.
+- **Jumps** (locate, play from stop, loop on/off, map or clip change): the engine raises a **generation**; the reader refills from the new place and old-generation data is dropped. **While stopped, the 2 s from the current place are always in the ring**, so play starts without waiting. A jump while playing silences only that track until the reader catches up (tens of ms; then a 10 ms fade-in).
+- **Underrun**: empty ring → silence for that track, missing frames counted; the reader skips ahead by that many (positions stay right). Count in the meters (and since 23-7, status `DiskTooSlow`).
+- **Plugin delay** (20-8 tracks read ahead): the reader fills that many frames further ahead (the engine says so with the generation).
+- **Budget**: 288 KB/s per 24-bit stereo track at 48 kHz, 4.6 MB/s for 16 tracks: about 1 % of an SSD. Rings: 12 MB for 16 tracks. Even 64 tracks should fit (18 MB/s).
+- **What is played is always PCM at the engine sample rate**:
+  - A wav in `音/` at the engine rate is read as it is.
+  - mp3, ogg, flac and wav at another rate are **decoded whole** (symphonia 0.6.1 with `mp3`, `ogg`, `vorbis`; MPL-2.0, files not changed), resampled with rubato 5.1.0 (MIT OR Apache-2.0, `Fft`), and kept as F32 wav in the cache (`$XDG_CACHE_HOME/meloet/audio/`). Meanwhile the clip is placed and shows «読みこんでいます 40 %» (not played). Details: 22-18 A2.
+  - Cache key: the audio table `uid` (22-10) and sample rate. It can be rebuilt; a new output device with another rate rebuilds it.
+  - **Why**: one play path; no decoding or resampling in the audio or read-ahead threads; long mp3s are not kept in memory.
+  - Opus is not read.
+- **Stretch and pitch** (step 4): **Signalsmith Stretch (MIT), rendered ahead and kept**, not live.
+  - A render thread makes one clip's sound as F32 wav in the cache; the reader reads it when ready.
+  - **While rendering, the source sound plays** (no stretch, no pitch). Changing over: superseded by 22-19 (core) — the reader cross-fades 10 ms inside the ring, without a new generation.
+  - **Following a ramped tempo**: output frame j's time → tick on the current map → file frame `p(j)` through the take's own tempo (`sync`, 22-10). Each block passes `p(j1) − p(j0)` in and `j1 − j0` out to `process()`. The remainder is kept as a summed position (never sum rounded lengths; same idea as 21).
+  - **Clips that need nothing are not rendered** (exact rule: 22-19 core). A recorded voice stays bit-exact unless the map changes.
+  - Key, render order (near the play line first), cancel, and the cache limit: 22-19 (core).
+  - Keep the voice character: `setFormantFactor(1.0, true)`.
+  - Wrapping: the Rust crate `signalsmith-stretch` 0.1.3 carries an old upstream commit, so it is not used. **The header (unchanged) and a small C interface built with `cc`** live in the new crate `crates/meloet-stretch` (C++ build and `unsafe` closed in one place). Building meloet now needs a C++ compiler.
+  - No live (in the audio thread) stretch: the author does not say it is real-time safe, and there are no cost numbers.
+  - Source tempo guessing: from the file length, the tempos of 1, 2, 4, 8 bars that fall in 60–180 (22-19). Beat detection does not work on voice alone.
+
+#### Step 4, first pass: meloet-stretch
+
+The crate `crates/meloet-stretch` wraps the stretch part. C++ and `unsafe` exist only here.
+
+- **Vendored** (`vendor/`, unchanged; see `vendor/VENDOR.md`): Signalsmith Stretch **tag 1.4.0** (commit `a670068`): `signalsmith-stretch.h`, `LICENSE.txt`. Signalsmith Linear **tag 0.6.4** (commit `de55e6a`, the version Stretch 1.4.0 points to): `stft.h`, `fft.h`, `include/signalsmith-linear/stft.h`, `LICENSE.txt` — following the `#include`s, this is all that is needed unless `SIGNALSMITH_USE_*` is set. Both MIT.
+- **Build**: `build.rs` builds `src/shim.cpp` with `cc` 1.11.2. C++17, always `-O3` (also in debug), no `-ffast-math`, no bindgen (`src/ffi.rs` is hand-written).
+- **C interface**: every function is `noexcept` and catches all exceptions (−1 on failure). The stretcher is **made with a fixed seed** (by default it uses `std::random_device`, so phases above ×2 change each run; kept audio must be the same for the same input). Split computation is always off (it only evens out the load for an audio thread and adds one interval of latency).
+- **Rust interface** (`src/lib.rs`): `Stretcher` (`Send`, `!Sync`) with `new(channels, rate, Preset)`, `configure`, latency getters, `set_transpose_semitones`, `set_formant_factor`, `set_formant_base`, `reset`, `seek`, `output_seek`, `process(in, out)` (lengths may differ), `flush`.
+  - `Preset`: `Default` (block 0.12 s, interval 0.03 s), `Cheaper` (0.1 s, 0.04 s), `Blocks { block, interval }`. **`Cheaper` is used** (the owner's listening test; `PRESET` in `crates/meloet-core/src/made.rs`).
+  - `STRETCH_VERSION` ("1.4.0") goes into the cache key.
+  - Memory: `new` and `configure` allocate; `process`, `seek`, `output_seek`, `flush`, `reset` only `resize`/`assign` within that size. Not watched by tests (the crate is not used on the audio thread).
+- **Following** (`src/follow.rs` `Follower`, numbers only): the stretcher treats the **middle** of its block as "now". The input runs `input_latency` frames ahead, the output comes `output_latency` frames late (2880 frames = 60 ms each with `Default` at 48 kHz).
+  - So to output file frame `p(j)` at out frame `j`, **before reading out frame `j`, input up to `round(p(j + output_latency)) + input_latency`**, computed fresh from `p` each time.
+  - **Head**: start `block + output_latency` frames before the clip head and throw away that output, reading real file audio before the clip (silence before the file head). No fade-in at the head. **Tail** likewise reads `output_latency + input_latency` frames past the clip end. So the real neighbouring audio shows at a split point. `outputSeek` and `flush` are not used in `render` (a clip cut in the middle should not start "from silence").
+  - `p` is only called inside the clip (`0..=out_frames`); outside, it is extended straight with the edge slope.
+- **Render one clip** (`src/render.rs`): `render(stretcher, out_frames, p, read, write, progress, cancel)`. `read(start, channels)` may go below 0 or past the end (zeros), only forward. `write` gets up to `RENDER_STEP` (256) frames at a time. `cancel` is an `AtomicBool` checked each step.
+  - **The step is fixed at 256** because a different step moves block borders by a frame and changes the output waveform. The same input always gives bit-identical output.
+- **Measured** (details: `docs/history/measurements/`): click positions within **40.5 frames (0.84 ms)** at worst, test limit 1 ms. Pitch accuracy: a shifted sine can miss its target by up to 23.8 cents at 220 Hz with `Cheaper` (0–3 cents at 1000 Hz); fine ±50 cent changes may be affected. Formant keeping works much better when the fundamental is given. No NaN/Inf. Speed: `Cheaper` 127–167× real time in release.
+- **Watch out**: faster than ×2 is capped at ×2 inside the phase calculation (positions stay right). Two blocks of silence make the part pass input straight through. Use within ×0.75–×1.5. Tested on Linux g++ 15 only.
+- **Licenses**: `licenses/upstream.json` lists both (with vendored files and sha256); `licenses/check.mjs` also checks that the vendored files are unchanged byte for byte. `NOTICE` comes from `tools/licenses/inventory.mjs`. About: 22-19 (screen).
+- **Listening set**: `python3 -I crates/meloet-stretch/listen/fetch.py` then `cargo run -p meloet-stretch --release --example listen -- ~/.cache/meloet/listen-src/wav target/listen/round7-stretch`.
+
+### 22-9. Waveforms
+
+- **Peaks**: min and max per channel (i16 each) in **5 levels**: one peak per 256, 1024, 4096, 16384, 65536 frames. 10 min of 48 kHz stereo: 0.9 MB for the finest level, 1.2 MB for all five. Nothing finer than 256 frames; when zoomed further, the same peaks are stretched.
+- **When made**: recorded audio by the disk writer while writing (also the live waveform); imported audio while decoding (22-8), or by one read for wav. Missing cache files are rebuilt.
+- **Where**: `$XDG_CACHE_HOME/meloet/peaks/<uid>.peaks` (exact path from `CoreOptions::cache_dir`, 22-18 A2). Not in the song folder. Why: it can be rebuilt, and the song folder should hold only the song and `音/`, which a beginner can understand.
+- **To the screen**: a binary answer like take notes (`peaks` invoke, kind 4, version 1; layout in 22-17). Audio files never change, so the screen caches by (audio id, level) with a limit.
+- **Drawn** inside the arrange `arrangeLanes` slot; **no new slot or context** (max 10, budget 12). The recording clip's waveform is in the `recordingClip` slot.
+  - **One quad per clip; peaks in a texture**, read by a second shader in the same context. Why: per-frame work while scrolling stays proportional to visible clips (7). A quad per px column would rebuild 30 000 quads per frame for 16 tracks. Texture format: superseded by 22-18 B (RG16I / RGBA16I).
+  - Clip gain changes only a shader factor. Stretched clips stretch the source peaks (no peaks of rendered audio).
+
+### 22-10. Audio clip data (`meloet-model`)
+
+The model holds only names and numbers; no I/O, no threads. Current types (after 22-15 and 22-17):
+
+```rust
+pub enum TrackKind { Keys, Vocal { input: VocalInput } }   // 23-A
+
+/// One audio file. Held in the Doc's audio table by Arc. Never changes.
 pub struct AudioSource {
-    pub id: AudioId,          // 曲の中の番号（next_id から。二度と配らない）
-    pub uid: [u8; 16],        // meloet が配る。しまっておく所（ピーク、作った音）の鍵
-    pub file: String,         // 「音/」の中の名前
+    pub id: AudioId,          // number in the song (from next_id, never given twice)
+    pub uid: [u8; 16],        // cache key (peaks, rendered audio)
+    pub file: String,         // name inside 「音/」
     pub frames: u64, pub sample_rate: u32, pub channels: u8,
-    pub sha256: Option<[u8; 32]>, // 入れた音だけ。「さがす…」で同じ中身か見る
+    pub bits: Option<u8>,     // 22-17
+    pub sha256: Option<[u8; 32]>, // imported audio only
 }
 
-/// この音が、どのテンポで鳴らされた物か。テイクの 0 ティックからの、テンポの点の列。
+/// The tempo this audio was played at: tempo points from tick 0 of the take.
 pub struct SourceTempo { pub tempo: Tempo, pub head_ramp: bool, pub points: Vec<TempoPoint> }
 
-/// 歌のテイク。一度できたら変えない（鍵盤のテイクと同じ決まり）。
+/// A vocal take. Never changes once made.
 pub struct AudioTake {
     pub id: TakeId,
     pub source: Arc<AudioSource>,
-    pub first_frame: u64,     // テイクの 0 ティックに当たる、ファイルのこま（22-6）
-    pub frames: u64,          // そこからの長さ
-    pub sync: Option<SourceTempo>, // 録った歌は録ったときの地図。入れた音は None（「—」）か、人が決めた 1 つのテンポ
+    pub first_frame: u64,     // file frame at tick 0 of the take (22-6)
+    pub frames: u64,
+    pub sync: Option<SourceTempo>, // recorded: the map when recorded; imported: None (「—」) or one tempo set by the person
 }
 
-/// 歌のクリップだけが持つ物。どれを変えても 1 手。
+/// What only an audio clip has. Changing any of these is one step.
 pub struct AudioShape {
-    pub fade_in: u64, pub fade_out: u64, // ティック。形は 1 つ
-    pub gain: Gain,                      // クリップの音量（dB。ミキサーの型）
-    pub follow: bool,                    // 曲のテンポについていく（録った歌はオン、入れた音はオフ）
-    pub semitones: i8, pub cents: i8,    // −12〜+12、−50〜+50
-    pub keep_formant: bool,              // 声の感じを保つ（はじめオン）
+    pub fade_in: u64, pub fade_out: u64, // ticks; one curve (22-17)
+    pub gain: ClipGain,                  // −60.00..+12.00 dB (22-15)
+    pub follow: bool,                    // follow the song tempo (recorded: on, imported: off)
+    pub semitones: i8, pub cents: i8,    // ±12, ±50
+    pub keep_formant: bool,              // keep voice character (on at first)
 }
 ```
 
-- **クリップは今の形のまま**（頭と終わりのティック、テイクの列、えらんでいるテイク、テイクごとの符号つきの `offset`）。テイクの列が「鍵盤のテイク」か「歌のテイク」かの 2 通りになり、歌のクリップは `AudioShape` を持つ。
-  - **理由**: 動かす ・ 長さを変える ・ 写す ・ 消す（17 章の `arrange.rs`）、テイクの切りかえ、ループ録音の「周ごとのテイク」、重ねない決まりが、歌でもそのまま使える。
-- **「この音のテンポ」を 1 つの数でなく点の列で持つ理由**: だんだんの中で録った歌は、録ったときの地図ごと覚えていないと、「ついていく」の比が 1 にならない（地図を変えていないのに、のび縮みがかかってしまう）。入れた音は点のない 1 つのテンポ。画面の「この音のテンポ」は頭の数（だんだんの中で録った歌の見せかたは【第 10 版で確かめる】）。
-- **もとのファイルは変えない**。切る ・ 動かす ・ 長さを変える ・ フェード ・ 音量 ・ のび縮み ・ 高さは、どれもクリップの数を変えるだけ。
-- **手**（16 章。どれも 1 手、ドラッグ 1 回が 1 手）:
-  - 録音: R の 1 回が 1 手（鍵盤と歌を同時に録っても 1 手。今の「録音 1 回 = 1 手」の続き）。
-  - **切る（S）**: クリップ 2 つにする。歌は、同じテイク（同じ `Arc`）を指す 2 つのクリップで、テイクは作らない。フェードは外がわに残す（左のクリップに入り、右のクリップに出）。鍵盤のクリップは、切り目にかかるノートを左で短くするので、**左だけ新しい id のテイク**（「ノートを直すと新しい id のテイク」の決まり）。何本切っても 1 手（`SplitClips { count }`）。
-  - 動かす ・ 長さを変える ・ 写す ・ 消す: 今の手のまま。
-  - フェード、クリップの音量、ついていく、この音のテンポ、半音 ・ セント、声の感じ: それぞれの手。「この音のテンポ」を変えると、`sync` のちがう新しい id のテイクを同じ場所に入れる（テイクは変えない決まり）。
-  - 音のファイルを入れる: いくつ落としても 1 手（`ImportAudio { count }`）。
-  - 「曲から外す」は 1 手。「さがす…」は手にしない（曲は変わらない。見つけたファイルを、同じ名前で作業の場所へ写すだけ）。
-  - 新しい手には名前と「（何を）」が要る（`StepName::every_kind()` の試験が落ちる）。文は【第 10 版で確かめる】。
-- **録音待機**（24-C）: `Session` の録音待機は「鍵盤のトラック 1 本（えらんだ物）＋ 歌のトラックの集まり」。モニターのオン ・ オフも `Session`（取り消しの対象にしない）。
-- 曲のファイル（版 6）: `song.audio: [{id, uid, file, frames, rate, channels, sha256?}]`、テイクの表に歌のテイク（`{id, audio, firstFrame, frames, sync?}`）、クリップに `shape`。くわしい形は、区切り3 の 1 回目（約束の形）でいっしょに決める。
+- **Clips keep their present shape** (start/end ticks, take list, active take, signed per-take `offset`); the take list is either key takes or audio takes, and an audio clip has an `AudioShape`. Why: move, resize, copy, delete (`arrange.rs`, 17), take switching, per-lap loop takes and the no-overlap rule all work for voice unchanged.
+- **Why the source tempo is a list of points**: a voice recorded inside a ramp must remember the whole map of that time, or "follow" would not give a ratio of 1 with an unchanged map. Imported audio has one tempo with no points. The screen shows the head value.
+- **The source file is never changed**. Cut, move, resize, fades, gain, stretch, pitch only change clip numbers.
+- **Steps** (16; each is one step, one drag is one step):
+  - Recording: one R is one step (keys and voice together too).
+  - **Split (S)**: two clips. Audio clips point to the same take (same `Arc`), no new take; fades stay on the outer sides. Key clips shorten notes across the cut, so **only the left gets a new take id**. Any number of splits is one step (`SplitClips { count }`).
+  - Fade, clip gain, follow, source tempo, semitones/cents, voice character: one step each. Changing the source tempo puts a new-id take with another `sync` in the same place (22-19).
+  - Importing any number of files: one step (`ImportAudio { count }`). "曲から外す" is one step. "さがす…" is not a step (the song does not change).
+- **Record arm** (24-C): `Session` holds "one keys track (the selected one) + a set of vocal tracks". Monitor on/off is also `Session` (not undoable). Details: 22-15.
+- Song file form: 22-15.
 
-### 22-11. 書き出し
+### 22-11. Export
 
-- **形: 書き出しのための、2 つめのエンジン**。`Doc` の写し（`Arc`）から、曲をひらくときと同じ道で、もう 1 つエンジンを作り、書き出しのスレッド（ふつうの優先度）が `render` を休まず呼ぶ。出口の流れにはつながない（聞こえない）。弾くほうのエンジンは、何も変わらずに動きつづける。
-  - 書き出しのエンジンは、自分の再生まわり、地図、帯（オートメーション）、音源の実体を持つ。サンプルの音色は `Arc` のサンプルを分けあうので、メモリはほとんどふえない。
-  - 歌のクリップは、書き出しのスレッドが自分でファイルを読む（輪も先読みの係もいらない。口を 1 つにして、中身を「輪から取る」と「じかに読む」の 2 通りにする）。**のび縮みの音が作りかけなら、できるまで待つ**（書き出しでは「もとの音」を使わない）。
-  - テンポの地図 ・ オートメーション ・ のび縮みは、再生と同じコード（同じ `frame_of`、同じ区切り、同じブロックの大きさ）でたどる。**理由**: 「書き出したファイルと、出口で録った音が同じ」を、別の道を書かずに守る。
-  - 音のスレッドの見はり（メモリを取らない）は、書き出しのエンジンでも同じ試験で回る。
-- **プラグイン: 書き出しのための、別のプラグイン係のプロセス**（プラグインの種類ごとに 1 つ、の決まりは同じ。弾くほうのプロセスとは別に起こす）。
-  - 書き出しの前に、弾くほうのプラグインの状態を写し（保存のときと同じ道）、書き出しのプロセスに読ませる。
-  - **くらべた案**: 弾くほうと同じプロセスに 2 つめの実体を作る。メモリは少ないが、書き出しの重い仕事が、同じプロセスのリアルタイムのスレッド（4 本）を取りあい、弾いた音がとぎれる。プラグインが落ちると両方止まる。とらない。
-  - とった案の重さ: 書き出しの間だけメモリが倍（16 個の Surge XT で約 290 MB）、起こすのに数秒。子は `meloet_plugin::launch::spawn` で 1 つずつ（今の決まり）。
-- **同じ速さで回るか**: 回る。エンジンが 1 ブロック頼み、子が返すまで**待つ**。次のブロックは、その返事のあと。
-  - 書き出しの枠は、しめきり（ブロックの長さ × 0.9）を使わない。**遅れたブロックを音なしにしない**。見はりは `HANG_MS`（5 秒）だけで、こえたら書き出しを「できなかった」にして、途中のファイルを消す。1 ブロックだけ音なし、にはしない（回すたびに結果が変わるため）。
-  - 書き出しの子は、リアルタイムの優先度を取らない。
-  - VST3: `setProcessing(false)` → `setActive(false)` → `setupProcessing(kOffline)` → `setActive(true)` → `setProcessing(true)`。毎ブロックの `ProcessData::processMode` も `kOffline`（JUCE の包みは 2 か所を見る。調べ物、A）。書き出しのプロセスは最初から `kOffline` で作るので、途中の切りかえはない。
-  - LV2: `lv2:freeWheeling` のポートに毎ブロック 1。worker は、その場で動かしてすぐ返す（仕様の SHOULD）。いまの `formats/lv2.rs` の worker の作りは、区切り5 で読んでから。
-  - ブロックの大きさは、弾くほうと同じ（`setupProcessing` の `maxSamplesPerBlock` をこえない）。
-- **回せないときは実時間で**: 同じ書き出しのエンジンを、ブロックごとに時計に合わせて待たせながら回す（道は同じ。聞こえないのも同じ）。
-  - 速く回してこわれるプラグインを、機械で見分ける方法は、どの DAW にもない（調べ物）。分かるのは LV2 の `lv2:isLive` だけ（この PC に 0 件）。**`isLive` のプラグインがあれば実時間**。そのほかは、人がえらぶ所（「くわしく」の中の行）が要る【第 10 版で確かめる: 仕様書の「回せないプラグイン」が何を指すか】。
-- **頭と尾**: プラグインの遅れは、エンジンの先読み（20-8）でトラックの間はそろっている。マスターのインサートの遅れのぶんは、頭を捨てる。尾は、範囲の終わりのあと、音が −90 dBFS より小さいブロックが 0.5 秒つづくまで、最大 10 秒（しきい値は仮。【第 10 版で確かめる】）。
-- **サンプルレートとビット**: エンジンのサンプルレートで作り、ちがう数がえらばれていたら、最後に rubato で変える。**理由**: 聞いていた音と同じ道で作る（サンプルレートを変えてエンジンを立てると、音源ものび縮みの音も作りなおしになる）。16 ビットにするときだけ TPDF のディザーを最後に 1 回。
-- **トラックごと**: 1 本ずつソロにして、本数ぶん回す（戻りとマスターも通る）。何を通すかは【第 10 版で確かめる】。
-- **ファイル**: 作業の場所の一時ファイルに書き、終わったら人がえらんだ所へ移す。「やめる」と失敗では消す。
-  - wav: 録る係と同じ自分の書きかた（`hound` は入れない）。
-  - flac: `flacenc` 0.5.1（Apache-2.0、純 Rust、8〜24 ビット）。32 ビットは wav だけ。
-  - **mp3**【オーナーさんに聞く】: LGPL でない書く部品は `rusty_mp3` 1.1.0（Apache-2.0）だけ。2026-07 に出たばかりで、音の良さの測りがなく、作りの来歴も確かめにくい（調べ物）。案: (a) 今回は mp3 を出さない（仕様書で許されている）、(b) `rusty_mp3` を、読みもどしの試験と聞きくらべをしてから入れる。**オーナーさんの答え（2026-11-21）: (a)**。形の一覧に mp3 を出さない。
-- **書き出す前のたしかめ**（頼みの 7。「いちばん大きい所 −0.6 dB」）: いちばん大きい所は、回してみないと分からない。決め: ダイアログをひらいた時に一時ファイルへ書きはじめ、できた所までの数を見せ、「書き出す」でその一時ファイルを使う（22-14）。
-- 書き出しの間の曲の変更は、書き出しに入らない（`Doc` の写しで回っている）。
-- 確かめ: 書き出したファイルと、同じ所を再生して出口で録った音をくらべる（テンポの変化 ・ 帯 ・ のび縮み ・ プラグインも入れて。`pw-record` の抜けに気をつける）。速く回した物と実時間で回した物が同じか。実時間の何倍か。書き出し中の鍵 → DAC。
+- **Shape: a second engine for export**. From a copy (`Arc`) of the `Doc`, another engine is built the same way a song is opened; an export thread (normal priority) calls `render` without pause. It is not connected to the output (not heard). The playing engine keeps running untouched.
+  - The export engine has its own transport, map, automation lanes and instrument objects; sample sounds share `Arc` samples, so memory hardly grows.
+  - Audio clips: superseded by 22-20 (second pass, engine and core): the same ring is kept, filled by an inline read-ahead between blocks. **If a stretch render is not ready, export waits** (it never uses the source sound).
+  - Tempo map, automation and stretch use the same code as play (same frame functions, same blocks). **Why**: "the exported file equals what the output played" is kept without a second path.
+  - The no-allocation watch also runs on the export engine.
+- **Plugins: separate plugin host processes for export** (one per plugin kind, as usual; started apart from the playing ones). States of the playing plugins are copied (as when saving) and loaded there.
+  - Rejected: a second instance in the playing process. Less memory, but the heavy export work would compete with that process's real-time threads (4) and break the played sound, and one crash would stop both.
+  - Cost: memory doubles during export (about 290 MB for 16 Surge XT), a few seconds to start. Children start one at a time with `meloet_plugin::launch::spawn`.
+- **Faster than real time**: the engine asks for a block and **waits** for the child; the next block comes after the answer.
+  - No deadline (block length × 0.9). **A late block never becomes silence** (results must be the same every run). Only `HANG_MS` (5 s) is watched; past it the export fails and the partial file is deleted.
+  - Export children take no real-time priority (and since 22-24 run at nice 19).
+  - VST3 runs in `kOffline` from the start (`setupProcessing` and each `ProcessData::processMode`; JUCE looks at both). LV2: `lv2:freeWheeling` port = 1 every block; worker: 22-20 (plugins).
+  - Block size as in play (not above `maxSamplesPerBlock`).
+- **Real-time export**: the same export engine, sleeping per block to follow the clock (same path, also silent). No DAW can detect plugins that break when run fast; only LV2 `lv2:isLive` says so (0 on this PC). **An `isLive` plugin forces real time**; otherwise the person can choose it under "くわしく".
+- **Head and tail**: plugin delay between tracks is already aligned (20-8). The master inserts' delay is cut from the head. The tail runs after the range until blocks under −90 dBFS last 0.5 s, at most 10 s (exact rule: 22-20 second pass).
+- **Sample rate and bits**: rendered at the engine rate; another chosen rate is converted at the end with rubato. Why: same path as what was heard (another engine rate would re-render instruments and stretch). TPDF dither only for 16 bits, once at the end.
+- **Per track**: each track soloed in turn (sends and master included), one pass per track.
+- **Files**: written to a temp file in the work place, then moved to the chosen place; deleted on cancel or failure. wav: our own writer (no `hound`). flac: `flacenc` 0.5.1 (Apache-2.0, pure Rust, 8–24 bit); 32 bits only as wav.
+  - **mp3 is not offered** (the owner's decision). The only non-LGPL encoder (`rusty_mp3` 1.1.0) was new and unproven.
+- **Check before export** (peak, "−0.6 dB"): the peak is known only after rendering, so **rendering to a temp file starts when the dialog opens**, and «書き出す» uses that file (22-14). Since 23-16 the peak is taken before the output clip.
+- Song changes during export are not in it (it runs on a copy of the `Doc`).
 
-### 22-12. 約束の版
+### 22-12. Version numbers
 
-| 物 | いま | 上げる時 |
+What changed in round 7 (current values: protocol 27 since 23-7; others below are still current):
+
+| Item | Before | Round 7 |
 |---|---|---|
-| 約束（`PROTOCOL_VERSION`） | 21 | **区切り1 で 22**（形は同じだが、ティックとテンポの意味が変わる。古い画面と新しい core が話さないように）。区切り2 の 1 回目で 23（トラックの種類、入口の一覧、録音待機の集まり、モニター、音の設定の奥、遅れを測る）。区切り3 の 1 回目で 24（歌のクリップ、音の表、ピークの答え、落とした位置、見つからない音、曲のフォルダ）。区切り4 で 25（のび縮み ・ 高さ ・ 作っている進み。形が区切り3 の 1 回目で決まるなら 24 にまとめる）。区切り5 の 1 回目で 26（書き出し） |
-| 計器のバイナリ | — | 区切り2（マイクの計）。先頭の版を 1 つ上げる |
-| テイクのバイナリ（`TAKE_VERSION`） | 2 | 上げない（ならびは同じ。22-1） |
-| 帯の点のバイナリ（`LANE_VERSION`） | 1 | 上げない |
-| ピークのバイナリ | なし | 区切り3 で版 1（型 4） |
-| プラグイン係とのやりとり（`WIRE_VERSION`） | 4 | 区切り1 では上げない（`PluginTransport` の形も、`tempo_bpm` の意味〔前から 4 分音符〕も同じ。変わるのは plughost の中の LV2 の拍の計算だけ）。**区切り5 で 5**（書き出しの印、しめきりなしで待つ、`kOffline`、`freeWheeling`） |
-| 曲のファイル | 5 | 区切り1 で 6。第 7 回の間は 6 のまま（22-3） |
-| なおすためのファイル | 1 | 区切り1 で 2 |
-| 設定（`settings.json`） | 1 | 上げない（欄を足すだけ。ない欄は既定の値で読む今の作り） |
+| Protocol (`PROTOCOL_VERSION`) | 21 | 22 (meaning of ticks and tempo), 23 (vocal tracks, inputs, arm, monitor, advanced sound settings, latency), 24 (audio clips, audio table, peaks, drop, missing audio, song folder), 25 (stretch and pitch), 26 (export). Superseded by 23-7: 27. |
+| Meter binary | — | header version +1 for the mic meter (22-15) |
+| Take binary (`TAKE_VERSION`) | 2 | not raised (same layout, 22-1) |
+| Lane point binary (`LANE_VERSION`) | 1 | not raised |
+| Peaks binary | — | version 1, kind 4 |
+| Plugin host wire (`WIRE_VERSION`) | 4 | 5 (export flag, wait without deadline, `kOffline`, `freeWheeling`) |
+| Song file | 5 | 6, kept through round 7 (22-3) |
+| Recovery file | 1 | 2 |
+| `settings.json` | 1 | not raised (new fields; missing fields read as defaults) |
 
-- 約束が変わる区切り 2 ・ 3 ・ 5 は、いつもどおり 2 回に分ける（1 回目: 約束の形と TS の型と偽物の場面 → コミット → 2 回目: core と画面を同時に）。区切り1 は形が変わらないので、下の切り分け。
+Steps that change the protocol were done in two passes, as usual (shape, TS types and fake scenes first; then core and screen at the same time).
 
-### 22-13. 区切り1 の切り分けの案
+### 22-13. Work plan of step 1
 
-| 順 | だれ | 何を | さわる所 |
-|---|---|---|---|
-| 0 | 棟梁 | 22 章を決めてコミット。B に仮の形（カウントインの四角、2/2 の表示）。第 10 版が読めたら 6 章と 5 章の文を `ja.ts` に入れる所を決める | `docs/` |
-| 1 | meloet-impl 2 人（同時、作業ツリー） | **数に名前をつける**（22-1 の 1 歩め。定数は 480 のまま、答えは変えない） | ア: `crates/` の試験。イ: `ui/` と `tools/` |
-| 2 | meloet-hard 1 人 | **model**: 定数 1920、`DISPLAY_TICKS_PER_BEAT` を消す、テンポの意味と地図の式、`quarter_bpm_at` を消す、`next_click`、表示 4 けた、答えの表の作りなおし | `crates/meloet-model`、`ui/src/time/tempoMap.table.json` |
-| 3 | meloet-hard 1 人 ・ meloet-impl 1 人（同時、作業ツリー） | ウ（hard）: エンジン（`TICKS_PER_S_PER_BPM`、メトロノーム、カウントイン、`PluginTransport`）、plughost の LV2、core（`songfile.rs` 版 6 と前の版を読む所を消す、`recovery.rs` 版 2）、約束 22、`tools/measure`。エ（impl）: 画面（`tempoMap.ts`、`bars.ts` の `WHOLE`、`time.ts`、4 けたの表示と位置の枠、カウントインの四角、`fake.ts`、文） | ウ: `crates/`（model のほか）、`tools/`。エ: `ui/` |
-| 4 | meloet-hard 1 人 | 測る: `record-timing.sh`（テンポの変更とだんだんの中、6/8 も）、`long-record.sh`、鍵 → DAC、鍵 → 画面、Surge XT の LV2 ・ VST3 の 6/8。第 6 回の数とくらべる | `docs/measurements/` |
+Done in this order: name every tick number (constant still 480) → model (1920, formulas, `next_click`, display, answer table) → engine, plughost LV2, core (song file 6, recovery 2), protocol 22, tools, and the screen in parallel → measure. The model came first because everything else rests on it.
 
-- **継ぎ目（棟梁が先に置く物）**:
-  - この章（表示の決まり、鳴る拍の決まり、カウントインの四角、LV2 の欄の表）。
-  - 順 2 のあとの model と答えの表のコミット。順 3 の 2 人は、これを同じ出発点にする（依頼文の `git reset -q --hard`）。
-  - 順 3 の前に、エンジンの口の変わる所を依頼文に書く（`count_in_beats` は鳴る拍の数、`Segment.ticks_per_beat` は鳴る拍の長さ）。計器のバイナリは変えないので、画面はエンジンを待たない。
-  - 仕様書の文（6 章「ティックは 0〜1919 なので」など）は、第 10 版が読めるまでエの仕事から外す。
-- 順 1 を 2 人に分けるのは、`crates/` と `ui/` ・ `tools/` が、たがいのファイルにさわらないため。順 2 を 1 人にするのは、ほかの全部が model の上に乗るため。
-- 順 3 のウが大きければ、エンジン ＋ plughost と、core ＋ 約束 ＋ 道具の 2 回に分ける（同時にはしない。core はエンジンの口に乗る）。
+### 22-14. Questions to the owner and the lead's decisions
 
-### 22-14. オーナーさんに聞く事と、第 10 版で確かめる事
+- **Owner's answers**: no mp3 export; OK to warn once about old recovery files; the owner tries real-mic latency measurement and Nautilus drag once; OK that a C++ compiler is now needed for Signalsmith Stretch.
+- **Lead's decisions**:
+  - Keys (MIDI) do not use `X` (22-5).
+  - Stretch goes into a new crate `crates/meloet-stretch` (C++ and `unsafe` closed in).
+  - **Check before export**: opening the dialog starts writing the chosen range to a temp file in the work place; peak and clipping are shown from what is done so far; «書き出す» uses that file. Changing the range rebuilds it; sample rate and bits do not (they are the last conversion). Closing deletes the file and stops the export plugin host. Why: the spec shows this "before export", and using the pre-render avoids running twice.
+  - With a vocal track selected, the keyboard keeps playing the last selected keys track ("弾くと鳴る先" shows it); with no keys track, nothing plays («—»). Temporary, B.
+  - The file is written from the count-in's last half beat (22-6). Temporary, B.
+- Spec-version-10 items that were open (2/2 display, tempo range, 3/8 and x/16 clicks, folder and file names, cleaning unused audio, save progress, when the input meter runs, latency texts and ranges, default record format, recovery hint, waveform look, fade curve, gain range, step names, ramp source tempo, non-fast plugins, tail threshold, per-track contents) were settled later in the spec or listed in `docs/history/design-notes.ja.md` B-94.
 
-- **オーナーさんに聞いた**（答えは 2026-11-21。design-notes C-11）: 1 は (a) 出さない、2 ・ 3 ・ 4 は OK。
-  1. mp3 の書き出し: 今回は出さない（すすめ）か、`rusty_mp3` を試験つきで入れるか（22-11）。
-  2. 前の版の曲が読めなくなる事の伝え: オーナーさんの PC に前の `recovery.json` があると、起動で 1 回だけ案内が出る（22-3）。
-  3. 本物のマイクとヘッドホンでの「遅れを測る」と、Nautilus からのドラッグを、1 回ずつためしてもらう（手順はその区切りで書く）。
-  4. のび縮みの部品（Signalsmith Stretch、MIT）で、meloet のビルドに C++ のコンパイラが要るようになる事（22-8）。声の良さは、聞きくらべを作ってから聞いてもらう。
-- **棟梁の決め**（2026-11-21）:
-  - 鍵（MIDI）には `X` を使わない（22-5 の (a)）。半分は当て推量で、第 2〜6 回の鍵の数を変えないため。
-  - のび縮みは新しいクレート `crates/meloet-stretch`（C++ のビルドと unsafe をここに閉じこめる）。
-  - 書き出す前のたしかめ（頼みの 7）: **書き出しのダイアログをひらいたら、えらんでいる範囲を作業の場所の一時ファイルへ書きはじめる**（22-11 の書き出しのエンジン）。いちばん大きい所と音割れは、できた所までの数で見せ、「書き出す」を押したらその一時ファイルを使う（範囲を変えたら作りなおす。サンプルレートとビットは最後の変換なので作りなおさない）。理由: 仕様書は「書き出す前」に見せる。前もって回すぶんを捨てずに使えば、2 回回さずにすむ。ダイアログをとじたら一時ファイルを消し、書き出しのプラグイン係も止める。見せかた（作っている間の文）は【第 10 版で確かめる】。仮の形として B に。
-  - 歌のトラックをえらんでいるとき（頼みの 1）: 鍵盤は、最後にえらんでいた鍵盤のトラックで鳴りつづけ、「弾くと鳴る先」もそのトラックを出す。鍵盤のトラックが 1 本もなければ鳴らない（「弾くと鳴る先」は「—」）。仮の形として B に。
-  - 22-6 の「ファイルはカウントインの最後の半拍から書く」は、そのまま仮の形として B に。
-- **第 10 版で確かめる**: 2/2 の表示と位置の枠の幅 ・ テンポの範囲 ・ 3/8 と x/16 のメトロノーム（22-1、22-2）、`音/` の名前 ・ 録った音と入れた音のファイルの名前 ・ 使っていない音の片づけの形 ・ 長い保存の進み（22-4）、入力計がいつ動くか ・ 「遅れを測る」の文と見た目 ・ 「遅れの合わせ」の範囲と向き（22-5）、録る形のはじめの値 ・ 録りかけを戻す案内（22-7）、波形の見た目（22-9）、フェードの形 ・ 音量の範囲 ・ 新しい手の名前 ・ だんだんの中で録った歌の「この音のテンポ」（22-10）、回せないプラグインの意味 ・ 尾のしきい値 ・ トラックごとの中身（22-11）。
+### 22-15. Protocol 23 (step 2, first pass)
 
-### 22-15. 約束 23 の形（区切り2 の 1 回目）
+The shared starting point for engine, core and screen of step 2.
 
-区切り2 の 2 回目で、エンジン ・ core ・ 画面の 3 人が同じ出発点から作るための形（2026-11-21、meloet-hard）。中身があるのは、型、曲のファイル、約束、計器のならび、92 の残り（19-A ・ 92-3 ・ 92-19）の core、入口の輪。入口をひらく所、録る流れ、新しい意図の中身、画面の部品は 2 回目。
+**Model** (`crates/meloet-model/src/audio.rs`, `song.rs`)
 
-**model**（`crates/meloet-model/src/audio.rs`、`song.rs`）
+- `Track.kind: TrackKind` (`Keys` or `Vocal { input }`). `VocalInput` is `Mono1`, `Mono2` or `Stereo12`, saved in the song (changing it is one step `StepKind::SetVocalInput`). "No input" is a PC state, not saved.
+  - Vocal tracks still have an `instrument` (sine, never read). Why: about 200 places read `Track.instrument`; making it `Option` would have meant rewriting all of them first. Vocal tracks are told apart by `kind`.
+- `Clip.takes: ClipTakes` (`Keys(Vec<ClipTake>)` or `Vocal { takes: Vec<ClipTake<AudioTake>>, shape: AudioShape }`). All takes of one clip are of one kind; `active` and `offset` unchanged.
+  - Note editing (`notes.rs`, `quantize.rs`, `controls.rs`) and `add_recording` return `EditError::NotKeys` for audio clips and vocal tracks. Moving or pasting a clip to a track of the other kind returns `EditError::WrongKind`. Move, edge move, take switch and delete work for both.
+  - `Clip::active_take()` is keys only (panics on an audio clip). For both kinds: `active_take_id()`, `active_zero()`, `takes.len()`, `keys()` (empty for audio), `active_audio()`. The piano roll's `shown()` never returns audio clips.
+- `Doc.audio` (audio table, `Arc<Vec<Arc<AudioSource>>>`), `AudioTake`, `SourceTempo`, `AudioShape` as in 22-10. **Clip gain is `ClipGain` (−60.00 to +12.00 dB, 0.01 steps)**: the mixer `Gain` stops at +6 and has −∞, which does not match the spec's "−60 to +12 dB".
+- `Session`: `armed_vocals`, `monitored`, `last_keys` (the keys track selected before a vocal track). Not saved. `Song::keys_target()` is "弾くと鳴る先" (B-94-1): the selected track if it is keys, else `last_keys`, else `None`.
+- `edit::add_vocal_track` (names «歌», «歌 2», input 1 mono, sends at −∞), `edit::set_vocal_input`.
 
-- `Track.kind: TrackKind`（`Keys` か `Vocal { input }`）。入口は `VocalInput`（`Mono1` ・ `Mono2` ・ `Stereo12`）で、曲に入る（変えるのは 1 手 `StepKind::SetVocalInput`）。「入口なし」は PC のようすなので、曲には入れない。
-  - 歌のトラックも `instrument` を持つ（サイン波。だれも読まない）。**理由**: `Track.instrument` を読む所が 200 か所あり、`Option` にすると区切り2 の前に全部を書きかえることになる。歌のトラックは `kind` で見分ける。
-- `Clip.takes: ClipTakes`（`Keys(Vec<ClipTake>)` か `Vocal { takes: Vec<ClipTake<AudioTake>>, shape: AudioShape }`）。1 つのクリップのテイクは、ぜんぶ同じ種類。`active` と `offset` は今のまま。
-  - ノートを直す関数（`notes.rs` ・ `quantize.rs` ・ `controls.rs`）と `add_recording` は、歌のクリップ ・ 歌のトラックに `EditError::NotKeys`。クリップを別の種類のトラックへ動かす ・ 貼ると `EditError::WrongKind`。動かす ・ はしを動かす ・ テイクの切りかえ ・ 消すは、そのまま歌にも効く。
-  - `Clip::active_take()` は鍵盤のクリップ専用（歌のクリップで呼ぶと止まる）。どちらでも使える物は `active_take_id()` ・ `active_zero()` ・ `takes.len()` ・ `keys()`（歌なら空）・ `active_audio()`。core のピアノロールの `shown()` は、歌のクリップを返さない。
-- `Doc.audio`（音の表、`Arc<Vec<Arc<AudioSource>>>`）、`AudioTake`、`SourceTempo`、`AudioShape` は 22-10 のとおり。**クリップの音量だけ `ClipGain`（−60.00〜+12.00 dB、0.01 きざみ）にした**。ミキサーの `Gain` は +6 までで −∞ があり、仕様書の「−60〜+12 dB」と合わないため。切る ・ フェードなどの手は、まだない（区切り3）。
-- `Session`: `armed_vocals`（● のついた歌のトラック）、`monitored`（モニターがオン）、`last_keys`（歌のトラックを選ぶ前に選んでいた鍵盤のトラック）。どれも保存しない。`Song::keys_target()` が「弾くと鳴る先」（B-94-1）: 選んだトラックが鍵盤ならそれ、歌なら `last_keys`、なければ `None`。
-- 足した関数: `edit::add_vocal_track`（名前は「歌」「歌 2」、入口 1 ・ モノ、センドは −∞）、`edit::set_vocal_input`。
+**Song file** (version 6, `songfile.rs`)
 
-**曲のファイル**（版 6 のまま。`songfile.rs`）
+- Tracks: `"kind": "vocal"` and `"input": "mono1" | "mono2" | "stereo12"` (not written for keys tracks).
+- `song.audio: [{id, uid, file, frames, rate, channels, bits?, sha256?}]` (`uid` 32 hex digits, `sha256` 64; `file` is a name only — `/` or `..` makes the file unreadable).
+- Audio takes are a separate top-level table **`audioTakes`** (`{id, audio, firstFrame, frames, sync?}`, `sync` = `{tempo, headRamp, points}`). Why separate: mixing two shapes in one table is easy to misread. Ids do not clash with key takes, clips, markers, inserts or audio.
+- Audio clips have `shape: {fadeIn, fadeOut, gainDb, follow, semitones, cents, keepFormant}` and their `takes` are `audioTakes` ids. A `shape` on a keys track, an audio clip without `shape`, out-of-range values or a take past the file length make the file unreadable.
 
-- トラックに `"kind": "vocal"` と `"input": "mono1" | "mono2" | "stereo12"`（鍵盤のトラックには書かない）。
-- `song.audio: [{id, uid, file, frames, rate, channels, sha256?}]`（`uid` は 16 進 32 けた、`sha256` は 64 けた。`file` は名前だけで、`/` や `..` があれば読まない）。
-- 歌のテイクは、鍵盤のテイクと別の表 **`audioTakes`**（ファイルのいちばん外。`{id, audio, firstFrame, frames, sync?}`、`sync` は `{tempo, headRamp, points}`）。22-10 は「テイクの表に」と書いたが、形のちがう物を 1 つの表にまぜると読みまちがえやすいので分けた。id は鍵盤のテイク ・ クリップ ・ マーカー ・ インサート ・ 音の表と重ならない。
-- 歌のクリップは `shape: {fadeIn, fadeOut, gainDb, follow, semitones, cents, keepFormant}` を持ち、`takes` は `audioTakes` の id。`shape` のあるクリップが鍵盤のトラックにある、ない歌のクリップがある、範囲の外の数、ファイルの長さをこえるテイクは「読めない物」。
-- なおすためのファイル（版 2）は、中の `song` が同じ形なので変えていない。録りかけの書きつけ（`work/rec.json`、22-7）は 2 回目。
+**Protocol 23** (`crates/meloet-protocol/src/vocal.rs` and others)
 
-**約束 23**（`crates/meloet-protocol/src/vocal.rs` ほか）
+- Tracks: `TrackView.kind` (`{kind: "keys"}` or `{kind: "vocal", input, inputReady, armed, monitor}`). `SongView.keysTarget` ("弾くと鳴る先"; `playTarget` now only means the selected track).
+- Recording: `TransportView.recording` keeps its shape for the keys part (`null` when only voice is recorded); the voice part is `recordingVocals: [{track, from, take, clip}]`. Why: many screen parts read `recording.track`; voice is added without changing it.
+- Intents: `addVocalTrack`, `setVocalInput` (one step), `toggleVocalArm`, `toggleMonitor`, `settingsSelectInput`, `settingsSetBuffer`, `settingsSetSampleRate`, `settingsSetRecordFormat`, `settingsSetManualLatency`, `openLatencyMeasure`, `startLatencyMeasure`, `stopLatencyMeasure`, `useMeasuredLatency`, `closeLatencyMeasure`.
+- Inputs: `EndpointView.channels`, `InputsView.chosen` and `open`.
+- Advanced sound settings: `AudioView` has `bufferChoices`, `requestedSampleRate`, `sampleRateChoices`, `recordFormat` (`bits16`, `bits24`, `bits32`), `latency` (`reportedMs`, `measuredMs`, `manualMs`, `used`, `usedMs`). All are round-trip ms (output → input). `X` = `measuredMs − reportedMs`.
+- Latency dialog: `WorkspaceView.latencyDialog: {measure}` with `idle`, `measuring {done, of, meanMs}`, `done {measuredMs}`, `failed {reason}` (`tooQuiet`, `unsteady`, `noInput`).
+- Status line: `noParams`, `vocalTrackAdded`, `noInput`, `monitorFirstOn`, `micTooLoud`, `vocalHasNoPianoRoll`, `recordingVocals {keys, vocals, monitor}`, `latencyMeasureOpen`; `lanesRemoved` added to `effectRemoved`, `insertReplaced`, `instrumentReplaced`, `instrumentReplacedSound`.
+- Recovery hint: `RecoveryView::Recovered.vocals: {count, until}`.
+- Leftovers of 92: `SelectedParams::Sound {track, sound}` (19-A); `StepWhat` gets `note`, `quantized`, `velocity`, `controlPoints`, `color`, `soundReplaced`, `vocalInput` (92-3). Core finds values by comparing the `Doc` before and after a step (`play/history.rs`); no new `StepKind`.
+- Step name `setVocalInput` («歌の入口を変える»). Adding a vocal track uses the existing `addTrack`.
 
-- トラック: `TrackView.kind`（`{kind: "keys"}` か `{kind: "vocal", input, inputReady, armed, monitor}`）。`SongView.keysTarget`（弾くと鳴る先。`playTarget` は「選んだトラック」だけの意味になった）。`ClipView.vocal`（波形は約束 24）。
-- 録音: `TransportView.recording` は今の形のまま「鍵盤の分」（歌だけを録るときは `null`）、歌の分は `recordingVocals: [{track, from, take, clip}]`。**理由**: `recording.track` を読む画面の所が多く、形を変えずに歌を足せる。
-- 意図: `addVocalTrack`、`setVocalInput`（1 手）、`toggleVocalArm`、`toggleMonitor`、`settingsSelectInput`、`settingsSetBuffer`、`settingsSetSampleRate`、`settingsSetRecordFormat`、`settingsSetManualLatency`、`openLatencyMeasure`、`startLatencyMeasure`、`stopLatencyMeasure`、`useMeasuredLatency`、`closeLatencyMeasure`。core は受けとるが、まだ何もしない（`state.rs`）。
-- 入口: `EndpointView.channels`、`InputsView.chosen`（歌が録る入口）と `open`（入口の流れがひらいている）。
-- 音の設定の奥: `AudioView` に `bufferChoices`、`requestedSampleRate`、`sampleRateChoices`、`recordFormat`（`bits16` ・ `bits24` ・ `bits32`）、`latency`（`reportedMs` ・ `measuredMs` ・ `manualMs` ・ `used` ・ `usedMs`）。遅れの数は、どれも「出口から入口へ戻るまでの全体」の ms（F7-Latency の 8.0 と 12.4）。22-5 の `X` は `measuredMs − reportedMs`。
-- 遅れを測る: `WorkspaceView.latencyDialog: {measure}`。`measure` は `idle` ・ `measuring {done, of, meanMs}` ・ `done {measuredMs}` ・ `failed {reason}`（`tooQuiet` ・ `unsteady` ・ `noInput`）。
-- 状態行: `noParams`、`vocalTrackAdded`、`noInput`、`monitorFirstOn`、`micTooLoud`、`vocalHasNoPianoRoll`、`recordingVocals {keys, vocals, monitor}`、`latencyMeasureOpen`。`effectRemoved` ・ `insertReplaced` ・ `instrumentReplaced` ・ `instrumentReplacedSound` に `lanesRemoved`。
-- なおすためのファイルの案内: `RecoveryView::Recovered.vocals: {count, until}`。
-- 92 の残り: `SelectedParams::Sound {track, sound}`（19-A）、`StepWhat` に `note` ・ `quantized` ・ `velocity` ・ `controlPoints` ・ `color` ・ `soundReplaced` ・ `vocalInput`（92-3）。core は、手の前と後の `Doc` をくらべて値を出す（`play/history.rs`。手の種類 `StepKind` は増やしていない）。
-- 手の名前: `setVocalInput`（「歌の入口を変える」、`builder:2026-11-21`）。歌のトラックを足す手は今の `addTrack`。
+**Meter binary (version 4)**: see the table in 3-3. Header 92 bytes; after the tracks, 16 bytes per vocal track (track id, left/right peak, flags: bit0 reached 0 dB, bit1 stereo). None while the input is closed.
 
-**計器のバイナリ（版 4）**: 3-3 の表。頭が 92 バイトになり、トラックのあとに、歌のトラックごとの 16 バイト（トラックの id、左右のピーク、旗〔bit0: 0 dB に届いた、bit1: ステレオ〕）。入口をひらいていない間は 0 個。
+**Engine input** (`crates/meloet-engine/src/input.rs`)
 
-**エンジンの入口の口**（`crates/meloet-engine/src/input.rs`）
+- `input_ends(channels, sample_rate)` makes the callback's `InputTap`, two ring readers (monitor 0.5 s, recording 4 s) and `InputMeters`. `InputTap::block(data, capture_us, callback_us)` is the whole callback (no memory, no waiting; `tests/input.rs` watches).
+- Each ring is a pair: frames and headers. `InputBlock {first_frame, frames, capture_us, callback_us, dropped}` per call; frame counts vary (0 too). A full ring gets only a `dropped` header; the reader fills silence. `first_frame` is the running number from the stream head.
+- `InputMeters::set_monitoring` / `set_recording` switch filling; while off, nothing is filled or counted.
+- cpal 0.18.2 sources read: `build_input_stream` (`src/traits.rs` 261), `InputStreamTimestamp {callback, capture}` (`src/timestamp.rs` 45; on PipeWire `capture = now − delay`, `src/host/pipewire/stream.rs` 329–348).
 
-- `input_ends(channels, sample_rate)` が、コールバックの持ち物 `InputTap` と、輪の読み手 2 つ（モニター用 0.5 秒、録る用 4 秒）と、`InputMeters` を作る。`InputTap::block(data, capture_us, callback_us)` がコールバックのすべて（メモリを取らない ・ 待たない。`tests/input.rs` が見はる）。
-- 輪は「こまの輪」と「見出しの輪」の 2 本組み。見出し `InputBlock {first_frame, frames, capture_us, callback_us, dropped}` は 1 回の呼び出しごと。こまの数は毎回ちがってよい（0 も）。輪がいっぱいなら、こまを入れずに `dropped` の見出しだけ入れ、読む側が音なしで埋める。`first_frame` は流れの頭からの通し番号（22-6 の「ファイルのこま ↔ エンジンのこま」に使う）。
-- 輪に入れるかどうかは `InputMeters::set_monitoring` ・ `set_recording` のスイッチ。オフの間は入れず、落とした数にも数えない。
-- `AudioInput::open` は、まだ `InputError::NotYet` を返す。cpal 0.18.2 の `build_input_stream`（`src/traits.rs` 261 行）と `InputStreamTimestamp {callback, capture}`（`src/timestamp.rs` 45 行。PipeWire では `capture = now − delay`、`src/host/pipewire/stream.rs` 329〜348 行）を読んで型を決めた。
+### 22-16. Engine and core of step 2 (second pass)
 
-### 22-16. 区切り2 のエンジンと core（2 回目、2026-11-21、meloet-hard）
+**Result of the 22-6 check** (`crates/meloet-engine/tests/input_loop.rs`, private PipeWire, sink monitor as input)
 
-**22-6 の確かめの結果**（`crates/meloet-engine/tests/input_loop.rs`、自分用の PipeWire、sink のモニターを入口に）
+- Using cpal's `capture` as the time of the block's first frame gave `X_sw = c − p` of **exactly one quantum** at quantum 64–1024. No non-proportional error.
+- Fix: the first frame's time is `capture − block frames ÷ rate` (`InputBlock::first_frame_us`, the only place). After it, 0.00–0.02 frames; the test watches ±0.5 frames. **Superseded by 22-26 (2)**: this is right only for a sink monitor; real ALSA sources need no subtraction.
 
-- cpal の `capture` をそのまま「ブロックの最初のこまの時刻」として使うと、`X_sw = c − p` は quantum 64 ・ 128 ・ 256 ・ 512 ・ 1024 のどれでも**ちょうど 1 quantum**（64.00 ・ 128.02 ・ 256.00 ・ 512.00 ・ 1024.00 こま）。比例しないずれはない。
-- **式の決まった直し**: 入口のブロックの最初のこまの時刻は `capture − そのブロックのこま数 ÷ サンプルレート`（`InputBlock::first_frame_us`。この 1 か所だけ）。直したあとは 0.00〜0.02 こま（3 回くり返して同じ）。試験が ±0.5 こまで見はる。
-- このとき PipeWire が言う遅れは、出口が 1 quantum、入口が 0。つまり出口の流れの 1 コマは `playback` に入っていて、入口の流れの 1 コマは `capture` に入っていない。本物の装置でも同じ作り（cpal の流れは入口も出口も非同期）なので同じ直しが要るはずだが、**本物の線（出口 → 入口）で quantum を変えて `X` が変わらない事は、まだ確かめていない**（オーナーさんに頼む測りで分かる）。
+**Engine** (`crates/meloet-engine/src/{input.rs,engine.rs,clock.rs,probe.rs}`)
 
-**エンジン**（`crates/meloet-engine/src/{input.rs,engine.rs,clock.rs,probe.rs}`）
+- `AudioInput::open(target, sample_rate, request_frames)`. `InputTarget.sink_monitor` opens a sink's monitor (for measuring and tests; the list for people shows only sources).
+- Vocal track seats: `EngineCommand::SetVoice { track, voice }`. The seat reads its chosen channels from an `InputFeed` (monitor ring reader, given with `SetInput`) instead of an instrument. On/off is a 20 ms straight ramp. The engine asks the callback to fill the monitor ring only while a voice needs it.
+  - Input and output callbacks have no fixed order, so `InputFeed` outputs silence and takes nothing when not enough is there; it then settles one block behind. If it has been one extra block behind for 64 blocks, or more than 3 blocks behind, it drops old data to catch up.
+- Messages: `Recorded::Started`, `LapChanged`, `Stopped` carry `frame` (running engine frame). **`Recorded::Rolling { frame, tick }`** is the frame where the song starts being recorded (end of count-in, no count-in, or R while playing). `Segment` has `frame0`.
+- `TransportClock::frame_at(t)` / `time_of_frame(frame)`: a single block time jitters by tens of µs, so the answer is the median of what the nearby segments (up to 33) each give by counting frames; answers more than half a block off (across a lost cycle) are not counted.
+- Latency click (`probe.rs`): 4 ms sweep 1 kHz → 6 kHz, peak **−12 dBFS (0.25)** — a bit louder than the metronome, just a "tick" in headphones. Found even when it returns at −50 dB. More than half of 5 not found → `tooQuiet`; any answer more than 1 frame from the median → `unsteady`.
 
-- `AudioInput::open(target, sample_rate, request_frames)`。`InputTarget.sink_monitor` が真なら、その sink のモニターをひらく（測りと試験のため。人がえらぶ一覧は source だけ）。
-- 歌のトラックの席: `EngineCommand::SetVoice { track, voice }`。席は音源のかわりに `InputFeed`（モニターの輪の読み手。`SetInput` で渡す）から、えらんだチャンネルを読む。オン ・ オフは 20 ms の直線。入口のコールバックがモニターの輪に入れるかどうかは、エンジンが声の要る間だけ立てる。
-  - 入口と出口のコールバックは順の約束がないので、`InputFeed` は「足りなければそのブロックは音なしで何も取らない」。これで 1 ブロック後ろで落ちつく。1 ブロック分よけいに待っている状態が 64 ブロック続くか、3 ブロックをこえたら、古い分を捨てて追いつく。
-- 知らせ: `Recorded::Started` ・ `LapChanged` ・ `Stopped` に `frame`（エンジンができてからのこまの通し番号）。**`Recorded::Rolling { frame, tick }` を足した**（曲がその位置から録られはじめるこま。カウントインの終わり、カウントインなし、再生中の録音のどれでも出る）。区間（`Segment`）に `frame0`。
-- `TransportClock::frame_at(t)` ・ `time_of_frame(frame)`: 1 ブロックの時刻には数十 µs のゆれがあるので、その瞬間のまわりの区間（33 個まで）がそれぞれ「こまを数えて」答えた中の真ん中を使う。半ブロック以上ちがう答えは、抜けたコマの向こうがわなので数えない。
-- 遅れを測る音（`probe.rs`）: 1 kHz → 6 kHz の 4 ms のスイープ、いちばん大きい所で **−12 dBFS（0.25）**。メトロノーム（0.13〜0.17）より少し大きく、4 ms なのでヘッドホンでも「コツ」と聞こえるだけ。−50 dB まで小さく返ってきても見つかる。相関のいちばん高い所を放物線で読む。5 回のうち半分より多く見つからなければ `tooQuiet`、真ん中から 1 こまより離れた答えがあれば `unsteady`。
+**Core**
 
-**core**
+- **The input is open** while a vocal track is selected or armed (and while the latency dialog is open) — shorter than 22-5's first plan, to keep the mic indicator off more. Same condition as the spec's input meter band.
+- **Disk writer** (`vocalrec.rs` `DiskWriter`, thread `meloet-disk`): owns the recording ring reader while the input is open. `start` makes the file (length `0xFFFFFFFF`); blocks are kept in memory until `from(t)`, then blocks before that time are dropped and writing starts (from the count-in's last half beat; at most one block early). `fdatasync` every second.
+  - Overflowed blocks become silence (`dropped`). **Lost input cycles** (a block later than the end of the previous one by more than half a block) are filled with silence (`gaps`), so frame counting stays right after the loss. Rules refined in 22-18 D, 22-21, 22-26.
+- **Recorded position**: only the start and lap heads use a time. The time the engine frame (`Rolling`, `LapChanged`) was heard (`time_of_frame` + `X`) is given to the writer, which answers "which file frame was sung then" (`DiskWriter::mark`, median of the newest 32 blocks). Between them, frames are counted (`vocalrec::takes_from`). Superseded in part by 22-26 (marks read from the engine-frame line).
+  - Checked (`crates/meloet-core/tests/vocal_private.rs`): metronome recorded from the sink monitor, buffers 64/256/1024 with 16/24/32 bits: **0.0 frames** off on all 6 beats.
+- **One recording = one step**: stop → `StopVocalRecording` → writer finishes and writes the length → `VocalsWritten` → voice (`meloet_model::add_vocal_recordings`) first, key takes on top, all as one step. File ids come from `Doc.next_id` at record start (same as the audio table ids); a taken name gets « (2)». Files of a recording that left nothing (stopped in count-in) are deleted.
+- **Half-recorded note** `work/rec.json` (version 1): file, track, rate, bits, start, loop, marks (file frames). Rewritten when the file is made, when recording starts, and each lap. At the next start, the voice is put as audio clips into the recovered song (else the saved song, else a new song) with `RecoveryView::Recovered.vocals`; a missing track gets a new vocal track. More rules: 22-18 A1.
+- **PC-reported latency** (`LatencyView.reportedMs`): output `playback − callback` + input `callback − capture` + one input block. Superseded by 22-26 (2): the extra block is added only for a sink monitor. The monitor latency («いまは 13 ms») adds one block waiting in the ring (computed, not measured).
+- `settings.json`: `input`, `buffer`, `sample_rate`, `record_bits`, `manual_latency_us`, `measured_latency` (output id, input id, rate, `x_us`, time) — renamed `measured_latency_2` in 22-26. Changing buffer or rate reopens output and input. A rate is asked for only if the device supports it (`supported_output_configs`); otherwise the device rate is used.
+- Dev variable `MELOET_INPUT_SINK_MONITOR=<sink node.name>` (dev builds only, 23-11).
 
-- **入口をひらいている間**は、約束 23 の `InputsView.open` の文のとおり「歌のトラックを選んでいるか、● がついている間」（と、遅れを測るダイアログをひらいている間）にした。22-5 の「入口をえらんだ歌のトラックが 1 本でもある間」より短い（マイクの印がつく時間をへらす。仕様書の「入力計の帯」と同じ条件）。
-- **書く係**（`vocalrec.rs` の `DiskWriter`、スレッド `meloet-disk`）: 入口をひらいている間、録る輪の読み手を持つ。`start` でファイルを作り（頭の長さは `0xFFFFFFFF`）、`from(t)` が来るまではメモリにため、来たらその時刻より前のブロックを捨てて書きはじめる（カウントインの最後の半拍から。ブロックの切れ目なので、最大 1 ブロック早い）。1 秒ごとに `fdatasync`。
-  - 輪があふれたブロックは音なし（`dropped`）。**入口のコマが抜けたとき**（ブロックの時刻が、前のブロックの終わりより半ブロックより遅い）も、その長さの音なしを書く（`gaps`）。こまを数える決まりが、抜けのあとも合うように。しきい値の半ブロックは、本物の装置でまだ確かめていない。
-- **録った歌の位置**: 時刻から決めるのは「録りはじめ」と「周の頭」だけ。エンジンが言うこま（`Rolling` ・ `LapChanged`）が耳に届く時刻 `time_of_frame` に `X` を足し、書く係に「その時刻に歌われたのはファイルの何こまめか」を聞く（`DiskWriter::mark`。いちばん新しい 32 ブロックの真ん中）。間はこまを数える（`vocalrec::takes_from`）。22-6 の「頭の 32 ブロックの中央値」と同じ考えで、出口のコマが抜けても周ごとに合わせなおせる形にした。
-  - 確かめ（`crates/meloet-core/tests/vocal_private.rs`）: メトロノームを sink のモニターから録り、クリックがテイクの拍のこまにあるかを見る。バッファ 64（16 ビット）・ 256（24 ビット）・ 1024（32 ビット）で、6 拍ともずれ **0.0 こま**（3 回くり返して同じ）。
-- **録音 1 回 = 1 手**: 止めると `StopVocalRecording` → 書く係が残りを書いて長さを入れる → `VocalsWritten` → 歌（`meloet_model::add_vocal_recordings`）を先に、その上に鍵盤のテイクを入れて、1 手にする。ファイルの名前の id は、録りはじめの `Doc.next_id` から順（音の表の id と同じになる）。同じ名前がもうあれば「 (2)」をつける。何も残らない録音（カウントイン中に止めた）のファイルは消す。
-- **録りかけの書きつけ** `work/rec.json`（版 1）: ファイル ・ トラック ・ サンプルレート ・ ビット ・ 録りはじめ ・ ループ ・ 印（ファイルのこまで）。ファイルができたとき、録りはじめたとき、周ごとに書きなおす。次の起動で、なおすためのファイルの曲（なければ保存してある曲、それもなければ新しい曲）に歌のクリップとして入れ、`RecoveryView::Recovered.vocals` を出す。トラックがもうなければ歌のトラックを足す。
-- **PC が言う遅れ**（`LatencyView.reportedMs`）: 出口の `playback − callback` ＋ 入口の `callback − capture` ＋ 入口の 1 ブロック（上の直しの分）。自分用の PipeWire ではちょうど 2 ブロック。モニターの遅れ（「いまは 13 ms」）は、それに輪で待つ 1 ブロックを足した数（測った数ではない）。
-- 設定（`settings.json`）: `input` ・ `buffer` ・ `sample_rate` ・ `record_bits` ・ `manual_latency_us` ・ `measured_latency`（出口の id ・ 入口の id ・ サンプルレート ・ `x_us` ・ 測った時）。バッファとサンプルレートを変えると、出口と入口をひらきなおす。サンプルレートは、装置が受ける数（cpal の `supported_output_configs`）のときだけ頼み、だめなら装置の数で動く。
-- 開発のための変数 `MELOET_INPUT_SINK_MONITOR=<sink の node.name>`: その sink のモニターを入口にする（線なしで回す測りと試験のため）。
-- **まだの事**（区切り3 へ）: 録った音は作業の場所（`work/音/`）に置いたまま。曲を保存しても `音/` へ移さないので、保存した曲をひらきなおすと音は見つからない。作業の場所の片づけ（22-4）もまだ。歌のクリップは鳴らない（22-8）。
+### 22-17. Protocol 24 (step 3, first pass)
 
-### 22-17. 約束 24 の形（区切り3 の 1 回目、2026-11-21、meloet-hard）
+The shared start for four parallel jobs (A1 engine playback, A2 core audio files, B screen WebGL, C screen HTML).
 
-区切り3 の 2 回目で 4 人（A1 エンジンで歌のクリップを鳴らす、A2 core の音のファイル、B 画面の WebGL、C 画面の HTML）が、同じ出発点から、同じファイルをさわらずに作るための形。中身があるのは、型、約束、ピークのファイルとバイナリ、フェードの形、クリップの区切りの表、先読みの輪、持ってきている間の場所の道、160 の行、偽物の場面。新しい意図の中身（切る ・ 入れる ・ クリップの値 ・ さがす ・ 曲から外す）、先読みの係、音のファイルを読む所、画面の部品は 2 回目。
+**Model** (`crates/meloet-model/src/audio.rs`, `audio/fade.rs`, `history.rs`)
 
-**model**（`crates/meloet-model/src/audio.rs`、`audio/fade.rs`、`history.rs`）
+- `AudioSource.bits: Option<u8>` (`None` for mp3/ogg). In the song file `bits` (missing → `None`; anything but 8, 16, 24, 32, 64 is unreadable).
+- **Fade curve**: `fade_gain(x) = sin(x · π/2)`, fade-out `fade_gain(1 − x)`; `clip_fade_gain(at, length, fade_in, fade_out)` multiplies both. Why: the spec asks for one curve that does not dip; where a fade-out meets a fade-in the sum of squares is always 1 (constant power), whereas two straight lines dip 3 dB in the middle; it is always above the straight line, so the fade-in is heard from its start. Engine, waveform and screen lines all use this one function. Screen copy `ui/src/components/arrange/fade.ts`, checked against `fade.table.json` written by `crates/meloet-model/tests/fade.rs`.
+- `StepKind`: `SplitClips { count }`, `ImportAudio { count }`, `SetClipGain { clip }`, `SetClipFade { clip }`, `RemoveAudio { audio, clips }`.
 
-- `AudioSource.bits: Option<u8>`（ファイルのビット。「48000 Hz ・ 24 ビット」のため。mp3 ・ ogg は `None`）。曲のファイル（版 6 のまま）の音の表に `bits`（ない欄は `None`。8 ・ 16 ・ 24 ・ 32 ・ 64 のほかは「読めない物」）。
-- **フェードの形**（`fade_gain(x) = sin(x · π/2)`、出るほうは `fade_gain(1 − x)`。`clip_fade_gain(at, length, fade_in, fade_out)` が 2 つのフェードの掛け算）。**理由**: 仕様書の「曲がった形 1 つ（大きさがへこまない形）」。出るフェードと入るフェードが出会う所で 2 乗の和がいつも 1（パワーが変わらない）。まっすぐな線 2 本だと、まん中で 3 dB へこむ。まっすぐな線よりいつも上にあるので、入りの頭から聞こえる。エンジン（音にかける）、波形、画面の線が、この 1 つの関数を使う。画面の写しは `ui/src/components/arrange/fade.ts`、同じ答えかは `crates/meloet-model/tests/fade.rs` が書く表 `fade.table.json` で見る（テンポの地図と同じやりかた）。
-- 手の種類（`StepKind`）: `SplitClips { count }`、`ImportAudio { count }`、`SetClipGain { clip }`、`SetClipFade { clip }`、`RemoveAudio { audio, clips }`。直す関数（切る ・ 入れる ・ 値を変える ・ 外す）は 2 回目（A2）。
+**Protocol 24** (`crates/meloet-protocol/src/audio.rs` and others)
 
-**約束 24**（`crates/meloet-protocol/src/audio.rs` ほか）
+- **Audio clips**: `ClipView.audio: AudioClipView | null` with audio id (the `peaks` key), file name, rate, bits, channels, `resampled` («（曲に合わせて鳴らします）»), `firstFrame`, `frames`, `fadeIn`/`fadeOut` (ticks), `gainDb`, `state` (`ready`, `loading`, `missing`), `stretch` (22-19).
+  - Where the waveform goes: tick 0 of the take is `start + takeOffset`; the file frame at song tick `t` is `firstFrame + (sec(t) − sec(tick 0)) × sampleRate` for a clip that does not follow (follow formula: 22-19).
+- **Progress** is a separate section **`audioWork`** (`jobs: [{kind: loading | rendering, audio, clip, percent}]`). Why: `song` is sent whole, and must not be resent for each percent. Core sends a few times a second.
+- **Selected clip panel**: `SelectedParams` gets `clip` (`{track, clip, missing}`) when exactly one audio clip is selected. Missing audio: `missing: {audio, file, wasAt}`.
+- **The 160 row**: `ArrangeView.tallTrack`, held by core (`Command::SetTallTrack`; the same track again or `null` goes back; not a step, not saved). Why: row height is read in three places (track heads, clip area, automation lanes), and measuring and screenshot tools must drive it by intent. Opening the piano roll by double click is also a core intent.
+- **Intents**: `splitClips` (S; core picks the clip: a selected clip under the play line, else the one under the line on the selected track), `setClipField {clip, field, value}` (`start`, `length`, `gainDb`, `fadeIn`, `fadeOut`; on drag end, double click for gain 0, or typed value; one step each, named by field), `setTallTrack`, `importAudio {track}` (core opens the PC window), `dropAudio {drop, track, tick, mode}`, `findAudio {audio}` (not a step), `removeMissing` with `{kind: "audio", audio}` (one step).
+- **Drag from outside**: `FileDropView.audio` (number of audio files), and immediate events `fileDrag {x, y}`, `fileDrop {drop, x, y}`.
+- **Recording voice**: `VocalRecordingView` has `audio`, `sampleRate`, `firstFrame`. The live waveform polls the same `peaks` while `growing` (`moreAudioPeaks`). Why: no separate path for recording audio; the screen fetches at its own pace (about 10 Hz).
+- `TransportView.recordingFaults: {gaps, dropped} | null` (see 22-26; status line since 23-7 `RecordingGaps`).
+- Status line: `audioMissing {count}`, `clipSplit {name, tick, count}`, `audioImported {file, track, tick, count, skipped}`, `audioUnreadable {file}` (23-7/23-8 add `AudioBroken`, `AudioTooManyChannels`), `audioDragging {audio, sf2}`.
+- Step names: `splitClips` («クリップを切る»), `importAudio`, `setClipGain`, `setClipFade`. Mod X `cutClips` is «クリップを切り取る». "What" gets `clipGain {name, fromDb, toDb}`.
 
-- **歌のクリップ**: `ClipView.vocal` をやめて `ClipView.audio: AudioClipView | null`。中身は、音の id（音の表の番号。`peaks` の鍵）、ファイルの名前、サンプルレート、ビット、チャンネル、`resampled`（「（曲に合わせて鳴らします）」）、`firstFrame` ・ `frames`（テイクの 0 ティックに当たるファイルのこまと、そこからの長さ）、`fadeIn` ・ `fadeOut`（ティック）、`gainDb`、`state`（`ready` ・ `loading` ・ `missing`）、`stretch`（ついていく ・ この音のテンポ ・ 半音 ・ セント ・ 声の感じ。区切り4 まで、だれも変えない。欄は「使えない」で出す）。
-  - **波形の場所**: テイクの 0 ティックは曲の `start + takeOffset`。曲のティック `t` で鳴るファイルのこまは `firstFrame + (秒(t) − 秒(0 ティック)) × sampleRate`（音はファイルの速さのまま鳴る。画面の地図で数える。`audioClipGeom.ts` の `fileFrameAt`）。
-- **進み**は `song` と別の区画 **`audioWork`**（`jobs: [{kind: loading | rendering, audio, clip, percent}]`）。**理由**: `song` は丸ごと送る区画なので、% のたびに曲を送りなおさない。core は 1 秒に数回まで。`rendering`（「音を作っています 34 %」）は区切り4 の席。
-- **選んだクリップの欄**: `SelectedParams` に `clip`（`{track, clip, missing}`）。歌のクリップがちょうど 1 つ選ばれているとき。位置 ・ 長さ ・ 音量 ・ フェードは `song` のクリップから読む。見つからない音は `missing: {audio, file, wasAt}`（「前はここにありました: …」）。
-- **160 の行**: `ArrangeView.tallTrack`（歌のトラックの id）。core が持つ（`Command::SetTallTrack`。同じトラックをもう一度か `null` で戻る。手にしない ・ 保存しない）。**理由**: 行の高さはトラックの見出し ・ クリップの面 ・ オートメーションの帯の 3 か所が読み、測りの道具（`remote.py`）と絵を撮る道具が意図で動かせる。ピアノロールをひらく（2 回押す）のも core の意図なので、そろえた。
-- **意図**: `splitClips`（S。どのクリップかは core が決める: 選んだクリップで再生の線がかかる物、なければ選んだトラックの線の下の 1 つ）、`setClipField {clip, field, value}`（`start` ・ `length` ・ `gainDb` ・ `fadeIn` ・ `fadeOut`。ドラッグの終わり、2 回押す〔`gainDb` 0〕、欄に打った値。どれも 1 手で、手の名前は欄で決まる: 動かす ・ 長さを変える ・ クリップの音量 ・ フェード）、`setTallTrack`、`importAudio {track}`（メニューと右クリック。core が PC の窓を出す）、`dropAudio {drop, track, tick, mode}`、`findAudio {audio}`（「さがす…」。手にしない）、`removeMissing` に `{kind: "audio", audio}`（「曲から外す」。1 手）。core は受けとるが、`setTallTrack` のほかはまだ何もしない。
-- **持ってきている間**（下の「ドラッグの約束」）: `FileDropView.audio`（音のファイルの数）、すぐ知らせる事 `fileDrag {x, y}` ・ `fileDrop {drop, x, y}`。
-- **録っている歌**: `VocalRecordingView` に `audio`（書いているファイルが音の表でもらう番号）・ `sampleRate` ・ `firstFrame`。録りながらの波形は、同じ `peaks` を `growing` の間くり返し取る（画面の `moreAudioPeaks`）。**理由**: 録っている音だけの別の道を作らない。波形は鍵のようにすぐ届かなくてよいので、画面が自分の間合い（10 Hz ほど）で取りにいき、描きなおしも減る。
-- **録音中の抜け**: `TransportView.recordingFaults: {gaps, dropped} | null`。形だけ（文は B-94-14 で待ち。何も出さない）。
-- 状態行: `audioMissing {count}`、`clipSplit {name, tick, count}`、`audioImported {file, track, tick, count, skipped}`、`audioUnreadable {file}`、`audioDragging {audio, sf2}`。文は仕様書 6 章（`ja.ts` に 0-2 で入っている）。
-- 手の名前: `splitClips`（「クリップを切る」、spec:3）、`importAudio` ・ `setClipGain` ・ `setClipFade`（仮）。Mod X の `cutClips` は「クリップを切り取る」（B-94-7）。「曲から外す」は今の `removeMissing`。（何を）に `clipGain {name, fromDb, toDb}`。
-- 保存で音を写している進みは、仕様書に文がないので置いていない（22-4 の【第 10 版で確かめる】のまま）。
+**Drag contract** (`crates/meloet-app/src/main.rs`, `crates/meloet-core/src/{service.rs,state.rs}`)
 
-**ドラッグの約束**（`crates/meloet-app/src/main.rs`、`crates/meloet-core/src/{service.rs,state.rs}`）
+- Core keeps the paths and never gives them to the screen (like SF2). The screen only decides where it was dropped.
+  1. Shell: `Enter` → `files_over(paths)` and `files_at(x, y)`; `Over` → `files_at`; `Drop` → `files_at` and `files_dropped(paths)`; `Leave` → `files_left`.
+  2. Core: if any file ends in wav/mp3/flac/ogg, each `files_at` sends `Event::FileDrag {x, y}` on the Channel (immediate, not a diff). On drop, core keeps the paths with a serial number and sends `Event::FileDrop {drop, x, y}`. SF2 is added at once as before.
+  3. Screen: finds track, tick (snapped to beats) and the left/right mode (30-C), shows the frame, and on `fileDrop` sends one `Command::DropAudio {drop, track, tick, mode}`. Answers with another number do nothing. Unclaimed paths are dropped when the next file enters the window.
+  - Rejected: the screen streams "current target" while hovering and core uses the last one at drop. The order of the shell's drop event and the screen's last target is not fixed.
+- **Coordinates** (sources read: wry 0.57.2 `src/webkitgtk/drag_drop.rs` 78–119; tauri-runtime-wry 2.12.3 `src/lib.rs` 4786–4807; tauri-runtime 2.12.2 `src/window.rs` 99–121): GTK `drag-motion`/`drag-drop` x, y are logical px from the WebView's top left, and Tauri wraps them in `PhysicalPosition` without scaling. So **on Linux they are logical px**, despite the type name. meloet scales with CSS variables, not WebView zoom, so **widget logical px = page CSS px**, no division even on HiDPI (`page_px` in `main.rs`). `Enter`'s position is the last motion before files are known (else (0, 0)). Not yet checked with a real Nautilus drag or on HiDPI.
 
-- 道は core が持ち、画面には渡さない（今の SF2 と同じ）。画面が決めるのは「落とした所」だけ。
-  1. 殻: `Enter` → `files_over(paths)` と `files_at(x, y)`、`Over` → `files_at`、`Drop` → `files_at` と `files_dropped(paths)`、`Leave` → `files_left`。
-  2. core: 音のファイル（名前の終わりが wav ・ mp3 ・ flac ・ ogg）が 1 つでもあれば、`files_at` のたびに `Event::FileDrag {x, y}` を Channel へ（すぐ知らせる事。差分にしない）。落としたら音のファイルの道を取っておき、通し番号をつけて `Event::FileDrop {drop, x, y}`。SF2 は今までどおりその場で足す。
-  3. 画面: 場所からトラックとティック（拍に吸いつけて）と 30-C の左右を決め、枠を出す。`fileDrop` が来たら `Command::DropAudio {drop, track, tick, mode}` を 1 つ送る。番号のちがう答えは何もしない。答えの来なかった道は、次のファイルが窓に来たとき手ばなす。
-  - **くらべた案**: 画面が乗っている間じゅう「いまの的」を送り、core が落とした瞬間の的を使う。落とした出来事（殻 → core）と最後の的（画面 → core）の順が決まらないので、とらない。
-- **座標**（入れた版のソース）: wry 0.57.2 の `src/webkitgtk/drag_drop.rs` は、GTK の `drag-motion`（94〜101 行）と `drag-drop`（106〜119 行）の `x` ・ `y` をそのまま渡す。これは WebView のウィジェットの左上からの数で、GTK 3 は画面の倍率によらず論理 px で数える（GTK の決まり。HiDPI の画面では、まだ確かめていない。`src/lib.rs` 2298 行のコメントも「relative to the webview top-left corner」）。tauri-runtime-wry 2.12.3 の `src/lib.rs` 4786〜4807 行は、それを倍率をかけずに `PhysicalPosition` に包むだけなので、**Linux では「物理 px」ではなく論理 px**（tauri-runtime 2.12.2 の `src/window.rs` 99〜121 行の型の名前と食いちがう）。meloet の拡大率は CSS の変数で、WebView の zoom は使わないので、**ウィジェットの論理 px ＝ ページの CSS px**。HiDPI でも割り算は要らない（`main.rs` の `page_px`）。
-  - `Enter` の場所は「ファイルが分かる前の最後の motion」（なければ (0, 0)。同 78〜90 行）で、次の motion から `Over` になる。`Over` は `Entered` の間だけ来る（95〜99 行）。
-  - Wayland と XWayland のちがいは、ソースからは出てこない（どちらも GTK の同じ信号）。**本物の Nautilus からのドラッグでは、まだ確かめていない**（オーナーさんに頼む確かめ、22-14 の 3）。
+**Peaks** (`crates/meloet-core/src/peaks.rs`, `crates/meloet-protocol/src/audio.rs`, `ui/src/bridge/peaks.ts`)
 
-**ピーク**（`crates/meloet-core/src/peaks.rs`、`crates/meloet-protocol/src/audio.rs`、`ui/src/bridge/peaks.ts`）
+- `PeakBuilder` (`push(frames)` builds all 5 levels bit by bit; the same answer live or from a whole file; the last unfinished peak is shown). File `<cache>/peaks/<uid hex>.peaks`: 36-byte header (`mlpk`, version 1, channels, frames, 5 level counts), then levels 0.. as i16 min/max. Temp file → rename.
+- `peaks(audio, level, first, count)` answer (little-endian):
 
-- 作る係 `PeakBuilder`（`push(こま)` で 5 段を少しずつ。録りながらでも、丸ごと読んでも同じ答え。まだ満ちていない最後のピークも見せる）。ファイルは `$XDG_CACHE_HOME/meloet/peaks/<uid の 16 進>.peaks`（頭 36 バイト: `mlpk`、版 1、チャンネル、音のこま数、5 段の数。あとは段 0 から順に i16 の最小 ・ 最大）。一時ファイル → rename。
-- invoke `peaks(audio, level, first, count)` の答え（リトルエンディアン）:
-
-| 位置 | 型 | 中身 |
+| Offset | Type | Contents |
 |---|---|---|
-| 0 | u8 | 種類 = 4（ピーク） |
-| 1 | u8 | 版 = 1 |
-| 2 | u8 | 段（0〜4: 1 つが 256 ・ 1024 ・ 4096 ・ 16384 ・ 65536 こま） |
-| 3 | u8 | チャンネルの数 c（1 か 2） |
-| 4 | u8 | 旗（bit0: まだふえる〔録っている ・ 読みこんでいる〕） |
-| 5 | 3 | 0（あき） |
-| 8 | u32 | 音の id |
-| 12 | u32 | 最初のピークの番号 |
-| 16 | u32 | 入っているピークの数 n |
-| 20 | u32 | この段の、いまあるピークの数 |
-| 24 | 4c × n | ピークごと、チャンネルごとに: 最小 i16、最大 i16 |
-
-- 1 回の答えは 65536 個まで。core のスレッドは「どこにあるか」（`PeaksPlace::File` か `Growing`）だけ答え、ファイルは invoke のスレッドが読む（core のスレッドでディスクにさわらない）。
-- 画面は `PeakStore`: （音の id、段）でため、曲の通し番号が変わったら手ばなす。クリップが使っていない音の分は、新しい物から 4 MiB まで（テイクの `keepOnly` と同じ考え）。`levelFor(1 px のこま数)` が描く段。
-
-**エンジンの口**（`crates/meloet-engine/src/{clips.rs,stream.rs}`。`engine.rs` にはまださわっていない）
-
-- **曲のこま**: こま 0 が曲の 0 ティック、ティック `t` は `song_frame(map, t, rate) = round(秒(t) × rate)`。エンジンのいまの位置は `song_frame_at(anchor_sec, frames, rate)`。区切りの表も先読みの係も、音はこの 1 つの関数で置く。**ノートと拍は錨から `frame_of` で置くので、同じティックの音と 1 こままでずれることがある**（区切り2 の測りの「最大 0.98 こま」と同じ大きさ。A1 が測って、足りなければ直す）。
-- **クリップの区切りの表** `ClipTable`（`ClipRegion {start, end, fade_in, fade_out, gain}`。曲のこま、フェードはこま数、音量は倍率）。`ClipRegion::of` がティックと dB から作り、`gain_at(こま)` がフェード × 音量（メモリを取らない）。core が地図 ・ クリップ ・ サンプルレートの変わるたびに作りなおし、`Box` で送る（古い物は輪で返す。コマンドの腕は A1 が足す）。
-- **先読みの輪** `stream_ring(rate)` → `StreamWriter` ・ `StreamReader`（2 秒、いつもステレオ。「こまの輪」と「見出しの輪」の 2 本組み。見出し `StreamChunk {generation, first_frame, frames}`）。`StreamReader::read(generation, frame, out)` が音のスレッドのすべて: 古い世代と過ぎたこまは捨て、係が先へとんだ分とまだない分は音なしで埋めて数える（`tests/stream.rs` がメモリを見はる）。
-- **エンジンが言う事** `StreamWant {track, generation, map_gen, anchor_sec, frame, loop_ticks}`（`want_ring`）。`frame` は錨からのこまで、先に読むトラックの分はもう入っている。
-- **先読みの係と音のファイルの継ぎ目**（`crates/meloet-core/src/pcm.rs`）: `PcmStore::open(uid, rate)` → `PcmFile`（エンジンのサンプルレートの PCM として読む）を A2 が作り、係（A1）はそれだけを見る。`feed_clip(map, rate, clip)` → `FeedClip {start, end, uid, file_frame, file_end}` が「クリップのどこがファイルのどこか」の 1 か所。
-
-**画面の継ぎ目**
-
-- `ui/src/components/arrange/audioClipGeom.ts`: 波形の所（`waveArea`: 名前の行の下〜下の枠の上、まん中の線）、音量の線 ↔ dB（`gainLineY` ・ `gainAtY`。上が +12、下が −60、dB でまっすぐ。仮）、フェードの取っ手と線（`fadeHandleBox` ・ `fadeTicksAt` ・ `fadeLinePoints`）、波形の場所（`fileFrameAt`）、160 の行（`rowHeights`。`arrangeGeom.ts` の `LaneDims.heights` と `rowHeight`）、落とす所（`dropTarget` ・ `dropFrameBox` ・ `dropModeAt`: 窓の左半分が「別々のトラックに」。仮）。
-- 偽物の場面: `audioEdit`（F7-AudioEdit）、`audioTall`（160 の行）、`audioDropOne` ・ `audioDrop` ・ `audioDropRight` ・ `audioDropMixed`（F7-AudioDrop）、`audioMissing`（F7-AudioMissing）、`audioLoading`、`audioKinds`（R11-Audio）。偽物の `peaks` は、それらしい波（`fakeAudio.ts`）。
-
-**棟梁が足した物と決め（2026-11-21、1 回目のあと）**
-
-- **先読みの係は core に置く**（`crates/meloet-core/src/readahead.rs`）。**理由**: エンジンのクレートは clippy で Mutex を禁じていて、ディスクに書く係（22-7）も core にある。エンジンは輪から取るだけ。
-- **音の置き場所の係** `crate::audiofiles::AudioStore`（`PcmStore` を持つ。core の `Worker.audio_store` に 1 つ、先読みの係と分けあう）。曲のフォルダ（`set_song_dir`）は A2 が、ひらく ・ 保存 ・ 名前をつけて保存のときに。音の表（`set_sources`）は A1 が、曲が変わってエンジンへ送るときに。`open` の中身（`音/` ・ 作業の場所 ・ しまっておく所をさがす）は A2。**理由**: 2 人が `service.rs` の同じ所を書かずにすむ。
-
-### 22-18 C. 画面の HTML の部品（区切り3 の 2 回目、2026-11-21、meloet-impl）
-
-- **160 の行**: 行の高さは `automation/autoGeom.ts` の `arrangeRows` が 1 か所で決める（`RowDims.tall` に `ArrangeView.tallTrack` と `part.track.vocal`。答えに `heights`）。見出しの列（`TrackHeads`）とクリップの面（`Arrange` の `LaneDims.heights`）が同じ答えを読む。**理由**: 帯（オートメーション）の上の位置も同じ所で足しあわせているので、行の高さだけ別の所で数えると、帯がずれる。歌のクリップを 2 回押すと `setTallTrack`（鍵盤のクリップの 2 回押しは、まだ何もしない）。
-- **取っ手と音量の線**（`arrange/AudioClipHandles.svelte`）: クリップの面（`.lanes`）にかさねた HTML。取っ手は `part.audioclip.handle`（仕様書 2 章「歌のクリップ」の 6×6）、線は accent の `line.hair`。押せる所は線の上下に取っ手と同じ高さ。ドラッグの間は `audioDrag.now` だけを書き、離したら `setClipField` を 1 つ。答えの rev が来るまで `audioDrag.now` を残す（クリップのドラッグの `clipPending` と同じ考え）。フェードは吸いつかない（ティックのまま。仮）。音量の読み値は「その場の読み値」（カーソルの左上）と状態行（`dragReading`）で、ドラッグの間だけ出す。
-- **持ってきている間**（`arrange/fileDrag.svelte.ts`）: `fileDrag` ・ `fileDrop` は、読みこんだ時に `onEvent` で聞く（部品がまだない時に来ても落とさない）。入る所の計算はアレンジの `DropFrame` が登録し、知らせの箱と落とした時の `dropAudio` が同じ計算を使う。音のファイルが 1 つなら `mode` は `inRow`（落とした所の歌のトラックへ）、2 つ以上は窓の左右（B-94-21）。「別々のトラックに」の枠は、歌のトラックの上でも新しい行に出す。落とした時に知らせの箱がもう閉じていても数がわかるよう、最後の `fileDrag` の時の数を覚えておく。
-- **選んだクリップの欄**（`params/ClipPanel.svelte`、字は `params/clipFields.ts`）: 値を 2 回押すと打ちこむ枠（パラメータの行と同じ `ValueField`）。フェードは「前」と「後」の数を別々に打つ。読めない位置 ・ 長さ ・ フェードは `rejectValue`（`position` ・ `length`）、読めない音量は何もしない（`ValueField` に音量の欄がない）。範囲の外は Rust がだまって中に入れる（B-94-29）。
-
-### 22-18 B. 画面の WebGL: 波形と、録音中の描きなおし（区切り3 の 2 回目、2026-11-21、meloet-hard）
-
-**波形**（`ui/src/gl/{wave.ts,batch.ts,renderer.ts,paint.ts}`、`ui/src/components/arrange/{wave.ts,wavePeaks.svelte.ts}`、`Arrange.svelte` の描く所）
-
-- **テクスチャは RG16I（1 チャンネル）か RGBA16I（2 チャンネル）**。22-9 の候補（RG8 ・ RG16F）はとらない。**理由**: ピークは i16 の「最小 ・ 最大」で届くので、届いた `Int16Array` をそのまま 1 texel にできる（写しも直しもない。`texSubImage2D` の「配列と、その中の始まり」の形で渡す）。RG8 は 256 段で、+12 dB の倍率をかけると 160 の行で 2〜3 px のきざみが見える。RG16F は半精度に直す手間がいる。整数のテクスチャは WebGL2 の決まりの中（拡張はいらない）で、なめらかにする読みかたがないので、シェーダーは `texelFetch` で読む（もともと、なめらかにしない）。本物のアプリ（WebKitGTK 2.52.6、NVIDIA）と headless の Chrome で、波形が出るのを見た。
-- **折りかた**: 幅 2048 の行に折る（texel は `(i % 2048, i / 2048)`。2048 は WebGL2 がかならず持つ大きさなので、PC に聞かない）。2048 行まで（いちばん細かい段で 6 時間ぶん。こえた分は描かない）。ふえていく音（録っている ・ 読みこんでいる）は、行を 2 倍ずつ先に取り、届いた分だけ「前の最後のピーク」から書きたす。
-- **ためる上限**: テクスチャは文脈ごと（`arrangeLanes` と `recordingClip`）。その絵が使わなかった物は、新しい順に 16 MiB まで（`WAVE_TEX_KEEP_BYTES`）。JS のピークは橋の `PeakStore` の上限（4 MiB）のまま: 画面の帳面（`WaveBook`）は、橋が手ばなした物を曲が変わるたびに手ばなす。
-- **絵の中の順**: `rects` の slot に `waves`（何個めの四角のあとに描くか `after` つき）。描く係は「四角 → 波形 → あとの四角」の順に、同じ文脈の 2 つめのシェーダーで描く（波形はクリップの面の上、あとのクリップや録っているクリップの下）。区画も文脈もふやしていない。波形のシェーダーは文脈を作るときにいっしょに作る（はじめての波形が録音中に来ても、止まらない）。
-- **シェーダー**: 四角 1 つ（頂点は番号から作るので、バッファなし）。画素ごとに、どの棒か → その棒の幅のピーク（16 個まで）の最小 ・ 最大 → その間なら棒の色。**棒は幅 1 ・ 3 px おき ・ いちばん低くて 2 px**（モック F7-AudioEdit の形。`mock.wave.*`）。棒はクリップの頭から数えるので、横に送っても同じ棒が同じ音を見せる。段は「棒 1 本の幅より細かい段のうち、いちばん粗い物」（`waveLevel`。棒 1 本が読むのは 1〜4 個）。2 チャンネルは 1 本にまとめる（仮。仕様書に決めがない）。
-- **音量とフェード**: クリップの音量は倍率（uniform）で、テクスチャはそのまま。フェードはクリップのはしの x と px の長さを渡し、シェーダーが `fade.ts` と同じ式（sin(x · π/2)、2 つの掛け算）で棒の高さにかける。フェードの線（gray.10）も同じシェーダーが描く（区画の箱の上の HTML にしない: 線は波形といっしょに変わる）。160 の行のまん中の線（gray.5）も。
-- **テンポが変わる所**: こまは「秒」で数えるので、テンポが変わるとティック → こまが折れる。見えている所を、まっすぐ（ずれが半 px 以内）な所ごとの四角に分ける（`straightParts`。テンポが一定なら 1 つ、64 個まで）。
-- **毎コマの仕事**: 横に送る ・ 拡大するコマで作るのは、見えているクリップ 1 つにつき四角 1 つ（と uniform 13 個）。ピークの数にも、px の数にもよらない。
-- **ドラッグ中**（`audioDrag.now`）: 大きな面は描きなおさない。そのクリップだけを `recordingClip` の区画の小さな箱（クリップの見えている所）に、ドラッグの値で重ねて描く。離したあとは、答えの状態が届くまで（届かなければ 100 ms）残す。クリップを動かす ・ つめる絵（`dragPicture`）にも波形を入れた。
-- **録っているクリップ**: できた小節は大きな面、先（2 小節まで）は `recordingClip`（鍵盤と同じ分けかた）。ピークは `moreAudioPeaks` を 100 ms ごと（使われている間だけ）。大きな面の波形は「最後のピークまで見せていなければ、ふえても同じ絵」と数えるので（`Batch.wave` の `fresh`）、録っている間に大きな面を出しなおすのは、小節が進んだときだけ。
-- **見つからない音**: 地 gray.2、上の線 gray.7、波形なし（ピークも頼まない）。えらんだときは枠と上の線が accent（仮）。**読みこんでいる途中**: 届いている所まで描く。まだピークがない（頼んだら断られた）ときは、0.5 秒から倍にしながら頼みなおす（8 秒まで）。
-
-**録音中の描きなおし**（区切り2 の測りの 5。`ui/src/gl/{engine.ts,slot.ts}`）
-
-- 大もとは、同じコマで出る 2 枚の canvas（トラックの計 y 249〜324、録っているクリップ y 199〜320）の上下がずれていて、たがいと再生の線を切りあう事（10 個）。
-- **決めた形**: `rects` の slot に `alignY: "trackMeters"`（録っているクリップの先だけがつける）。その slot がある間、2 つの区画の canvas の上と下を「2 つを合わせた所」にそろえる（片方を置くコマには、もう片方も置きなおす。slot がなくなれば、もとの大きさ）。四角は「位置 ・ 時間 ・ 入力計 ・ 線の上 ・ トラックの計 ・ 録っているクリップ ・ 線の下」の **7 個**で、録っているトラックの数にも、波形にもよらない（どれも同じ 1 枚の中）。
-- **測った数**（1920×1080、`plain.meloet`、gdb の下。`tools/measure/webkit-damage.sh`）: 歌 1 本で録音 = 7 個が 141 回のうち 104 回（前は 10 個が 117 回のうち 105 回）。鍵盤 1 本 ＋ 歌 2 本で録音 = 7 個が 136 回のうち 114 回。いちばん多いコマは 9 個（録りはじめの 1 回）。囲む四角まるごとは 2〜3 回（録りはじめに大きな面を出すコマ。前と同じ）。
-- レイアウトの側（`tools/measure/webkit-layout.sh`、鍵盤 1 本 ＋ 歌 2 本で録音）: ふつうのレイアウトが頼むのは位置と時間の 2 個（178 回のうち 166 回）。小節が進むコマだけ、先の箱が動いて 8 個を頼む（3 回。前からの形で、面は 3.4 万 px）。
-- **くらべた案**: (a) 録っているクリップの canvas を再生の線の高さいっぱいにのばす（線が canvas の中に入る）: 数は同じ 7 で、面が 7 倍。(b) トラックの計の canvas を見出しいっぱいにのばす: 下に文字が多い。(c) 上の帯の数字をマスターの canvas でまとめる（`SHOWN_WITH`）: 1 個へるが、5 万 px を毎コマ出す。どれもとらない。
-- **残る天井**: 面の広さは「先の幅（2 小節）× そろえた高さ」。横にいちばん拡大して、トラックが多いと、25 % の決まりに近づく（測っていない）。処理の負荷の数字が変わるコマ（上の帯の箱の高さがそろっていない）は、再生だけのときと同じく 11 個をこえる事がある（前からの宿題）。
-- 読んだ所: `ui/node_modules/typescript/lib/lib.dom.d.ts`（TypeScript 6.0.3。`texImage2D` ・ `texSubImage2D` の形）、`docs/measurements/2026-11-21-round7-step2.md` 8 章と `target/measure/round7-step2/damage-vocal-recording/`（四角の並び）、7 章「CPU で描く WebKit」。
-
-### 22-18 A2. core の音のファイル（区切り3 の 2 回目、2026-11-21、meloet-hard）
-
-**置き場所の係と、ほどく係**（`crates/meloet-core/src/audiofiles.rs` と `audiofiles/`）
-
-- `AudioStore` が場所を知る 1 か所: 曲のフォルダの `音/` → 前にいたフォルダの `音/`（名前をつけて保存の前。履歴だけが指す音のため）→ 作業の場所 `work/音/`。しまっておく所は `CoreOptions::cache_dir`（`$XDG_CACHE_HOME/meloet`）の下の `audio/<uid の 16 進>-<サンプルレート>.wav` と `peaks/<uid>.peaks`。**ピークの場所もここから**（`Model::with_cache_dir`。`peaks::peaks_dir()` は、もうだれも呼ばない）。
-- **ほどく係** `Keeper`（スレッド `meloet-audio`、1 本）: 写す ・ 中身を見る（`bring`）、曲の音の表を見はる（`watch`）、さがす（`find`）。長いファイルをほどいている間も、パケット 1 つごとに次の頼みを見るので、入れる操作は待たされない。core のスレッドはディスクにさわらない（作業の場所を空にする時だけは別。下）。
-- **鳴らす形**（`PcmStore::open`）: そのまま読める wav（1 ・ 2 チャンネル、8 ・ 16 ・ 24 ・ 32 ビットの整数か 32 ・ 64 ビットの小数）でエンジンのサンプルレートなら、ファイルをじかに読む（`wav.rs` の `WavPcm`。頼まれた所だけ seek して読む）。ほかは、しまっておく所の F32 の wav。まだ無ければ `None`（`Loading`）。
-- **`AudioStore::generation()`**（継ぎ目に足した物）: 前は `open` が `None` だった音が見つかるかもしれない時（ほどき終わった、さがして見つけた、曲のフォルダが変わった、音の表が変わった）に上がる数。先読みの係は、これが変わったら、開けなかった音をもう一度 `open` する。
-- **サンプルレートの変換**（`resample.rs`）: rubato 5.1.0 の `Fft`（`FixedSync::Input`、1024 こま）。手順は `Resampler::process_all_into_buffer`（`rubato-5.1.0/src/lib.rs` 325〜393 行）と同じ（丸ごとのチャンク → 最後の半端を `partial_len` → 遅れの分だけ無音を押しこむ → 頭の `output_delay()` を切る）。**ただし 1 チャンクずつ流す**。**理由**: `process_all_into_buffer` は入口も出口も丸ごとメモリに要る（44.1 kHz ・ ステレオの 10 分で、入口だけで 200 MB）。出る長さは整数で `ceil(こま × 出 ÷ 入)`（rubato の数えかたは小数を通るので、44100 → 48000 の 1 秒が 48001 こまになることがあった）。44.1 → 48 kHz で、クリックは 1 こまもずれない（試験）。
-- **ほどく**（`decode.rs`、symphonia 0.6.1 に `mp3` ・ `ogg` ・ `vorbis` を足した）: 長さは「数える」。そのまま読める wav と flac は頭の数、mp3 と ogg は 1 回ほどいて数える（タグのない mp3 は頭の数が見積もりなので）。3 チャンネル以上と、opus は「読めない」。
-- **uid**（入れた音）: 中身の SHA-256 から作る。同じ中身は、どの曲でも同じ鍵（しまっておく所とピークを分けあう）。録った音は今までどおり 1 つずつちがう。
-- **写す名前**: もとの名前のまま作業の場所へ（一時の名前で写して `sync_all` → rename）。同じ名前の物が `音/` か作業の場所にあって、中身（SHA-256）が同じならそれを使い、ちがえば「 2」「 3」…。音の表にあって見つからない名前も、新しいファイルにはつけない。
-
-**mp3 の頭の無音を測った**（この PC の lame 3.101 beta 3 と ffmpeg 8.0.1 の libmp3lame、`crates/meloet-core/tests/fixtures/make.sh`、試験 `the_four_kinds_decode_to_the_same_second` ・ `an_mp3_without_its_tag_starts_1105_frames_late`）
+| 0 | u8 | kind = 4 (peaks) |
+| 1 | u8 | version = 1 |
+| 2 | u8 | level (0–4: 256, 1024, 4096, 16384, 65536 frames) |
+| 3 | u8 | channel count c (1 or 2) |
+| 4 | u8 | flags (bit0: still growing — recording or loading) |
+| 5 | 3 | 0 (unused) |
+| 8 | u32 | audio id |
+| 12 | u32 | index of the first peak |
+| 16 | u32 | peaks in this answer n |
+| 20 | u32 | peaks this level has now |
+| 24 | 4c × n | per peak, per channel: min i16, max i16 |
+
+- At most 65536 per answer. The core thread only says where they are (`PeaksPlace::File` or `Growing`); the invoke thread reads the file (core never touches the disk).
+- Screen `PeakStore`: cached by (audio id, level), dropped when the song serial changes; audio not used by any clip is kept newest-first up to 4 MiB. `levelFor(frames per px)` picks the level.
+
+**Engine interface** (`crates/meloet-engine/src/{clips.rs,stream.rs}`)
+
+- **Song frames**: frame 0 is song tick 0; tick `t` is `song_frame(map, t, rate) = round(sec(t) × rate)`; the engine position is `song_frame_at(anchor_sec, frames, rate)`. Clip tables and read-ahead place audio with this one function. Notes and beats are placed from the anchor with `frame_of`, so they can differ by one frame (22-18 A1).
+- **Clip table** `ClipTable` of `ClipRegion {start, end, fade_in, fade_out, gain}` (song frames, fade frames, linear gain); `ClipRegion::of` builds from ticks and dB; `gain_at(frame)` = fade × gain, no allocation. Core rebuilds it when map, clips or rate change and sends a `Box`; old ones come back through a ring.
+- **Read-ahead ring** `stream_ring(rate)` → `StreamWriter`/`StreamReader` (2 s, always stereo; frame ring + header ring; header `StreamChunk {generation, first_frame, frames}`). `StreamReader::read(generation, frame, out)` is all the audio thread does: drop old generations and past frames, fill silence for skipped or missing frames and count it (`tests/stream.rs` watches memory).
+- **What the engine asks** `StreamWant {track, generation, map_gen, anchor_sec, frame, loop_ticks}` (`want_ring`); `frame` is from the anchor and already includes the read-ahead for delayed tracks.
+- **Read-ahead ↔ files** (`crates/meloet-core/src/pcm.rs`): `PcmStore::open(uid, rate)` → `PcmFile` (PCM at the engine rate). `feed_clip(map, rate, clip)` → `FeedClip {start, end, uid, file_frame, file_end}` is the one place that says which part of the file a clip plays.
+
+**Screen joins**
+
+- `ui/src/components/arrange/audioClipGeom.ts`: wave area (below the name row, above the bottom border, center line), gain line ↔ dB (`gainLineY`, `gainAtY`; top +12, bottom −60, straight in dB), fade handles and lines, `fileFrameAt`, 160 rows (`rowHeights`), drop targets (`dropTarget`, `dropFrameBox`, `dropModeAt`: the left half of the window is "separate tracks").
+- Fake scenes: `audioEdit`, `audioTall`, `audioDropOne`, `audioDrop`, `audioDropRight`, `audioDropMixed`, `audioMissing`, `audioLoading`, `audioKinds`; fake peaks from `fakeAudio.ts`.
+
+**Lead's decisions after the first pass**
+
+- **The read-ahead thread lives in core** (`crates/meloet-core/src/readahead.rs`). Why: clippy forbids Mutex in the engine crate, and the disk writer (22-7) is in core too. The engine only reads rings.
+- **`crate::audiofiles::AudioStore`** (holds the `PcmStore`; one per `Worker.audio_store`, shared with read-ahead) is the one place that knows where audio is. Song folder set on open/save/save-as (`set_song_dir`), audio table set when the song goes to the engine (`set_sources`). Why: two people did not have to edit the same part of `service.rs`.
+
+### 22-18 C. Screen HTML parts (step 3, second pass)
+
+- **160 rows**: row heights are decided in one place, `arrangeRows` in `automation/autoGeom.ts` (`RowDims.tall` with `ArrangeView.tallTrack` and `part.track.vocal`; result has `heights`). Track heads (`TrackHeads`) and the clip area (`Arrange`'s `LaneDims.heights`) read the same answer. Why: automation lane positions are summed there too; counting rows elsewhere would shift the lanes. Double clicking an audio clip sends `setTallTrack`.
+- **Handles and gain line** (`arrange/AudioClipHandles.svelte`): HTML over the clip area. Handles are `part.audioclip.handle` (6×6), the line is accent `line.hair`. During a drag only `audioDrag.now` changes; release sends one `setClipField`. `audioDrag.now` stays until the answering rev arrives (like `clipPending`). Fades do not snap (ticks as they are; temporary). The gain reading shows at the cursor and on the status line (`dragReading`) only while dragging. Fade handles became WebGL later (22-18, arrange zoom).
+- **Drag from outside** (`arrange/fileDrag.svelte.ts`): `fileDrag`/`fileDrop` are listened to from load time with `onEvent` (not lost before the part exists). The arrange's `DropFrame` registers the target math; the notice box and `dropAudio` use the same math. One audio file: `mode` is `inRow` (onto the vocal track under the pointer); two or more: window left/right (B-94-21). The count of the last `fileDrag` is remembered in case the box is already closed at drop.
+- **Selected clip panel** (`params/ClipPanel.svelte`, texts `params/clipFields.ts`): double click a value to type (same `ValueField` as parameter rows). Fades have separate "before" and "after" numbers. Unreadable position, length or fade → `rejectValue`; unreadable gain does nothing. Out-of-range values are clamped silently by Rust (B-94-29).
+
+### 22-18 B. Screen WebGL: waveforms and redraws while recording (step 3, second pass)
+
+**Waveforms** (`ui/src/gl/{wave.ts,batch.ts,renderer.ts,paint.ts}`, `ui/src/components/arrange/{wave.ts,wavePeaks.svelte.ts}`)
+
+- **Texture: RG16I (1 channel) or RGBA16I (2 channels)**, not 22-9's RG8/RG16F. Why: peaks arrive as i16 min/max, so the `Int16Array` becomes texels as it is (`texSubImage2D` with array and offset). RG8 has 256 steps, and at +12 dB gain in a 160 row the steps show (2–3 px). RG16F needs half-float conversion. Integer textures are core WebGL2 (no extension) and cannot be filtered, so the shader uses `texelFetch` (no filtering wanted anyway).
+- **Folding**: rows of 2048 texels (`(i % 2048, i / 2048)`; WebGL2 always supports 2048), up to 2048 rows (6 h at the finest level; more is not drawn). Growing audio doubles rows ahead and adds from the last known peak.
+- **Limits**: textures are per context (`arrangeLanes`, `recordingClip`); textures not used by the current picture are kept newest-first up to 16 MiB (`WAVE_TEX_KEEP_BYTES`). JS peaks follow the bridge `PeakStore` limit (4 MiB); `WaveBook` drops what the bridge dropped when the song changes.
+- **Draw order**: the `rects` slot has `waves` with `after` (after which quad). The painter draws quads → waves → later quads with the second shader of the same context (waves above the clip face, below later clips and the recording clip). No new slot or context. The wave shader is built when the context is built (a first waveform during recording does not stall).
+- **Shader**: one quad (vertices from the index, no buffer). Per pixel: which bar → min/max of up to 16 peaks in that bar → color if inside. **Bars are 1 px wide, every 3 px, at least 2 px tall** (mock F7-AudioEdit, `mock.wave.*`). Bars count from the clip head, so scrolling shows the same bar for the same audio. The level is the coarsest one finer than one bar (`waveLevel`; 1–4 peaks per bar). Two channels are merged into one shape (temporary; the spec does not say).
+- **Gain and fades**: clip gain is a uniform; fades get clip edge x and px lengths and the shader applies the `fade.ts` formula. The fade line (gray.10) and the 160-row center line (gray.5) are drawn by the same shader (they change with the waveform).
+- **Tempo changes**: frames count in seconds, so tick → frame bends where the tempo changes. The visible part is split into nearly straight parts (within half a px; `straightParts`, one if the tempo is steady, up to 64).
+- **Per-frame work** while scrolling or zooming: one quad per visible clip (and 13 uniforms), independent of peak or px counts.
+- **During a drag** (`audioDrag.now`): the big area is not redrawn; only that clip is drawn with the drag values in a small box of the `recordingClip` slot, kept until the answer arrives (or 100 ms). The move/close-up picture (`dragPicture`) includes waveforms.
+- **Recording clip**: finished bars in the big area, the next 2 bars in `recordingClip` (same split as keys). `moreAudioPeaks` every 100 ms while used. The big area counts "nothing beyond the last shown peak" as the same picture (`Batch.wave` `fresh`), so it redraws only when a bar is finished.
+- **Missing audio**: background gray.2, top line gray.7, no waveform (no peaks asked). Selected: border and top line accent (temporary). **Loading**: drawn up to what has arrived; refused requests are retried from 0.5 s, doubling, up to 8 s.
 
-| ファイル | 読めたこま（もとは 44100） | クリックの位置（もとは 22050） |
-|---|---|---|
-| wav ・ flac | 44100 | 22050 |
-| mp3（lame、タグつき） | 44100 | 22050 |
-| mp3（ffmpeg の libmp3lame、タグつき） | 44100 | 22050 |
-| ogg（oggenc） | 44100 | 22050 |
-| mp3（`lame -t`、タグなし） | 46080（1152 × 40） | 23155（**1105 こま = 25.1 ms おそい**） |
+**Redraw while recording** (`ui/src/gl/{engine.ts,slot.ts}`)
 
-- **直さない（タグのない mp3 の頭の 1105 こまは切らない。棟梁の決め、2026-11-21）**。**理由**: タグがないと、どの作り手の mp3 かで遅れがちがうので、決まった数を引くと別の mp3 でずれる。人はクリップを動かして合わせられる。 1105 は LAME の数（符号器 576 ＋ 復号器 529）で、タグがなければ、どの符号器で作ったかが分からない。ほかの符号器の mp3 から 1105 こま切ると、音の頭を切ってしまうかもしれない。同じ 3 つの mp3 をこの PC の ffmpeg 8.0.1 でほどいても、こまの数もクリックの位置も meloet と同じだった（タグなしは 46080 こま、クリックは 23155）。ずれが気になる時は、人がクリップの左はしをちぢめる（今の操作で直せる）。lame と ffmpeg がふつうに作る mp3 にはタグがつくので、ずれない。
-
-**曲のフォルダ**（22-4 の中身。`AudioStore::settle`、`service.rs` の `save_song`、`songfile::save_new_with`）
-
-- 保存は「音を `音/` へ → `音/` を `sync_all` → `.meloet`（14 章）」。作業の場所の物は移す（rename。`CrossesDevices` なら、`音/` に一時の名前で写して `sync_all` → rename → フォルダを `sync_all` → もとを消す）。前にいたフォルダ（名前をつけて保存）の物は写す。見つからない物はとばす。
-- 途中で止まっても（試験 `a_save_moves_the_audio_into_the_folder_and_a_save_cut_short_loses_nothing` が、1 つ目の前と 1 つ目の後で止める）、どの音も 2 つの場所のどちらかに丸ごとある。`音/` の中の物は、どの道でも消さない。
-- **「保存する `Doc` が指す音」は、どれかのクリップのどれかのテイク（えらんでいないテイクも）が鳴らす音だけ**（棟梁の決め、2026-11-21。`songfile::used_audio`）。曲のファイルの音の表にも、`音/` へ移す物にも、これだけを入れる。ひらいている曲の音の表（メモリ）からは消さない（クリップを消した手を取り消せば戻るので）。だから、消したクリップの音は作業の場所に残り、曲を閉じたときに作業の場所ごと空になる。保存のあとで取り消してクリップが戻れば、音は作業の場所で見つかって鳴り、次の保存で移る。もう `音/` にある音が使われなくなった時は、曲のファイルの表からだけ外し、`音/` のファイルは消さない（人のフォルダは自動で消さない）。
-  - **なおすためのファイルも同じ**（同じ `songfile::encode` を通る）。**理由**: なおすためのファイルは取り消しの履歴を持たないので、戻した曲では、どのクリップも鳴らさない音に戻る道がない。表に残しても、だれも読まない。ファイルそのものは作業の場所に残り、その曲を手ばなす時に空になる。
-- **作業の場所を空にする時**: `Effect::ClearWorkAudio`（閉じる ・ 新しい曲 ・ ひらいた曲に入れかわった）と、起動のとき（なおすためのファイルも録りかけの書きつけもない）。core のスレッドで、その場で消す。**理由**: 閉じるときは、すぐあとに meloet が終わるので、ほかのスレッドに頼むと間に合わない。ファイルを数個消すだけ。
-- 音の置き場所の係に曲のフォルダを伝えるのは `Worker::tell_song_dir`（どの入力のあとでも、効果を走らせる前に見くらべる）。通し番号が変わったら「別の曲」（`set_song_dir`）、同じなら「同じ曲が動いた」（`song_moved`。前のフォルダもさがす所に残す）。
-
-**意図と見方**（`state/audio.rs`、`play/audio.rs`、`meloet-model` の `arrange.rs` ・ `audio/clips.rs`）
+- Cause: two canvases that change in the same frame (track meters y 249–324, recording clip y 199–320) had different top and bottom edges, so they cut each other and the play line into 10 rectangles.
+- **Fix**: the `rects` slot can say `alignY: "trackMeters"` (only the recording clip's head part uses it). While it exists, both slots' canvases share the union top and bottom (placing one re-places the other; size goes back when the slot goes). Rectangles become **7** (position, time, input meter, line above, track meters, recording clip, line below), independent of the number of recorded tracks or waveforms. Measured with `tools/measure/webkit-damage.sh` (details: `docs/history/measurements/2026-11-21-round7-step2.md` 8).
+- Rejected: stretching the recording canvas to the play line height (7 times the area), stretching the meter canvas (more text below), combining the top band numbers in the master canvas (5 × 10⁴ px every frame).
+- Remaining ceiling: area is "2 bars wide × aligned height"; at the widest zoom with many tracks it may near the 25 % rule (not measured). Frames where the load numbers change can still exceed 11 rectangles (old issue).
 
-- 入れる流れ: 意図（`importAudio` → PC の窓、`dropAudio`）→ `Effect::BringAudio` → 係が写して中身を見る → `AudioNews::Brought` → **ここで 1 手**（`import_audio`）→ 音の表が変わったので `Effect::WatchAudio` → 係が「ある ・ ない ・ ほどいている」を答え、要る物をほどく（`Progress` は 250 ms に 1 回まで）。クリップは、ほどく前に置かれる。録音中に届いた物は、録音が終わってから入れる。
-- **いつ見はりなおすか**: 曲が入れかわった、音の表（`Doc.audio` の `Arc`）が変わった、流れのサンプルレートが変わった。だから、出口の装置が変わってサンプルレートが変わると、自動で作りなおす。
-- 「1 本にならべる」で、もうあるクリップと重なるファイルは、新しい歌のトラック 1 本へ（その 1 本を分けあう）。名前の順は、ファイルの名前のバイトの順（仮）。トラックが 64 本をこえる入れかたは、何もしない（文がない）。
-- 「さがす…」は、えらんだファイルのサンプルレートとチャンネルの数が同じなら受けとる（仮。SHA-256 がちがってもよい: 別のアプリで書きなおした同じ歌かもしれない）。ちがえば状態行 `audioUnreadable`（仮。B-94-30）。見つけたファイルは作業の場所に入り、次の保存で `音/` へ移る。
-- 「選んだクリップ」の欄は Model が決める（`Model::params_view`）: 歌のクリップがちょうど 1 つ選ばれていて、そのあとにインサートも音源も選んでいない時。
-- フェードは、クリップが短くなったら（長さを変える ・ 切る）クリップの長さまでちぢめる。出るフェードが先にゆずる。
+### 22-18 A2. Core audio files (step 3, second pass)
 
-**まだの事**
+**Places and the decoder** (`crates/meloet-core/src/audiofiles.rs`, `audiofiles/`)
 
-- しまっておく所の大きさの上限と、古い物から消す決まり（22-8 のとおり区切り4 で）。
-- debug のビルドでは、5 分の mp3 をほどいて 48 kHz にするのに 13 秒ほどかかった（ほかの係のビルド中の、にごった数）。こまごとの仕事（symphonia の `copy_to_slice_interleaved`、rubato へわたす入れ物、ピーク）が `meloet-core` の中に展開されて、最適化されないため。release では測っていない。
-### 22-18 A1. エンジンで歌のクリップを鳴らす（区切り3 の 2 回目、2026-11-21、meloet-hard）
+- `AudioStore` is the one place that knows where audio is: the song folder's `音/` → the folder the song was in before "save as" (for audio only the undo history points to) → `work/音/`. Cache under `CoreOptions::cache_dir` (`$XDG_CACHE_HOME/meloet`): `audio/<uid hex>-<rate>.wav`, `peaks/<uid>.peaks`, and later `stretch/` (22-19). **Peaks paths also come from here** (`Model::with_cache_dir`).
+- **Keeper** (thread `meloet-audio`, one): copy and inspect (`bring`), watch the song's audio table (`watch`), search (`find`). While decoding a long file it checks for new requests after every packet, so imports do not wait. The core thread does not touch the disk (except clearing the work place, below).
+- **Play form** (`PcmStore::open`): a plain wav (1–2 channels; 8/16/24/32-bit integer or 32/64-bit float) at the engine rate is read directly (`wav.rs` `WavPcm`, seeking only what is asked). Others use the cached F32 wav; if not ready, `None` (`Loading`).
+- **`AudioStore::generation()`** goes up when a sound that gave `None` might now open (decoding done, found by search, song folder changed, audio table changed). Read-ahead retries unopened sounds when it changes.
+- **Resampling** (`resample.rs`): rubato 5.1.0 `Fft` (`FixedSync::Input`, 1024 frames), the same steps as `process_all_into_buffer` (`rubato-5.1.0/src/lib.rs` 325–393) **but one chunk at a time**. Why: `process_all_into_buffer` needs whole input and output in memory (200 MB of input alone for 10 min of 44.1 kHz stereo). Output length is the integer `ceil(frames × out ÷ in)` (rubato's float count sometimes gave 48001 for one second). 44.1 → 48 kHz moves a click by 0 frames (tested).
+- **Decoding** (`decode.rs`, symphonia 0.6.1 + `mp3`, `ogg`, `vorbis`): lengths are counted; wav and flac from the header, mp3 and ogg by decoding once (a tagless mp3 header only estimates). 3+ channels and opus are unreadable.
+- **uid** of imported audio comes from the SHA-256 of its contents: the same contents share cache and peaks across songs. Recorded audio gets a fresh uid each time.
+- **Names**: copied to the work place under the original name (temp name, `sync_all`, rename). Same name in `音/` or the work place with the same SHA-256 → reused; different → « 2», « 3»…. Names of missing table entries are not reused.
 
-**エンジン**（`crates/meloet-engine/src/{clipplay.rs,engine.rs,stream.rs}`）
+**Silence at the head of mp3** (lame 3.101 and ffmpeg 8.0.1 libmp3lame; `crates/meloet-core/tests/fixtures/make.sh`): wav, flac, tagged mp3 (both encoders) and ogg all decode to the same frames and click position. **A tagless mp3 (`lame -t`) starts 1105 frames (25.1 ms) late**.
 
-- コマンドは 2 つ。`SetStream {track, reader}`（先読みの輪の読み手。なければ `None`）と `SetClips {track, table, refeed}`（区切りの表）。古い読み手と表は、返す輪（`retired_clips` ・ `retired_streams`）で core に返す。音のスレッドでは捨てない。
-  - `refeed` は「クリップの音や場所が変わった」の印。立っていれば新しい世代にして、係が入れなおす。立っていなければ（音量とフェードだけ）、輪はそのまま。
-- **世代を決める所は 1 つ**（ブロックの頭の `aim_streams`）。位置がとぶコマンド（再生 ・ 録音 ・ 止める ・ 位置を変える ・ ループが変わる ・ 地図）と、トラックの先読み（20-8）が変わったときに印をつけ、次のブロックの頭で「どこから要るか」（`StreamWant`）を作る。**いま輪に入っている所と同じなら、世代を上げない**。止まっている間に入れた 2 秒が、そのまま再生の頭になる。
-  - カウントイン中は、録りはじめる所（`record_from`）の分を先に言う。カウントインが終わった瞬間に、輪はもう入っている。
-  - ループの折り返しでは世代を上げない（係がならべてある）。先に読むトラックが折り返しをまたぐ所は、エンジンが区切りの表の位置だけを切りかえる。
-- **音量とフェード**: 毎こま、区切りの表（`ClipRegion::gain_at`、model の `clip_fade_gain`）を引いて掛ける。クリップの境目は、表がその場で次の値を言う。**表が入れかわった時だけ、古い表の答えから新しい表の答えへ 20 ms でまっすぐ移る**（古い表を 20 ms だけ持っておき、終わったら返す）。**理由**: 音量でもフェードでも同じ 1 つのしかけですむ。値の種類ごとに「なめらかにする物」を持たない。
-- **とび**: 鳴っている間にとんだら、古い世代を 10 ms でしぼってから（`tail`）、新しい世代を 10 ms で入れる。止まっている所からの再生は、しぼりも入りもなし（頭のこまから、その大きさで鳴る）。ミュート ・ ソロは、輪を読みつづけたまま 10 ms で開け閉めする（戻したとき位置が合っている）。
-- **輪が空**: そのひと区切りは音なしにして、足りなかったこまを数える（`EngineMeters::stream_missing`。core が増えた分を stderr に書く）。入ってきたら 10 ms で入る。位置はずれない。**とびのすぐあと、係がまだ入れていない分は数えない**（遅れではないので）。
-  - 空だったブロックでは、エンジンが「いまここ」（同じ世代の `StreamWant`）を言う。係はそこまでとんでから入れる（過ぎたこまを読みにいかない）。
-- 止まっている間は、エンジンが毎ブロック `StreamReader::settle` で古い世代を輪から出す（そうしないと、古い 2 秒が輪をふさいで新しい 2 秒が入らない）。
-- **同じティックの音とノートの 1 こま**（1 回目の申し送り）: 合わせていない。試験（`tests/clips.rs` の `audio_and_notes_of_one_tick_are_at_most_a_frame_apart`）で、123.45 のテンポで再生の頭を変えて見ると、0 こまの回と 1 こまの回がある（1 こまをこえない）。**理由**: ノートは「再生を始めた所から数えたこま」（`frame_of`）、音は「曲の頭から数えたこま」（`song_frame`）に置く。音を再生の頭ごとの数えかたに合わせると、S で切った 2 つのクリップの間で 1 こま重なったり空いたりする。切った所が元のままつながる事を取った。120 のように拍がこまの上に来る曲では 0。
-- 見はり: `tests/clips.rs` の試験は、どれも音のスレッドの中の確保 ・ 解放が (0, 0)。
+- **Not corrected** (lead's decision). Why: without a tag the encoder is unknown, and the delay depends on it (1105 is LAME's 576 + 529). Cutting a fixed amount could cut the start of other mp3s. ffmpeg decodes the same files the same way. People can shorten the left edge. lame and ffmpeg normally write the tag.
 
-**先読みの係**（`crates/meloet-core/src/readahead.rs`、スレッド `meloet-readahead`）
+**Song folder** (22-4; `AudioStore::settle`, `service.rs` `save_song`, `songfile::save_new_with`)
 
-- ふつうの優先度の 1 本。トラックごとに、輪が 1 秒を切ったら 2 秒まで入れる。新しい世代は、すぐ入れる。1 回に読むのは 4096 こままでで、その間にエンジンが言った事を見る（何本もあるときは 1 本ずつ順に）。
-- 「曲のどのこまが、世代の何こまめか」は `meloet_engine::StreamLayout` の 1 か所（ループの折り返しと、21-3 の端数を捨てる決まりも、エンジンと同じ式）。
-- 順の約束: **core は、係にクリップを言ってから、エンジンに世代を上げさせる**。係は「エンジンが言った事 → core が言った事」の順に読む。だから、新しい世代の頼みが見えた時には、そのクリップはもう届いている。地図は番号（`map_gen`）で待つ（番号の合う地図が来るまで、その世代は入れない）。
-- ファイルは `PcmStore::open` だけで開く。なかった物（`None`）は音なしで、クリップが変わった時と `store_changed` の時に、もう一度たずねる。読みそこねは音なしにして数える。
-- 起こす間合いは 5 ms（歌のトラックがなければ 200 ms）。エンジンは係を起こさない（音のスレッドからシステムコールを呼ばない）。
+- Save: audio to `音/` → `sync_all` `音/` → `.meloet` (14). Work-place files are moved (rename; `CrossesDevices`: temp copy in `音/`, `sync_all`, rename, `sync_all` the folder, delete the source). Files from the earlier folder (save as) are copied. Missing ones are skipped.
+- Cut short at any point, every sound is whole in one of the two places (tested by `a_save_moves_the_audio_into_the_folder_and_a_save_cut_short_loses_nothing`). Nothing in `音/` is ever deleted.
+- **"Audio the saved `Doc` uses" = audio played by any take (active or not) of any clip** (`songfile::used_audio`). Only these go into the file's audio table and into `音/`. The open song's in-memory table keeps the others (undoing a delete brings the clip back). So a deleted clip's audio stays in the work place and goes when the work place is cleared. Audio already in `音/` that is no longer used is only removed from the table, not deleted.
+  - **The recovery file does the same** (same `songfile::encode`). Why: it has no undo history, so unused audio could never come back there.
+- **Clearing the work place**: `Effect::ClearWorkAudio` (close, new song, another song opened) and at start (no recovery file, no half-recorded note). Done on the core thread at once. Why: at close meloet ends right after, so another thread might not finish; it is only a few deletes.
+- `Worker::tell_song_dir` tells the store about the song folder (compared before effects run after each input). New serial → another song (`set_song_dir`); same serial → the same song moved (`song_moved`, the old folder stays searched).
 
-**core からエンジンと係へ**（`crates/meloet-core/src/play/audiosync.rs`、`service.rs`）
+**Intents and views** (`state/audio.rs`, `play/audio.rs`; model `arrange.rs`, `audio/clips.rs`)
 
-- 決まりの側（`Play`）は、席ごとの歌のクリップを曲の形のまま送る（`EngineOp::Clips {seat, clips}`、音の表は `EngineOp::AudioSources`）。出すのは、ノートを送る所と同じ（トラックのクリップが変わった時、曲を入れかえた時、起動）。
-- こまの数にするのは、サンプルレートと地図を知っている音の側（`service.rs` の `Audio`）。席ごとのクリップを帳面に持ち、**出口をひらいた時（輪を作りなおす）と、地図が変わった時（全部を入れなおす）**に、表と `FeedClip` を作りなおす。`FeedClip` が前と同じなら `refeed` を立てない（音量 ・ フェードだけの変更は、輪にさわらない）。
-- `AudioStore::set_sources` は `EngineOp::AudioSources` の所で。
-- **置き場所の中身が変わった時（merge のあと、A2 の `AudioStore::generation()` に合わせた）**: 音の側が、いつもの見まわりでこの数を見る。変わっていたら、**`open` が `None` だったファイルのある席だけ**を入れなおす（係が席ごとに印をつけている: `ReadStats::unopened`）。ほかの席は、鳴ったまま何もしない。**理由**: `set_sources` や保存でも数は上がるので、全部の席を入れなおすと、関係のないトラックが 10 ms とぎれる。
-- 試験のために `Core::set_pcm_store`（係が開く所を、試験の持ちこんだ物にする）。そのとき全部の席を入れなおすのが `Worker::audio_files_changed`。
+- Import: intent (`importAudio` → PC window, or `dropAudio`) → `Effect::BringAudio` → keeper copies and inspects → `AudioNews::Brought` → **one step here** (`import_audio`) → the table changed → `Effect::WatchAudio` → keeper answers present / missing / decoding and decodes what is needed (`Progress` at most every 250 ms). Clips are placed before decoding. Imports arriving during recording wait until it ends.
+- The keeper re-watches when the song changes, the table `Arc` changes, or the stream rate changes (so a new device rate rebuilds caches automatically).
+- "In one row": files that would overlap existing clips go to one new vocal track (shared). Order by byte order of file names (temporary). An import that would go over 64 tracks does nothing (no text).
+- "さがす…" accepts a file with the same rate and channel count, even with another SHA-256 (maybe the same song saved again by another app); otherwise `audioUnreadable` (temporary, B-94-30). The found file goes to the work place and moves to `音/` on the next save.
+- `Model::params_view` decides the clip panel: exactly one audio clip selected, and no insert or instrument selected after it.
+- Fades shrink to the clip length when a clip gets shorter (resize, split); the fade-out gives way first.
 
-**録りながらのピーク**（`vocalrec.rs`、`service/input.rs`）
+**Open**: in debug builds, decoding a 5-min mp3 to 48 kHz took about 13 s (per-frame work inside `meloet-core` is not optimized there). Release not measured.
 
-- 書く係が、ファイルに書いた物と同じ物を `PeakBuilder` に足す（抜けを埋めた音なしも）。`DiskWriter::start` がファイルごとの `SharedPeaks` を返す。
-- `peaks` の答えは、録っている間と、止めてからピークのファイルができるまでは `PeaksPlace::Growing`（core の音の側 `service/input.rs` が、音の番号で持つ。`Play::peaks_place` には入れていない。**理由**: 録っている間は、まだ音の表に uid がなく、`Play::peaks_place` は音の表から引くので）。録音が曲に入ると、ピークのファイルの名前（uid）が決まるので、書く係のスレッドで `.peaks` を書き、書けたら手ばなす。10 秒たっても曲に入らなかった録音の分は捨てる。
-- **置き場所は A2 の `CoreOptions::cache_dir` の下**（`Play::peaks_place` が言う `<cache>/peaks/<uid>.peaks`。`peaks::peaks_dir()` は使わない）。`cache_dir` がなければ書かない。
-- **録った歌のピークを作るのは、書く係（A1）**。A2 の係（keeper）は「ピークのファイルが無い音」を wav から作るので、二重にならないよう、**keeper に曲の音を見せる（`Effect::WatchAudio`）すぐ前に、録音のピークを書きおえる**（`Worker::keep_recorded_peaks`。小さいファイルなので、そこだけ待つ）。keeper は、こま数の合うファイルを見つけて作らない。ピークのファイルが消えていた時に作りなおすのは keeper。
+### 22-18 A1. Playing audio clips in the engine (step 3, second pass)
 
-- **`VocalRecordingView` の `from` と `firstFrame` は、いつも同じ所を指す**（棟梁からの申し送り、画面は `from` から数えて波形を描き、`firstFrame` をそこのファイルのこまとして読む）。**両方を「いまの周の頭」にそろえた**: 1 周めは録りはじめのティックとそこのこま、2 周めからはループの頭のティックとその周の頭のこま（再生中に R を押してループの途中から録りはじめたときも、2 周めからは `from` がループの頭になる）。書く係が周の頭のこまを答えなかった周は、録りはじめから数えたこまを出す（テイクを作る時と同じ数えかた）。**理由**: 周ごとのテイクがループの頭から始まるので、録りおわって曲に入るクリップと同じ場所に波形が出る。
-- **止めたあとの旗**: 録音が曲に入ると、次の見まわり（core のスレッドのいつもの回り）で `.peaks` を書き、書けたら `peaks` の答えがファイルからになって「まだふえる」の旗が落ちる。自分用の PipeWire の試験で、止めてから 3 秒以内に落ちるのを見ている（かかった時間は測っていない）。
+**Engine** (`crates/meloet-engine/src/{clipplay.rs,engine.rs,stream.rs}`)
 
-**録音中の抜け**
+- Two commands: `SetStream {track, reader}` and `SetClips {track, table, refeed}`. Old readers and tables go back to core through rings (`retired_clips`, `retired_streams`); nothing is dropped on the audio thread.
+  - `refeed` means "clip audio or position changed": new generation, the reader refills. Without it (gain and fade only) the ring is kept.
+- **One place decides generations** (`aim_streams` at the block head). Commands that jump (play, record, stop, locate, loop change, map) and read-ahead changes (20-8) set a mark; at the next block head a `StreamWant` is made. **If it equals what is already in the ring, no new generation**: the 2 s filled while stopped become the head of play.
+  - In count-in, the want is for the record start (`record_from`), so the ring is full when count-in ends.
+  - Loop wraps raise no generation (the reader laid them out). For delayed tracks across a wrap, only the clip-table position is switched.
+- **Gain and fades**: each frame the clip table (`ClipRegion::gain_at`, model `clip_fade_gain`) is looked up and multiplied. At clip borders the table gives the next value at once. **Only when the table is replaced, the gain moves straight from the old table's answer to the new one over 20 ms** (the old table is kept 20 ms, then returned). Why: one mechanism for gain and fades; no smoother per value kind.
+- **Jumps**: while sounding, the old generation fades out in 10 ms (`tail`), then the new fades in over 10 ms. Play from stop has no fades (starts at full level from the first frame). Mute/solo keep reading the ring and open/close over 10 ms (position stays right).
+- **Empty ring**: that slice is silent and missing frames are counted (`EngineMeters::stream_missing`; core logs the increase; since 23-7/23-8 also status `DiskTooSlow`); fades in over 10 ms when data returns; positions stay right. **Frames right after a jump that the reader has not filled yet are not counted** (not a delay). In an empty block the engine states "now" (same-generation `StreamWant`), so the reader skips ahead instead of reading past frames.
+- While stopped, the engine calls `StreamReader::settle` every block to drop old generations (otherwise old data blocks the new 2 s).
+- **Audio vs notes at the same tick**: they may be one frame apart (never more; `audio_and_notes_of_one_tick_are_at_most_a_frame_apart` in `tests/clips.rs`). Why: notes count frames from where play started (`frame_of`), audio from the song head (`song_frame`). Counting audio per play head would make two clips cut with S overlap or gap by a frame; a clean join was chosen. 0 when beats fall on frames (e.g. 120).
+- All `tests/clips.rs` tests see (0, 0) allocations on the audio thread.
 
-- `Written` に回数（`gap_count`、`dropped_blocks`）を足した。`TransportView.recordingFaults` は約束の文のとおり「入口がとんだ回数」と「輪に入らなかったブロックの数」（こま数ではない）。録っている間は増えるたびに、止めたあとは次の録音まで出る。
-- 止めた時に、抜けがあれば stderr と `MELOET_MEASURE_DIR/vocal-faults.log` に 1 行（こま数と回数）。
+**Read-ahead thread** (`crates/meloet-core/src/readahead.rs`, thread `meloet-readahead`)
 
-**区切り2 の測りで見つけた事の直し**
+- One, normal priority. Per track: when under 1 s, fill to 2 s; new generations at once. At most 4096 frames per read, checking engine wants in between (one track at a time).
+- `meloet_engine::StreamLayout` is the one place for "which song frame is which frame of the generation" (loop wrap and 21-3 remainder rule, same as the engine).
+- **Order**: core tells the reader the clips **before** letting the engine raise a generation; the reader reads "engine wants → core news" in that order, so the clip is known when the want is seen. Maps are matched by `map_gen`.
+- Files are opened only by `PcmStore::open`; `None` gives silence, retried when clips change and on `store_changed`. Read errors give silence and are counted.
+- Wakes every 5 ms (200 ms without vocal tracks). The engine never wakes it (no syscalls from the audio thread).
 
-- **録りはじめに、待っている変更をすぐ書く**（`state/recovery.rs`）。`busy` になった最初の入力で、2 秒待ちの変更があれば、なおすためのファイルを書く。**理由**: 録った歌は「その時の曲」の上に置くので、途中で落ちた次の起動が前の曲を見つけてはいけない。
-- **戻した歌の位置**: 起動で `rec.json` から歌を戻したら、なおすためのファイルを**すぐ**書く（2 秒待たない）。`rec.json` は、そのファイルが書けるまで消さない（書けた知らせで消す）。その間にまた落ちても、次の起動が同じ書きつけから戻す。同じ名前のファイルがもう曲にあれば、二重には入れない。「戻さない」をえらんだら、書きつけも消す。
-- **出口が消えて止まったとき**: 歌があると、テイクが曲に入るのは書く係が書きおわってから。止まった理由を録音が持っておき、入った時に「テイク n を残しました」を出す（歌だけなら、歌のテイクの番号）。
-- **頭だけの wav**: カウントイン中に落ちた 44 バイトのファイルは、次の起動で書きつけを読む所が消す。
+**Core → engine and reader** (`crates/meloet-core/src/play/audiosync.rs`, `service.rs`)
 
-**確かめ**（自分用の PipeWire、`crates/meloet-core/tests/vocal_play_private.rs`）
+- `Play` sends each seat's audio clips in song form (`EngineOp::Clips {seat, clips}`; audio table `EngineOp::AudioSources`) at the same times as notes.
+- The audio side (`service.rs` `Audio`), which knows the rate and map, keeps per-seat clips and rebuilds tables and `FeedClip`s **when the output opens (new rings) and when the map changes (everything refilled)**. An unchanged `FeedClip` sets no `refeed` (gain/fade edits do not touch the ring).
+- `AudioStore::set_sources` is called at `EngineOp::AudioSources`.
+- **When `AudioStore::generation()` changes**, only seats with a file that failed to open (`ReadStats::unopened`) are refilled. Why: the number also rises on `set_sources` and saves; refilling all seats would cut unrelated tracks for 10 ms.
+- `Core::set_pcm_store` (tests) and `Worker::audio_files_changed` refill all seats.
 
-- メトロノームを歌のトラックに録る → メトロノームを切り、そのクリップを鳴らしながら 2 本めの歌のトラックに録る（sink のモニターが入口なので、2 本めのファイルは「エンジンが鳴らしたクリップ」）。2 本めのファイルの中のクリックが拍のこまにあるかを見る。**バッファ 64 ・ 256 ・ 1024 で、6 拍ともずれ 0.0 こま**（録った時も鳴らした時も）。ファイルは、64 と 1024 では試験の中の `PcmStore` で、256 では本物の `AudioStore`（作業の場所の wav）で開いた（merge のあと）。
-- PC がこんでいて入口がとんだ回（`recordingFaults` が出た回）は、数に入れずにやりなおす。
+**Live peaks** (`vocalrec.rs`, `service/input.rs`)
+
+- The writer feeds `PeakBuilder` with exactly what it writes (filled silence too); `DiskWriter::start` returns a per-file `SharedPeaks`.
+- `peaks` answers `PeaksPlace::Growing` while recording and until the peak file exists (held by audio number in `service/input.rs`, not in `Play::peaks_place`, because the uid is not in the table yet). When the recording enters the song the writer thread writes `.peaks` and lets go. Recordings that do not enter the song within 10 s are dropped.
+- Peaks go under `CoreOptions::cache_dir`; nothing is written without one.
+- **Recorded peaks are made by the writer**; the keeper makes peaks only for files that have none. To avoid doing it twice, **the recorded peaks are written just before the keeper is shown the song's audio** (`Worker::keep_recorded_peaks`, a short wait for a small file). The keeper rebuilds lost peak files.
+- **`VocalRecordingView.from` and `firstFrame` always point to the same place: the head of the current lap** (lap 1: record start tick and its frame; later laps: loop head tick and that lap's head frame). Why: lap takes start at the loop head, so the live waveform is where the final clip will be.
+- After stop, the next core round writes `.peaks`; then answers come from the file and the "still growing" flag drops (within 3 s in the private PipeWire test).
 
-### 22-18 D. 区切り3 の直し（音の側、2026-11-21、meloet-hard）
+**Faults while recording**: `Written` has `gap_count` and `dropped_blocks`. `TransportView.recordingFaults` is "times the input skipped" and "blocks that did not fit in the ring" (not frames); shown while recording and after stop until the next recording. On stop, any faults go to stderr and the dev-only `vocal-faults.log`.
 
-測り（`docs/measurements/2026-11-21-round7-step3.md` の「見つけた事」2 ・ 3 と、B-94-50）のあとの 3 つ。約束（版 24）と文面は変えていない。
+**Fixes from the step 2 measurement**
 
-**1. 録っているトラックは、もとからあるクリップを鳴らさない（B-94-50）**
+- **At record start, pending changes are written at once** (`state/recovery.rs`): the first input that becomes `busy` writes the recovery file if a 2 s wait is pending. Why: the voice is placed on "the song at that time"; a crash must not recover an older song.
+- **Recovered voice**: after restoring from `rec.json` at start, the recovery file is written **at once**; `rec.json` is deleted only after that write is confirmed (a second crash recovers again). A file already in the song is not added twice. Choosing "don't restore" deletes the note.
+- **Output lost during recording**: with voice, takes enter the song after the writer finishes; the stop reason is kept and «テイク n を残しました» shows then.
+- A 44-byte header-only wav (crash in count-in) is deleted at next start.
 
-- core の `EngineOp::Record` ・ `RecordHere` の `muted` を、席 1 つから席の集まり（`meloet_engine::TrackSet`）にした。入るのは、**その録音で本当に録るトラック**: 鍵盤の行き先のトラックと、● がついていて入口のある歌のトラックぜんぶ（`Play::record` が作る `vocals`。`recording_vocals` に出る物と同じ）。
-- ● がついていても録れないトラック（入口がない、入口のチャンネルが足りない）は入れない。理由: 何も録らないのに前の歌だけ消えると、「録れている」と思わせる。棟梁の決め（「● のついた歌のトラックぜんぶ」）と食いちがうのはこの形だけ。
-- エンジンは変えていない。`Transport::lane_plays` が鍵盤の並び（`Lane`）と歌のクリップ（`ClipPlayer::render` の `plays`）の両方に効いていた。鳴らさない間も `render` は輪を読みつづけるので（`plays` はゲートだけ）、先読みは作りなおさない。
-- 切りかわり: 止まった所から録る時は、はじめのこまから無音（ゲートは止まっている間 0）。鳴っている途中の R（`RecordHere`）は、今のゲートの決まりのまま 10 ms で消える（`SetSilentTracks` のミュートと同じ道）。止めたあとの再生は、はじめのこまから鳴る。
-- ループ録音の周の頭: `muted` は録音の間ずっと同じ（周で変えない）。録っている途中で ● は変えられない（`toggle_vocal_arm` は `busy()` の間は何もしない）ので、途中で集まりが変わる形はない。
-- 試験: エンジン `tests/clips.rs` の `a_track_that_records_does_not_play_its_clips_and_the_other_tracks_do`（録っていないトラックは鳴る、録っているトラックはループの周をこえても無音で先読みは作りなおさない、止めたら鳴る、R で 10 ms で消える、メモリ 0）。core `state/vocal_tests.rs` の `every_track_that_records_is_told_to_the_engine_as_not_playing`。
+**Checked** (private PipeWire, `crates/meloet-core/tests/vocal_play_private.rs`): record the metronome, then play that clip while recording a second vocal track from the monitor; clicks are **0.0 frames** off at buffers 64/256/1024. Runs with input skips are retried, not counted.
 
-**2. 入口の抜けを埋める決まり（`vocalrec.rs` の `Gaps`）**
+### 22-18 D. Step 3 fixes (sound side)
 
-- 測った形: 混んだ PC のバッファ 64 で、あるブロックの時刻だけが 1 quantum 遅く、次のブロックは前の線に戻っている（こまは抜けていない）。本当の抜けは、あとのブロックがみな同じだけ遅れたまま。時刻のゆれは、どの形でもブロックの間で 1 µs より小さい。
-- 決まり: 遅れたブロック（線より半ブロックより遅い）は、**すぐには埋めずに待たせる**（2 つまで。`HELD_BLOCKS`）。あとのブロックが、待たせた分を数えた線の上に来たら、待たせたブロックは「時刻だけ遅れた」→ 埋めずに書く。待たせた数が 2 をこえても遅れたままなら、いちばん前のブロックの前が「抜け」→ 今までと同じ数（遅れ ÷ 1 こまの時間）を埋め、残りはそこからの線で見なおす。録音が終わる時に待っていたブロックは、抜けとして書く（測りでは、遅れたブロック 45 のうち 44 が抜け）。
-- 理由: 測りの係の案 (b)（次も遅れている時だけ埋める）を取った。(a)（長い線とくらべる）だけでは、遅れたブロックが来た時点で「抜け」と「時刻だけ」を分けられない（どちらも線より遅い）し、ブロックの時刻のゆれが小さいので長い線はいらない。(c)（quantum の倍数にまるめる）は、1 回のこま数が毎回同じとは限らない（22-5）ので入れていない。待たせる数を 1 でなく 2 にしたのは、時刻が 2 ブロック続けて遅れる形を測りの数から否定できないため（測った 1 か所は 1 ブロック）。
-- 払う物: 抜けのあと、書くのが 2 ブロック（1024 で 43 ms）遅れる。波形と `mark` の答えが、その時だけその分遅い。
-- 試験（`vocalrec/tests.rs`、数は `tests/fixtures/input-blocks.txt` に切り出した）: 静かな 64 と混んだ 256 は 0。混んだ 64 の 3 つの切り出しは、前の決まりと同じ 448（5 か所）・ 512（4 か所）・ 640（9 か所）で、時計が言う足りない数と合う。時刻だけ遅れた所は 0（前の決まりは 64）。測りの 1 回ぶんぜんぶ（14947 ブロック）では 3584 こま ・ 44 か所（前は 3648 ・ 45）、時計が言う数は 3583.7。
-- 混んだ PC で確かめる道具: `the_rule_fills_what_the_clock_says_is_missing_in_a_measured_run`（`#[ignore]`、`MELOET_GAPS_BLOCKS` に `input_gaps_private.rs` の `MELOET_GAPS_OUT` のファイル）。
+Protocol (24) and texts unchanged.
 
-**3. 「遅れを測る」のさがす範囲（`probe.rs` の `ProbeHeard::way_round`）**
+**1. A track being recorded does not play its existing clips (B-94-50)**
 
-- さがす範囲を「エンジンがカチッを書いた時刻（= 出た時刻 − PC が言う出口の遅れ）− 2 ms」から「出た時刻 ＋ 200 ms」までにした。`way_round` は PC が言う出口の遅れ（`Meters::out_delay_us`）を受けとる。書く前には物理的に戻れないので、ここより前は見ない。
-- PC が言う出口の遅れが本当より大きい時（出口のモニターは 1 quantum、Bluetooth など）は、答え（測った数 − PC が言う数）が負になる。負はもともと通る: 設定の `x_us` は `i32`、`latency_x_us` は `i64`、録る位置は `heard_us + x_us`、中央値とばらつきは差だけを見る。画面に出る「測った数」（PC が言う往復 ＋ 答え）は、カチッが書く前には戻らないので、入口の遅れ ＋ 1 ブロックより小さくならない（0 より大きい。さがす範囲の 2 ms のゆとりの中で見つかった時だけ、そこから 2 ms まで下がりうる）。
-- 試験: `probe.rs` の `a_click_back_before_the_pc_says_it_left_is_measured`（64 ・ 256 ・ 1024 で、1 ブロック早く戻る → 測れて数が合う、書く前の音は取らない、200 ms より後は取らない）。
+- `EngineOp::Record` / `RecordHere` `muted` became a set (`meloet_engine::TrackSet`) of **tracks this recording really records**: the keys target and every armed vocal track with an input (`vocals` from `Play::record`, same as `recording_vocals`).
+- Armed tracks that cannot record (no input, too few channels) are not included. Why: losing the old voice without recording anything would suggest it is recording.
+- Engine unchanged: `Transport::lane_plays` already gated both key lanes and audio clips (`ClipPlayer::render` `plays`); the ring keeps being read, so no refill.
+- Start from stop: silent from the first frame. R while playing (`RecordHere`): fades out in 10 ms (same path as `SetSilentTracks`). Play after stop: sounds from the first frame. `muted` stays the same for all laps; arming cannot change while `busy()`.
+- Tests: `a_track_that_records_does_not_play_its_clips_and_the_other_tracks_do` (engine `tests/clips.rs`), `every_track_that_records_is_told_to_the_engine_as_not_playing` (core `state/vocal_tests.rs`).
 
-### 22-18 区切り3 の直し（アレンジの拡大、2026-11-21、meloet-hard）
+**2. Rule to fill input gaps (`Gaps` in `vocalrec.rs`)**
 
-区切り3 の測りの「歌のクリップがあると、アレンジの拡大が重い」（`docs/measurements/2026-11-21-round7-step3.md` の 7 章、見つけた事 4）を分けて、直した。
+- Seen: on a busy PC at buffer 64, sometimes one block's time is one quantum late and the next is back on the line (no frames lost). A real loss leaves all later blocks equally late. Jitter is under 1 µs between blocks.
+- Rule: a late block (more than half a block after the line) is **held, not filled at once** (up to 2, `HELD_BLOCKS`). If later blocks return to the line, the held ones were "late in time only" → written without filling. If more than 2 are held and still late, a loss happened before the first → fill (lateness ÷ frame time), then check the rest from the new line. Blocks still held at the end are written as losses. Amount filled: refined in 22-21 (2).
+- Why: option (b) "fill only if the next is late too". (a) comparing with a long line cannot tell at arrival time; (c) rounding to quantum multiples fails because frames per call vary. 2 instead of 1 because two late blocks in a row could not be ruled out.
+- Cost: after a loss, writing is 2 blocks late (43 ms at 1024); waveform and `mark` answers lag that much then.
+- Tests in `vocalrec/tests.rs` with real block lists in `tests/fixtures/input-blocks.txt`; the ignored tool `the_rule_fills_what_the_clock_says_is_missing_in_a_measured_run` (`MELOET_GAPS_BLOCKS`, output of `input_gaps_private.rs` `MELOET_GAPS_OUT`).
 
-**どこに時間がかかっていたか**（歌 192 個がぜんぶ見える所まで縮小して、1 コマに 1 回、横に送る。本物のアプリ、1920×1080、WebKitGTK 2.52。`tools/measure/arrange_parts.py`。PC がこんでいたので、WebKitWebProcess の主スレッドの CPU の時間で読む）
+**3. Search window of the latency click (`ProbeHeard::way_round` in `probe.rs`)**
 
-| 1 コマの中身 | 直す前 | 取っ手を WebGL に | （ためしただけ）書体の切れはしを 1 つに |
-|---|---|---|---|
-| 主スレッドの CPU（1 コマ） | 22.3 ms | 18.1 ms | 13.7 ms |
-| うち JS（ホイールの係と Svelte の流し） | 3.4 ms | 1.9 ms | 1.8 ms |
-| うち スタイルとレイアウト | 3.2 ms | 1.6 ms | 1.6 ms |
-| クリップごとの HTML | 札 192、取っ手 384 | 札 192 | 札 192 |
+- The search runs from "when the engine wrote the click (= left time − PC-reported output latency) − 2 ms" to "left time + 200 ms". `way_round` takes `Meters::out_delay_us`. Nothing before the write can be a return.
+- If the PC overstates the output latency (a monitor is 1 quantum; Bluetooth), the answer `X` is negative. That is allowed: settings `x_us` is `i32`, `latency_x_us` `i64`, the record position is `heard_us + x_us`, median and spread only use differences. The shown measured value cannot go below input latency + 1 block (except within the 2 ms margin).
+- Test: `a_click_back_before_the_pc_says_it_left_is_measured` (64/256/1024).
 
-- 鍵盤だけ 17 本の曲は、同じ形で 11.1〜11.6 ms。
-- **波形のテクスチャではなかった**。テクスチャを入れるのは段が変わった時の 1 回だけ（1 コマ 1 ms より小さい）。毎コマの GL の呼び出しは 0.8 ms。
-- **重かったのは、クリップごとの HTML**: フェードの取っ手（クリップ 1 つに 2 つ）と名前の札。CPU で描く WebKit（7 章）では、クリップの面の canvas が変わるコマは、その上の HTML をぜんぶ描きなおす。さらに、1 つずつの `left` ・ `width` を書きかえるので、スタイルの計算も数だけかかる。札と取っ手をかくすと 22.3 → 13.2 ms（札だけで 7 ms、取っ手だけで 2.5 ms）。
-- **札の 7 ms のうち 4.4〜4.7 ms は、文字を描く所**。`tools/measure/webkit-stacks.sh`（gdb で主スレッドのスタックを何百回も見る）では、文字を描く時間のほぼぜんぶが `GlyphDisplayListCache::get` → `FontCascade::isLoadingCustomFonts` → `FontRanges::isLoading`: 文字を 1 回描くたびに、その書体の `@font-face` をぜんぶ「読みこみ中か」と聞いている。@fontsource の `400.css` は、太さ 1 つが unicode-range で 123 個に切ってある。**これは札だけでなく、画面の文字ぜんぶにかかる**（1 回 20 µs ほど）。
-- 残りの 9〜10 ms は、クリップの面（1676×904）を描きなおす決まった重さ（地をぬる、canvas を写す）。鍵盤だけの曲でも同じ。
-- **busyMs の「最大 54 ms」は、1 コマが 54 ms かかったのではない**。busyMs は「そのコマの頭 → そのとき投げた知らせが届くまで」で、1 コマが 16.7 ms をこえるコマが続くと、知らせが次のコマのうしろへ回って、2〜3 コマぶんが足される。コマの間は 20〜27 ms だった。
+### 22-18 Step 3 fix (arrange zoom)
 
-**直した形**
+The finding "audio clips make arrange zoom heavy" (`docs/history/measurements/2026-11-21-round7-step3.md` 7) was split and fixed. Measured with `tools/measure/arrange_parts.py` (192 audio clips all visible).
 
-- **フェードの取っ手は WebGL の四角にした**（`arrange/audioClipGeom.ts` の `handleRects`。`Arrange.svelte` の `paintAudioClip` が、クリップの絵といっしょに出す）。**理由**: 取っ手は gray.10 の四角 2 つで、文字がない。HTML でなくてよい物を、クリップの数だけ HTML にしていた。区画も文脈もふやしていない（`arrangeLanes` の同じ絵の最後の四角）。
-  - 絵の順: 取っ手は、その絵のどのクリップと波形よりもあと（重なったクリップの下にかくれない。HTML のときと同じ）。
-  - 押した所がどの取っ手かは、形から数える（`AudioClipHandles.svelte` の `handleAt`）。クリップの面（部品の親）の `pointerdown` を capture で先に見て、取っ手の上なら自分で受けて止める（クリップをつかむ係には届かない）。テイクの切りかえの札のように取っ手より上にある物は、`data-over-clips` をつけておくと、その上では受けない。
-  - HTML は、ポインタの下の取っ手 1 つだけ（`.grip`。すきとおった箱で、カーソルの形 `ew-resize` のため。ひっぱっている間は値についていく）。
-  - ドラッグ中の絵（`livePicture`）、クリップを動かす ・ つめる絵（`dragPicture`）にも取っ手が入る。
-- **札（名前とテイクの札）は HTML のまま**。文字は HTML で描く決まりなので。
+- **Not the waveform texture** (uploaded once per level change, under 1 ms; GL calls 0.8 ms per frame).
+- **Per-clip HTML was heavy**: fade handles (2 per clip) and name labels. With the CPU WebKit path (7), a frame that changes the clip canvas repaints all HTML above it, and each `left`/`width` write costs style work. Hiding labels and handles: 22.3 → 13.2 ms per frame (labels 7 ms, handles 2.5 ms).
+- **4.4–4.7 ms of the labels' 7 ms is text drawing**: almost all in `GlyphDisplayListCache::get` → `FontCascade::isLoadingCustomFonts` → `FontRanges::isLoading` (`tools/measure/webkit-stacks.sh`). Every text draw asks every `@font-face` "loading?"; @fontsource's `400.css` splits one weight into 123 unicode-ranges. **This affects all text on screen** (about 20 µs a time).
+- The other 9–10 ms is the fixed cost of repainting the 1676×904 clip area; the same for keys-only songs.
+- busyMs "max 54 ms" was not one 54 ms frame: busyMs is "frame head → its posted message arrives", which adds 2–3 frames when frames run over 16.7 ms.
 
-**見た目で変わった所**（小さい）
+**Fix**
 
-- 取っ手が名前の文字の下になった（前は上）。取っ手は名前の行の下の線を 2 px またぐので、クリップの左の角で、文字の下のはし（g や y の足）と重なる時だけちがう。
-- クリップを動かしている間、取っ手は動いている絵についていく（前は、もとの位置の gray.7 の枠の上に残っていた）。
+- **Fade handles are WebGL quads** (`handleRects` in `arrange/audioClipGeom.ts`, emitted by `Arrange.svelte` `paintAudioClip`), the last quads of the same `arrangeLanes` picture (no new slot or context). Why: two gray.10 squares with no text do not need HTML per clip.
+  - They are drawn after all clips and waveforms (not hidden under overlapping clips, as with HTML).
+  - Hit testing is computed from shapes (`handleAt` in `AudioClipHandles.svelte`): the clip area's `pointerdown` is caught in capture and stopped if on a handle. Parts above the handles (e.g. take switch labels) set `data-over-clips`.
+  - Only the handle under the pointer has HTML (`.grip`, transparent, for the `ew-resize` cursor; it follows the value while dragging).
+  - `livePicture` and `dragPicture` include handles.
+- **Labels stay HTML** (text is HTML by rule).
+- Small visible changes: handles are now under the name text (differs only where descenders meet the handle), and follow the moving picture during a clip drag.
+- "Drawing only every other frame while scrolling" was the tool's fault: `audio_app.py arrange` sent wheel events inside a rAF callback. Sending them in a task after the frame (`arrange_parts.py --how task`) draws every frame. The product was not changed.
+- **Open**: with 192 visible audio clips a frame is still about 18 ms (label text 4.4 ms). **Fewer `@font-face` would lighten all text**: a test build with `@fontsource/ibm-plex-sans-jp/japanese-{400,500,600}.css` (one unsplit woff2 per weight, 895 KB) gave 18.1 → 13.7 ms; look and start time not checked. Drawing labels in WebGL would break "text is HTML". See also 23-13.
 
-**横に送ると、描くのが 2 コマに 1 回**は、道具のせいだった。`audio_app.py arrange` は rAF のコールバックの中でホイールの出来事を送る。WebGL の係（`gl/engine.ts`）は「変わったら次の rAF を頼む」形なので、同じコマのコールバックがもう頼まれていると、そこで描いて、次のコマは頼まれない。出来事をコマのあとのタスクで送る（本物のホイールと同じ。`arrange_parts.py --how task`）と、毎コマ描く。製品は変えていない。
+### 22-19. Step 4, first pass: protocol 25 (stretch and pitch)
 
-**残った物**（直していない。棟梁へ）
+The shared start for core (renderer, intents) and screen (panel, marks, progress, waveform).
 
-- 歌 192 個がぜんぶ見える所では、まだ 1 コマ 18 ms ほど（16.7 ms をこえる）。残りの大きな物は、札の文字（4.4 ms）。**書体の `@font-face` の数をへらすと、札だけでなく画面ぜんぶの文字が軽くなる**: ためしに `ui/src/design/fonts.ts` を `@fontsource/ibm-plex-sans-jp/japanese-{400,500,600}.css`（切っていない woff2 が太さごとに 1 つ、895 KB）に変えたビルドで 18.1 → 13.7 ms、鍵盤だけの曲でも 1 ms ほど軽い。見た目が同じか、起動の時間がどうなるかは、確かめていない（`fonts.ts` はこの仕事の外）。
-- 札を WebGL で描く（文字をテクスチャにする）手もあるが、「文字は HTML」の決まりを変える事になるので、していない。
+**Follow formula** (`FileClock` in `crates/meloet-model/src/audio/follow.rs`)
 
-**もとの道具の数**（`audio_app.py arrange --splits 11`、歌 192 個。前 ・ 後 ・ 前 ・ 後の順に同じ時間帯で。となりで別の係がビルドや試験を回していた。busyMs 平均 / p95 / 最大）
+- Tick 0 of the take is `clip.start + offset` (`Clip::active_zero`), which is file frame `first_frame`. After that:
+  - Not following: `first_frame + (song_sec(t) − song_sec(tick 0)) × rate`.
+  - **Following: `first_frame + source_sec(t − tick 0) × rate`**, where source seconds come from a map built only from the take's `sync` (`SourceTempo::map`; ticks from take tick 0 → seconds; before 0 the head tempo continues). **The song tempo is not in the formula**: whatever the song tempo, the same tick gets the same frame (audio is stuck to song ticks). Clip length in ticks does not change.
+- **Following needs `AudioShape::follow` on and a `sync` on the take**. With «—», follow does nothing (no tempo to compare), but the switch is kept and works once a tempo is set.
+- 22-8's `p(j)` = `frame_at(song map, song map.tick_at(sec of out frame j))`. The renderer, counting in the engine-rate copy, passes that copy's frames and rate to `FileClock::new`.
+- The ratio mark: `ratio_at(song map, t)` = song tempo(t) ÷ source tempo(t − tick 0).
+- **Why in the model**: three places must agree (renderer and clip tables in core, waveform on screen), like the tempo map.
+- **Screen copy** `ui/src/components/arrange/follow.ts` (`sourceMapOf`, `clipFrameAt`, `stretchRatioAt`), checked by `ui/tests/arrange.follow.test.ts` against `follow.table.json` written by `crates/meloet-model/tests/follow.rs` (6 scenes, ramps on both sides, tick 0 before the song head; frames to 1/1000, ratios to 1e-12). The screen builds the source map by giving `SourceTempoView` to `TempoMap` (4/4, no flags).
 
-| | 直す前（2 回） | 直したあと（2 回） | （ためしただけ）書体 | 鍵盤だけ 17 本 |
-|---|---|---|---|---|
-| 拡大（描いたコマは 9） | 24.4 / 66 / 66、22.3 / 54 / 54 | 23.6 / 54 / 54、22.7 / 52 / 52 | 16.0 / 35 / 35 | 8.9 / 13 / 13 |
-| 横に送る | 11.9 / 14 / 26、12.7 / 17 / 26 | 10.9 / 13 / 15、11.0 / 13 / 15 | 10.1 / 14 / 15 | 8.6 / 12 / 13 |
-| 再生中 | 7.2 / 9 / 11、7.3 / 9 / 11 | 7.1 / 9 / 11、6.9 / 8 / 10 | 4.6 / 6 / 8 | 6.2 / 8 / 12 |
+**Model edits** (`crates/meloet-model/src/audio/stretch.rs`; each one step; `WrongKind` for non-audio clips, `Unchanged` for the same value)
 
-- この道具の「拡大」は、目あて（最大 16.7 ms の中）に届いていない。この道具は 2 コマに 1 回しか描かせないので、1 つの busyMs に出来事 2 つぶんの JS とスタイルが入り、上の「知らせが後ろへ回る」も重なる。取っ手の分（1 コマ 4 ms）は、札の文字と決まった重さにかくれる。
-- 録音中の描きなおしの四角は 7 個のまま（`webkit-damage.sh`、130 回のうち 107 回。囲む四角まるごとは 3 回）。
+- `set_clip_follow` → `SetClipFollow`.
+- `set_clip_semitones` (clamped ±12), `set_clip_cents` (±50), `set_clip_keep_formant` → `SetClipPitch`.
+- `set_source_tempo` → `SetSourceTempo`: **only the shown take is replaced by a new-id take with the same audio, range and offset** and a single-tempo `sync` (`SourceTempo::steady`). The take count does not change. The other clip of an S split keeps the old take. Typing a tempo into a ramp-recorded voice removes its points (undo restores).
+- Guessing: `source_tempo_guesses(frames, rate, signature)` (tempos for 1, 2, 4, 8 bars that fall in 60.00–180.00 after rounding to 0.01; at most 2, since doubling bars doubles tempo), `pick_guess(candidates, song tempo)` (nearest by ratio; the slower on a tie), `guess_source_tempo(doc, clip)`.
+  - **Why ratio**: candidates are ×2/÷2 of each other; a ratio (middle 84.85 between 60 and 120) splits "double or half" better than a difference (middle 90).
 
-### 22-19. 区切り4 の 1 回目: 約束 25（のび縮みと音の高さ、2026-11-21、meloet-hard）
+**Protocol 25** (`crates/meloet-protocol/src/audio.rs`, `lib.rs`, `history.rs`)
 
-区切り4 の 2 回目で、core（作る係、意図の中身）と画面（欄、印、進みの棒、波形）が、同じ出発点から別々に作るための形。中身があるのは、model の直す関数と式、約束の型、答えの表と画面の写し、偽物の場面。**core は新しい意図を受けとるが、まだ何もしない**。画面の部品は今のまま（欄は「使えない」）。
+- Intents:
+  - `setClipStretch {clip, change}`, `change` = `{kind: "follow", on}` | `{kind: "sourceBpm", bpm}` | `{kind: "semitones", semitones}` | `{kind: "cents", cents}` | `{kind: "keepFormant", on}`. One step each. Rust rounds (nearest integer within range; tempo to 0.01 within 30–300). Non-numbers, same values, non-audio ids, count-in and recording do nothing.
+    - **Why not in `SetClipField`**: on/off stays a bool; the panel's two groups («クリップ», «のび縮み ・ 音の高さ») map to two intents; adding to `ClipField` would break `ClipPanel.svelte`'s `Record<ClipField, …>`.
+  - `findSourceTempo {clip}` («さがす»): sets the source tempo if found (one step, new take). **Follow is not changed** (the person decides). Nothing changes if not found.
+- Views:
+  - `StretchView.ratio: number | null`: song tempo ÷ source tempo **at the clip head**; `null` if not following. Not rounded (the screen shows 2 decimals and hides 1.00). In a ramp the mark shows only the head value. When the ratio changes, `song` is resent (22-19 core).
+  - `AudioClipView.sourceTempo: {tempoBpm, headRamp, tempoPoints} | null`: **only for following clips**; the tempo points for placing the waveform (field names as in the `timeline` section). The screen uses the follow formula when it is not null. Why here and not in `StretchView`: `StretchView` is the panel's four values (`Copy`); waveform placement sits next to `firstFrame`/`frames`.
+  - Render progress uses `audioWork.jobs` `{kind: "rendering", audio, clip, percent}` as is. **The status-line text «… の音を作っています 34 % ・ …» is made by the screen from `audioWork`** (a Rust status message would resend `status` per percent).
+  - Status: `sourceTempoFound {name, bpm, bars}`, `sourceTempoNotFound {name}`.
+- Step names: `setClipFollow`, `setSourceTempo`, `setClipPitch` ("what" is the clip name).
+- Ranges are exported to `ui/src/bridge/generated/audio.ts` (`CLIP_SEMITONES_MAX`, `CLIP_CENTS_MAX`, `SOURCE_BPM_MIN`, `SOURCE_BPM_MAX`).
 
-**ついていくときの式**（`crates/meloet-model/src/audio/follow.rs` の `FileClock`）
+**Song file**: version 6, no new fields: semitones, cents, follow, voice character are in `shape`; the source tempo is the take's `sync` (a new take in `audioTakes`). Tests: `songfile/vocal_tests.rs`.
 
-- テイクの 0 ティックは曲の `clip.start + offset`（`Clip::active_zero`）。そこがファイルの `first_frame`。そこから先は 2 通り。
-  - ついていかない: `first_frame + (曲の秒(t) − 曲の秒(0 ティック)) × サンプルレート`（今までの式）。
-  - **ついていく: `first_frame + この音の秒(t − 0 ティック) × サンプルレート`**。「この音の秒」は、テイクの `sync`（`SourceTempo`）だけで作った地図（`SourceTempo::map`。テイクの 0 ティックからのティック → 秒。0 より前は頭のテンポがそのまま前へ続く）。**曲のテンポは式に出てこない**。だから、曲のテンポをどう変えても、同じティックに同じこまが来る（音が曲のティックに貼りつく）。クリップの長さ（ティック）は変わらない。
-- **ついていくのは「`AudioShape::follow` がオン」かつ「テイクに `sync` がある」とき**。「—」のままついていくをオンにしても、ファイルの速さのまま（比べるテンポがないので）。スイッチは覚えておき、テンポが入ったら、ついていく。
-- 22-8 の `p(j)` は、`frame_at(曲の地図, 曲の地図.tick_at(出るこま j の秒))`。作る係がエンジンのサンプルレートの写し（しまっておく所の PCM）で数えるときは、`FileClock::new` に、その写しのこまとサンプルレートをわたす。
-- 印の比は `ratio_at(曲の地図, t)` = 曲のテンポ(t) ÷ この音のテンポ(t − 0 ティック)。
-- **置き場所を model にした理由**: 数だけの式で、作る係（core）、エンジンに送る区切りの表（core）、波形（画面の写し）の 3 か所が同じ答えを出さなければならない。テンポの地図（`tempo_map.rs`）と同じ扱い。
-- **画面の写し**は `ui/src/components/arrange/follow.ts`（`sourceMapOf` ・ `clipFrameAt` ・ `stretchRatioAt`）。同じ答えかは、`crates/meloet-model/tests/follow.rs` が書く表 `follow.table.json`（6 場面、324 行。だんだんが曲とこの音の両方にある場面、テイクの 0 ティックが曲の頭より前の場面も）を `ui/tests/arrange.follow.test.ts` が読んで見る（こまは 1000 分の 1 こままで、比は 1e-12 まで）。「この音のテンポ」の地図は、画面の `TempoMap` に `SourceTempoView` をそのまま（拍子 4/4、旗なしで）わたせば作れる。**`wave.ts` ・ `audioClipGeom.ts` の `fileFrameAt` を、この写しに変えるのは 2 回目**。
+**Fake scenes** (`ui/src/bridge/fake.ts`, `fakeStretch` in `fakeAudio.ts`): `stretch`, `stretchRendering` (F7-Stretch, 34 %), `stretchPitch`, `stretchNoTempo`, `stretchRamp`. Fake recorded voice uses tempo 96.00 like the song.
 
-**model の直す関数**（`crates/meloet-model/src/audio/stretch.rs`。どれも 1 手、歌のクリップでなければ `WrongKind`、同じ値なら `Unchanged`）
+### 22-19 Step 4, second pass (screen)
 
-- `set_clip_follow(doc, clip, on)` → 手 `SetClipFollow`。
-- `set_clip_semitones(doc, clip, i32)`（±12 にまるめる）、`set_clip_cents(doc, clip, i32)`（±50）、`set_clip_keep_formant(doc, clip, on)` → 手 `SetClipPitch`。
-- `set_source_tempo(doc, clip, tempo)` → 手 `SetSourceTempo`。**見せているテイクだけを、新しい id の、同じ音 ・ 同じ範囲 ・ 同じ offset のテイクに入れかえる**（`sync` は点のない 1 つのテンポ、`SourceTempo::steady`）。テイクの数は変わらない。S で同じテイクを指していたもう片方のクリップは、古いテイクのまま。だんだんの中で録った歌に数を打つと、点の列は消える（取り消せば戻る）。
-- さがす: `source_tempo_guesses(こま数, サンプルレート, 拍子)`（1 ・ 2 ・ 4 ・ 8 小節と見たテンポのうち 60.00〜180.00 に入る物。0.01 にまるめてから範囲を見る。小節の数が倍になるとテンポも倍なので、多くて 2 つ）、`pick_guess(候補, 曲のテンポ)`（比でいちばん近い物。同じ近さなら遅いほう）、`guess_source_tempo(doc, clip)`（見せているテイクの長さ、クリップの頭の拍子とテンポで）。見つけた数は `set_source_tempo` で入れる。
-  - **比で近さを見る理由**: 候補は倍 ・ 半分の関係なので、差（60 と 120 のまん中が 90）より比（まん中が 84.85）のほうが「倍か半分か」をまっすぐ分ける。
+**Selected clip panel: «のび縮み ・ 音の高さ»** (`params/ClipPanel.svelte`, `params/clipFields.ts`, `params/StretchNumber.svelte`)
 
-**約束 25**（`crates/meloet-protocol/src/audio.rs` ・ `lib.rs` ・ `history.rs`）
+- On/off (follow, voice character) uses the 12×12 square mark of parameter rows left of the value text; a press sends one `setClipStretch`. Why: that is the on/off form of spec chapter 2 "parameter row"; parts in the panel look alike. (Mock F7-Stretch shows text only.)
+- «この音のテンポ» is typed after a double click (`ValueField`); unreadable → `rejectValue` (`tempo`; same range 30.00–300.00). **«さがす» shows only with «—»** (spec 3 pairs them; with a number, retyping is enough). Finding does not change follow (B-94-52).
+- Pitch («+2 半音 0 セント»): two numbers, each dragged up/down (up is plus, 1 per `space.2` px, stopping at the ends) or typed. During a drag only the text moves; release is one step; Esc (`onDragCancel`) restores. Unreadable text does nothing; out-of-range is sent and clamped by Rust.
+- While rendering, a progress row under the name/file rows (mock F7-Stretch: 24 high, «音を作っています», gray.4 bar with accent, «34 %»), only for this clip's `rendering` job. Bar thickness uses `mock.latency.progress` (4).
+- Nothing can be pressed during recording or count-in.
 
-- **意図**
-  - `setClipStretch {clip, change}`。`change` は `{kind: "follow", on}` ・ `{kind: "sourceBpm", bpm}` ・ `{kind: "semitones", semitones}` ・ `{kind: "cents", cents}` ・ `{kind: "keepFormant", on}`。1 つが 1 手。数は Rust がまるめる（半音 ・ セントはいちばん近い整数で範囲の中、テンポは 0.01 きざみで 30〜300）。数でない値、同じ値、歌のクリップでない id、カウントイン中 ・ 録音中は何もしない。
-    - **`SetClipField` に足さず、別の意図にした理由**: オン ・ オフを 0 と 1 で送らずにすむ（`on` は bool）。欄の 2 つのグループ（「クリップ」と「のび縮み ・ 音の高さ」）が、そのまま 2 つの意図になる。今の `ClipPanel.svelte` は `Record<ClipField, …>` を持っているので、`ClipField` を増やすと、さわらない約束の部品が型で落ちる。
-  - `findSourceTempo {clip}`（「さがす」）。見つけたら「この音のテンポ」に入れる（1 手、新しいテイク）。**ついていくは変えない**（仮。決めるのは人）。見つからなければ何も変えない。
-- **見る物**
-  - `StretchView.ratio: number | null`: **クリップの頭の**「曲のテンポ ÷ この音のテンポ」。ついていかないクリップは null。まるめずに送る（画面が小数 2 けたで出し、1.00 になる物は印を出さない）。だんだんの中では先で数が変わるが、印は頭の数 1 つ。**曲のテンポやクリップの場所が変わって比が変わったら、core は `song` の区画を送りなおす**（2 回目）。
-  - `AudioClipView.sourceTempo: {tempoBpm, headRamp, tempoPoints} | null`: **ついていくクリップにだけ**入る（`follow` がオンで、テイクにテンポがある）。波形を置くための、この音のテンポの点の列。欄の名前は `timeline` の区画と同じにしてある。画面は「`sourceTempo` が null なら今までの式、あれば ついていく式」と読む。
-    - `StretchView` でなく `AudioClipView` に置いた理由: `StretchView` は欄の 4 行の値（`Copy` のまま）、波形の場所は `firstFrame` ・ `frames` のとなり。
-  - 音を作っている進みは、約束 24 の `audioWork.jobs` の `{kind: "rendering", audio, clip, percent}` で足りる（クリップの下、欄の上の棒、状態行の 3 か所とも、`clip` から読める）。足した物はない。**状態行の「… の音を作っています 34 % ・ …」は、画面が `audioWork` から作る**（Rust の状態行の文にすると、% のたびに `status` を送ることになる）。
-  - 状態行: `sourceTempoFound {name, bpm, bars}`、`sourceTempoNotFound {name}`。文はまだない（画面は何も出さない）。
-- **手の名前**: `setClipFollow` ・ `setSourceTempo` ・ `setClipPitch`。（何を）は、どれもクリップの名前（今の `name` の形。フェードと同じ）。
-- 範囲の数は `ui/src/bridge/generated/audio.ts` に出る（`CLIP_SEMITONES_MAX` ・ `CLIP_CENTS_MAX` ・ `SOURCE_BPM_MIN` ・ `SOURCE_BPM_MAX`）。
+**Clip marks and the note under the clip** (`Arrange.svelte` labels, `arrange/AudioClipNotes.svelte`)
 
-**core**（最小の直しだけ）
+- Marks «×1.25», «+2», «−1 ・ 30» are **spans inside the existing name label** (`.clip-label`), pushed right (`margin-left: auto`). Clips without marks share the empty `NO_MARKS`, so `{#each}` makes nothing. Why: the step 3 fix showed per-clip HTML and per-item `left`/`width` writes are the cost; no new positioned boxes. In narrow clips the name gets «…» first.
+- Ratio text: `toFixed(2)`, hidden at «1.00». Pitch: «+2» for semitones only, «semitones ・ cents» with cents (B-94-59: cents signed, no «+»); hidden when both are 0.
+- «音を作っています 34 %» under the clip uses the same place and form as «読みこんでいます 40 %»; loading of the same file shows first.
 
-- `play/vocal.rs` の `audio_clip_view` が `ratio` と `sourceTempo` を本当の数で入れる（曲の地図を引数にもらう）。
-- `Command::SetClipStretch` ・ `FindSourceTempo` は受けとって何もしない（`state.rs`）。手の名前の腕は入れてある（`play/history.rs`）。
+**Status line** (`StatusLine.svelte`): «… の音を作っています 34 % ・ できるまでは、もとの音で鳴らします» is made from `audioWork` and **shows only when core's message is the usual summary**; any other message (find result, recording, drag reading, dialogs, window list, parameter search) wins. Why: progress is already in the panel and under the clip; the answer to what the person just did must not be hidden. With several jobs, the earliest started. `sourceTempoFound`/`NotFound` use `msg.sourceTempoFound`/`msg.sourceTempoNotFound` (tempo by `tempoText`).
 
-**曲のファイル**: 版 6 のまま、形は足していない。半音 ・ セント ・ ついていく ・ 声の感じは `shape`、この音のテンポはテイクの `sync`（新しい id のテイクとして `audioTakes` に 1 つふえる）。保存 → ひらく の試験は `songfile/vocal_tests.rs`。
+**Context menu**: audio clips only get a separator and «逆にする», «ノーマライズ» at the bottom, disabled (spec 3 "later round").
 
-**偽物の場面**（`ui/src/bridge/fake.ts`、`fakeAudio.ts` の `fakeStretch`）: `stretch`（×1.25 ・ +2）、`stretchRendering`（F7-Stretch。34 %）、`stretchPitch`（−1 ・ 30、比 1）、`stretchNoTempo`（入れたファイル、「—」）、`stretchRamp`（だんだんの中の 2 つ: 地図ごと録った物〔比 1〕と、96.00 で歌った物〔頭で 1.125〕）。偽物の録った歌は、曲と同じ 96.00（前は 120 で、今の決まりでは ×0.80 がつくので直した）。偽物の意図（`setClipStretch` ・ `findSourceTempo`）は絵と試験に足りるだけ動く。
+**Waveform of following clips** (`arrange/wave.ts`, `arrange/audioClipGeom.ts`, `arrange/follow.ts`)
 
-**2 回目へ**
+- `WaveTiming` is `FollowClip` (`start`, `takeOffset`, `firstFrame`, `sampleRate`) plus `source` (source map or null). `frameAtTick` and `fileFrameAt` both go through `clipFrameAt`. Recording voice has `source: null`.
+- `cachedSourceMap`: a WeakMap keyed by `SourceTempoView`, built once per object (the same object comes until the next `song` section; then rebuilt per clip, old ones GC'd).
+- A following clip has frames straight in ticks even across song tempo changes, so one quad suffices (split only at source-tempo ramps).
+- `livePicture` and `dragPicture` use `waveClipOf(clip)`, so they follow too.
 
-- core: 意図の中身（上の model の関数を呼ぶだけ）、作る係、区切りの表を「ついていく式」で作る事、できた音への入れかえ、`rendering` の進み、比が変わったときの `song` の送りなおし。
-- **だんだんの中で録りはじめた歌**は、`SourceTempo::from_timeline` が頭のテンポを 0.01 にまるめるので、「ついていく式」と「ファイルの速さのまま」が、ごくわずかにずれる（まるめが 0.005 で 100 のとき、10 秒で 24 こまほど）。22-8 の「何もしなくてよいクリップは作らない」を、式の差が小さい（たとえば 1 こまより小さい）で決めるのか、`sync` が曲の地図から作った物と同じかで決めるのかは、2 回目で決める。
-- 画面: `fileFrameAt` ・ `frameAtTick` を `follow.ts` の写しに変える。欄、印、進みの棒、右クリックの一覧。
+**About: vendored sources** (`tools/licenses/inventory.mjs`, `about/licenses.ts`): `vendored` entries of `licenses/upstream.json` (Signalsmith Stretch 1.4.0, Linear 0.6.4) are not Rust parts, so they go to `upstream` with name and version (`vendoredPart`, read from the head of `title`). About merges them with `parts` (`allParts`) under the MIT heading; full texts by `name@version` (`makeTexts`). NOTICE already listed them. Why: About's second level is one list of parts by license, and vendored C++ ships with meloet; a separate heading would need text the spec does not have.
 
-### 22-19 区切り4 の 2 回目（画面、2026-11-21、meloet-impl）
+### 22-19 Step 4, second pass (core and engine)
 
-**選んだクリップの欄の「のび縮み ・ 音の高さ」**（`params/ClipPanel.svelte`、字は `params/clipFields.ts`、ドラッグする数は `params/StretchNumber.svelte`）
+Protocol 25 unchanged. Added: intent bodies, the render rule, the renderer, changing over to rendered audio, the cache limit.
 
-- オン ・ オフ（ついていく ・ 声の感じ）は、パラメータの行と同じ 12×12 の四角の印を値の字の左に置き、押すと `setClipStretch` を 1 つ。**理由**: 仕様書 2 章「パラメータの行」のオン ・ オフの形がこれで、欄の中で押せる物の形をそろえる。モック F7-Stretch は字だけ（印がない）。
-- 「この音のテンポ」は、ほかの値と同じく 2 回押して打ちこむ（`ValueField`）。読めない字は `rejectValue`（`tempo`。範囲が同じ 30.00〜300.00 なので、テンポの文を使う）。範囲の外とまるめは Rust。**「さがす」は「—」のときだけ**出す（仕様書 3 章が「—」と「さがす」を組で書いている。数があれば、打ちなおせば足りる。B-94-52 のとおり、さがしても「ついていく」は変えない）。
-- 「音の高さ」は「+2 半音 0 セント」の 2 つの数を別々に、上下のドラッグ（上がプラス、`space.2` の px ごとに 1。範囲のはしで止まる）か 2 回押して打ちこむ。ドラッグの間は字だけが先に動き、離したときに 1 手。Esc（`onDragCancel`）でやめると戻す。読めない字は何もしない（範囲の文の欄がない。B-94-39 と同じ）。範囲の外は送り、Rust が中に入れる（B-94-29 と同じ）。
-- 音を作っている間は、名前とファイルの行の下に進みの行（モック F7-Stretch: 高さ 24、「音を作っています」、地 gray.4 の棒に accent、「34 %」）。`audioWork.jobs` の `rendering` で `clip` がこのクリップの物だけ。棒の太さは F7-Latency の棒の名前（`mock.latency.progress`、同じ 4）を使った。
-- 録音中 ・ カウントイン中は、どれも押せない（送らない）。
+**Intents** (`set_clip_stretch`, `find_source_tempo` in `play/audio.rs`)
 
-**クリップの印と、下の進み**（`Arrange.svelte` の名前の札、`arrange/AudioClipNotes.svelte`）
+- `setClipStretch` calls one model function: one step. Rust rounds (semitones/cents to the nearest integer, then the model clamps; tempo clamped to 30–300, then 0.01 steps). Non-numbers, same values, non-audio ids, `busy()` do nothing.
+- `findSourceTempo` → `guess_source_tempo` → `set_source_tempo`. Found → `sourceTempoFound` (also when already equal; then no step); none → `sourceTempoNotFound`. Follow unchanged.
+- **`StretchView.ratio`**: views (`AppState`) are rebuilt after every input and compared per section, so tempo edits, clip moves and source tempo edits all resend `song`. No new mechanism (test `the_rows_of_stretching_and_pitch_are_steps_and_the_tempo_is_found`).
 
-- 印「×1.25」「+2」「−1 ・ 30」は、**名前の札（`.clip-label`）の中の span**。札の数はクリップの数のまま。印のないクリップ（だいたいのクリップ）は、同じ空の配列（`NO_MARKS`）なので、`{#each}` は何も作らない。**理由**: 区切り3 の直しで、クリップごとの HTML の数と、1 つずつの `left` ・ `width` の書きかえが重さだったので、新しい位置の箱を作らない。モック F7-Stretch のとおり、印はクリップの右はしに寄せる（`margin-left: auto`）。せまいクリップでは名前が先に「…」になる。
-- 印の字: 比は `StretchView.ratio` を小数 2 けた（`toFixed(2)`）、「1.00」になる物は出さない。音の高さは半音だけなら「+2」、セントがあれば「半音 ・ セント」（B-94-59 の仮の読み: セントは符号つき、+ は書かない）。半音もセントも 0 なら出さない。
-- クリップの下の「音を作っています 34 %」は、「読みこんでいます 40 %」と同じ所と形。同じファイルの読みこみがあれば、読みこみを先に出す。
+**When to render** (`plan` in `crates/meloet-core/src/made.rs`)
 
-**状態行**（`StatusLine.svelte`）
+- Render if either: semitones or cents ≠ 0; or follow on, take has `sync`, and **that `sync` is not equal to "the current song map copied from the take's tick 0"**. Otherwise the source file plays with the non-follow formula.
+- **Keeping recordings bit-exact**: compare shapes, not formula results (`SourceTempo::is_the_songs`). Build what `sync` recording at that place would give now, with **the same function** recording uses (`SourceTempo::from_timeline(map, tick-0 place)`), and compare. Equal → "this audio was played on the song's map" → no render.
+  - **Why**: same function, same input, same answer — including the 0.01 rounding of a ramp's head tempo. Comparing frame differences would need a threshold for that rounding (about 24 frames per 10 s), which long clips exceed. `from_timeline`'s rounding was not changed (`SourceTempo`'s head is a 0.01-step `Tempo`; holding the true mid-ramp value would change the song file and `sourceTempo`).
+  - Compared **only up to the clip end** (`SourceTempo::until`); map changes after the clip do not render. A ramp crossing the clip end is compared up to its target point. Points that do not change the tempo are ignored.
+  - Moving a clip to a place with the same map shape does not render (in a one-tempo song, never). S halves and left-trimmed clips likewise (tick 0 does not move). A tick 0 before the song head assumes the head tempo continues backwards.
+  - **Cost**: changing the map only between tick 0 and the clip head (e.g. the trimmed part) renders even though the ratio stays 1 (no "read the source shifted" path). Ramp-recorded voice, once rendered, uses the rounded head tempo (at worst 0.005 off).
+- Keep-formant does nothing at pitch 0 (the stretcher skips the formant stage then, `signalsmith-stretch.h` 310), so the switch alone does not render and is not in the key.
+- **Until ready**, the source plays with the non-follow formula. The waveform uses the follow formula, so picture and sound differ only while the progress bar shows.
 
-- 「… の音を作っています 34 % ・ できるまでは、もとの音で鳴らします」は、画面が `audioWork` から作る。**出すのは、core の知らせがいつものまとめ（なし ・ summary）のときだけ**で、ほかの知らせ（さがした答え、録音、ドラッグの読み値、ダイアログ、窓の一覧、パラメータをさがしている）があれば、そちらが先。**理由**: 進みは欄とクリップの下にも出ているので、人が今した事の答えを消さない。いくつも作っているときは、いちばん先に始めた物。
-- `sourceTempoFound` ・ `sourceTempoNotFound` は `msg.sourceTempoFound` ・ `msg.sourceTempoNotFound`（テンポは `tempoText` の「120.00」）。
+**Key** (`made::plan`; SHA-256; cache `stretch/<key hex>.wav`)
 
-**右クリックの一覧**: 歌のクリップだけ、いちばん下に区切りと「逆にする」「ノーマライズ」（使えない。仕様書 3 章「あとの回の席」）。
+- Always: recipe number (`RECIPE`, now 1), `STRETCH_VERSION`, preset name (now `cheaper`, from `PRESET`), `RENDER_STEP`, formant base (none = −1), audio `uid`, engine rate, clip frames, take end frame, semitones, cents, voice character (off at pitch 0).
+- Pitch only (not following, or on the song map): a "straight" mark and the file frame at the clip head (the same integer the reader uses). **No map**.
+- Following: take `first_frame`, file rate, the whole `sync`, the clip head's tick within the take, the clip length in ticks, and **the map piece over the clip** (`meloet_model::tempo_piece`: tempo points in ticks from the clip head; a ramp at the head reaches back to its start, a ramp over the end goes to its target).
+  - **Why**: written "as seen from the clip head", so clips moved to the same tempo, copied clips, and map edits outside the clip keep the same key and are not rendered again. So `p(j)` counts from "clip head second + j ÷ rate" (the half-frame rounding of the clip head frame, 10 µs, is ignored).
+- Changing preset or formant base after listening: the two lines `PRESET` and `FORMANT_BASE_HZ` at the top of `made.rs` (they are in the key, so old renders are not reused).
 
-**ついていくクリップの波形の場所**（`arrange/wave.ts`、`arrange/audioClipGeom.ts`、`arrange/follow.ts`）
+**Renderer** (`crates/meloet-core/src/maker.rs`, thread `meloet-render`, one)
 
-- `WaveTiming` は `follow.ts` の `FollowClip`（`start` ・ `takeOffset` ・ `firstFrame` ・ `sampleRate`）に `source`（この音のテンポの地図か null）を足した形。`frameAtTick` と `fileFrameAt` は、どちらも `clipFrameAt` を通す。録っている歌は `source: null`（ファイルの速さのまま）。
-- この音のテンポの地図は `cachedSourceMap`: `SourceTempoView` を鍵にした WeakMap で、同じ物には 1 回だけ作る。曲の区画が届くまで同じ `SourceTempoView` が来るので、毎コマは作らない。曲の区画が来たら作りなおす（クリップの数だけ。古い物は GC）。
-- ついていくクリップは、曲のテンポが変わる所でも、こまがティックにまっすぐなので、波形の四角は 1 つのまま（この音のテンポにだんだんがあれば、そこで分かれる）。
-- ドラッグ中の絵（`livePicture`）、動かす ・ つめる絵（`dragPicture`）は `waveClipOf(clip)` から作るので、そのまま同じ式。
+- The audio side builds a render table (`MadePlan`) from all seats' clips and **sends it whole only when it changes** (`Maker::want`); jobs not in the table are cancelled. Nothing is rendered without an output stream (no rate yet).
+- Already cached results are answered at once (`MadeNews::Ready`), so undo/redo to an old value is instant.
+- Missing ones start **300 ms after the last table change** (`SETTLE`). Why: do not render every middle value while a person keeps changing a field; drags send one intent on release, so a short wait is enough. A job still in the new table continues.
+- **Order**: clips ahead of the play position (heard position tick, given every 100 ms) nearest first, then clips behind, nearest first; re-chosen after each one.
+- Rendering: `meloet_stretch::render` with `MadePlan::file_frame_at` (the `FileClock` formula in engine-rate frames). Input through `AudioStore` (`PcmStore::open`, same as read-ahead); silence before the file head and after the take end. Output `CacheWav` (`.part`, renamed when done).
+- **Cancel**: at each `write` (256 frames) new requests are checked; if the current key is not in the new table, `cancel` is set and the `.part` deleted. Closing or replacing a song empties the table, so the same path cancels. At quit, the renderer is stopped and waited for.
+- **Progress**: the renderer reports all running and waiting jobs when they change (`MadeNews::Work`, percent at most every 250 ms). Core shows them as `audioWork.jobs` `rendering`; **waiting jobs show 0 %**; one key used by two clips shows twice; clips no longer in the song are not shown.
+- Clips whose source cannot open yet (decoding, missing) are set aside and retried when `AudioStore::generation()` changes (`Maker::retry`).
+- Without a cache dir (`cache_dir` `None`), nothing is rendered and the source plays.
 
-**「meloet について」の写したソース**（`tools/licenses/inventory.mjs`、`about/licenses.ts`）
+**Playing rendered audio** (`readahead.rs`, engine `clipplay.rs`, `send_clips` in `service.rs`)
 
-- `licenses/upstream.json` の `vendored` の物（Signalsmith Stretch 1.4.0、Signalsmith Linear 0.6.4）は、Rust の部品ではないので `parts` には入れず、`upstream` に名前と版（`title` の頭から読む。`vendoredPart`）を足して書き出す。About は `allParts` で `parts` と合わせ、部品の行（ライセンスの見出し MIT の中、名前と版）にする。全文は `makeTexts` が `名前@版` の鍵で入れる（licenses/ の写し）。NOTICE は前から「Parts made from the work of others」に出ているので変わらない。部品の数（「… 個の部品」）には 2 つふえる。
-- **理由**: About の 2 段目は「部品（ライセンスごと）」の 1 つの並びで、写した C++ も meloet といっしょに配る部品。別の見出しを作ると、仕様書にない文が要る。
+- A render is one wav from clip head to clip end (engine frames). The reader is told with the usual `FeedClip`: `made` = key, `file_frame` 0, `file_end` = frames. **Song frame → rendered frame is "song frame − clip head frame"**, exactly how the reader already counts, so loops and jumps work unchanged. The engine clip table (place, fades, gain) is the same for source and rendered audio.
+  - Why no position mapping in the table: the reader lays out audio; the engine only multiplies (22-8). Position is already in `FeedClip`.
+- **Changing over (source ⇄ rendered, rendered → another render) is a 10 ms cross-fade made by the reader inside the ring** (`ReadAhead::splice_clips`). From the next frames it puts into the ring, for 480 frames (48 kHz) it reads both old and new layouts and mixes them in a straight line. The engine gets `EngineCommand::SpliceClips`.
+  - Track sounding: the engine does nothing (no new generation). No break; what is in the ring (1–2 s) plays, then the cross-fade.
+  - Track not sounding (stopped, count-in, muted, mid-jump): the engine starts a new generation. Why: while stopped, the ring holds "2 s from here", which would otherwise play old audio at the next start; nothing is heard, so refilling is fine.
+  - **Why not a new generation (22-8's first plan)**: it fades out 10 ms and leaves the track silent until the reader catches up (tens of ms). A cross-fade needs old and new at once, and the engine can read only one ring stream; the reader has both files.
+  - The audio side treats it as a change-over only when the seat's clip places are exactly the same and only `made` differs (`made::only_audio_differs`). Other changes raise a generation as before.
+  - A second change-over before the first cross-fade starts cross-fades directly from what is in the ring to the newest.
+- If rendered audio is gone when it should play (someone emptied the cache), the reader sets `ReadStats::made_lost`; the audio side forgets "ready", refills with the source and has the renderer check again.
+- The audio thread touches no memory or locks (`SpliceClips` only checks a flag and calls `jump`; test `other_audio_for_the_same_clips_keeps_the_ring_while_it_sounds`).
 
-### 22-19 区切り4 の 2 回目（core とエンジン、2026-11-21、meloet-hard）
-
-1 回目の約束（版 25）は変えていない。足したのは、意図の中身、作るかどうかの決まり、音を作る係、できた音への入れかえ、しまっておく所の上限。
-
-**意図**（`play/audio.rs` の `set_clip_stretch` ・ `find_source_tempo`）
-
-- `setClipStretch` は model の関数を 1 つ呼んで 1 手。数は Rust がまるめる（半音 ・ セントはいちばん近い整数にしてから model が範囲に入れる。テンポは 30〜300 に入れてから 0.01 きざみ）。数でない値、同じ値、歌のクリップでない id、カウントイン中 ・ 録音中（`busy()`）は何もしない。
-- `findSourceTempo` は `guess_source_tempo` → `set_source_tempo`。見つかれば状態行 `sourceTempoFound`（もう同じテンポでも言う。そのときは手にならない）、合う数がなければ `sourceTempoNotFound`。「ついていく」は変えない。
-- **`StretchView.ratio`**: 見る物（`AppState`）は入力のたびに作りなおして、区画ごとに前とくらべて送る（今までのしかけ）。だから、テンポを変えた ・ クリップを動かした ・ この音のテンポを変えた、のどれでも `song` の区画が出る。足したしかけはない（試験 `the_rows_of_stretching_and_pitch_are_steps_and_the_tempo_is_found` が、96 → 120 で 1.0 → 1.25 になるのを見る）。
-
-**作るかどうかの決まり**（`crates/meloet-core/src/made.rs` の `plan`）
-
-- 作るのは次のどちらか。ほかは作らず、もとのファイルを今までの式（ファイルの速さのまま）で鳴らす。
-  - 半音かセントが 0 でない。
-  - 「ついていく」がオンで、テイクに `sync` があり、**その `sync` が「いまの曲の地図を、テイクの 0 ティックの所から写した物」と同じでない**。
-- **録った歌を 1 ビットも変えない守りかた**: くらべるのは数の式ではなく、形（`SourceTempo::is_the_songs`、`crates/meloet-model/src/audio/follow.rs`）。いまの曲の地図から、録音のときと**同じ関数**（`SourceTempo::from_timeline(地図, 0 ティックの場所)`）で「この場所から録ったら、どんな `sync` になるか」を作り、テイクの `sync` とくらべる。同じなら「この音は、曲の地図どおりに鳴らされた物」→ 作らない。
-  - **理由**: 録音は `from_timeline` で `sync` を作る。地図を変えていなければ、同じ関数に同じ入力なので、だんだんの中で頭のテンポを 0.01 にまるめた分まで、かならず同じ答えになる。式の差（こま数）でくらべると、まるめの分（10 秒で 24 こまほど）を「小さい」と見るしきいの数が要り、長いクリップでは越える。`from_timeline` のまるめは直していない（`SourceTempo` の頭は 0.01 きざみの `Tempo` で、だんだんの途中の本当の数を持てない。持てる形にすると、曲のファイルと約束の `sourceTempo` が変わる）。
-  - くらべるのは**クリップの終わりまで**（`SourceTempo::until`）。クリップより後ろの地図を変えても作らない。だんだんがクリップの終わりをまたぐときは、そのだんだんの行き先の点までくらべる。テンポが変わらない点（同じテンポの点を足しただけ）は、ないものとしてくらべる。
-  - クリップを動かしても、動かした先の地図が同じ形なら作らない（テンポが 1 つの曲の中では、どこへ動かしても作らない）。S で切った左右、左はしをちぢめたクリップも同じ（0 ティックの場所が変わらないので）。テイクの 0 ティックが曲の頭より前のクリップは、曲の頭のテンポが前へ続くとしてくらべる。
-  - **払う物**: 0 ティックからクリップの頭までの間だけ地図を変えた（左はしをちぢめたクリップの、切りすてた所の地図を変えた）ときは、比は 1 のままで位置だけずれるが、作る（もとのファイルを、ずらして読む形にはしていない）。だんだんの中で録った歌は、地図を変えて作るようになったとき、まるめた頭のテンポ（いちばん悪くて 0.005）からの式になる。
-- 「声の感じを保つ」は、高さが 0 のときは何もしない（部品が、高さを変えないときは声の感じの段をとばす。`signalsmith-stretch.h` 310 行）。だから、高さ 0 でスイッチだけ変えても作らないし、鍵にも入れない。
-- **できるまで**は、もとのファイルを「ついていかない」式で鳴らす（のばさない、高さを変えない）。波形は「ついていく」式で描かれるので、作っている間は絵と音が合わない（進みの棒が出ている間だけ）。
-
-**鍵**（`made::plan`。SHA-256、しまっておく所の `stretch/<鍵の 16 進>.wav`）
-
-- いつも入れる物: 作りかたの番号（`RECIPE`、いま 1）、`STRETCH_VERSION`、preset の名前（`default`）、`RENDER_STEP`、基音を教えるか（いまは教えない = −1）、音の `uid`、エンジンのサンプルレート、クリップのこま数、テイクの終わりのこま、半音、セント、声の感じ（高さが 0 なら切）。
-- 高さだけ（ついていかない、または地図どおり）: 「まっすぐ」の印と、クリップの頭のファイルのこま（先読みの係が読むこまと同じ整数）。**地図は入れない**。
-- ついていく: テイクの `first_frame`、ファイルのサンプルレート、`sync` ぜんぶ、クリップの頭がテイクの何ティックめか、クリップの長さ（ティック）、**クリップにかかる地図のかけら**（`meloet_model::tempo_piece`: クリップの頭からのティックで書いたテンポの点。頭にかかるだんだんは、始まった所までさかのぼる。終わりをまたぐだんだんは、行き先の点まで）。
-  - **理由**: 曲の中の場所でなく「クリップの頭から見た地図」で書くので、同じテンポの所へ動かしたクリップ、写したクリップ、クリップより前や後ろの地図だけを変えた曲は、同じ鍵になり、作りなおさない。そのために `p(j)` は「クリップの頭の秒 ＋ j ÷ サンプルレート」から数える（クリップの頭のこまを整数にまるめた分、いちばん悪くて半こま = 10 µs は見ない）。
-- 聞きくらべの答えで preset や基音を変えるときは、`made.rs` の頭の `PRESET` ・ `FORMANT_BASE_HZ` の 2 行（鍵にも入っているので、前に作った物は使われない）。
-
-**音を作る係**（`crates/meloet-core/src/maker.rs`、スレッド `meloet-render`、1 本）
-
-- core の音の側（`service.rs` の `Audio`）が、席ごとのクリップから「作る物の表」（`MadePlan`）を作り、**表が前と変わったときだけ**、ぜんぶを係に言う（`Maker::want`）。表にない仕事は、係がやめる。出口の流れがない間は、何も作らない（サンプルレートが決まらないので）。
-- 係は、言われたらすぐ、しまっておく所にもうある物を答える（`MadeNews::Ready`）。取り消し ・ やりなおしで前の値に戻ったときは、待たずにその音になる。
-- ない物は、**最後に表が変わってから 300 ms 待って**（`SETTLE`）作りはじめる。**理由**: 欄の数を続けて変えている人の、途中の値を全部は作らない。ドラッグは離したときに意図が 1 つ来るので、短くてよい。作っている物が新しい表にも入っていれば、やめずに続ける。
-- **順番**: 再生の位置（100 ms ごとに音の側が言う、耳に届いている位置のティック）より先にあるクリップを近い順に、そのあと後ろのクリップを近い順に。1 つ作るたびに選びなおす。
-- 作る所: `meloet_stretch::render` に、`MadePlan::file_frame_at`（`FileClock` の式。エンジンのサンプルレートの写しのこまで数える）をわたす。入口は `AudioStore`（`PcmStore::open`。先読みの係と同じ口）。ファイルの頭より前と、テイクの終わりより先は無音（先読みの係と同じ）。出口は `CacheWav`（`.part` に書き、できたら名前を変える）。
-- **やめる**: `render` の `write`（256 こまごと）のたびに、来ている頼みを見る。新しい表にいま作っている鍵がなければ `cancel` を立てる。`.part` は消す。曲を閉じる ・ 入れかえるときは、席のクリップが変わって表が空になるので、同じ道でやめる。meloet が終わるときは、係を手ばなす所で、やめさせて待つ。
-- **進み**: 係は「作っている物と待っている物のぜんぶ」を、変わるたびに言う（`MadeNews::Work`。% は 250 ms に 1 回まで）。core は `Input::AudioMaking` で受けて、`audioWork.jobs` に `{kind: rendering, audio, clip, percent}` で出す。**待っている物は 0 %**。同じ鍵を 2 つのクリップが使うときは、2 つとも出る。もう曲にないクリップの分は出さない。
-- もとの音がまだ開けない（ほどいている途中、見つからない）クリップは、仕事に数えずに置いておき、`AudioStore::generation()` が変わったらもう一度ためす（`Maker::retry`）。
-- しまっておく所がない（`cache_dir` が `None`）ときは、何も作らず、もとの音で鳴る。
-
-**できた音で鳴らす**（`readahead.rs`、エンジンの `clipplay.rs`、`service.rs` の `send_clips`）
-
-- 作った音は、クリップの頭から終わりまで（エンジンのこまで）の 1 つの wav。先読みの係には、今までと同じ `FeedClip` で言う: `made` に鍵、`file_frame` は 0、`file_end` はこま数。**「曲のこま → 作った音のこま」は「曲のこま − クリップの頭のこま」**で、先読みの係の今の数えかたそのまま。だから、ループの折り返しも、とびも、今のしかけのままで合う。エンジンの区切りの表（場所 ・ フェード ・ 音量）は、もとの音でも作った音でも同じ。
-  - **表に位置の数えかたを入れなかった理由**: 音をならべるのは先読みの係で、エンジンは輪から出てきたこまに掛け算するだけ（22-8）。位置は、もう `FeedClip` にある。
-- **入れかえ（もとの音 ⇄ 作った音、作った音 → 別の作った音）は、先読みの係が輪の中で 10 ms 重ねる**（`ReadAhead::splice_clips`）。係は、次に輪へ入れるこまから 480 こま（48 kHz）の間、古い並びと新しい並びを両方読んで、まっすぐな線でまぜて入れる。エンジンには `EngineCommand::SpliceClips` を送る。
-  - 鳴っているトラック: エンジンは何もしない（世代を上げない）。音は切れず、輪に入っている分（1〜2 秒）が鳴ってから、重なって新しい音になる。
-  - 鳴っていないトラック（止まっている、カウントイン中、ミュート、とびの途中）: エンジンが新しい世代にする。**理由**: 止まっている間は輪に「いまの位置からの 2 秒」が入ったままなので、そのままだと、次の再生の頭の 2 秒が古い音になる。聞こえていないので、入れなおしてよい。
-  - **世代を上げて入れかえる形（22-8 の前の案）にしなかった理由**: 世代を上げると、10 ms でしぼってから係が追いつくまで（数十 ms）そのトラックが音なしになる。重ねるには古い音と新しい音が同時に要るが、輪は 1 本の列なので、エンジンは両方を同時に読めない。両方のファイルを持っているのは係。
-  - 音の側が「入れかえ」と見るのは、席のクリップの場所が前とまったく同じで、ちがうのが「どの音を読むか」（`made`）だけのとき（`made::only_audio_differs`）。場所が変わった、同じファイルの読む所が変わった、地図が変わった、は今までどおり世代を上げる。
-  - 重ねはじめる前に次の入れかえが来たら（値を戻してすぐ、しまってある音が見つかったとき）、輪に入っている音から新しい音へ、じかに重ねる。
-- 作った音が、鳴らそうとしたら無かった（だれかがしまっておく所を空にした）ときは、係が印を立て（`ReadStats::made_lost`）、音の側が「できている物」をわすれて、もとの音で入れなおし、作る係に見なおさせる。
-- 音のスレッドは、メモリも鍵もさわらない（`SpliceClips` は旗を見て `jump` を呼ぶだけ。試験 `other_audio_for_the_same_clips_keeps_the_ring_while_it_sounds` が確保 ・ 解放 (0, 0) を見る）。
-
-**しまっておく所の上限**（`maker.rs` の `trim_cache` ・ `remove_left_parts`）
-
-- 大きさ: エンジンのサンプルレートの F32。48 kHz のステレオで **1 分 23.0 MB**（モノは 11.5 MB）。音の写し（`audio/`。mp3 ・ ogg ・ flac と、サンプルレートのちがう wav だけ）も、作った音（`stretch/`）も同じ大きさ。ピーク（`peaks/`）は 10 分で 1.2 MB。4 分のステレオを 16 本入れて、全部のび縮みさせた曲で、写し 1.5 GB ＋ 作った音 1.5 GB。
-- **上限は 3 つ合わせて 4 GiB**（`CACHE_LIMIT`）。こえたら、**使った時刻の古い順**に消す。**いま開いている曲が使っている物は消さない**（曲の音の表の `uid` の写しとピーク、いまの「作る物の表」の鍵の音）。使っている物は、見るたびにファイルの時刻を今にする（= 使った時刻）。使っている物だけで上限をこえる曲では、何も消さない（残りの物が全部なくなるだけ）。
-  - **理由**: 上の大きな曲 1 つ（3 GB）が入り、取り消しで戻る音が少し残る大きさ。消えても作りなおせる物なので、上限は「ディスクをいつのまにか食いつぶさない」ための数。
-  - 見る時: 作る物の表が変わったとき（30 秒に 1 回まで）と、音を 1 つ作りおえたとき。作る係のスレッドで。**ほどく係が写しを作った直後には見ない**（次に表が変わったときに見る）。
-  - 取り消しの履歴だけが持つ値（いまの表にない鍵）の音は「使っていない」に入る。新しいので、上限をこえないかぎり残る。
-- **起動のとき**、`audio/` ・ `stretch/` ・ `peaks/` に残った `.part` を消す（10 分より前に書かれた物だけ。**理由**: いま書いている `.part` は、同じ人が同時に動かしている別の meloet の物かもしれない）。
-
-**試験**
-
-- model（`audio/follow.rs`）: 録った `sync` は、どのティックから録っても（だんだんの中でも）、地図が同じなら「曲の物」。クリップの中の点を変えたら、ちがう。後ろの点はひびかない。0 ティックが曲の頭より前。地図のかけらは場所によらない。
-- core `made/tests.rs`（5）: 録った歌（だんだんの途中から、S で切った左右、44.1 kHz でも）は作らない。地図の中を変える ・ 動かす → 作る。ついていくを切る → 作らない。高さだけ → 「まっすぐ」で作る、0 に戻す → 作らない。鍵は、後ろの地図や同じテンポの所への移動で変わらず、テンポ ・ この音のテンポ ・ 長さ ・ 値 ・ サンプルレートで変わる。
-- core `maker/tests.rs`（7 ＋ 測り 1）: 本物の `AudioStore` と一時のフォルダで。頼む → 仕事（0 %）→ 300 ms より後に → できる → 仕事なし。しまってある物はすぐ答えて作らない。作っている途中で別の値 → 古い `.part` が消えて新しい鍵だけできる。係を手ばなしても `.part` が残らない。再生の位置に近い順。開けなかった音は `retry` で。上限（古い順、使っている物は残る、`.part`）。
-- core `readahead/tests.rs`（＋2）: 入れかえは、輪の終わりの所から 480 こまでまっすぐに重なり、世代は 1 のまま。重ねはじめる前の次の入れかえ。新しい世代は重ねない。作った音がないときの印。
-- core `state/audio/tests.rs`（＋3）: 意図と手、さがすと状態行、比、録音中は何もしない、`audioWork` の `rendering`。
-- エンジン `tests/clips.rs`（＋1）: `SpliceClips` は、鳴っている間は世代を上げず 1 こまも変えない。ミュート中と止まっている間は新しい世代。メモリ (0, 0)。
-- **本物の core を通した試験**（自分用の PipeWire、`tests/stretch_play_private.rs`、`--ignored`）: メトロノームを 120 で歌のトラックに録る → 作る仕事が出ない、比 1.0 → 曲を 96 にする → `rendering` が出て、消えて、`stretch/` に wav が 1 つ → そのクリップを鳴らしながら 2 本めに録る → 2 本めのファイルのクリックが、96 の拍（30000 こまごと）にある → 120 に戻す（1 本めはもとの音、96 で録った 2 本めが作られる）→ 取り消しで 96（1 本めは、しまってある音。作らない）→ **再生しながら**半音を +2 にする（作られて、鳴っている音に重なって入る。世代を上げた入れなおしではなく、重ねた回数 `Core::made_counts().splices` がふえる）→ 再生しながら取り消し（前の音が重なって戻る。作らない）。バッファ 256 と 1024 で通った。
-- **確かめていない事**: 本物の core で再生中に重なる所は、「重ねる道を通った」（回数）までを見ている。**出口の音が切れていない事**は、部品ごとの試験（先読みの係が輪に入れる 480 こま、エンジンが 1 こまも変えない事）で見ていて、本物の出口の音では見ていない。出口の流れがないと音の側は作る物の表を作らないので、ふつうの `cargo test` は core を端から端まで通せない（上の `--ignored` の試験だけが通す）。
-
-**測った数**（2026-11-21。ほかの係が動いている PC。load 0.6〜1.7）
-
-- 位置（`maker/tests.rs`、クリックのエネルギーのまん中）: 120 の音を 96 の曲で（×0.8）−15.6〜−20.4 こま、96 → 144 のだんだんの中で −20.0〜＋22.4 こま（**いちばん悪くて 0.47 ms**）、同じだんだん ＋1 半音で −1.4〜＋4.6 こま。試験の決めた数は 48 こま（1 ms）。
-- 本物の core（録ったメトロノームを 96 で鳴らして録りなおす）: クリックのまん中は、もとの録音より 30〜43 こま（0.6〜0.9 ms）後ろ。クリックそのものが 1.25 倍に長くなる分が入っている。**鳴りはじめ**（いちばん大きい所の 25 % をこえる所）は、拍より 47〜71 こま（1.0〜1.5 ms）前（のび縮みの区切りが、クリックの前に小さな音をにじませる。頭の 1 つめは 0）。バッファ 256 と 1024 で、1 こまも同じ数（作った音は、何度作っても同じ）。
-- 作る速さ: ステレオ 48 秒（合成した声のような音）を、release で、のび縮み ×1.25 が 0.44 秒（実時間の **110 倍**）、+3 半音 ＋ 声の感じ が 0.51 秒（95 倍）、両方が 0.56 秒（86 倍）。debug（`meloet-stretch` だけ opt-level 3）では 47 倍 ・ 47 倍 ・ 30 倍。wav の読み書きも入った数（`cargo test -p meloet-core --release --lib -- how_fast --ignored --nocapture`）。4 分の歌 1 本が 2〜3 秒。
-- 3.3 秒のクリップは、頼んでから 350 ms でできた（そのうち 300 ms は待つ時間）。
-- **測っていない**: 16 本を鳴らしながら作るときの音のスレッドの負荷（本物のアプリで `tools/measure/` の道具に場面を足す必要がある）。作る係はふつうの優先度の 1 本で、音のスレッドとはファイルの読み書きのほかに分けあう物がない。
-
-**まだの事 ・ 申し送り**
-
-- `crates/meloet-core/Cargo.toml` は `meloet-stretch` を道（`path = "../meloet-stretch"`）で指している。ワークスペースの `Cargo.toml` の `[workspace.dependencies]` に `meloet-stretch` がなかったので（さわってよいファイルの外）。棟梁が足したら `{ workspace = true }` に直す。
-- 書き出し（区切り5）: 「作りかけならできるまで待つ」は `Maker::waiting()`（いまの表のうち、まだ無い音の数。開けなかった音は数えない。外からは `Core::made_counts().waiting`）が 0 になるのを待てばよい。書き出しがエンジンと別のサンプルレートで回すなら、鍵にサンプルレートが入っているので、そのサンプルレートの表（`made::seat_audio`）を作って係に頼む形になる。出口の流れがないときに書き出す道も、同じ所を通す。
-- 「作っている間は、前に作った音で鳴らす」（高さを +2 から +3 にしたとき、+3 ができるまで +2 のまま）は、していない。いまは、いったんもとの音に戻る（22-8 の「作っている間は、もとの音」のとおり）。
-- 「meloet について」に Signalsmith の 2 つを出す（1 回目の申し送りのまま。画面の側）。
-
-### 22-20. 区切り5 の 1 回目: 約束 26 と継ぎ目（書き出し、2026-11-21、meloet-hard）
-
-形だけを置いた回。書き出しの中身（2 つめのエンジン、ファイルを書く、プラグインを速く回す）と画面の部品は 2 回目。
-
-- **約束 26**（`crates/meloet-protocol/src/export.rs`）
-  - 区画を 1 つ足した: `AppState::export`（`Change::Export`）= `{ dialog, run }`。**理由**: たしかめの数と進みの % は 1 秒に数回変わる。`workspace` に入れると、そのたびに帯の配置まで送りなおすことになる。`audioWork` と同じ考えで、小さな区画にした。
-  - `dialog`（`ExportDialogView`）: 範囲（`song` ・ `loop` ・ `tracks`）、ループの範囲（なければ選べない）、トラックの数、書く範囲のティック、形と形の一覧（`wav` ・ `flac`。mp3 は一覧にない）、保存する所（見せる文字だけ。道は core）、たしかめ（`ExportCheck`: `waiting` ・ `counting { percent, peakDb, clips }` ・ `done { peakDb, clips }` ・ `failed { reason }`）、止まっているプラグイン、「くわしく」（ひらいているか、サンプルレートと選べる数、ビットと選べる数、しっぽ、実時間）、`canExport`。
-  - `run`（`ExportRunView`）: `running { percent, file, remainingS, realtime, lengthS }` ・ `done { file, files, place, lengthS, sampleRate, bits }` ・ `cancelled` ・ `failed { reason }`。**終わった形も `run` に置いた**（状態行の知らせにしなかった）。理由: 仕様書 2 章の「書き出しの進み」は、書き出している ・ 実時間 ・ 終わった を 1 つの部品の状態として書いている。終わった形は、人が次に何かするまで残る（知らせと同じ決まり。「フォルダをひらく」では消えない）。
-  - 意図（どれも手ではない）: `openExport` ・ `closeExport` ・ `setExport { change }`（`range` ・ `format` ・ `advancedOpen` ・ `sampleRate` ・ `bits` ・ `tail` ・ `realtime`）・ `chooseExportPlace` ・ `startExport` ・ `cancelExport` ・ `showExported`。`setExport` は `setClipStretch` と同じ形（変える物を 1 つの enum に）。
-  - 状態行の知らせ: `exportDialogOpen`（モック F7-Export の「「書き出し」のダイアログをひらいています」）だけ。
-  - ビットは録る形と同じ `RecordFormat`（16 ・ 24 ・ 32。32 は浮動小数で wav だけ）。`clips` は core が決める: いちばん大きい所が 0 dB をこえ、**かつ** 32 ビットでないとき（浮動小数は割れない）。
-  - 書き出す TS: 型 10 個と `generated/export.ts`（`EXPORT_FORMATS`、`EXPORT_TAIL_MAX_S`）。
-- **core の決まり**（`crates/meloet-core/src/export.rs` の `Exporting`。`state` と同じく純粋）
-  - 入るもの: 意図と `ExportNews`（`Input::Export`）。出るもの: `ExportAsk`（`Effect::Export`）。`Model` とのつなぎは `state/export.rs`（曲のようすを `Scene` にして渡すだけ）。
-  - **仕事 1 つ = 範囲 1 回ぶんの音**（`ExportJob`: `Doc` の写し、範囲、トラックごとか、しっぽ、実時間か、とばすプラグイン、エンジンのサンプルレート）。ダイアログをひらくと `Render`、範囲 ・ しっぽ ・ 実時間を変えると `Drop` して新しい `Render`、形 ・ サンプルレート ・ ビットを変えても仕事はそのまま（22-14）。「書き出す」は `Finish { job, target }` で、その仕事を使う。とじる ・ やめるは `Drop`。
-  - `ExportNews`: `Counted { job, percent, peak_db, length_s, remaining_s, done }` ・ `MustBeRealtime { job }` ・ `Finished { job, files }` ・ `Failed { job, reason }` ・ `PlacePicked(path)`。古い仕事の知らせは聞かない。
-  - 選んだ事（範囲、形、くわしく、保存する所）は、meloet が動いている間おぼえている（設定には書かない）。
-  - いまは `service.rs` が `Effect::Export` を受けて何もしない。だから本物のアプリでは、たしかめが `waiting` のまま（2 回目に受け手を作る）。
-- **プラグインの継ぎ目**（`crates/meloet-core/src/plugins/export.rs`）
-  - `export_seats(&HostOptions, ExportWant, Arc<PluginBlock>) -> Result<ExportSeats, ExportPluginError>`。`ExportWant` は鳴るプラグインの一覧（場所、名前、鍵、束、状態）とサンプルレートといちばん長いブロック。`ExportSeats` は音源とエフェクトの席（`Box<dyn Instrument>` ・ `Box<dyn Effect>`、曲の中の場所 `PluginPlace` つき）、`realtime`（`lv2:isLive`）、止まったかを見る `watches` と `stopped()`。
-  - 口の決まり（doc コメントにも）: 書き出しのスレッドで、最初のブロックの前に呼ぶ（待つので、core のスレッドでも音のスレッドでもない）。`block` は書き出しのエンジンの物。席はブロックごとに答えを待ち、しめきりは使わない（見はりは `HANG_MS` だけ。こえたら `stopped()` が言い、書き出しはまるごと「できなかった」）。状態は、呼ぶ側が core のスレッドで先に集める（弾くほうのプラグインに `Hosts::state`、答えない物は `Doc` の `PluginRef::state`）。
-  - いまの中身: プラグインのない曲は空の席、あれば `ExportPluginError::NotYet`。
-  - **席を場所（`PluginPlace`）で返す理由**: 書き出しのエンジンの席の番号は、エンジンを作る側（`Seats::for_song`）が決める。プラグインの側は番号を知らなくてよい。
-- **ファイルを書く口**（`crates/meloet-core/src/export/sink.rs`）
-  - `trait AudioSink { write(&[f32]) / finish() -> フレーム数 / abandon() }` と `create(path, SinkSpec { format, sample_rate, channels, bits })`。`CacheWav` と同じ 3 つの動き。**trait にした理由**: 書き出しのスレッドは形を知らずに同じ道で書ける。浮動小数で受けて、整数への変換（16 ビットのディザー）は口の中の同じ 1 か所にするので、wav と flac の中身のサンプルが同じになる。
-  - いまの中身: `create` は `Unsupported` を返す。`flacenc` は 2 回目に入れる（ライセンスの見はりも）。
-- **仮に決めた事**（仕様書にない。design-notes B-94 へ）
-  1. 保存する所のはじめ: 保存した曲は曲のフォルダ（6 章の例「~/ミュージック/はじめての曲/はじめての曲.wav」）、まだ保存していない曲は PC の音楽のフォルダ。名前は曲の名前。
-  2. 「トラックごと」の保存する所はフォルダで、「えらぶ…」はフォルダの窓。
-  3. たしかめを数えている途中でも「書き出す」は押せる（数が 1 つでも来たら）。まだ何も来ていない間 ・ できないとき ・ 空の曲では押せない。
-  4. しっぽは「音が消えるまで」と「なし」の 2 つ。「実時間で書き出す」は「くわしく」の中の切りかえ（22-11 の「人がえらぶ所」）。
-  5. ダイアログは、カウントイン中と録音中はひらかない。再生中はひらける。書き出している間はひらかない。
-  6. 「ループ」「曲ぜんぶ」のファイルの名前はどちらも曲の名前。
-- **偽物の場面**: `exportDialog`（F7-Export）・ `exportWaiting` ・ `exportCounting` ・ `exportClips` ・ `exportStopped`（F-Export の止まっているプラグイン）・ `exportAdvanced` ・ `exportCheckFailed` ・ `exportFit`（R11-Fit）・ `exporting`（F7-Exporting）・ `exportingRealtime` ・ `exportDone` ・ `exportCancelled` ・ `exportFailed`。偽物は意図を受けて、ダイアログと進みを変える（たしかめはすぐ「できた」、% は動かない）。
-
-### 22-21. 区切り3 ・ 4 の残りの直し（core とエンジン、2026-11-21、meloet-hard）
-
-測り（`docs/measurements/2026-11-21-round7-step3-fix.md` の「気になった事」1 ・ 2、`2026-11-21-round7-step4.md` の「見つけた事」4 と「道具の弱い所」）のあとの 5 つ。約束と文面は変えていない。
-
-**1. しまっておく所: 表に入った物と出た物は、その時に「使った」**（`maker.rs` の `Work::mark_changed`）
-
-- 起きていた事: 「使った時刻」（ファイルの時刻）は、けずる係が回った時（30 秒に 1 回まで、`TRIM_EVERY`）に、その時の表の物にだけついていた。ひらいて 30 秒たたずに値を変えると、さっきまで使っていた音が、前の日の時刻のまま表から出て、いちばん古い物として先に消えた。
-- 決まり: 表（`Ask::Want`）が変わるたびに、**入った鍵と出た鍵**の音のファイル、**入った uid と出た uid** の読んだ音とピークに、今の時刻をつける。消すのは今までどおり（30 秒に 1 回まで、または 1 本作った時）。
-- 理由: 表の差だけなので、値を続けて変えても軽い（鍵 1 つにファイル 1 つを開くだけ。フォルダを読むのは uid が変わった時だけ）。表に残っている物は、次にけずる時に今までどおり時刻がつく。
-- 試験: `maker/tests.rs` の `what_left_the_table_since_the_cache_was_looked_through_is_not_the_oldest`（直す前は、いま出たばかりの音が消えて、きのうの音が残る）。
-
-**2. 入口の抜けを埋める決まり: 抜けの長さは、待っているブロックのいちばん小さい遅れ**（`vocalrec.rs` の `Gaps::settle_first`）
-
-- 見た物: 棟梁が取った 4 回（バッファ 64、輪 32 個、load 10〜26、ぜんぶで 80 秒）のうち、多く埋めた 2 回の中身。多く埋めた所は **3 か所**（3 回めに 1、4 回めに 2）で、どれも同じ形: **1 コマ抜け、次のコマが 2 つのブロックを同じ時刻で渡す**（1 つめは、時刻が 1 コマ遅い）。「抜け」と「時刻だけ遅れ」が同時に来た形。3 ブロック以上つづく遅れ、まるめ、時計の線のずれは、なかった（ほかの 205 か所は、前の決まりで時計と合っていた）。
-- 前の決まりは、待たせた数をこえたら、**いちばん前のブロックの遅れ**（2 コマ）をそのまま埋めていた。本当の抜けは 1 コマ。
-- 決まり: 埋める数は、待っているブロックと今来たブロックの遅れ（それぞれ、前のブロックの長さを数えた線から）の**いちばん小さい物**。待たせる数（`HELD_BLOCKS` = 2）は変えていない。
-- 理由: ブロックの時刻は、遅くなる事はあっても早くはならない（コマが起きた時刻なので）。だから、どれか 1 つでも線に近いブロックがあれば、それが本当の線。待たせる数を時間で決める形は取らなかった（数が足りないのではなく、数えかたの問題だったので）。
-- 試験（`vocalrec/tests.rs`、`tests/fixtures/input-blocks.txt` に 3 か所を 40〜60 ブロックずつ切り出した）: `load-64-hole-and-late-a` は 64（前の決まりは 128）、`-b` は 640（704）、`-c` は 192（256）で、時計の言う数と合う。作った並びでも（`late_times_of_one_or_two_blocks_…`）。4 回ぜんぶを流すと（`the_rule_fills_what_the_clock_says_is_missing_in_a_measured_run`）4032 と 4031.8、4800 と 4799.8、**2240 と 2239.7**（前は 2304）、**10496 と 10495.8**（前は 10624）。
-
-**3. 混んだ PC で 2 回めの録音が 1 ブロックずれた件: 出口だけがコマを落とす。直していない**
-
-- 残っていた wav を見た: 2 回めのファイルで、クリップの頭（下の 4 の音）は合っていて、拍 1 から先の 16 個がみな 256 こま遅い。**頭から拍 1 までの 0.5 秒の間に、鳴らす側と録る側が 256 こまずれた**。その回の記録（埋めた数、出口のコマ）は残っていないので、どちらが動いたかは、その回については分からない。
-- しくみを測った（`crates/meloet-engine/tests/input_gaps_private.rs` に足した数: 入口のブロックが取られた瞬間に DAC に出ていたエンジンのこま − 入口のこまの数。自分用の PipeWire、輪 32 個、20 秒）:
-
-  | バッファ | load | 出口が作ったブロック | 入口の抜け（時計） | エンジンのこま − 入口のこま（終わり − 始め） |
-  |---|---|---|---|---|
-  | 64、静か | 4 | 時計と同じ | 0 | 0 |
-  | 256 | 16〜21 | **7 少ない** | 256（1 か所） | **−1536**（6 ブロック） |
-  | 256 | 16〜21 | 同じ | 0 | −256（1 か所） |
-  | 64 | 4〜12 | **524 少ない** | 3392 | **−30016**（0.63 秒） |
-  | 64 | 24〜27 | **294 少ない** | 4736 | **−14080** |
-
-- 読み: 区切り3 の「別の事」と同じ所。**混んだ PC では、エンジンの出口のコールバックだけが呼ばれないコマが、入口の抜けよりずっと多い**（256 でも 20 秒に 1〜7）。出口が 1 コマ落とすと、曲は 1 ブロック遅れて聞こえる。録る側は、頭を 1 回だけ時刻から決めて、あとは入口のこまを数える（22-6）ので、そこから先の歌は 1 ブロック後ろに置かれる。入口の抜けを音なしで埋める決まり（上の 2）は「入口のこま ↔ 時計」を守るが、出口が同じコマを落としていたら、埋めた分だけ逆にずれる。
-- エンジンは知っているか: `TransportClock` は知っている（区間ごとに `frame0` と DAC の時刻。`frame_at` ・ `time_of_frame` は、抜けたコマの前と後ろを分けて読む）。`EngineMeters::late_callbacks`（前の呼び出しから 1.5 ブロックより遅い）は数えるだけ。`xruns` は cpal が言う分で、上の回では 0。`stream_missing` は歌の先読みの輪の話で、関係ない。録る側には何も伝えていない。
-- **直していない理由**: 直す形は「録る係が、ブロックごとに `clock.frame_at(取られた時刻 ＋ X)` とファイルのこまをくらべ、出口だけが落とした分は**入口のこまを捨てる**（歌が 1 ブロック切れる）、両方が同じコマを落とした分は埋めない」になる。22-6 の「頭を 1 回だけ時刻から決め、あとはこまを数える」を変える大きさで、「歌を切るか、5 ms 遅れたままにするか」は聞こえかたの決め、切った数を人に知らせるなら約束（`RecordingFaults`）もさわる。
-- 案（棟梁へ）: (a) 上の形（`Gaps` の「線」を、入口の自分の時刻から、エンジンのこまに変える。待たせる決まりは同じ。時計が覚えていない古いブロック〔512 区間、64 で 0.68 秒〕は今の決まりに落とす）。(b) 切らずに、止めた時に「出口が N 回落ちた」と知らせるだけ。(c) 何もしない（256 以上の静かな PC では起きていない。8 回に 0 回）。
-
-**4. メトロノームを切ったあとの録音の頭の「半分のカチッ」: メトロノームではない。直す所はなかった**
-
-- エンジンのメトロノームは、なめらかにする値ではなくスイッチ（`EngineCommand::SetMetronome` はその場で `Transport::metronome` を変え、カチッを始めるかは拍のこまで `click_audible()` を見る）。止まっている間に切れば、次に動く最初のこまから鳴らない。
-- 録った wav でくらべた（静かな回 ・ こんだ回の両方）: 2 回めの録音の −256 の音は、**1 回めのクリップの頭の 600 こまと、相関 1.0000 ・ 大きさ 1.0000 倍**。1 回めのカチッ（−256 から始まる）を、クリップの頭（こま 0）で切った残り。大きさ 0.0866 は 0.17 × exp(−256 ÷ 384)（カチッは 8 ms で 1/e に小さくなる）で、数も合う。区切り3 の書類の読み（「クリップの頭のクリックが切れているため」）が正しかった。モニターで録ったメトロノームだから出る形で、人が歌った録音では出ない。
-- ほかの「20 ms でなめらかに」の値（ミキサーのフェーダー ・ パン ・ センド）: エンジンは止まっている間も毎ブロック描く（鍵の音のため）ので、止まっている間に変えた値は、その 20 ms で着く。動きだすのを待たない。
-- 試験（見はり）: エンジン `tests/transport.rs` の `a_metronome_turned_off_while_stopped_is_silent_from_the_first_frame`（64 ・ 256 ・ 1024、再生と録音、切ったのと同じブロックで録りはじめる形も。メモリ 0）。
-
-**5. 測る道具の `Recorder`（`tools/measure/remote.py`）: メモリに録って、止めた時に写す**
-
-- `pw-record` の録る先を、`$XDG_RUNTIME_DIR`（なければ `/run/user/<uid>`）の下の一時フォルダにし、`stop()` が頼まれた所へ移してフォルダを消す（`stretch_app.py splice` と同じ形）。呼ぶ側（`audio_app.py`、`stretch_app.py`、`click-check.py`）は変えていない（`stop()` のあとに頼んだ道を読むので）。書けるフォルダがなければ、今までどおりじかに録る。
-
-### 22-20 区切り5 の 2 回目（プラグインを書き出しで回す、2026-11-21、meloet-hard）
-
-22-11 の「プラグイン」の段を、そのまま作った回。書き出しのエンジンと core は、同じ時に別の係が作っている。
-
-- **`export_seats` の中身**（`crates/meloet-core/src/plugins/export.rs`）
-  - 中で、書き出しだけの `Hosts`（`Hosts::start_offline`）を 1 つ立てる。弾くほうの `Hosts` と同じコード ・ 同じスレッドの作り（子は `launch::spawn` で 1 つずつ、同じ鍵のプラグインは 1 つのプロセス、16 個をこえたら次のプロセス、pidfd で見はる）で、ちがうのは「書き出しの印」と「席の待ちかた」の 2 つだけ。**理由**: 起こす ・ 読ませる ・ 状態を入れる ・ 止まったら片づける、を 2 通り書かない。
-  - 渡された `ExportPlugin` を順に読ませる（`StartState::Bytes(state)`、空なら `Fresh`）。音源の場所（`PluginPlace::Instrument`）は `PluginInstrument`、インサートは `PluginEffect` にして、場所つきで返す。
-  - `ExportSeats` に、外から見えない欄 `hosts` を足した（いちばん最後の欄。席が先に落ちる）。落とすと、書き出しの `Hosts` のスレッドが終わり、子に `Quit` を送り、0.3 秒で終わらなければ止める。取り出した席は、その前に落とす（doc コメントのとおり）。あとで落としても、こわれはしない（共有メモリは `Arc`。席は「止まった」になるだけ）。
-  - `ExportSeats::pids()` を足した（試験と記録のため）。`ExportPluginError::NotYet` は、もう返さない（書き出しのエンジンの係が使っていなければ、消してよい）。
-  - 読みこめないとき: プロセスが起きなければ `Start`、プラグインが読めない ・ 状態を受けとらない ・ 読みこみ中に落ちた、は `Load { place, name }`。途中まで起こした子は、そこで全部終わらせる。
-  - `ExportWant::max_frames` は、いまは使っていない。プラグインは、弾くほうと同じ `HostOptions::geometry.max_frames`（1024）で用意する（VST3 の `maxSamplesPerBlock`）。それより長いブロックは、席が切って渡す（弾くほうと同じ）。
-- **`WIRE_VERSION` 5**（`crates/meloet-plugin/src/wire.rs`、`launch.rs`）
-  - 書き出しの印は、**コマンドラインの `--offline`**（`launch::host_command(.., offline)`）。あいさつの答え `Reply::Hello { version, offline }` で、子が「書き出しの子です」と言い、meloet の側が合っているか見る（合わなければ、その子は使わない）。
-  - **あいさつで送らなかった理由**: 子の音のスレッドは、あいさつの前に始まり、そこでリアルタイムの優先度を頼む。印は、プロセスが始まった時に分かっていないといけない。
-  - `LoadedPlugin::live` を足した（LV2 の `lv2:isLive`。VST3 はいつも false）。
-- **書き出しの子**（`crates/meloet-plughost`）
-  - 音のスレッドは、リアルタイムの優先度を頼まない（rtkit にも聞かない。ログにも何も書かない）。スレッドの数の決まり（プラグインの数、CPU の半分、4 本まで）は同じ。
-  - VST3: `setupProcessing` の `processMode` と、毎ブロックの `ProcessData::processMode` が `kOffline`（`formats/vst3.rs` の `process_mode`。2 か所とも同じ関数から）。最初から `kOffline` で用意するので、途中の切りかえはない。
-  - LV2: `lv2:designation lv2:freeWheeling` の control の入口に、毎ブロック 1（弾くほうでは、さわらない。前と同じ）。
-  - LV2 の worker: livi 0.9 は、worker の仕事を自分のスレッドが 0.1 秒ごとに見にいく（`features/mod.rs` の 100 ms の sleep）。時計で動くので、書き出しではそのままだと回すたびに結果が変わる。書き出しの子は、`run` のすぐあとに、その場で `WorkerManager::run_workers()` を呼ぶ。仕事は次の `run` の前に終わり、答えは次の `run` で届く。**仕様の「schedule_work の中ですぐ」とは 1 つずれる**（livi の `schedule_work` はさしかえられない）が、毎回同じブロックに届く。Guitarix のキャビネットで確かめた（型を変えた音が、いつも次のブロックから。弾くほうの子を休まず回すと、0.1 秒たつまで届かない）。
-  - `lv2:isLive` は、`lilv_plugin_has_feature`（required と optional の両方）で見る。
-- **しめきりなしで待つ**（`crates/meloet-plugin/src/ipc/ends.rs` の `EngineEnd::wait_through`、`crates/meloet-engine/src/plugin.rs` の `PluginSlot::for_export`）
-  - 書き出しの席は、答えが来るまで futex で眠る。`PluginBlock` のしめきりは見ない。0.05 秒ごとに起きて、まだ来うるかだけ見る。
-  - あきらめるのは 3 つだけ: 子のスレッドがそのブロックを `HANG_MS`（5 秒）持ったまま ・ だれも取らないまま、子が `HANG_MS` の間なにも進めなかった ・ 共有メモリに「止まった」の印がついた（子のプロセスが終わったのを、`Hosts` のスレッドが 10 ms のうちに見つけてつける）。あきらめたら、その席と同じプロセスの席をぜんぶ止め、`PluginWatch::stopped` が立つ（`ExportSeats::stopped()` が場所を言う）。
-  - 弾くほうの形（`PluginSlot::new`）は変えていない。先に頼む形（`Instrument::ask`）は、書き出しでも使える。
-  - 書き出しの席でも、メモリは取らない（エンジンの試験で見はっている）。書き出しのスレッドは音のスレッドではないが、同じ見はりで回せる。
-- **状態の写し**: 足した口はない。弾くほうの `Hosts::state(id)`（保存のときと同じ道。`Model::plugin_tickets()` → `Hosts::state`）で集めた物を、`ExportPlugin::state` に入れる。答えない物は `Doc` の `PluginRef::state`。
-- **確かめた事**（この PC、debug のビルド）
-  - エフェクト（LSP コンプレッサー VST3 ・ LV2、ZamComp VST3 ・ LV2、Dragonfly Hall LV2）: 書き出しの子で 2 回回した音は 1 サンプルもちがわず、弾くほうの子で同じブロックの大きさで回した音とも同じ。
-  - **Surge XT は同じにならない**（VST3 も LV2 も）。弾くほうの子で 2 回回しても、同じだけちがう（オシレーターが好きな所から始まる。Surge XT の中の乱数）。音の大きさ（0.1 秒ごとの RMS）は 2 % のうちで合う。書き出したファイルと出口の音を 1 サンプルずつくらべる試験には、Surge XT を使えない。
-  - 弾くほうで Surge XT を時計どおりに鳴らしながら、書き出しで Surge XT 2 つ ＋ Dragonfly を回した: 120 秒ぶんを 2.6 秒（46 倍）。弾くほうの答えのない回は 0。書き出しは、弾くほうの状態（音量を下げた物）で鳴った。
-  - 子が遅い（1 ブロックに 30 ms）: 待って、どのブロックにも音が入り、2 回とも同じ。子が止まった: 5.0 秒で `stopped()`、プロセスは残らない。子が落ちた: 1 秒のうちに `stopped()`。
-- **書き出しのエンジンの係へ**
-  - 席は `ExportSeats::instruments` ・ `effects` から取り出して、弾くほうと同じ口（`swap_instrument` ・ `set_effect`）で入れる。`block` は書き出しのエンジンの `plugin_block()`。しめきり（`set_deadline`）は決めなくてよい。
-  - 毎ブロックのあとに `ExportSeats::stopped()` を見る。止まった席は、音源なら音なし、エフェクトなら素通しを返すので、見ないと気づかずに書きつづける。
-  - 落とす順: エンジン（と、エンジンから戻ってきた席）→ `ExportSeats`。
-  - `realtime` が true なら、時計に合わせて回す。
-  - worker を使う LV2（LSP、Dragonfly、Guitarix など）は、弾くほうでは仕事の届く時が時計しだい（0.1 秒まで）。読みこんですぐの最初の数ブロックは、書き出しと弾くほうで合わないことがある。
-- **残した事**
-  - VST3 の `processMode` を、プラグインの側から見る試験はない（作り物の VST3 がない）。渡す値は 1 つの関数から来ていて、その関数と、Surge XT が `kOffline` で鳴る事は試験にある。
-  - `lv2:isLive` を **required** にしているプラグインは、livi が読みこむ前にはじくかもしれない（この PC に 0 件で、確かめられない）。
-  - 書き出しの子の優先度は、ふつうのまま（nice も変えていない）。弾くほうの子がリアルタイムの優先度を取れていれば、とぎれない（上の測り）。画面のスレッドとは取りあう。
-
-### 22-22 区切り4 の直し（画面: 音を作っている %、2026-11-21、meloet-impl）
-
-`docs/measurements/2026-11-21-round7-step4.md` の「見つけた事」1 ・ 2 ・ 5 の直し。文（仕様書の「音を作っています 34 %」）は変えていない。
-
-- **見せる % は 1 か所**（`ui/src/state/audioWork.svelte.ts` の `shownWork`）。クリップの下（`arrange/AudioClipNotes.svelte`）、選んだクリップの欄の棒と %（`params/ClipPanel.svelte`）、状態行（`StatusLine.svelte`）の 3 つは、どれもこれを読む。
-  - % だけが変わったときは、前に見せかえてから 500 ms たつまで前の値のまま（1 秒に 2 回まで）。まだなら 1 回だけタイマーを置き、その時に `$state` の数を 1 つ進めて、3 つを同じコマで読みなおさせる。仕事が始まった ・ 終わった（仕事の並びの kind ・ audio ・ clip が変わった）時はすぐ。
-  - 見せる物を作るとき、表を 1 回だけ作る: `rendering`（クリップの id → 仕事）、`loading`（音のファイルの番号 → 仕事）、`firstRendering`（状態行の「いちばん先に始めた」）。何も変わらなければ同じ物を返すので、読んでいる `$derived` は止まる。
-  - **理由**: Rust は % を 1 秒に 5 回送る。3 つがばらばらのコマで変わると、描きなおしが 3 回になる。% の進みは 0.5 秒ごとで足りる。
-- **クリップの下の箱**: 見えていないクリップは表を引く前にとばす。仕事がなければ、見つからない音のクリップだけを見る。
-- **再生中は、字の列の四角を先に頼む**（`AudioClipNotes.svelte` の `askColumn`）: 再生中（止めている時以外）に % の字が変わったら、`.time`（再生の線と同じ箱）の上から下までの見えない列の箱で `askWhole` する。列の左は箱の字の左、幅は「いちばん幅の広い % の字」（`clip.rendering` か `clip.loading` に 11, 22 … 99 と 10, 20 … 90 を入れた字を見えない字で重ねる）。列の箱は、はじめて頼むときに作り、箱が消える時に消す。
-  - **理由**: 字の箱だけの四角（143×18）は、トラックのメーターと再生の線の四角を上下 3 つの帯に切り、状態行と入力計を足して 11 個になって、まるごと描いていた（7 章「CPU で描く WebKit」）。列は上下の端が再生の線と同じなので、何も切らない。
-  - 止めている時は頼まない。ほかに動く物がないと、列（143×908）と状態行だけで囲む四角の 25 % をこえて、囲む四角（424×953）をまるごと描いた（測った）。止めている時は、箱の四角だけで 2〜3 個。
-- **選んだクリップの欄の進みの行**: % の字は流れの外の箱（`.percent > .in`。幅は `data-size` の「99 %」の見えない字で決める）。% が変わったら行まるごとの四角を先に頼む（`askRow`）。
-  - **欄の下のほうがよごれていた原因**: % の字が流れの中にあったので、字が変わるたびに行がレイアウトしなおされ、欄（`aside.panel`、flex の縦ならび）もレイアウトされて、WebKit が欄の中の最後の子より下のあき（1576,465 320×567）を描きなおしていた。字を流れの外に出したら、このよごれは出なくなった（`askRow` は四角を足すだけなので、消えたのは流れの外に出した分。WebKit のどのコードかは見ていない）。
-  - 1 けたの %（「5 %」）のときは、棒の右はしと字の間が 1 けたぶん広くなる（棒の長さが % の字の幅で変わらない）。
-- **測った数**（release、16 本の歌のクリップを開いた時から作る形。`webkit-damage.sh` は gdb の下なので四角の並びを読む）:
-  - 再生中に % が変わったコマ: 前の版は 24 回のうち 23 回がページのほぼ全体（12,30 1896×1047）をまるごと。直した版は 7〜10 個（ふつう 8 個: トラックのメーター、入力計、列 229,124 143×908、再生の線、上の帯、状態行）で、まるごとは仕事が 1 つ終わったコマ（アレンジの canvas。前と同じ）だけ。
-  - 止めている時: 前の版も直した版も 2〜3 個。選んだクリップを作っている時は、前の版 9〜10 個（欄の下のあき 3 つ、棒、% が 3 つに切れる）→ 直した版 3〜4 個（欄は行の 1577,193 319×32 の 1 個）。
-  - 再生中のコマ（16 本、選んだクリップあり、欄をひらく、ページの 6〜34 秒め、前の版と直した版を交互に 4 回ずつ。ほかの係のビルドで load 2〜6）: busyMs 平均 8.77〜8.82 → 8.63〜8.80、p95 12〜14 → 11、p99 20〜22 → 19〜20、最大 31〜43 → 26〜29、15 ms 以上のコマ 60〜79 → 41〜56（前の版の 1 回めは、ほかの仕事でにごったので外した）。長いコマは 0.26 秒おき → 0.5 秒おきになったが、1 つの長さは 19〜20 ms のまま。
-- **残った事**:
-  - 再生中で、欄をひらき、選んだクリップを作っている時は、欄の行（y 193〜225）が列と再生の線を切って 11〜13 個になり、まるごと描く（0.5 秒に 1 回。前は 0.2 秒に 1 回）。
-  - 作っている間の % のコマ（0.5 秒に 1 回）は、まだ 1 つ 19 ms ほど。作っていない時に、同じ 3 つ（列 ・ 字 ・ 状態行）をページの中から 0.5 秒ごとに変えると、そのコマは 12〜13 ms（ふだん 7〜8 ms）。残りの分は分けていない（推しはかり: 作る係が 1 コアを使っている）。
-  - 192 個（S で切った形、仕事 190 ほど）の止めている時の 11 ms のコマは、直した版でも同じ（1 秒に 5 回 = 状態が届くたび。見せる % は変わっていないコマ）。ページの中で 1 ms ごとに回る印で見ると、前の版も直した版も 4 ms より長い仕事はなかった。`jobs.find` の分ではない。何の時間かは分かっていない。
-
-### 22-20 区切り5 の 2 回目（書き出しのエンジンと core、2026-11-21、meloet-hard）
-
-約束（版 26）は変えていない。足したのは、書き出しのエンジン、仕事のスレッド、ファイルを書く口の中身、PC の窓、`service.rs` の受け手。
-
-**書き出しのエンジン**（`crates/meloet-core/src/export/told.rs` ・ `render.rs`）
-
-- **同じ道の守りかた: 決まり（`Play`）をもう 1 つ作って、曲をひらかせる**。`Told::of(doc, solo, known, skip)` は、使いすての `Play` を作り、meloet の起動と同じ順（`engine_seats()` → `replace_song` → 入力のあとの `sync_*`）で動かして、出てきた `EngineOp` をそのまま集める。書き出しのための「曲 → エンジン」の式は、どこにもない。
-  - **理由**: 曲がエンジンの何になるか（席、音色、ミキサー、ノート、帯、歌のクリップ、ミュートとソロ）を言う所を 1 つにしておけば、書き出しだけがちがう音になることがない。
-  - **`engine_seats()` を先に呼ぶ理由**: 新しい曲と同じ戻り（リバーブ ・ ディレイ）とマスター（リミッター）は、`Play::new` が「もう言った」ことにしている。起動のときの分を足さないと、書き出しのエンジンには戻りとマスターのエフェクトが入らない（1 サンプルずつくらべる試験が見つけた）。
-  - セッション（取り消しの外）は書き出しの物: ループは回さない、ソロなし（「トラックごと」ではその 1 本）、メトロノームは切。**いまのソロは「曲ぜんぶ」の書き出しに入らない**（`ExportJob` は `Doc` だけを持ち、ソロは `Session`）。ミュートは `Doc` なので入る。
-  - プラグイン: `Effect::LoadPlugin` を集めて `ToldPlugin`（場所 ・ 名前 ・ 鍵 ・ 束 ・ 状態）にし、`plugin_loaded` を呼んで出てきた `EngineOp::Plug` と帯の送りなおしを `Told::plugged` に取っておく。止まっているプラグイン（`ExportJob::skip`）は一覧から外し、その `Plug` も外す（音源なら音なし、インサートなら空）。この PC にないプラグインは、弾くほうと同じでサイン波。
-- `ExportEngine::tell` は、`EngineOp` を弾くほうの `Audio::op` と同じエンジンのコマンドにする（`mixbook::command` ・ `mixbook::make` ・ `instruments::make` ・ `sequence_event` ・ `auto_lanes` ・ `made::seat_audio` を分けあう）。`match` に `_` はないので、`EngineOp` に腕が足されたらコンパイルが止まる。
-- **歌のクリップ: 輪はそのまま、読む人だけ変える**。22-11 の「口を 1 つにして中身を 2 通り」は、エンジンの側ではなく先読みの係の側で作った: `ReadAhead::inline(store)` はスレッドを持たない先読みの係で、書き出しのスレッドがブロックとブロックの間に `pump()` を呼ぶ。輪 ・ `StreamWant` ・ 世代 ・ `FeedClip` の読みかた ・ エンジンの `ClipPlayer` は、弾くほうと 1 行も変わらない。
-  - **理由**: エンジンに「じかに読む」口を足すと、フェード ・ 世代 ・ ループの折り返しをもう 1 回書くことになる。輪を残せば、ちがうのは「いつ輪に入れるか」だけで、中身は同じ。輪は 2 秒、1 秒を切ったら満たすので、ブロック（1 秒より短い）が足りなくなることはない（`ExportEngine::missing()` はいつも 0）。
-  - ファイルは最初のブロックの前にぜんぶ開く（`open_all`）。そのあとで曲が入れかわっても、しまっておく所が空にされても、書き出しは開いたファイルを読みつづける。
-- **鳴らしはじめ**: `Stop` → `Locate(頭)` → 止まったまま 0.25 秒ぶんのブロック（`REST_S`。捨てる）→ `Play(頭)`。**理由**: フェーダーと帯の値が落ちつく（20 ms）、入れたエフェクトが重なりおわる（10 ms）、輪が頭の所で満ちる。弾くほうで言えば「曲をひらいて、少し待って、再生を押す」。
-- **ブロックの大きさ**: 弾くほうの流れの数（`EngineMeters::last_frames`）。流れがなければ設定のバッファ、それもなければ 256。エンジンの設定（`max_frames` 1024、64 席）は弾くほうと同じ。
-- **範囲の終わり**: エンジンのこまで `frame_of(終わり, 頭の秒)`。そのこまでブロックを切り、`Stop` を送る（ノートが離され、歌のクリップが 10 ms でしぼられる）。そのあとに出てくる物がしっぽ。
-- **頭**: `Engine::master_latency()`（マスターのとばしていないインサートの遅れの和）のこまを捨てる。
-- **しっぽ**（`job.rs` の `Taker`）: 範囲のあとのブロックを、いちばん大きい所が −90 dBFS より小さければ書かずに持っておき、大きいブロックが来たら持っていた分ごと書く。小さいブロックが 0.5 秒つづいたら終わり（**その 0.5 秒は書かない**）。10 秒で打ち切る。「なし」は範囲のこまちょうど。**理由**: 余韻のない曲のファイルに、待った 0.5 秒の無音をつけない。
-- **トラックごと**: エンジンは 1 つのまま、本数ぶん回す。回のたびに `Stop` → `Engine::prepare`（鳴っている音と余韻を止める）→ そのトラックだけをソロにした `SilentTracks`（`Told::of(doc, Some(track), …).silent()`）→ 鳴らしはじめ。**理由**: プラグイン係のプロセスを本数ぶん起こしなおさない。ミュートしたトラックは、ソロにしても音なし（弾くほうと同じ）。
-- **実時間**: ブロックのあと、時計が「鳴らしたこま ÷ サンプルレート」になるまで眠る。道は同じ。
-
-**仕事のスレッド**（`export/job.rs`、スレッド `meloet-export`、ふつうの優先度、仕事 1 つに 1 本）
-
-1. core のスレッドが `Setup` を作る（`service/export.rs`）: `ExportJob`、ブロックの大きさ、`AudioStore`、曲の音色のサンプル（`Arc`）、この PC のプラグインの一覧、プラグイン係の起こしかた（`HostOptions`）、弾くほうのプラグインの状態を受ける口（保存と同じ `Hosts::state`）、作る係の「待っている数」。**音色のサンプルが読みこみ中なら、読めるまで仕事を始めない**（30 秒まで。`Worker::export_tick`）。
-2. スレッド: エンジンを作って `Told::ops` を言う → 読みこみ中の音のファイルを待つ（`Playable::NeedsCache` の間。5 分まで）→ **のび縮みの音を待つ** → プラグイン（`export_seats`。状態は 3 秒まで待って、答えない物は `Doc` の物）→ `Told::plugged` → 回す → `Counted { done }` → 「書き出す」（`Finish`）を待つ → 形に変える → 移す → `Finished`。
-- **のび縮みの音**（`wait_made`）: 要る鍵（`seat_audio` の `plans`）がしまっておく所にそろうまで、最初のブロックを回さない。作る係が何かを作っている間（`Maker::waiting() > 0`）は待つ。作る係が作らない物（出口の流れがない、曲がもう別の物）は、**書き出しのスレッドが自分で作る**（`maker::make_now`。作る係と同じ `render_plan` を通り、`<鍵>.export-<pid>.wav` に書いてから名前を変えるので、作る係の `.part` とぶつからない。中身は同じ）。その間 `Counted` は出ないので、たしかめは `waiting` のまま。もとの音が開けない物は待たない（弾くほうでも音なし）。
-- **たしかめ**: `Counted` は 250 ms に 1 回まで。最初のブロックのあとにすぐ 1 回出る（「書き出す」が押せるようになる）。% は範囲のこま（しっぽは数えない、トラックごとは全部の回で）、いちばん大きい所は書いたサンプルの絶対値の最大（dB）、残りは 1 秒たってから「かかった時間 × 残り ÷ すんだ分」。`done` の `length_s` はいちばん長いファイルの秒（しっぽ込み）。
-- **一時ファイル**: `<state>/export/<pid>-<仕事の番号>/pass-<n>.wav`（F32、エンジンのサンプルレート、ステレオ。`CacheWav`）。`state_dir` がなければ PC の一時フォルダ。仕事が終わる（できた ・ やめた ・ 失敗）と、フォルダごと消す。起動のとき、もう動いていない pid のフォルダを消す。
-- **やめる**: `Drop` は旗を立てるだけ（core は待たない）。スレッドはブロックごと ・ 変換の 4096 こまごと ・ 待っている間は 50 ms ごとに旗を見る。meloet が終わるときは、全部やめさせて待つ（`Exports::end`）。
-- **失敗**: 書けない物はどれも `cannotWrite`（作業の場所、変換、移す先）。プラグインは `plugin { name }`（読みこめない、起こせない、回している間に `ExportSeats::stopped()`）。もう移したファイルは消す。
-
-**ファイル**（`export/sink.rs`、`job.rs` の `convert` ・ `move_to`）
-
-- 変換は「書き出す」のあと、一時ファイルを 4096 こまずつ読んで: サンプルレートがちがえば rubato（`audiofiles::resample::Resample`、入れるときと同じ FFT の変換。長さは `ceil(こま × 行き先 ÷ もと)`）→ `AudioSink`。
-- 浮動小数 → 整数は `sink.rs` の `Whole` の 1 か所（wav も flac も通る）: 24 ビットは `round(clamp(s) × 8388607)`、16 ビットは `round(clamp(s) × 32767 + TPDF)`。TPDF は xorshift32（種は決まった数）の 2 つの差で ±1 段。**ファイルごとに同じ種から始めるので、同じ音からは同じファイル**。式は録る係（`vocalrec::WavFile`）と同じ。32 ビットは浮動小数のまま（1.0 をこえてもそのまま、数でない物は 0）。
-- wav: 44 バイトの頭（録る係と同じ形）、終わりに長さを書きなおして `sync_all`。4 GiB をこえる長さは「ファイルの終わりまで」（0xFFFFFFFF）。
-- flac: `flacenc` 0.5.1（`default-features = false`: スレッド ・ serde ・ log なし）。**1 コマ（4096 こま）ずつ符号化して書く**（`encode_fixed_size_frame`。`encode_with_fixed_block_size` は曲をまるごとメモリに持つので使わない）。頭（STREAMINFO）は終わりに、こま数 ・ MD5 ・ コマの大きさを入れて書きなおす。
-- **移す**: 作業の場所で全部のファイルを形にしてから（`out-<n>`、`sync_all` ずみ）、`rename` で人のえらんだ所へ。別のファイルシステム（`CrossesDevices`）なら、行き先のとなりの `<名前>.part` に写して `sync_all` → `rename` → もとを消す。どちらも、えらんだ名前のファイルが書きかけで見える時はない。終わりにフォルダを `sync`。前からあるファイルには上書きする（1 つのファイルは PC の保存の窓が聞く。トラックごとのフォルダは聞かない）。
-- 「トラックごと」のファイルの名前: トラックの名前から `/` `\` と制御文字を取り、前後の空白と `.` を取った物（空なら `_`）＋ 形の終わり。同じ名前の 2 本めからは「 2」「 3」。
-
-**PC の窓とフォルダをひらく**
-
-- `ShellRequest::PickExportPlace { folder, name, folder_only }` → `Core::export_place_picked`。殻（`pcwindow.rs`）は `Pick::ExportFile`（保存の窓。題は「名前をつけて保存」をもう一度使う。上書きは窓が聞く）と `Pick::ExportFolder`（フォルダの窓。題は「場所をえらぶ」）。【題は仕様書にない。開く窓 ・ フォルダの窓を使いまわしている前例にならった仮の形】
-- 「フォルダをひらく」は 1 回目のつなぎ（`Effect::ShowFile` → `ShellRequest::ShowFile` → `pcwindow::show_file`）のまま: `org.freedesktop.FileManager1.ShowItems` でファイルを選んだ形でひらき、だめなら `xdg-open <フォルダ>`。**理由**: 録音や曲の「場所をひらく」と同じ口で、足す物がない。
-
-**試験**
-
-- `service/export_tests.rs`（1）: **弾くほうと 1 サンプルも同じ**。弾くほうは、本物の `Play` ＋ `Audio::op` ＋ 先読みのスレッド ＋ 作る係のスレッドで、試験が流れのかわりにブロック（256）を呼ぶ（`Audio::open_by_hand`。試験のときだけある口）。曲（`export/fixture.rs`）: 96 → 120 のだんだん、途中のテンポの点、リード（フェーダーの帯、ディレイ、リバーブへのセンド）、ドラム（パン）、歌 3 つ（録ったまま＋フェード＋音量、+3 半音、のびたクリップ）、マスターのリミッター。曲ぜんぶ、ノート ・ クリップ ・ だんだんの途中から、のびたクリップだけ、しっぽありの範囲の 4 通りで、ビットまで同じ。
-- `export/job/tests.rs`（7）: しっぽの決まり（頭を捨てる、0.5 秒、短い静けさは残る、10 秒）、本物の曲のしっぽ（範囲まではしっぽなしと同じ）、トラックごと（3 本の和がマスターと 1e-4 より近い、ファイルの名前）、形（32 ビットはそのまま、24 ビットの数、flac と wav が同じ数、16 ビットは 2 回書いて同じバイト、44.1 k ・ 96 k の長さ）、のび縮みを待つ ・ 自分で作る ・ 作りなおしても同じ、やめる ・ 書けない ・ 上書き、プラグインが読みこめない ・ 止まっている ・ この PC にない。
-- `export/sink/tests.rs`（5）、エンジン `tests/mixer.rs`（＋1、`master_latency`）。
-- `tests/export_whole.rs`（1 ＋ 測り 1）: 本物の core を通して、ひらく → たしかめ → ビットを変えても同じ仕事 → しっぽを変えると作りなおし → PC の窓 → 書き出す → ファイルを読む → フォルダをひらく → 実時間でやめる。**この試験のバイナリは数える確保係を持ち、書き出しのエンジンのブロックの中の確保 ・ 解放が (0, 0)**（`meloet-core` の dev-dependencies で `meloet-engine` の `rt-check` を立てた）。
-- 「範囲を変えたら作りなおす、形を変えても作りなおさない」の決まりは 1 回目の `export/tests.rs`。
-
-**測った数**（2026-11-21、release、ほかの係が動いている PC、load 1.6）
-
-- 歌 16 本 ・ 5 分の曲（`target/measure/round7-step3/song16` の写し、17 トラック、48 kHz、ブロック 256）: 2.85 秒（しっぽなし）、2.82 秒（しっぽあり）= **実時間の約 105 倍**。確保 (0, 0)。`MELOET_EXPORT_SONG=<曲>.meloet cargo test -p meloet-core --release --test export_whole -- how_fast --ignored --nocapture`。
-
-**まだの事 ・ 申し送り**
-
-- **リードとパッドの波の始まり、エレクトロキットの金属と雑音、サンプルの順ぐりは、曲のノートなら、そのノートの場所で決まる**（22-25）。同じエンジンで何回再生しても、途中から再生しても、書き出し（曲ぜんぶ、トラックごとのどの回も）と同じ音。試験は `service/export_tests.rs` の `what_is_exported_is_what_plays_sample_for_sample`（同じエンジンで 2 回再生し、2 回めと書き出しをくらべる）。
-- 本物の出口で録った音とのくらべ（22-11 の確かめ）は、していない。くらべたのは「出口の流れのかわりに試験がブロックを呼ぶ」所まで。
-- プラグインのある曲: 席を受けとってエンジンに入れる所、毎ブロックの `stopped()`、落とす順（エンジン → `ExportSeats`）、`realtime` は書いてある。この枝の `export_seats` はまだ中身がないので、通して確かめたのは「読みこめないと `plugin { name }`」まで。トラックごとの回の間の `Engine::prepare` は、プラグインの席の `prepare` も呼ぶ。
-- 書き出しの間に曲を保存して音のファイルが曲のフォルダへ移っても、開いたファイルは読みつづけられる。仕事を始める前（音色の読みこみ待ち）に曲を入れかえると、新しい曲の音の表でファイルをさがすので、歌のクリップは音なしになる。
-- wav の頭の 44 バイトは、録る係 ・ しまっておく所 ・ 書き出しの 3 か所にある（録る係のファイルはさわってよい範囲の外だった）。
-
-### 22-23 区切り5 の 2 回目（画面: 書き出し、2026-11-21、meloet-impl）
-
-- **部品**: `ui/src/components/export/ExportDialog.svelte`（ダイアログ）、`exportText.ts`（文の部品。DOM を知らない）、状態行の進みは `StatusLine.svelte` の左の snippet の中。`App.svelte` は `state.export.dialog` があるときだけダイアログを置く。
-- **見せる数は 1 か所**（`ui/src/state/exportShown.svelte.ts` の `exportShown`）。ダイアログも状態行もこれを読む。たしかめの `counting` の % ・ いちばん大きい所、進みの `running` の % ・ 残りだけが変わったときは、`audioWork` と同じく 500 ms に 1 回まで見せかえる。ほかの所（形、範囲、状態）が変わったらすぐ。**理由**: 22-22 と同じ（% のたびに描きなおしをふやさない）。
-  - 状態行の % の字は流れの外の箱（幅は見えない「99 %」で決める）。棒は `transform: scaleX`。字の幅でも棒でも、行をレイアウトしなおさない。
-- **状態行の順**: 書き出している間（`run.state = running`）は、札（■ 停止中など）と文の代わりに進み（ドラッグの読み値、ほかの知らせより先）。終わった ・ やめた ・ できなかったは、札はそのままで、画面だけの物（ドラッグの読み値、meloet について、曲のダイアログ、欄の行のドラッグ）の次、core の知らせより先の文。「フォルダをひらく」はほかの知らせのボタンと同じ下線の字、「やめる」はモック F7-Exporting の箱のボタン（高さ 20）。
-- **キー**: Mod Shift E は `openExport`（録音中 ・ カウントイン中 ・ 書き出している間 ・ もうひらいているときは送らない。メニューの「書き出し…」も同じ道）。Esc は core の `back` ではなく `closeExport`（core の `Back` は書き出しのダイアログを閉じないため）。Enter は `canExport` のときだけ `startExport`。ダイアログがある間は、棚のためし弾きと取り消しの履歴の帯より、ダイアログが先。
-- **ダイアログの形**: 窓の上下のまん中（仕様書 3 章「ひらくたびに、いまの窓のまん中から」。モック F7-Export は上から 72）。中身は `ScrollArea`、見出しと下の列はその外（R11-Fit）。ひらいた「くわしく」は音の設定のくわしい設定と同じ行（名前 120、▾ の一覧）、実時間は「選ぶ印」（`realtimeForced` なら使えない形でオン）。
-- **足した数**: `part.exporting.bar`（160。仕様書 2 章「書き出しの進み」）、`mock.exporting.bar`（4）・ `mock.exporting.stop`（20）（F7-Exporting）。
-
-### 22-24 区切り5 の直し（優先度、実時間の文、保存する所の欄、2026-11-21、meloet-hard）
-
-測り（`docs/measurements/2026-11-21-round7-step5.md` の「見つけた事」1 ・ 3 ・ 5）の直し。約束は版 26 のまま（まだ配っていない）。
-
-- **書き出しは、ゆずる優先度（nice 19）で回る**
-  - 書き出しのプラグイン係（`meloet-plughost host --offline`）は、`main` のいちばん初め（スレッドを 1 本も作る前）に `launch::low_priority()` を呼ぶ。core のスレッド `meloet-export` も、始まってすぐ同じ物を呼ぶ。スキャンの子と同じ関数（`setpriority(PRIO_PROCESS, 0, 19)`）。
-  - Linux の nice は**スレッドごと**の値で、新しいスレッドとプロセスは、作った側の値を受けつぐ（setpriority(2) の BUGS、sched(7)）。だから、`meloet-export` で呼べば、meloet のほかのスレッド（画面、core、音）は変わらず、`meloet-export` が作る物（書き出しの `Hosts` のスレッド、書き出しのスレッドが自分で作るのび縮みの音 `make_now`）だけが同じ 19 になる。子は、自分で呼ぶので、プラグインが作るスレッド（JUCE など）も 19。試験: `launch.rs` の `a_low_priority_is_the_calling_threads_and_of_what_it_starts`、`meloet-plughost/tests/host.rs` の `a_host_for_an_export_asks_for_no_priority_and_gives_way`（どのスレッドも、ふつうの方式で nice 19）。本物のアプリでも `ps -L -o ni,cls` で見た（書き出しの側は 19、弾くほうの `plughost-audio-*` は FF 20 のまま）。
-  - **nice 19 にした理由**: (1) スキャンの子と同じ 1 つの関数ですむ。(2) `SCHED_IDLE` は使わない: 止まったかの見はり（`HANG_MS` = 5 秒）は壁の時計なので、PC がいそがしい時に 1 度も回してもらえないと、止まったプラグインと見まちがえる。nice 19 は、少なくても必ず順番が来る。(3) `SCHED_BATCH` は足さなかった: 起きた時に割りこまないだけの小さなちがいで、nice と別に要る理由が、測りで見えなかった。
-  - 弾くほうのリアルタイムのスレッド（meloet の音のスレッド、弾くほうの係の `plughost-audio-*`。meloet の音のスレッドは、このときはまだふつうの優先度だった。23-10）と、作る係（`meloet-render`。弾くほうの曲のための物）にはさわっていない。
-  - nice は、同じ cgroup（同じアプリの scope）の中のふつうのスレッドどうしで効く。リアルタイムのスレッドは、もとから書き出しより先。だから、この直しが効くのは「画面 ・ core ・ リアルタイムを取れなかった弾くほうの係」に対して。となりの論理コア（SMT）やキャッシュの取りあいは、nice では変わらない。
-  - **測り**（`k7m5-surge16`、再生しながら鍵 120、48 秒、quantum 256、load 1.9〜3.7 = ほかの係が動いていた）。答えのない回（Surge XT の係 ・ ZamComp の係）:
-
-    | | 書き出しなし | 21 秒ごとに書き出しなおす |
-    |---|---|---|
-    | 直す前 | 6 ・ 6、5 ・ 6、16 ・ 20、8 ・ 11 | 6 ・ 6、0 ・ 0、6 ・ 5、6 ・ 13、2 ・ 7 |
-    | 直した後 | 0 ・ 0、10 ・ 22、7 ・ 9、0 ・ 5 | 4 ・ 4、7 ・ 7、6 ・ 6、6 ・ 7 |
-
-    **今日は、直す前でも「書き出し中のほうが多い」が出なかった**（ZamComp: なし 6〜20、あり 0〜13）。回ごとのばらつき（0〜22）のほうが大きく、この数では、直しが効いたとも効かないとも言えない。直した後の書き出し中は 4〜7 で、いちばんそろっている。出口の ERR はどの回も 0。
-  - 書き出しの速さ（同じ曲、180 秒、ひらいてから数え終わるまで、2 回ずつ）: 18.54 ・ 18.56 秒 → 18.61 ・ 18.69 秒。PC があいていれば、変わらない。
-- **人が選んだ実時間は、プラグインのせいにしない**
-  - `ExportRunView::Running` に `realtimeForced` を足した（ダイアログの `realtime` ・ `realtimeForced` と同じ組）。`realtime` は「実時間で回っている」（人が選んだか、プラグインのせい）、`realtimeForced` は「速く書き出せないプラグインがある」（`ExportNews::MustBeRealtime` が来た）。
-  - 画面（`exportText.ts` の `runShown`）: `realtimeForced` なら仕様書 6 章の文（`msg.exportingRealtime`）、`realtime` だけなら `msg.exportingRealtimeChosen`「実時間で書き出しています（{length}）。」（仮の文、`builder:2026-11-21`）。両方のときは、プラグインの文（わけを言うほう）。
-- **保存する所の欄は、頭を省いて終わりを見せる**
-  - `ui/src/components/export/cutHead.ts`（`use:cutHead`）: 字の幅と欄の内がわの幅をくらべ、入りきらない間、欄に `data-cut` をつける。見はるのは `ResizeObserver`（欄と字。道が変わる ・ 書体が届く ・ 幅が変わる、のどれでも来る）。毎コマは測らない。
-  - CSS: `data-cut` の欄は、前に「…」（`::before`）を置き、字の箱を終わりそろえ（`justify-content: flex-end`）にする。字は切らずに DOM に置いたまま（頭は箱の外に出て隠れる）。
-  - **`direction: rtl` と `text-overflow: ellipsis` の手を使わなかった理由**: 道の中の「/」や「~」の並びが双方向の決まりで動くことがあり、WebKit で終わりが残るかも確かめが要る。測って印をつける形は、試験（jsdom）でも印で見られる。本物のアプリ（WebKitGTK）で、長い道の終わりのファイルの名前が見えるのを絵で確かめた。
-  - 色 ・ 大きさ ・ すきまは足していない。「…」は CSS の `content`（`text-overflow` の「…」と同じ扱いで、`ja.ts` の文面にしていない）。
-
-### 22-25 曲のノートは、いつも同じ音（順ぐりと乱数を曲の場所から、2026-11-22、meloet-hard）
-
-オーナーさんの決め（2026-11-22、案 C）: 順ぐり（round robin）と乱数を、曲の中のノートの場所から決める。人がいま弾く鍵は、いままでどおり続きから。
-
-- **エンジンが音色に場所を渡す**: `Instrument` に `song_note_on(note, velocity, place: SongPlace)` を足した（`crates/meloet-engine/src/instrument.rs`）。トラックの列（`Sequence`）から出る押す鍵だけが、`Lane::fire_next` からこれで届く。ほかの出来事（離す、CC64 のほかの CC、ベンド、ペダルのほかの追いかけ、止めたときに離す）と、鍵盤 ・ ためし弾き ・ 棚の ▶ のフレーズ ・ 録音中の鍵は、いままでどおり `event`。ふだんの形は `event(NoteOn)` に回すので、プラグイン（`PluginInstrument`、`HousedInstrument`）、SF2（`Sampler` だが包みに順ぐりがない。乱数もない）、試験の音色は何も変えていない。`InstrumentEvent` の形も変えていない。列から出る CC64（追いかけた物も）は `song_pedal` で届く（下の「ペダルの音と離したときの音」）。
-- **`SongPlace` が持つ物**（どれも `Sequence::new` で、音のスレッドの外で作る）
-  - **種**（`seed()`）: ノートの tick、キー、同じ tick の同じキーの何番めか、の 3 つからまぜて作る u32。ほかのノートを足したり消したりしても、そのノートの種は変わらない。同じ tick に同じキーが 2 つあっても別の種。ループの 2 周めは 1 周めと同じ所なので同じ種。トラックの番号は入れていない（同じ音色を同じノートで重ねたトラックは、同じ波で始まる）。
-  - **同じキーの前の押す鍵を、強さの範囲で数える**（`earlier(lo, hi)`）: 列は、キーごとに押す鍵の強さを曲の順にならべ、64 個ごとに「強さ v 以下が何個」の 128 の累計（タリー）を持つ。答えは「直前のタリーの差 + そこから 63 個以下を数える」で、音のスレッドで曲の頭から数えなおさない。メモリは押す鍵 1 つに約 17 バイト（強さ 1、タリー 8、種と番号 8。ほかの出来事にも種と番号の 8）。
-- **順ぐり（`sampler/player.rs` の `trigger`）**: 曲の押す鍵は、順ぐりの領域ごとに `place.earlier(領域の velLo, velHi) % rrCount == rrIndex` で鳴らすかを決める。グループ（`RoundRobinId`）は (trigger, keyLo, keyHi, velLo, velHi, rrCount) なので、強さの範囲で数えれば「グループごとの通し番号」になる。16 分のハイハットで拍の頭だけ強い段でも、強い音どうし ・ 弱い音どうしが、それぞれ 0, 1, 2, 3 と回る（となりあう同じグループの音はちがうサンプル）。
-  - **包みが変わっても数はずれない**: 数えるのはサンプルの包みによらない物（キーと強さ）だけで、どのグループかは鳴らす瞬間に音色が自分の包みで決める。音色の入れかえ、読みおわり、ためし（trial）、トラックの移動で、列を作りなおす事はない。
-  - グループが 2 つ以上のキーにまたがる包み（いまの包みにはない）は、自分のキーの前の鍵だけを数える。となりあう別のキーの音が同じサンプルになることはある。
-  - 離したときの音とペダルの音も、曲から来た物は曲の場所で決める（下の「ペダルの音と離したときの音」）。
-  - 人が弾く鍵は、いままでの「グループごとの数」（`turns`）で回る。曲の押す鍵も、この数を進める（人が弾く鍵の回りかたは、いままでと同じ「続きから」）。
-- **ペダルの音と離したときの音**（2026-11-22 の 2 回め、オーナーさんの決め「曲の場所で決める形にそろえる」）
-  - **ペダル**: `Instrument` に `song_pedal(value, place)` を足した。列から出る CC64 だけがこれで届く（ふだんの形は `event(Control 64)` に回すだけ。プラグイン ・ SF2 ・ シンセは何も変わらない）。`Sequence::new` が CC64 ごとに「前に同じ向きに動いた回数」（踏む音なら前に踏んだ回数、離す音なら前に離した回数）を数えて `SongPlace::pedal` に入れる。動いたかは 64 の上下が変わった時だけで数える（鍵盤のペダルを録ると 100 → 127 のような同じ向きの値がならぶ。それは数えない）。サンプルの係は、ペダルの音の順ぐりを `place.earlier_moves() % rrCount` で選ぶ。踏むたびに 1 つ進むので、同じグループのとなりはちがうサンプル（グランドピアノは rrCount 2 で、交互）。
-  - **離したときの音**: 押した鍵の場所で決める。曲の押す鍵が来たとき、そのキーと強さに合う、順ぐりのある離したときの音のグループごとに `place.earlier(velLo, velHi)` を 1 回数え、キーごとに持っておく（`release_turns`、グループは 4 つまで、それより多いグループは続きから）。離したときの音は、すぐ鳴っても、ペダルで待ってペダルを離したときに鳴っても、その数で選ぶ。押す鍵の数と同じなので、同じグループのとなりはちがうサンプル。人が押した鍵はこの数を消すので、続きから。いまの包みには、順ぐりのある離したときの音はない（グランドピアノの離したときの音 157 は、どれも順ぐりなし。順ぐりはペダルの 4 つだけ。`target/sounds/dev/*/instrument.json` で数えた）。SFZ の形としてありうるので入れた。
-  - **追いかけたペダル**: 途中から再生するとき、`Lane::seek` が追いかけるペダルは `song_pedal` に `chased()` の印をつけて送り、サンプルの係は**音を鳴らさずに**踏んだ状態だけにする。前は `event` で送っていたので、踏んだままの所から再生すると、その瞬間にペダルを踏む音が鳴っていた。頭から通したときには、その瞬間に踏む音は鳴らない（踏む音は、その前の踏んだ所で鳴りおわっている）ので、鳴らさないほうが頭から通した音と同じになる。踏む音がまだ鳴っている所（踏んでからペダルの音の長さの間）から再生すると、その分はちがう（前の響きと同じあつかい）。
-  - 人の鍵盤のペダル（`event` の CC64）、止めたときとループで戻るときに列が離すペダル（`Lane::silence` の CC64 0）は、いままでどおり続きから進む数で鳴る。
-- **乱数**: リードとパッド（`synth/poly.rs`）は、曲の押す鍵なら `Rng::new(seed)` で波の始まりを決める（声を取りあって後から始まる音も、待っている間に種を持つ）。エレクトロキット（`synth/kit.rs`）は、曲の押す鍵なら声の乱数をその種から始める。金属の波の始まりだけでなく、キック ・ スネア ・ クラップの雑音も、その声の乱数から出るので、音ぜんぶが種で決まる。人が弾く鍵は、いままでどおり音色の実体ごと ・ 声ごとに続く乱数。
-- **同じにならない所**: 前のノートの響き（とくにパッドのリリース、エフェクトのしっぽ）が残っている所から再生すると、その響きの分だけちがう。声の取りあい（ポリフォニーの上限）も、前から鳴っている音によって変わる。確かめた「同じ」は「前の響きが消えた所」から。
-- **試験**
-  - `meloet-engine` の `transport::tests`: 2 つのキーに 700 の押す鍵（タリーを何回もまたぐ）で、`earlier` がどの強さの範囲でも頭から数えた数と同じ。種は同じ tick ・ キー ・ 順番の物と同じで、ほかのノートで変わらない。
-  - `meloet-sound/tests/song_places.rs`: ハイハットの例（強い段 4 つと弱い段 4 つが順ぐり、1 小節に強い 3 ・ 弱い 13）で、同じ段のとなりあう 4 つがみなちがい、5 つめで戻る。3 小節めから 2 回再生しても、頭から通したときと同じサンプル。人が弾く同じキーは、続けて押すとサンプルが変わる。サンプルの包み ・ リード ・ パッド ・ エレクトロキットを 1 つのエンジンで頭から 2 回と 9 小節めから鳴らし、1 こまもちがわない。その間、音のスレッドの確保 (0, 0)。
-  - `sampler_rt.rs` ・ `synth_voices.rs` の確保の見はりに、`song_note_on` の道を足した（`sampler_rt.rs` には `song_pedal` の道も、追いかけた印つきとなしで）。
-  - `transport::tests::a_pedal_move_knows_the_earlier_moves_the_same_way`: 鍵盤から録ったような値のならび（127, 100, 30, 0, 90, 64, 63, 127）で、動いた回数がならび通り。途中から seek すると、最後の値が追いかけた印つきで 1 回だけ届く。0 で終わっていれば何も届かない。
-  - `song_places.rs` の `pedal_sounds_of_the_song_take_turns_by_their_place`（グランドピアノのようにペダルの踏む音 2 つ ・ 離す音 2 つが順ぐり、5 小節踏んで離す）: 踏む音どうし ・ 離す音どうしのとなりはちがい、1 つおきに戻る。頭から 2 回、3 小節めの 2 拍め（踏んだまま）と 4 小節めから 2 回ずつ、1 こまもちがわない。確保 (0, 0)。`release_sounds_of_the_song_take_turns_by_their_place`（離したときの音が強弱 2 段 × 順ぐり 3、2 小節めと 4 小節めはペダルで待つ）: 同じ段のとなりはちがい、頭から 2 回と途中から（ペダルを踏んだままの所も）1 こまもちがわない。確保 (0, 0)。`a_pedal_played_now_goes_round_its_sounds`: 人のペダルは続きから回る。
-  - `service/export_tests.rs` の `what_is_exported_is_what_plays_sample_for_sample`: 曲を 1 回ひらき、範囲ごとに同じエンジンで 2 回再生（間に、しっぽが消えて 2 秒しずかになるまで待つ）、1 回めと 2 回め、2 回めと書き出しが 1 こまもちがわない。
-- **ループの境目のペダル**（オーナーさんの決め 2026-11-22）: ループの終わりで頭に戻るとき、曲が踏んでいるペダルは `Lane::silence_at_loop` が音なしで離す（`song_pedal(0, 追いかけた印)`。そのまま弾きつづけたら、そこでペダルは動かないため）。待っていた鍵の離したときの音は鳴る。止めたときの `Lane::silence` は、いままでどおり離す音を鳴らす。
-
-### 22-26 出口が落ちたあとの歌の位置と、出口の時刻（第 8 回 区切り1、2026-11-22、meloet-hard ・ Opus 5.5）
-
-測った数は `docs/measurements/2026-11-22-round8-step1-timing.md`。
-
-**1. 出口だけがコマを落としたら、その分の入口のこまを捨てる**（22-21 の 3、棟梁の決め: 案 a）
-
-- 決まり: 録る係（`vocalrec.rs` の `Gaps`）の「線」を、入口の自分の時刻から、**そのブロックが歌われた時に耳に届いていたエンジンのこま**に変えた。ブロックの最初のこまが取られた時刻を `c` とすると、`TransportClock::kept_frame_at(c − X)`（`X` は 22-5。0 のことが多い）。ファイルのこまとエンジンのこまの差が、ずっと同じになるように書く。
-  - 入口だけが落とした（線より半ブロックより遅い）: いままでどおり待たせて、待っている物のいちばん小さい遅れだけ音なしを入れる（22-21 の 2）。
-  - 出口だけが落とした（線より半ブロックより早い）: そのブロックの頭から、早い分のこまを捨てる（歌がそこで切れる）。待たせない（時刻は遅れても早くはならないので、早いのは本当に出口が落ちた時だけ）。ブロックより多い分は、次のブロックで続けて捨てる。
-  - 同じ瞬間を両方が落とした: 線のままなので、何もしない。「同じコマの番号」ではなく「同じ瞬間」（出口のコマ n が 2 ブロック先に鳴らすはずだった所と、入口のコマ n＋3 が 1 ブロック前から取るはずだった所）。同じ番号のコマを両方が落とすと、別の 2 つの瞬間なので、1 つ埋めて 1 つ捨てる（長さは同じ）。
-  - 埋める数 ・ 捨てる数は、ブロックの長さの何倍かに 1/8 ブロックより近ければ、その倍にそろえる（`snap`）。コマは丸ごと落ちるので、時刻のゆれ（数十 µs）をファイルに入れない。
-  - 時計が覚えていない時（エンジンがまだ何も出していない、輪の 512 区間より古い。64 で 0.68 秒）は、前の決まり（入口の時刻）に落とす。そのブロックの次に時計が覚えている物が来たら、そこから線をとりなおす（とりなおす所では、埋めも捨てもしない）。
-- **ロールと周の印も同じ線で**: 「エンジンのこま E の時に歌われたファイルのこま」は、書いたブロックの「ファイルのこま ↔ エンジンのこま」から読む（`Job::heard_frames`、32 ブロックのまん中）。前は入口の時刻から読んでいた。印はブロックが来る前に答える（ロールの瞬間は 2 ブロックほど先に耳に届く）ので、答えたあとで出口が落ちて捨てると、時刻から読んだ印だけが古い線に残った（40 本の負荷で 1 回、5 ブロックずれた）。線から読めば、そのあと捨てても同じ線のまま。
-- 知らせ: `Written` に `cut`（捨てたこま）と `cut_count`（捨てた所の数。続けて捨てたブロックは 1 つ）を足した。約束の `RecordingFaults` は形を変えず、`gaps` に「入口の抜けの数 ＋ 捨てた所の数」を入れる（「録音が位置を守るために動いた回数」。コメントを直し、TS も書き出しなおした）。画面はまだこの欄を見せていない（B-94-14 の文待ち）。測る時の `vocal-faults.log` には、捨てたこまも書く。
-- **理由**: 決まりは「耳に届いていた位置」。出口が落ちた瞬間は人にもとぎれが聞こえているので、そこで 1 ブロック切れても、後ろの歌がずっと 1 ブロック遅れるよりよい（棟梁の決め）。エンジンのこまどうしで比べるので、装置の時計と `CLOCK_MONOTONIC` のずれ（ppm）も入らない。
-- 試験: `vocalrec/tests.rs` の `the_frames_of_the_file_stay_where_the_song_was_heard_whichever_side_misses_cycles`（作り物のエンジンと入口を同じ時計で回し、出口だけ 1 ・ 2 コマ落とす、入口だけ、同じ瞬間、同じ番号、時刻だけ遅いブロックの横で出口が落ちる、で、ファイルのどのこまも「歌われた時に耳に届いていたエンジンのこま − ファイルのこま」が同じ）。エンジンの `transport.rs` に `the_clock_says_nothing_of_a_moment_it_no_longer_keeps`。前からの `Gaps` の試験（時計なしの決まり）はそのまま通る。自分用の PipeWire の `vocal_private`（負荷あり）は、直す前 64 ・ 256 で 1 拍ごとに数百〜1 万こまずれていった所が、直したあと 0（切った所に頭がかかった 1 拍だけ 64〜452）。`vocal_private` と `vocal_timing_private` の合格の線は、両どなりが合っている「ひとつだけはなれたクリック」（1000 こま未満）を数えるだけにした（混んだ PC で、切った所にクリックの頭がかかるため。後ろがずれる形は今までどおり落ちる）。
-
-**2. 本物の装置の「PC が言う遅れ」が 1 ブロック多かった**（オーナーさんの手順 (b)）
-
-- 原因: 入口のブロックの時刻を「cpal の `capture` から 1 ブロック引いた時刻」として、どの入口にも使っていた（`InputBlock::first_frame_us`）。これは出口のモニターの時だけ正しい（第 7 回 区切り2 で、モニターで測って決めた）。ALSA の入口（source）では、PipeWire の `delay` は source の `Latency`（1 quantum ＋ headroom 32 こま。driver なので非同期のつなぎの 1 コマは足さない: PipeWire 1.6.2 `impl-port.c` の `pw_impl_port_recalc_latency`）で、`capture = now − delay` は、そのブロックの最初のこまの時刻。モニターでは `delay` が 0 と言うのに、返ってくるこまは 1 quantum 遅い。
-  - この PC の本物の出口と入口で読んだ数（quantum 256 ・ 512）: 出口 2 quantum、入口 1 quantum ＋ 32 こま、モニター 0。`pw-dump` のポートの `Latency` と同じ。直す前の「PC が言う数」は、これに 1 ブロック足していた（22 ms ・ 43 ms）。直したあと 16.7 ms ・ 32.7 ms で、オーナーさんの測った数（19 ・ 35 ms）との差 `X` は、どちらも +2.3 ms（quantum で変わらない）。
-- 直した事: `InputBlock` に `sink_monitor`（`InputMeters::set_sink_monitor` を、ひらく時に `InputTarget::sink_monitor` から）。1 ブロック引くのはモニターの時だけ。状態行の「PC が言う遅れ」（`service/input.rs` の `delays`）も、1 ブロック足すのはモニターの時だけ。モニター（自分用の PipeWire の試験）の数は前と同じ。
-- しまった `X`: 前の式で測った数は、本物の入口では 1 ブロック（測った時の quantum の）ずれている。`settings.json` の欄の名前を `measured_latency` → `measured_latency_2` にして、前の数は読まない（「まだ測っていない」に戻る。オーナーさんの PC に 1 つしまってあれば、測りなおしが要る）。鍵に quantum は入れていない（式が直ったので要らない）。
-- 鍵（MIDI）の位置は、出口の時刻だけを使うので変わらない。
-
-**3. 鍵 → DAC が 10.4 ms と出た回**（第 7 回の終わりの測りの 2 回）
-
-- 再現しなかった（`pw-record` で出口のモニターを録る ・ 出入りさせる ・ 先にひらく ・ 150 秒録ったあと、出口を 100 回ひらきなおす、など。どれも 2 quantum）。
-- 見当（推論）: その 2 回は 120 鍵とも「ちょうど 1 quantum」だった。これは cpal 0.18.2 が `pw_stream_get_time_n` から答えをもらえない時の形（`callback` は今の時刻、`playback = callback ＋ こま数 ÷ 率`）と同じ。`pw_stream_get_time_n` はストリームの状態が STREAMING でないと −EIO を返す。この出口の本当の遅れ（2 quantum）では、ほかに 1 quantum ちょうどになる道は見つからなかった。直していない（cpal の中なので meloet から状態を見られない）。案は報告に。
+**Cache limit** (`trim_cache`, `remove_left_parts` in `maker.rs`)
+
+- Size: engine-rate F32; 48 kHz stereo **23.0 MB per minute**. Source copies (`audio/`: mp3, ogg, flac and other-rate wav only) and renders (`stretch/`) are the same size; peaks 1.2 MB per 10 min.
+- **Limit: 4 GiB for all three** (`CACHE_LIMIT`). Over it, delete **by oldest use time**. **Never delete what the open song uses** (copies and peaks of uids in its audio table, renders of keys in the current table); files in use get their mtime set to now. If the used files alone exceed the limit, nothing more is deleted.
+  - **Why**: fits one big song (16 stereo 4-min tracks, all stretched: 1.5 + 1.5 GB) plus some undo leftovers. It can all be rebuilt; the limit only keeps the disk from silently filling.
+  - Checked when the render table changes (at most every 30 s, `TRIM_EVERY`) and after each render, on the renderer thread. When use times are set: 22-21 (1).
+- **At start**, leftover `.part` files in `audio/`, `stretch/`, `peaks/` older than 10 min are deleted (newer ones may belong to another meloet running at the same time).
+
+**Tests**: model `audio/follow.rs` (recorded `sync` is "the song's" from any tick incl. ramps; changes inside the clip break it; later points do not; map pieces are place-independent); core `made/tests.rs`, `maker/tests.rs`, `readahead/tests.rs`, `state/audio/tests.rs`; engine `tests/clips.rs` (`SpliceClips`). **End to end** through real core (private PipeWire, `tests/stretch_play_private.rs`, `--ignored`): record a metronome at 120 → no job, ratio 1.0 → song to 96 → render appears and ends → play it into a second track: clicks on the 96 beats → back to 120 → undo → pitch +2 while playing (cross-fade count `Core::made_counts().splices` rises) → undo while playing. Passed at buffers 256 and 1024.
+
+- **Not checked**: that the real output has no break at a cross-fade (only the parts: 480-frame mix in the reader, engine unchanged frames). A normal `cargo test` cannot drive core end to end, because without an output stream no render table is made.
+
+**Measured** (details in `docs/history/measurements/`): positions within **0.47 ms** at worst (test limit 48 frames = 1 ms); onsets 1.0–1.5 ms early because stretch blocks smear a little sound before a click. Render speed in release: about 86–110× real time (a 4-min song takes 2–3 s); debug 30–47×. A 3.3 s clip was ready 350 ms after the request (300 ms of it waiting). Not measured: audio-thread load while rendering during play of 16 tracks.
+
+**Open**
+
+- "While rendering, keep playing the previous render" (e.g. +2 → +3 stays +2 until +3 is ready) is not done; it goes back to the source.
+- `meloet-core` points to `meloet-stretch` by path; to be changed to `{ workspace = true }` when added to `[workspace.dependencies]`.
+- Export waits on `Maker::waiting()` (22-20, second pass).
+
+### 22-20. Step 5, first pass: protocol 26 and joins (export)
+
+Only shapes; the bodies came in the second passes.
+
+- **Protocol 26** (`crates/meloet-protocol/src/export.rs`)
+  - New section `AppState::export` (`Change::Export`) = `{ dialog, run }`. Why: check values and percent change a few times a second; inside `workspace` they would resend band layout each time (same idea as `audioWork`).
+  - `dialog` (`ExportDialogView`): range (`song`, `loop`, `tracks`), loop range (not selectable without one), track count, ticks to write, format and list (`wav`, `flac`; no mp3), save place (display text only; the path stays in core), check (`ExportCheck`: `waiting`, `counting { percent, peakDb, clips }`, `done { peakDb, clips }`, `failed { reason }`), stopped plugins, «くわしく» (open, rate and choices, bits and choices, tail, real time), `canExport`. 23-7 adds `over` and `solo`.
+  - `run` (`ExportRunView`): `running { percent, file, remainingS, realtime, lengthS }` (22-24 adds `realtimeForced`), `done { file, files, place, lengthS, sampleRate, bits }`, `cancelled`, `failed { reason }`. **The finished state is in `run`**, not a status message. Why: spec chapter 2 "export progress" describes exporting, real time and finished as states of one part. It stays until the person does something next («フォルダをひらく» does not clear it).
+  - Intents (none are steps): `openExport`, `closeExport`, `setExport { change }` (`range`, `format`, `advancedOpen`, `sampleRate`, `bits`, `tail`, `realtime`), `chooseExportPlace`, `startExport`, `cancelExport`, `showExported`.
+  - Status: `exportDialogOpen` only.
+  - Bits use `RecordFormat` (16, 24, 32; 32 is float, wav only). `clips` is decided by core: over 0 dB **and** not 32-bit (float does not clip). Superseded by 23-8 (counted `over > 0`) and 23-16 (peak before the output clip).
+  - TS: 10 types and `generated/export.ts` (`EXPORT_FORMATS`, `EXPORT_TAIL_MAX_S`).
+- **Core rules** (`Exporting` in `crates/meloet-core/src/export.rs`, pure like `state`)
+  - In: intents and `ExportNews` (`Input::Export`). Out: `ExportAsk` (`Effect::Export`). `state/export.rs` turns the model into a `Scene`.
+  - **One job = audio of one range** (`ExportJob`: `Doc` copy, range, per track or not, tail, real time, plugins to skip, engine rate). Opening the dialog → `Render`; changing range, tail or real time → `Drop` + new `Render`; changing format, rate or bits keeps the job (22-14). «書き出す» → `Finish { job, target }`. Close/cancel → `Drop`.
+  - `ExportNews`: `Counted { job, percent, peak_db, length_s, remaining_s, done }` (23-8 adds `over`), `MustBeRealtime { job }`, `Finished { job, files }`, `Failed { job, reason }`, `PlacePicked(path)`. News of old jobs is ignored.
+  - Choices (range, format, advanced, place) are remembered while meloet runs (not in settings).
+- **Plugin join** (`crates/meloet-core/src/plugins/export.rs`): `export_seats(&HostOptions, ExportWant, Arc<PluginBlock>) -> Result<ExportSeats, ExportPluginError>`. `ExportWant` lists the plugins (place, name, key, bundle, state), rate and longest block. `ExportSeats` gives instrument and effect seats (`Box<dyn Instrument>`, `Box<dyn Effect>`, each with its `PluginPlace`), `realtime` (`lv2:isLive`), and `watches`/`stopped()`.
+  - Rules: call on the export thread before the first block (it waits, so not on core or audio threads); `block` is the export engine's; seats wait for each answer with no deadline (only `HANG_MS`; past it `stopped()` says so and the export fails); states are gathered first on the core thread (`Hosts::state` for playing plugins, else `PluginRef::state` of the `Doc`).
+  - **Why seats by place**: seat numbers are decided by the engine side (`Seats::for_song`); the plugin side need not know them.
+- **File writer** (`crates/meloet-core/src/export/sink.rs`): `trait AudioSink { write(&[f32]) / finish() -> frames / abandon() }` and `create(path, SinkSpec { format, sample_rate, channels, bits })`. **Why a trait**: the export thread writes the same way whatever the format; float in, and integer conversion (with 16-bit dither) in one place inside, so wav and flac hold the same samples.
+- **Temporary decisions** (not in the spec; B-94): (1) default place: the song folder for a saved song, else the PC music folder; name = song name. (2) Per-track export saves to a folder; «えらぶ…» opens a folder window. (3) «書き出す» can be pressed during counting once a value has arrived; not before, not on failure, not for an empty song. (4) Tail: «音が消えるまで» or «なし»; «実時間で書き出す» is a toggle in «くわしく». (5) The dialog does not open during count-in, recording or export; it opens while playing. (6) «ループ» and «曲ぜんぶ» both use the song name.
+- **Fake scenes**: `exportDialog`, `exportWaiting`, `exportCounting`, `exportClips`, `exportStopped`, `exportAdvanced`, `exportCheckFailed`, `exportFit`, `exporting`, `exportingRealtime`, `exportDone`, `exportCancelled`, `exportFailed`.
+
+### 22-21. Remaining fixes of steps 3 and 4 (core and engine)
+
+Protocol and texts unchanged.
+
+**1. Cache: what enters or leaves the table counts as "used" at that moment** (`Work::mark_changed` in `maker.rs`)
+
+- Problem: use times were only set when trimming ran (at most every 30 s), on the table of that moment. A sound used a moment ago but changed away within 30 s kept yesterday's time and was deleted first.
+- Rule: on every table change (`Ask::Want`), set now on the files of **keys that entered or left**, and on copies and peaks of **uids that entered or left**. Trimming itself is as before. Why: only the difference, so repeated edits stay light.
+- Test: `what_left_the_table_since_the_cache_was_looked_through_is_not_the_oldest`.
+
+**2. Gap fill size = the smallest lateness among held blocks** (`Gaps::settle_first` in `vocalrec.rs`)
+
+- Seen: over-filling came from one shape: **one cycle lost, and the next cycle delivers two blocks with the same time** (the first one cycle late) — a loss and a late-time block together. The old rule filled the first block's lateness (2 cycles) instead of 1.
+- Rule: fill the **smallest** lateness of the held blocks and the new block (each from the line of its previous block). `HELD_BLOCKS` stays 2. Why: a block time can be late but never early (it is when the cycle ran), so any block near the line shows the true line.
+- Tests in `vocalrec/tests.rs` with cuts of `tests/fixtures/input-blocks.txt`; whole runs now match the clock's count within one frame.
+
+**3. A busy PC put a second recording one block late: the output alone drops cycles.** Superseded by 22-26 (1).
+
+- On a busy PC the engine's output callback misses far more cycles than the input (at 256, 1–7 per 20 s). When the output drops a cycle, the song is heard one block later, but the recorder (head from time, then counting input frames) places the rest of the voice one block late. Filling input gaps does not help; it even moves the other way if the output dropped the same cycle.
+- `TransportClock` knows these losses (`frame0` and DAC time per segment); `EngineMeters::late_callbacks` only counts them; cpal's `xruns` was 0.
+- Options were (a) compare each block with `clock.frame_at(time + X)` and drop input frames for output-only losses, (b) only tell the person, (c) nothing. (a) was chosen (22-26).
+
+**4. "Half a click" at the head after turning off the metronome: not the metronome; nothing to fix**
+
+- The engine metronome is a switch (`EngineCommand::SetMetronome` sets `Transport::metronome` at once; `click_audible()` is checked on the beat frame). Turned off while stopped, it is silent from the first frame.
+- The sound at −256 in the second recording matched the first clip's head (correlation 1.0000): the first recording's click cut at frame 0 of the clip. It only happens when the metronome is recorded from the monitor.
+- Other 20 ms smoothed values (fader, pan, send) arrive within 20 ms even while stopped (the engine renders every block for keys).
+- Test: `a_metronome_turned_off_while_stopped_is_silent_from_the_first_frame` (engine `tests/transport.rs`).
+
+**5. Measuring tool `Recorder`** (`tools/measure/remote.py`): `pw-record` writes into a temp folder under `$XDG_RUNTIME_DIR` (or `/run/user/<uid>`, i.e. memory), and `stop()` moves the file to the asked place. Callers unchanged. Falls back to direct recording when no writable folder.
+
+### 22-20 Step 5, second pass (plugins in export)
+
+The plugin part of 22-11, built as planned.
+
+- **`export_seats`** (`crates/meloet-core/src/plugins/export.rs`)
+  - Starts one export-only `Hosts` (`Hosts::start_offline`): the same code and threads as the playing `Hosts` (children one at a time with `launch::spawn`, one process per plugin key, a new process over 16, pidfd watch). Only two things differ: the export flag and how seats wait. **Why**: start, load, set state, clean up after a stop are not written twice.
+  - Loads each `ExportPlugin` (`StartState::Bytes(state)`, `Fresh` if empty); `PluginPlace::Instrument` becomes `PluginInstrument`, inserts `PluginEffect`, returned with places.
+  - `ExportSeats` has a private last field `hosts` (seats drop first). Dropping it ends the export `Hosts` thread, sends `Quit` to children and kills them after 0.3 s. Seats taken out should be dropped before (doc comment); dropping later does no harm (shared memory is `Arc`; seats just become "stopped").
+  - `ExportSeats::pids()` for tests and logs.
+  - Errors: process does not start → `Start`; plugin not loadable, state refused, or crash during load → `Load { place, name }`; children started so far are ended.
+  - `ExportWant::max_frames` is unused; plugins are prepared with the playing `HostOptions::geometry.max_frames` (1024, VST3 `maxSamplesPerBlock`); longer blocks are cut by the seat, as in play.
+- **`WIRE_VERSION` 5** (`crates/meloet-plugin/src/wire.rs`, `launch.rs`)
+  - The export flag is **the command line `--offline`** (`launch::host_command(.., offline)`). The hello answer `Reply::Hello { version, offline }` lets the child say "I am an export child"; a mismatch means the child is not used.
+  - **Why not in the hello**: the child's audio threads start before the hello and ask for real-time priority there; the flag must be known at process start.
+  - `LoadedPlugin::live` (LV2 `lv2:isLive`; VST3 always false).
+- **Export child** (`crates/meloet-plughost`)
+  - Audio threads ask for no real-time priority (no rtkit, no log line). Thread count rule unchanged (plugins, half the CPUs, at most 4). Runs at nice 19 (22-24).
+  - VST3: `setupProcessing` `processMode` and each `ProcessData::processMode` are `kOffline` (`process_mode` in `formats/vst3.rs`, one function for both). Prepared offline from the start.
+  - LV2: control input with `lv2:designation lv2:freeWheeling` set to 1 every block (untouched when playing).
+  - LV2 worker: livi 0.9 polls worker jobs on its own thread every 0.1 s (`features/mod.rs`), clock-driven, so results would change per run. The export child calls `WorkerManager::run_workers()` right after each `run`; work finishes before the next `run` and replies arrive in it. **One block later than the spec's "at once inside schedule_work"** (livi's `schedule_work` cannot be replaced), but always the same block. Checked with the Guitarix cabinet.
+  - `lv2:isLive` is checked with `lilv_plugin_has_feature` (required and optional).
+- **Waiting without a deadline** (`EngineEnd::wait_through` in `crates/meloet-plugin/src/ipc/ends.rs`, `PluginSlot::for_export` in `crates/meloet-engine/src/plugin.rs`)
+  - Export seats sleep on a futex until the answer, ignoring the `PluginBlock` deadline, waking every 0.05 s to see if an answer can still come.
+  - They give up only when: a child thread has held the block for `HANG_MS` (5 s); nobody took it and the child made no progress for `HANG_MS`; or shared memory is marked "stopped" (the `Hosts` thread marks it within 10 ms of the process ending). Then all seats of that process stop and `PluginWatch::stopped` is set (`ExportSeats::stopped()` tells the place).
+  - The playing form (`PluginSlot::new`) is unchanged. `Instrument::ask` (ask first) works in export too. Export seats take no memory (watched by engine tests).
+- **State copy**: no new interface. States gathered with the playing `Hosts::state(id)` (as for saving: `Model::plugin_tickets()` → `Hosts::state`) go into `ExportPlugin::state`; plugins that do not answer use `PluginRef::state` of the `Doc`.
+- **Checked** (this PC, debug):
+  - Effects (LSP compressor VST3/LV2, ZamComp VST3/LV2, Dragonfly Hall LV2): two export runs are identical, and equal to the playing child with the same block size.
+  - **Surge XT is never identical** (VST3 and LV2), even between two playing runs (its oscillators start at random phases). RMS per 0.1 s within 2 %. Sample-by-sample export-vs-output tests cannot use Surge XT.
+  - Exporting 2 Surge XT + Dragonfly while Surge XT plays live: 120 s in 2.6 s (46×), no missed answers on the playing side.
+  - Slow child (30 ms per block): waits, every block has sound, same twice. Stopped child: `stopped()` after 5.0 s, no process left. Crashed child: `stopped()` within 1 s.
+- **For the export engine**: take seats from `ExportSeats::instruments`/`effects` and insert with the playing interface (`swap_instrument`, `set_effect`); `block` is the export engine's `plugin_block()`; no `set_deadline`. **Check `ExportSeats::stopped()` after every block** (stopped instruments give silence and effects pass through, so it would go unnoticed). Drop order: engine (and seats returned from it) → `ExportSeats`. `realtime` true → follow the clock. Worker-using LV2 plugins (LSP, Dragonfly, Guitarix) may differ from the playing side for the first blocks after load (the playing side's worker timing depends on the clock).
+- **Open**: no test sees `processMode` from the plugin side (no fake VST3). Plugins that make `lv2:isLive` **required** may be rejected by livi before loading (none on this PC). Export children compete with the UI threads (they have normal scheduling, now nice 19).
+
+### 22-22 Step 4 fix (screen: render percent)
+
+Fixes of `docs/history/measurements/2026-11-21-round7-step4.md` findings 1, 2 and 5. Text unchanged.
+
+- **The shown percent comes from one place** (`shownWork` in `ui/src/state/audioWork.svelte.ts`), read by the note under the clip (`arrange/AudioClipNotes.svelte`), the panel bar (`params/ClipPanel.svelte`) and the status line (`StatusLine.svelte`).
+  - When only percents change, the old value stays until 500 ms after the last change (at most twice a second); one timer bumps a `$state` counter so all three re-read in the same frame. Jobs starting or ending (kind, audio or clip changes) show at once.
+  - Tables are built once per shown value: `rendering` (clip id → job), `loading` (audio number → job), `firstRendering`. Unchanged results return the same object, so `$derived` readers stop.
+  - **Why**: Rust sends percents 5 times a second; three parts changing in different frames triple the redraws; 0.5 s steps are enough.
+- **Notes under clips**: invisible clips are skipped before looking up tables; with no jobs, only clips of missing audio are checked.
+- **While playing, ask for a column rectangle** (`askColumn` in `AudioClipNotes.svelte`): when the percent text changes while not stopped, `askWhole` an invisible column box from the top to the bottom of `.time` (the play line's box); left = text left, width = the widest percent text (measured with hidden «11, 22 … 99» and «10, 20 … 90» texts). Made on first use, removed with the note.
+  - **Why**: a text-only rectangle (143×18) cut the track meter and play line rectangles into three bands; with the status line and input meter it reached 11 and WebKit repainted the whole bounding box (7, "CPU WebKit"). A column with the same top and bottom as the play line cuts nothing.
+  - Not done while stopped: with nothing else moving, column + status line pass 25 % of the bounding box and trigger a full repaint. Stopped, the text box alone gives 2–3 rectangles.
+- **Panel progress row**: the percent text is out of flow (`.percent > .in`, width from a hidden «99 %» in `data-size`); a change asks for the whole row's rectangle (`askRow`).
+  - Cause of dirt at the bottom of the panel: the in-flow text relayouted the row and the flex column panel (`aside.panel`), and WebKit repainted the empty space below the last child. Moving the text out of flow removed it.
+  - With a one-digit percent the gap between bar and text is one digit wider (the bar length does not depend on the text width).
+- **Result** (details in the measurement document): changing percents while playing went from near full-page repaints (23 of 24 frames) to 7–10 rectangles; stopped, 2–3. busyMs p95 12–14 → 11 ms.
+- **Open**: playing with the panel open and the selected clip rendering, the panel row cuts the column and play line → 11–13 rectangles → full repaint every 0.5 s. A percent frame while rendering is still about 19 ms (probably the renderer using a core). With 192 clips stopped, a frame of 11 ms comes 5 times a second (each state arrival) for an unknown reason (not `jobs.find`).
+
+### 22-20 Step 5, second pass (export engine and core)
+
+Protocol 26 unchanged. Added: the export engine, the job thread, file writers, PC windows, the `service.rs` receiver.
+
+**Export engine** (`crates/meloet-core/src/export/told.rs`, `render.rs`)
+
+- **Keeping one path: make another `Play` and let it open the song**. `Told::of(doc, solo, known, skip)` builds a throwaway `Play`, runs it in startup order (`engine_seats()` → `replace_song` → `sync_*` after input) and collects the `EngineOp`s it emits. There is no export-only "song → engine" code.
+  - **Why**: with one place that says what a song becomes in the engine (seats, sounds, mixer, notes, lanes, audio clips, mute, solo), export cannot sound different.
+  - **Why `engine_seats()` first**: `Play::new` counts the new song's returns (reverb, delay) and master (limiter) as "already told"; without the startup part, the export engine would miss them (found by the sample-exact test).
+  - The session (outside undo) is export's: no loop, no solo (per-track: that one track), metronome off. **The current solo is not applied to "whole song"** (`ExportJob` carries only the `Doc`; solo is `Session`). Mute is in the `Doc`, so it applies.
+  - Plugins: `Effect::LoadPlugin` becomes `ToldPlugin` (place, name, key, bundle, state); `plugin_loaded` is called and the resulting `EngineOp::Plug` and lane resends are kept in `Told::plugged`. Stopped plugins (`ExportJob::skip`) are removed with their `Plug` (instrument: silence; insert: empty). Plugins missing on this PC become the sine, as when playing.
+- `ExportEngine::tell` turns `EngineOp`s into engine commands like the playing `Audio::op`, sharing `mixbook::command`, `mixbook::make`, `instruments::make`, `sequence_event`, `auto_lanes`, `made::seat_audio`. The `match` has no `_`, so a new `EngineOp` arm stops the build.
+- **Audio clips: same ring, other filler** (supersedes 22-11's "read directly"). `ReadAhead::inline(store)` is a read-ahead with no thread; the export thread calls `pump()` between blocks. Ring, `StreamWant`, generations, `FeedClip` reading and the engine's `ClipPlayer` are identical to play.
+  - **Why**: a "read directly" path in the engine would repeat fades, generations and loop wraps. With the ring kept, only "when it is filled" differs. The ring holds 2 s and is filled under 1 s, and blocks are shorter than 1 s, so it never runs dry (`ExportEngine::missing()` is always 0).
+  - All files are opened before the first block (`open_all`); later song changes or cache clearing do not affect the export.
+- **Start**: `Stop` → `Locate(head)` → 0.25 s of blocks while stopped (`REST_S`, thrown away) → `Play(head)`. Why: faders and lanes settle (20 ms), inserted effects finish their cross-fade (10 ms), rings fill at the head — like "open the song, wait a little, press play".
+- **Block size**: the playing stream's (`EngineMeters::last_frames`); without a stream, the settings buffer, else 256. Engine settings (`max_frames` 1024, 64 seats) as in play.
+- **Range end**: engine frame `frame_of(end, head sec)`; the last block is cut there and `Stop` sent (notes released, audio clips fade 10 ms). What follows is the tail.
+- **Head**: frames of `Engine::master_latency()` (sum of unbypassed master insert delays) are thrown away.
+- **Tail** (`Taker` in `job.rs`): blocks after the range whose peak is under −90 dBFS are held, not written; a louder block writes them all. 0.5 s of quiet blocks ends it, **and those 0.5 s are not written**; stops at 10 s. «なし» = exactly the range. Why: a song without reverb tail should not get 0.5 s of silence.
+- **Per track**: one engine, one pass per track: `Stop` → `Engine::prepare` (stop sounds and tails) → `SilentTracks` soloing that track (`Told::of(doc, Some(track), …).silent()`) → start. Why: plugin host processes are not restarted per track. A muted track stays silent when soloed (as in play).
+- **Real time**: after each block, sleep until the clock reaches "frames rendered ÷ rate". Same path.
+
+**Job thread** (`export/job.rs`, thread `meloet-export`, normal priority then nice 19 (22-24), one per job)
+
+1. The core thread makes a `Setup` (`service/export.rs`): `ExportJob`, block size, `AudioStore`, the song's samples (`Arc`), this PC's plugin list, `HostOptions`, a way to get playing plugin states (`Hosts::state`, as for saving), the renderer's waiting count. **If sounds are still loading, the job waits** (up to 30 s, `Worker::export_tick`).
+2. Thread: build the engine and tell `Told::ops` → wait for loading audio files (`Playable::NeedsCache`, up to 5 min) → **wait for stretch renders** → plugins (`export_seats`; states waited up to 3 s, else the `Doc`'s) → `Told::plugged` → run → `Counted { done }` → wait for «書き出す» (`Finish`) → convert → move → `Finished`.
+- **Stretch renders** (`wait_made`): the first block waits until every needed key (`plans` of `seat_audio`) is in the cache. While the renderer works (`Maker::waiting() > 0`) it waits. What the renderer will not make (no output stream, the song changed), **the export thread renders itself** (`maker::make_now`, same `render_plan`, written to `<key>.export-<pid>.wav` then renamed, so it never clashes with the renderer's `.part`; contents identical). No `Counted` meanwhile, so the check stays `waiting`. Sources that cannot open are not waited for (silent in play too).
+- **Check**: `Counted` at most every 250 ms, and once right after the first block (so «書き出す» becomes pressable). Percent over range frames (tail not counted; per-track over all passes); peak = largest absolute sample written, in dB (since 23-16 before the output clip; 23-8 adds the count of places over 0 dB); remaining time after 1 s = elapsed × left ÷ done. `done`'s `length_s` = longest file in seconds incl. tail.
+- **Temp files**: `<state>/export/<pid>-<job number>/pass-<n>.wav` (F32, engine rate, stereo, `CacheWav`); the PC temp folder without `state_dir`. The folder is deleted when the job ends (done, cancelled, failed). At start, folders of pids no longer running are deleted.
+- **Cancel**: `Drop` only sets a flag (core does not wait). The thread checks it each block, each 4096 converted frames, and every 50 ms while waiting. At quit, all are cancelled and waited for (`Exports::end`).
+- **Failure**: anything unwritable is `cannotWrite` (work place, conversion, target). Plugins: `plugin { name }` (not loadable, not startable, `ExportSeats::stopped()` while running). Files already moved are deleted.
+
+**Files** (`export/sink.rs`; `convert`, `move_to` in `job.rs`)
+
+- After «書き出す», the temp file is read 4096 frames at a time: resampled if the rate differs (rubato, `audiofiles::resample::Resample`, the same FFT conversion as import; length `ceil(frames × target ÷ source)`) → `AudioSink`.
+- Float → integer happens only in `Whole` in `sink.rs` (wav and flac): 24 bits `round(clamp(s) × 8388607)`, 16 bits `round(clamp(s) × 32767 + TPDF)`; TPDF is the difference of two xorshift32 values (fixed seed), ±1 step. **Each file starts from the same seed, so the same audio gives the same file.** Same formula as the recorder (`vocalrec::WavFile`). 32 bits stays float (values over 1.0 kept, non-numbers → 0).
+- wav: 44-byte header (same form as the recorder); length rewritten at the end and `sync_all`. Over 4 GiB the length fields say "to end of file" (0xFFFFFFFF).
+- flac: `flacenc` 0.5.1 (`default-features = false`: no threads, serde, log). **Encoded and written one 4096-frame frame at a time** (`encode_fixed_size_frame`; `encode_with_fixed_block_size` holds the whole song in memory). STREAMINFO is rewritten at the end with frames, MD5 and frame sizes.
+- **Moving**: all files are finished in the work place (`out-<n>`, synced), then `rename`d to the chosen place. Across file systems (`CrossesDevices`): copy to `<name>.part` next to the target, `sync_all`, `rename`, delete the source. A half-written file is never seen under the chosen name. The folder is synced at the end. Existing files are overwritten (the PC save window asks for single files; per-track folders do not ask).
+- Per-track file names: track name with `/`, `\` and control characters removed and leading/trailing spaces and `.` trimmed (`_` if empty) + extension; « 2», « 3» for repeats.
+
+**PC windows and opening the folder**
+
+- `ShellRequest::PickExportPlace { folder, name, folder_only }` → `Core::export_place_picked`. The shell (`pcwindow.rs`) has `Pick::ExportFile` (save window; title reuses «名前をつけて保存»; the window asks about overwriting) and `Pick::ExportFolder` (folder window, «場所をえらぶ»). Temporary (titles are not in the spec).
+- «フォルダをひらく» uses the existing path (`Effect::ShowFile` → `ShellRequest::ShowFile` → `pcwindow::show_file`): `org.freedesktop.FileManager1.ShowItems` with the file selected, else `xdg-open <folder>`. Why: the same interface as "show place" for recordings and songs.
+
+**Tests**
+
+- `service/export_tests.rs`: **sample-exact with play**. Play side: real `Play` + `Audio::op` + read-ahead and renderer threads, with the test calling blocks (256) instead of a stream (`Audio::open_by_hand`, test-only). Song `export/fixture.rs`: 96 → 120 ramp, a tempo point, lead (fader lane, delay, send to reverb), drums (pan), 3 audio clips (as recorded + fade + gain, +3 semitones, a stretched clip), master limiter. Whole song, from mid-note/clip/ramp, the stretched clip only, and a range with tail: identical to the bit.
+- `export/job/tests.rs`: tail rules, per track (sum of 3 ≈ master within 1e-4; names), formats (32-bit unchanged, 24-bit values, flac = wav, 16-bit twice gives the same bytes, lengths at 44.1 k/96 k), stretch wait/self-render/same result, cancel, unwritable, overwrite, plugin not loadable/stopped/missing.
+- `export/sink/tests.rs`; engine `tests/mixer.rs` (`master_latency`).
+- `tests/export_whole.rs`: through real core (open → check → bits change keeps the job → tail change rebuilds → PC window → export → read file → open folder → cancel in real time). **This test binary has the counting allocator and sees (0, 0) allocations in export engine blocks** (dev-dependency on `meloet-engine` with `rt-check`).
+- "Range change rebuilds, format change does not": `export/tests.rs`.
+
+**Measured**: 16 vocal tracks, 5 min, 48 kHz, block 256: about 2.8 s, **about 105× real time**, allocations (0, 0). Command: `MELOET_EXPORT_SONG=<song>.meloet cargo test -p meloet-core --release --test export_whole -- how_fast --ignored --nocapture`.
+
+**Open**
+
+- Lead/pad wave starts, electro-kit metal and noise, and sample round robin now depend on the note's place in the song (22-25), so play is repeatable and equals export (`what_is_exported_is_what_plays_sample_for_sample`).
+- Comparison with audio recorded from the real output (22-11) is not done; only "test calls blocks instead of the stream".
+- Saving during export (audio moving into the song folder) does not disturb it (files already open). Replacing the song before the job starts (waiting for sounds) makes it look up the new song's table, so audio clips become silent.
+- The 44-byte wav header exists in three places (recorder, cache, export).
+
+### 22-23 Step 5, second pass (screen: export)
+
+- **Parts**: `ui/src/components/export/ExportDialog.svelte`, `exportText.ts` (text pieces, no DOM), progress inside the left snippet of `StatusLine.svelte`. `App.svelte` places the dialog only when `state.export.dialog` exists.
+- **Shown numbers from one place** (`exportShown` in `ui/src/state/exportShown.svelte.ts`), read by dialog and status line. When only `counting` percent/peak or `running` percent/remaining change, it updates at most every 500 ms like `audioWork`; other changes (format, range, state) show at once. Why: as 22-22.
+  - The status-line percent text is out of flow (width from a hidden «99 %»); the bar uses `transform: scaleX`. Neither relayouts the row.
+- **Status line order**: while exporting (`run.state = running`), progress replaces the tag («■ 停止中» etc.) and text, ahead of drag readings and other messages. Done/cancelled/failed keep the tag and come after screen-only things (drag reading, About, song dialogs, panel row drags) and before core messages. «フォルダをひらく» is underlined text like other message buttons; «やめる» is a boxed button (20 high, mock F7-Exporting).
+- **Keys**: Mod Shift E → `openExport` (not during recording, count-in, export, or when open; the menu «書き出し…» uses the same path). Esc → `closeExport`, not core `back` (core `Back` does not close this dialog). Enter → `startExport` only when `canExport`. While the dialog is open it comes before shelf audition and the undo history band.
+- **Dialog**: centered vertically in the window (spec 3: "from the middle of the current window each time"; the mock puts it 72 from the top). Contents in a `ScrollArea`, heading and bottom row outside (R11-Fit). Opened «くわしく» uses the advanced sound settings rows (name 120, ▾ list); real time is a check mark (on and disabled when `realtimeForced`).
+- **Added values**: `part.exporting.bar` (160, spec 2 "export progress"), `mock.exporting.bar` (4), `mock.exporting.stop` (20) (F7-Exporting).
+
+### 22-24 Step 5 fixes (priority, real-time text, save place field)
+
+Fixes of `docs/history/measurements/2026-11-21-round7-step5.md` findings 1, 3, 5. Protocol stays 26.
+
+- **Export runs at a yielding priority (nice 19)**
+  - The export plugin host (`meloet-plughost host --offline`) calls `launch::low_priority()` at the very start of `main` (before any thread). The core thread `meloet-export` calls the same at its start. Same function as scan children (`setpriority(PRIO_PROCESS, 0, 19)`).
+  - On Linux, nice is **per thread** and new threads and processes inherit it (setpriority(2) BUGS, sched(7)). So only `meloet-export` and what it creates (the export `Hosts` thread, `make_now` renders) get 19; other meloet threads are unchanged. The child calls it itself, so plugin-created threads (JUCE etc.) are 19 too. Tests: `a_low_priority_is_the_calling_threads_and_of_what_it_starts` (`launch.rs`), `a_host_for_an_export_asks_for_no_priority_and_gives_way` (`meloet-plughost/tests/host.rs`).
+  - **Why nice 19**: (1) one function shared with scan; (2) not `SCHED_IDLE`: the hang watch (`HANG_MS`) uses wall-clock time, and a thread never scheduled on a busy PC would look like a hung plugin; nice 19 always gets a turn; (3) not `SCHED_BATCH` too: no measured reason for it.
+  - Real-time threads of play (meloet's audio threads since 23-10, the playing hosts' `plughost-audio-*`) and the renderer (`meloet-render`, for the playing song) are untouched.
+  - nice works between normal threads in the same cgroup (the app scope); real-time threads already beat export. So it helps UI, core and playing hosts that could not get real time. SMT neighbours and cache sharing are not affected.
+  - Measured: too noisy to show an effect either way (details in the measurement document); export speed unchanged on an idle PC.
+- **Real time chosen by the person is not blamed on plugins**
+  - `ExportRunView::Running` gets `realtimeForced` (same pair as the dialog). `realtime` = running in real time (chosen or forced); `realtimeForced` = a plugin cannot export fast (`ExportNews::MustBeRealtime`).
+  - Screen (`runShown` in `exportText.ts`): `realtimeForced` → spec chapter 6 text (`msg.exportingRealtime`); `realtime` only → `msg.exportingRealtimeChosen` «実時間で書き出しています（{length}）。» (temporary text, `builder:2026-11-21`); both → the plugin text (it gives the reason).
+- **The save place field cuts the head and shows the end**
+  - `ui/src/components/export/cutHead.ts` (`use:cutHead`): compares text width with the field's inner width and sets `data-cut` while it does not fit. Watched with `ResizeObserver` (path change, font arrival, resize); never measured per frame.
+  - CSS: a `data-cut` field shows «…» (`::before`) and aligns the text box to the end (`justify-content: flex-end`); the text stays whole in the DOM (the head is hidden outside the box).
+  - **Why not `direction: rtl` + `text-overflow: ellipsis`**: bidi rules can move «/» and «~» in a path, and WebKit behaviour would need checking. Measuring and marking can be tested in jsdom. Checked in the real app (WebKitGTK).
+  - No color, size or space added. «…» is CSS `content` (like `text-overflow`'s «…»), not a wording in `ja.ts`.
+
+### 22-25 Song notes always sound the same (round robin and randomness from the song place)
+
+The owner's decision (option C): round robin and randomness for song notes are decided by the note's place in the song. Keys played now continue as before.
+
+- **The engine gives the instrument a place**: `Instrument::song_note_on(note, velocity, place: SongPlace)` (`crates/meloet-engine/src/instrument.rs`). Only note-ons from a track's sequence (`Sequence`) arrive this way, from `Lane::fire_next`. Other events (note-offs, CCs other than 64, bends, other chased controls, releases on stop) and keyboard, audition, shelf ▶ phrases and keys while recording still use `event`. The default forwards to `event(NoteOn)`, so plugins (`PluginInstrument`, `HousedInstrument`), SF2 (`Sampler`, no round robin or randomness in its packs) and test instruments are unchanged. `InstrumentEvent` is unchanged. CC64 from the sequence (chased too) arrives as `song_pedal` (below).
+- **`SongPlace`** (built in `Sequence::new`, outside the audio thread):
+  - **Seed** (`seed()`): a u32 mixed from the note's tick, key, and its index among same-tick same-key notes. Adding or removing other notes does not change it; two notes at the same tick and key differ; loop lap 2 equals lap 1. The track number is not in it (the same sound on the same notes in two tracks starts with the same wave).
+  - **Earlier note-ons of the same key in a velocity range** (`earlier(lo, hi)`): per key, the note-on velocities in song order, and every 64 notes a tally of "how many at velocity ≤ v" (128 entries). Answer = tally difference + counting at most 63, so the audio thread never counts from the song head. About 17 bytes per note-on (velocity 1, tally 8, seed and index 8; other events 8).
+- **Round robin** (`trigger` in `sampler/player.rs`): a song note-on plays a region if `place.earlier(region velLo, velHi) % rrCount == rrIndex`. A group (`RoundRobinId`) is (trigger, keyLo, keyHi, velLo, velHi, rrCount), so counting by velocity range gives a per-group running number. With 16th hi-hats loud only on beats, loud ones and soft ones each go 0, 1, 2, 3 (neighbours in a group always differ).
+  - **Pack changes do not shift counts**: only pack-independent things (key, velocity) are counted; the group is chosen by the instrument from its own pack at play time. Swapping sounds, finishing loading, trials and moving tracks never rebuild the sequence.
+  - A group spanning several keys (none in current packs) counts only earlier notes of its own key; neighbouring keys may hit the same sample.
+  - Keys played now go round by the per-group counter (`turns`) as before; song note-ons also advance it ("continue" for live play is unchanged).
+- **Pedal and release sounds** (the owner's decision: same rule)
+  - **Pedal**: `Instrument::song_pedal(value, place)`; only sequence CC64 arrives this way (default forwards to `event(Control 64)`). `Sequence::new` counts for each CC64 the earlier moves in the same direction (`SongPlace::pedal`), counting only when 64 is crossed (recorded pedals have runs like 100 → 127, which are not moves). The sampler picks the pedal round robin by `place.earlier_moves() % rrCount` (the grand piano has rrCount 2: alternating).
+  - **Release sounds**: decided by the note-on's place. On a song note-on, for each release group with round robin that fits the key and velocity, `place.earlier(velLo, velHi)` is counted once and kept per key (`release_turns`, up to 4 groups; more continue as live). The release sound, whether at once or after the pedal lifts, uses that count. Live notes clear it (continue as before). Current packs have no round-robin release groups (only the 4 pedal sounds have round robin); it is there for SFZ.
+  - **Chased pedal**: when starting mid-song, `Lane::seek` sends the chased pedal through `song_pedal` with `chased()`, and the sampler **only sets the pedal down without a sound**. Before, it sounded a pedal-down at the start. Playing from the head would not sound one there either (it sounded earlier), so silence matches. Starting inside a still-ringing pedal sound differs by that sound (like other old reverb).
+  - Live pedal (`event` CC64) and the pedal-up the lane sends on stop and loop wrap (`Lane::silence`) continue as before.
+- **Randomness**: lead and pad (`synth/poly.rs`) use `Rng::new(seed)` for wave starts of song notes (including voices that start later after stealing). The electro kit (`synth/kit.rs`) starts the voice's random state from the seed, so metal waves and kick, snare and clap noise are all decided by it. Live keys keep the per-instance, per-voice running randomness.
+- **What still differs**: starting where earlier notes still ring (pad releases, effect tails) differs by those sounds; voice stealing also depends on what is already sounding. "Same" is checked from a point where earlier sounds have died.
+- **Tests**: `transport::tests` in `meloet-engine` (700 note-ons on 2 keys: `earlier` equals a count from the head for any range; seeds stable; `a_pedal_move_knows_the_earlier_moves_the_same_way`); `meloet-sound/tests/song_places.rs` (hi-hat round robin; replaying from bar 3 gives the same samples; sample pack, lead, pad and electro kit in one engine played from the head twice and from bar 9 differ by no frame; pedal and release round robin by place, also starting with the pedal down; live pedal continues; allocations (0, 0)); `sampler_rt.rs`, `synth_voices.rs` allocation watches cover `song_note_on` and `song_pedal`; `what_is_exported_is_what_plays_sample_for_sample` in `service/export_tests.rs` (two plays with the same engine, waiting 2 s of silence in between, then export: no frame differs).
+- **Pedal at the loop border** (the owner's decision): when the loop wraps, a pedal the song holds down is released silently by `Lane::silence_at_loop` (`song_pedal(0, chased)`), since playing on the pedal would not move there. Release sounds of waiting notes do sound. `Lane::silence` on stop still sounds the pedal-up.
+
+### 22-26 Voice position after output losses, and output times (round 8, step 1)
+
+Measured numbers: `docs/history/measurements/2026-11-22-round8-step1-timing.md`.
+
+**1. When only the output drops cycles, the matching input frames are dropped** (option (a) of 22-21 (3))
+
+- Rule: the recorder's line (`Gaps` in `vocalrec.rs`) is no longer the input's own time but **the engine frame that was being heard when the block was sung**: for block start time `c`, `TransportClock::kept_frame_at(c − X)` (`X` from 22-5, often 0). The difference "file frame − engine frame" is kept constant.
+  - Input-only loss (more than half a block late): held as before, then fill the smallest lateness (22-21 (2)).
+  - Output-only loss (more than half a block early): drop the early amount of frames from the start of that block (the voice is cut there). No holding (times can be late but never early, so early means the output really dropped). More than a block carries into the next blocks.
+  - Both lose the same moment: still on the line, nothing done. "Same moment" means the output cycle n that should have played 2 blocks ahead and the input cycle n+3 that should have captured 1 block before — not the same cycle number. If both lose the same cycle number, those are two different moments: one fill and one drop (length unchanged).
+  - Fill and drop amounts within 1/8 block of a multiple of the block length are snapped to it (`snap`): cycles are lost whole, so time jitter (tens of µs) does not go into the file.
+  - When the clock has no record (engine has output nothing yet, or older than 512 segments: 0.68 s at 64), the old rule (input time) is used; at the next block the clock knows, the line is taken again there (no fill or drop at that point).
+- **Roll and lap marks use the same line**: "the file frame sung at engine frame E" is read from the written blocks' file ↔ engine frame pairs (median of 32 blocks in `heard_frames`). Before, marks came from input times; a mark answered before a later output drop stayed on the old line (once, 5 blocks off under a 40-track load).
+- Messages: `Written` gets `cut` (dropped frames) and `cut_count` (places; consecutive blocks count once). Protocol `RecordingFaults` keeps its shape; `gaps` = input losses + drop places ("times the recording moved to keep positions"). Shown on the status line since 23-7 (`RecordingGaps`). The dev `vocal-faults.log` includes dropped frames.
+- **Why**: the rule is "the position that was heard". At an output loss the person also heard a break, so cutting one block there is better than leaving the rest of the voice a block late (the lead's decision). Comparing engine frames also keeps device-clock drift (ppm) out.
+- Tests: `the_frames_of_the_file_stay_where_the_song_was_heard_whichever_side_misses_cycles` (`vocalrec/tests.rs`; a fake engine and input on one clock with all loss shapes), `the_clock_says_nothing_of_a_moment_it_no_longer_keeps` (engine `transport.rs`). Old `Gaps` tests still pass. Under load, `vocal_private` went from drifting hundreds to 10 000 frames per beat to 0 (except one beat whose click head fell on a cut). The pass line of `vocal_private` and `vocal_timing_private` now only counts single isolated clicks (under 1000 frames off with both neighbours right); a drifting tail still fails.
+
+**2. On real devices the PC-reported latency was one block too large** (the owner's step (b))
+
+- Cause: `InputBlock::first_frame_us` subtracted one block from cpal's `capture` for every input. That is only right for a sink monitor (where it was measured in round 7). For an ALSA source, PipeWire's `delay` is the source's `Latency` (1 quantum + 32 frames headroom; as a driver it adds no async cycle: PipeWire 1.6.2 `impl-port.c` `pw_impl_port_recalc_latency`), so `capture = now − delay` is already the time of the block's first frame. For a monitor, `delay` is 0 while the frames return one quantum late.
+  - Read on this PC at quantum 256 and 512: output 2 quanta, input 1 quantum + 32 frames, monitor 0 (same as `pw-dump` port `Latency`). After the fix the reported values are 16.7/32.7 ms; the owner's measured 19/35 ms give `X` = +2.3 ms at both quanta.
+- Fix: `InputBlock` has `sink_monitor` (`InputMeters::set_sink_monitor` from `InputTarget::sink_monitor` at open). One block is subtracted only for a monitor (`crates/meloet-engine/src/input.rs`). The reported latency (`delays` in `service/input.rs`) also adds a block only for a monitor.
+- Stored `X`: values measured with the old formula are off by one block on real inputs. The `settings.json` field is now `measured_latency_2`; old values are not read ("not measured yet"). Quantum is still not in the key (the formula is right now).
+- Key (MIDI) positions use only output times and do not change.
+
+**3. A key → DAC of 10.4 ms in two runs** (end of round 7): not reproduced. Guess (reasoning, C): those runs were exactly 1 quantum for all 120 keys, which matches cpal 0.18.2's fallback when `pw_stream_get_time_n` gives nothing (`callback` = now, `playback = callback + frames ÷ rate`); it returns −EIO unless the stream is STREAMING. Not fixed (inside cpal; meloet cannot see the state).
 
 ---
 
-## 23. 第 8 回で決めたこと（仕上げと配る形）
+## 23. Finishing and shipping (round 8): sound pack download, development hooks, audio thread priority, memory, the WebKit CPU path
 
-調べ物は `docs/research/` の `distribution-formats.md`、`webkitgtk-2404-2604.md`、`sound-pack-download.md`、`dev-hooks-release.md`（2026-11-22）。デザインは第 12 版（43-B ・ 44-A ・ 45-A）。
+Research: `docs/history/research/distribution-formats.md`, `webkitgtk-2404-2604.md`, `sound-pack-download.md`, `dev-hooks-release.md`. Design: spec edition 12 (43-B, 44-A, 45-A).
 
-### 23-1. 音の素材の包みの形（19-1 ・ 19-8 を変える）
+### 23-1. The form of the sound pack (changes 19-1 and 19-8)
 
-- **音色ごとのファイル**にする（45-A「取れた音色から鳴る」と、新しい包みで変わった音色だけ取りなおすため）。1 つの音色 = 1 つの tar（`<音色>-<音色の版>.tar`。中は今の `grand-piano/instrument.json` と `samples/*.flac`。FLAC はもう縮んでいるので tar は縮めない）。帰属表示とライセンスの文（`credits.json`、`licenses/`）は小さな共通の tar `common-<版>.tar` に。
-- **目録** `catalog.json`（版つきの JSON、`"format": "meloet-sounds-catalog", "version": 1`）: 包みの版（`2026.12.0` など）、音色ごとに `{id, version, file, url, bytes, sha256, credits}`、共通の tar の同じ欄。音色の版は、その音色の中身（instrument.json とサンプル）の sha256 から作る（中身が同じなら版も同じ。包みを作りなおしても、変わらない音色は取りなおさない）。
-- **署名**: v0.x の間は**つけない**（オーナーさんの決め 2026-11-22）。そのかわり、目録に書いてよい取る先は `https://github.com/wintermaples/meloet/releases/download/` の下だけにしぼり、ほかの URL がある目録は使わない。守れる物: TLS（相手は GitHub）、目録の sha256（とちゅうの欠け ・ 化け）、immutable releases（上げた添付は書きかえられない）、はじめの目録は実行ファイルの中（最初の 240 MB は正しい）。守れない物: アカウントやトークンを乗っとられて `main` の目録を書きかえられた時（取らされるのは音のファイルだけで、プログラムは動かない）。目録をたしかめる所を 1 か所にまとめ、あとで minisign の署名（`minisign-verify`、MIT）を足せる形にしておく。
-- **置き場所**: `$XDG_DATA_HOME/meloet/sounds/<音色>/<音色の版>/`（ないときは `~/.local/share`）。目録の写しは `$XDG_DATA_HOME/meloet/sounds/catalog.json`。**理由**: 取りなおせるが 240 MB で重く、ネットがない所では取れない。`~/.cache` は掃除の道具が消す前提（調べ物 A）。歌のファイルの写し（`audiofiles/`）は「消えても作りなおせる」ので `XDG_CACHE_HOME` のまま。
-- さがす順（19-1 を変える）: `MELOET_SOUNDS_DIR`（開発と試験だけ。23-4）→ 開発のビルドの `target/*/sounds` → `$XDG_DATA_HOME/meloet/sounds/`。音色ごとに、目録の版のフォルダがあれば使う。前の形（`~/.cache/meloet/sounds/<包みの版>/`）は、この PC の開発のための物なので読まない。
-- **作りかた**: `tools/sounds/build.py` は今のまま 1 つのフォルダを作り、新しい `tools/sounds/split.py`（仮の名前）が音色ごとの tar と目録を作り、署名する。Release は 1 つの包みの版ごとに 1 つ（タグ `sounds-<包みの版>`、immutable にする）。前の Release に同じ版の音色があれば、その URL を目録に書き、同じファイルを上げなおさない。上げる前にオーナーさんに聞く（いつもの決まり）。
-- **はじめの目録**は、ビルドのときに実行ファイルに入れる（今の `tools/sounds/pack.json` と同じ役目）。はじめての取りにいくのに、ネットの目録を待たない。
+- **One file per sound** (so 45-A "sounds play as they arrive" works, and a new pack only refetches the sounds that changed). One sound = one tar, `<id>-<version>.tar`, holding `instrument.json` and `samples/*.flac` at the top (no folder above). FLAC is already compressed, so the tar is not. Credits and license texts (`credits.json`, `licenses/<id>/…`) are in a small shared `common-<version>.tar`.
+- **Catalog** `catalog.json` (versioned JSON): `{"format": "meloet-sounds-catalog", "version": 1, "pack": "2026.12.0", "common": {id, version, file, url, bytes, sha256}, "instruments": [{…, "credits": […]}]}`. `id` is the sound name used in song files (`grandPiano`). A sound's version is the first 16 hex digits of a sha256 over its files' paths and sha256s, so the same content gives the same version and rebuilding the pack does not refetch unchanged sounds.
+- **No signature during v0.x** (the owner's decision). Instead, a catalog may only point under `https://github.com/wintermaples/meloet/releases/download/` (`RELEASES` in `crates/meloet-core/src/sounds/catalog.rs`); a catalog with any other URL is not used. What this protects: TLS (the other end is GitHub), the catalog's sha256 (broken or changed bytes on the way), immutable releases (uploaded files cannot be replaced), and the built-in catalog (the first 240 MB are right). What it does not: someone who takes over the account or a token and rewrites the catalog on `main` (they can only make meloet fetch sound files; no program runs). Catalog checking is in one place (`check` in `catalog.rs`) so a minisign signature (`minisign-verify`, MIT) can be added there later.
+- **Where**: `$XDG_DATA_HOME/meloet/sounds/<id>/<version>/` (`~/.local/share` if unset; `XDG_DATA_HOME` is used only if absolute). The kept catalog is `…/sounds/catalog.json`. Reason: it can be fetched again but is 240 MB and cannot be fetched offline, and `~/.cache` is expected to be cleaned by tools. Copies of audio files (`audiofiles/`) can be rebuilt, so they stay in `XDG_CACHE_HOME`.
+- **Search order** (changes 19-1): see 23-9.
+- **Building**: `tools/sounds/build.py` makes one folder as before; `tools/sounds/split.py` makes the per-sound tars and the catalog (23-9). One GitHub Release per pack version (tag `sounds-<pack version>`, immutable). If an earlier Release has the same version of a sound, the catalog uses its URL and the file is not uploaded again. Ask the owner before uploading.
+- **The built-in catalog** is put into the executable at build time (`include_str!` of `tools/sounds/catalog.json`), so the first fetch does not wait for the catalog on the net.
 
-### 23-2. 取りにいく係（43-B ・ 44-A ・ 45-A）
+### 23-2. The fetcher (43-B, 44-A, 45-A)
 
-- core の中の 1 本のスレッド（`meloet-core/src/sounds/fetch.rs` など）。音のスレッドから遠い。HTTP は `ureq` 3（MIT OR Apache-2.0、blocking）、TLS は rustls ＋ ring、証明書は PC の物（`rustls-platform-verifier`）、読めなければ `webpki-roots`。`https_only`、リダイレクトは 10 回まで、User-Agent は `meloet/<版>` だけ（OS も名前も送らない）。プロキシは環境変数（`HTTPS_PROXY` ・ `NO_PROXY`）。
-- **答えるまでは取らない**（43-B）。答えは設定（PC につく）に残す。「あとで」は、次の起動でまた聞く（文と形は第 12 版のとおり）。
-- **順**: 45-A のとおりグランドピアノ、スタジオキットが先。そのあとは design-notes の B-95-1（Y2 の急ぐ順のうち包みにある物、そのあと棚の並び）。1 つずつ取る（並べて取らない。グランドピアノが早く届くため）。
-- **続きから**: `<file>.part` に書き、とちゅうで切れたら `Range` で続きを頼む。206 なら足す、200 ならはじめから。403 ・ 410（期限つきの URL が切れた）は、目録の URL からたどりなおす。**仕上げにかならず大きさと sha256 をたしかめ**、合わなければ消して 1 回だけだまって取りなおす。2 回めも合わなければ「こわれていた」（6 章の文）。`If-Range` には頼らない。
-- **置く**: たしかめたら、同じファイルシステムの中の作業のフォルダにほどき、`rename` で `<音色>/<版>/` に入れる（こわれない書きかた。14 章と同じ考え）。
-- **空き**: 取りはじめる前に、残りの大きさ ＋ 64 MB を `statvfs`（`rustix`、もう Cargo.lock にある）の `f_bavail × f_frsize` とくらべる。足りなければ取らずに「ディスクがいっぱい」。書いている間に `ENOSPC` が来ても同じ。
-- **取れた音色から鳴る**: 置いたら core が読みこみ（今の `play/sounds.rs` の「読めたら、その音色の席をぜんぶ作りなおす」流れ）、席を入れかえる。エンジンの入れかえは 10 ms 重ねる決まりのまま。**取る前の席は「サイン波で代わり」**（3 章「取れるまで鳴らす音」。新しい曲の 1 本目は、取る前からグランドピアノの名前で、音はサイン波）。曲のファイルには本当の音色の名前を書く。
-- **やめる**: いま取っているファイルは `.part` のまま残し、次は続きから。
-- **ネットにつなぐ所はここだけ**。画面（WebView）は CSP の `connect-src` で外に出られない（今のまま）。区切り4 で、起動から終わりまで、ほかの所から外に出ていかないことを見る。
+- One thread in the core (`crates/meloet-core/src/sounds/fetch.rs`), far from the audio thread. HTTP is `ureq` 3 (MIT OR Apache-2.0, blocking), TLS is rustls + ring, certificates from the PC (`rustls-platform-verifier`), falling back to `webpki-roots`. `https_only`, up to 10 redirects, User-Agent only `meloet/<version>` (no OS, no name). Proxies from environment variables.
+- **Nothing is fetched until the user answers** (43-B). The answer is kept in settings (per PC). 「あとで」 asks again at the next start.
+- **Order**: as 45-A, grand piano and studio kit first, then B-95-1 of `docs/history/design-notes.ja.md`. One at a time (not in parallel, so the grand piano arrives sooner).
+- **Resume**: write to `<file>.part`; after a cut, ask for the rest with `Range`. **Always check size and sha256 at the end**; on a mismatch, delete and silently fetch once more; a second mismatch is "broken" (chapter 6 text). `If-Range` is not relied on. Details in 23-9.
+- **Placing**: after the check, unpack into a work folder on the same file system and `rename` into `<id>/<version>/` (safe write, same idea as chapter 14).
+- **Free space**: checked with `statvfs` before starting (rustix, already in Cargo.lock), and `ENOSPC` while writing means the same "disk full". The exact amount is in 23-9.
+- **Sounds play as they arrive**: once placed, the core loads it (the existing "when it loads, rebuild every seat with that sound" flow in `play/sounds.rs`) and swaps the seats; engine swaps still overlap 10 ms. **Seats before that use the sine stand-in** (chapter 3, 「取れるまで鳴らす音」). The song file holds the real sound name.
+- **Stop**: the file being fetched stays as `.part` and the next fetch resumes.
+- **This is the only place that goes on the net.** The page (WebView) cannot go out because of CSP `connect-src`.
 
-### 23-3. 起動のときの確かめ
+### 23-3. The check at start
 
-- 新しい包みがあるかは、**起動を止めずに**（画面のあいさつのあと、取りにいく係のスレッドで）、**目録を 1 つ取るだけ**（`GET` 1 回 ＋ 署名 1 回。名前も何も送らない。User-Agent は `meloet/<版>`）。
-- **回数は 24 時間に 1 回まで**。見にいった時刻を状態の場所（`MELOET_STATE_DIR` のふだんの場所）に書き、24 時間たつまで見にいかない。**理由**: 包みは月に 1 回も変わらない。多く見にいくと、GitHub に IP が残る回数がふえるだけ。Sparkle（macOS の更新のしくみ）の既定も 1 日（調べ物 A）。
-- **ネットがなければ、だまっている**（知らせも、記録の文も出さない。次の起動でまた 24 時間の決まりで）。
-- 音の素材を 1 つも取っていない人（「あとで」の人）には見にいかない（取りにいくかの問いが先）。
-- 目録の置き場所（ネットの物）は、Release とは別の、変わらない URL がいる（Release は版ごとに immutable なので）。仮に `https://raw.githubusercontent.com/wintermaples/meloet/main/tools/sounds/catalog.json`（と `.minisig`）。`main` に置くので、配る前に `foundation` を `main` へ入れる時期とつながる（0-4 で聞く）。（棟梁の決め 2026-11-22: 組みこむ目録と同じファイル。新しい包みを出す時は、`main` のこのファイルを書きかえると、前の版の meloet が見つける）
+- Whether there is a new pack is checked **without holding up start** (after the screen's greeting, on the fetcher thread) by **fetching one catalog** (one `GET`; nothing about the user is sent).
+- **At most once per 24 hours.** The time of the last check is written in the normal state folder, and no check is made until 24 hours have passed. Reason: the pack changes less than once a month; checking more only leaves more IP logs at GitHub. Sparkle (macOS updates) also defaults to one day.
+- **Offline, it says nothing** (no notice, no log line; next start follows the 24-hour rule).
+- No check for people who have no sounds yet (people who said 「あとで」); the question comes first.
+- The catalog on the net needs a fixed URL outside Releases (Releases are immutable per version): `https://raw.githubusercontent.com/wintermaples/meloet/main/tools/sounds/catalog.json` (`ONLINE` in `catalog.rs`). It is the same file as the built-in catalog; to ship a new pack, rewrite this file on `main` and older meloet versions find it. There is no `.minisig` (23-1). Details in 23-9.
 
-### 23-4. release と開発のビルドのちがい
+### 23-4. Release builds versus development builds
 
-- Rust: feature **`dev-hooks`**（`meloet-app` の feature。`meloet-core/dev-hooks` などへ流す。`default` に入れない）。`#[cfg(feature = "dev-hooks")]` の属性で、モジュールごと、命令ごと（`generate_handler!` の項目にも）外す。`cfg!(…)` のマクロは使わない（文字が残る）。`cfg(debug_assertions)` も使わない（release で測れなくなる）。外す物: `devhooks.rs` のぜんぶ（`MELOET_PIPE` ・ `MELOET_OPEN_SONG` ・ `MELOET_UI_SCRIPT` など）、`measure_*` ・ `ui_script` の命令、`MELOET_DEBUG_SCREEN`、`MELOET_MEASURE_DIR`、試験用の鍵盤の設定（`MELOET_ACCEPT_VIRTUAL` など）、plughost の試験の仕込み（`MELOET_PLUGHOST_FAKE` など）、置き場所の差しかえ（`MELOET_STATE_DIR` ・ `MELOET_SOUNDS_DIR` など）。試験は crate の中の試験（`cfg(test)`）か、`--features dev-hooks` で回す。
-- 画面: `define` の `__DEV_HOOKS__`（`MELOET_DEV_HOOKS=1` のときだけ true）の `if` の中でだけ `ui/src/dev/` の入口を読む。塊が落ちなければ、本番では `resolve.alias` で空の入口に差しかえる（作って `ui/dist` で見て決める）。
-- 測る道具（`tools/measure/`）は `--features dev-hooks` と `MELOET_DEV_HOOKS=1` で作る。
-- **見はりの試験**（`scripts/check-release.sh`、区切り4 で作る）: feature なしの `cargo build --release -p meloet-app` の実行ファイルに `strings` をかけ、仕込みの名前の一覧が 1 つも出ないこと。画面は本番の `ui/dist` を grep。実行ファイルに入った画面は `generate_context!().assets()` を戻して見る。逆に、feature ありでは名前が出ること（試験が空ぶりしていない印）。配るビルドは `-p meloet-app` を 1 つだけ指す（`--workspace` だと feature が和になって入る）。
+- Rust: feature **`dev-hooks`** on `meloet-app`, passed on to `meloet-core/dev-hooks` and others, not in `default`. Hooks are removed with `#[cfg(feature = "dev-hooks")]` attributes on modules, items and statements (also on `generate_handler!` entries). `cfg!(…)` is not used (its strings stay in the binary); `cfg(debug_assertions)` is not used (release could not be measured). The full list is in 23-11.
+- Screen: the `__DEV_HOOKS__` `define` (true only with `MELOET_DEV_HOOKS=1`); `ui/src/dev/` is loaded only inside `if (__DEV_HOOKS__)`. (The planned `resolve.alias` fallback was not needed, 23-11.)
+- Measuring tools (`tools/measure/`) are built with `--features dev-hooks` and `MELOET_DEV_HOOKS=1` (`tools/measure/build-dev.sh`).
+- **Guard test** `scripts/check-release.sh` (23-11). A shipping build names `-p meloet-app` alone (`--workspace` would unite features and pull hooks in).
 
-### 23-5. 配る形と版の名前
+### 23-5. Package form and version names
 
-- **形**: deb を主力にする案（オーナーさんに聞く。0-4）。Ubuntu 24.04 の上（コンテナ）で作り、24.04 と 26.04 の両方に入る `Depends` を自分で書く（`libwebkit2gtk-4.1-0, libasound2t64 | libasound2, libpipewire-0.3-0t64 | libpipewire-0.3-0, libstdc++6`、`Recommends: pipewire, wireplumber`）。`meloet-plughost` は `/usr/bin/` の本体のとなり（`bundle.externalBin`）。見つけかたは `current_exe()` のとなり（`launch::spawn` のまま）。`LICENSE-MIT` ・ `LICENSE-APACHE` ・ `NOTICE` は `/usr/share/doc/meloet/`。AppImage は作らない（ホストの Mesa ・ NVIDIA とずれて落ちる事故。調べ物 A）。Flatpak は作らない（ホストのプラグインが見えない）。
-- **版の名前**: はじめて配る版は `0.1.0`（いまの `Cargo.toml` のまま）。「meloet について」はその数（いまも `0.1.0` が出る。出どころはライセンスの一覧を作る道具。区切り4 で `Cargo.toml` の版とそろうことを試験で見る）。曲のファイルの版 ・ 約束の版とは別の数。包みの版（`2026.12.0` など）は日付の形のまま、別の数。
-- **WebKitGTK**: 24.04 にも 2.52.6 が届いているので、頼っている決まり（描きなおし、GC、WebGL の 16）はソースの上では同じ（調べ物 A）。ただし、この PC の WebKitGTK は 2026-11-21 に `.1` → `.2` に上がり、NVIDIA で描く道が変わったかもしれない（推論）。区切り2 の前に、この PC で見なおす（`webkit-damage.sh`）。
+- **Form: deb** (the owner's decision). Built on Ubuntu 24.04 (in a container, `packaging/Dockerfile`, `scripts/build-deb.sh`) with hand-written dependencies that work on both 24.04 and 26.04. The current list is in `crates/meloet-app/tauri.conf.json` (`bundle.linux.deb.depends`: `libc6 (>= 2.39)`, `libasound2t64 | libasound2`, `libpipewire-0.3-0t64 | libpipewire-0.3-0`, `liblilv-0-0`, `libdbus-1-3`, `libxcb1`, `libstdc++6`; `recommends: pipewire, wireplumber`), which replaces the first plan. `meloet-plughost` goes next to the main binary in `/usr/bin/` (`bundle.externalBin`, passed by `build-deb.sh`) and is found next to `current_exe()` (`launch::spawn`). `LICENSE-MIT`, `LICENSE-APACHE` and `NOTICE` go to `/usr/share/doc/meloet/`.
+  - No AppImage (it breaks when the host's Mesa / NVIDIA differ). No Flatpak (host plugins are not visible).
+- **Version**: the first shipped version is `0.1.0` (as in `Cargo.toml`), shown in 「meloet について」. It is a different number from the song file version and the protocol version. The pack version (`2026.12.0` …) is date-shaped and separate again.
+- **WebKitGTK**: 24.04 also has 2.52.6, so the behaviour meloet relies on (redraw, GC, the WebGL limit of 16) is the same in source. The WebKitGTK on this PC went from `.1` to `.2` on 2026-11-21, which changed the drawing path (see chapter 7 and 23-13).
 
-### 23-6. 棟梁が決めた所（理由つき、まとめ）
+### 23-6. Decisions with reasons (summary)
 
-- 署名は v0.x ではつけない: 上の 23-1（オーナーさんの決め）。取る先の URL をしぼる。
-- 24 時間に 1 回: 上の 23-3。
-- 置き場所を DATA に: 上の 23-1。
-- ureq: tokio を持ちこまない。1 本のスレッドで足りる。reqwest は 0.13 の既定が aws-lc（C の部品が多い）。
-- 1 つずつ取る: 45-A（グランドピアノを先に鳴らす）を守るいちばん単純な形。並べても回線の太さは同じ。
+- No signature in v0.x; the fetch URLs are limited instead (23-1, the owner's decision).
+- Once per 24 hours (23-3).
+- Sounds in DATA, not cache (23-1).
+- `ureq`: no tokio; one thread is enough. `reqwest` 0.13 defaults to aws-lc (many C parts).
+- One file at a time: the simplest form that keeps 45-A (grand piano first). Parallel fetches do not make the line faster.
 
-### 23-7 約束 27 の形（区切り2 ・ 3 の 1 回目、2026-11-22、meloet-hard）
+### 23-7 Protocol 27: the shape
 
-形と TS の型と偽物の場面だけを置いた回。core はいまの動きのまま新しい形を埋めただけ（音の素材は「ぜんぶある」、新しい意図は受けて何もしない）。2 回目で core と画面を作る。
+This step only added the shapes, TS types and fake scenes; 23-8 and 23-9 made the core do it.
 
-**1. 歌のクリップを 2 つ以上えらんだとき（39-B ・ 40-A）**
+**1. Two or more audio clips chosen (39-B, 40-A)**
 
-- 見方: `ParamsView::clips: Option<SelectedClips>`（`crates/meloet-protocol/src/audio.rs`）。`Some` は、選んだクリップが 2 つ以上で、**ぜんぶ**歌のクリップのとき（鍵盤のクリップがまざれば `None`）。そのとき `selected` は `None`。インサートや音源をえらぶと、`selected` と同じく欄をゆずり、クリップをえらびなおすと戻る。
-  - `SelectedClips { clips, tracks, gain_db, follow, semitones, cents, keep_formant }`。`clips` は `ArrangeView::selected_clips` の順、`tracks` はそのトラックの id（1 回ずつ、トラックの順。「6 歌 ・ 7 歌 2」）。値は、ぜんぶ同じならその値、ちがえば `None`（欄は「—」）。
-  - **`SelectedParams` の腕にしなかった理由**: 腕をふやすと、いまの画面の部品（`RightRail.svelte` の `selected.kind` の分かれ）が型で落ちる。1 回目は画面の部品をさわらない決まりなので、となりの欄にした。
-- 意図（どれも 1 手。`StepName` はいまの `SetClipGain` ・ `SetClipFollow` ・ `SetClipPitch`、`StepWhat::Clips { count }`）:
-  - `ShiftClipGains { clips, by_db }`: 音量の線のドラッグを離したとき。ぜんぶが同じ dB だけ動き、それぞれ −60〜+12 で止まる。0 ・ 数でない値 ・ 歌のクリップが 1 つもないときは何もしない。
-  - `SetClipGains { clips, db }`: 「まとめて変える」の「音量」に打った値を、ぜんぶに。
-  - `SetClipsStretch { clips, change: StretchChange }`: 「ついていく」「音の高さ」（半音とセントは別々）「声の感じを保つ」。`SourceBpm` は何もしない。もうその値のクリップはそのまま、ぜんぶそうなら手にならない。
-  - ドラッグ中は画面だけが動き、離して 1 つ送る（いつもの決まり）。1 つだけのクリップは、いままでどおり `SetClipField` ・ `SetClipStretch`。
-- モックの状態行「選択 3 クリップ ・ 欄の「音量」に打つと、3 つともその音量になります」（F8-MultiClip）は、画面が `params.clips` から作る（約束に知らせを足していない）。
+- `ParamsView::clips: Option<SelectedClips>` (`crates/meloet-protocol/src/audio.rs`). `Some` when two or more clips are chosen and **all** are audio clips (a keyboard clip in the mix gives `None`); then `selected` is `None`. Choosing an insert or instrument takes over the panel as with `selected`, and choosing clips again brings it back.
+  - `SelectedClips { clips, tracks, gain_db, follow, semitones, cents, keep_formant }`. `clips` in the order of `ArrangeView::selected_clips`; `tracks` are their track ids (once each, in track order: 「6 歌 ・ 7 歌 2」). Each value is the shared value, or `None` if they differ (the panel shows 「—」).
+  - Not a new arm of `SelectedParams`: that would break the screen's type checks (`selected.kind` in `RightRail.svelte`), and this step did not touch screen parts.
+- Intents (each one step; step names `SetClipGain` / `SetClipFollow` / `SetClipPitch`, `StepWhat::Clips { count }`):
+  - `ShiftClipGains { clips, by_db }`: on release of a gain-line drag; all move by the same dB, each stopped at −60…+12. 0, a non-number, or no audio clips: nothing.
+  - `SetClipGains { clips, db }`: the value typed in 「まとめて変える」's 「音量」, for all.
+  - `SetClipsStretch { clips, change: StretchChange }`: 「ついていく」, 「音の高さ」 (semitones and cents apart), 「声の感じを保つ」. `SourceBpm` does nothing. Clips already at the value stay; if all are, no step.
+  - Drags move only the screen and send one intent on release. A single clip still uses `SetClipField` / `SetClipStretch`.
+- The mock status line for F8-MultiClip is made by the screen from `params.clips` (no new notice).
 
-**2. 書き出す前のたしかめ（41-A ・ 42-C）**
+**2. The check before export (41-A, 42-C)**
 
-- `ExportCheck::Counting` と `Done` に `over: u32`: いままでに書いた所で 0 dB をこえた所の数（数えかたは design-notes B-95-2: こえたこまの並びが 1 か所、こえない所が 100 ms つづいたら次）。こえた所のいちばん大きい所は `peak_db`（こえた所があれば、いちばん大きい所はその中にある）。`over` はビットによらず数える。`clips`（いまの形で割れるか）は前のまま: 32 ビットでは `over` が 1 以上でも `false`。
-  - 「用意をしています」は前からの `Waiting`。「たしかめています 38 %」と「ここまでのいちばん大きい所」は `Counting`。
-  - いまの core は数えていない: `over` は「いちばん大きい所が 0 dB をこえたら 1」（`crates/meloet-core/src/export.rs` の `check`）。2 回目で書き出しのエンジンが数える。
-- `ExportDialogView::solo: Option<ExportSolo { first: TrackRef, others }>`: いまソロのトラック（トラックの順で最初の 1 本と、ほかの本数）。「いま 2 ベース をソロにしています。…」「2 ベース ほか 1 本」。ソロは書き出しに入れない（いままでどおり）。いまの core は `None`（2 回目で `Scene` から埋める）。
-- 状態行の「 ・ たしかめています 38 %」「 ・ 0 dB をこえる所があります」（F8-ExportCheck ・ F8-ExportClip）は、画面が `ExportDialogOpen` と `export.dialog.check` から作る。
+- `ExportCheck::Counting` and `Done` carry `over: u32`: the number of places so far above 0 dB (counted as B-95-2: a run of frames over is one place; after 100 ms not over, the next one is a new place). `peak_db` is the highest point (inside an over place if there is one). `over` is counted for every bit depth. `clips` (whether the chosen format will clip) is as before: `false` for 32-bit even with `over` ≥ 1.
+  - 「用意をしています」 is the existing `Waiting`; 「たしかめています 38 %」 and the peak so far are `Counting`.
+- `ExportDialogView::solo: Option<ExportSolo { first: TrackRef, others }>`: the soloed tracks (first in track order and how many others), for 「いま 2 ベース をソロにしています。…」. Solo is not applied to exports (as before).
+- The status line parts 「 ・ たしかめています 38 %」 and 「 ・ 0 dB をこえる所があります」 (F8-ExportCheck, F8-ExportClip) are made by the screen from `ExportDialogOpen` and `export.dialog.check`.
 
-**3. core から出す知らせ（6 章 第 12 版）**（`StatusMessage`。文は `ui/src/text/ja.ts` の「[第 8 回 ・ core から出す知らせと音の素材]」の下、文にするのは `StatusLine.svelte` の `message`）
+**3. Notices from the core (chapter 6, edition 12)** (`StatusMessage`; texts in `ui/src/text/ja.ts`, made into text by `message` in `StatusLine.svelte`): `InputLost { input, device }`, `RecordingGaps { count }`, `AudioFound { file, clips }`, `AudioFoundMismatch`, `AudioBroken { file }` / `AudioTooManyChannels { file }` (instead of `AudioUnreadable`), `SavingAudio { done, total, done_bytes, total_bytes }`, `DiskTooSlow`, and `same` on `SourceTempoFound`. When each is sent: 23-8.
 
-| 意図の名前 | 6 章の場面 | 出すとき（2 回目の core） |
-|---|---|---|
-| `InputLost { input, device }` | 入口が抜けた | 歌を録っている間に入口が消え、録音を止めたとき。`input` は録っていた最初の歌のトラックのチャンネル |
-| `RecordingGaps { count }` | 録っている間に音がとぎれた | 録音を止めたとき、`RecordingFaults` の `gaps + dropped` が 1 以上 |
-| `AudioFound { file, clips }` | さがして見つけた | `FindAudio` で写せたとき |
-| `AudioFoundMismatch` | さがしたファイルが合わない | `FindAudio` でサンプルレートかチャンネルの数がちがうとき（写さない） |
-| `AudioBroken { file }` ・ `AudioTooManyChannels { file }` | こわれたファイル ・ 3 チャンネル以上 | 入れたファイルが、その理由で読めないとき（`AudioUnreadable` のかわり） |
-| `SavingAudio { done, total, done_bytes, total_bytes }` | 保存で音を写している | 保存が音のファイルを曲のフォルダへ写している間。1 秒に 4 回まで |
-| `DiskTooSlow` | ディスクが間に合わない | 歌の先読みが間に合わず音が切れたとき。止めるまで 1 回だけ |
-| `SourceTempoFound { …, same }` ・ `SourceTempoNotFound` | この音のテンポをさがした | 前のまま。`same`: もうその数だった（いまの core は `EditError::Unchanged` で埋めた） |
+- 「遅れを測れない ・ ばらつき」 and 「… ・ 入口がない」 are dialog texts on the existing `LatencyFailure::Unsteady` / `NoInput` (`latency.failedUnsteady`, `latency.failedNoInput`).
+- `msg.sourceTempoFound` is joined with `msg.sourceTempoSet` or `msg.sourceTempoSame`, because chapter 6 writes the first half of the "same" text as 「…」.
 
-- 「遅れを測れない ・ ばらつき」「… ・ 入口がない」はダイアログの文で、約束は前からの `LatencyFailure::Unsteady` ・ `NoInput`。文は `latency.failedUnsteady` ・ `latency.failedNoInput`（ボタンは `button.again` と `button.audioSettingsEllipsis`）。`LatencyDialog.svelte` はまだ前の文（`NoInput` に「入口がない」の状態行の文）を出している。画面の係が直す。
-- この節の文は `msg.sourceTempoFound`（「この音のテンポは 120.00 くらいです」）に `msg.sourceTempoSet` か `msg.sourceTempoSame` をつなぐ形にした（6 章の「同じ数なら「…くらいです（いまの数と同じです）。」」が、はじめの半分を「…」で書いているため）。
+**4. Sound pack (43-B, 44-A, 45-A, 23-1 to 23-3)** (`crates/meloet-protocol/src/pack.rs`)
 
-**4. 音の素材（43-B ・ 44-A ・ 45-A、23-1〜23-3）**（`crates/meloet-protocol/src/pack.rs`）
-
-- 区画を 1 つ足した: `AppState::sounds`（`Change::Sounds`）= `SoundsView`。**理由**: 取っている間の数は 1 秒に何回も変わる。`shelf` や `workspace` に入れると、そのたびに棚や帯を送りなおすことになる（`audioWork` ・ `export` と同じ考え）。core は 1 秒に 4 回まで送る。
+- A new part `AppState::sounds` (`Change::Sounds`) = `SoundsView`. Reason: the numbers change many times a second while fetching; inside `shelf` or `workspace` they would resend the shelf or bands each time (same idea as `audioWork` and `export`). The core sends it at most 4 times a second.
 - `SoundsView`:
-  - `ask`: 帯が「音の素材（約 240 MB）を取りにいきます」と聞く。なにか足りなくて、まだ答えていない（はじめての起動と、「あとで」のあとの起動ごと）。答えたら `false`。**流れ 1〜4 の案内**（鍵盤がない、出口がまだ、音が出た、など）が出ている間は、画面が待たせる（画面は `keyboards` ・ `outputs` ・ `workspace.chooser` ・ `workspace.hint` でもう決められるので、約束には足していない）。
-  - `fetch: PackFetchView` = `Idle` ・ `Fetching { instrument, done_bytes, total_bytes, remaining_s }` ・ `Failed { failure, done_bytes, total_bytes }`。% は `done_bytes / total_bytes`。`instrument` はいま取っている音色（棚の「取ってきています」の行。共通の小さなファイルのときは `None`）。`done_bytes` は前の回に取った分と `.part` を入れた、ディスクにある分。`remaining_s` は見こみが立つまで `None`（「のこり 約 2 分」を出さない）。帯（44-A）は `Idle` でなければ出す。流れの案内が出ている間は状態行（44-B の形）に移る（画面が決める）。
-  - `PackFailure` = `Offline` ・ `CutOff` ・ `DiskFull { needed_bytes, free_bytes }`（「あと」は差）・ `Corrupt`（1 回だまって取りなおしたあと）。
-  - `have` / `total`: 自分の音で鳴る棚の音色の数（計算で作る 5 つも数える）と、ぜんぶ（31）。くわしい設定の行「ぜんぶあります ・ 240 MB」（`have == total`）か「まだ 12 / 31」。
-  - `pack_bytes`（「約 240 MB」）、`new_pack_bytes`（起動のときの確かめで見つけた新しい包みの、取る大きさ。取ったら `None`）、`place`（置き場所を見せる字。くわしい設定の行と「meloet について」の「音の素材」の見出し）。
-- `ShelfView::not_yet: Vec<InstrumentKind>`: まだ取っていない音色（棚の順）。`available` には入れない。棚は両方を棚の順にならべ、`not_yet` の行は名前 gray.8 と「まだ」（`fetch.instrument` なら「取ってきています」）、星 ・ ▶ ・ ためし弾きなし。包みがそろえば空。
-- トラックが「サイン波で代わり」で鳴っていることは、前からの `StandIn::PackMissing`。まだ取っていないのか、こわれているのかは `sounds` で分かる（`StandIn` に腕を足さなかったのは、`sounds.ts` の `standInTip` の `switch` が型で落ちるため。乗ったときの文を分けるかは画面の係と棟梁が決める）。
-- 意図（どれも手ではない）: `FetchPack`（「取りにいく」「もう一度」「続きから」、新しい包みの「取りにいく」、くわしい設定と棚の知らせの「取りにいく」。答えを設定に残す。取っている間 ・ 取る物がないときは何もしない）・ `PackLater`（帯の「あとで」。聞いているときと、うまくいかなかったあと。`ask` を `false`、`fetch` を `Idle`。次の起動でまた聞く）・ `StopPackFetch`（「やめる」。来た分は残し、次の `FetchPack` は続きから）。
-- 知らせ（`StatusMessage`）: `PackAsking`（モック F8-PackAsk「音の素材がまだありません ・ いまはサイン波で鳴ります」。`ask` の間）・ `SoundReady { instrument }`（3 章 45-A「グランドピアノ が鳴るようになりました ・ のこりの音色を取っています」。まだ残りがあるとき）・ `PackFetched { count }`（最後のファイルが来たとき）・ `PackFailed { failure, done_bytes, total_bytes }`（`fetch` が `Failed` になったとき。ボタンは「もう一度」、`CutOff` は「続きから」。どちらも `FetchPack`）・ `NewPack { bytes }`（起動の確かめで見つけたとき 1 回。「取りにいく」）。
-- 画面のための文（ja.ts の同じ所）: 案内の帯の 2 行は 6 章の文を分けた `pack.fetching` ・ `pack.fetchingBytes` ・ `pack.fetchingLeft`、聞く帯 `pack.ask` ・ `pack.askDetail`（853 の窓 `pack.askDetailShort`）、うまくいかなかった帯 `pack.failedTitle` ・ `pack.failedOfflineDetail`（モックはつながっていない形だけ）、棚 `shelf.packFetching` ・ `shelf.packNotYet`、くわしい設定 `settings.packRow` ・ `settings.packAll` ・ `settings.packNotYet`、ボタン `button.fetchPack` ・ `button.resumeFetch` ・ `button.packLater`（「もう一度」「やめる」は前からの `button.again` ・ `button.cancel`）。MB は 1000 × 1000 バイト（状態行の `mb`）。
-- いまの core: `sounds_view()`（`crates/meloet-core/src/state.rs`）が「ぜんぶある」（`have == total == 31`、ほかは空）を返し、`not_yet` は空、3 つの意図は受けて何もしない。
+  - `ask`: the band asks 「音の素材（約 240 MB）を取りにいきます」. True when something is missing and there is no answer yet (first start, and every start after 「あとで」). While the flow 1–4 hints are shown (no keyboard, no output yet, sound came out …), the screen waits; it can tell from `keyboards`, `outputs`, `workspace.chooser`, `workspace.hint`, so nothing was added to the protocol.
+  - `fetch: PackFetchView` = `Idle` / `Fetching { instrument, done_bytes, total_bytes, remaining_s }` / `Failed { failure, done_bytes, total_bytes }`. % is `done_bytes / total_bytes`; `instrument` is the sound being fetched (`None` for the common file); `done_bytes` includes earlier runs and `.part`; `remaining_s` is `None` until there is an estimate. The band (44-A) shows unless `Idle`; while flow hints show, it moves to the status line (44-B; the screen decides).
+  - `PackFailure` = `Offline` / `CutOff` / `DiskFull { needed_bytes, free_bytes }` / `Corrupt` (after one silent refetch).
+  - `have` / `total`: shelf sounds that play with their own samples (the 5 computed ones count) and all (31). Advanced settings row: 「ぜんぶあります ・ 240 MB」 when equal, else 「まだ 12 / 31」.
+  - `pack_bytes`, `new_pack_bytes` (size of a new pack found at start; `None` once fetched), `place` (the folder, for advanced settings and 「meloet について」).
+- `ShelfView::not_yet: Vec<InstrumentKind>`: sounds not yet fetched (shelf order), not in `available`. The shelf lists both in shelf order; `not_yet` rows have the name in gray.8 and 「まだ」 (「取ってきています」 when it is `fetch.instrument`), no star, ▶ or audition.
+- A track on the sine stand-in is the existing `StandIn::PackMissing`; whether it is not fetched yet or broken is told by `sounds` (no new `StandIn` arm, since `standInTip` in `sounds.ts` switches on it).
+- Intents (not steps): `FetchPack` (「取りにいく」, 「もう一度」, 「続きから」 and the other fetch buttons; stores the answer; nothing while fetching or with nothing to fetch), `PackLater` (「あとで」; `ask` false, `fetch` `Idle`; asks again next start), `StopPackFetch` (「やめる」; what arrived stays, the next `FetchPack` resumes).
+- Notices: `PackAsking` (mock F8-PackAsk, while `ask`), `SoundReady { instrument }` (45-A, when more are still coming), `PackFetched { count }`, `PackFailed { failure, done_bytes, total_bytes }` (button 「もう一度」, or 「続きから」 for `CutOff`; both `FetchPack`), `NewPack { bytes }` (once, when the start check finds one).
+- Screen texts are under `pack.*`, `shelf.pack*`, `settings.pack*` and `button.fetchPack` / `resumeFetch` / `packLater` in `ja.ts`. MB is 1000 × 1000 bytes.
 
-**5. TS と偽物**
+**5. TS and fakes**: types are written by `cargo test -p meloet-protocol` (exported from `ui/src/bridge/types.ts`); fakes and scenes (`packAsk`, `packGet`, `packFail*`, `packSettings`, `packNew`, `multiClip`, `exportCheck`, `exportClip`) are in `ui/src/bridge/fakeRound8.ts`; tests in `crates/meloet-protocol/src/tests27.rs` and `ui/tests/bridge.protocol27.test.ts`.
 
-- 型は `cargo test -p meloet-protocol` が書き出す（新しい物: `SoundsView` ・ `PackFetchView` ・ `PackFailure` ・ `SelectedClips` ・ `ExportSolo`。`ui/src/bridge/types.ts` から出す）。新しい意図は、いまの `send(command)` で送る（`Command` の型に入った。包む関数は足していない）。
-- 偽物は `ui/src/bridge/fakeRound8.ts`: `reducePack`（3 つの意図）、`advancePack`（取っている間、1 秒に 2 MB ずつ進め、取れた音色を棚と曲に戻し `SoundReady`、最後に `PackFetched`）、`reduceClips27`（3 つの意図、1 手）、`fakeClipsPanel`（選んだクリップから `params.clips` を作る。偽物の `send` は意図のたびにこれを当てなおす）、`fakeSolo`。偽物の `send` は、取っている間だけ 250 ms ごとに `advancePack` を流す。場面の取りにいきは止まったまま（絵がずれないように）で、「取りにいく」を送ると動く。
-- 偽物の場面（`?scene=`）: `packAsk`（F8-PackAsk）・ `packGet`（F8-PackGet、棚をひらく）・ `packFailOffline`（F8-PackFail）・ `packFailCutOff` ・ `packFailDiskFull` ・ `packFailCorrupt`（6 章）・ `packSettings`（F8-PackSettings、まだ 12 / 31）・ `packNew`（6 章「新しい包み」）・ `multiClip`（F8-MultiClip）・ `exportCheck`（F8-ExportCheck、2 ベース がソロ）・ `exportClip`（F8-ExportClip、3 か所 +1.2 dB）。
-- 試験: `crates/meloet-protocol/src/tests27.rs`、`ui/tests/bridge.protocol27.test.ts`（形、場面、偽物の意図、状態行の 18 の文）。
+### 23-8 Protocol 27: the core
 
+The protocol shapes are those of 23-7. The sound pack is in 23-9.
 
-### 23-8 約束 27 の core（区切り2 の 2 回目、2026-11-22、meloet-hard）
+**1. Two or more audio clips**
 
-約束の形は 23-7 のまま（変えていない）。音の素材（`SoundsView`、`FetchPack` など）はここではさわっていない。
+- Model: `meloet_model::set_clips_shape(doc, clips, change, step)` (`crates/meloet-model/src/audio/clips.rs`) changes the `AudioShape` of the chosen audio clips in one `Edit`, skipping keyboard clips, missing ids and clips that do not change. If none changes: `Unchanged` (no step).
+- Steps: `StepKind::SetClipsGain { count }`, `SetClipsFollow { count }`, `SetClipsPitch { count }` (`count` = clips that really changed). Rows use `StepName::SetClipGain` / `SetClipFollow` / `SetClipPitch`, `StepWhat::Clips { count }`, place `StepPlace::Arrange` (the clips may span tracks, so no track name).
+- Core (`crates/meloet-core/src/play/audio.rs`): `Play::set_clip_gains` (`ClipGains::By` for the line drag, `To` for a typed value; both clamp to −60…+12 through `ClipGain::from_db`), `Play::set_clips_stretch` (semitones ±12, cents ±50; `SourceBpm` does nothing). Nothing during recording or count-in.
+- Panel: `Play::selected_vocal_clips` makes the `SelectedClips`; `params_view` in `state/audio.rs` puts it in `ParamsView::clips` by the same rule as one clip, with `selected` `None`.
 
-**1. 歌のクリップを 2 つ以上**
+**2. The check before export**
 
-- model: `meloet_model::set_clips_shape(doc, clips, change, step)`（`crates/meloet-model/src/audio/clips.rs`）。選んだ歌のクリップの形（`AudioShape`）を 1 つの `Edit` で変える。鍵盤のクリップ、ない id、形が変わらないクリップは飛ばす。1 つも変わらなければ `Unchanged`（手にならない）。
-- 手の種類: `StepKind::SetClipsGain { count }` ・ `SetClipsFollow { count }` ・ `SetClipsPitch { count }`（`count` は本当に変わったクリップの数）。履歴の行は `StepName::SetClipGain` ・ `SetClipFollow` ・ `SetClipPitch`、（何を）は `StepWhat::Clips { count }`、場所は `StepPlace::Arrange`（トラックがいくつにもまたがるので、1 つのクリップの手のようにトラックの名前にしない）。
-- core: `Play::set_clip_gains`（`ClipGains::By` は線のドラッグ、`To` は打った値。どちらも `ClipGain::from_db` で −60〜+12 に止まる）・ `Play::set_clips_stretch`（半音 ±12、セント ±50 に止める。`SourceBpm` は何もしない）（`crates/meloet-core/src/play/audio.rs`）。録音中 ・ カウント中は何もしない。
-- 欄: `Play::selected_vocal_clips` が `SelectedClips` を作り、`state/audio.rs` の `params_view` が 1 つのクリップと同じ決まり（あとでインサートか音源をえらんだら欄をゆずる）で `ParamsView::clips` に入れる。そのとき `selected` は `None`。
+- Counting (B-95-2): `OverPlaces` in `export/job.rs`. It looks at the frames that go into the file (the head latency is not in it, the tail is). A frame where either channel is above 1.0 is over (exactly 1.0 is not). After 4800 frames not over (100 ms at 48 kHz), the next over frame starts a new place.
+- Per-track export sums the counts of the files. `ExportNews::Counted` carries `over`. `clips` = `over > 0` and not 32-bit. What is counted is the master before the final cut: 23-16.
+- Solo: `ExportDialogView::solo` from `export::Scene::soloed`. Solo is not in `Asked`, so changing it does not restart the export job.
 
-**2. 書き出す前のたしかめ**
+**3. Notices from the core**
 
-- 数えかた（B-95-2）: `export/job.rs` の `OverPlaces`。ファイルに入るこま（頭の遅れの分は入らない、しっぽは入る）を順に見て、左右のどちらかが 1.0 をこえたこまが 0 dB をこえたこま（ちょうど 1.0 はこえない）。前にこえたこまから、こえないこまが 4800 こま（48 kHz で 100 ms）以上つづいたあとなら新しい 1 か所。
-- トラックごとの書き出しは、ファイルごとの数を足す。`ExportNews::Counted` に `over` を足し、`ExportCheck` の `over` はそれ。`clips` は `over > 0` で 32 ビットでないとき（前の「いちばん大きい所が 0 dB をこえた」と同じ）。
-- 「用意をしています」（`Waiting`）と % は前のまま（1 回目の数が来るまで `Waiting`）。
-- ソロ: `export::Scene::soloed`（トラックの順の `TrackRef`）から `ExportDialogView::solo`。ソロは `Asked` に入れないので、ソロを変えても書き出しの仕事は作りなおさない。
-
-**3. core から出す知らせ**
-
-| 知らせ | 出すところ |
+| Notice | Where |
 |---|---|
-| `InputLost` | `Input::InputLost` で歌を録っていたとき（`state.rs`）。`input` は録っていた最初の歌のトラックの入口、`device` はひらいたときに覚えた入口の名前（`EndpointView::name`。一覧から消えていても言える。`state/vocal.rs` の `wanted_name`）。 |
-| `RecordingGaps` | `Input::VocalsWritten`（止めて、ディスクの係が書き終えたとき）で、`gap_count + dropped_blocks` が 1 以上。音の出口が消えて止まった知らせと `InputLost` のほうが先。録る係の中身（`vocalrec.rs`）はさわっていない。 |
-| `AudioFound` ・ `AudioFoundMismatch` | `AudioNews::Found` の `found: Finding`（`Taken` ・ `Mismatch` ・ `Unreadable`）。`Mismatch` は読めたがサンプルレートかチャンネルの数がちがう（3 チャンネル以上も）。`AudioFound` の `file` は曲が探している名前、`clips` はいま見せているテイクがその音のクリップの数。 |
-| `AudioBroken` ・ `AudioTooManyChannels` | `Brought::Unreadable(name, Unread)`。`audiofiles/decode.rs` の `ReadError { why: Unread }`: 3 チャンネル以上は `TooManyChannels`、ほかは名前の終わりが wav ・ mp3 ・ flac ・ ogg（`AUDIO_EXTENSIONS`）なら `Broken`、ちがえば `NotAudio`（前の `AudioUnreadable`）。 |
-| `SavingAudio` | 保存が音のファイルを曲のフォルダへ入れる間（`AudioStore::settle` の `Settling`）。はじめの 250 ms は言わず、そのあと 250 ms に 1 回まで。移す（rename）ファイルは入れ終わったときにその大きさを足す。保存が終わったら消える。 |
-| `DiskTooSlow` | 歌の先読みが間に合わなかったこまがふえたとき（`EngineMeters::stream_missing`、`service.rs` の `log_missing`）、`Input::DiskTooSlow`。動いている間に 1 回だけ、止まったらまた言える。 |
+| `InputLost` | `Input::InputLost` while recording vocals (`state.rs`). `input` is the input of the first vocal track being recorded; `device` is the input name remembered when opened (`EndpointView::name`; works even after it left the list; `wanted_name` in `state/vocal.rs`) |
+| `RecordingGaps` | `Input::VocalsWritten` (after stop, when the disk worker has finished), if `gap_count + dropped_blocks` ≥ 1. The output-gone notice and `InputLost` come first |
+| `AudioFound` / `AudioFoundMismatch` | `found: Finding` of `AudioNews::Found` (`Taken` / `Mismatch` / `Unreadable`). `Mismatch`: readable but sample rate or channel count differ (also 3+ channels). `file` is the name the song is looking for; `clips` counts clips in the shown takes that use it |
+| `AudioBroken` / `AudioTooManyChannels` | `Brought::Unreadable(name, Unread)`. `ReadError { why: Unread }` in `audiofiles/decode.rs`: 3+ channels → `TooManyChannels`; else a name ending in wav / mp3 / flac / ogg (`AUDIO_EXTENSIONS`) → `Broken`, otherwise `NotAudio` (the old `AudioUnreadable`) |
+| `SavingAudio` | while a save brings audio into the song folder (`Settling` of `AudioStore::settle`): silent for the first 250 ms, then at most once per 250 ms. Files that are renamed add their size when done. Gone when the save ends |
+| `DiskTooSlow` | when frames the vocal read-ahead missed go up (`EngineMeters::stream_missing`, `log_missing` in `service.rs`), `Input::DiskTooSlow`. Once while running; can be said again after stop |
 
-- **保存のしかたを 1 つ変えた**: 使っている音がある曲は、プラグインがなくても保存を自分のスレッドで書く（`service.rs` の `save_song`）。前は core のスレッドで書いていたので、写している間に `SavingAudio` を送れなかった。答えは前のプラグインのある曲と同じく、あとから `Msg::Input` で来る。
+- **One change to saving**: a song that uses audio is written on its own thread even without plugins (`save_song` in `service.rs`); on the core thread it could not send `SavingAudio` while copying. The answer comes back later as `Msg::Input`, as for songs with plugins.
 
-### 23-9 音の素材を取りにいく係（区切り3、2026-11-22、meloet-hard）
+### 23-9 The sound pack fetcher (built)
 
-23-1〜23-3 を作った回。署名はオーナーさんの答え待ちなので、まだつけていない（目録をたしかめる所は `sounds/catalog.rs` の `check` 1 か所。署名はそこに足す）。
+This is how 23-1 to 23-3 were built. No signature (23-1); catalog checking is in one place, `check` in `sounds/catalog.rs`.
 
-**包み（道具）**
+**The pack (tool)**
 
-- `tools/sounds/split.py <build.py の出力> --out <dir> --pack 2026.12.0 [--previous <前の目録>] [--catalog tools/sounds/catalog.json]`: 音色ごとの tar（`<id>-<版>.tar`。中は `instrument.json` と `samples/*.flac` を tar の頭に。上のフォルダはない）、共通の tar（`common-<版>.tar`: `credits.json` と `licenses/<id>/…`）、目録 `catalog.json` を作る。`id` は曲のファイルと同じ音色の名前（`grandPiano`）。版は中身のファイルの道と sha256 から作る sha256 の頭 16 字（中身が同じなら版も同じ）。tar は ustar、縮めない、名前の順、持ち主と時刻なし（同じフォルダから同じバイト。2 回作って同じ目録になった）。`--previous` の目録に同じ版があれば、その URL を使う（上げなおさない）。
-- 目録: `{"format": "meloet-sounds-catalog", "version": 1, "pack": "2026.12.0", "common": {id, version, file, url, bytes, sha256}, "instruments": [{…, "credits": […]}]}`。URL は `https://github.com/wintermaples/meloet/releases/download/sounds-<包みの版>/<file>`。
-- いまの `target/sounds/dev` から作った物: `target/k8s-pack/`（26 音色 ＋ 共通、238,909,440 バイト）。その目録を `tools/sounds/catalog.json` に置き、ビルドで実行ファイルに入れる（`include_str!`。前の `tools/sounds/pack.json` の役目）。**この URL の Release はまだない**（上げる前にオーナーさんに聞く）。`dev` の包みが配る包みと同じかは棟梁が決める。
-- 消した物: `tools/sounds/pack.json`、`tools/sounds/pack.py`（1 つの tar の形）、`scripts/fetch-sounds.sh`（meloet が自分で取りにいくので要らない。開発は今のまま `build.py` → `target/sounds/dev` → `ln -sfn ../sounds/dev target/debug/sounds`）。Release の `sounds-2026.11.1`（前の形）は残る。
+- `tools/sounds/split.py <build.py output> --out <dir> --pack 2026.12.0 [--previous <older catalog>] [--catalog tools/sounds/catalog.json]` makes the per-sound tars, the common tar and `catalog.json` (form in 23-1). The tars are ustar, uncompressed, in name order, with no owner or time, so the same folder gives the same bytes. With `--previous`, a sound with the same version keeps its old URL (not uploaded again). URLs are `https://github.com/wintermaples/meloet/releases/download/sounds-<pack version>/<file>`.
+- The catalog built from `target/sounds/dev` (26 sounds + common, 238,909,440 bytes) is `tools/sounds/catalog.json`, built into the executable. Whether the dev pack is the shipped pack, and uploading the Release, are decisions for the lead / the owner.
+- Removed: `tools/sounds/pack.json`, `tools/sounds/pack.py` (the one-tar form), `scripts/fetch-sounds.sh` (meloet fetches by itself). Development stays `build.py` → `target/sounds/dev` → `ln -sfn ../sounds/dev target/debug/sounds`. The old Release `sounds-2026.11.1` remains.
 
-**さがす順と置き場所**（`crates/meloet-core/src/sounds.rs`、`sounds/fetch.rs`）
+**Search order and places** (`crates/meloet-core/src/sounds.rs`, `sounds/fetch.rs`)
 
-- `MELOET_SOUNDS_DIR`（決めたら、それだけ。取りにいかない）→ 実行ファイルのそばの `sounds/`（`pack.json` のあるとき。開発の `target/*/sounds`）→ `$XDG_DATA_HOME/meloet/sounds/<id>/<版>/`（`XDG_DATA_HOME` は絶対の道だけ、ないときは `~/.local/share`）。音色ごとに見る: 開発のフォルダにある音色は取りにいかない（`Disk::covered`）、ない音色は DATA から（目録の版を先に、なければほかの版。新しい包みを取るまでは古い版で鳴る）。
-- 目録は、組みこんだ物と、ネットから取って `…/sounds/catalog.json` に残した物のうち、包みの版の数が大きいほう。残した物も `check` を通らなければ使わない。
-- 取っている間の物: `…/sounds/<file>.part`、ほどく所 `…/sounds/.work-<file>/`（同じファイルシステム）→ `rename` で `<id>/<版>/`。起動のとき（係のスレッドのはじめ）に、残った `.work-*`、目録にない `.part`、目録の版があるときのほかの版を消す（動いている間は、読んでいるかもしれないので消さない）。
+- `MELOET_SOUNDS_DIR` (development only; if set, only it, and no fetching) → `sounds/` beside the executable when it has a `pack.json` (the `target/*/sounds` of a development build; does nothing in a deb) → `$XDG_DATA_HOME/meloet/sounds/<id>/<version>/`. Per sound: sounds in the development folder are not fetched (`Disk::covered`); others come from DATA (the catalog's version first, else any other version, so an old version plays until the new one arrives). The old `~/.cache/meloet/sounds/<pack version>/` is not read.
+- The catalog used is whichever of the built-in one and the one kept from the net (`…/sounds/catalog.json`) has the higher pack version. A kept one is not used unless it passes `check`.
+- While fetching: `…/sounds/<file>.part`, unpacked in `…/sounds/.work-<file>/` (same file system), then `rename` to `<id>/<version>/`. At the start of the fetcher thread, leftover `.work-*`, `.part` files not in the catalog, and other versions of sounds whose catalog version is present are deleted (not while running, since they may be in use).
 
-**取りにいく係**（`sounds/fetch.rs` の `Fetcher`。スレッド `meloet-pack` 1 本。ネットにつなぐのはここだけ）
+**The fetcher** (`Fetcher` in `sounds/fetch.rs`; one thread `meloet-pack`; the only code that goes on the net)
 
-- ureq 3.5.2（rustls ＋ ring、`platform-verifier`、gzip なし）。`https_only`、リダイレクト 10、User-Agent は `meloet/<版>` だけ、`http_status_as_error(false)`。接続と答えの頭を待つのは 15 秒、読む 1 回は 30 秒（とぎれたら「切れた」）。PC の証明書が 1 つも読めない（`rustls-platform-verifier` の「No CA certificates」）ときだけ `webpki-roots` に替える。プロキシは ureq の既定（`ALL_PROXY` ・ `HTTPS_PROXY` ・ `NO_PROXY` など）。
-- 順: 共通 → B-95-1（グランドピアノ、スタジオキット、フィンガーベース、ストリングス、エレクトリックピアノ、オルガン → 棚の順）。1 つずつ。
-- 1 つのファイル: `.part` の大きさから `Range: bytes=N-`。206 は `Content-Range` のはじめが N なら足す（ちがえば消してはじめから）、200 ははじめから、416 は消してはじめから、403 ・ 410 は目録の URL からたどりなおす（2 回まで。まだなら `CutOff`）、ほかの答え（404 ・ 5xx など）は `CutOff`（ネットにはつながっているので「つながっていません」と言わない。棟梁の決め 2026-11-22）。とちゅうで切れたら 1 秒待ってだまって続きから（2 回まで。まだなら `CutOff`、`.part` は残す）。仕上げにかならず大きさと sha256。合わない ・ ほどけない ・ 中に `instrument.json`（共通は `credits.json`）がない → `.part` を消してだまって 1 回取りなおし、2 回目も → `Corrupt`。ほどく所は ustar の「ファイルとフォルダ」だけ（リンク、pax、外へ出る名前、`\` はファイルごとことわる。`sounds/untar.rs`）。
-- 空き: 取りはじめる前に `statvfs`（rustix）の `f_bavail × f_frsize` を「残り ＋ 残りの中でいちばん大きいファイル（ほどく間は 2 つある）＋ 64 MiB」（`ROOM_BYTES`）とくらべる（棟梁の決め 2026-11-22）。書く所 ・ ほどく所の `StorageFull` ・ `QuotaExceeded` も `DiskFull { needed_bytes: 同じ式, free_bytes: いまの空き }`。
-- 数: `total` は、まだない音色が 1 つでもあれば包みぜんぶ（開発のフォルダにある分は除く）、新しい包みだけなら変わった分。`done` は `total` − 残り（`.part` の分は来た物に数える）。知らせは 250 ms に 1 回まで（画面へは 1 秒に 4 回まで）。`remaining_s` は 3 秒たってから、この回に来た速さで。
-- 「やめる」: `stop(round)` でその回の読みを止める（`.part` は残す）。core は回の番号を 1 つ進め、止めた回が遅れて言う事は聞かない（置いた音色は受けとる）。
+- ureq 3.5.2 (rustls + ring, `platform-verifier`, no gzip). `https_only`, 10 redirects, User-Agent `meloet/<version>` only, `http_status_as_error(false)`. 15 s for connect and response head, 30 s per read (then "cut off"). Only if the PC has no readable CA certificates at all (`rustls-platform-verifier`'s "No CA certificates") is `webpki-roots` used. Proxies: ureq's defaults (`ALL_PROXY`, `HTTPS_PROXY`, `NO_PROXY` …).
+- Order: common → B-95-1 (grand piano, studio kit, finger bass, strings, electric piano, organ → shelf order). One at a time.
+- One file: `Range: bytes=N-` from the `.part` size. 206 with `Content-Range` starting at N: append (otherwise delete and start over). 200: start over. 416: delete and start over. 403 / 410 (expired signed URL): follow the catalog URL again (twice at most, then `CutOff`). Any other answer (404, 5xx …): `CutOff` (the net is there, so do not say 「つながっていません」). A cut in the middle: wait 1 s and silently resume (twice at most, then `CutOff`, keeping `.part`). At the end, always size and sha256. Mismatch, cannot unpack, or no `instrument.json` (`credits.json` for common) → delete `.part`, silently fetch once more; again → `Corrupt`. The unpacker (`sounds/untar.rs`) accepts only ustar files and folders; links, pax, names that leave the folder, and `\` are refused per file.
+- Free space: before starting, `statvfs` (rustix) `f_bavail × f_frsize` is compared with "what is left + the largest file left (two copies exist while unpacking) + 64 MiB" (`ROOM_BYTES`). `StorageFull` / `QuotaExceeded` while writing or unpacking also give `DiskFull { needed_bytes: same formula, free_bytes: free now }`.
+- Numbers: `total` is the whole pack (minus what the dev folder covers) if any sound is missing, or only what changed for a new pack. `done` = `total` − what is left (`.part` counts as arrived). Notices at most every 250 ms (to the screen at most 4 a second). `remaining_s` from 3 s on, at this run's speed.
+- 「やめる」: `stop(round)` stops that run's read (`.part` stays). The core bumps the run number and ignores late news from a stopped run (sounds already placed are taken).
 
-**起動のときの確かめ**（23-3）: 画面のあいさつ（`Core::subscribe` → `Input::ScreenUp`、1 回だけ）で `Job::Check`。DATA に 1 つも取った物がなければ見にいかない。`MELOET_STATE_DIR` のふだんの場所の `sounds-checked`（Unix ms）から 24 時間たっていなければ見にいかない。見にいくと決めたら、まず時刻を書く（ネットがなくても書く。次は 24 時間あと）。`GET` 1 回（1 MiB まで）、ネットがない ・ 200 でない ・ 読めない → だまる。目録が `check` を通り、今のより新しければ `catalog.json` に残して使う。ここにある音色の古い版があれば `NewPack { bytes: 変わった分 }`。
+**Check at start** (23-3): on the screen's greeting (`Core::subscribe` → `Input::ScreenUp`, once), `Job::Check`. No check if DATA has nothing fetched, or if `sounds-checked` (Unix ms) in the normal `MELOET_STATE_DIR` place is less than 24 hours old. Once it decides to check, it first writes the time (also when offline). One `GET` (up to 1 MiB); offline, not 200, or unreadable → silent. If the catalog passes `check` and is newer, it is kept in `catalog.json` and used. If an older version of a sound is here: `NewPack { bytes: what changed }`.
 
-**core の決まり**（`state/pack.rs`）
+**Core rules** (`state/pack.rs`)
 
-- 答え: 設定の `pack_fetch`（`settings.json` の `"pack_fetch": true`）。「取りにいく」で true、「あとで」 ・ 「やめる」 ・ ぜんぶ取れたら false。起動のとき true でまだ足りなければ、あいさつのあと（確かめのあと）だまって続きから。false で、まだない音色（新しい包みの差だけではなく）があれば `ask`。うまくいかなかった（`Failed`）ときは true のまま（次の起動で続きから）。
-- `ask` の間の状態行は `PackAsking`（流れ 1〜4 の行、鍵盤がない ・ 出口がまだ、のあと。新しい曲の行の前）。`SoundReady` は、ここになかった音色が来たとき（新しい版の差し替えでは言わない）、`PackFetched { count: have }`、`PackFailed`、`NewPack` は知らせ（次の操作で消える）。
-- 来た音色: サービスが `Library::add`（読む所を新しい道に）→ `Play::sound_installed` → 曲や棚が使っていれば `LoadSound` → 読めたら席をぜんぶ作りなおす（前からの流れ。エンジンの入れかえは 10 ms 重ねる）。読めるまでの席は前のサイン波のまま（だまらない）。新しい版の差し替えは `DropSound` と `LoadSound`。
-- 新しい曲: 1 本目は、取る前からグランドピアノ（目録にグランドピアノがあり、最後の取りにいきが `Corrupt` でないとき。そうでなければ前のとおりサイン波の「シンセ」）。曲のファイルには `grandPiano` と書く。起動のときの、まだだれもさわっていない新しい曲も、目録を知ってから作りなおす（`Play::start_pack`）。
-- 棚: `available` は計算で作る 5 つ ＋ ここにある音色、`not_yet` は目録にあってここにない音色（棚の順）。目録がなくて包みもないときだけ、前のとおりサイン波だけ。`LibraryView::pack_missing` は前のまま（サンプルの音色が 1 つもない）。
-- `SoundsView`: `have` は `available` の数（計算の 5 つを含む）、`total` 31、`place` は `~/.local/share/meloet/sounds` の形（家を `~` に）。取りにいく係がないとき（試験、`MELOET_SOUNDS_DIR`、家がない）は前のとおり「ぜんぶある」（31 / 31）。
+- The answer is `pack_fetch` in `settings.json`: true on 「取りにいく」; false on 「あとで」, 「やめる」 or when all have arrived. At start, if true and something is missing, it silently resumes after the greeting (after the check). If false and some sound is missing (not just a new pack's difference): `ask`. After `Failed` it stays true (resume next start).
+- During `ask` the status line says `PackAsking` (after the flow 1–4 lines, no keyboard, no output; before the new song line). `SoundReady` when a sound that was not here arrives (not for a new version of one), then `PackFetched { count: have }`, `PackFailed`, `NewPack` (cleared by the next action).
+- An arriving sound: the service calls `Library::add` (new path) → `Play::sound_installed` → `LoadSound` if the song or shelf uses it → when loaded, rebuild every seat (existing flow; engine swaps overlap 10 ms). Until then seats keep the sine. A new version is `DropSound` then `LoadSound`.
+- New song: the first track is grand piano even before fetching (if the catalog has it and the last fetch was not `Corrupt`; otherwise the sine 「シンセ」 as before), and the file says `grandPiano`. The untouched new song at start is rebuilt once the catalog is known (`Play::start_pack`).
+- Shelf: `available` = the 5 computed sounds + sounds here; `not_yet` = in the catalog but not here (shelf order). Only with no catalog and no pack is it sine only. `LibraryView::pack_missing` as before.
+- `SoundsView`: `have` = number of `available` (with the 5 computed), `total` 31, `place` like `~/.local/share/meloet/sounds` (home shown as `~`). Without a fetcher (tests, `MELOET_SOUNDS_DIR`, no home): "all there" (31 / 31).
 
-**決めた数**: 空きのゆとり 64 MiB、確かめ 24 時間、接続 15 秒、読み 30 秒、切れたときのだまった続き 2 回（1 秒あけて）、403 ・ 410 のたどりなおし 2 回、こわれたときの取りなおし 1 回、知らせ 250 ms、のこり時間は 3 秒から、ネットの目録 1 MiB まで、版は 16 字。
+**Numbers**: 64 MiB spare, 24 h between checks, 15 s connect, 30 s read, 2 silent resumes (1 s apart), 2 re-follows on 403/410, 1 refetch when broken, notices every 250 ms, remaining time from 3 s, net catalog up to 1 MiB, versions of 16 hex digits.
 
-**試験の口**（release から外す一覧に入れる。23-4）: `MELOET_PACK_ORIGIN`（`http://127.0.0.1:<port>/` など。目録の URL の決まりと、ネットの目録 `<origin>catalog.json` をそこに替え、`http://` なら `https_only` を外す）、`MELOET_PACK_CATALOG`（組みこんだ目録のかわりに読むファイル）。前からの `MELOET_SOUNDS_DIR` ・ `MELOET_STATE_DIR` も。空きと `ENOSPC` と時刻の差しかえは `cfg(test)` の `fetch::Hooks` だけ（環境変数はない）。
+**Test hooks** (removed in release, 23-11): `MELOET_PACK_ORIGIN` (e.g. `http://127.0.0.1:<port>/`; replaces the allowed URL prefix and the net catalog `<origin>catalog.json`, and drops `https_only` for `http://`), `MELOET_PACK_CATALOG` (a file instead of the built-in catalog), and `MELOET_SOUNDS_DIR` / `MELOET_STATE_DIR`. Free space, `ENOSPC` and time are replaced only through `cfg(test)` `fetch::Hooks` (no env vars).
 
-**試験**: `sounds/fetch_tests.rs`（この PC の中の小さな HTTP サーバ。Range ・ 302 ・ 403 ・ 404 ・ 416 を返す。ネットの本物にはつながない）で、ふつう（302 をたどる、順、User-Agent、Cookie なし）、遅いつながり、とちゅうで切れる（だまって続き ・ 3 回切れて `CutOff` ・ 次の回は `Range`）、こわれたファイル（1 回だまって ・ 2 回で `Corrupt`、`.part` を残さない）、403（たどりなおし ・ ずっと 403 で `CutOff`）、404 ・ 500（`CutOff`）、ディスクがいっぱい（はじめの空き ・ 書く所の `StorageFull`）、ネットがない（だれも聞いていない港）、やめる（`.part` を残し次は続き）、ネットの目録（取っていない人は見ない ・ 新しい包み ・ 24 時間 ・ 次の起動で古い版を消す ・ 404 はだまる）、決まりの外の URL の目録（`catalog.rs` と、残した目録を使わない）。`state/pack_tests.rs` で core の決まり。`sounds/untar.rs` でほどく所。
+**Tests**: `sounds/fetch_tests.rs` with a small local HTTP server (never the real net) covers each answer above, cuts, broken files, disk full, offline, stop, the net catalog and catalogs with URLs outside the rule; `state/pack_tests.rs` the core rules; `sounds/untar.rs` the unpacker. In the real app, stop and fetch again resumed with `Range`, and key → DAC while fetching stayed 11.4–15.4 ms.
 
-**本物のアプリ**（2026-11-22、debug）: 空の `XDG_DATA_HOME`（`target/k8s-home/data`）、`MELOET_PACK_ORIGIN` でこの PC の中の置き場所（Range つき、20 MB/秒にしぼった Python のサーバ）。`fetchPack` → 3 秒で `stopPackFetch` → 2 秒で `fetchPack`: グランドピアノは `Range: bytes=58785792-` で続きから、26 音色 ＋ 共通がそろい、グランドピアノは取れたあと読まれた（`read the sound of grandPiano`）。`settings.json` の `pack_fetch` は最後に消えた。取っている間に仮想の鍵盤で 30 鍵: 鍵 → DAC 11.4 〜 15.4 ms（平均 13.4、256 こま）。
+### 23-11 Development hooks removed from release builds
 
-### 23-11 開発の仕込みを外した形（第 8 回 区切り4）
+How 23-4 was built. Research: `docs/history/research/dev-hooks-release.md`.
 
-23-4 を作った回（2026-11-22、meloet-hard）。調べ物は `docs/research/dev-hooks-release.md`。
+**Features**
 
-**feature の流れ**
+- `meloet-app/dev-hooks` = `meloet-core/dev-hooks` + `dep:cairo-rs` (used only by `MELOET_SNAPSHOT`). `meloet-core/dev-hooks` = `meloet-midi/dev-hooks` (and `meloet-engine/dev-hooks` for `MELOET_ENGINE_RT`, 23-10). `meloet-plughost/dev-hooks` is a separate binary and is turned on by itself. None is in `default`.
+- Everything removed uses `#[cfg(feature = "dev-hooks")]` (modules, functions, statements, struct fields, `generate_handler!` entries). No `cfg!(…)` or `cfg(debug_assertions)`. plughost uses `#[cfg(any(test, feature = "dev-hooks"))]` (its own tests use the fake plugin).
+- Tests: `meloet-core` lists itself with the feature in `[dev-dependencies]` (like `rt-check` in `meloet-engine`). Binary-only crates (`meloet-app`, `meloet-plughost`) cannot (Cargo warns that a dependency without a lib is ignored), so plughost's integration tests and `meloet-core`'s tests run `cargo build -p meloet-plughost --features dev-hooks` themselves (`exe()` in `tests/common/mod.rs`, `meloet-core/tests/plughost/mod.rs`). `devhooks.rs` tests in `meloet-app` run only with `--features dev-hooks`. `scripts/check-all.sh` runs `cargo clippy --all-targets --features dev-hooks`, `cargo clippy` (no feature, the shipped form) and `cargo test --features dev-hooks` (on the workspace, the feature is set only on crates that have it).
+- Screen: `__DEV_HOOKS__` in `define` of `ui/vite.config.ts` (true with `MELOET_DEV_HOOKS=1` or under vitest; type in `ui/src/dev/flag.d.ts`). Only the measuring part of `gl/Surface.svelte` (`measureEnabled` → `KeyToScreen`, `FrameProfile`, `uiScript` → `import("../dev/start")`) is inside `if (__DEV_HOOKS__)`. With that alone the production `vite build` (Vite 8.3.8 / Rolldown 1.2.19) drops the `start-*.js` chunk and the strings `measure_enabled`, `measure_report`, `ui_script`, `__meloetMeasure`, `key-to-screen` (unused bridge functions and `gl/measure.ts` / `profile.ts` are tree-shaken). `resolve.alias` was not needed. `bridge/tauri.ts` was not changed.
+- Measuring tools are built by `tools/measure/build-dev.sh` (`MELOET_DEV_HOOKS=1 npm run build` and `cargo build --release -p meloet-app -p meloet-midi -p meloet-plughost --features dev-hooks`). `latency.sh`, `long-record.sh`, `ui-script.sh` and `tools/design/shoot_app.py` call it; other tools use the `target/release` it made.
 
-- `meloet-app/dev-hooks` = `meloet-core/dev-hooks` ＋ `dep:cairo-rs`（`MELOET_SNAPSHOT` だけが使う。配る形には入らない）。`meloet-core/dev-hooks` = `meloet-midi/dev-hooks`。`meloet-plughost/dev-hooks` は別の実行ファイルなので、それだけで立てる。`default` にはどれも入れない。`meloet-engine` ・ `meloet-sound` には仕込みがないので feature はない。
-- 外す所はすべて `#[cfg(feature = "dev-hooks")]` の属性（モジュール、関数、文、構造体の欄、`generate_handler!` の項目）。`cfg!(…)` と `cfg(debug_assertions)` は使っていない。plughost だけは `#[cfg(any(test, feature = "dev-hooks"))]`（中の試験が偽物のプラグインを使うため）。
-- 試験: `meloet-core` は `[dev-dependencies]` に自分を feature つきで（`meloet-engine` の `rt-check` と同じ形）。実行ファイルだけのクレート（`meloet-app` ・ `meloet-plughost`）は、その形だと Cargo が「lib のない依存を無視する」と警告するので使わない。`meloet-plughost` の結合の試験と `meloet-core` の試験は、`cargo build -p meloet-plughost --features dev-hooks` を自分で呼んでから使う（`tests/common/mod.rs` の `exe()`、`meloet-core/tests/plughost/mod.rs`）。`meloet-app` の `devhooks.rs` の試験は `--features dev-hooks` のときだけ。`scripts/check-all.sh` は `cargo clippy --all-targets --features dev-hooks`、`cargo clippy`（feature なし、配る形）、`cargo test --features dev-hooks` を回す（ワークスペースで `--features dev-hooks` を渡すと、持っているクレートにだけ立つ）。
-- 画面: `ui/vite.config.ts` の `define` の `__DEV_HOOKS__`（`MELOET_DEV_HOOKS=1` か vitest のとき true。型は `ui/src/dev/flag.d.ts`）。`gl/Surface.svelte` の測る所（`measureEnabled` → `KeyToScreen` ・ `FrameProfile` ・ `uiScript` → `import("../dev/start")`）を `if (__DEV_HOOKS__)` の中に入れただけで、本番の `vite build`（Vite 8.3.8 / Rolldown 1.2.19）では `start-*.js` の塊も、`measure_enabled` ・ `measure_report` ・ `ui_script` ・ `__meloetMeasure` ・ `key-to-screen` の文字も消えた（使われなくなった `bridge` の関数と `gl/measure.ts` ・ `profile.ts` は木から落ちる）。`resolve.alias` の差しかえは要らなかった。`bridge/tauri.ts` は書きかえていない。
-- 測る道具は `tools/measure/build-dev.sh`（`MELOET_DEV_HOOKS=1 npm run build` と `cargo build --release -p meloet-app -p meloet-midi -p meloet-plughost --features dev-hooks`）で作る。`latency.sh` ・ `long-record.sh` ・ `ui-script.sh` はこれを呼び、`tools/design/shoot_app.py` も同じ形で作る。ほかの道具（「何も作らない」物、`remote.py` を使う物）は、これで作った `target/release` を使う。
+**Removed names** (not in the shipped `meloet` / `meloet-plughost`)
 
-**外した名前**（配る `meloet` ・ `meloet-plughost` にない）
+- `meloet-app`: all of `devhooks.rs` (`MELOET_WINDOW`, `MELOET_SNAPSHOT`, `MELOET_SNAPSHOT_AFTER_MS`, `MELOET_COMMANDS`, `MELOET_EVAL`, `MELOET_PIPE`, `MELOET_EXIT_AFTER_MS`, `MELOET_CLOSE_AFTER_MS`, `MELOET_PCWINDOW_SHOT`, `MELOET_OPEN_SONG`, `MELOET_UI_SCRIPT`), commands `measure_enabled`, `measure_report`, `ui_script`, and `MELOET_DEBUG_SCREEN`.
+- `meloet-core`: the whole `measure` module (`MELOET_MEASURE_DIR`, writing `key-to-sound.json`, `plugins.json`, `vocal-faults.log`, `CoreOptions::measure_dir`, sound load timing), the place overrides `MELOET_STATE_DIR`, `MELOET_CONFIG_DIR`, `MELOET_SF2_DIR`, `MELOET_SONGS_DIR`, `MELOET_SOUNDS_DIR`, the pack test hooks `MELOET_PACK_ORIGIN`, `MELOET_PACK_CATALOG`, `MELOET_INPUT_SINK_MONITOR`, and (added later) `MELOET_PLUGHOST_LOG_DIR` (23-14).
+- `meloet-midi`: `MELOET_ACCEPT_VIRTUAL`, `MELOET_ONLY_VIRTUAL`, `MELOET_VKEYS_NAME`, `MELOET_MIDI_FAIL_AFTER` read by `MidiOptions::from_env` (without the feature: `MidiOptions::default()`, real keyboards only).
+- `meloet-engine`: `MELOET_ENGINE_RT` (23-10).
+- `meloet-plughost`: the fake plugin (`formats/fake.rs`, `MELOET_PLUGHOST_FAKE`, `urn:meloet:fake:`), `MELOET_PLUGHOST_RT`, `MELOET_PLUGHOST_NO_DUMP`, and the crash log (`crashlog.rs`, 23-14).
+- Screen: the `ui/src/dev/` chunk, `gl/measure.ts`, `gl/profile.ts`, and calls to the measuring commands.
 
-- `meloet-app`: `devhooks.rs` のぜんぶ（`MELOET_WINDOW` ・ `MELOET_SNAPSHOT` ・ `MELOET_SNAPSHOT_AFTER_MS` ・ `MELOET_COMMANDS` ・ `MELOET_EVAL` ・ `MELOET_PIPE` ・ `MELOET_EXIT_AFTER_MS` ・ `MELOET_CLOSE_AFTER_MS` ・ `MELOET_PCWINDOW_SHOT` ・ `MELOET_OPEN_SONG` ・ `MELOET_UI_SCRIPT`）、命令 `measure_enabled` ・ `measure_report` ・ `ui_script`、`MELOET_DEBUG_SCREEN`。
-- `meloet-core`: `measure` モジュールごと（`MELOET_MEASURE_DIR`、`key-to-sound.json` ・ `plugins.json` ・ `vocal-faults.log` を書く所、`CoreOptions::measure_dir`、音色を読んだ時間の記録）、置き場所の差しかえ `MELOET_STATE_DIR` ・ `MELOET_CONFIG_DIR` ・ `MELOET_SF2_DIR` ・ `MELOET_SONGS_DIR` ・ `MELOET_SOUNDS_DIR`、音の素材の試験の口 `MELOET_PACK_ORIGIN` ・ `MELOET_PACK_CATALOG`、`MELOET_INPUT_SINK_MONITOR`。
-- `meloet-midi`: `MidiOptions::from_env` が読む `MELOET_ACCEPT_VIRTUAL` ・ `MELOET_ONLY_VIRTUAL` ・ `MELOET_VKEYS_NAME` ・ `MELOET_MIDI_FAIL_AFTER`（feature なしでは `MidiOptions::default()`、本物の鍵盤だけ）。
-- `meloet-plughost`: 偽物のプラグイン（`formats/fake.rs`、`MELOET_PLUGHOST_FAKE`、`urn:meloet:fake:`）、`MELOET_PLUGHOST_RT`、`MELOET_PLUGHOST_NO_DUMP`。
-- 画面: `ui/src/dev/` の塊、`gl/measure.ts` ・ `gl/profile.ts`、測る命令の呼び出し。
+**Kept, and why**
 
-**残した物とわけ**
+- `JSC_useGenerationalGC` and `WEBKIT_DISABLE_COMPOSITING_MODE`: they are how the shipped meloet behaves (memory and drawing path). That a value set from outside wins is kept for comparisons.
+- The `MidiOptions` fields (`accept_virtual` …) and spotting virtual keyboards by the `meloet-vkeys` name (`meloet-midi/src/rules.rs`): tests set the fields directly. Without the feature nothing can set them from the environment, so they are always off.
+- `sounds/` beside the executable (with `pack.json`): not an env var; it finds `target/*/sounds` of development builds. In a deb there is no `/usr/bin/sounds/pack.json`, so it does nothing.
+- `XDG_*`, `HOME` and proxy variables: normal PC rules.
+- Test-only names (`cfg(test)`, `MELOET_TIMING_*` / `MELOET_VTIMING_*` in `tests/` …) never reach the shipped binary.
 
-- `JSC_useGenerationalGC` ・ `WEBKIT_DISABLE_COMPOSITING_MODE`: 配る meloet の動き（メモリと描く道）。外から決めれば勝つのも、くらべるために残す。
-- `MidiOptions` の欄（`accept_virtual` など）と、`meloet-vkeys` の名前で仮想の鍵盤を見分ける所（`meloet-midi/src/rules.rs`）: 試験が欄を直接決めて使う。feature なしでは環境から決める道がないので、いつも切れている。
-- 実行ファイルのそばの `sounds/`（`pack.json` のあるとき）: 環境変数ではなく、開発のビルドの `target/*/sounds` を見つける所。配る形（`/usr/bin/sounds/pack.json` はない）では何もしない。
-- `XDG_*` ・ `HOME` ・ プロキシの変数: ふつうの PC の決まり。
-- 試験だけの物（`cfg(test)`、`tests/` の `MELOET_TIMING_*` ・ `MELOET_VTIMING_*` など）: もともと配る実行ファイルに入らない。
+**Guard test** `scripts/check-release.sh` (`--no-dev` skips the reverse test)
 
-**見はりの試験** `scripts/check-release.sh`（`--no-dev` で逆の試験をとばす）
+1. Reverse test (first): the `MELOET_DEV_HOOKS=1` `ui/dist` and the `--features dev-hooks` release **do** contain the names (so the search list is not stale): in `meloet`, `MELOET_PIPE`, `MELOET_UI_SCRIPT`, `MELOET_MEASURE_DIR`, `MELOET_STATE_DIR`, `MELOET_ACCEPT_VIRTUAL`, `MELOET_PACK_ORIGIN`, `devhooks`, `measure_report`; in `meloet-plughost`, `MELOET_PLUGHOST_FAKE`, `MELOET_PLUGHOST_RT`, `urn:meloet:fake`; in the page, `measure_report`, `ui_script`, `pr-scroll`.
+2. Shipped form (after, so `ui/dist` and `target/release` are left in the shipped form): `npm run build` without `MELOET_DEV_HOOKS`, and `cargo build --release` without features for `-p meloet-app` and `-p meloet-plughost` **one at a time** (together, features would unite). `strings` finds none of `MELOET_` (every `MELOET_` name is a hook), `devhooks`, `measure_enabled`, `measure_report`, `ui_script`, `key-to-sound.json`, `vocal-faults.log`, `urn:meloet:fake`. `ui/dist` has no `start-*.js` and none of `MELOET_`, the command names, `uiScript`, `__meloetMeasure`, `key-to-screen`, `frame-times`, `pr-scroll`.
+3. The page inside the executable: the `meloet-app` test `embedded_page::write_the_embedded_page` (`#[ignore]`) decodes the brotli `assets()` of `tauri::generate_context!()` into `MELOET_ASSETS_OUT`, which is searched as in 2 (closes the hole of a stale `ui/dist`).
+- It takes about 3 minutes the first time and 44 s after, so `scripts/check-all.sh` runs it only with `--release`.
 
-1. 逆の試験（先に）: `MELOET_DEV_HOOKS=1` の `ui/dist` と `--features dev-hooks` の release に、名前が「ある」こと（探す名前が古くなっていない印）。`meloet` に `MELOET_PIPE` ・ `MELOET_UI_SCRIPT` ・ `MELOET_MEASURE_DIR` ・ `MELOET_STATE_DIR` ・ `MELOET_ACCEPT_VIRTUAL` ・ `MELOET_PACK_ORIGIN` ・ `devhooks` ・ `measure_report`、`meloet-plughost` に `MELOET_PLUGHOST_FAKE` ・ `MELOET_PLUGHOST_RT` ・ `urn:meloet:fake`、画面に `measure_report` ・ `ui_script` ・ `pr-scroll`。
-2. 配る形（あとに。`ui/dist` と `target/release` は配る形で残る）: `MELOET_DEV_HOOKS` なしの `npm run build`、feature なしの `cargo build --release -p meloet-app` と `-p meloet-plughost`（1 つずつ。いっしょに作ると feature が和になる）。`strings` で `MELOET_` ・ `devhooks` ・ `measure_enabled` ・ `measure_report` ・ `ui_script` ・ `key-to-sound.json` ・ `vocal-faults.log` ・ `urn:meloet:fake` が 1 つも出ないこと（`MELOET_` はぜんぶ仕込み）。`ui/dist` に `start-*.js` がなく、`MELOET_` ・ 命令の名前 ・ `uiScript` ・ `__meloetMeasure` ・ `key-to-screen` ・ `frame-times` ・ `pr-scroll` がないこと。
-3. 実行ファイルに入った画面: `meloet-app` の試験 `embedded_page::write_the_embedded_page`（`#[ignore]`）が `tauri::generate_context!()` の `assets()` を brotli から戻して `MELOET_ASSETS_OUT` に書き、それを 2 と同じく grep する（`ui/dist` が古い、という穴をふさぐ）。
-- かかる時間: 依存の release が作ってある所で 2 分 44 秒、2 回目からは 44 秒（release を 2 回 ＋ 試験の release を 2 回）。実行ファイルの大きさ（この PC、strip なし）: `meloet` 36,562,640 → 36,367,408 バイト（dev-hooks あり → なし）、`meloet-plughost` 1,955,240 → 1,920,496。重いので `scripts/check-all.sh` からは `--release` のときだけ呼ぶ。
+### 23-10 Audio thread priority
 
-### 23-10 音のスレッドの優先度（第 8 回 区切り4）
+- **Form**: the engine raises it itself (`crates/meloet-engine/src/priority.rs`). The output and input callbacks write their own thread id (`gettid`) to an atomic once, on the first call. A helper thread per stream, `meloet-rt-ask` (started when the stream opens), looks every 10 ms, raises the thread when it sees the id, writes one log line and ends. The callback never makes calls that may wait (D-Bus, rlimit). If the stream closes before the first callback, the helper ends quietly (it watches the count of the `Arc` the callback holds).
+- **How**: the same order as the plugin host (chapter 20). If `RLIMIT_RTPRIO` ≥ 1, `sched_setscheduler(tid, SCHED_FIFO | SCHED_RESET_ON_FORK, 20)` (or the limit if lower). Otherwise rtkit `MakeThreadRealtime(tid, 20)` (setting `RLIMIT_RTTIME` to rtkit's `RTTimeUSecMax` first, or rtkit refuses). If both fail, it runs at normal priority. Log lines: `meloet: the audio output thread runs at real-time priority 20 (limit)` / `… (rtkit)` / `meloet: no real-time priority for the audio output thread: <reason>` (`audio input` for input). No protocol change.
+- **Why 20**: the same as the audio threads of the plugin hosts that play. The engine waits for their answers, so it must not be below them (it would wait its turn to wake). Above them gains nothing, since it sleeps while waiting. rtkit's maximum is also 20. It stays below PipeWire's own threads (88 with limits).
+- **Why not cpal's `realtime` feature** (read: cpal 0.18.2 `Cargo.toml`, `src/host/pipewire/stream.rs`, `rt_promote.rs`; audio_thread_priority 0.35.1 `src/lib.rs`, `src/rt_linux.rs`): (1) `realtime` alone does nothing on Linux (audio_thread_priority uses `rt_linux` only with its `dbus` feature); `realtime-dbus` would add a second dbus (0.6; meloet has 0.9.12). (2) rtkit only, no `RLIMIT_RTPRIO` path, and the priority is fixed at 10. (3) audio_thread_priority is MPL-2.0 (usable unchanged, but one more part). (4) Failure arrives at cpal's error callback and would mix into meloet's xrun counts. Doing it ourselves adds no parts (dbus 0.9.12 and libc are already there), matches the plugin host, and needs one log line.
+- **On a normal Ubuntu**: the `pipewire-bin` package ships `/etc/security/limits.d/25-pw-rlimits.conf` (`@pipewire - rtprio 95`), but normally nobody is in the `pipewire` group. On this PC the `audio` group's rtprio 95 comes from `30-ubuntustudio-audio.conf` (not checked whether a normal Ubuntu has it; confidence C), so other PCs will usually take the rtkit path. rtkit's polkit rule (`org.freedesktop.RealtimeKit1.acquire-real-time`) says yes for active and inactive seat sessions and no otherwise; a meloet started from the desktop should pass (confidence C). The agent user on this PC has no seat and is refused by rtkit, so **the rtkit path has not been checked for real**.
+- **Test hook**: `MELOET_ENGINE_RT` (only with `meloet-engine`'s `dev-hooks`, passed from `meloet-core/dev-hooks`): `off` asks nothing; `rtkit` asks rtkit even with limits. Same form as `MELOET_PLUGHOST_RT`. Tests: two in `priority.rs` (raised; helper ends if the stream closes before the first callback). The no-allocation callback guard in `tests/device.rs` (`--ignored`) still passes.
+- **Measured** (`docs/history/measurements/2026-11-22-round8-rt.md`): `pw_out` runs FIFO 20 in the real app. With 16 Surge XT + compressor on a busy PC, blocks that missed the plugin answer went from 1458 (without) to 0–20 (with). Key → DAC did not change (p95 15.88 ms).
 
-- **形**: エンジンが自分で上げる（`crates/meloet-engine/src/priority.rs`）。出口と入口のコールバックは、はじめの 1 回だけ自分のスレッドの id（`gettid`）を原子変数に書く。ストリームごとの手伝いのスレッド `meloet-rt-ask`（ストリームをひらく時に起こす）が 10 ms ごとにそれを見て、見つけたら上げ、記録に 1 行書いて終わる。コールバックは、待つかもしれない呼び出し（D-Bus、rlimit）をしない。ストリームが最初のコールバックの前に閉じたら、手伝いもだまって終わる（コールバックが持つ `Arc` の数で見る）。
-- **上げかた**: プラグイン係（20 章）と同じ順。`RLIMIT_RTPRIO` が 1 以上なら、手伝いが `sched_setscheduler(tid, SCHED_FIFO | SCHED_RESET_ON_FORK, 20)`（上限が 20 より低ければ上限）。だめなら rtkit の `MakeThreadRealtime(tid, 20)`（その前に、rtkit の `RTTimeUSecMax` を `RLIMIT_RTTIME` にする。rtkit がないと断るため）。どちらもだめなら、ふつうの優先度のまま動く。記録の文: `meloet: the audio output thread runs at real-time priority 20 (limit)` ・ `… (rtkit)` ・ `meloet: no real-time priority for the audio output thread: <わけ>`（入口は `audio input`）。画面の約束は変えていない。
-- **優先度 20 の理由**: 弾くほうのプラグイン係の音のスレッドと同じ。エンジンはその答えを待つので、下に置かない（下だと、答えが来ても起きる順番を待つ）。上にしても、待っている間は眠っているので、得る物がない。rtkit が出す最大も 20。PipeWire の自分のスレッド（limits のとき 88）より下。
-- **cpal の `realtime` の機能をとらなかった理由**（cpal 0.18.2 の `Cargo.toml`、`src/host/pipewire/stream.rs` 237〜257 ・ 320〜370 行、`rt_promote.rs`、audio_thread_priority 0.35.1 の `src/lib.rs` ・ `src/rt_linux.rs` を読んだ）: (1) `realtime` だけでは Linux で何もしない（audio_thread_priority は `dbus` の機能のときだけ `rt_linux` を使い、ないと空の実装）。`realtime-dbus` が要り、dbus 0.6（meloet は 0.9.12）がもう 1 つ入る。(2) rtkit だけで、`RLIMIT_RTPRIO` の道がない。優先度は 10 に決まっている（`RT_PRIO_DEFAULT`）。(3) audio_thread_priority は MPL-2.0（書きかえなければ使えるが、部品が増える）。(4) 上げられない時、cpal のエラーの口に来るので、meloet の xrun などの数え（`stream_error_counter` の「ほか」）にまざる。自分で上げれば、部品は増えず（dbus 0.9.12 と libc はもうある）、プラグイン係と同じ決まりで、記録の文も 1 つですむ。
-- **ふつうの Ubuntu で上げられるか**: Ubuntu の `pipewire-bin` の包みは `/etc/security/limits.d/25-pw-rlimits.conf`（`@pipewire - rtprio 95`）を置くが、この PC でも `pipewire` グループにはだれも入っていない。この PC の `audio` グループ（オーナーさんと meloet-agent）の rtprio 95 は、包みのない `30-ubuntustudio-audio.conf` から（ふつうの Ubuntu にあるかは確かめていない。確かさ C）。その PC では rtkit の道になる。rtkit の polkit の決まり（`org.freedesktop.RealtimeKit1.acquire-real-time`）は、席のある active ・ inactive のセッションで yes、ほか（`allow_any`）は no。画面の前で動かす meloet は通る、と読んだ（確かさ C）。この PC の meloet-agent（席のないセッション）は rtkit に断られるので、**rtkit の道で上がる所は確かめていない**。
-- **試験の口**: `MELOET_ENGINE_RT`（`meloet-engine` の feature `dev-hooks` のときだけ。`meloet-core/dev-hooks` から流す。棟梁が取りこむときに入れた。`off` で頼まない、`rtkit` で limits があっても rtkit に聞く。プラグイン係の `MELOET_PLUGHOST_RT` と同じ形）。試験: `priority.rs` の 2 つ（上がる ・ 最初のコールバックの前に閉じたら手伝いが終わる）。`tests/device.rs`（`--ignored`）の、コールバックでメモリを取らない見はりは、この形でも通る。
-- **測り**（`docs/measurements/2026-11-22-round8-rt.md`）: 本物のアプリで `pw_out` は FF 20、試験で `pw_in` も FF 20。Surge XT 16 ＋ コンプ 170 秒、静かな PC で xrun はなし 0 ・ 0 ・ 1、あり 0 ・ 0 ・ 0、負荷の最大 71〜77 % と 53〜59 %。ほかの係が動いていた PC では、なしでプラグインの答えを待ちきれなかったブロックが 1458 回、ありで 0〜20。鍵 → DAC は変わらない（p95 15.88 ms）。
+### 23-14 The Surge XT host stopping at the start of play
 
-### 23-14 Surge XT の係が再生の頭で落ちる件（第 8 回 区切り4）
+- **Found** (`docs/history/measurements/2026-11-22-round8-surge.md`): it did not crash; the engine was stopping a live host. The engine's watch (20-2, `EngineEnd::await_overdue` in `meloet-plugin`) took "no request picked up and the host's `progress` unmoved over two deadlines" as "stopped or gone". A freshly loaded Surge XT (1.3.4) takes 4–5 ms for its first block; with 16 in one host (the grouping rule of 20-1) all making their first sound in the same block, the host's 4 audio threads are all inside Surge XT and `progress` stops. With short blocks (always at 128 frames in tests) all 16 were stopped at the start of play. That this was the cause of the two earlier quiet-PC cases is not proven (no logs), but Surge XT never crashed in 59 real-app and 100+ test runs (confidence C).
+- **Decided**: "dead" also requires that no slot of the host has a thread inside the plugin (`taken` ≠ `done`) for less than `HANG_MS`. A host with a thread inside a plugin is slow, not dead. Reason: more heavy work than the host's threads (at most 4) is normal under the grouping rule. A stopped host whose thread happened to be inside a plugin is found after `HANG_MS` (5 s, `crates/meloet-plugin/src/ipc/ends.rs`), like a hanging plugin. Gone hosts are still caught by the core's pidfd.
+- **Not taken**: at most 4 plugins per host (more hosts and memory; breaks 20-1). Moving `progress` from the host's main thread too (useless if the audio threads are the ones stuck).
+- **Logs**: `MELOET_PLUGHOST_LOG_DIR` (core `dev-hooks`) writes each host's stderr to a file; the host then writes a stack on fatal signals (`crates/meloet-plughost/src/crashlog.rs`, `dev-hooks`). If a host did not end by the core's SIGKILL, the core always logs `meloet: the process of <key> ended: <how>`.
+- **Left**: Surge XT's heavy first block still drops a few blocks of the first chord (as before; it just no longer stops). On rtkit PCs the host's `RLIMIT_RTTIME` becomes 200 ms, and a long patch-loading block might get the host SIGKILLed (not checked).
 
-- **見つけた事**（`docs/measurements/2026-11-22-round8-surge.md`）: 落ちたのではなく、エンジンが生きている係を止めていた形が見つかった。エンジンの見はり（20-2、`meloet-plugin` の `EngineEnd::await_overdue`）は「頼みをだれも受けとらず、係全体の `progress` が 2 つの締め切りの間動かない」を「止まった ・ 消えた係」とみなす。読みこんだばかりの Surge XT（1.3.4）は最初の音のブロックが 1 個 4〜5 ms かかり、16 個が 1 つの係（20-1 のまとめる決まり）で同じブロックに最初の音を出すと、係の音のスレッド 4 本がそろって Surge XT の中にいて、`progress` が止まる。ブロックがそれより短いと（試験の場で 128 フレームなら毎回）係の 16 本が再生の頭で止まる。quiet の 2 回（静かな PC、256 フレーム）がこの形だった証拠はない（記録がない）が、本物のアプリ 59 回と試験の場 100 回あまりで Surge XT が落ちた事はなく、合わない所も見つかっていない（確かさ C）。
-- **決めた事**: 「死んだ」に「係のどのスロットでも、スレッドがプラグインの中にいて（`taken` ≠ `done`）、まだ `HANG_MS` たっていない」ことがない、を足す。スレッドがプラグインの中にいる係は、遅いだけで生きている。理由: 係の中のスレッドの数（最大 4）より重い仕事が多く来るのは、まとめる決まりでふつうに起きる。止まった係のうち、ちょうどスレッドがプラグインの中にいた物は、ハングするプラグインと同じ `HANG_MS`（5 秒）で見つかる。消えた係は core が pidfd で見ているので変わらない。
-- **とらなかった案**: 1 つの係に入れるプラグインの数を 4 までにする（係の数とメモリがふえる。20-1 をくずす）。`progress` をプラグイン係の主スレッドからも進める（主スレッドが生きていても音のスレッドが止まっていれば役に立たない）。
-- **記録の口**: `MELOET_PLUGHOST_LOG_DIR`（core の `dev-hooks`）で係の標準エラーをファイルに。そのとき係は致命的なシグナルでスタックを書く（`crates/meloet-plughost/src/crashlog.rs`、`dev-hooks`）。係の終わりかたが core の送った SIGKILL でなければ、core は `meloet: the process of <key> ended: <終わりかた>` を書く（いつも。落ちた係がスタックを書く間にエンジンが先に見切ると SIGKILL になって出ないので、わけは係の記録で見る）。
-- **残した事**: Surge XT の最初の音が重いので、頭の和音は数ブロック欠ける（前から。止まらなくなっただけ）。rtkit の道の PC では、係の `RLIMIT_RTTIME` が 200 ms になり、パッチを読む長いブロックで係が SIGKILL になるかもしれない（確かめていない）。
+### 23-12 Memory
 
-### 23-12 メモリ（第 8 回 区切り4）
+Numbers: `docs/history/measurements/2026-11-22-round8-memory.md`; tool `tools/measure/memory.py`.
 
-測った数は `docs/measurements/2026-11-22-round8-memory.md`、道具は `tools/measure/memory.py`（2026-11-22、meloet-hard の印 k8mem。Fable の上限のため Opus 5.5）。
+- **meloet's memory is mostly samples.** Started without samples: RSS 238 MB (PSS 99 MB; shared libraries and the NVIDIA mapping count in RSS but are shared). One grand piano adds 333 MB; 8 tracks of mixed sounds reach 908 MB (674 MiB of samples). 16 Surge XT weigh in the plugin host (290 MB, Surge's own); 16 vocal tracks add 18 MB (read-ahead rings).
+- **Freed sample memory goes back to the PC** (fixed). The sample loading thread puts samples in its glibc malloc arena; memory freed there was kept by malloc, so RSS did not drop (closing an 8-track song left 1051 MB).
+  - Form: `SampleBank`'s `Drop` counts freed bytes (`meloet_sound::memory`). The core's 100 ms `housekeeping` checks: at 4 MiB or more, a separate thread `meloet-give-back` calls `malloc_trim(0)` once (glibc; every arena, including free pages in the middle). Never two at once.
+  - Reason: samples are freed in many places (closing a song, replacing a sound, deleting a track, ending a shelf audition, reloading an SF2, a new sound version arriving), and where the last `Arc` drops (core, an instrument back from the engine, the shelf) is not fixed. Counting in `Drop` works on every path. `malloc_trim` takes 0.2–25 ms (24.8 ms for 334 MiB) and holds arena locks in turn, so it runs off the core thread. The audio thread does not allocate, so it never waits for those locks.
+  - When samples are held and let go (not kept for undo; the shelf's "one before" only while open, etc.) is unchanged (`sync_sounds` in `play/sounds.rs`). Only "RSS goes down after freeing" changed.
+  - Not taken: (1) `mallopt(M_MMAP_THRESHOLD)` to keep big samples outside malloc: changes malloc for the whole process, set at `meloet-app` start. (2) Our own mmap container: more unsafe in meloet-sound. (3) `M_ARENA_MAX`: does not change whether memory is returned.
+- **"10 minutes of recording grows meloet from 102 to 232 MB" was not growth**: 102 MB is the 0 s sample before the page shows; from 30 s to 600 s it is flat (231.7 → 232.4 MB).
+- ~~WebKitWebProcess grows on the CPU path even when stopped (+130 MB in 10 minutes of recording).~~ **Superseded by 23-15**: not reproduced; both paths grow alike and level off.
 
-- **meloet のメモリは、ほぼサンプル**。サンプルなしの起動で RSS 238 MB（PSS 99 MB。共有のライブラリ 148 MB と NVIDIA の写し 37 MB は RSS に数えられるが、ほかと分けあう）。グランドピアノ 1 本で ＋ 333 MB（サンプル 340 MiB）、8 トラック（いろいろな音色）で 908 MB（サンプル 674 MiB）。Surge XT 16 本の重さはプラグイン係（290 MB、Surge の物）、歌 16 本は ＋ 18 MB（先読みの輪）。
-- **手放したサンプルのメモリを PC に返す**（直した）。サンプルを読む係のスレッドは glibc の malloc の「スレッドごとの場所」（arena）にサンプルを置く。そこで手放したメモリは、malloc が次のために持ったままで、RSS が減らない（8 トラックの曲を閉じても 1051 MB のまま、サンプルは 340 MiB）。
-  - 形: `SampleBank` の `Drop` が手放したバイト数を数える（`meloet_sound::memory`）。core の 100 ms ごとの片づけ（`housekeeping`）が、4 MiB 以上たまっていたら、別のスレッド `meloet-give-back` で `malloc_trim(0)`（glibc。全部の arena の、まん中の空いたページも返す）を 1 回呼ぶ。同時に 2 つは走らせない。
-  - **理由**: 手放す所（曲を閉じる、音色を入れかえる、トラックを消す、棚のためし弾きをやめる、SF2 を入れなおす、新しい版の音色が来る）はいくつもあり、最後の `Arc` がどこで落ちるか（core、エンジンから戻った音源、棚）も決まっていない。`Drop` で数えれば、どの道でも同じに働く。`malloc_trim` は 1 回 0.2〜25 ms（334 MiB で 24.8 ms）で、arena の鍵を順に持つので、core のスレッドではなく別のスレッドで呼ぶ。音のスレッドはメモリを取らないので、鍵を待たない。
-  - いつ持ち、いつ手放すか（取り消しで戻せる間も持たない、棚の「1 つ前」はひらいている間だけ、など）の決まりは今のまま（`play/sounds.rs` の `sync_sounds`）。変えたのは「手放したあと、RSS が下がる」ことだけ。
-  - くらべた案: (1) `mallopt(M_MMAP_THRESHOLD)` を決めて、大きなサンプルをいつも malloc の外（mmap）に置く。プロセス全体の malloc の動きを変え、決める場所が meloet-app の起動になるのでとらない。(2) サンプルを自分で mmap した入れ物に置く。meloet-sound に unsafe の入れ物がふえるのでとらない。(3) arena の数をしぼる（`M_ARENA_MAX`）。返すかどうかは変わらないのでとらない。
-- **10 分録ると meloet が 102 → 232 MB にふえる、はふえていない**。102 MB は起動してすぐ（画面が出る前）の 0 秒の数で、30 秒から 600 秒までは 231.7 → 232.4 MB（第 7 回の生の数）、今回も 571.5 → 573.6 MB（グランドピアノつき）。
-- **WebKitWebProcess は、CPU の道（`meloet-app` が決める `WEBKIT_DISABLE_COMPOSITING_MODE=1`、`2026-11-22-round8-quiet.md`）で、止まっていてもふえる**（10 分録って ＋130 MB。第 7 回の合成の道は ＋30 MB）。JS のヒープは平ら（Full の GC のあとで 28 MB）で、ふえるのは JS の外の無名のメモリ。くわしくは測りの書類の 3 章。直していない（道を変えるかは棟梁が決める。測りの書類の 5 章）。
+### 23-13 Arrange scrolling on the CPU path
 
-### 23-13 CPU の道のアレンジの送り（第 8 回 区切り4）
+Numbers: `docs/history/measurements/2026-11-22-round8-scroll.md`.
 
-測った数は `docs/measurements/2026-11-22-round8-scroll.md`。
+- **Where the cost is**: a scroll frame makes the whole time side (1676×904 at 1920×1080) one bounding rectangle. Everything moves, so fewer rectangles do not mean less area. Nearly half the drawing is canvases (WebKit reads the WebGL picture to the CPU, puts it into a GPU ImageBuffer, then reads it back to draw) and filling the background (new shared memory each time). On the page side, what could be cut was the wheel JS (3–4.5 ms each) and rewriting HTML on each scroll.
+- **Form**:
+  1. **Clip face rectangles are not rebuilt on each scroll** (`lanePicture` in `Arrange.svelte`). They are built for a window 3 view-widths wide (1 left, 2 right), and the offset from the window's left edge is applied with the `rects` slot's `shiftX` (`gl/slot.ts`; the engine draws rectangles and waveforms shifted left). The window is rebuilt when the view's left edge has moved one width, and on zoom or content change. Clips outside the window are not built, so zoom costs about the same as before.
+  2. **Only waveforms are built each scroll** (`laneWaves`): their level (`framesPerPx`) and cut points (`straightParts`) depend on the visible part, so building them for the window would change the picture. They are drawn with the same `shiftX`.
+  3. **Note shapes are remembered per take** (`laneShapesOf`): takes never change, so shapes are keyed by take and clip placement (start, end, offset), and only notes touching the window are taken by binary search (`notesNear`, starting back by the longest note). `keyRange` is over all the clip's notes, as before.
+  4. **Ruler numbers move as one strip with `transform`** (`.bar-strip`); each number's `left` is from the song head and is not rewritten.
+  5. **Labels at the left edge do not change width each scroll**: a label of a clip that reaches past two view-widths to the right is cut there (no name is longer). A width change ran layout inside the label every frame.
+- **Not taken**: two label sets each moved by `transform` (crossing the left edge rebuilt elements and was slower); showing clip faces through a `bitmaprenderer` copy (no change).
+- **Reading busyMs**: on the CPU path a frame comes as soon as the last one is drawn (it does not wait 16.7 ms on a 144 Hz screen). busyMs is "until this frame's picture is drawn" and can cover two frames' drawing. Whether 60 Hz holds is read from `frameGapMs` (mean and p95) in `arrange_parts.py`.
+- **Result**: side scroll busyMs 20 → 13 ms mean, frame gap p95 15–16 → 12–13 ms; most zoomed-out scroll 24 → 14–16 ms. Zoom is 19–20 ms, **not inside 16.7 ms** (mean frame gap 11 ms). A song with 192 audio clips did not change (label text cost; the font task of 22-18). Key → screen while playing did not change.
+- **Left**: zoom and scrolling songs with many audio clips still pay for canvas and text drawing. (`set_enable_accelerated_2d_canvas(false)` was thought of here; **23-15 found it does nothing in WebKitGTK 2.52.6**.)
 
-- **重さの正体**: 送るコマは、時間の側ぜんぶ（1920×1080 で 1676×904）が「囲む四角 1 つ」になる。中身がぜんぶ動くので、四角の数をへらしても描く広さはへらない。描く所の半分ちかくは canvas（WebKit が WebGL の絵を CPU に読み、GPU の ImageBuffer に入れ、描くときにまた読みもどす）と、地をぬる所（描くたびに新しい共有メモリ）。ページの側でへらせたのは、ホイールの JS（1 回 3〜4.5 ms）と、送るたびの HTML の書きかえ。
-- **形**:
-  1. **クリップの面の四角は、送るたびに作りなおさない**（`Arrange.svelte` の `lanePicture`）。見えている幅の 3 つぶんの窓（左に 1、右に 2）を見ているつもりで作り、窓の左はしからの分を `rects` の slot の `shiftX`（`gl/slot.ts`。engine が四角と波形をその分左に描く）で送る。窓は、見えている所の左はしが幅 1 つぶん動いたときと、拡大 ・ 中身が変わったときに作りなおす。窓の外のクリップは作らないので、拡大のたびの重さは前と同じくらい。
-  2. **波形だけは送るたびに作る**（`laneWaves`）。段（`framesPerPx`）と切れ目（`straightParts`）が見えている所で決まるので、窓で作ると絵が変わる。作った物は窓の左はしからの x に直して、同じ `shiftX` で描く。
-  3. **ノートの形はテイクごとに覚える**（`laneShapesOf`）。テイクは中身を変えないので、テイクとクリップの置き場所（始まり ・ 終わり ・ ずれ）で覚え、窓にかかるノートだけを二分探索で取る（`notesNear`。いちばん長いノートの分だけ前から）。高さの範囲（`keyRange`）はクリップのノートぜんぶで、前と同じ。
-  4. **目盛の数字は、数字の帯ごと `transform` で送る**（`.bar-strip`）。数字の `left` は曲の頭からの x（ティック × px）で、送っても書きかえない。
-  5. **左はしにかかる札の幅を、送るたびに変えない**: 右が見えている幅の 2 つぶんより先にのびるクリップの札は、そこで切る（名前がそれより長い事はない）。幅が変わると、札の中のレイアウトが毎コマ走る。
-- **とらなかった形**（理由は測りの書類の 4 章）: 札を 2 組に分けて組ごと `transform`（左はしをまたぐたびに要素を作りなおして重くなった）、クリップの面を `bitmaprenderer` の写しで見せる（変わらなかった）。
-- **busyMs の読みかた**: CPU の道では、コマは前のコマを描き終えしだい来る（画面が 144 Hz なら 16.7 ms を待たない）。busyMs は「そのコマの絵を描き終えるまで」で、次のコマの描く所のあとに回ると 2 つぶんになる。60 Hz を保っているかは、`arrange_parts.py` の `frameGapMs`（平均と p95 を足した）で読む。
-- **結果**（`arr16`、交互に 3 回ずつ）: 横に送る busyMs 平均 20 → 13 ms、コマの間 p95 15〜16 → 12〜13 ms。いちばん縮めて送る 24 → 14〜16 ms。拡大は 20〜21 → 19〜20 ms で、**16.7 ms の中に入っていない**（コマの間は平均 11 ms）。歌の 192 個の曲は変わらない（札の文字の重さ。22-18 の書体の宿題）。再生中の鍵 → 画面は変わらない。
-- **のこり**: 拡大と、歌の多い曲の送りは、canvas を描く所と文字を描く所が残る。canvas の読みもどしを 1 回にできるかもしれない形（`webkit2gtk` の `set_enable_accelerated_2d_canvas(false)`、`crates/meloet-app`）は、ためしていない。
+### 23-15 WebKit memory on the CPU path
 
-### 23-15 CPU の道の WebKit のメモリ（第 8 回 区切り4）
+Numbers: `docs/history/measurements/2026-11-22-round8-webkit-memory.md`; tool `tools/measure/webkit_memory.py`.
 
-測った数は `docs/measurements/2026-11-22-round8-webkit-memory.md`、道具は `tools/measure/webkit_memory.py`（2026-11-22、meloet-hard の印 k8wk。Fable の上限のため Opus 5.5）。
+- **Decision: keep the CPU path (`WEBKIT_DISABLE_COMPOSITING_MODE=1`) and add nothing.** It keeps key → drawn at p50 0.4–0.7 ms. The "+130 MB in 10 minutes even when stopped" of 23-12 did not appear in the current version. The CPU path and the compositing path grow about the same in the same scene (play 25 min: +18 / +16 MB; record 13 min: +20 / +17 MB) and level off after 20–25 minutes; both are flat when stopped. CPU-path play for 60 minutes: +38 MB (in steps). RSS is 40–170 MB lower on the CPU path. The memory target "10 minutes of recording: WebKit within +40 MB" is met.
+- What grows is WebKitWebProcess's libpas (`fastMalloc` and JavaScriptCore) in-use memory, not memory freed and kept. Shared memory (`memfd` of each frame's `ShareableBitmap`) does not pile up. meloet itself (the UI process) does not grow.
+- **Tried, no effect**: glibc malloc tunables (`GLIBC_TUNABLES` `trim_threshold` / `arena_max` / `mmap_threshold`); `Malloc=1` (no bmalloc; worse); the CPU path by setting (`set_hardware_acceleration_policy(Never)`: same path as the env var, same growth and time, and since it changes after the WebView is made a `Core: Scrolling` thread is left); `enable-2d-canvas-acceleration` false (in 2.52.6 a WebGL canvas on the CPU path always goes through `createImageBufferForWebGLContextReads`, which ignores this setting). `set_enable_accelerated_2d_canvas` of `webkit2gtk` 2.0.2 does nothing in 2.52.6.
+- WebKitWebProcess disappearing after about 280 s did not happen again in about 4 hours of CPU-path runs.
+- Note: on the CPU path, play keeps drawing 60+ frames a second even when the window is hidden or the screen is off (the compositing path stops). When measuring the compositing path, check from the page's frame count (`frames` in `frame-profile.json`) that the screen did not go off. Open: whether to stop drawing while hidden; memory beyond 2 hours of play.
 
-- **CPU の道（`WEBKIT_DISABLE_COMPOSITING_MODE=1`）のまま、何も足さない、を係はすすめる（決めるのは棟梁）**。23-12 の「CPU の道で止まっていてもふえる、10 分録って ＋130 MB」は、今の版では出なかった。CPU の道と合成の道は、同じ場面で同じくらいふえ（再生 25 分で ＋18 と ＋16 MB、録る 13 分で ＋20 と ＋17 MB）、20〜25 分で平らになる。止まっていると、どちらも平ら。CPU の道の再生は 60 分で ＋38 MB（段になってふえる）。RSS の高さは CPU の道のほうが 40〜170 MB 低い。
-- ふえるのは WebKitWebProcess の libpas（`fastMalloc` と JavaScriptCore）の「使用中」で、手放したのに返さない形ではない。共有メモリ（1 コマごとの `ShareableBitmap` の `memfd`）はたまらない。meloet（画面のプロセス）はふえない。
-- **入れなかった形**: glibc の malloc の決まり（`GLIBC_TUNABLES` の `trim_threshold` ・ `arena_max` ・ `mmap_threshold`）、`Malloc=1`（bmalloc を使わない。悪くなった）、設定で CPU の道（`set_hardware_acceleration_policy(Never)`。環境の変数と同じ描く道で、ふえかたも時間も同じ。WebView を作ったあとに変えるので `Core: Scrolling` のスレッドが残る）、`enable-2d-canvas-acceleration` を false（2.52.6 の WebGL の canvas は、CPU の道で描くたびに GPU の ImageBuffer を決めうちで作りなおす `createImageBufferForWebGLContextReads` を通り、この設定を見ない。数も時間も同じ）。`webkit2gtk` 2.0.2 の `set_enable_accelerated_2d_canvas` は 2.52.6 では何もしない。
-- WebKitWebProcess が約 280 秒で消えた件は、約 4 時間の CPU の道の回で再現しなかった。
-- 気をつける事: CPU の道は、窓が見えない時や画面が消えた時も、再生中は毎秒 60 コマ以上描きつづける（合成の道は止まる）。測る人は、合成の道を測る間に画面が消えていないかを、ページのコマの数（`frame-profile.json` の `frames`）で確かめる。
+### 23-16 The export check uses the sound before the final cut
 
-### 23-16 書き出しのたしかめは切る前の音で（第 8 回の終わり）
+Fixes "F8-ExportClip cannot be made" from `docs/history/measurements/2026-11-22-round8-end.md`.
 
-2026-11-22、meloet-hard の印 k8clip（Fable の上限のため Opus 5.5）。測りの書類 `docs/measurements/2026-11-22-round8-end.md` の「モックとのちがい」7（F8-ExportClip が作れない）の直し。
-
-- **わけ**: 書き出しの 2 つめのエンジン（`export/render.rs` の `ExportEngine`）は、弾くほうと同じ `Engine::process` を呼ぶ。その終わり（`engine.rs` のマスターのあと、出口へ書く所）で、音は ±1.0 に切られていた。たしかめ（`export/job.rs` の `Taker` の `peak_of` ・ `OverPlaces`）と作業の場所の 32 ビットのファイルは、その切ったあとの音を受けとるので、いちばん大きい所は 0.0 dB で止まり、`over` はいつも 0 だった。切る所は第 1 回から、書き出しは第 7 回から（第 7 回の「いちばん大きい所」も 0.0 dB で止まっていた。前からの不具合）。
-- **直した形**: `Engine::keep_overs()`（出口へ書く所で切らない。数でない値は今までどおり 0）。書き出しのエンジンだけが呼ぶ。弾くエンジンは今までどおり切る（耳とスピーカーを守る）。
-  - たしかめのいちばん大きい所と `over` は、切る前のマスターの音（マスターのインサートのあと、メトロノームは書き出しでは鳴らない）。リミッターがあれば、そのあと。
-  - 作業の場所のファイル（32 ビットの浮動小数）は切らない。仕上げで 32 ビットはそのまま書く（B-95-10「32 ビットは割れない」）。16 ・ 24 ビットは、前からファイルに書く所（`export/sink.rs` の `Whole::of`）で ±1.0 に切る。
-  - 約束は変えていない（`ExportCheck` の `peak_db` ・ `over` ・ `clips` の意味のまま。`clips` は 32 ビットでは `false` のまま）。
-- **「出口の音と 1 ビットも同じ」の読みなおし**: 0 dB をこえない曲は今までどおり 1 ビットも同じ（`what_is_exported_is_what_plays_sample_for_sample`）。こえる曲は、書き出しの音を ±1.0 に切ると、出口の音と 1 ビットも同じ（`what_goes_over_0_db_is_exported_as_it_is_and_cut_as_it_plays`）。16 ・ 24 ビットのファイルの数は、切ってから整数にするので、出口の音から作った物と同じ。
-- **本物のアプリ**: `shoot_app.py exportClipApp`（リミッターを外し、フェーダーをみな +6 dB）で、たしかめは「いちばん大きい所 +11.7 dB」「0 dB をこえる所が 1 か所あります（いちばん大きい所 +11.7 dB）。音が割れます。」になった（1280×800 ・ 100 %、2026-11-22）。音が詰まった曲なので、こえない所が 100 ms つづかず 1 か所。
+- **Why**: the export engine (`ExportEngine` in `export/render.rs`) calls the same `Engine::process` as playback. At its end (after the master in `engine.rs`, where the output is written) the sound was cut to ±1.0. The check (`peak_of` and `OverPlaces` of `Taker` in `export/job.rs`) and the 32-bit work file got the cut sound, so the peak stopped at 0.0 dB and `over` was always 0. The cut had been there since round 1 and export since round 7 (the bug was old).
+- **Fix**: `Engine::keep_overs()` (do not cut where the output is written; non-numbers still become 0). Only the export engine calls it; the playing engine still cuts (to protect ears and speakers).
+  - The check's peak and `over` are from the master before the cut (after the master inserts; the metronome does not play in exports), after the limiter if there is one.
+  - The work file (32-bit float) is not cut. The final 32-bit file is written as is (B-95-10, "32-bit does not clip"). 16 / 24-bit (and FLAC) are cut to ±1.0 where the file is written (`Whole::of` in `export/sink.rs`), as before.
+  - No protocol change (`peak_db`, `over`, `clips` of `ExportCheck` mean the same; `clips` stays `false` for 32-bit).
+- **"The same as the output, bit for bit", read again**: a song that never goes over 0 dB is still identical (`what_is_exported_is_what_plays_sample_for_sample`). A song that goes over is identical once the export is cut to ±1.0 (`what_goes_over_0_db_is_exported_as_it_is_and_cut_as_it_plays`). 16 / 24-bit values are cut before turning into integers, so they equal what would be made from the output.
+- **Real app**: `shoot_app.py exportClipApp` (limiter removed, all faders +6 dB) shows 「いちばん大きい所 +11.7 dB」 and 「0 dB をこえる所が 1 か所あります（いちばん大きい所 +11.7 dB）。音が割れます。」 (a dense song never has 100 ms below 0 dB, so one place).

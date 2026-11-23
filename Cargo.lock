@@ -2358,7 +2358,7 @@ dependencies = [
 
 [[package]]
 name = "meloet-ai"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "libc",
  "meloet-core",
@@ -2374,7 +2374,7 @@ dependencies = [
 
 [[package]]
 name = "meloet-app"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "cairo-rs",
  "dbus",
@@ -2392,7 +2392,7 @@ dependencies = [
 
 [[package]]
 name = "meloet-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "dirs",
  "flacenc",
@@ -2417,7 +2417,7 @@ dependencies = [
 
 [[package]]
 name = "meloet-devices"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "pipewire",
  "serde_json",
@@ -2425,7 +2425,7 @@ dependencies = [
 
 [[package]]
 name = "meloet-engine"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "cpal",
  "dbus",
@@ -2438,14 +2438,14 @@ dependencies = [
 
 [[package]]
 name = "meloet-mcp"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde_json",
 ]
 
 [[package]]
 name = "meloet-midi"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "alsa",
  "libc",
@@ -2453,11 +2453,11 @@ dependencies = [
 
 [[package]]
 name = "meloet-model"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "meloet-plughost"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "dbus",
  "libc",
@@ -2473,7 +2473,7 @@ dependencies = [
 
 [[package]]
 name = "meloet-plugin"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "libc",
  "serde",
@@ -2482,7 +2482,7 @@ dependencies = [
 
 [[package]]
 name = "meloet-protocol"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "meloet-model",
  "serde",
@@ -2492,7 +2492,7 @@ dependencies = [
 
 [[package]]
 name = "meloet-sound"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "libc",
  "meloet-engine",
@@ -2504,7 +2504,7 @@ dependencies = [
 
 [[package]]
 name = "meloet-stretch"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "cc",
 ]

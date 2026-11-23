@@ -19,7 +19,7 @@ Last written: 2026-11-23, during round 9 (foundation at `ea66c22`).
 | Recovery file | 2 | `crates/meloet-core/src/recovery.rs`, architecture 15 |
 | Wire to the plugin host | 5 | `crates/meloet-plugin/src/wire.rs` |
 | Sound pack catalog | format `meloet-sounds-catalog`, version 1; pack `2026.11.2` | `tools/sounds/catalog.json`, architecture 23-1 and 23-9 |
-| App | 0.1.0 (released as v0.x.y) | `crates/meloet-app/Cargo.toml` |
+| App | 0.2.0 (released as v0.x.y) | `crates/meloet-app/Cargo.toml` |
 
 Time base: a quarter note is 1920 ticks. Tempo is always quarter notes per minute, whatever the time signature (architecture 22-1, 22-2). The tempo map is `crates/meloet-model/src/tempo_map.rs` and `ui/src/time/tempoMap.ts`.
 
@@ -99,7 +99,7 @@ Items from rounds 7 and 8 that are still open. Older items that rounds 7 and 8 d
 
 Still open:
 
-1. **Install and try on a real PC** (`docs/install-check.md`): on a real PC or VM with Ubuntu 24.04 and 26.04, install `target/deb/meloet_0.1.0_amd64.deb` → open → keyboard → fetch the sound pack → the grand piano sounds → the plugin shelf → save and open → remove. Also the "audio thread priority" line when started from a terminal (`(limit)`, `(rtkit)`, or could not raise). The agent on this PC cannot check rtkit (a session with no seat).
+1. **Install and try on a real PC** (`docs/install-check.md`): on a real PC or VM with Ubuntu 24.04 and 26.04, install `target/deb/meloet_0.2.0_amd64.deb` → open → keyboard → fetch the sound pack → the grand piano sounds → the plugin shelf → save and open → remove. Also the "audio thread priority" line when started from a terminal (`(limit)`, `(rtkit)`, or could not raise). The agent on this PC cannot check rtkit (a session with no seat).
 2. **Measure 「遅れを測る」 again**: round 8 fixed the formula (real inputs were one block too large). If 「この数を使う」 was pressed before, that number is no longer read (`measured_latency_2`).
 3. **Clean-up**: delete `/var/crash/_usr_lib_x86_64-linux-gnu_webkit2gtk-4.1_WebKitWebProcess.1001.crash` (made when a helper stopped WebKit under gdb; while it is there, apport writes no new report). Remove meloet-agent from the docker group (`sudo gpasswd -d meloet-agent docker`; the image `meloet-deb-build` is already deleted).
 4. **Put the deb on a Release?** Make an app Release (for example `v0.1.0`) apart from the sound pack, and when.

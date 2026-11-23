@@ -29,12 +29,12 @@ Reply in Japanese, in plain words (the owner reads Japanese).
 Ask a stronger model through the Claude Code command line, read-only, from the root of your worktree (or the folder the request names). First sonnet:
 
 ```bash
-claude -p --model sonnet --effort medium \
+claude -p --model claude-sonnet-5-5 --effort medium \
   --tools "Read,Grep,Glob" --allowedTools "Read,Grep,Glob" \
   "<your question>"
 ```
 
-If sonnet's answer does not get you unstuck, ask opus the same way (`--model opus --effort medium`). Put in the question what the job is, what you ran, the exact output, and what you are unsure of.
+If sonnet's answer does not get you unstuck, ask opus the same way (`--model claude-opus-5-5 --effort medium`). Put in the question what the job is, what you ran, the exact output, and what you are unsure of.
 If you are still stuck after opus, stop and return to the lead: say what you tried, what each model said, and where you stopped. Do not guess your way through.
 
 ## Finishing

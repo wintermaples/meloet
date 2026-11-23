@@ -40,7 +40,7 @@ Reply in Japanese, in plain words (the owner reads Japanese).
 When you think "I'm stuck", even a little — a design you are not sure of, a test you cannot explain, a fix that does not hold, a second failed try — ask Fable (a stronger model) through the Claude Code command line, read-only, before going on:
 
 ```bash
-claude -p --model fable --effort medium \
+claude -p --model claude-fable-5-2 --effort medium \
   --tools "Read,Grep,Glob" --allowedTools "Read,Grep,Glob" \
   "<your question>"
 ```

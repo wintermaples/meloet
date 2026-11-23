@@ -98,7 +98,7 @@ meloet-stretch (Rust): Signalsmith Linear 0.6.4 (C++ headers stft.h and fft.h, k
   source: https://github.com/Signalsmith-Audio/linear
   license: MIT; the text is in licenses/rust/meloet-stretch/SIGNALSMITH-LINEAR-LICENSE.txt
 
-== Parts (265: 262 Rust crates, 3 npm packages)
+== Parts (267: 264 Rust crates, 3 npm packages)
 
 @tauri-apps/api 2.12.4 (npm): Apache-2.0 OR MIT
 aho-corasick 1.1.5 (Rust): Unlicense OR MIT
@@ -144,6 +144,7 @@ crossbeam-utils 0.8.23 (Rust): MIT OR Apache-2.0
 crypto-common 0.1.7 (Rust): MIT OR Apache-2.0
 crypto-common 0.2.2 (Rust): MIT OR Apache-2.0
 ctor 1.0.14 (Rust): Apache-2.0 OR MIT
+dasp_frame 0.11.0 (Rust): MIT OR Apache-2.0
 dasp_sample 0.11.0 (Rust): MIT OR Apache-2.0
 dbus 0.9.12 (Rust): Apache-2.0 OR MIT
 deranged 0.5.9 (Rust): MIT OR Apache-2.0
@@ -155,6 +156,7 @@ dlopen2 0.8.2 (Rust): MIT
 dpi 0.1.2 (Rust): Apache-2.0 AND MIT
 dunce 1.0.5 (Rust): CC0-1.0 OR MIT-0 OR Apache-2.0
 dyn-clone 1.0.20 (Rust): MIT OR Apache-2.0
+ebur128 0.1.11 (Rust): MIT
 equivalent 1.0.3 (Rust): Apache-2.0 OR MIT
 erased-serde 0.4.11 (Rust): MIT OR Apache-2.0
 extended 0.1.0 (Rust): MIT

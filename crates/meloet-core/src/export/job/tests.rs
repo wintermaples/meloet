@@ -30,6 +30,7 @@ fn target(
         format,
         sample_rate,
         bits,
+        loudness: ExportLoudness::AsIs,
     }
 }
 
@@ -84,6 +85,7 @@ fn taker(path: &Path, head: u64, range: u64, tail: ExportTail) -> Taker {
         written: 0,
         over: false,
         listen: None,
+        true_peak: None,
     }
 }
 
@@ -694,4 +696,235 @@ fn a_job_that_measures_bands_and_sections_answers_for_every_rendering() {
     let frames: u64 = analysis.sections.iter().map(|s| s.passes[0].frames).sum();
     assert_eq!(frames, passes[0].frames);
     assert!(analysis.sections.iter().all(|s| s.passes.len() == 4));
+}
+
+/// The integrated loudness and the true peak (dBTP) of interleaved stereo, by ebur128 alone.
+fn remeasured(samples: &[f32], rate: u32) -> (f32, f32) {
+    use ebur128::{EbuR128, Mode};
+    let mut meter = EbuR128::new(2, rate, Mode::I | Mode::TRUE_PEAK).unwrap();
+    meter.add_frames_f32(samples).unwrap();
+    let peak = (0..2)
+        .map(|c| meter.true_peak(c).unwrap())
+        .fold(0.0, f64::max);
+    (
+        meter.loudness_global().unwrap() as f32,
+        (20.0 * peak.log10()) as f32,
+    )
+}
+
+/// Ten seconds at [`RATE`]: a 1 kHz sine of `amplitude`, and, with `bursts`, a millisecond
+/// at −6 dB every two seconds.
+fn fixed_signal(amplitude: f32, bursts: bool) -> Vec<f32> {
+    use std::f32::consts::TAU;
+    (0..10 * RATE as usize)
+        .flat_map(|i| {
+            let t = (i % RATE as usize) as f32 / RATE as f32;
+            let loud = bursts && i % (2 * RATE as usize) < 48;
+            let level = if loud { 0.5 } else { amplitude };
+            let s = level * (TAU * 1_000.0 * t).sin();
+            [s, s * 0.9]
+        })
+        .collect()
+}
+
+/// Writes `samples` as a job renders them, measures them as the job does, and brings them
+/// into `target` as 「書き出す」 does. Returns what was measured and what was written.
+fn converted(
+    place: &Place,
+    name: &str,
+    samples: &[f32],
+    target: &ExportTarget,
+) -> (Option<f32>, Option<f32>, Vec<f32>) {
+    let from = place.root.join(format!("{name}.render.wav"));
+    let mut wav = CacheWav::create(&from, RATE, 2).unwrap();
+    let mut listen = Listener::new(RATE, None, &[]);
+    let mut true_peak = TruePeak::new(RATE).unwrap();
+    for block in samples.chunks(2 * BLOCK) {
+        wav.write(block).unwrap();
+        listen.feed(block);
+        true_peak.feed(block);
+    }
+    wav.finish().unwrap();
+    let (lufs, peak) = (listen.finish().lufs, true_peak.db());
+    let gain = match target.loudness {
+        ExportLoudness::Match => loudness::match_gain(lufs, peak).map(|m| m.gain_db),
+        ExportLoudness::AsIs => None,
+    };
+    let stop = AtomicBool::new(false);
+    std::fs::create_dir_all(target.path.parent().unwrap()).unwrap();
+    if convert(&from, &target.path, RATE, target, gain, &stop).is_err() {
+        panic!("{name} was not converted");
+    }
+    let out = match target.format {
+        ExportFormat::Wav => read_wav(&target.path),
+        ExportFormat::Flac => read_flac(&target.path).1,
+    };
+    (lufs, peak, out)
+}
+
+fn matched(path: PathBuf, format: ExportFormat, rate: u32, bits: RecordFormat) -> ExportTarget {
+    ExportTarget {
+        loudness: ExportLoudness::Match,
+        ..target(path, format, rate, bits)
+    }
+}
+
+#[test]
+fn matched_fixed_signals_measure_minus_14_lufs_or_stop_at_minus_1_dbtp() {
+    let place = Place::new("export-match");
+    let out = |name: &str| place.root.join("out").join(name);
+
+    // Quiet: brought up to −14 LUFS.
+    let quiet = fixed_signal(0.05, false);
+    let target = matched(
+        out("quiet.wav"),
+        ExportFormat::Wav,
+        RATE,
+        RecordFormat::Bits32,
+    );
+    let (lufs, peak, file) = converted(&place, "quiet", &quiet, &target);
+    let (lufs, peak) = (lufs.unwrap(), peak.unwrap());
+    // The check's loudness is BS.1770's, as ebur128 has it too.
+    let (again, again_peak) = remeasured(&quiet, RATE);
+    assert!((lufs - again).abs() < 0.05, "{lufs} / {again}");
+    assert!((peak - again_peak).abs() < 0.01, "{peak} / {again_peak}");
+    assert!(lufs < -20.0 && peak < -20.0, "{lufs} LUFS {peak} dBTP");
+    let (lufs, peak) = remeasured(&file, RATE);
+    assert!((lufs + 14.0).abs() <= 0.2, "{lufs} LUFS");
+    assert!(peak < -1.0, "{peak} dBTP");
+
+    // Loud: brought down to −14 LUFS.
+    let loud = fixed_signal(0.9, false);
+    let target = matched(
+        out("loud.flac"),
+        ExportFormat::Flac,
+        RATE,
+        RecordFormat::Bits24,
+    );
+    let (before, _, file) = converted(&place, "loud", &loud, &target);
+    assert!(before.unwrap() > -5.0, "{before:?}");
+    let (lufs, _) = remeasured(&file, RATE);
+    assert!((lufs + 14.0).abs() <= 0.2, "{lufs} LUFS");
+
+    // Quiet with short peaks: up only until the true peak is at −1 dBTP.
+    let peaky = fixed_signal(0.05, true);
+    let target = matched(
+        out("peaky.wav"),
+        ExportFormat::Wav,
+        RATE,
+        RecordFormat::Bits24,
+    );
+    let (before, _, file) = converted(&place, "peaky", &peaky, &target);
+    let (lufs, peak) = remeasured(&file, RATE);
+    assert!((peak + 1.0).abs() <= 0.2, "{peak} dBTP");
+    assert!(lufs < -14.5 && lufs > before.unwrap(), "{lufs} LUFS");
+    let file_peak = file.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+    assert!(file_peak < 1.0, "24 bits do not clip: {file_peak}");
+
+    // Brought to another rate: the same, give or take what the resampler does.
+    for rate in [44_100, 96_000] {
+        let name = format!("quiet-{rate}.flac");
+        let target = matched(out(&name), ExportFormat::Flac, rate, RecordFormat::Bits24);
+        let (_, _, file) = converted(&place, &name, &quiet, &target);
+        let (lufs, _) = remeasured(&file, rate);
+        assert!((lufs + 14.0).abs() <= 0.3, "{rate} Hz: {lufs} LUFS");
+        let name = format!("peaky-{rate}.wav");
+        let target = matched(out(&name), ExportFormat::Wav, rate, RecordFormat::Bits32);
+        let (_, _, file) = converted(&place, &name, &peaky, &target);
+        let (_, peak) = remeasured(&file, rate);
+        assert!((peak + 1.0).abs() <= 0.3, "{rate} Hz: {peak} dBTP");
+    }
+}
+
+#[test]
+fn as_is_writes_the_samples_as_they_were_rendered() {
+    let place = Place::new("export-as-is");
+    let signal = fixed_signal(0.05, true);
+    let path = place.root.join("out").join("as-is.wav");
+    let plain = target(path, ExportFormat::Wav, RATE, RecordFormat::Bits32);
+    let (_, _, file) = converted(&place, "as-is", &signal, &plain);
+    assert!(file == signal);
+
+    // Silence cannot be matched: written as it is.
+    let silence = vec![0.0f32; 2 * RATE as usize];
+    let path = place.root.join("out").join("silence.wav");
+    let target = matched(path, ExportFormat::Wav, RATE, RecordFormat::Bits32);
+    let (lufs, peak, file) = converted(&place, "silence", &silence, &target);
+    assert_eq!((lufs, peak), (None, None));
+    assert!(file == silence);
+}
+
+/// The loudness and the true peak in the last word of a rendered job.
+fn loudness_said(run: &Run) -> (Option<f32>, Option<f32>) {
+    let seen = run.until("rendered", |n| {
+        matches!(
+            n,
+            ExportNews::Counted { done: true, .. } | ExportNews::Failed { .. }
+        )
+    });
+    match seen.last() {
+        Some(ExportNews::Counted {
+            lufs, true_peak_db, ..
+        }) => (*lufs, *true_peak_db),
+        other => panic!("the job failed: {other:?}"),
+    }
+}
+
+#[test]
+fn a_job_measures_its_file_and_matches_it_and_one_for_each_track_does_not() {
+    let place = Place::new("export-job-match");
+    let (doc, _) = song();
+    place.files_of(&doc);
+    let span = (0, 2 * BAR);
+    let run = place.start(place.setup(place.job(1, &doc, span, ExportTail::UntilSilent)));
+    let (lufs, peak) = loudness_said(&run);
+    let floats = run.pass(0);
+    let (lufs, peak) = (lufs.unwrap(), peak.unwrap());
+    // The true peak hears the tail; the loudness only the range.
+    let range = 2 * frames_of(&doc, span.0, span.1);
+    assert!(floats.len() > range, "the song rings on");
+    let (whole_lufs, whole_peak) = remeasured(&floats, RATE);
+    let (range_lufs, _) = remeasured(&floats[..range], RATE);
+    assert!((peak - whole_peak).abs() < 0.01, "{peak} / {whole_peak}");
+    assert!((lufs - range_lufs).abs() < 0.05, "{lufs} / {range_lufs}");
+    assert!(
+        (lufs - whole_lufs).abs() > 1e-4,
+        "the tail is not in the loudness"
+    );
+
+    let path = place.root.join("out").join("matched.wav");
+    run.handle.finish(matched(
+        path.clone(),
+        ExportFormat::Wav,
+        RATE,
+        RecordFormat::Bits24,
+    ));
+    assert_eq!(finished(&run), std::slice::from_ref(&path));
+    let file = read_wav(&path);
+    assert_eq!(file.len(), floats.len());
+    let m = loudness::match_gain(Some(lufs), Some(peak)).unwrap();
+    let (lufs_after, peak_after) = remeasured(&file, RATE);
+    let at_target = (lufs_after + 14.0).abs() <= 0.2;
+    let at_ceiling = (peak_after + 1.0).abs() <= 0.2;
+    assert!(
+        at_target || at_ceiling,
+        "{lufs_after} LUFS {peak_after} dBTP"
+    );
+    assert_eq!(!at_target, m.limited, "{m:?}");
+
+    // For each track: nothing is measured, and nothing is matched.
+    let mut job = place.job(2, &doc, span, ExportTail::Off);
+    job.per_track = true;
+    let run = place.start(place.setup(job));
+    assert_eq!(loudness_said(&run), (None, None));
+    let first = run.pass(0);
+    let folder = place.root.join("tracks");
+    run.handle.finish(matched(
+        folder,
+        ExportFormat::Wav,
+        RATE,
+        RecordFormat::Bits32,
+    ));
+    let files = finished(&run);
+    assert!(read_wav(&files[0]) == first);
 }

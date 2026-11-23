@@ -112,3 +112,6 @@ opt-level = 3
 # The flac files of an export.
 [profile.dev.package.flacenc]
 opt-level = 3
+# The true peak of an export's check (4× oversampled).
+[profile.dev.package.ebur128]
+opt-level = 3

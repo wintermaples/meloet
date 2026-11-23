@@ -14,9 +14,10 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use meloet_model::{Doc, InstrumentRef, PluginPlace, TickRange, TrackId};
-use meloet_protocol::{EXPORT_TAIL_MAX_S, ExportFailure, ExportTail};
+use meloet_protocol::{EXPORT_TAIL_MAX_S, ExportFailure, ExportLoudness, ExportTail};
 
 use super::analysis::{self, Heard, Listener};
+use super::loudness::{self, TruePeak};
 use super::render::{ExportEngine, Plugs};
 use super::sink::{self, SinkSpec};
 use super::told::{KnownPlugins, Told};
@@ -172,6 +173,8 @@ struct Rendered {
     levels: PassLevels,
     /// What a job that measures heard.
     heard: Option<Heard>,
+    /// Of a job that renders one file and does not measure.
+    true_peak_db: Option<f32>,
 }
 
 fn go(
@@ -225,6 +228,12 @@ fn go(
             }
         },
     };
+    let gain = match (target.loudness, &rendered[..]) {
+        (ExportLoudness::Match, [one]) if !job.per_track => {
+            loudness::match_gain(one.levels.lufs, one.true_peak_db).map(|m| m.gain_db)
+        }
+        _ => None,
+    };
     // Every file is brought into its form in the work place first: moving takes a moment,
     // so a job given up on the way leaves nothing where the person looks.
     let mut ready = Vec::new();
@@ -239,7 +248,7 @@ fn go(
             None => target.path.clone(),
         };
         let out = setup.work.join(format!("out-{i}"));
-        convert(&file.path, &out, job.sample_rate, &target, stop)?;
+        convert(&file.path, &out, job.sample_rate, &target, gain, stop)?;
         ready.push((out, to));
     }
     for (out, to) in ready {
@@ -339,6 +348,8 @@ fn render(
         .collect();
     let bands = (job.measure.as_ref().and_then(|m| m.bands))
         .map(|layout| analysis::bands(layout, job.sample_rate));
+    // F1: the loudness and the true peak of one file (the dialog's; the AI link's too).
+    let loud = !job.per_track && job.measure.is_none();
     let mut watch = Watch {
         job: job.id,
         passes: passes.len() as u64,
@@ -351,6 +362,7 @@ fn render(
         over_before: 0,
         over: 0,
         longest: 0,
+        loudness: (None, None),
     };
     let realtime = job.realtime || seats.realtime;
     let mut rendered = Vec::new();
@@ -368,14 +380,22 @@ fn render(
                 let solo = Told::of(doc, Some(*track), &setup.known, &job.skip);
                 engine.set_silent(solo.silent());
             }
-            let listen = job.measure.as_ref().map(|m| {
-                let keep = i > 0 && m.compare.contains(&(i - 1));
-                let bands = bands.as_deref().map(|b| (b, keep));
-                Listener::new(job.sample_rate, bands, &cuts)
-            });
+            let listen = match &job.measure {
+                Some(m) => {
+                    let keep = i > 0 && m.compare.contains(&(i - 1));
+                    let bands = bands.as_deref().map(|b| (b, keep));
+                    Some(Listener::new(job.sample_rate, bands, &cuts))
+                }
+                None => loud.then(|| Listener::new(job.sample_rate, None, &[])),
+            };
+            let true_peak = if loud {
+                TruePeak::new(job.sample_rate)
+            } else {
+                None
+            };
             watch.pass = i as u64;
             let path = setup.work.join(format!("pass-{i}.wav"));
-            let mut each = |written: u64, peak: f32, over: u32| -> Result<(), Ended> {
+            let mut each = |written: u64, taker: &Taker| -> Result<(), Ended> {
                 if stop.load(Relaxed) {
                     return Err(Ended::Dropped);
                 }
@@ -388,13 +408,24 @@ fn render(
                 if let Ok(wanted) = targets.try_recv() {
                     *target = Some(wanted);
                 }
-                watch.saw(written, peak, over, tell);
+                watch.saw(written, taker, tell);
                 Ok(())
             };
-            let (levels, heard) =
-                render_pass(&mut engine, job, &path, i > 0, realtime, &mut each, listen)?;
+            let listening = Listening { listen, true_peak };
+            let (levels, heard, true_peak_db) = render_pass(
+                &mut engine,
+                job,
+                &path,
+                i > 0,
+                realtime,
+                &mut each,
+                listening,
+            )?;
             watch.over_before = watch.over;
             watch.longest = watch.longest.max(levels.frames);
+            if loud {
+                watch.loudness = (levels.lufs, true_peak_db);
+            }
             if job.measure.is_some() {
                 let _ = fs::remove_file(&path);
             }
@@ -403,6 +434,7 @@ fn render(
                 name: pass.map(|(_, name)| name),
                 levels,
                 heard,
+                true_peak_db,
             });
         }
         Ok(())
@@ -458,6 +490,8 @@ struct Watch {
     over: u32,
     /// The frames of the longest file so far.
     longest: u64,
+    /// F1, once the one file is rendered: its loudness and true peak.
+    loudness: (Option<f32>, Option<f32>),
 }
 
 impl Watch {
@@ -470,12 +504,13 @@ impl Watch {
     }
 
     /// `written`: frames of the range that are in the file of this pass.
-    fn saw(&mut self, written: u64, peak: f32, over: u32, tell: &dyn Fn(ExportNews)) {
-        self.peak = self.peak.max(peak);
-        self.over = self.over_before.saturating_add(over);
+    fn saw(&mut self, written: u64, taker: &Taker, tell: &dyn Fn(ExportNews)) {
+        self.peak = self.peak.max(taker.peak);
+        self.over = self.over_before.saturating_add(taker.places.count);
         if self.told_at.is_some_and(|at| at.elapsed() < TELL_EVERY) {
             return;
         }
+        let (lufs, true_peak_db) = taker.loudness();
         self.told_at = Some(Instant::now());
         let all = (self.passes * self.range).max(1);
         let done = (self.pass * self.range + written.min(self.range)).min(all);
@@ -490,6 +525,8 @@ impl Watch {
             over: self.over,
             length_s: self.seconds(self.range),
             remaining_s: remaining,
+            lufs,
+            true_peak_db,
             done: false,
         });
     }
@@ -502,6 +539,8 @@ impl Watch {
             over: self.over,
             length_s: self.seconds(self.longest),
             remaining_s: Some(0),
+            lufs: self.loudness.0,
+            true_peak_db: self.loudness.1,
             done: true,
         });
     }
@@ -528,8 +567,16 @@ struct Taker {
     squares: f64,
     written: u64,
     over: bool,
-    /// Hears the range for the AI link.
+    /// Hears the range for the AI link, or for F1.
     listen: Option<Listener>,
+    /// F1: hears all that is written, the tail too.
+    true_peak: Option<TruePeak>,
+}
+
+/// What hears a rendering besides the file.
+struct Listening {
+    listen: Option<Listener>,
+    true_peak: Option<TruePeak>,
 }
 
 fn peak_of(samples: &[f32]) -> f32 {
@@ -578,12 +625,26 @@ impl OverPlaces {
 }
 
 impl Taker {
+    /// F1 so far: the loudness of the range and the true peak of the file.
+    fn loudness(&self) -> (Option<f32>, Option<f32>) {
+        match &self.true_peak {
+            Some(true_peak) => (
+                self.listen.as_ref().and_then(Listener::lufs_now),
+                true_peak.db(),
+            ),
+            None => (None, None),
+        }
+    }
+
     fn write(&mut self, samples: &[f32]) -> io::Result<()> {
         if samples.is_empty() {
             return Ok(());
         }
         self.peak = self.peak.max(peak_of(samples));
         self.places.feed(samples);
+        if let Some(true_peak) = &mut self.true_peak {
+            true_peak.feed(samples);
+        }
         self.squares += samples
             .iter()
             .map(|s| f64::from(*s) * f64::from(*s))
@@ -632,17 +693,18 @@ impl Taker {
 }
 
 /// Plays the range once and writes it to `path`. `each` is called after every block with
-/// the frames of the range written so far, the largest sample and the places over 0 dB.
-/// Returns the frames of the file and what was in them, and what `listen` heard of the range.
+/// the frames of the range written so far and what the file holds so far.
+/// Returns the frames of the file and what was in them, what `listen` heard of the range,
+/// and the true peak of the file.
 fn render_pass(
     engine: &mut ExportEngine,
     job: &ExportJob,
     path: &Path,
     anew: bool,
     realtime: bool,
-    each: &mut dyn FnMut(u64, f32, u32) -> Result<(), Ended>,
-    listen: Option<Listener>,
-) -> Result<(PassLevels, Option<Heard>), Ended> {
+    each: &mut dyn FnMut(u64, &Taker) -> Result<(), Ended>,
+    listening: Listening,
+) -> Result<(PassLevels, Option<Heard>, Option<f32>), Ended> {
     let range = range_frames(engine, job.span);
     engine.play_from(job.span.start(), anew);
     let mut taker = Taker {
@@ -660,7 +722,8 @@ fn render_pass(
         squares: 0.0,
         written: 0,
         over: false,
-        listen,
+        listen: listening.listen,
+        true_peak: listening.true_peak,
     };
     let started = Instant::now();
     let block = engine.block() as u64;
@@ -680,7 +743,7 @@ fn render_pass(
         if played == range {
             engine.stop();
         }
-        if let Err(e) = each(taker.written.min(range), taker.peak, taker.places.count) {
+        if let Err(e) = each(taker.written.min(range), &taker) {
             break Err(e);
         }
         if taker.over {
@@ -695,6 +758,7 @@ fn render_pass(
         Ok(()) => {
             let frames = taker.out.finish()?;
             let samples = taker.written.saturating_mul(2).max(1);
+            let true_peak_db = taker.true_peak.as_ref().and_then(TruePeak::db);
             let heard = taker.listen.map(Listener::finish);
             let levels = PassLevels {
                 peak: taker.peak,
@@ -704,7 +768,7 @@ fn render_pass(
                 lufs: heard.as_ref().and_then(|h| h.lufs),
                 lufs_short_max: heard.as_ref().and_then(|h| h.lufs_short_max),
             };
-            Ok((levels, heard))
+            Ok((levels, heard, true_peak_db))
         }
         Err(e) => {
             taker.out.abandon();
@@ -835,13 +899,16 @@ fn load_plugins(engine: &ExportEngine, told: &Told, setup: &Setup) -> Result<Exp
 }
 
 /// Brings a rendered file into the form of `target`, as the file `to` of the work place.
+/// `gain` (dB) is on every sample before anything else; without it the samples are as read.
 fn convert(
     from: &Path,
     to: &Path,
     rate: u32,
     target: &ExportTarget,
+    gain: Option<f32>,
     stop: &AtomicBool,
 ) -> Result<(), Ended> {
+    let factor = gain.map(loudness::factor);
     let mut wav = WavPcm::open(from)?;
     let spec = SinkSpec {
         format: target.format,
@@ -866,6 +933,9 @@ fn convert(
                 break;
             }
             at += got as u64;
+            if let Some(factor) = factor {
+                buf[..got * 2].iter_mut().for_each(|s| *s *= factor);
+            }
             match &mut resample {
                 Some(r) => r.push(&buf[..got * 2], &mut |block| out.write(block))?,
                 None => out.write(&buf[..got * 2])?,

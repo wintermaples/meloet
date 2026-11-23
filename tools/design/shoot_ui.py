@@ -234,6 +234,12 @@ BOARDS = {
     "exportStopped": "F-Export",
     "exportAdvanced": None,
     "exportCheckFailed": None,
+    # 「音の大きさ」 of the export (round 12 F1; the spec's mock is not a board).
+    "exportLoudness": None,
+    "exportLoudnessLimited": None,
+    "exportLoudnessQuieter": None,
+    "exportLoudnessCounting": None,
+    "exportLoudnessSilent": None,
     # Two or more clips, the check before export.
     "multiClip": "F8-MultiClip",
     "exportCheck": "F8-ExportCheck",

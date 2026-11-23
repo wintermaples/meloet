@@ -82,7 +82,10 @@ describe("export dialog (mock F7-Export, spec 3 (34-B))", () => {
     expect(qa('[data-test^="export-format-"]').map(text)).toEqual(["wav", "flac"]);
     expect(text(q('[data-test="export-place"]'))).toBe("~/音楽/はじめての曲.wav");
     // the spec 6 text 「書き出しの前」 (not the mock's 「音割れなし」).
-    expect(qa('[data-test="export-check-line"]').map(text)).toEqual(["いちばん大きい所 −0.6 dB ・ 音割れはありません"]);
+    expect(qa('[data-test="export-check-line"]').map(text)).toEqual([
+      "いちばん大きい所 −0.6 dB ・ 音割れはありません",
+      "曲ぜんたいの大きさ −12.5 LUFS ・ トゥルーピーク −0.5 dBTP",
+    ]);
     expect(text(q('[data-test="export-stopped"]'))).toBe("止まっているプラグインはありません");
     expect(text(q('[data-test="export-details"]'))).toBe("▸ くわしく 48000 Hz ・ 24 ビット ・ しっぽは音が消えるまで（最大 10 秒）");
     expect(q('[data-test="export-adv"]')).toBeNull();

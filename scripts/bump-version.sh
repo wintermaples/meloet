@@ -2,8 +2,8 @@
 # Raise the app version everywhere it is written, then check that the old one is gone.
 #   scripts/bump-version.sh 0.2.0
 # It changes: every crates/*/Cargo.toml, Cargo.lock (workspace members only), NOTICE and the
-# about dialog list (tools/licenses/inventory.mjs write), and the deb name and version in the docs.
-# It does not commit, tag, push or build the deb.
+# about dialog list (tools/licenses/inventory.mjs write), and the deb and AppImage names and the
+# version in the docs. It does not commit, tag, push or build the deb or the AppImage.
 set -euo pipefail
 
 new="${1:-}"
@@ -45,6 +45,7 @@ node tools/licenses/inventory.mjs write
 # 4. The docs that name the deb or the current version.
 esc_old="${old//./\\.}"
 sed -i "s/meloet_${esc_old}_amd64\.deb/meloet_${new}_amd64.deb/g" README.md README.ja.md docs/development/ubuntu.md docs/install-check.md docs/user/README.ja.md docs/progress.md
+sed -i "s/meloet_${esc_old}_amd64\.AppImage/meloet_${new}_amd64.AppImage/g" README.md README.ja.md docs/development/appimage.md docs/user/README.ja.md docs/progress.md
 sed -i "s/いまの版は ${esc_old} です/いまの版は ${new} です/" docs/user/README.ja.md
 sed -i "s/^| App | ${esc_old} /| App | ${new} /" docs/progress.md
 
@@ -60,7 +61,7 @@ check() {
 for toml in crates/*/Cargo.toml; do check "$toml" "^version = \"$old\"$"; done
 check NOTICE "^Version $old\."
 check ui/src/components/about/generated/licenses.json "\"meloet\": {\"version\":\"$old\""
-for doc in README.md README.ja.md docs/development/ubuntu.md docs/install-check.md docs/user/README.ja.md docs/progress.md; do
+for doc in README.md README.ja.md docs/development/ubuntu.md docs/development/appimage.md docs/install-check.md docs/user/README.ja.md docs/progress.md; do
   check "$doc" "meloet_${old}_amd64"
 done
 check docs/user/README.ja.md "いまの版は $old"

@@ -2437,6 +2437,7 @@ dependencies = [
  "libc",
  "meloet-ai",
  "meloet-core",
+ "meloet-plugin",
  "meloet-protocol",
  "serde_json",
  "tauri",

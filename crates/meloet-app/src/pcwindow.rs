@@ -197,7 +197,9 @@ pub fn show_file(path: PathBuf) {
             if let Err(e) = show_items(&path) {
                 eprintln!("meloet: the file manager did not show the file ({e}); trying xdg-open");
                 let folder = path.parent().unwrap_or(&path);
-                match std::process::Command::new("xdg-open").arg(folder).status() {
+                let mut command = std::process::Command::new("xdg-open");
+                meloet_plugin::launch::outside_appimage(&mut command);
+                match command.arg(folder).status() {
                     Ok(s) if s.success() => {}
                     Ok(s) => eprintln!("meloet: xdg-open ended with {s}"),
                     Err(e) => eprintln!("meloet: cannot run xdg-open: {e}"),
@@ -256,13 +258,15 @@ pub fn open_file(_: PathBuf) {}
 fn xdg_open(thread: &str, what: std::ffi::OsString) {
     let opened = std::thread::Builder::new()
         .name(thread.into())
-        .spawn(
-            move || match std::process::Command::new("xdg-open").arg(&what).status() {
+        .spawn(move || {
+            let mut command = std::process::Command::new("xdg-open");
+            meloet_plugin::launch::outside_appimage(&mut command);
+            match command.arg(&what).status() {
                 Ok(s) if s.success() => {}
                 Ok(s) => eprintln!("meloet: xdg-open {what:?} ended with {s}"),
                 Err(e) => eprintln!("meloet: cannot run xdg-open: {e}"),
-            },
-        );
+            }
+        });
     if let Err(e) = opened {
         eprintln!("meloet: cannot start xdg-open: {e}");
     }

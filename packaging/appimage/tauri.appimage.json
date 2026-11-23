@@ -1,0 +1,22 @@
+{
+  "bundle": {
+    "linux": {
+      "appimage": {
+        "files": {
+          "/usr/share/doc/meloet/LICENSE-MIT": "../../LICENSE-MIT",
+          "/usr/share/doc/meloet/LICENSE-APACHE": "../../LICENSE-APACHE",
+          "/usr/share/doc/meloet/NOTICE": "../../NOTICE",
+          "/usr/share/doc/meloet/AppImage-libraries.txt": "../../packaging/appimage/libraries.txt",
+          "/usr/share/doc/appimage-runtime/README": "../../packaging/appimage/runtime.txt",
+          "/usr/share/doc/appimage-runtime/type2-runtime.LICENSE": "../../packaging/appimage/licenses/type2-runtime.LICENSE",
+          "/usr/share/doc/appimage-runtime/libfuse.LGPL2.txt": "../../packaging/appimage/licenses/libfuse.LGPL2.txt",
+          "/usr/share/doc/appimage-runtime/squashfuse.LICENSE": "../../packaging/appimage/licenses/squashfuse.LICENSE",
+          "/usr/share/doc/appimage-runtime/zstd.LICENSE": "../../packaging/appimage/licenses/zstd.LICENSE",
+          "/usr/share/doc/appimage-runtime/zlib.LICENSE": "../../packaging/appimage/licenses/zlib.LICENSE",
+          "/usr/share/doc/appimage-runtime/mimalloc.LICENSE": "../../packaging/appimage/licenses/mimalloc.LICENSE",
+          "/usr/share/doc/appimage-runtime/musl.COPYRIGHT": "../../packaging/appimage/licenses/musl.COPYRIGHT"
+        }
+      }
+    }
+  }
+}

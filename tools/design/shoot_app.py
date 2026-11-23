@@ -161,6 +161,8 @@ def dress_song(made, s, folder):
         data = json.load(f)
     song = data["song"]
     song["name"] = "はじめての曲"
+    if s.get("tidy"):
+        tidy_notes(data)
     if s.get("loop"):
         a, b = s["loop"]
         song["loop"] = {"start": q(4 * (a - 1)), "end": q(4 * (b - 1))}
@@ -194,6 +196,39 @@ def dress_song(made, s, folder):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False)
     return path
+
+
+def tidy_notes(data):
+    """For the README picture: the six tracks of make_song.py (piano, bass, drums, strings,
+    electric piano, lead) play C - Am - F - G, one chord a bar, instead of random notes. Bars 1-4
+    piano and drums, 5-8 also bass and electric piano, 9-16 everything (strings and lead too)."""
+    bar, beat, eighth = 7680, 1920, 960
+    chords = [([60, 64, 67], 48), ([60, 64, 69], 45), ([60, 65, 69], 41), ([59, 62, 67], 43)]
+    tune = [72, 74, 76, 79, 76, 74, 72, 69, 69, 72, 74, 72, 71, 74, 79, 74]
+    parts = {k: [] for k in range(6)}
+    for b in range(16):
+        top, root = chords[b % 4]
+        at = b * bar
+        for half in (0, 2 * beat):
+            parts[0] += [[at + half, 3600, p, 78 + (b * 7 + half) % 17] for p in top]
+        parts[0].append([at, 7400, root, 72])
+        for i in range(8):
+            t = at + i * eighth
+            parts[2].append([t, 240, 42, 64 + (i % 2) * 18])
+            if i in (0, 4):
+                parts[2].append([t, 240, 36, 100])
+            if i in (2, 6):
+                parts[2].append([t, 240, 38, 92])
+            if b >= 4:
+                parts[1].append([t, 820, root - 12 + (12 if i in (3, 7) else 0), 84 + (i % 2) * 8])
+        if b >= 8:
+            parts[3] += [[at, 7600, p - 12, 70] for p in top]
+            parts[5] += [[at + n * beat, 1800, tune[(b - 8) * 2 % 16 + (n // 2)], 96] for n in range(4)]
+        if b >= 4:
+            parts[4] += [[at + beat + n * 2 * beat, 1700, p, 74] for n in range(2) for p in top]
+    for n, take in enumerate(data["takes"][:6]):
+        take["notes"] = sorted(parts[n])
+        take["controls"] = []
 
 
 TAKE1 = "歌 テイク 1.wav"
@@ -248,6 +283,13 @@ STATES = {
     "pianoRollSong": dict(board="A-PianoRoll", remembered=True, song=200,
                           commands=[(600, {"type": "selectClip", "clip": 2}),
                                     (800, {"type": "toggleBand", "band": "pianoRoll"})], snap=2500),
+    # The picture at the top of the READMEs: a song of six tracks with markers, its first clip
+    # in the piano roll.
+    "readmeApp": dict(remembered=True, snap=3000, tidy=True,
+                      song=["--tracks", "6", "--notes", "4", "--bars", "16", "--instruments", "builtin",
+                            "--markers", "0:イントロ,30720:Aメロ,61440:サビ"],
+                      commands=[(600, {"type": "selectClip", "clip": 2}),
+                                (800, {"type": "toggleBand", "band": "pianoRoll"})]),
     # Two tracks added through the shelf, one renamed, one recolored and moved to the top.
     "tracks": dict(board="R7-Arrange6", remembered=True, snap=3600, commands=[
         (400, {"type": "openShelf", "mode": {"kind": "newTrack"}}),
@@ -699,7 +741,7 @@ def shoot(state, size, scale, settings, work, png):
                 stdout=subprocess.DEVNULL)
         if s.get("gone"):
             rename_plugins(song)
-        if s.get("loop") or s.get("vocal"):
+        if s.get("loop") or s.get("vocal") or s.get("tidy"):
             folder = os.path.join(tempfile.mkdtemp(prefix="song-", dir=work), "はじめての曲")
             os.makedirs(folder)
             song = dress_song(song, s, folder)

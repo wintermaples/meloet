@@ -6,6 +6,8 @@
 
 <p align="center"><a href="README.md">English</a> | 日本語</p>
 
+<p align="center"><img src="docs/screenshots/app/readmeApp-1280x800-100.png" width="800" alt="meloet の画面: 6 トラックの曲のアレンジとピアノロール"></p>
+
 ## 概要
 
 meloet は、はじめて MIDI 鍵盤を買った人のための音楽アプリ（DAW）です。鍵盤を USB でつなぎ、音の出口をえらぶと、弾く、録る、ノートを直すことができます。録ったノートは鍵盤を押したときに耳に届いていた位置に置かれ、どの変更も 1 手ずつ取り消せます。

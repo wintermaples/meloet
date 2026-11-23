@@ -6,6 +6,8 @@
 
 <p align="center">English | <a href="README.ja.md">日本語</a></p>
 
+<p align="center"><img src="docs/screenshots/app/readmeApp-1280x800-100.png" width="800" alt="meloet: the arrange and the piano roll of a song with six tracks"></p>
+
 ## Overview
 
 meloet is a music app (a DAW) for people who have just bought their first MIDI keyboard. Plug the keyboard in by USB, choose where the sound comes out, and you can play, record and edit notes. Recorded keys are placed where you heard them, and every change can be undone step by step.

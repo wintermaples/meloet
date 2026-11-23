@@ -8,6 +8,7 @@ mod export;
 mod pack;
 mod recovery;
 mod songs;
+mod typed;
 mod updates;
 mod vocal;
 
@@ -722,6 +723,8 @@ pub struct Model {
     /// The id of the keyboard played last, while it is plugged in.
     played: Option<String>,
     lost: Option<String>,
+    /// R2 「キーで弾く」 is on: the PC keyboard, as a keyboard (`state/typed.rs`).
+    typed: Option<Keyboard>,
     /// `None` until the first picture. Outputs are kept in chooser order.
     devices: Option<DevicesPicture>,
     chosen: Option<String>,
@@ -873,6 +876,7 @@ impl Model {
             keyboards: Vec::new(),
             played: None,
             lost: None,
+            typed: None,
             devices: None,
             chosen_name: settings.output_name.filter(|_| settings.output.is_some()),
             chosen: settings.output,
@@ -981,7 +985,7 @@ impl Model {
                 }
             }
             Input::KeyboardPlayed { id } => {
-                if self.keyboards.iter().any(|k| k.id == id) {
+                if self.all_keyboards().any(|k| k.id == id) {
                     self.played = Some(id);
                 }
             }
@@ -1501,10 +1505,14 @@ impl Model {
     /// Returns the node a test tone was asked on.
     fn command(&mut self, command: Command, effects: &mut Vec<Effect>) -> Option<String> {
         // A resize is not something the user does to answer a notice, and neither is the sound
-        // of the write tool, which comes and goes around the write that may give a notice.
+        // of the write tool, which comes and goes around the write that may give a notice, nor a
+        // key of the PC keyboard, which is played as a keyboard's.
         if !matches!(
             command,
-            Command::SetViewport { .. } | Command::Audition { .. } | Command::AuditionOff
+            Command::SetViewport { .. }
+                | Command::Audition { .. }
+                | Command::AuditionOff
+                | Command::TypedKey { .. }
         ) {
             self.notice = None;
             self.new_song_unsaid = false;
@@ -1515,8 +1523,9 @@ impl Model {
         let command = self.vocal_command(command, effects)?;
         match command {
             Command::KeepPlayed => self.notice = self.play.keep_played(effects),
-            // round12 stub: R2
-            Command::TypedKeys { .. } | Command::TypedKey { .. } => {}
+            Command::TypedKeys { on } => self.set_typed_keys(on),
+            // Played by the service before it comes here (`service/typed.rs`).
+            Command::TypedKey { .. } => {}
             // round12 stub: E1
             Command::SetNoteGlow { .. } => {}
             Command::ShelfSelectPattern { id } => {
@@ -2839,12 +2848,12 @@ impl Model {
     fn active_keyboard(&self) -> Option<&Keyboard> {
         self.played
             .as_ref()
-            .and_then(|id| self.keyboards.iter().find(|k| &k.id == id))
-            .or_else(|| self.keyboards.last())
+            .and_then(|id| self.all_keyboards().find(|k| &k.id == id))
+            .or_else(|| self.all_keyboards().last())
     }
 
     fn chooser_shown(&self) -> bool {
-        self.chosen.is_none() && !self.keyboards.is_empty()
+        self.chosen.is_none() && self.all_keyboards().next().is_some()
     }
 
     pub fn view(&self) -> AppState {
@@ -2908,22 +2917,12 @@ impl Model {
             plugins: self.plugins.view(),
             windows: self.play.windows_view(),
             keyboards: KeyboardsView {
-                list: self
-                    .keyboards
-                    .iter()
-                    .map(|k| KeyboardView {
-                        id: k.id.clone(),
-                        name: k.name.clone(),
-                        port_name: k.port_name.clone(),
-                        address: k.address(),
-                    })
-                    .collect(),
+                list: self.keyboard_views(),
                 active: self.active_keyboard().map(|k| k.id.clone()),
                 lost: self.lost.clone(),
                 input_stopped: self.midi_restarting.is_some(),
                 velocity_fixed: self.velocity_fixed,
-                // round12 stub: R2
-                typed_keys: false,
+                typed_keys: self.typed_keys(),
             },
             outputs: OutputsView {
                 list: self.outputs().iter().map(endpoint_view).collect(),
@@ -2966,7 +2965,10 @@ impl Model {
             latency_ms: measured.or_else(|| Some(estimate_ms(self.actual_frames?, rate?))),
             latency_ms_at_requested: rate.map(|r| estimate_ms(self.sound.buffer, r)),
             output_device: self.open.as_ref().map(|o| o.node_name.clone()),
-            midi_input: self.active_keyboard().map(Keyboard::label),
+            midi_input: self
+                .active_keyboard()
+                .filter(|k| self.keyboards.contains(k))
+                .map(Keyboard::label),
             buffer_choices: BUFFER_CHOICES.to_vec(),
             requested_sample_rate: self.sound.sample_rate,
             sample_rate_choices: SAMPLE_RATE_CHOICES.to_vec(),
@@ -3117,6 +3119,10 @@ impl Model {
                 meter_den: song.timeline.meter.den(),
                 track: self.play.record_target(),
             });
+        }
+        // While on: why the one-letter keys do nothing.
+        if self.typed_keys() {
+            return Some(StatusMessage::TypedKeysOn);
         }
         let redo = self.play.redo_count();
         if redo > 0 && !self.play.busy() {
@@ -3345,5 +3351,7 @@ mod speed;
 mod tests;
 #[cfg(test)]
 mod tooloud_tests;
+#[cfg(test)]
+mod typed_tests;
 #[cfg(test)]
 mod vocal_tests;

@@ -36,6 +36,8 @@ export interface MeterFitInput {
   sustain?: number;
   /** Width of each sentence when a hint is shown at the right end. rest includes all the sentences. */
   sentences?: readonly number[];
+  /** Widths of 「キーで弾く」 and then of its octave, each with the gap before (R2). rest includes them. */
+  typed?: readonly number[];
 }
 
 export interface MeterFit {
@@ -51,6 +53,8 @@ export interface MeterFit {
   sustain: boolean;
   /** How many hint sentences to show from the front. The first stays; if it does not fit, the screen cuts its end with 「…」. */
   sentences: number;
+  /** How many of `typed` to show, from the front (R2): only in the room the rest leaves. */
+  typed: number;
 }
 
 type Step = "modulation" | "pitchBend" | "narrowKeys" | "instrument" | "targetLabel" | "sentence" | "sustain";
@@ -72,9 +76,22 @@ export function nameWidthPx(name: NameWidth, scale: Scale): number {
  * the 「弾くと鳴る先」 label → sustain.
  * When full with a hint at the right end: modulation → pitch bend → narrow keys → hint sentences from the 2nd on → sustain.
  * A name or hint that still does not fit is cut with 「…」.
+ * 「キーで弾く」 and its octave came after these rules: they are fitted as if they were not there, and shown only in the room
+ * left (R2), so they never push out what the spec shows.
  */
 export function meterFit(input: MeterFitInput): MeterFit {
-  const { meter, scale, available, rest, pitchBend, modulation } = input;
+  const { meter, scale, available, pitchBend, modulation } = input;
+  const typedWidths = input.typed ?? [];
+  const rest = typedWidths.reduce((r, w) => r - w, input.rest);
+  const typedFits = (need: number) => {
+    let shown = 0;
+    for (const w of typedWidths) {
+      if (need + w > available) break;
+      need += w;
+      shown += 1;
+    }
+    return shown;
+  };
   const sentenceWidths = input.sentences ?? [];
   let sentences = sentenceWidths.length;
   const dropSentence = (need: number) => need - sentenceWidths[--sentences]!;
@@ -97,6 +114,7 @@ export function meterFit(input: MeterFitInput): MeterFit {
       targetLabel: true,
       sustain: true,
       sentences,
+      typed: 0,
     };
     let need = rest + nameWidthPx(first, scale) + pitchBend + modulation;
     for (const step of input.sentences ? MESSAGE_ORDER : TARGET_ORDER) {
@@ -110,6 +128,7 @@ export function meterFit(input: MeterFitInput): MeterFit {
       need -= saved[step];
     }
     fit.sentences = sentences;
+    fit.typed = typedFits(need);
     return fit;
   }
   const width = (w: NameWidth, bend: boolean, mod: boolean) =>
@@ -126,6 +145,7 @@ export function meterFit(input: MeterFitInput): MeterFit {
       targetLabel: true,
       sustain: true,
       sentences,
+      typed: typedFits(need),
     };
   };
   const fits = (w: NameWidth, bend: boolean, mod: boolean) => width(w, bend, mod) <= available;

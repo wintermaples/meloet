@@ -13,6 +13,7 @@ export const tauriTransport: Transport = {
   },
   snapshot: () => invoke<Snapshot>("snapshot"),
   send: (command) => invoke<SendReply>("send", { command }),
+  post: (command) => invoke<void>("post", { command }),
   clock: () => invoke<number>("clock"),
   // A raw reply (tauri::ipc::Response) arrives as an ArrayBuffer.
   takeNotes: (id) => invoke<ArrayBuffer>("take_notes", { id }),

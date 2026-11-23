@@ -32,6 +32,13 @@ export function send(command: Command): Promise<number | null> {
   return Promise.resolve(0);
 }
 
+/** What was sent without waiting (the keys of the PC keyboard). */
+export const posted: Command[] = [];
+
+export function post(command: Command): void {
+  posted.push(command);
+}
+
 export function onEvent(listener: (e: Event) => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
@@ -61,6 +68,7 @@ export function reset(): void {
   state = null;
   telemetry = null;
   sent.length = 0;
+  posted.length = 0;
   listeners.clear();
 }
 

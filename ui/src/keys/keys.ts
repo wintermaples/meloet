@@ -34,6 +34,8 @@ export type KeyAction =
   | { kind: "record" }
   /** Shift R: 「さっきのを残す」 (round 12, R1). */
   | { kind: "keepPlayed" }
+  /** Mod K: 「キーで弾く」 on and off (round 12, R2). */
+  | { kind: "typedKeys" }
   | { kind: "toStart" }
   | { kind: "loop" }
   | { kind: "metronome" }
@@ -161,6 +163,7 @@ export function keyAction(k: KeyInput, typing: boolean, platform: Platform, cont
     if (l === "q") return { kind: "quit" };
     if (l === "j") return { kind: "joinClips" };
     if (l === "r") return { kind: "repeatClips" };
+    if (l === "k") return { kind: "typedKeys" };
     // While typing, Mod A, X, C, V belong to the text in the box.
     if (l && MOD_EDITS[l] && !(typing && l !== "d")) return MOD_EDITS[l]!;
     if (!k.alt && (k.key === "," || k.code === "Comma")) return { kind: "audioSettings" };

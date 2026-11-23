@@ -28,6 +28,7 @@ use meloet_plugin::ipc::Transport as PluginTransport;
 
 const COMMAND_RING: usize = 256;
 const MIDI_RING: usize = 1024;
+const TYPED_RING: usize = 256;
 const LATENCY_RING: usize = 1024;
 const RECORDED_RING: usize = 4096;
 /// Slots of that ring left to what a recording says: the keys played outside one
@@ -424,7 +425,8 @@ pub struct MidiIn {
     pub t_us: u64,
 }
 
-/// The MIDI thread's end of the ring into the engine.
+/// The end of a ring of keys into the engine: the MIDI thread's, or the PC keyboard's
+/// ([`EngineHandle::typed_in`]).
 pub type MidiFeed = Producer<MidiIn>;
 
 /// When this block was called and when its first frame reaches the DAC, [`monotonic_us`] clock.
@@ -1389,6 +1391,8 @@ pub struct Engine {
     /// Its fader and pan come before its slots (docs/architecture.md 19-11).
     master_strip: Strip,
     midi: Consumer<MidiIn>,
+    /// The keys of the PC keyboard ([`EngineHandle::typed_in`]), read with `midi` in time order.
+    typed: Consumer<MidiIn>,
     latency: Producer<LatencyRecord>,
     recorded: Producer<Recorded>,
     clock: Arc<TransportClock>,
@@ -1457,6 +1461,7 @@ impl Engine {
         let (recorded_tx, recorded_rx) = RingBuffer::new(RECORDED_RING);
         let clock = Arc::new(TransportClock::default());
         let (midi_tx, midi_rx) = RingBuffer::new(MIDI_RING);
+        let (typed_tx, typed_rx) = RingBuffer::new(TYPED_RING);
         let (latency_tx, latency_rx) = RingBuffer::new(LATENCY_RING);
         let (analysis_tap, analysis_reader) = analysis_ring(config.sample_rate);
         let buffer = || vec![0.0f32; config.max_frames].into_boxed_slice();
@@ -1489,6 +1494,7 @@ impl Engine {
             returns: [Strip::new(), Strip::new()],
             master_strip: Strip::new(),
             midi: midi_rx,
+            typed: typed_rx,
             latency: latency_tx,
             recorded: recorded_tx,
             clock: clock.clone(),
@@ -1528,6 +1534,7 @@ impl Engine {
             last_map_gen: 0,
             latency: latency_rx,
             recorded: recorded_rx,
+            typed: typed_tx,
             clock,
             meters,
             max_frames: config.max_frames,
@@ -2474,23 +2481,37 @@ impl Engine {
         }
     }
 
-    /// Keys played after `record_until` sound but are not recorded.
+    /// Keys played after `record_until` sound but are not recorded. The MIDI thread's keys and
+    /// the PC keyboard's come in the order they were played; the earlier of the two heads first.
     fn read_midi(&mut self, timing: BlockTiming, record_until: u64) {
-        while let Ok(midi) = self.midi.pop() {
+        loop {
+            let typed_first = match (self.midi.peek(), self.typed.peek()) {
+                (Ok(midi), Ok(typed)) => typed.t_us < midi.t_us,
+                (Err(_), Ok(_)) => true,
+                (_, Err(_)) => false,
+            };
+            if typed_first {
+                let Ok(midi) = self.typed.pop() else { break };
+                self.key_in(midi, timing, record_until);
+                continue;
+            }
+            let Ok(midi) = self.midi.pop() else { break };
+            // Only the MIDI keyboard's: the PC keyboard's time comes from the screen, and this
+            // is the key-to-sound latency the settings show.
+            if matches!(midi.event, InstrumentEvent::NoteOn { velocity, .. } if velocity > 0) {
+                // Every event starts at frame 0 of this block, so `playback_us` is its first sample.
+                let _ = self.latency.push(LatencyRecord {
+                    key_us: midi.t_us,
+                    callback_us: timing.callback_us,
+                    playback_us: timing.playback_us,
+                });
+            }
             self.key_in(midi, timing, record_until);
         }
     }
 
     /// One event of a keyboard: it sounds on the play target and is written down as played.
     fn key_in(&mut self, midi: MidiIn, timing: BlockTiming, record_until: u64) {
-        if matches!(midi.event, InstrumentEvent::NoteOn { velocity, .. } if velocity > 0) {
-            // Every event starts at frame 0 of this block, so `playback_us` is its first sample.
-            let _ = self.latency.push(LatencyRecord {
-                key_us: midi.t_us,
-                callback_us: timing.callback_us,
-                playback_us: timing.playback_us,
-            });
-        }
         if let Some(instrument) = self
             .play_target
             .and_then(|t| self.tracks[t].instrument.as_mut())
@@ -3166,6 +3187,7 @@ pub struct EngineHandle {
     last_map_gen: u32,
     latency: Consumer<LatencyRecord>,
     recorded: Consumer<Recorded>,
+    typed: Producer<MidiIn>,
     clock: Arc<TransportClock>,
     meters: Arc<EngineMeters>,
     max_frames: usize,
@@ -3178,6 +3200,13 @@ impl EngineHandle {
         self.commands
             .push(command)
             .map_err(|rtrb::PushError::Full(command)| command)
+    }
+
+    /// The ring of the PC keyboard (R2): its keys are played as the MIDI thread's are, and
+    /// read with them in the order of their `t_us`, which must not go back. Only the thread
+    /// that owns this handle pushes into it; [`EngineHandle::rebuild`] makes a new one.
+    pub fn typed_in(&mut self) -> &mut MidiFeed {
+        &mut self.typed
     }
 
     /// Prepares `instrument` here (this may allocate) and sends it to `track`.

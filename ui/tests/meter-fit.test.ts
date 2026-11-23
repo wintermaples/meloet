@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { charCount, meterFit, nameWidthPx, sentences, type MeterFitInput } from "../src/components/meterFit";
 
-const ALL = { narrowKeys: false, instrument: true, targetLabel: true, sustain: true, sentences: 0 };
+const ALL = { narrowKeys: false, instrument: true, targetLabel: true, sustain: true, sentences: 0, typed: 0 };
 import { heldText, noteName, pad3, signed4 } from "../src/components/meterFormat";
 
 const base: MeterFitInput = {

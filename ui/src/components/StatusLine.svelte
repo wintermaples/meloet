@@ -57,6 +57,7 @@
   import { positionText, shownTick } from "./time";
   import ZoomMenu from "./ZoomMenu.svelte";
   import { overdubClipName } from "./clipEdits";
+  import { keyboardName as nameOfKeyboard, namedKeyboard } from "./keyboardName";
 
   const app = $derived(current.state!);
   /** The piano roll shows drum rows (selected notes and sounding notes as drum piece names). */
@@ -328,7 +329,7 @@
       case "searchingKeyboard":
         return plain("status.searchingKeyboard");
       case "keyboardFound":
-        return plain("msg.keyboardFound", { keyboard: m.keyboard });
+        return plain("msg.keyboardFound", { keyboard: namedKeyboard(m.keyboard) });
       case "keyboardLost":
         return plain("msg.keyboardLost", { keyboard: m.keyboard });
       case "keyboardInputStopped":
@@ -455,6 +456,9 @@
         return plain("msg.tooManyTracks");
       case "nothingToKeep":
         return plain("msg.nothingToKeep");
+      // R2: and that the keys do not sound while the input method is on.
+      case "typedKeysOn":
+        return { parts: joined(textParts("msg.typedKeysOn", {}), textParts("msg.typedKeysIme", {})), strong: [], button: null };
       case "instrumentReplaced":
         return withLanes(
           plain("msg.instrumentReplaced", {
@@ -1033,9 +1037,10 @@
   });
 
   const outputName = $derived(app.outputs.list.find((o) => o.id === app.outputs.chosen)?.name ?? null);
-  const keyboardName = $derived(
-    app.keyboards.inputStopped ? null : (app.keyboards.list.find((k) => k.id === app.keyboards.active)?.name ?? null),
-  );
+  const keyboardName = $derived.by(() => {
+    const active = app.keyboards.inputStopped ? undefined : app.keyboards.list.find((k) => k.id === app.keyboards.active);
+    return active ? nameOfKeyboard(active) : null;
+  });
   const actual = $derived(app.audio.actualFrames);
   const requested = $derived(app.audio.requestedFrames);
   const scale = $derived(app.workspace.scale);

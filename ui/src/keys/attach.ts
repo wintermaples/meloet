@@ -1,6 +1,6 @@
 // Connects the key rules (keys.ts) to the screen. The Esc order and clearing the 「音が出ました」 hint are here too.
 // Menu bar rows that have a key also go through runKeyAction here (so the choice between the piano roll and the arrange is made in one place).
-import type { AppState, Command } from "../bridge";
+import { clockOffsetUs, type AppState, type Command } from "../bridge";
 import { aboutBack } from "../components/about/about.svelte";
 import { exportedOpen } from "../components/export/exported";
 import { keyListBack } from "../components/keylist/keyList.svelte";
@@ -51,10 +51,15 @@ import {
   platformOf,
   type KeyAction,
 } from "./keys";
+import { forgetTyped, letGoTyped, switchTypedKeys, typedKeyDown, typedKeyUp, type TypedDeps } from "./typed.svelte";
 
 export interface KeyDeps {
   state(): AppState | null;
   send(command: Command): void;
+  /** Sends without waiting for the rev (the keys of the PC keyboard). send when not given. */
+  post?(command: Command): void;
+  /** For the times of the PC keyboard's keys (for tests; normally the bridge's). */
+  clockOffsetUs?(): Promise<number>;
   doc?: Document;
   nav?: { platform?: string; userAgent?: string };
   /** The take the piano roll shows (for tests; normally from shown.svelte.ts). */
@@ -180,6 +185,8 @@ function command(action: KeyAction, state: AppState): Command | null {
     // Sent with nothing to keep too: the status line then says so.
     case "keepPlayed":
       return { type: "keepPlayed" };
+    case "typedKeys":
+      return { type: "typedKeys", on: !state.keyboards.typedKeys };
     case "toStart":
       return { type: "goToStart" };
     case "loop":
@@ -351,10 +358,27 @@ export function runKeyAction(
       if (clips) openRepeatBox(clips);
       return clips !== null;
     }
+    case "typedKeys":
+      switchTypedKeys(!state.keyboards.typedKeys, { ...typedDeps(deps), send: (c) => deps.send(c) });
+      return true;
   }
   const c = keyCommand(action, state, deps, toPianoRoll);
   if (c) deps.send(c);
   return c !== null;
+}
+
+function typedDeps(deps: KeyDeps): TypedDeps {
+  return {
+    post: (c) => (deps.post ?? deps.send)(c),
+    clockOffsetUs: deps.clockOffsetUs ?? clockOffsetUs,
+  };
+}
+
+/** Esc while 「キーで弾く」 is on turns it off (after a drag and the menus, before going back; spec R2). */
+function typedKeysOff(state: AppState, deps: KeyDeps): boolean {
+  if (!state.keyboards.typedKeys) return false;
+  runKeyAction({ kind: "typedKeys" }, deps);
+  return true;
 }
 
 const SHELF_KEYS = new Set<KeyAction["kind"]>(["shelfStep", "shelfConfirm"]);
@@ -377,6 +401,7 @@ const WITH_MOD = new Set<KeyAction["kind"]>([
   "zoom",
   "joinClips",
   "repeatClips",
+  "typedKeys",
 ]);
 
 /**
@@ -428,12 +453,17 @@ export function handleKeydown(ev: KeyboardEvent, deps: KeyDeps): void {
   const doc = deps.doc ?? document;
   const state = deps.state();
   if (!state || ev.isComposing || MODIFIERS.has(ev.key)) return;
+  const typing = isTyping(doc);
+
+  // While 「キーで弾く」 is on, letters and digits are the PC keyboard's, before any shortcut (spec R2). They are a
+  // keyboard, so they leave the 「音が出ました」 hint.
+  if (!state.keyboards.typedKeys) forgetTyped();
+  else if (!typing && typedKeyDown(ev, typedDeps(deps))) return;
 
   // Any action other than the keyboard clears the 「音が出ました」 hint (the owner's decision).
   if (state.workspace.hint === "soundCameOut")
     deps.send({ type: "dismissHint" });
 
-  const typing = isTyping(doc);
   const context = state.workspace.chooser
     ? "outputChooser"
     : shelfHasKeys(state)
@@ -522,7 +552,7 @@ export function handleKeydown(ev: KeyboardEvent, deps: KeyDeps): void {
       return;
     }
     if (typing) (doc.activeElement as HTMLElement | null)?.blur();
-    else if (!closeMenus() && !aboutBack() && !keyListBack())
+    else if (!closeMenus() && !typedKeysOff(state, deps) && !aboutBack() && !keyListBack())
       deps.send(
         context === "history"
           ? { type: "toggleBand", band: "history" }
@@ -552,8 +582,12 @@ export function handleKeydown(ev: KeyboardEvent, deps: KeyDeps): void {
     ev.preventDefault();
 }
 
-/** The keyup of Space. Buttons are pressed on keyup (WebKit and Firefox), so it is stopped here too when not typing. */
-export function handleKeyup(ev: KeyboardEvent, doc: Document = document): void {
+/**
+ * The keyup of Space. Buttons are pressed on keyup (WebKit and Firefox), so it is stopped here too when not typing.
+ * With deps, a key of the PC keyboard is let go (R2).
+ */
+export function handleKeyup(ev: KeyboardEvent, doc: Document = document, deps?: KeyDeps): void {
+  if (deps) typedKeyUp(ev, typedDeps(deps));
   const space = ev.key === " " || ev.code === "Space";
   if (
     space &&
@@ -588,15 +622,25 @@ export function handlePointerdown(
 /** Connects keys and the mouse to document. Returns a function that disconnects them. */
 export function attachKeys(deps: KeyDeps): () => void {
   const doc = deps.doc ?? document;
+  const win = doc.defaultView;
   const onKey = (ev: KeyboardEvent) => handleKeydown(ev, deps);
-  const onKeyup = (ev: KeyboardEvent) => handleKeyup(ev, doc);
+  const onKeyup = (ev: KeyboardEvent) => handleKeyup(ev, doc, deps);
   const onPointer = (ev: PointerEvent) => handlePointerdown(deps, ev.target);
+  // The keyup of a held key may never come once the window is not in front (R2): its notes are let go now.
+  const onLeave = () => letGoTyped(typedDeps(deps));
+  const onVisibility = () => {
+    if (doc.visibilityState === "hidden") onLeave();
+  };
   doc.addEventListener("keydown", onKey);
   doc.addEventListener("keyup", onKeyup);
   doc.addEventListener("pointerdown", onPointer, true);
+  doc.addEventListener("visibilitychange", onVisibility);
+  win?.addEventListener("blur", onLeave);
   return () => {
     doc.removeEventListener("keydown", onKey);
     doc.removeEventListener("keyup", onKeyup);
     doc.removeEventListener("pointerdown", onPointer, true);
+    doc.removeEventListener("visibilitychange", onVisibility);
+    win?.removeEventListener("blur", onLeave);
   };
 }

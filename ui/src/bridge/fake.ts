@@ -15,6 +15,7 @@ import { advancePack, fakeClipsPanel, fakeSolo, fakeSounds, packAsking, packFail
 import { reduceRound10 } from "./fakeRound10";
 import { FAKE_PATTERNS, reduceP4 } from "./fakeP4";
 import { reduceUpdates } from "./fakeUpdates";
+import { FakeTypedKeys, typedOn } from "./fakeTyped";
 import { CLICK_VOLUME_MAX_DB, CLICK_VOLUME_MIN_DB, REPEAT_COUNT_MAX } from "./types";
 import { fakeLoudnessOf } from "./fakeLoudness";
 import { reduceA9 } from "./fakeA9";
@@ -1791,6 +1792,23 @@ SCENES.keepPlayedReady = {
   setup(s) {
     bandSong(s, BAND_TRACKS.slice(0, 4));
     s.transport.canKeepPlayed = true;
+  },
+  meters: QUIET,
+};
+// R2: 「キーで弾く」 on and played: 「パソコンのキーボード」 (with 「+1」) in the input meter, the octave, the status line.
+SCENES.typedKeys = {
+  setup(s) {
+    bandSong(s, BAND_TRACKS.slice(0, 4));
+    s.keyboards = typedOn(s.keyboards, true);
+    s.status.message = { id: "typedKeysOn" };
+  },
+  meters: { ...QUIET, keys: [48, 52, 55], velocity: 100 },
+};
+// R2: the sound settings while 「キーで弾く」 is on: 「パソコンのキーボード」 in the list of keyboards.
+SCENES.typedKeysSettings = {
+  setup(s) {
+    settings(s);
+    s.keyboards = typedOn(s.keyboards, false);
   },
   meters: QUIET,
 };
@@ -5427,6 +5445,7 @@ export function createFakeTransport(initial?: AppState): Transport {
   const clipboard: FakeClipboard = { clips: [] };
   const vocalMemo: FakeVocalMemo = { monitorSaid: false };
   const tables = new FakeParamTables();
+  const typed = new FakeTypedKeys();
   // The rows of the history band: the scene's, and those of the steps the fake made since.
   const historyRows: HistoryRow[] = [...(scene?.history ?? [])];
   let rev = 1;
@@ -5473,6 +5492,12 @@ export function createFakeTransport(initial?: AppState): Transport {
       return { rev, state };
     },
     async send(command) {
+      const typedDone = typed.reduce(state, command, rest);
+      if (typedDone) {
+        land(typedDone.changes);
+        for (const event of typedDone.events) listener?.({ kind: "event", ...event });
+        return { rev };
+      }
       const round10 = reduceRound10(state, bands, command, FAKE_TAKES) ?? reduceP4(state, command, FAKE_TAKES, newKitTrack, nowUs());
       if (round10?.row) {
         historyRows.length = Math.min(historyRows.length, round10.row.index - 1);
@@ -5528,6 +5553,9 @@ export function createFakeTransport(initial?: AppState): Transport {
       if (state.sounds.fetch.state === "fetching") fetchTimer ??= setInterval(fetchTick, FETCH_TICK_MS);
       if (values) listener?.({ kind: "paramValues", ...values });
       return { rev };
+    },
+    async post(command) {
+      await this.send(command);
     },
     async clock() {
       return nowUs();

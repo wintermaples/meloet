@@ -196,6 +196,7 @@ export function topMenus(state: AppState, deps: KeyDeps, platform: Platform): To
         ),
       ),
     }),
+    act("menu.typedKeys", { kind: "typedKeys" }, k.mod(t("key.playByKeys")), { checked: state.keyboards.typedKeys }),
   ];
 
   const pr = state.pianoRoll;

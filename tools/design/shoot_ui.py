@@ -112,6 +112,8 @@ BOARDS = {
     "tooManyTracks": None,
     "keepPlayedReady": None,
     "nothingToKeep": None,
+    "typedKeys": None,
+    "typedKeysSettings": None,
     "drumRoll": "R7-Drum",
     # About meloet.
     "about": "R7-About",

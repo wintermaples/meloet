@@ -28,6 +28,8 @@ export interface Transport {
   ): Promise<void>;
   snapshot(): Promise<Snapshot>;
   send(command: Command): Promise<SendReply>;
+  /** As send, but Rust does not answer when it is done: resolves once Rust has it, in the order sent. */
+  post(command: Command): Promise<void>;
   /** Rust's CLOCK_MONOTONIC in microseconds. */
   clock(): Promise<number>;
   /** The take binary (docs/architecture.md 3-4). */
@@ -63,6 +65,8 @@ export interface Handlers {
 export interface Connection {
   /** Sends an intent. Resolves to the rev after it; the new state arrives through onState. */
   send(command: Command): Promise<number>;
+  /** Sends an intent without waiting for Rust to be done with it (the keys of the PC keyboard). */
+  post(command: Command): Promise<void>;
   /** `rustMonoUs ≈ performance.now() * 1000 + offset`. */
   clockOffsetUs(rounds?: number): Promise<number>;
   rev(): number;
@@ -184,6 +188,7 @@ export async function connectWith(
     async send(command) {
       return (await transport.send(command)).rev;
     },
+    post: (command) => transport.post(command),
     async clockOffsetUs(rounds = 5) {
       // The shortest round trip has the least room for the reply to sit anywhere, so its
       // midpoint is the best guess of when Rust read its clock.

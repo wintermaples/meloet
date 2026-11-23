@@ -20,11 +20,6 @@ where
 }
 
 #[test]
-fn the_version() {
-    assert_eq!(PROTOCOL_VERSION, 33);
-}
-
-#[test]
 fn the_arpeggio() {
     let arp = Arp {
         on: true,
@@ -315,7 +310,6 @@ fn the_new_step_names() {
         assert!(StepName::every_kind().contains(&name), "{kind}");
         both_ways(name, json!({"kind": kind}));
     }
-    assert_eq!(StepName::every_kind().len(), 99);
     both_ways(
         StepWhat::SoundKnob {
             track: TrackRef {

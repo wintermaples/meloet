@@ -1,7 +1,7 @@
 //! Mute sets: the mutes of the tracks and the returns, and which tracks are soloed, kept in
 //! the song under a name, to switch between combinations of tracks in one call.
 
-use meloet_core::ai::{AiAsk, AiSong};
+use meloet_core::ai::{AiAnswer, AiAsk, AiRefusal, AiSong};
 use meloet_model::mute_sets::{self, MuteSet};
 use meloet_model::{Bus, TrackId};
 use rmcp::model::CallToolResult;
@@ -11,7 +11,7 @@ use rmcp::{
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::{Tools, done, failed, name_ok};
+use super::{Tools, done, failed, name_ok, refusal_text};
 use crate::trackref::id_text;
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
@@ -29,6 +29,16 @@ pub struct MuteSetArgs {
     /// The set's name, as list_mute_sets gives it.
     #[schemars(length(min = 1, max = 64))]
     pub name: String,
+}
+
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+pub struct RenameMuteSetArgs {
+    /// The set's name now, as list_mute_sets gives it.
+    #[schemars(length(min = 1, max = 64))]
+    pub name: String,
+    /// The new name, 1 to 64 characters, not the name of another set.
+    #[schemars(length(min = 1, max = 64))]
+    pub new_name: String,
 }
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
@@ -257,5 +267,58 @@ impl Tools {
             format!("Deleted the mute set \"{name}\".\n{value}"),
             value,
         ))
+    }
+
+    /// Gives a mute set another name, as one undo step; it keeps its place and what it
+    /// holds. The name of another set is an error; the name it has already changes nothing
+    /// (`changed: false`).
+    #[tool(annotations(
+        title = "Rename mute set",
+        read_only_hint = false,
+        destructive_hint = false,
+        idempotent_hint = true,
+        open_world_hint = false
+    ))]
+    async fn rename_mute_set(
+        &self,
+        Parameters(a): Parameters<RenameMuteSetArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        check!(self.allowed());
+        let name = a.name.trim().to_owned();
+        let new_name = check!(name_ok(&a.new_name));
+        let ask = AiAsk::RenameMuteSet {
+            name: name.clone(),
+            to: new_name.clone(),
+        };
+        let d = match check!(self.answer(ask).await) {
+            AiAnswer::Done(d) => *d,
+            AiAnswer::Refused(AiRefusal::MuteSetExists(taken)) => {
+                return Ok(failed(format!(
+                    "Could not rename the mute set: the song has another mute set \"{taken}\"; \
+                     choose another name"
+                )));
+            }
+            AiAnswer::Refused(r) => {
+                return Ok(failed(format!(
+                    "Could not rename the mute set: {}.",
+                    refusal_text(&r)
+                )));
+            }
+            _ => return Ok(super::closing()),
+        };
+        let read = check!(self.read().await);
+        let set = (read.song.doc.mute_set(&new_name)).map(|s| set_value(&read, s));
+        let changed = d.step.is_some();
+        let value = json!({
+            "changed": changed,
+            "set": set,
+            "step": d.step,
+            "undo_steps": d.undo_count,
+        });
+        let said = match changed {
+            true => format!("Renamed the mute set \"{name}\" to \"{new_name}\"."),
+            false => format!("The mute set is called \"{new_name}\" already; nothing changed."),
+        };
+        Ok(done(format!("{said}\n{value}"), value))
     }
 }

@@ -19,6 +19,7 @@ mod export;
 mod history;
 mod knobs;
 mod language;
+mod mute_sets;
 mod pack;
 mod params;
 mod patterns;
@@ -65,6 +66,7 @@ pub use export::{
 pub use history::{HistoryRow, HistoryView, MeterValue, StepName, StepPlace, StepWhat, StripName};
 pub use knobs::{SOUND_KNOB_DEFAULTS, SoundKnob, SoundKnobsView};
 pub use language::Language;
+pub use mute_sets::{MUTE_SET_NAME_MAX, MUTE_SETS_MAX, MuteSetView};
 pub use pack::{PackFailure, PackFetchView, SoundsView};
 pub use params::{
     EffectName, NamedInsert, ParamEnd, ParamGroup, ParamKind, ParamRef, ParamRow, ParamTable,
@@ -93,7 +95,7 @@ pub use vocal::{
     VocalRef,
 };
 
-pub const PROTOCOL_VERSION: u32 = 33;
+pub const PROTOCOL_VERSION: u32 = 34;
 
 /// Screen → Rust. Intent only; Rust decides what the state becomes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1698,6 +1700,39 @@ pub enum Command {
     SetLanguage {
         language: Language,
     },
+    // Protocol 34 (round 12 after the features, the owner's answers of 2026-11-24): mute sets
+    // in the menu at the head of the mixer band (B-97-3, B-97-5). A set is named by its name
+    // (`SongView::mute_sets`). Each does nothing while counting in or recording, and nothing
+    // for a name the song has no set of; no status line says why.
+    /// Keeps the mutes of every track and of the two returns, and which tracks are soloed,
+    /// as the set `name` (the spaces at its ends taken off; 1 to `MUTE_SET_NAME_MAX`
+    /// characters, no control characters). A set of that name is written over only with
+    /// `overwrite`, in its place; a new one goes last. One step (「ミュートのセットを保存する」).
+    /// Nothing for a name that is no name, a name taken without `overwrite`, a new set past
+    /// `MUTE_SETS_MAX`, or a set that holds this already.
+    SaveMuteSet {
+        name: String,
+        overwrite: bool,
+    },
+    /// The tracks the set names and the returns are muted as it says, as one step
+    /// (「ミュートのセットを呼び出す」), and those tracks are soloed as it says (no step: undo
+    /// leaves the solo). Tracks deleted since are skipped; tracks added since stay as they
+    /// are; a mute lane that moves a mute that changes rests, as with M. No step when the
+    /// mutes are as the set says (`MuteSetView::as_now`).
+    RecallMuteSet {
+        name: String,
+    },
+    /// One step (「ミュートのセットを消す」); the mutes stay as they are.
+    DeleteMuteSet {
+        name: String,
+    },
+    /// The set keeps its place and gets the name `to` (as `SaveMuteSet`'s `name`). One step
+    /// (「ミュートのセットの名前を変える」). Nothing for a name that is no name, the name it
+    /// has, or the name of another set.
+    RenameMuteSet {
+        name: String,
+        to: String,
+    },
 }
 
 /// A note of `Command::AddNotesAt`. `start` is a song position.
@@ -2259,6 +2294,8 @@ pub struct SongView {
     pub loop_range: Option<TickSpan>,
     pub loop_on: bool,
     pub file: SongFile,
+    /// The song's mute sets, in the order the song keeps them (a new one goes last).
+    pub mute_sets: Vec<MuteSetView>,
 }
 
 /// The song against its file.
@@ -4229,3 +4266,5 @@ mod tests31;
 mod tests32;
 #[cfg(test)]
 mod tests33;
+#[cfg(test)]
+mod tests34;

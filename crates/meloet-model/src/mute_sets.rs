@@ -2,8 +2,8 @@
 //! switch between combinations of tracks in one go. A set names tracks by id: a track deleted
 //! since is skipped, a track added since is left as it is.
 //!
-//! Saving, recalling and deleting a set are steps. Solo is the session's and no step: a set
-//! keeps it, and a recall hands it back for the session to take.
+//! Saving, recalling, deleting and renaming a set are steps. Solo is the session's and no
+//! step: a set keeps it, and a recall hands it back for the session to take.
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -17,6 +17,8 @@ use crate::song::{Doc, Track};
 
 /// Sets one song holds at most.
 pub const MAX_MUTE_SETS: usize = 64;
+/// A set's name has at most this many characters.
+pub const MAX_NAME_CHARS: usize = 64;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MuteSet {
@@ -39,7 +41,7 @@ pub enum MuteSetError {
     Taken,
     /// The song has [`MAX_MUTE_SETS`] sets.
     TooMany,
-    /// An empty name.
+    /// No name: empty, longer than [`MAX_NAME_CHARS`], or with a control character.
     BadName,
     /// The set would be as it is.
     Unchanged,
@@ -67,8 +69,40 @@ impl Doc {
     }
 }
 
+impl MuteSet {
+    /// Whether a recall would change nothing: the mutes, the returns and the solo
+    /// (`soloed`, the session's) are as the set says ([`recall_mute_set`]).
+    pub fn is_now(&self, doc: &Doc, soloed: &BTreeSet<TrackId>) -> bool {
+        let named = |id: &TrackId| self.tracks.binary_search(id).is_ok();
+        let there = |id: &TrackId| doc.track(*id).is_some();
+        let mutes = (doc.tracks.iter())
+            .filter(|t| named(&t.id))
+            .all(|t| t.muted == self.muted.binary_search(&t.id).is_ok());
+        let returns = Bus::ALL
+            .into_iter()
+            .all(|b| doc.returns[b.index()].muted == self.muted_returns[b.index()]);
+        let solo_kept = (soloed.iter())
+            .filter(|id| named(id))
+            .all(|id| self.soloed.binary_search(id).is_ok() && there(id));
+        let solo_given = (self.soloed.iter())
+            .filter(|id| there(id))
+            .all(|id| soloed.contains(id));
+        mutes && returns && solo_kept && solo_given
+    }
+}
+
 fn index_of(doc: &Doc, name: &str) -> Option<usize> {
     doc.mute_sets.iter().position(|s| s.name == name.trim())
+}
+
+/// `name` as a set keeps it: without the spaces at its ends.
+fn name_of(name: &str) -> Result<&str, MuteSetError> {
+    let name = name.trim();
+    let count = name.chars().count();
+    if count == 0 || count > MAX_NAME_CHARS || name.chars().any(char::is_control) {
+        return Err(MuteSetError::BadName);
+    }
+    Ok(name)
 }
 
 /// The mutes of `doc` and the solo of the session (`soloed`) as a set named `name`.
@@ -97,9 +131,7 @@ pub fn save_mute_set(
     name: &str,
     overwrite: bool,
 ) -> Result<Edit, MuteSetError> {
-    if name.trim().is_empty() {
-        return Err(MuteSetError::BadName);
-    }
+    let name = name_of(name)?;
     let set = mute_set_now(doc, soloed, name);
     let mut sets = Vec::clone(&doc.mute_sets);
     let index = match index_of(doc, name) {
@@ -123,6 +155,21 @@ pub fn delete_mute_set(doc: &Doc, name: &str) -> Result<Edit, MuteSetError> {
     let mut sets = Vec::clone(&doc.mute_sets);
     sets.remove(index);
     Ok(with_sets(doc, sets, StepKind::DeleteMuteSet { index }))
+}
+
+/// Gives the set `name` the name `to`, in its place. The name of another set is taken, as
+/// for a save that is not to write over it.
+pub fn rename_mute_set(doc: &Doc, name: &str, to: &str) -> Result<Edit, MuteSetError> {
+    let index = index_of(doc, name).ok_or(MuteSetError::NoSuchSet)?;
+    let to = name_of(to)?;
+    match index_of(doc, to) {
+        Some(i) if i == index => return Err(MuteSetError::Unchanged),
+        Some(_) => return Err(MuteSetError::Taken),
+        None => {}
+    }
+    let mut sets = Vec::clone(&doc.mute_sets);
+    sets[index].name = to.to_owned();
+    Ok(with_sets(doc, sets, StepKind::RenameMuteSet { index }))
 }
 
 /// Mutes the tracks and the returns as the set says. `soloed`: the session's solo now.

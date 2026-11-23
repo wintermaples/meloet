@@ -159,31 +159,10 @@ Sent back at the end of round 8 with the items above:
 
 ## B-97: round 11 (the AI link)
 
-### B-97-1 The history row of a batch
-
-- Question: the AI tool `batch` makes several changes as one undo step. What should its row in the undo history band say?
-- Now: the name of the last operation inside it. A mix of 15 operations shows one row such as the volume change of track 3, which does not tell what is inside.
-- Proposal (helper): a new row wording such as 「まとめて変える（N 個）」. It needs a new step name (`StepKind`, `StepName`, `ja.ts`; a protocol change).
-- From: architecture 24-16 A.
-
-### B-97-2 Step names of mute sets, and the word 「セット」
-
-- Question: saving, recalling and deleting a mute set are one step each. What should their rows say? And is 「セット」 the right word, or 「組み合わせ」?
-- Now: all three show the step name 「ミュート」 with the set's name as the (what), place 「ミキサー」.
-- Proposal (helper): 「ミュートのセットを保存する」, 「ミュートのセットを呼び出す」, 「ミュートのセットを消す」 (and 「ミュートのセットの名前を変える」 if renaming is built).
-- From: architecture 24-16 F. Code: `crates/meloet-core/src/play/history.rs` (a comment marks the open question).
-
 ### B-97-3 Where on the screen a mute set is chosen
 
 - Question: mute sets can only be used by the AI now. Should the screen have them, and where? Should saving, renaming and deleting be possible from the screen too?
-- Now: nothing on the screen.
-- Proposal (helper): the menu at the head of the mixer band, the 「表示」 menu, or the context menu of a track head.
-- From: architecture 24-16 F.
-
-### B-97-5 Renaming a mute set
-
-- Question: is a tool (and later a screen way) to rename a mute set wanted?
-- Now: not built (it was not in the list asked for). A set can be saved again under a new name and the old one deleted.
+- Answered (the owner, 2026-11-24): in the menu at the head of the mixer band, with saving, recalling, renaming and deleting. The shapes are in (protocol 34: `SongView::mute_sets`, `Command::SaveMuteSet` / `RecallMuteSet` / `DeleteMuteSet` / `RenameMuteSet`, architecture 25-37); the screen part is being built. Remove this item when it is in.
 - From: architecture 24-16 F.
 
 ### B-97-6 The history row of a plugin state set by the AI

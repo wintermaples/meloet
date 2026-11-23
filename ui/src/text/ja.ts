@@ -3097,6 +3097,12 @@ export const stepNames: Readonly<Record<StepName["kind"], Entry>> = {
   // The spec names only the step of 「いいとこ取り」; this one undoes it with the verb of 「もとに戻す」 (「外し」).
   clearComp: e("いいとこ取りを外す", "builder:2026-11-24"),
   setClipTune: e("音程を寄せる", "user:2026-11-23"),
+  saveMuteSet: e("ミュートのセットを保存する", "user:2026-11-24"),
+  recallMuteSet: e("ミュートのセットを呼び出す", "user:2026-11-24"),
+  deleteMuteSet: e("ミュートのセットを消す", "user:2026-11-24"),
+  renameMuteSet: e("ミュートのセットの名前を変える", "user:2026-11-24"),
+  // A batch of the AI link: how many steps it made one.
+  batch: e("まとめて変える（{count} 個）", "user:2026-11-24", { count: "15" }),
 };
 
 export interface Term {

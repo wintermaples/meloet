@@ -187,6 +187,8 @@ fn every_step_kind() -> Vec<StepKind> {
         SaveMuteSet { index: 0 },
         RecallMuteSet { index: 0 },
         DeleteMuteSet { index: 0 },
+        RenameMuteSet { index: 0 },
+        Batch { count: 3 },
         RemoveInstrument { track },
         AddLane { home, target },
         DeleteLane { home, target },
@@ -321,6 +323,8 @@ fn every_step_kind() -> Vec<StepKind> {
             | SaveMuteSet { .. }
             | RecallMuteSet { .. }
             | DeleteMuteSet { .. }
+            | RenameMuteSet { .. }
+            | Batch { .. }
             | RemoveInstrument { .. }
             | AddLane { .. }
             | DeleteLane { .. }

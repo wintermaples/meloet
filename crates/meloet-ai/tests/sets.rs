@@ -44,7 +44,7 @@ fn switching_between_two_sets_is_one_step_each_and_undo_brings_the_song_back() {
     let saved = ok(&mut c, "save_mute_set", json!({ "name": "爽快セット" }));
     assert_eq!(steps(&r), steps_before + 1, "{saved}");
     assert_eq!(saved["changed"], true);
-    assert_eq!(saved["step"]["name"]["kind"], "mute");
+    assert_eq!(saved["step"]["name"]["kind"], "saveMuteSet");
     assert_eq!(saved["step"]["what"]["name"], "爽快セット");
     assert_eq!(saved["set"]["muted"], json!([2, 4]));
     assert_eq!(saved["set"]["soloed"], json!([3]));
@@ -126,6 +126,64 @@ fn switching_between_two_sets_is_one_step_each_and_undo_brings_the_song_back() {
 }
 
 #[test]
+fn a_set_is_renamed_as_one_step_and_keeps_what_it_holds() {
+    let r = running("sets-rename");
+    let mut c = Client::start(&r.socket);
+    ok(&mut c, "add_track", json!({ "sound": "sine" }));
+    mute(&mut c, 2, true);
+    ok(&mut c, "save_mute_set", json!({ "name": "A" }));
+    mute(&mut c, 2, false);
+    ok(&mut c, "save_mute_set", json!({ "name": "B" }));
+    let before = steps(&r);
+
+    let renamed = ok(
+        &mut c,
+        "rename_mute_set",
+        json!({ "name": "A", "new_name": " サビ " }),
+    );
+    assert_eq!(steps(&r), before + 1, "{renamed}");
+    assert_eq!(renamed["changed"], true);
+    assert_eq!(renamed["step"]["name"]["kind"], "renameMuteSet");
+    assert_eq!(
+        renamed["step"]["what"],
+        json!({"kind": "renamed", "from": "A", "to": "サビ"})
+    );
+    assert_eq!(renamed["set"]["name"], "サビ");
+    assert_eq!(renamed["set"]["muted"], json!([2]));
+    let listed = ok(&mut c, "list_mute_sets", json!({}));
+    let names: Vec<&str> = (listed["mute_sets"].as_array().unwrap().iter())
+        .map(|s| s["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["サビ", "B"], "in its place");
+
+    let same = ok(
+        &mut c,
+        "rename_mute_set",
+        json!({ "name": "サビ", "new_name": "サビ" }),
+    );
+    assert_eq!(same["changed"], false, "{same}");
+    let text = refused(
+        &mut c,
+        "rename_mute_set",
+        json!({ "name": "サビ", "new_name": "B" }),
+    );
+    assert!(text.contains("another mute set \"B\""), "{text}");
+    let text = refused(
+        &mut c,
+        "rename_mute_set",
+        json!({ "name": "A", "new_name": "C" }),
+    );
+    assert!(text.contains("list_mute_sets"), "{text}");
+    assert_eq!(steps(&r), before + 1);
+
+    // Undo gives the old name back.
+    ok(&mut c, "undo", json!({}));
+    let song = r.core.ai_song().unwrap().song;
+    let names: Vec<&str> = song.doc.mute_sets.iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(names, ["A", "B"]);
+}
+
+#[test]
 fn the_tools_say_what_they_are() {
     let r = running("sets-tools");
     let mut c = Client::start(&r.socket);
@@ -143,6 +201,7 @@ fn the_tools_say_what_they_are() {
         ("save_mute_set", false, Some(false)),
         ("recall_mute_set", false, Some(false)),
         ("delete_mute_set", false, Some(true)),
+        ("rename_mute_set", false, Some(false)),
     ] {
         let t = tool(name);
         let hints = &t["annotations"];

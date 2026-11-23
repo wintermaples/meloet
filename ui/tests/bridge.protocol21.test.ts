@@ -57,7 +57,7 @@ describe("step names (spec 3 (Y19))", () => {
   const filled = (e: Entry) => fill(e.text, e.example ?? {});
 
   it("every kind in the protocol has a name, and no name is outside the protocol (fails if even one step has no name)", () => {
-    expect(STEP_NAME_KINDS.length).toBe(99);
+    expect(STEP_NAME_KINDS.length).toBe(104);
     expect(names.map(([kind]) => kind).sort()).toEqual([...STEP_NAME_KINDS].sort());
     for (const [kind, e] of names) {
       expect(e.text.trim(), kind).not.toBe("");
@@ -102,7 +102,8 @@ describe("step names (spec 3 (Y19))", () => {
     for (const [kind, e] of names.filter(([, x]) => x.source === "spec:3")) expect(spec, kind).toContain(filled(e));
     // Names in the list but not in the steps: 「パラメータを変える」 (shown in the form 「コンプレッサーの「しきい値」を変える」), and plugin windows (shown with the chapter 6 text).
     // 「戻した変更をすてる」 is 「戻した変更をすてる（最後に保存した形にする）」 in chapter 6.
-    const used = new Set(names.map(([, e]) => filled(e).replace(/（[^）]*）$/, "")));
+    // 「まとめて変える（N 個）」 is written with N for the count.
+    const used = new Set(names.flatMap(([, e]) => [filled(e).replace(/（[^）]*）$/, ""), e.text.replace("{count}", "N")]));
     expect(spec.filter((name) => !used.has(name))).toEqual(["パラメータを変える", "（プラグイン）の窓で変えた所"]);
   });
 

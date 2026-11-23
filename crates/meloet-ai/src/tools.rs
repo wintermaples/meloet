@@ -91,7 +91,7 @@ move_track, create_clip, rename_clip, delete_clips, move_clips, duplicate_clips,
 join_clips, switch_take, set_clip, set_clip_stretch, import_audio); sounds (list_sounds, \
 list_instruments, set_instrument, get_key_names, list_presets, load_preset, save_preset); mixer \
 (get_mixer, set_volume, set_pan, set_send, set_mute, set_solo, save_mute_set, list_mute_sets, \
-recall_mute_set, delete_mute_set); effects (list_effects, insert_effect, replace_effect, \
+recall_mute_set, delete_mute_set, rename_mute_set); effects (list_effects, insert_effect, replace_effect, \
 remove_effect, move_effect, bypass_effect); plugins (get_plugin_params, get_param_choices, \
 set_param, set_params, get_plugin_state, set_plugin_state, set_plugin_state_text); Surge XT \
 (surge_list_modulations, surge_get_patch_params, surge_set_modulation, \

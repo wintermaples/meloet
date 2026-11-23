@@ -341,6 +341,12 @@ pub enum AiAsk {
     DeleteMuteSet {
         name: String,
     },
+    /// The set `name` gets the name `to`, in its place. The name it has: no step, done. The
+    /// name of another set is refused, as for a save without `overwrite`.
+    RenameMuteSet {
+        name: String,
+        to: String,
+    },
     /// An audio file into a vocal track (id; `None`: a new one) from `tick`. With a ticket.
     ImportAudio {
         path: PathBuf,
@@ -503,6 +509,7 @@ impl AiAsk {
             AiAsk::SaveMuteSet { .. } => "save the mute set",
             AiAsk::RecallMuteSet { .. } => "recall the mute set",
             AiAsk::DeleteMuteSet { .. } => "delete the mute set",
+            AiAsk::RenameMuteSet { .. } => "rename the mute set",
             AiAsk::ImportAudio { .. } => "import audio",
             AiAsk::WriteNotes { .. } => "write notes",
             AiAsk::DeleteNotes { .. } => "delete notes",

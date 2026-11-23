@@ -314,6 +314,14 @@ pub enum StepKind {
     DeleteMuteSet {
         index: usize,
     },
+    /// The set at `index` of either `Doc` has another name: the one before the step the old.
+    RenameMuteSet {
+        index: usize,
+    },
+    /// The steps of a batch of the AI link made one ([`History::merge`]): `count` of them.
+    Batch {
+        count: usize,
+    },
     /// 「外す」 on the stopped plugin that was the track's instrument (spec 3, 89-5): the track
     /// sounds as the sine wave. The `Doc` before the step has the plugin.
     RemoveInstrument {
@@ -667,7 +675,7 @@ impl History {
             && (self.undo.get(mark.undo)).is_some_and(|first| first.version == mark.version)
     }
 
-    /// Makes one step of the steps made since `mark`, named as the last of them: one row,
+    /// Makes one step of the steps made since `mark`, a [`StepKind::Batch`] of them: one row,
     /// one undo, one redo. The `Doc` stays as it is and gets a new number, as the step is
     /// another one now. Only when the `Doc` has the number `end` and those steps are the
     /// newest ones done. Returns how many steps they were; 0 or 1, and nothing changes,
@@ -680,9 +688,8 @@ impl History {
         if steps < 2 {
             return steps;
         }
-        let kind = self.undo[self.undo.len() - 1].kind;
         self.undo.truncate(mark.undo + 1);
-        self.undo[mark.undo].kind = kind;
+        self.undo[mark.undo].kind = StepKind::Batch { count: steps };
         if self.saved == self.version {
             self.saved = self.next_version;
         }

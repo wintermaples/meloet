@@ -396,6 +396,23 @@ fn mute_sets_come_back_and_a_song_without_them_is_written_as_before() {
 }
 
 #[test]
+fn a_set_renamed_is_saved_and_read_under_its_new_name() {
+    let song = with_mute_sets(&rich_song("x", 3));
+    let doc = mute_sets::rename_mute_set(&song.doc, "クール", "大サビ")
+        .unwrap()
+        .doc;
+    let renamed = Song { doc, ..song };
+    let v: serde_json::Value = serde_json::from_slice(&encode(&renamed)).unwrap();
+    assert_eq!(v["song"]["muteSets"][1]["name"], "大サビ");
+    let back = decode(&encode(&renamed)).unwrap();
+    assert_eq!(back, renamed);
+    let names: Vec<&str> = (back.doc.mute_sets.iter())
+        .map(|s| s.name.as_str())
+        .collect();
+    assert_eq!(names, ["爽快セット", "大サビ"]);
+}
+
+#[test]
 fn mute_sets_that_cannot_be_are_left_out_and_cost_nothing_else() {
     let song = with_mute_sets(&rich_song("x", 3));
     let mut v: serde_json::Value = serde_json::from_slice(&encode(&song)).unwrap();

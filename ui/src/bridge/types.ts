@@ -265,3 +265,7 @@ export {
   SOUND_KNOBS,
   TUNE_STRENGTH_MAX,
 } from "./generated/round12wave3";
+// Protocol 34 (round 12, the owner's answers of 2026-11-24): mute sets on the screen, and the step names of mute sets and
+// of a batch of the AI link.
+export type { MuteSetView } from "./generated/MuteSetView";
+export { MUTE_SET_NAME_MAX, MUTE_SETS_MAX } from "./generated/muteSets";

@@ -202,6 +202,24 @@ What was asked and decided about the owner's `改善ノート.md` (14 items). Ne
       - Do not build a teacher for what was played.
     - The socket opens only when turned on in the settings. It is placed where only the same user can use it.
 
+### Round 10 so far (2026-11-23)
+
+Done and merged into `foundation` (every check of `scripts/check-all.sh` passed after the step 1 merges); how each is built is in architecture chapter 24:
+
+- Round 9 docs: `docs/architecture.md`, `README.md`, `docs/install-check.md`, `CLAUDE.md`, this file, spec chapter 7 and `docs/spec/open-questions.md` (B-96-1 to 3 are new) in English.
+- 3 (crash): not reproduced on any path; the owner said it was a mistake. Guard tests kept.
+- 5 (paste): fixed; paste grows the clip (the owner's decision), Mod V pastes what was copied last.
+- 10, 11 (loop): the piano roll opens on the loop; Home goes to the loop start, then the song start.
+- 12 (keyboard buttons): Mackie Control buttons on the second port, the fader on the selected track's volume (picks up), CC 123 / 121.
+- 1, 4, 7, 8, 9 (clip names, join, empty tracks, split here, context menus, markers): protocol 28 and 29, core and screen.
+- 2 (overdub): the 「重ねる」 switch; loop passes add to the take, one step per pass.
+- 6 (chord help): the chord stamp and the chord table of the key (the piano roll band is 24 taller at both ends).
+- The five proposal mocks are in `docs/design/proposals/` (the owner chose Overdub A, ChordTable A, AiLink B).
+
+In progress: 13 (the AI link: the port, the MCP tools, `meloet-mcp`; the settings row; the user guide). Research: `docs/research/2026-11-23-mcp.md`; spike: `spikes/s10-mcp/`.
+
+Left for later in round 10: screen comments in English (the rules written in round 9 are `target/k9-comments-rules.md`), `.claude/agents/` in English, `scripts/check-all.sh --release`, a real-app check of the new features by the owner, and measuring key → sound and key → screen while overdubbing.
+
 ## 7. Notes for Windows and Mac
 
 From the end of round 8 (only what was noticed).

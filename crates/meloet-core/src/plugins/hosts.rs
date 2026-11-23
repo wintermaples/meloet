@@ -781,8 +781,12 @@ impl Run {
         let proc = &mut self.procs[at];
         let id = proc.next_request;
         proc.next_request += 1;
-        write_frame(&mut proc.control, &ToHost { id, request }, blob)
-            .map_err(|_| HostError::Gone)?;
+        // A socket that breaks is of no more use (`write_frame`, `read_frame`): the process is
+        // killed, so that `watch` tells it as stopped and its plugins can be loaded again.
+        if write_frame(&mut proc.control, &ToHost { id, request }, blob).is_err() {
+            let _ = proc.pidfd.kill();
+            return Err(HostError::Gone);
+        }
         let until = Instant::now() + within;
         loop {
             let left = until.saturating_duration_since(Instant::now());
@@ -804,7 +808,10 @@ impl Run {
                 }
                 Ok((FromHost::Reply { .. }, _)) => {}
                 Ok((FromHost::Notice { notice }, _)) => self.heard(at, notice),
-                Err(_) => return Err(HostError::Gone),
+                Err(_) => {
+                    let _ = self.procs[at].pidfd.kill();
+                    return Err(HostError::Gone);
+                }
             }
         }
     }

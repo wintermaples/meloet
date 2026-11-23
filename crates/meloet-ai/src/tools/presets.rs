@@ -4,7 +4,7 @@
 //! (`Tools::put_plugin_state`); saving one writes a file of the person and changes nothing in
 //! the song.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use meloet_core::ai::{AiAnswer, AiAsk, AiRefusal, AiSong, PresetAsk, PresetSaid};
 use meloet_model::{PluginPlace, PluginRef};
@@ -27,53 +27,18 @@ const DEFAULT_LIMIT: u32 = 50;
 const MAX_LIMIT: u32 = 500;
 /// Categories a listing names, at most.
 const MAX_CATEGORIES: usize = 100;
-/// Presets loaded lately that are remembered.
-const MAX_LOADED: usize = 64;
 const SURGE: &str = "surge";
 
-/// What the preset tools keep for every connection: the folders, and the presets loaded
-/// lately.
+/// What the preset tools keep for every connection: the folders.
 #[derive(Debug)]
 pub(super) struct PresetSide {
     dirs: PresetDirs,
-    loaded: Mutex<Vec<Loaded>>,
 }
 
 impl PresetSide {
     pub(super) fn new(dirs: PresetDirs) -> PresetSide {
-        PresetSide {
-            dirs,
-            loaded: Mutex::new(Vec::new()),
-        }
+        PresetSide { dirs }
     }
-
-    fn loaded(&self) -> std::sync::MutexGuard<'_, Vec<Loaded>> {
-        self.loaded.lock().unwrap_or_else(|e| e.into_inner())
-    }
-
-    /// The preset `id` was loaded at `place` and the song has had the plugin's state since.
-    fn still(&self, place: PluginPlace, key: &str, id: &str, sha256: &str) -> bool {
-        (self.loaded().iter())
-            .any(|l| l.place == place && &*l.key == key && l.id == id && l.sha256 == sha256)
-    }
-
-    fn remember(&self, loaded: Loaded) {
-        let mut all = self.loaded();
-        all.retain(|l| !(l.place == loaded.place && l.key == loaded.key));
-        if all.len() == MAX_LOADED {
-            all.remove(0);
-        }
-        all.push(loaded);
-    }
-}
-
-/// A preset loaded, and the sha256 of the plugin's state the song took with it.
-#[derive(Debug)]
-struct Loaded {
-    place: PluginPlace,
-    key: Arc<str>,
-    id: String,
-    sha256: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, schemars::JsonSchema)]
@@ -615,23 +580,6 @@ impl Tools {
         let place = check!(plugin_place(&read, a.track, a.bus, a.slot));
         let plugin = check!(plugin_at(&read, place));
         let preset = json!({ "id": id, "source": source_of(&id) });
-        let p = plugin.clone();
-        let sha = check!(off(move || sha256_hex(&p.state)).await);
-        if self.presets.still(place, &plugin.key, &id, &sha) {
-            let value = json!({
-                "changed": false,
-                "step": null,
-                "undo_steps": read.undo_count,
-                "preset": preset,
-            });
-            return Ok(done(
-                format!(
-                    "No change: that preset is loaded already, and the plugin has not changed \
-                     since.\n{value}"
-                ),
-                value,
-            ));
-        }
         let state = check!(self.preset_state(place, &plugin, &id).await);
         let (mut value, text) = match self.put_plugin_state(place, state.into()).await {
             Ok(d) => {
@@ -642,7 +590,7 @@ impl Tools {
                 );
                 (value, text)
             }
-            // The song has that state already.
+            // The song has that state already, or the plugin says so once it has taken it.
             Err(result) if result.is_error != Some(true) => {
                 let value = result.structured_content.unwrap_or_else(|| json!({}));
                 (
@@ -654,12 +602,6 @@ impl Tools {
         };
         if let Some((bytes, sha256)) = check!(self.song_sha(place).await) {
             value["now"] = json!({ "bytes": bytes, "sha256": sha256 });
-            self.presets.remember(Loaded {
-                place,
-                key: plugin.key.clone(),
-                id,
-                sha256,
-            });
         }
         value["preset"] = preset;
         Ok(done(format!("{text}\n{value}"), value))

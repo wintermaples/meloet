@@ -302,6 +302,11 @@ pub enum AiAsk {
         place: PluginPlace,
         state: Arc<[u8]>,
     },
+    /// How the put of a ticket of [`AiAsk::SetPluginState`] ended: answered with
+    /// [`AiState::Put`], or `Waiting` until the plugin has taken the state. Not a write.
+    StatePut {
+        ticket: u64,
+    },
     /// About the presets of the LV2 plugin at `place`, asked of its plugin host and answered
     /// from there with [`AiAnswer::Preset`]. Not a write: a preset saved is a file, not a
     /// change of the song.
@@ -404,6 +409,7 @@ pub fn batchable(ask: &AiAsk) -> bool {
             | AiAsk::ParamTexts { .. }
             | AiAsk::PluginState { .. }
             | AiAsk::SetPluginState { .. }
+            | AiAsk::StatePut { .. }
             | AiAsk::Preset { .. }
             | AiAsk::KeyNames { .. }
             | AiAsk::Save
@@ -484,6 +490,7 @@ impl AiAsk {
             AiAsk::PluginParams { .. } => "read the plugin's parameters",
             AiAsk::PluginState { .. } => "read the plugin's state",
             AiAsk::SetPluginState { .. } => "set the plugin's state",
+            AiAsk::StatePut { .. } => "learn how the state was put in",
             AiAsk::Preset {
                 ask: PresetAsk::Save { .. },
                 ..
@@ -669,6 +676,39 @@ pub enum AiState {
     /// The plugin was asked; ask again in a moment.
     Waiting,
     Got(AiPluginState),
+    /// How a put of [`AiAsk::SetPluginState`] ended.
+    Put(AiStatePut),
+}
+
+/// How a state the AI link put into a plugin ended, with the undo count then.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AiStatePut {
+    pub end: AiPutEnd,
+    pub undo_count: u32,
+}
+
+/// Whether the song holds a state the AI link put into a plugin. Only `Step` changed the
+/// song; after the others the song and the plugin have the song's state.
+#[derive(Debug, Clone, PartialEq)]
+pub enum AiPutEnd {
+    /// The plugin took it, and what it says its state is since went into the song as this
+    /// step.
+    Step(Option<Box<HistoryRow>>),
+    /// The plugin took it and says the state the song has already (it may have made what it
+    /// was given into what it had): no step.
+    Same,
+    /// The plugin refused it; the text is for the log.
+    Refused(String),
+    /// The plugin's process stopped while it took it (the state may be broken): it is loaded
+    /// again with the song's state.
+    Stopped,
+    /// An undo or a redo put another state into the plugin first, or it was loaded again with
+    /// the song's state (another sample rate).
+    Overtaken,
+    /// The plugin is not at its place in the song any more.
+    Gone,
+    /// The plugin's process could not be asked; the text is for the log.
+    Failed(String),
 }
 
 /// How a set of plugin parameters the AI link asked for ended.

@@ -23,6 +23,9 @@
 //! - `urn:meloet:fake:live`: as `pass`; it says it cannot run faster than it plays.
 //! - `urn:meloet:fake:drums`: as `sine`; it names two keys ([`DRUM_NAMES`]).
 //! - `urn:meloet:fake:kit`: as `sine`; it names none.
+//! - `urn:meloet:fake:late`: as `sine`; a state put into it is taken in at the end of its next
+//!   block, after that block's parameter changes, as Surge XT takes one while its blocks run.
+//!   Before its first block it takes one at once.
 //!
 //! To scan (by the bundle's file name without its ending):
 //! - `found`: two plugins. `empty`: none. `broken`: a bundle that cannot be read.
@@ -33,7 +36,9 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
+use std::sync::atomic::{
+    AtomicBool, AtomicU64, Ordering::Acquire, Ordering::Relaxed, Ordering::Release,
+};
 
 use meloet_plugin::ipc::ToPlugin;
 use meloet_plugin::wire::{KeyName, LoadedPlugin, ParamInfo, ParamNow, ParamShape, PresetInfo};
@@ -87,13 +92,17 @@ pub fn load(key: &PluginKey, activation: Activation) -> Option<Result<Loaded, St
 /// The fake plugin of that name, whatever the environment says.
 pub fn make(name: &str, activation: Activation) -> Result<Loaded, String> {
     let level = Arc::new(AtomicU64::new(DEFAULT_LEVEL.to_bits()));
+    let late = (name == "late").then(|| Arc::new(Late::default()));
     let processor: Box<dyn Processor> = match name {
-        "sine" | "window" | "knob" | "slowwindow" | "drums" | "kit" | "choices" => Box::new(Sine {
-            sample_rate: activation.sample_rate,
-            level: level.clone(),
-            key: None,
-            phase: 0.0,
-        }),
+        "sine" | "window" | "knob" | "slowwindow" | "drums" | "kit" | "choices" | "late" => {
+            Box::new(Sine {
+                sample_rate: activation.sample_rate,
+                level: level.clone(),
+                key: None,
+                phase: 0.0,
+                late: late.clone(),
+            })
+        }
         "pass" | "notyet" | "live" => Box::new(Pass { fault: None }),
         "slow" => Box::new(Pass {
             fault: Some(Fault::Slow),
@@ -112,7 +121,7 @@ pub fn make(name: &str, activation: Activation) -> Result<Loaded, String> {
     };
     let window = matches!(name, "window" | "knob" | "slowwindow");
     let choices = name == "choices";
-    let instrument = matches!(name, "sine" | "drums" | "kit") || window || choices;
+    let instrument = matches!(name, "sine" | "drums" | "kit" | "late") || window || choices;
     let editor = match name {
         _ if window => EditorKind::X11,
         "notyet" => EditorKind::Unsupported,
@@ -139,6 +148,7 @@ pub fn make(name: &str, activation: Activation) -> Result<Loaded, String> {
             open: false,
             said: Vec::new(),
             names: name == "drums",
+            late,
         }),
         processor,
     })
@@ -236,6 +246,15 @@ struct Sine {
     level: Arc<AtomicU64>,
     key: Option<u8>,
     phase: f64,
+    late: Option<Arc<Late>>,
+}
+
+/// The state `late` was given and has not taken in yet.
+#[derive(Default)]
+struct Late {
+    ran: AtomicBool,
+    waiting: AtomicBool,
+    level: AtomicU64,
 }
 
 impl Sine {
@@ -275,6 +294,12 @@ impl Processor for Sine {
             block.outputs[0][frame] = sample;
             block.outputs[1][frame] = sample;
         }
+        if let Some(late) = &self.late {
+            late.ran.store(true, Relaxed);
+            if late.waiting.swap(false, Acquire) {
+                self.level.store(late.level.load(Relaxed), Relaxed);
+            }
+        }
     }
 
     fn reset(&mut self) {
@@ -301,6 +326,7 @@ struct FakeController {
     said: Vec<Said>,
     /// It names its keys.
     names: bool,
+    late: Option<Arc<Late>>,
 }
 
 impl FakeController {
@@ -457,7 +483,13 @@ impl Controller for FakeController {
         if !(0.0..=1.0).contains(&level) {
             return Err(bad());
         }
-        self.level.store(level.to_bits(), Relaxed);
+        match &self.late {
+            Some(late) if late.ran.load(Relaxed) => {
+                late.level.store(level.to_bits(), Relaxed);
+                late.waiting.store(true, Release);
+            }
+            _ => self.level.store(level.to_bits(), Relaxed),
+        }
         Ok(())
     }
 

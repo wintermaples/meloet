@@ -49,6 +49,16 @@ const LET_GO: Duration = Duration::from_millis(500);
 /// How long a state waits for a block to take the values set before it: two of the longest
 /// blocks the engine asks for (1024 frames at 44.1 kHz) and more.
 const PARAMS_WAIT: Duration = Duration::from_millis(100);
+/// A state put while the slot's blocks run is in the plugin once this many blocks have ended
+/// since: one that was under way when it was put, the one the plugin takes it in with
+/// (Surge XT), and one more, in which Surge XT's state still changed after a patch.
+const STATE_BLOCKS: u64 = 3;
+/// The slot's blocks run when the last one ended no longer ago than this: two of the longest
+/// blocks the engine asks for (1024 frames at 44.1 kHz) and more.
+const RUNNING: Duration = Duration::from_millis(50);
+/// The longest wait of one request for [`STATE_BLOCKS`], well inside the time meloet gives an
+/// answer (`ANSWER_WAIT` of `meloet_core::plugins::hosts`, 5 s).
+const STATE_WAIT: Duration = Duration::from_millis(250);
 
 /// A plugin's window on the screen.
 struct Top {
@@ -104,6 +114,8 @@ struct Host {
     moved: Vec<Option<Moved>>,
     /// By slot: when a value was last given to the audio thread from here.
     params_set: Vec<Option<Instant>>,
+    /// By slot: the slot's block count when a state was put that it may not have taken yet.
+    state_put: Vec<Option<u64>>,
     /// The slots meloet watches, and when it was last told of them.
     watched: Vec<u32>,
     watch_told: Instant,
@@ -628,9 +640,51 @@ impl Host {
         }
     }
 
+    /// A state was put into the plugin. Once a plugin has run blocks, some take a state in
+    /// only with their next block (Surge XT, docs/architecture.md 20-3), and a state taken
+    /// before that says the old one, or a patch half loaded. One that never ran a block takes
+    /// it at once.
+    fn state_was_put(&mut self, slot: u32) {
+        let blocks = self.audio.blocks(slot).count;
+        self.state_put[slot as usize] = (blocks > 0).then_some(blocks);
+    }
+
+    /// Everything asked of a plugin after a state was put into it waits until the plugin has
+    /// it: [`STATE_BLOCKS`] blocks, for [`STATE_WAIT`] at most. Not while the slot's blocks
+    /// do not run: the state is still to come then, and is waited for when they run again.
+    fn wait_for_state(&mut self, slot: u32) {
+        let Some(&Some(put)) = self.state_put.get(slot as usize) else {
+            return;
+        };
+        let started = Instant::now();
+        loop {
+            let blocks = self.audio.blocks(slot);
+            if blocks.count.wrapping_sub(put) >= STATE_BLOCKS || started.elapsed() >= STATE_WAIT {
+                self.state_put[slot as usize] = None;
+                return;
+            }
+            if !blocks.in_one && blocks.since.is_none_or(|since| since > RUNNING) {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+
     fn handle(&mut self, request: Request, blob: Vec<u8>) -> Answer {
         if !self.greeted && !matches!(request, Request::Hello { .. }) {
             return error("hello comes first");
+        }
+        match request {
+            Request::Load { slot, .. } | Request::Unload { slot } => {
+                if let Some(put) = self.state_put.get_mut(slot as usize) {
+                    *put = None;
+                }
+            }
+            _ => {
+                if let Some(slot) = slot_of(&request) {
+                    self.wait_for_state(slot);
+                }
+            }
         }
         match request {
             Request::Hello { version } => {
@@ -681,7 +735,10 @@ impl Host {
                     return error(message);
                 }
                 match self.controller(slot).map(|c| c.load_state(&blob)) {
-                    Ok(Ok(())) => ok(),
+                    Ok(Ok(())) => {
+                        self.state_was_put(slot);
+                        ok()
+                    }
                     Ok(Err(message)) => error(message),
                     Err(answer) => answer,
                 }
@@ -868,6 +925,29 @@ impl Host {
     }
 }
 
+/// The slot a request is about.
+fn slot_of(request: &Request) -> Option<u32> {
+    match *request {
+        Request::Load { slot, .. }
+        | Request::Unload { slot }
+        | Request::GetState { slot }
+        | Request::SetState { slot }
+        | Request::KeyNames { slot }
+        | Request::Presets { slot, .. }
+        | Request::PresetState { slot, .. }
+        | Request::SavePreset { slot, .. }
+        | Request::Params { slot }
+        | Request::GetParam { slot, .. }
+        | Request::SetParam { slot, .. }
+        | Request::Texts { slot, .. }
+        | Request::ReadText { slot, .. }
+        | Request::OpenEditor { slot, .. }
+        | Request::CloseEditor { slot }
+        | Request::Watch { slot, .. } => Some(slot),
+        Request::Hello { .. } | Request::Quit => None,
+    }
+}
+
 /// What has arrived on the socket and is not a whole frame yet.
 #[derive(Default)]
 struct Inbox {
@@ -966,6 +1046,7 @@ pub fn run(control: UnixStream, memory: OwnedFd, offline: bool) -> i32 {
         touches: vec![0; slots as usize],
         moved: (0..slots).map(|_| None).collect(),
         params_set: vec![None; slots as usize],
+        state_put: vec![None; slots as usize],
         watched: Vec::new(),
         watch_told: Instant::now(),
         notices: Vec::new(),

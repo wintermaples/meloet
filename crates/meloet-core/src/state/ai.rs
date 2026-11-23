@@ -213,6 +213,10 @@ impl Model {
                 Ok(state) => AiAnswer::State(state),
                 Err(refused) => AiAnswer::Refused(refused),
             },
+            AiAsk::StatePut { ticket } => match self.play.ai_state_put_end(ticket) {
+                Ok(state) => AiAnswer::State(state),
+                Err(refused) => AiAnswer::Refused(refused),
+            },
             AiAsk::ParamsSet { ticket } => match self.play.ai_params_set(ticket) {
                 Ok(params) => AiAnswer::Params(params),
                 Err(refused) => AiAnswer::Refused(refused),
@@ -602,6 +606,7 @@ impl Model {
             AiAsk::PluginParams { .. }
             | AiAsk::KeyNames { .. }
             | AiAsk::PluginState { .. }
+            | AiAsk::StatePut { .. }
             | AiAsk::Preset { .. }
             | AiAsk::ParamsSet { .. }
             | AiAsk::ParamTexts { .. } => {

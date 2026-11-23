@@ -2079,6 +2079,8 @@ impl Controller for Lv2Controller {
             .world
             .state_from_string(&self.shared.features, text)
             .map_err(|e| format!("state: {e:?}"))?;
+        presets::applies(&state, &self.plugin_uri)
+            .map_err(|_| "the state is not one of this plugin".to_string())?;
         let _claim = (self.shared.gate.claim(GATE_WAIT)).ok_or("the plugin is busy")?;
         // SAFETY: inside the gate nothing else touches the instance.
         let instance = unsafe { &mut *self.shared.instance.get() };

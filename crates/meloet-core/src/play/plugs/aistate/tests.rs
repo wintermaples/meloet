@@ -34,6 +34,17 @@ fn failed(r: &Rig, ticket: u64) -> String {
     }
 }
 
+/// How the put of `ticket` ended, as the AI link learns it.
+fn end(r: &mut Rig, ticket: u64) -> AiPutEnd {
+    match ask(r, AiAsk::StatePut { ticket }) {
+        AiAnswer::State(AiState::Put(put)) => {
+            assert_eq!(put.undo_count, r.undo_count());
+            put.end
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
 fn in_song(r: &Rig, place: PluginPlace) -> Arc<[u8]> {
     r.m.play().song().doc.plugin(place).unwrap().state.clone()
 }
@@ -112,10 +123,23 @@ fn a_state_put_in_is_one_step_and_undo_and_redo_put_the_states_back() {
 
     let ticket = put(&mut r, place, new.clone());
     assert_eq!(outcome(&r, ticket), AiOutcome::Pending);
+    assert_eq!(
+        ask(&mut r, AiAsk::StatePut { ticket }),
+        AiAnswer::State(AiState::Waiting)
+    );
     assert_eq!(r.undo_count(), steps, "not before the plugin has it");
     r.settle();
     assert_eq!(outcome(&r, ticket), AiOutcome::Done(None));
     assert_eq!(r.undo_count(), steps + 1);
+    let AiPutEnd::Step(Some(row)) = end(&mut r, ticket) else {
+        panic!("a step with its row")
+    };
+    assert_eq!(row.index, steps + 1);
+    // An end nobody knows of.
+    assert!(matches!(
+        ask(&mut r, AiAsk::StatePut { ticket: 999 }),
+        AiAnswer::Refused(AiRefusal::Cannot(_))
+    ));
     assert_eq!(
         r.m.play().steps().last(),
         Some(&StepKind::PluginWindow { place })
@@ -176,6 +200,7 @@ fn a_refused_state_makes_no_step_and_the_plugin_gets_the_songs_state_again() {
         "{}",
         failed(&r, ticket)
     );
+    assert!(matches!(end(&mut r, ticket), AiPutEnd::Refused(_)));
     assert_eq!(r.undo_count(), steps);
     assert_eq!(in_song(&r, place), first);
     assert_eq!(r.host.plugins[&surge], [0.75, 0.5, 0.0]);
@@ -185,16 +210,14 @@ fn a_refused_state_makes_no_step_and_the_plugin_gets_the_songs_state_again() {
         "the song's state is put back"
     );
 
-    // Taken, but passed over: the plugin says the state it had, and that is no step.
+    // Taken, but passed over: the plugin says the state it had, and that is no step, and no
+    // failure either.
     let mut skip = b"SKIP".to_vec();
     skip.resize(24, 0);
     let ticket = put(&mut r, place, skip.into());
     r.settle();
-    assert!(
-        failed(&r, ticket).contains("passed over"),
-        "{}",
-        failed(&r, ticket)
-    );
+    assert_eq!(outcome(&r, ticket), AiOutcome::Done(None));
+    assert_eq!(end(&mut r, ticket), AiPutEnd::Same);
     assert_eq!(r.undo_count(), steps);
     assert_eq!(in_song(&r, place), first);
 
@@ -205,6 +228,7 @@ fn a_refused_state_makes_no_step_and_the_plugin_gets_the_songs_state_again() {
     let ticket = put(&mut r, place, Arc::from(&b"broken"[..]));
     r.settle();
     assert!(matches!(outcome(&r, ticket), AiOutcome::Failed(_)));
+    assert!(matches!(end(&mut r, ticket), AiPutEnd::Refused(_)));
     assert_eq!(r.host.plugins[&surge], FRESH);
     assert!(in_song(&r, place).is_empty());
 }
@@ -228,6 +252,7 @@ fn a_state_that_stops_the_process_makes_no_step_and_the_plugin_is_loaded_again()
         "{}",
         failed(&r, ticket)
     );
+    assert_eq!(end(&mut r, ticket), AiPutEnd::Stopped);
     let effects = r.go(Input::PluginStopped { ticket: surge });
     assert!(effects.contains(&Effect::ReloadPlugin { ticket: surge }));
     r.go(Input::PluginLoaded { ticket: surge });
@@ -246,6 +271,7 @@ fn a_state_that_stops_the_process_makes_no_step_and_the_plugin_is_loaded_again()
     let effects = r.said(surge, gone);
     assert!(effects.contains(&Effect::ReloadPlugin { ticket: surge }));
     assert!(matches!(outcome(&r, ticket), AiOutcome::Failed(_)));
+    assert_eq!(end(&mut r, ticket), AiPutEnd::Stopped);
     assert_eq!(in_song(&r, place), first);
 
     // Long after, a plugin that stops is not loaded again by itself.
@@ -272,6 +298,7 @@ fn an_undo_while_the_state_goes_in_wins_and_makes_it_no_step() {
         "{}",
         failed(&r, ticket)
     );
+    assert_eq!(end(&mut r, ticket), AiPutEnd::Overtaken);
     assert_eq!(r.undo_count(), steps);
     assert!(in_song(&r, place).is_empty());
     assert_eq!(r.host.plugins[&surge], FRESH);
@@ -332,6 +359,7 @@ fn an_undo_while_a_state_stops_the_process_loads_the_plugin_anew_with_the_songs_
     r.cmd(Command::Undo);
     r.settle();
     assert!(failed(&r, ticket).contains("stopped"));
+    assert_eq!(end(&mut r, ticket), AiPutEnd::Stopped);
     let effects = r.go(Input::PluginStopped { ticket: surge });
     assert!(!effects.contains(&Effect::ReloadPlugin { ticket: surge }));
     let loads = loads(&effects);
@@ -366,6 +394,7 @@ fn a_put_on_its_way_is_not_carried_into_a_plugin_loaded_again() {
         .expect("loaded again");
     assert_eq!(ours.2, crate::play::PlugState::Bytes(first.clone()));
     r.settle();
-    assert!(failed(&r, ticket).contains("meanwhile"));
+    assert!(failed(&r, ticket).contains("loaded again"));
+    assert_eq!(end(&mut r, ticket), AiPutEnd::Overtaken);
     assert_eq!(in_song(&r, place), first);
 }

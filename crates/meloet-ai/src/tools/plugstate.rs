@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use meloet_core::ai::{AiAnswer, AiAsk, AiDone, AiSong, AiState};
+use meloet_core::ai::{AiAnswer, AiAsk, AiDone, AiPutEnd, AiSong, AiState};
 use meloet_model::{PluginPlace, PluginRef, StripId};
 use rmcp::model::CallToolResult;
 use rmcp::{
@@ -33,17 +33,9 @@ pub(super) const MAX_STATE: usize = 64 << 20;
 const MAX_INLINE: usize = 256 << 10;
 /// How long the plugin may take to say its state.
 const STATE_WAIT: Duration = Duration::from_secs(10);
-/// Core's words when a plugin, asked right after it took a state, says the state it had
-/// (`crates/meloet-core/src/play/plugs/aistate.rs`).
-const SAID_THE_OLD_STATE: &str = "says it has the state it had";
-/// How long after that a state is put in once more.
-const PUT_AGAIN_AFTER: Duration = Duration::from_millis(200);
-
-fn said_the_old_state(result: &CallToolResult) -> bool {
-    (result.content.iter())
-        .filter_map(|c| c.as_text())
-        .any(|t| t.text.contains(SAID_THE_OLD_STATE))
-}
+/// How long a put may take: the plugin's process may be waited for twice (taking the state,
+/// then saying it), 5 s each, before it is taken for stopped.
+const PUT_WAIT: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 pub struct GetStateArgs {
@@ -219,8 +211,10 @@ impl Tools {
     }
 
     /// Puts a whole state into the plugin at `place`, and waits until it is one step of the
-    /// song, or why it is not (the plugin refused it, or its process stopped: the song and
-    /// the plugin then keep the song's state).
+    /// song, or why it is not. `Err` is the tool's answer then: a failure (the plugin refused
+    /// it, its process stopped, an undo came first: the song and the plugin keep the song's
+    /// state), or "no change", which is not one (the song has that state, or the plugin made
+    /// what it was given into the state it had).
     pub(super) async fn put_plugin_state(
         &self,
         place: PluginPlace,
@@ -232,23 +226,73 @@ impl Tools {
         if bytes.len() > MAX_STATE {
             return Err(failed(too_large()));
         }
-        let ask = || AiAsk::SetPluginState {
-            place,
-            state: bytes.clone(),
-        };
-        match self.ticketed(ask()).await {
-            Ok((done, _)) => Ok(done),
-            // A plugin that takes a state on its next audio block (Surge XT while the sound
-            // runs) may still say its old state when core asks right after, and have the new
-            // one a moment later. Put in again, its state is already the new one.
-            Err(failure) if said_the_old_state(&failure) => {
-                eprintln!("meloet: a plugin took a state late; it is put in once more");
-                tokio::time::sleep(PUT_AGAIN_AFTER).await;
-                let (done, _) = self.ticketed(ask()).await?;
-                Ok(done)
+        let d = self
+            .ask(AiAsk::SetPluginState {
+                place,
+                state: bytes,
+            })
+            .await?;
+        let ticket = d.ticket.ok_or_else(closing)?;
+        let until = Instant::now() + PUT_WAIT;
+        let put = loop {
+            match self.answer(AiAsk::StatePut { ticket }).await? {
+                AiAnswer::State(AiState::Put(put)) => break put,
+                AiAnswer::State(AiState::Waiting) if Instant::now() < until => {}
+                AiAnswer::State(AiState::Waiting) => {
+                    return Err(failed(format!(
+                        "Could not set the plugin's state: the plugin did not take it within \
+                         {} s; call get_plugin_state to see what it has",
+                        PUT_WAIT.as_secs()
+                    )));
+                }
+                AiAnswer::Refused(r) => {
+                    return Err(failed(format!(
+                        "Could not set the plugin's state: {}.",
+                        refusal_text(&r)
+                    )));
+                }
+                _ => return Err(closing()),
             }
-            Err(failure) => Err(failure),
-        }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        };
+        let why = match put.end {
+            AiPutEnd::Step(row) => {
+                return Ok(AiDone {
+                    step: row.map(|row| *row),
+                    undo_count: put.undo_count,
+                    pending: false,
+                    ..d
+                });
+            }
+            AiPutEnd::Same => {
+                let value = json!({ "changed": false, "step": null, "undo_steps": put.undo_count });
+                return Err(done(
+                    format!(
+                        "No change: the plugin took the state and says it has the state the song \
+                         has (it may have made what it was given into that).\n{value}"
+                    ),
+                    value,
+                ));
+            }
+            AiPutEnd::Refused(why) => format!(
+                "the plugin refused the state ({why}); it has the song's state again, and no \
+                 step was made"
+            ),
+            AiPutEnd::Stopped => "the plugin's process stopped while it took the state (the \
+                 state may be broken); it is loaded again with the song's state, and no step \
+                 was made"
+                .into(),
+            AiPutEnd::Overtaken => "an undo or a redo changed the plugin first, or it was \
+                 loaded again with the song's state; no step was made"
+                .into(),
+            AiPutEnd::Gone => {
+                "the plugin was taken out of the song meanwhile; no step was made".into()
+            }
+            AiPutEnd::Failed(why) => {
+                format!("the plugin could not take the state ({why}); no step was made")
+            }
+        };
+        Err(failed(format!("Could not set the plugin's state: {why}.")))
     }
 
     /// A new file in the private temporary folder with the state in it.
@@ -485,22 +529,6 @@ impl Tools {
             format!("Done: set the plugin's state from the text.\n{value}"),
             value,
         ))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// The words a second put waits for are core's own.
-    #[test]
-    fn core_says_the_words_a_put_again_looks_for() {
-        let core = include_str!("../../../meloet-core/src/play/plugs/aistate.rs");
-        assert!(core.contains(SAID_THE_OLD_STATE));
-        assert!(said_the_old_state(&failed(format!(
-            "Could not set the plugin's state: the plugin took the state but {SAID_THE_OLD_STATE}."
-        ))));
-        assert!(!said_the_old_state(&failed("the plugin refused the state")));
     }
 }
 

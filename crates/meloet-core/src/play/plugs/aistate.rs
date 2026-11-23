@@ -14,7 +14,7 @@ use std::sync::Arc;
 use meloet_model::{InstrumentRef, PluginChange, PluginPlace};
 
 use super::{Phase, Spot, Want};
-use crate::ai::{AiOutcome, AiPluginState, AiRefusal, AiState};
+use crate::ai::{AiOutcome, AiPluginState, AiPutEnd, AiRefusal, AiState, AiStatePut};
 use crate::play::{EngineOp, Play};
 use crate::plugins::hosts::HostError;
 use crate::state::{Effect, PluginAsk, StateAsk};
@@ -26,6 +26,8 @@ const ASK_AGAIN_US: u64 = 2_000_000;
 /// How long after a put stopped a plugin's process its other plugins, told as stopped, are
 /// loaded again too.
 const REVIVE_US: u64 = 2_000_000;
+/// How many ends of puts are kept for the AI link to learn.
+const ENDS_KEPT: usize = 32;
 
 /// A state a plugin said (`None`: it could not), and when it came.
 type Said = (Option<Arc<[u8]>>, u64);
@@ -39,6 +41,8 @@ pub(super) struct AiStates {
     putting: Vec<Putting>,
     /// How puts ended, under the AI link's tickets, until the rules hand them on.
     ended: Vec<(u64, AiOutcome)>,
+    /// How the last puts ended, under the AI link's tickets, the newest last.
+    ends: Vec<(u64, AiStatePut)>,
     /// The key of the plugins that are loaded again when told as stopped, and until when.
     revive: Option<(Arc<str>, u64)>,
     /// Plugins a put stopped after an undo or a redo gave them another state, which their
@@ -62,6 +66,7 @@ struct Putting {
     ai: u64,
     /// `Plug::puts` when it was sent: a state put back after it (undo, redo) overtakes it.
     puts: u32,
+    place: PluginPlace,
 }
 
 impl Play {
@@ -143,7 +148,12 @@ impl Play {
         self.want_base(ticket, effects);
         let visiting = self.end_visit(ticket, effects);
         let puts = self.plugs.of(ticket).map_or(0, |plug| plug.puts);
-        self.plugs.ai.putting.push(Putting { ticket, ai, puts });
+        self.plugs.ai.putting.push(Putting {
+            ticket,
+            ai,
+            puts,
+            place,
+        });
         effects.push(Effect::AskPlugin {
             ticket,
             ask: PluginAsk::PutState { state },
@@ -167,33 +177,61 @@ impl Play {
             return;
         };
         let going = putting.remove(at);
-        let outcome = match put {
+        let end = match put {
             Ok(now) => self.ai_state_taken(&going, now, effects),
             Err(HostError::Refused(why)) => {
                 self.put_song_state_back(ticket, effects);
-                Err(format!(
-                    "the plugin refused the state ({why}); it has the song's state again, and \
-                     no step was made"
-                ))
+                AiPutEnd::Refused(why)
             }
             Err(HostError::Gone) => {
                 let restored = (self.plugs.of(ticket)).is_some_and(|p| p.puts != going.puts);
                 self.revive(ticket, restored, effects);
-                Err(
-                    "the plugin's process stopped while it took the state (the state may be \
-                     broken); it is loaded again with the song's state, and no step was made"
-                        .into(),
-                )
+                AiPutEnd::Stopped
             }
-            Err(other) => Err(format!(
-                "the plugin could not take the state ({other}); no step was made"
+            Err(other) => AiPutEnd::Failed(other.to_string()),
+        };
+        let outcome = match &end {
+            AiPutEnd::Step(_) | AiPutEnd::Same => AiOutcome::Done(None),
+            AiPutEnd::Refused(why) => AiOutcome::Failed(format!(
+                "the plugin refused the state ({why}); it has the song's state again, and no \
+                 step was made"
+            )),
+            AiPutEnd::Stopped => AiOutcome::Failed(
+                "the plugin's process stopped while it took the state (the state may be \
+                 broken); it is loaded again with the song's state, and no step was made"
+                    .into(),
+            ),
+            AiPutEnd::Overtaken => AiOutcome::Failed(
+                "an undo or a redo changed the plugin meanwhile, or it was loaded again with the \
+                 song's state; no step was made"
+                    .into(),
+            ),
+            AiPutEnd::Gone => AiOutcome::Failed(
+                "the plugin was taken out of the song meanwhile; no step was made".into(),
+            ),
+            AiPutEnd::Failed(why) => AiOutcome::Failed(format!(
+                "the plugin could not take the state ({why}); no step was made"
             )),
         };
-        let outcome = match outcome {
-            Ok(()) => AiOutcome::Done(None),
-            Err(why) => AiOutcome::Failed(why),
-        };
         self.plugs.ai.ended.push((going.ai, outcome));
+        let undo_count = self.undo_count();
+        let ends = &mut self.plugs.ai.ends;
+        if ends.len() == ENDS_KEPT {
+            ends.remove(0);
+        }
+        ends.push((going.ai, AiStatePut { end, undo_count }));
+    }
+
+    /// How the AI link's put of `ai` ended, or `Waiting` while the plugin takes it.
+    pub(crate) fn ai_state_put_end(&self, ai: u64) -> Result<AiState, AiRefusal> {
+        let ai_states = &self.plugs.ai;
+        if ai_states.putting.iter().any(|p| p.ai == ai) {
+            return Ok(AiState::Waiting);
+        }
+        (ai_states.ends.iter())
+            .find(|(t, _)| *t == ai)
+            .map(|(_, put)| AiState::Put(put.clone()))
+            .ok_or_else(|| AiRefusal::Cannot("that put of a state is not known any more".into()))
     }
 
     /// The step of a state the plugin took: what the plugin says its state is since, as for
@@ -204,21 +242,23 @@ impl Play {
         going: &Putting,
         now: Arc<[u8]>,
         effects: &mut Vec<Effect>,
-    ) -> Result<(), String> {
+    ) -> AiPutEnd {
         let ticket = going.ticket;
         let Some(plug) = self.plugs.of(ticket) else {
-            return Err(
-                "the plugin was taken out or loaded again meanwhile; no step was made".into(),
-            );
+            // Loaded anew meanwhile (another sample rate), with the song's state; or taken out.
+            return match self.doc().plugin(going.place) {
+                Some(_) => AiPutEnd::Overtaken,
+                None => AiPutEnd::Gone,
+            };
         };
         if plug.puts != going.puts {
-            return Err("an undo or a redo changed the plugin meanwhile; no step was made".into());
+            return AiPutEnd::Overtaken;
         }
         let spot = plug.spot;
         let same = plug.plugin.state == now
             || (plug.plugin.state.is_empty() && plug.base.as_ref() == Some(&now));
         let edit = self.plugin_state_edit(ticket, now, PluginChange::Window);
-        let taken = match edit {
+        let end = match edit {
             Some(edit) => {
                 if let Some(place) = self.place_of(spot)
                     && let Some(now) = edit.doc.plugin(place).cloned()
@@ -226,23 +266,25 @@ impl Play {
                 {
                     plug.plugin = now;
                 }
+                let steps = self.undo_count();
                 self.apply_own(edit, effects);
-                Ok(())
+                match self.undo_count() {
+                    now if now > steps => {
+                        AiPutEnd::Step(self.history_rows(now, now).pop().map(Box::new))
+                    }
+                    _ => AiPutEnd::Same,
+                }
             }
-            None if same => Err(
-                "the plugin took the state but says it has the state it had \
-                 (it may have passed over what it could not read); no step was made"
-                    .into(),
-            ),
+            None if same => AiPutEnd::Same,
             None => {
                 self.put_song_state_back(ticket, effects);
-                return Err("the song has no plugin there any more; no step was made".into());
+                return AiPutEnd::Gone;
             }
         };
         // Its parameters may all have other values now.
         self.table_stale(ticket);
         self.lanes_anew(spot, effects);
-        taken
+        end
     }
 
     /// The plugin gets the song's state again: it may have taken part of one it refused.

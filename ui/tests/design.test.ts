@@ -216,7 +216,7 @@ describe("values per scale and CSS variables", () => {
 
   it("CSS variable names and values", () => {
     const v = cssVariables(125, 2);
-    expect(v["--color-gray-4"]).toBe("#222222");
+    expect(v["--color-gray-4"]).toBe("#2F2F2F");
     expect(v["--color-meter-ok"]).toBe("#4CD964");
     expect(v["--space-3"]).toBe("15px");
     expect(v["--size-meter-slim"]).toBe("30px");

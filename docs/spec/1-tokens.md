@@ -1,32 +1,89 @@
 # 1 List of values
 
-Colors are called by name. The grays are 11 steps in which R, G and B are the same number; no other gray is used. Color is painted only on small places that have a meaning; large areas stay gray.
+Colors are called by name. The grays are 11 steps in which R, G and B are the same number; no other gray is used (the pink and mint themes tint them; see “Themes”). Color is painted only on small places that have a meaning; large areas stay gray.
 
 ## Colors
 
 |  | Name | Value | R=G=B | Used for |
 |---|---|---|---|---|
-|  | `color.gray.0` | `#0A0A0A` | 10 | Background of meters and readings, input meter, status line |
-|  | `color.gray.1` | `#121212` | 18 | Work area (arrange, piano roll background) |
-|  | `color.gray.2` | `#161616` | 22 | Open band, white-key rows |
-|  | `color.gray.3` | `#1A1A1A` | 26 | Panels, track heads, shelf |
-|  | `color.gray.4` | `#222222` | 34 | Folded headings, button face, selected row |
-|  | `color.gray.5` | `#2C2C2C` | 44 | Thin divider lines |
-|  | `color.gray.6` | `#3A3A3A` | 58 | Strong divider lines, button border |
-|  | `color.gray.7` | `#5E5E5E` | 94 | Disabled things, the position before aligning |
+|  | `color.gray.0` | `#000000` | 0 | Background of meters and readings, input meter, status line |
+|  | `color.gray.1` | `#1A1A1A` | 26 | Work area (arrange, piano roll background) |
+|  | `color.gray.2` | `#212121` | 33 | Open band, white-key rows |
+|  | `color.gray.3` | `#282828` | 40 | Panels, track heads, shelf |
+|  | `color.gray.4` | `#2F2F2F` | 47 | Folded headings, button face, selected row |
+|  | `color.gray.5` | `#3C3C3C` | 60 | Thin divider lines |
+|  | `color.gray.6` | `#4A4A4A` | 74 | Strong divider lines, button border |
+|  | `color.gray.7` | `#717171` | 113 | Disabled things, the position before aligning |
 |  | `color.gray.8` | `#9A9A9A` | 154 | Labels |
 |  | `color.gray.9` | `#D6D6D6` | 214 | Body text, line drawings |
 |  | `color.gray.10` | `#F2F2F2` | 242 | Emphasis, numbers |
 |  | `color.accent` | `#FFB000` |  | Things that are live now (pressed keys, selection, loop, on, play head, the band chosen with the keyboard) |
-|  | `color.rec` | `#FF3B30` |  | Recording, record arm, broken things |
+|  | `color.rec` | `#FF6158` |  | Recording, record arm, broken things |
 |  | `color.meter.ok` | `#4CD964` |  | Meter up to −3 dB (70 % of the length) |
 |  | `color.meter.hot` | `#FFD60A` |  | Meter above −3 dB |
 |  | `color.track.1` | `#69E4E4` |  | Track color 1 (only the 4px-wide strip and the top 2px edge of a clip) |
 |  | `color.track.2` | `#5ABDF2` |  | Track color 2 |
 |  | `color.track.3` | `#6F8BED` |  | Track color 3 |
-|  | `color.track.4` | `#8C54C3` |  | Track color 4 |
+|  | `color.track.4` | `#9561C7` |  | Track color 4 |
 |  | `color.track.5` | `#FFD9F1` |  | Track color 5. From the 6th track, back to 1 |
 |  | `color.tip.bg / color.tip.fg` | `#F2F2F2` |  | The term tip background is gray.10, the text is gray.0 |
+
+The values above are the 「ダーク」 (dark) theme. gray.0 to gray.7, rec and track.4 were changed so that the pairs below reach their contrast (user:2026-11-23, the owner's request: the on and off rows of scale lock in the piano roll and the lines were hard to tell apart). Before: gray.0 `#0A0A0A`, gray.1 `#121212`, gray.2 `#161616`, gray.3 `#1A1A1A`, gray.4 `#222222`, gray.5 `#2C2C2C`, gray.6 `#3A3A3A`, gray.7 `#5E5E5E`, rec `#FF3B30`, track.4 `#8C54C3`. The mock boards are still drawn with the values from before.
+
+## Themes
+
+There are 6 themes (user:2026-11-23): 「ダーク」 `dark`, 「ライト」 `light`, 「ピンク ・ ダーク」 `pinkDark`, 「ピンク ・ ライト」 `pinkLight`, 「ミント ・ ダーク」 `mintDark`, 「ミント ・ ライト」 `mintLight`. Every theme gives a value to every color name above, and the names keep their role in every theme. In the light themes the brightness runs the other way: gray.0 is the lightest ground and gray.10 the darkest text, so gray.0 to gray.4 are still the grounds from the back to the front and gray.7 to gray.10 still the text from weak to strong. In the pink and mint themes the grays carry a light tint of their color (both grounds and text), at the same brightness as the plain grays, so they meet the same contrast.
+
+- `color.accent` follows the theme: yellow in dark, a dark amber in light (dark enough for text on the light grounds), pink in pinkDark, a dark plum pink in pinkLight, mint green in mintDark, a dark green in mintLight.
+- `color.rec` is red in every theme. Only its brightness follows the ground.
+- Track colors: the same 5 hues, lighter or darker for the ground. Where a track color would look like the accent, it is changed for a yellow: track.5 in the pink themes, track.1 in the mint themes.
+- `color.tip.bg` is gray.10 and `color.tip.fg` is gray.0 in every theme, so the term tip is always the opposite of the screen.
+- Values are in `ui/src/design/themes.ts`; `dark` is `colors` of `ui/src/design/tokens.ts`.
+
+| Name | `dark` | `light` | `pinkDark` | `pinkLight` | `mintDark` | `mintLight` |
+|---|---|---|---|---|---|---|
+| `color.gray.0` | `#000000` | `#FFFFFF` | `#040404` | `#FBF9F9` | `#040404` | `#F8FAF9` |
+| `color.gray.1` | `#1A1A1A` | `#EAEAEA` | `#211B1E` | `#EEE0E6` | `#171F1C` | `#DBE7E3` |
+| `color.gray.2` | `#212121` | `#E1E1E1` | `#292225` | `#E8D6DE` | `#1D2723` | `#D0DFDA` |
+| `color.gray.3` | `#282828` | `#D8D8D8` | `#30282C` | `#E2CCD6` | `#232E2A` | `#C4D7D1` |
+| `color.gray.4` | `#2F2F2F` | `#CDCDCD` | `#392F33` | `#DBC1CD` | `#293531` | `#B6CEC6` |
+| `color.gray.5` | `#3C3C3C` | `#BBBBBB` | `#483B41` | `#CFADBD` | `#33423D` | `#A0BDB3` |
+| `color.gray.6` | `#4A4A4A` | `#A7A7A7` | `#57494F` | `#BF98AA` | `#3F514A` | `#89AB9F` |
+| `color.gray.7` | `#717171` | `#7A7A7A` | `#806E77` | `#866F7A` | `#637971` | `#617C73` |
+| `color.gray.8` | `#9A9A9A` | `#575757` | `#A7969E` | `#5D5056` | `#8D9E98` | `#485852` |
+| `color.gray.9` | `#D6D6D6` | `#333333` | `#DBD5D7` | `#373134` | `#D3D7D6` | `#2D3432` |
+| `color.gray.10` | `#F2F2F2` | `#111111` | `#F3F2F2` | `#121011` | `#F1F3F2` | `#0F1111` |
+| `color.accent` | `#FFB000` | `#735000` | `#FF7FC8` | `#8E2879` | `#5CF0B4` | `#0B603F` |
+| `color.rec` | `#FF6158` | `#A5261F` | `#FF685F` | `#9F251E` | `#FF6A61` | `#A0251E` |
+| `color.meter.ok` | `#4CD964` | `#2D813C` | `#4CD964` | `#2C7D3A` | `#4CD964` | `#2C7E3A` |
+| `color.meter.hot` | `#FFD60A` | `#906C00` | `#FFD60A` | `#8B6900` | `#FFD60A` | `#8C6900` |
+| `color.track.1` | `#69E4E4` | `#007F7F` | `#69E4E4` | `#007B7B` | `#FFD54A` | `#8F6800` |
+| `color.track.2` | `#5ABDF2` | `#1977B6` | `#5ABDF2` | `#1873B0` | `#5ABDF2` | `#1874B0` |
+| `color.track.3` | `#6F8BED` | `#4668E1` | `#6F8BED` | `#4164E0` | `#6F8BED` | `#4165E0` |
+| `color.track.4` | `#9561C7` | `#9551CD` | `#9664C8` | `#924CCC` | `#9765C9` | `#924DCC` |
+| `color.track.5` | `#FFD9F1` | `#C23F87` | `#FFD54A` | `#8E6800` | `#FFD9F1` | `#BD3D84` |
+| `color.tip.bg` | `#F2F2F2` | `#111111` | `#F3F2F2` | `#121011` | `#F1F3F2` | `#0F1111` |
+| `color.tip.fg` | `#000000` | `#FFFFFF` | `#040404` | `#FBF9F9` | `#040404` | `#F8FAF9` |
+
+## Contrast
+
+Every theme must meet WCAG 2 AA. Contrast is the WCAG 2 contrast ratio of the two colors. `tools/design/contrast.py` checks every theme against the list of pairs in `tools/design/contrast-pairs.json` (which color is drawn on which, and where) and fails if a pair is under its minimum. When a part starts to draw a color on a new color, add the pair there.
+
+| Kind | Minimum | Pairs |
+|---|---|---|
+| text | 4.5 | Text on its ground (WCAG SC 1.4.3). gray.8, gray.9, gray.10, accent and rec on gray.0 to gray.4; gray.9 and gray.10 on gray.5; tip.fg on tip.bg |
+| ui | 3 | A mark, a meaningful line or border, or an on mark, against the color next to it (WCAG SC 1.4.11). Notes and the original position frame on the rows, play head, record ring, track colors, meter colors, keyboard focus line |
+| state | 3 | The on color against the off color of the same mark, where only color shows the change: accent against gray.6 (button border), accent and rec against gray.5 (M, S, ● toggles), gray.10 against gray.7 (star, plugged-in mark) |
+| disabled | 2 | Text of 「使えない」 (disabled) parts. WCAG asks for no ratio here; they must still be readable |
+| line | 1.5 | Lines that show structure but are not the only way to tell it: bar lines, strong dividers, button, clip and box borders (gray.6) |
+| grid | 1.2 | Thin lines that only have to be seen clearly: beat lines (gray.4), thin dividers (gray.5) |
+| faint | 1.08 | The faintest decoration: sub-beat lines (gray.3), neighbouring fills (white-key and black-key rows, panels and bands) |
+| fill | 1.2 | Large neighbouring fills that carry a meaning: the rows that can be written (gray.1, gray.2) against the rows outside the scale (gray.0) while scale lock is on |
+
+- Text sizes are all under the WCAG large size (18.66 px bold, 24 px), so all text uses 4.5.
+- Where the words or a border also change (「オン」 and 「オフ」, the border of an on button), the on and off text colors need no ratio between them. Accent and rec, and accent and the track colors, are told apart by hue.
+- The drum row name that sounds (accent) or is being recorded (rec) on the gray.5 name column is counted as a mark (3), not as text: the same name is shown in gray.9 or gray.10 just before.
+- Scale lock: 3:1 between the rows cannot be reached by values alone without making the whole work area light. The values give 1.2 or more; a stronger difference needs a change in how the rows are drawn.
 
 ## Text
 

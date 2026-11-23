@@ -1,0 +1,723 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>案 P10-6 ・ テーマ 6 つ（色の表とコントラスト）</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+JP:wght@400;500;600&display=swap">
+<style>
+body{margin:0;background:#121212}
+*{box-sizing:border-box}
+.m{font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums}
+.s6{font-weight:600}.t20{font-size:20px;line-height:24px}
+.f{display:flex}.fc{display:flex;flex-direction:column}.fc>*{flex-shrink:0}.ac{align-items:center}.x1{flex:1;min-width:0}
+.g4{gap:4px}.g8{gap:8px}.g16{gap:16px}.g24{gap:24px}
+.rel{position:relative}.abs{position:absolute}
+</style>
+</helmet>
+<div style="width:1760px;height:1560px;background:#121212;color:#D6D6D6;font-family:'IBM Plex Sans JP','Noto Sans JP',sans-serif;font-size:12px;line-height:16px;overflow:hidden">
+<div class="fc g16" style="padding:24px 32px">
+<div class="f g16" style="align-items:baseline"><span class="t20 s6" style="color:#F2F2F2">案 P10-6 ・ テーマ 6 つ（色の表とコントラスト）</span><span style="color:#9A9A9A">オーナーさんの頼み user:2026-11-23。どのテーマも同じ色の名前を使い、WCAG AA の決まり（tools/design/contrast.py）を通る。見本は実物の大きさ</span></div>
+<div class="f g24"><div class="fc" style="width:400px;background:#121212;color:#D6D6D6;border:1px solid #3A3A3A">
+<div class="f ac g8" style="height:32px;padding:0 12px;background:#222222;border-bottom:1px solid #3A3A3A"><span class="s6" style="color:#F2F2F2">いまのダーク（直す前）</span><span class="m" style="color:#9A9A9A">darkBefore</span></div>
+<div class="f" style="padding:8px 12px 0">
+<div class="fc" style="width:34px;height:40px;background:#0A0A0A;color:#F2F2F2;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">0</span></div>
+<div class="fc" style="width:34px;height:40px;background:#121212;color:#F2F2F2;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">1</span></div>
+<div class="fc" style="width:34px;height:40px;background:#161616;color:#F2F2F2;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">2</span></div>
+<div class="fc" style="width:34px;height:40px;background:#1A1A1A;color:#F2F2F2;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">3</span></div>
+<div class="fc" style="width:34px;height:40px;background:#222222;color:#F2F2F2;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">4</span></div>
+<div class="fc" style="width:34px;height:40px;background:#2C2C2C;color:#F2F2F2;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">5</span></div>
+<div class="fc" style="width:34px;height:40px;background:#3A3A3A;color:#F2F2F2;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">6</span></div>
+<div class="fc" style="width:34px;height:40px;background:#5E5E5E;color:#0A0A0A;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">7</span></div>
+<div class="fc" style="width:34px;height:40px;background:#9A9A9A;color:#0A0A0A;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">8</span></div>
+<div class="fc" style="width:34px;height:40px;background:#D6D6D6;color:#0A0A0A;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">9</span></div>
+<div class="fc" style="width:34px;height:40px;background:#F2F2F2;color:#0A0A0A;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">10</span></div>
+</div>
+<div class="f" style="padding:4px 12px 0;gap:2px">
+<div style="width:38px;height:20px;background:#FFB000" title="accent #FFB000"></div>
+<div style="width:38px;height:20px;background:#FF3B30" title="rec #FF3B30"></div>
+<div style="width:38px;height:20px;background:#4CD964" title="meter.ok #4CD964"></div>
+<div style="width:38px;height:20px;background:#FFD60A" title="meter.hot #FFD60A"></div>
+<div style="width:38px;height:20px;background:#69E4E4" title="track.1 #69E4E4"></div>
+<div style="width:38px;height:20px;background:#5ABDF2" title="track.2 #5ABDF2"></div>
+<div style="width:38px;height:20px;background:#6F8BED" title="track.3 #6F8BED"></div>
+<div style="width:38px;height:20px;background:#8C54C3" title="track.4 #8C54C3"></div>
+<div style="width:38px;height:20px;background:#FFD9F1" title="track.5 #FFD9F1"></div>
+</div>
+<div class="m" style="padding:2px 12px 0;color:#9A9A9A">accent ・ rec ・ ok ・ hot ・ トラック 1〜5</div>
+<div class="f ac g4" style="height:32px;margin-top:8px;padding:0 12px;background:#222222;border-top:1px solid #3A3A3A;border-bottom:1px solid #3A3A3A;position:relative"><div style="position:absolute;left:0;right:0;top:0;height:2px;background:#FFB000"></div><span class="f ac" style="height:24px;padding:0 8px;border:1px solid #3A3A3A;background:#222222;color:#D6D6D6;border-radius:1px">スケール固定</span><span class="f ac" style="height:24px;padding:0 8px;border:1px solid #FFB000;background:#222222;color:#FFB000;border-radius:1px">スケール固定</span><span class="f ac" style="height:24px;padding:0 8px;border:1px solid #2C2C2C;background:#222222;color:#5E5E5E;border-radius:1px">使えない</span><span class="f ac" style="height:24px;padding:0 8px;border:1px solid #FF3B30;background:#222222;color:#FF3B30;border-radius:1px">止</span><span class="f ac" style="width:20px;height:20px;border:1px solid #2C2C2C;background:#121212;color:#9A9A9A;justify-content:center">S</span><span class="f ac" style="width:20px;height:20px;border:1px solid #FFB000;background:#121212;color:#FFB000;justify-content:center">S</span><span class="f ac" style="width:24px;height:24px;border:1px solid #3A3A3A;background:#222222;justify-content:center"><span style="width:12px;height:12px;border-radius:50%;border:2px solid #FF3B30"></span></span></div>
+<div class="fc" style="background:#1A1A1A;padding:6px 12px;gap:2px">
+<div class="f ac" style="height:18px;color:#F2F2F2"><span class="x1">強調 ・ 数字 gray.10</span><span class="m" style="color:#9A9A9A">15.55</span></div>
+<div class="f ac" style="height:18px;color:#D6D6D6"><span class="x1">本文 gray.9</span><span class="m" style="color:#9A9A9A">11.97</span></div>
+<div class="f ac" style="height:18px;color:#9A9A9A"><span class="x1">ラベル gray.8</span><span class="m" style="color:#9A9A9A">6.19</span></div>
+<div class="f ac" style="height:18px;color:#5E5E5E"><span class="x1">使えない gray.7</span><span class="m" style="color:#9A9A9A">2.68</span></div>
+<div class="f ac" style="height:22px;background:#222222;box-shadow:inset 2px 0 0 #FFB000;padding-left:8px;margin:0 -12px;padding-right:12px"><span class="x1">選んだ行</span><span class="m" style="color:#FFB000">オン</span><span class="m" style="color:#F2F2F2;margin-left:8px">オフ</span></div>
+</div>
+<div class="f" style="margin-top:8px;border-top:1px solid #3A3A3A">
+<div class="fc" style="width:64px;background:#121212">
+<div style="height:12px;border-bottom:1px solid #121212;background:#2C2C2C;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #121212;background:#0A0A0A;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #121212;background:#2C2C2C;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #121212;background:#0A0A0A;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #121212;background:#2C2C2C;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #121212;background:#0A0A0A;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #121212;background:#2C2C2C;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #121212;background:#2C2C2C;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #121212;background:#0A0A0A;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #121212;background:#2C2C2C;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #121212;background:#0A0A0A;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #121212;background:#2C2C2C;margin-left:24px"></div>
+</div>
+<div class="rel" style="width:334px;height:144px;background:#121212">
+<div class="abs" style="left:0;right:0;top:0px;height:11px;background:#161616"></div>
+<div class="abs" style="left:0;right:0;top:12px;height:11px;background:#0A0A0A"></div>
+<div class="abs" style="left:0;right:0;top:24px;height:11px;background:#161616"></div>
+<div class="abs" style="left:0;right:0;top:36px;height:11px;background:#0A0A0A"></div>
+<div class="abs" style="left:0;right:0;top:48px;height:11px;background:#161616"></div>
+<div class="abs" style="left:0;right:0;top:60px;height:11px;background:#0A0A0A"></div>
+<div class="abs" style="left:0;right:0;top:72px;height:11px;background:#161616"></div>
+<div class="abs" style="left:0;right:0;top:84px;height:11px;background:#161616"></div>
+<div class="abs" style="left:0;right:0;top:96px;height:11px;background:#0A0A0A"></div>
+<div class="abs" style="left:0;right:0;top:108px;height:11px;background:#161616"></div>
+<div class="abs" style="left:0;right:0;top:120px;height:11px;background:#0A0A0A"></div>
+<div class="abs" style="left:0;right:0;top:132px;height:11px;background:#161616"></div>
+<div class="abs" style="left:0px;top:0;bottom:0;width:1px;background:#3A3A3A"></div>
+<div class="abs" style="left:21px;top:0;bottom:0;width:1px;background:#1A1A1A"></div>
+<div class="abs" style="left:42px;top:0;bottom:0;width:1px;background:#222222"></div>
+<div class="abs" style="left:63px;top:0;bottom:0;width:1px;background:#1A1A1A"></div>
+<div class="abs" style="left:84px;top:0;bottom:0;width:1px;background:#222222"></div>
+<div class="abs" style="left:104px;top:0;bottom:0;width:1px;background:#1A1A1A"></div>
+<div class="abs" style="left:125px;top:0;bottom:0;width:1px;background:#222222"></div>
+<div class="abs" style="left:146px;top:0;bottom:0;width:1px;background:#1A1A1A"></div>
+<div class="abs" style="left:167px;top:0;bottom:0;width:1px;background:#3A3A3A"></div>
+<div class="abs" style="left:188px;top:0;bottom:0;width:1px;background:#1A1A1A"></div>
+<div class="abs" style="left:209px;top:0;bottom:0;width:1px;background:#222222"></div>
+<div class="abs" style="left:230px;top:0;bottom:0;width:1px;background:#1A1A1A"></div>
+<div class="abs" style="left:250px;top:0;bottom:0;width:1px;background:#222222"></div>
+<div class="abs" style="left:271px;top:0;bottom:0;width:1px;background:#1A1A1A"></div>
+<div class="abs" style="left:292px;top:0;bottom:0;width:1px;background:#222222"></div>
+<div class="abs" style="left:313px;top:0;bottom:0;width:1px;background:#1A1A1A"></div>
+<div class="abs" style="left:334px;top:0;bottom:0;width:1px;background:#3A3A3A"></div>
+<div class="abs" style="left:1px;top:0px;width:62px;height:11px;background:#F2F2F2;border-left:2px solid #F2F2F2"></div>
+<div class="abs" style="left:85px;top:24px;width:83px;height:11px;background:#D6D6D6;border-left:2px solid #F2F2F2"></div>
+<div class="abs" style="left:168px;top:48px;width:41px;height:11px;background:#9A9A9A;border-left:2px solid #F2F2F2"></div>
+<div class="abs" style="left:210px;top:84px;width:62px;height:11px;background:#FFB000;border-left:2px solid #F2F2F2"></div>
+<div class="abs" style="left:272px;top:108px;width:41px;height:11px;background:#F2F2F2;border-left:2px solid #F2F2F2"></div>
+<div class="abs" style="left:210px;top:60px;width:62px;height:11px;border:1px solid #5E5E5E"></div>
+<div class="abs" style="left:250px;top:0;bottom:0;width:1px;background:#FFB000"></div>
+<div class="abs" style="left:105px;top:132px;width:42px;height:11px;background:#FF3B30"></div>
+</div></div>
+<div class="m" style="padding:4px 12px;color:#9A9A9A">固定 オン: 書ける行 gray.2 / gray.1 と 外の行 gray.0 = 1.09 / 1.06</div>
+<div class="fc" style="gap:1px">
+<div class="f" style="height:28px;background:#121212"><div class="f ac" style="width:120px;background:#1A1A1A;border-bottom:1px solid #2C2C2C"><div style="width:4px;align-self:stretch;background:#69E4E4"></div><span style="padding-left:8px;color:#F2F2F2">トラック 1</span></div><div class="rel" style="margin:3px 0 3px 12px;width:140px;background:#222222;border:1px solid #3A3A3A"><div style="height:2px;background:#69E4E4"></div><div style="margin:5px 8px 0;height:2px;width:40px;background:#9A9A9A"></div></div></div>
+<div class="f" style="height:28px;background:#121212"><div class="f ac" style="width:120px;background:#222222;border-bottom:1px solid #2C2C2C"><div style="width:4px;align-self:stretch;background:#5ABDF2"></div><span style="padding-left:8px;color:#F2F2F2">トラック 2</span></div><div class="rel" style="margin:3px 0 3px 12px;width:140px;background:#222222;border:1px solid #FFB000"><div style="height:2px;background:#FFB000"></div><div style="margin:5px 8px 0;height:2px;width:40px;background:#9A9A9A"></div></div></div>
+<div class="f" style="height:28px;background:#121212"><div class="f ac" style="width:120px;background:#1A1A1A;border-bottom:1px solid #2C2C2C"><div style="width:4px;align-self:stretch;background:#6F8BED"></div><span style="padding-left:8px;color:#F2F2F2">トラック 3</span></div><div class="rel" style="margin:3px 0 3px 12px;width:100px;background:#222222;border:1px solid #3A3A3A"><div style="height:2px;background:#6F8BED"></div><div style="margin:5px 8px 0;height:2px;width:40px;background:#9A9A9A"></div></div></div>
+<div class="f" style="height:28px;background:#121212"><div class="f ac" style="width:120px;background:#1A1A1A;border-bottom:1px solid #2C2C2C"><div style="width:4px;align-self:stretch;background:#8C54C3"></div><span style="padding-left:8px;color:#F2F2F2">トラック 4</span></div><div class="rel" style="margin:3px 0 3px 12px;width:140px;background:#222222;border:1px solid #FF3B30"><div style="height:2px;background:#FF3B30"></div><div style="margin:5px 8px 0;height:2px;width:40px;background:#FF3B30"></div></div></div>
+<div class="f" style="height:28px;background:#121212"><div class="f ac" style="width:120px;background:#1A1A1A;border-bottom:1px solid #2C2C2C"><div style="width:4px;align-self:stretch;background:#FFD9F1"></div><span style="padding-left:8px;color:#F2F2F2">トラック 5</span></div><div class="rel" style="margin:3px 0 3px 12px;width:140px;background:#222222;border:1px solid #3A3A3A"><div style="height:2px;background:#FFD9F1"></div><div style="margin:5px 8px 0;height:2px;width:40px;background:#9A9A9A"></div></div></div>
+</div>
+<div class="f ac g8" style="padding:8px 12px"><div class="rel" style="width:200px;height:6px;background:#0A0A0A"><div class="abs" style="left:0;top:0;bottom:0;width:140px;background:#4CD964"></div><div class="abs" style="left:140px;top:0;bottom:0;width:56px;background:#FFD60A"></div><div class="abs" style="left:196px;top:0;bottom:0;width:2px;background:#FF3B30"></div></div><span class="m" style="color:#FF3B30">0 dB</span></div>
+<div style="margin:0 12px 12px;padding:8px;background:#F2F2F2;color:#0A0A0A;border-radius:1px">用語の説明: スケール固定 ・ えらんだ音階の音だけに書きこめるようにする。</div>
+</div><div class="fc" style="width:400px;background:#1A1A1A;color:#D6D6D6;border:1px solid #4A4A4A">
+<div class="f ac g8" style="height:32px;padding:0 12px;background:#2F2F2F;border-bottom:1px solid #4A4A4A"><span class="s6" style="color:#F2F2F2">ダーク（直した後）</span><span class="m" style="color:#9A9A9A">dark</span></div>
+<div class="f" style="padding:8px 12px 0">
+<div class="fc" style="width:34px;height:40px;background:#000000;color:#F2F2F2;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">0</span></div>
+<div class="fc" style="width:34px;height:40px;background:#1A1A1A;color:#F2F2F2;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">1</span></div>
+<div class="fc" style="width:34px;height:40px;background:#212121;color:#F2F2F2;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">2</span></div>
+<div class="fc" style="width:34px;height:40px;background:#282828;color:#F2F2F2;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">3</span></div>
+<div class="fc" style="width:34px;height:40px;background:#2F2F2F;color:#F2F2F2;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">4</span></div>
+<div class="fc" style="width:34px;height:40px;background:#3C3C3C;color:#F2F2F2;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">5</span></div>
+<div class="fc" style="width:34px;height:40px;background:#4A4A4A;color:#F2F2F2;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">6</span></div>
+<div class="fc" style="width:34px;height:40px;background:#717171;color:#000000;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">7</span></div>
+<div class="fc" style="width:34px;height:40px;background:#9A9A9A;color:#000000;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">8</span></div>
+<div class="fc" style="width:34px;height:40px;background:#D6D6D6;color:#000000;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">9</span></div>
+<div class="fc" style="width:34px;height:40px;background:#F2F2F2;color:#000000;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">10</span></div>
+</div>
+<div class="f" style="padding:4px 12px 0;gap:2px">
+<div style="width:38px;height:20px;background:#FFB000" title="accent #FFB000"></div>
+<div style="width:38px;height:20px;background:#FF6158" title="rec #FF6158"></div>
+<div style="width:38px;height:20px;background:#4CD964" title="meter.ok #4CD964"></div>
+<div style="width:38px;height:20px;background:#FFD60A" title="meter.hot #FFD60A"></div>
+<div style="width:38px;height:20px;background:#69E4E4" title="track.1 #69E4E4"></div>
+<div style="width:38px;height:20px;background:#5ABDF2" title="track.2 #5ABDF2"></div>
+<div style="width:38px;height:20px;background:#6F8BED" title="track.3 #6F8BED"></div>
+<div style="width:38px;height:20px;background:#9561C7" title="track.4 #9561C7"></div>
+<div style="width:38px;height:20px;background:#FFD9F1" title="track.5 #FFD9F1"></div>
+</div>
+<div class="m" style="padding:2px 12px 0;color:#9A9A9A">accent ・ rec ・ ok ・ hot ・ トラック 1〜5</div>
+<div class="f ac g4" style="height:32px;margin-top:8px;padding:0 12px;background:#2F2F2F;border-top:1px solid #4A4A4A;border-bottom:1px solid #4A4A4A;position:relative"><div style="position:absolute;left:0;right:0;top:0;height:2px;background:#FFB000"></div><span class="f ac" style="height:24px;padding:0 8px;border:1px solid #4A4A4A;background:#2F2F2F;color:#D6D6D6;border-radius:1px">スケール固定</span><span class="f ac" style="height:24px;padding:0 8px;border:1px solid #FFB000;background:#2F2F2F;color:#FFB000;border-radius:1px">スケール固定</span><span class="f ac" style="height:24px;padding:0 8px;border:1px solid #3C3C3C;background:#2F2F2F;color:#717171;border-radius:1px">使えない</span><span class="f ac" style="height:24px;padding:0 8px;border:1px solid #FF6158;background:#2F2F2F;color:#FF6158;border-radius:1px">止</span><span class="f ac" style="width:20px;height:20px;border:1px solid #3C3C3C;background:#1A1A1A;color:#9A9A9A;justify-content:center">S</span><span class="f ac" style="width:20px;height:20px;border:1px solid #FFB000;background:#1A1A1A;color:#FFB000;justify-content:center">S</span><span class="f ac" style="width:24px;height:24px;border:1px solid #4A4A4A;background:#2F2F2F;justify-content:center"><span style="width:12px;height:12px;border-radius:50%;border:2px solid #FF6158"></span></span></div>
+<div class="fc" style="background:#282828;padding:6px 12px;gap:2px">
+<div class="f ac" style="height:18px;color:#F2F2F2"><span class="x1">強調 ・ 数字 gray.10</span><span class="m" style="color:#9A9A9A">13.17</span></div>
+<div class="f ac" style="height:18px;color:#D6D6D6"><span class="x1">本文 gray.9</span><span class="m" style="color:#9A9A9A">10.14</span></div>
+<div class="f ac" style="height:18px;color:#9A9A9A"><span class="x1">ラベル gray.8</span><span class="m" style="color:#9A9A9A">5.24</span></div>
+<div class="f ac" style="height:18px;color:#717171"><span class="x1">使えない gray.7</span><span class="m" style="color:#9A9A9A">3.02</span></div>
+<div class="f ac" style="height:22px;background:#2F2F2F;box-shadow:inset 2px 0 0 #FFB000;padding-left:8px;margin:0 -12px;padding-right:12px"><span class="x1">選んだ行</span><span class="m" style="color:#FFB000">オン</span><span class="m" style="color:#F2F2F2;margin-left:8px">オフ</span></div>
+</div>
+<div class="f" style="margin-top:8px;border-top:1px solid #4A4A4A">
+<div class="fc" style="width:64px;background:#1A1A1A">
+<div style="height:12px;border-bottom:1px solid #1A1A1A;background:#3C3C3C;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #1A1A1A;background:#000000;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #1A1A1A;background:#3C3C3C;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #1A1A1A;background:#000000;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #1A1A1A;background:#3C3C3C;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #1A1A1A;background:#000000;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #1A1A1A;background:#3C3C3C;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #1A1A1A;background:#3C3C3C;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #1A1A1A;background:#000000;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #1A1A1A;background:#3C3C3C;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #1A1A1A;background:#000000;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #1A1A1A;background:#3C3C3C;margin-left:24px"></div>
+</div>
+<div class="rel" style="width:334px;height:144px;background:#1A1A1A">
+<div class="abs" style="left:0;right:0;top:0px;height:11px;background:#212121"></div>
+<div class="abs" style="left:0;right:0;top:12px;height:11px;background:#000000"></div>
+<div class="abs" style="left:0;right:0;top:24px;height:11px;background:#212121"></div>
+<div class="abs" style="left:0;right:0;top:36px;height:11px;background:#000000"></div>
+<div class="abs" style="left:0;right:0;top:48px;height:11px;background:#212121"></div>
+<div class="abs" style="left:0;right:0;top:60px;height:11px;background:#000000"></div>
+<div class="abs" style="left:0;right:0;top:72px;height:11px;background:#212121"></div>
+<div class="abs" style="left:0;right:0;top:84px;height:11px;background:#212121"></div>
+<div class="abs" style="left:0;right:0;top:96px;height:11px;background:#000000"></div>
+<div class="abs" style="left:0;right:0;top:108px;height:11px;background:#212121"></div>
+<div class="abs" style="left:0;right:0;top:120px;height:11px;background:#000000"></div>
+<div class="abs" style="left:0;right:0;top:132px;height:11px;background:#212121"></div>
+<div class="abs" style="left:0px;top:0;bottom:0;width:1px;background:#4A4A4A"></div>
+<div class="abs" style="left:21px;top:0;bottom:0;width:1px;background:#282828"></div>
+<div class="abs" style="left:42px;top:0;bottom:0;width:1px;background:#2F2F2F"></div>
+<div class="abs" style="left:63px;top:0;bottom:0;width:1px;background:#282828"></div>
+<div class="abs" style="left:84px;top:0;bottom:0;width:1px;background:#2F2F2F"></div>
+<div class="abs" style="left:104px;top:0;bottom:0;width:1px;background:#282828"></div>
+<div class="abs" style="left:125px;top:0;bottom:0;width:1px;background:#2F2F2F"></div>
+<div class="abs" style="left:146px;top:0;bottom:0;width:1px;background:#282828"></div>
+<div class="abs" style="left:167px;top:0;bottom:0;width:1px;background:#4A4A4A"></div>
+<div class="abs" style="left:188px;top:0;bottom:0;width:1px;background:#282828"></div>
+<div class="abs" style="left:209px;top:0;bottom:0;width:1px;background:#2F2F2F"></div>
+<div class="abs" style="left:230px;top:0;bottom:0;width:1px;background:#282828"></div>
+<div class="abs" style="left:250px;top:0;bottom:0;width:1px;background:#2F2F2F"></div>
+<div class="abs" style="left:271px;top:0;bottom:0;width:1px;background:#282828"></div>
+<div class="abs" style="left:292px;top:0;bottom:0;width:1px;background:#2F2F2F"></div>
+<div class="abs" style="left:313px;top:0;bottom:0;width:1px;background:#282828"></div>
+<div class="abs" style="left:334px;top:0;bottom:0;width:1px;background:#4A4A4A"></div>
+<div class="abs" style="left:1px;top:0px;width:62px;height:11px;background:#F2F2F2;border-left:2px solid #F2F2F2"></div>
+<div class="abs" style="left:85px;top:24px;width:83px;height:11px;background:#D6D6D6;border-left:2px solid #F2F2F2"></div>
+<div class="abs" style="left:168px;top:48px;width:41px;height:11px;background:#9A9A9A;border-left:2px solid #F2F2F2"></div>
+<div class="abs" style="left:210px;top:84px;width:62px;height:11px;background:#FFB000;border-left:2px solid #F2F2F2"></div>
+<div class="abs" style="left:272px;top:108px;width:41px;height:11px;background:#F2F2F2;border-left:2px solid #F2F2F2"></div>
+<div class="abs" style="left:210px;top:60px;width:62px;height:11px;border:1px solid #717171"></div>
+<div class="abs" style="left:250px;top:0;bottom:0;width:1px;background:#FFB000"></div>
+<div class="abs" style="left:105px;top:132px;width:42px;height:11px;background:#FF6158"></div>
+</div></div>
+<div class="m" style="padding:4px 12px;color:#9A9A9A">固定 オン: 書ける行 gray.2 / gray.1 と 外の行 gray.0 = 1.30 / 1.21</div>
+<div class="fc" style="gap:1px">
+<div class="f" style="height:28px;background:#1A1A1A"><div class="f ac" style="width:120px;background:#282828;border-bottom:1px solid #3C3C3C"><div style="width:4px;align-self:stretch;background:#69E4E4"></div><span style="padding-left:8px;color:#F2F2F2">トラック 1</span></div><div class="rel" style="margin:3px 0 3px 12px;width:140px;background:#2F2F2F;border:1px solid #4A4A4A"><div style="height:2px;background:#69E4E4"></div><div style="margin:5px 8px 0;height:2px;width:40px;background:#9A9A9A"></div></div></div>
+<div class="f" style="height:28px;background:#1A1A1A"><div class="f ac" style="width:120px;background:#2F2F2F;border-bottom:1px solid #3C3C3C"><div style="width:4px;align-self:stretch;background:#5ABDF2"></div><span style="padding-left:8px;color:#F2F2F2">トラック 2</span></div><div class="rel" style="margin:3px 0 3px 12px;width:140px;background:#2F2F2F;border:1px solid #FFB000"><div style="height:2px;background:#FFB000"></div><div style="margin:5px 8px 0;height:2px;width:40px;background:#9A9A9A"></div></div></div>
+<div class="f" style="height:28px;background:#1A1A1A"><div class="f ac" style="width:120px;background:#282828;border-bottom:1px solid #3C3C3C"><div style="width:4px;align-self:stretch;background:#6F8BED"></div><span style="padding-left:8px;color:#F2F2F2">トラック 3</span></div><div class="rel" style="margin:3px 0 3px 12px;width:100px;background:#2F2F2F;border:1px solid #4A4A4A"><div style="height:2px;background:#6F8BED"></div><div style="margin:5px 8px 0;height:2px;width:40px;background:#9A9A9A"></div></div></div>
+<div class="f" style="height:28px;background:#1A1A1A"><div class="f ac" style="width:120px;background:#282828;border-bottom:1px solid #3C3C3C"><div style="width:4px;align-self:stretch;background:#9561C7"></div><span style="padding-left:8px;color:#F2F2F2">トラック 4</span></div><div class="rel" style="margin:3px 0 3px 12px;width:140px;background:#2F2F2F;border:1px solid #FF6158"><div style="height:2px;background:#FF6158"></div><div style="margin:5px 8px 0;height:2px;width:40px;background:#FF6158"></div></div></div>
+<div class="f" style="height:28px;background:#1A1A1A"><div class="f ac" style="width:120px;background:#282828;border-bottom:1px solid #3C3C3C"><div style="width:4px;align-self:stretch;background:#FFD9F1"></div><span style="padding-left:8px;color:#F2F2F2">トラック 5</span></div><div class="rel" style="margin:3px 0 3px 12px;width:140px;background:#2F2F2F;border:1px solid #4A4A4A"><div style="height:2px;background:#FFD9F1"></div><div style="margin:5px 8px 0;height:2px;width:40px;background:#9A9A9A"></div></div></div>
+</div>
+<div class="f ac g8" style="padding:8px 12px"><div class="rel" style="width:200px;height:6px;background:#000000"><div class="abs" style="left:0;top:0;bottom:0;width:140px;background:#4CD964"></div><div class="abs" style="left:140px;top:0;bottom:0;width:56px;background:#FFD60A"></div><div class="abs" style="left:196px;top:0;bottom:0;width:2px;background:#FF6158"></div></div><span class="m" style="color:#FF6158">0 dB</span></div>
+<div style="margin:0 12px 12px;padding:8px;background:#F2F2F2;color:#000000;border-radius:1px">用語の説明: スケール固定 ・ えらんだ音階の音だけに書きこめるようにする。</div>
+</div><div class="fc" style="width:400px;background:#EAEAEA;color:#333333;border:1px solid #A7A7A7">
+<div class="f ac g8" style="height:32px;padding:0 12px;background:#CDCDCD;border-bottom:1px solid #A7A7A7"><span class="s6" style="color:#111111">ライト</span><span class="m" style="color:#575757">light</span></div>
+<div class="f" style="padding:8px 12px 0">
+<div class="fc" style="width:34px;height:40px;background:#FFFFFF;color:#111111;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">0</span></div>
+<div class="fc" style="width:34px;height:40px;background:#EAEAEA;color:#111111;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">1</span></div>
+<div class="fc" style="width:34px;height:40px;background:#E1E1E1;color:#111111;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">2</span></div>
+<div class="fc" style="width:34px;height:40px;background:#D8D8D8;color:#111111;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">3</span></div>
+<div class="fc" style="width:34px;height:40px;background:#CDCDCD;color:#111111;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">4</span></div>
+<div class="fc" style="width:34px;height:40px;background:#BBBBBB;color:#111111;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">5</span></div>
+<div class="fc" style="width:34px;height:40px;background:#A7A7A7;color:#111111;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">6</span></div>
+<div class="fc" style="width:34px;height:40px;background:#7A7A7A;color:#FFFFFF;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">7</span></div>
+<div class="fc" style="width:34px;height:40px;background:#575757;color:#FFFFFF;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">8</span></div>
+<div class="fc" style="width:34px;height:40px;background:#333333;color:#FFFFFF;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">9</span></div>
+<div class="fc" style="width:34px;height:40px;background:#111111;color:#FFFFFF;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">10</span></div>
+</div>
+<div class="f" style="padding:4px 12px 0;gap:2px">
+<div style="width:38px;height:20px;background:#735000" title="accent #735000"></div>
+<div style="width:38px;height:20px;background:#A5261F" title="rec #A5261F"></div>
+<div style="width:38px;height:20px;background:#2D813C" title="meter.ok #2D813C"></div>
+<div style="width:38px;height:20px;background:#906C00" title="meter.hot #906C00"></div>
+<div style="width:38px;height:20px;background:#007F7F" title="track.1 #007F7F"></div>
+<div style="width:38px;height:20px;background:#1977B6" title="track.2 #1977B6"></div>
+<div style="width:38px;height:20px;background:#4668E1" title="track.3 #4668E1"></div>
+<div style="width:38px;height:20px;background:#9551CD" title="track.4 #9551CD"></div>
+<div style="width:38px;height:20px;background:#C23F87" title="track.5 #C23F87"></div>
+</div>
+<div class="m" style="padding:2px 12px 0;color:#575757">accent ・ rec ・ ok ・ hot ・ トラック 1〜5</div>
+<div class="f ac g4" style="height:32px;margin-top:8px;padding:0 12px;background:#CDCDCD;border-top:1px solid #A7A7A7;border-bottom:1px solid #A7A7A7;position:relative"><div style="position:absolute;left:0;right:0;top:0;height:2px;background:#735000"></div><span class="f ac" style="height:24px;padding:0 8px;border:1px solid #A7A7A7;background:#CDCDCD;color:#333333;border-radius:1px">スケール固定</span><span class="f ac" style="height:24px;padding:0 8px;border:1px solid #735000;background:#CDCDCD;color:#735000;border-radius:1px">スケール固定</span><span class="f ac" style="height:24px;padding:0 8px;border:1px solid #BBBBBB;background:#CDCDCD;color:#7A7A7A;border-radius:1px">使えない</span><span class="f ac" style="height:24px;padding:0 8px;border:1px solid #A5261F;background:#CDCDCD;color:#A5261F;border-radius:1px">止</span><span class="f ac" style="width:20px;height:20px;border:1px solid #BBBBBB;background:#EAEAEA;color:#575757;justify-content:center">S</span><span class="f ac" style="width:20px;height:20px;border:1px solid #735000;background:#EAEAEA;color:#735000;justify-content:center">S</span><span class="f ac" style="width:24px;height:24px;border:1px solid #A7A7A7;background:#CDCDCD;justify-content:center"><span style="width:12px;height:12px;border-radius:50%;border:2px solid #A5261F"></span></span></div>
+<div class="fc" style="background:#D8D8D8;padding:6px 12px;gap:2px">
+<div class="f ac" style="height:18px;color:#111111"><span class="x1">強調 ・ 数字 gray.10</span><span class="m" style="color:#575757">13.25</span></div>
+<div class="f ac" style="height:18px;color:#333333"><span class="x1">本文 gray.9</span><span class="m" style="color:#575757">8.86</span></div>
+<div class="f ac" style="height:18px;color:#575757"><span class="x1">ラベル gray.8</span><span class="m" style="color:#575757">5.07</span></div>
+<div class="f ac" style="height:18px;color:#7A7A7A"><span class="x1">使えない gray.7</span><span class="m" style="color:#575757">3.01</span></div>
+<div class="f ac" style="height:22px;background:#CDCDCD;box-shadow:inset 2px 0 0 #735000;padding-left:8px;margin:0 -12px;padding-right:12px"><span class="x1">選んだ行</span><span class="m" style="color:#735000">オン</span><span class="m" style="color:#111111;margin-left:8px">オフ</span></div>
+</div>
+<div class="f" style="margin-top:8px;border-top:1px solid #A7A7A7">
+<div class="fc" style="width:64px;background:#EAEAEA">
+<div style="height:12px;border-bottom:1px solid #EAEAEA;background:#BBBBBB;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #EAEAEA;background:#FFFFFF;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #EAEAEA;background:#BBBBBB;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #EAEAEA;background:#FFFFFF;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #EAEAEA;background:#BBBBBB;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #EAEAEA;background:#FFFFFF;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #EAEAEA;background:#BBBBBB;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #EAEAEA;background:#BBBBBB;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #EAEAEA;background:#FFFFFF;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #EAEAEA;background:#BBBBBB;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #EAEAEA;background:#FFFFFF;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #EAEAEA;background:#BBBBBB;margin-left:24px"></div>
+</div>
+<div class="rel" style="width:334px;height:144px;background:#EAEAEA">
+<div class="abs" style="left:0;right:0;top:0px;height:11px;background:#E1E1E1"></div>
+<div class="abs" style="left:0;right:0;top:12px;height:11px;background:#FFFFFF"></div>
+<div class="abs" style="left:0;right:0;top:24px;height:11px;background:#E1E1E1"></div>
+<div class="abs" style="left:0;right:0;top:36px;height:11px;background:#FFFFFF"></div>
+<div class="abs" style="left:0;right:0;top:48px;height:11px;background:#E1E1E1"></div>
+<div class="abs" style="left:0;right:0;top:60px;height:11px;background:#FFFFFF"></div>
+<div class="abs" style="left:0;right:0;top:72px;height:11px;background:#E1E1E1"></div>
+<div class="abs" style="left:0;right:0;top:84px;height:11px;background:#E1E1E1"></div>
+<div class="abs" style="left:0;right:0;top:96px;height:11px;background:#FFFFFF"></div>
+<div class="abs" style="left:0;right:0;top:108px;height:11px;background:#E1E1E1"></div>
+<div class="abs" style="left:0;right:0;top:120px;height:11px;background:#FFFFFF"></div>
+<div class="abs" style="left:0;right:0;top:132px;height:11px;background:#E1E1E1"></div>
+<div class="abs" style="left:0px;top:0;bottom:0;width:1px;background:#A7A7A7"></div>
+<div class="abs" style="left:21px;top:0;bottom:0;width:1px;background:#D8D8D8"></div>
+<div class="abs" style="left:42px;top:0;bottom:0;width:1px;background:#CDCDCD"></div>
+<div class="abs" style="left:63px;top:0;bottom:0;width:1px;background:#D8D8D8"></div>
+<div class="abs" style="left:84px;top:0;bottom:0;width:1px;background:#CDCDCD"></div>
+<div class="abs" style="left:104px;top:0;bottom:0;width:1px;background:#D8D8D8"></div>
+<div class="abs" style="left:125px;top:0;bottom:0;width:1px;background:#CDCDCD"></div>
+<div class="abs" style="left:146px;top:0;bottom:0;width:1px;background:#D8D8D8"></div>
+<div class="abs" style="left:167px;top:0;bottom:0;width:1px;background:#A7A7A7"></div>
+<div class="abs" style="left:188px;top:0;bottom:0;width:1px;background:#D8D8D8"></div>
+<div class="abs" style="left:209px;top:0;bottom:0;width:1px;background:#CDCDCD"></div>
+<div class="abs" style="left:230px;top:0;bottom:0;width:1px;background:#D8D8D8"></div>
+<div class="abs" style="left:250px;top:0;bottom:0;width:1px;background:#CDCDCD"></div>
+<div class="abs" style="left:271px;top:0;bottom:0;width:1px;background:#D8D8D8"></div>
+<div class="abs" style="left:292px;top:0;bottom:0;width:1px;background:#CDCDCD"></div>
+<div class="abs" style="left:313px;top:0;bottom:0;width:1px;background:#D8D8D8"></div>
+<div class="abs" style="left:334px;top:0;bottom:0;width:1px;background:#A7A7A7"></div>
+<div class="abs" style="left:1px;top:0px;width:62px;height:11px;background:#111111;border-left:2px solid #111111"></div>
+<div class="abs" style="left:85px;top:24px;width:83px;height:11px;background:#333333;border-left:2px solid #111111"></div>
+<div class="abs" style="left:168px;top:48px;width:41px;height:11px;background:#575757;border-left:2px solid #111111"></div>
+<div class="abs" style="left:210px;top:84px;width:62px;height:11px;background:#735000;border-left:2px solid #111111"></div>
+<div class="abs" style="left:272px;top:108px;width:41px;height:11px;background:#111111;border-left:2px solid #111111"></div>
+<div class="abs" style="left:210px;top:60px;width:62px;height:11px;border:1px solid #7A7A7A"></div>
+<div class="abs" style="left:250px;top:0;bottom:0;width:1px;background:#735000"></div>
+<div class="abs" style="left:105px;top:132px;width:42px;height:11px;background:#A5261F"></div>
+</div></div>
+<div class="m" style="padding:4px 12px;color:#575757">固定 オン: 書ける行 gray.2 / gray.1 と 外の行 gray.0 = 1.31 / 1.20</div>
+<div class="fc" style="gap:1px">
+<div class="f" style="height:28px;background:#EAEAEA"><div class="f ac" style="width:120px;background:#D8D8D8;border-bottom:1px solid #BBBBBB"><div style="width:4px;align-self:stretch;background:#007F7F"></div><span style="padding-left:8px;color:#111111">トラック 1</span></div><div class="rel" style="margin:3px 0 3px 12px;width:140px;background:#CDCDCD;border:1px solid #A7A7A7"><div style="height:2px;background:#007F7F"></div><div style="margin:5px 8px 0;height:2px;width:40px;background:#575757"></div></div></div>
+<div class="f" style="height:28px;background:#EAEAEA"><div class="f ac" style="width:120px;background:#CDCDCD;border-bottom:1px solid #BBBBBB"><div style="width:4px;align-self:stretch;background:#1977B6"></div><span style="padding-left:8px;color:#111111">トラック 2</span></div><div class="rel" style="margin:3px 0 3px 12px;width:140px;background:#CDCDCD;border:1px solid #735000"><div style="height:2px;background:#735000"></div><div style="margin:5px 8px 0;height:2px;width:40px;background:#575757"></div></div></div>
+<div class="f" style="height:28px;background:#EAEAEA"><div class="f ac" style="width:120px;background:#D8D8D8;border-bottom:1px solid #BBBBBB"><div style="width:4px;align-self:stretch;background:#4668E1"></div><span style="padding-left:8px;color:#111111">トラック 3</span></div><div class="rel" style="margin:3px 0 3px 12px;width:100px;background:#CDCDCD;border:1px solid #A7A7A7"><div style="height:2px;background:#4668E1"></div><div style="margin:5px 8px 0;height:2px;width:40px;background:#575757"></div></div></div>
+<div class="f" style="height:28px;background:#EAEAEA"><div class="f ac" style="width:120px;background:#D8D8D8;border-bottom:1px solid #BBBBBB"><div style="width:4px;align-self:stretch;background:#9551CD"></div><span style="padding-left:8px;color:#111111">トラック 4</span></div><div class="rel" style="margin:3px 0 3px 12px;width:140px;background:#CDCDCD;border:1px solid #A5261F"><div style="height:2px;background:#A5261F"></div><div style="margin:5px 8px 0;height:2px;width:40px;background:#A5261F"></div></div></div>
+<div class="f" style="height:28px;background:#EAEAEA"><div class="f ac" style="width:120px;background:#D8D8D8;border-bottom:1px solid #BBBBBB"><div style="width:4px;align-self:stretch;background:#C23F87"></div><span style="padding-left:8px;color:#111111">トラック 5</span></div><div class="rel" style="margin:3px 0 3px 12px;width:140px;background:#CDCDCD;border:1px solid #A7A7A7"><div style="height:2px;background:#C23F87"></div><div style="margin:5px 8px 0;height:2px;width:40px;background:#575757"></div></div></div>
+</div>
+<div class="f ac g8" style="padding:8px 12px"><div class="rel" style="width:200px;height:6px;background:#FFFFFF"><div class="abs" style="left:0;top:0;bottom:0;width:140px;background:#2D813C"></div><div class="abs" style="left:140px;top:0;bottom:0;width:56px;background:#906C00"></div><div class="abs" style="left:196px;top:0;bottom:0;width:2px;background:#A5261F"></div></div><span class="m" style="color:#A5261F">0 dB</span></div>
+<div style="margin:0 12px 12px;padding:8px;background:#111111;color:#FFFFFF;border-radius:1px">用語の説明: スケール固定 ・ えらんだ音階の音だけに書きこめるようにする。</div>
+</div></div>
+<div class="f g24"><div class="fc" style="width:400px;background:#211B1E;color:#DBD5D7;border:1px solid #57494F">
+<div class="f ac g8" style="height:32px;padding:0 12px;background:#392F33;border-bottom:1px solid #57494F"><span class="s6" style="color:#F3F2F2">ピンク ・ ダーク</span><span class="m" style="color:#A7969E">pinkDark</span></div>
+<div class="f" style="padding:8px 12px 0">
+<div class="fc" style="width:34px;height:40px;background:#040404;color:#F3F2F2;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">0</span></div>
+<div class="fc" style="width:34px;height:40px;background:#211B1E;color:#F3F2F2;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">1</span></div>
+<div class="fc" style="width:34px;height:40px;background:#292225;color:#F3F2F2;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">2</span></div>
+<div class="fc" style="width:34px;height:40px;background:#30282C;color:#F3F2F2;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">3</span></div>
+<div class="fc" style="width:34px;height:40px;background:#392F33;color:#F3F2F2;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">4</span></div>
+<div class="fc" style="width:34px;height:40px;background:#483B41;color:#F3F2F2;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">5</span></div>
+<div class="fc" style="width:34px;height:40px;background:#57494F;color:#F3F2F2;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">6</span></div>
+<div class="fc" style="width:34px;height:40px;background:#806E77;color:#040404;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">7</span></div>
+<div class="fc" style="width:34px;height:40px;background:#A7969E;color:#040404;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">8</span></div>
+<div class="fc" style="width:34px;height:40px;background:#DBD5D7;color:#040404;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">9</span></div>
+<div class="fc" style="width:34px;height:40px;background:#F3F2F2;color:#040404;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">10</span></div>
+</div>
+<div class="f" style="padding:4px 12px 0;gap:2px">
+<div style="width:38px;height:20px;background:#FF7FC8" title="accent #FF7FC8"></div>
+<div style="width:38px;height:20px;background:#FF685F" title="rec #FF685F"></div>
+<div style="width:38px;height:20px;background:#4CD964" title="meter.ok #4CD964"></div>
+<div style="width:38px;height:20px;background:#FFD60A" title="meter.hot #FFD60A"></div>
+<div style="width:38px;height:20px;background:#69E4E4" title="track.1 #69E4E4"></div>
+<div style="width:38px;height:20px;background:#5ABDF2" title="track.2 #5ABDF2"></div>
+<div style="width:38px;height:20px;background:#6F8BED" title="track.3 #6F8BED"></div>
+<div style="width:38px;height:20px;background:#9664C8" title="track.4 #9664C8"></div>
+<div style="width:38px;height:20px;background:#FFD54A" title="track.5 #FFD54A"></div>
+</div>
+<div class="m" style="padding:2px 12px 0;color:#A7969E">accent ・ rec ・ ok ・ hot ・ トラック 1〜5</div>
+<div class="f ac g4" style="height:32px;margin-top:8px;padding:0 12px;background:#392F33;border-top:1px solid #57494F;border-bottom:1px solid #57494F;position:relative"><div style="position:absolute;left:0;right:0;top:0;height:2px;background:#FF7FC8"></div><span class="f ac" style="height:24px;padding:0 8px;border:1px solid #57494F;background:#392F33;color:#DBD5D7;border-radius:1px">スケール固定</span><span class="f ac" style="height:24px;padding:0 8px;border:1px solid #FF7FC8;background:#392F33;color:#FF7FC8;border-radius:1px">スケール固定</span><span class="f ac" style="height:24px;padding:0 8px;border:1px solid #483B41;background:#392F33;color:#806E77;border-radius:1px">使えない</span><span class="f ac" style="height:24px;padding:0 8px;border:1px solid #FF685F;background:#392F33;color:#FF685F;border-radius:1px">止</span><span class="f ac" style="width:20px;height:20px;border:1px solid #483B41;background:#211B1E;color:#A7969E;justify-content:center">S</span><span class="f ac" style="width:20px;height:20px;border:1px solid #FF7FC8;background:#211B1E;color:#FF7FC8;justify-content:center">S</span><span class="f ac" style="width:24px;height:24px;border:1px solid #57494F;background:#392F33;justify-content:center"><span style="width:12px;height:12px;border-radius:50%;border:2px solid #FF685F"></span></span></div>
+<div class="fc" style="background:#30282C;padding:6px 12px;gap:2px">
+<div class="f ac" style="height:18px;color:#F3F2F2"><span class="x1">強調 ・ 数字 gray.10</span><span class="m" style="color:#A7969E">12.82</span></div>
+<div class="f ac" style="height:18px;color:#DBD5D7"><span class="x1">本文 gray.9</span><span class="m" style="color:#A7969E">9.90</span></div>
+<div class="f ac" style="height:18px;color:#A7969E"><span class="x1">ラベル gray.8</span><span class="m" style="color:#A7969E">5.12</span></div>
+<div class="f ac" style="height:18px;color:#806E77"><span class="x1">使えない gray.7</span><span class="m" style="color:#A7969E">3.01</span></div>
+<div class="f ac" style="height:22px;background:#392F33;box-shadow:inset 2px 0 0 #FF7FC8;padding-left:8px;margin:0 -12px;padding-right:12px"><span class="x1">選んだ行</span><span class="m" style="color:#FF7FC8">オン</span><span class="m" style="color:#F3F2F2;margin-left:8px">オフ</span></div>
+</div>
+<div class="f" style="margin-top:8px;border-top:1px solid #57494F">
+<div class="fc" style="width:64px;background:#211B1E">
+<div style="height:12px;border-bottom:1px solid #211B1E;background:#483B41;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #211B1E;background:#040404;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #211B1E;background:#483B41;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #211B1E;background:#040404;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #211B1E;background:#483B41;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #211B1E;background:#040404;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #211B1E;background:#483B41;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #211B1E;background:#483B41;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #211B1E;background:#040404;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #211B1E;background:#483B41;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #211B1E;background:#040404;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #211B1E;background:#483B41;margin-left:24px"></div>
+</div>
+<div class="rel" style="width:334px;height:144px;background:#211B1E">
+<div class="abs" style="left:0;right:0;top:0px;height:11px;background:#292225"></div>
+<div class="abs" style="left:0;right:0;top:12px;height:11px;background:#040404"></div>
+<div class="abs" style="left:0;right:0;top:24px;height:11px;background:#292225"></div>
+<div class="abs" style="left:0;right:0;top:36px;height:11px;background:#040404"></div>
+<div class="abs" style="left:0;right:0;top:48px;height:11px;background:#292225"></div>
+<div class="abs" style="left:0;right:0;top:60px;height:11px;background:#040404"></div>
+<div class="abs" style="left:0;right:0;top:72px;height:11px;background:#292225"></div>
+<div class="abs" style="left:0;right:0;top:84px;height:11px;background:#292225"></div>
+<div class="abs" style="left:0;right:0;top:96px;height:11px;background:#040404"></div>
+<div class="abs" style="left:0;right:0;top:108px;height:11px;background:#292225"></div>
+<div class="abs" style="left:0;right:0;top:120px;height:11px;background:#040404"></div>
+<div class="abs" style="left:0;right:0;top:132px;height:11px;background:#292225"></div>
+<div class="abs" style="left:0px;top:0;bottom:0;width:1px;background:#57494F"></div>
+<div class="abs" style="left:21px;top:0;bottom:0;width:1px;background:#30282C"></div>
+<div class="abs" style="left:42px;top:0;bottom:0;width:1px;background:#392F33"></div>
+<div class="abs" style="left:63px;top:0;bottom:0;width:1px;background:#30282C"></div>
+<div class="abs" style="left:84px;top:0;bottom:0;width:1px;background:#392F33"></div>
+<div class="abs" style="left:104px;top:0;bottom:0;width:1px;background:#30282C"></div>
+<div class="abs" style="left:125px;top:0;bottom:0;width:1px;background:#392F33"></div>
+<div class="abs" style="left:146px;top:0;bottom:0;width:1px;background:#30282C"></div>
+<div class="abs" style="left:167px;top:0;bottom:0;width:1px;background:#57494F"></div>
+<div class="abs" style="left:188px;top:0;bottom:0;width:1px;background:#30282C"></div>
+<div class="abs" style="left:209px;top:0;bottom:0;width:1px;background:#392F33"></div>
+<div class="abs" style="left:230px;top:0;bottom:0;width:1px;background:#30282C"></div>
+<div class="abs" style="left:250px;top:0;bottom:0;width:1px;background:#392F33"></div>
+<div class="abs" style="left:271px;top:0;bottom:0;width:1px;background:#30282C"></div>
+<div class="abs" style="left:292px;top:0;bottom:0;width:1px;background:#392F33"></div>
+<div class="abs" style="left:313px;top:0;bottom:0;width:1px;background:#30282C"></div>
+<div class="abs" style="left:334px;top:0;bottom:0;width:1px;background:#57494F"></div>
+<div class="abs" style="left:1px;top:0px;width:62px;height:11px;background:#F3F2F2;border-left:2px solid #F3F2F2"></div>
+<div class="abs" style="left:85px;top:24px;width:83px;height:11px;background:#DBD5D7;border-left:2px solid #F3F2F2"></div>
+<div class="abs" style="left:168px;top:48px;width:41px;height:11px;background:#A7969E;border-left:2px solid #F3F2F2"></div>
+<div class="abs" style="left:210px;top:84px;width:62px;height:11px;background:#FF7FC8;border-left:2px solid #F3F2F2"></div>
+<div class="abs" style="left:272px;top:108px;width:41px;height:11px;background:#F3F2F2;border-left:2px solid #F3F2F2"></div>
+<div class="abs" style="left:210px;top:60px;width:62px;height:11px;border:1px solid #806E77"></div>
+<div class="abs" style="left:250px;top:0;bottom:0;width:1px;background:#FF7FC8"></div>
+<div class="abs" style="left:105px;top:132px;width:42px;height:11px;background:#FF685F"></div>
+</div></div>
+<div class="m" style="padding:4px 12px;color:#A7969E">固定 オン: 書ける行 gray.2 / gray.1 と 外の行 gray.0 = 1.32 / 1.21</div>
+<div class="fc" style="gap:1px">
+<div class="f" style="height:28px;background:#211B1E"><div class="f ac" style="width:120px;background:#30282C;border-bottom:1px solid #483B41"><div style="width:4px;align-self:stretch;background:#69E4E4"></div><span style="padding-left:8px;color:#F3F2F2">トラック 1</span></div><div class="rel" style="margin:3px 0 3px 12px;width:140px;background:#392F33;border:1px solid #57494F"><div style="height:2px;background:#69E4E4"></div><div style="margin:5px 8px 0;height:2px;width:40px;background:#A7969E"></div></div></div>
+<div class="f" style="height:28px;background:#211B1E"><div class="f ac" style="width:120px;background:#392F33;border-bottom:1px solid #483B41"><div style="width:4px;align-self:stretch;background:#5ABDF2"></div><span style="padding-left:8px;color:#F3F2F2">トラック 2</span></div><div class="rel" style="margin:3px 0 3px 12px;width:140px;background:#392F33;border:1px solid #FF7FC8"><div style="height:2px;background:#FF7FC8"></div><div style="margin:5px 8px 0;height:2px;width:40px;background:#A7969E"></div></div></div>
+<div class="f" style="height:28px;background:#211B1E"><div class="f ac" style="width:120px;background:#30282C;border-bottom:1px solid #483B41"><div style="width:4px;align-self:stretch;background:#6F8BED"></div><span style="padding-left:8px;color:#F3F2F2">トラック 3</span></div><div class="rel" style="margin:3px 0 3px 12px;width:100px;background:#392F33;border:1px solid #57494F"><div style="height:2px;background:#6F8BED"></div><div style="margin:5px 8px 0;height:2px;width:40px;background:#A7969E"></div></div></div>
+<div class="f" style="height:28px;background:#211B1E"><div class="f ac" style="width:120px;background:#30282C;border-bottom:1px solid #483B41"><div style="width:4px;align-self:stretch;background:#9664C8"></div><span style="padding-left:8px;color:#F3F2F2">トラック 4</span></div><div class="rel" style="margin:3px 0 3px 12px;width:140px;background:#392F33;border:1px solid #FF685F"><div style="height:2px;background:#FF685F"></div><div style="margin:5px 8px 0;height:2px;width:40px;background:#FF685F"></div></div></div>
+<div class="f" style="height:28px;background:#211B1E"><div class="f ac" style="width:120px;background:#30282C;border-bottom:1px solid #483B41"><div style="width:4px;align-self:stretch;background:#FFD54A"></div><span style="padding-left:8px;color:#F3F2F2">トラック 5</span></div><div class="rel" style="margin:3px 0 3px 12px;width:140px;background:#392F33;border:1px solid #57494F"><div style="height:2px;background:#FFD54A"></div><div style="margin:5px 8px 0;height:2px;width:40px;background:#A7969E"></div></div></div>
+</div>
+<div class="f ac g8" style="padding:8px 12px"><div class="rel" style="width:200px;height:6px;background:#040404"><div class="abs" style="left:0;top:0;bottom:0;width:140px;background:#4CD964"></div><div class="abs" style="left:140px;top:0;bottom:0;width:56px;background:#FFD60A"></div><div class="abs" style="left:196px;top:0;bottom:0;width:2px;background:#FF685F"></div></div><span class="m" style="color:#FF685F">0 dB</span></div>
+<div style="margin:0 12px 12px;padding:8px;background:#F3F2F2;color:#040404;border-radius:1px">用語の説明: スケール固定 ・ えらんだ音階の音だけに書きこめるようにする。</div>
+</div><div class="fc" style="width:400px;background:#EEE0E6;color:#373134;border:1px solid #BF98AA">
+<div class="f ac g8" style="height:32px;padding:0 12px;background:#DBC1CD;border-bottom:1px solid #BF98AA"><span class="s6" style="color:#121011">ピンク ・ ライト</span><span class="m" style="color:#5D5056">pinkLight</span></div>
+<div class="f" style="padding:8px 12px 0">
+<div class="fc" style="width:34px;height:40px;background:#FBF9F9;color:#121011;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">0</span></div>
+<div class="fc" style="width:34px;height:40px;background:#EEE0E6;color:#121011;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">1</span></div>
+<div class="fc" style="width:34px;height:40px;background:#E8D6DE;color:#121011;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">2</span></div>
+<div class="fc" style="width:34px;height:40px;background:#E2CCD6;color:#121011;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">3</span></div>
+<div class="fc" style="width:34px;height:40px;background:#DBC1CD;color:#121011;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">4</span></div>
+<div class="fc" style="width:34px;height:40px;background:#CFADBD;color:#121011;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">5</span></div>
+<div class="fc" style="width:34px;height:40px;background:#BF98AA;color:#121011;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">6</span></div>
+<div class="fc" style="width:34px;height:40px;background:#866F7A;color:#FBF9F9;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">7</span></div>
+<div class="fc" style="width:34px;height:40px;background:#5D5056;color:#FBF9F9;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">8</span></div>
+<div class="fc" style="width:34px;height:40px;background:#373134;color:#FBF9F9;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">9</span></div>
+<div class="fc" style="width:34px;height:40px;background:#121011;color:#FBF9F9;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">10</span></div>
+</div>
+<div class="f" style="padding:4px 12px 0;gap:2px">
+<div style="width:38px;height:20px;background:#8E2879" title="accent #8E2879"></div>
+<div style="width:38px;height:20px;background:#9F251E" title="rec #9F251E"></div>
+<div style="width:38px;height:20px;background:#2C7D3A" title="meter.ok #2C7D3A"></div>
+<div style="width:38px;height:20px;background:#8B6900" title="meter.hot #8B6900"></div>
+<div style="width:38px;height:20px;background:#007B7B" title="track.1 #007B7B"></div>
+<div style="width:38px;height:20px;background:#1873B0" title="track.2 #1873B0"></div>
+<div style="width:38px;height:20px;background:#4164E0" title="track.3 #4164E0"></div>
+<div style="width:38px;height:20px;background:#924CCC" title="track.4 #924CCC"></div>
+<div style="width:38px;height:20px;background:#8E6800" title="track.5 #8E6800"></div>
+</div>
+<div class="m" style="padding:2px 12px 0;color:#5D5056">accent ・ rec ・ ok ・ hot ・ トラック 1〜5</div>
+<div class="f ac g4" style="height:32px;margin-top:8px;padding:0 12px;background:#DBC1CD;border-top:1px solid #BF98AA;border-bottom:1px solid #BF98AA;position:relative"><div style="position:absolute;left:0;right:0;top:0;height:2px;background:#8E2879"></div><span class="f ac" style="height:24px;padding:0 8px;border:1px solid #BF98AA;background:#DBC1CD;color:#373134;border-radius:1px">スケール固定</span><span class="f ac" style="height:24px;padding:0 8px;border:1px solid #8E2879;background:#DBC1CD;color:#8E2879;border-radius:1px">スケール固定</span><span class="f ac" style="height:24px;padding:0 8px;border:1px solid #CFADBD;background:#DBC1CD;color:#866F7A;border-radius:1px">使えない</span><span class="f ac" style="height:24px;padding:0 8px;border:1px solid #9F251E;background:#DBC1CD;color:#9F251E;border-radius:1px">止</span><span class="f ac" style="width:20px;height:20px;border:1px solid #CFADBD;background:#EEE0E6;color:#5D5056;justify-content:center">S</span><span class="f ac" style="width:20px;height:20px;border:1px solid #8E2879;background:#EEE0E6;color:#8E2879;justify-content:center">S</span><span class="f ac" style="width:24px;height:24px;border:1px solid #BF98AA;background:#DBC1CD;justify-content:center"><span style="width:12px;height:12px;border-radius:50%;border:2px solid #9F251E"></span></span></div>
+<div class="fc" style="background:#E2CCD6;padding:6px 12px;gap:2px">
+<div class="f ac" style="height:18px;color:#121011"><span class="x1">強調 ・ 数字 gray.10</span><span class="m" style="color:#5D5056">12.49</span></div>
+<div class="f ac" style="height:18px;color:#373134"><span class="x1">本文 gray.9</span><span class="m" style="color:#5D5056">8.38</span></div>
+<div class="f ac" style="height:18px;color:#5D5056"><span class="x1">ラベル gray.8</span><span class="m" style="color:#5D5056">5.04</span></div>
+<div class="f ac" style="height:18px;color:#866F7A"><span class="x1">使えない gray.7</span><span class="m" style="color:#5D5056">3.03</span></div>
+<div class="f ac" style="height:22px;background:#DBC1CD;box-shadow:inset 2px 0 0 #8E2879;padding-left:8px;margin:0 -12px;padding-right:12px"><span class="x1">選んだ行</span><span class="m" style="color:#8E2879">オン</span><span class="m" style="color:#121011;margin-left:8px">オフ</span></div>
+</div>
+<div class="f" style="margin-top:8px;border-top:1px solid #BF98AA">
+<div class="fc" style="width:64px;background:#EEE0E6">
+<div style="height:12px;border-bottom:1px solid #EEE0E6;background:#CFADBD;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #EEE0E6;background:#FBF9F9;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #EEE0E6;background:#CFADBD;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #EEE0E6;background:#FBF9F9;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #EEE0E6;background:#CFADBD;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #EEE0E6;background:#FBF9F9;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #EEE0E6;background:#CFADBD;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #EEE0E6;background:#CFADBD;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #EEE0E6;background:#FBF9F9;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #EEE0E6;background:#CFADBD;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #EEE0E6;background:#FBF9F9;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #EEE0E6;background:#CFADBD;margin-left:24px"></div>
+</div>
+<div class="rel" style="width:334px;height:144px;background:#EEE0E6">
+<div class="abs" style="left:0;right:0;top:0px;height:11px;background:#E8D6DE"></div>
+<div class="abs" style="left:0;right:0;top:12px;height:11px;background:#FBF9F9"></div>
+<div class="abs" style="left:0;right:0;top:24px;height:11px;background:#E8D6DE"></div>
+<div class="abs" style="left:0;right:0;top:36px;height:11px;background:#FBF9F9"></div>
+<div class="abs" style="left:0;right:0;top:48px;height:11px;background:#E8D6DE"></div>
+<div class="abs" style="left:0;right:0;top:60px;height:11px;background:#FBF9F9"></div>
+<div class="abs" style="left:0;right:0;top:72px;height:11px;background:#E8D6DE"></div>
+<div class="abs" style="left:0;right:0;top:84px;height:11px;background:#E8D6DE"></div>
+<div class="abs" style="left:0;right:0;top:96px;height:11px;background:#FBF9F9"></div>
+<div class="abs" style="left:0;right:0;top:108px;height:11px;background:#E8D6DE"></div>
+<div class="abs" style="left:0;right:0;top:120px;height:11px;background:#FBF9F9"></div>
+<div class="abs" style="left:0;right:0;top:132px;height:11px;background:#E8D6DE"></div>
+<div class="abs" style="left:0px;top:0;bottom:0;width:1px;background:#BF98AA"></div>
+<div class="abs" style="left:21px;top:0;bottom:0;width:1px;background:#E2CCD6"></div>
+<div class="abs" style="left:42px;top:0;bottom:0;width:1px;background:#DBC1CD"></div>
+<div class="abs" style="left:63px;top:0;bottom:0;width:1px;background:#E2CCD6"></div>
+<div class="abs" style="left:84px;top:0;bottom:0;width:1px;background:#DBC1CD"></div>
+<div class="abs" style="left:104px;top:0;bottom:0;width:1px;background:#E2CCD6"></div>
+<div class="abs" style="left:125px;top:0;bottom:0;width:1px;background:#DBC1CD"></div>
+<div class="abs" style="left:146px;top:0;bottom:0;width:1px;background:#E2CCD6"></div>
+<div class="abs" style="left:167px;top:0;bottom:0;width:1px;background:#BF98AA"></div>
+<div class="abs" style="left:188px;top:0;bottom:0;width:1px;background:#E2CCD6"></div>
+<div class="abs" style="left:209px;top:0;bottom:0;width:1px;background:#DBC1CD"></div>
+<div class="abs" style="left:230px;top:0;bottom:0;width:1px;background:#E2CCD6"></div>
+<div class="abs" style="left:250px;top:0;bottom:0;width:1px;background:#DBC1CD"></div>
+<div class="abs" style="left:271px;top:0;bottom:0;width:1px;background:#E2CCD6"></div>
+<div class="abs" style="left:292px;top:0;bottom:0;width:1px;background:#DBC1CD"></div>
+<div class="abs" style="left:313px;top:0;bottom:0;width:1px;background:#E2CCD6"></div>
+<div class="abs" style="left:334px;top:0;bottom:0;width:1px;background:#BF98AA"></div>
+<div class="abs" style="left:1px;top:0px;width:62px;height:11px;background:#121011;border-left:2px solid #121011"></div>
+<div class="abs" style="left:85px;top:24px;width:83px;height:11px;background:#373134;border-left:2px solid #121011"></div>
+<div class="abs" style="left:168px;top:48px;width:41px;height:11px;background:#5D5056;border-left:2px solid #121011"></div>
+<div class="abs" style="left:210px;top:84px;width:62px;height:11px;background:#8E2879;border-left:2px solid #121011"></div>
+<div class="abs" style="left:272px;top:108px;width:41px;height:11px;background:#121011;border-left:2px solid #121011"></div>
+<div class="abs" style="left:210px;top:60px;width:62px;height:11px;border:1px solid #866F7A"></div>
+<div class="abs" style="left:250px;top:0;bottom:0;width:1px;background:#8E2879"></div>
+<div class="abs" style="left:105px;top:132px;width:42px;height:11px;background:#9F251E"></div>
+</div></div>
+<div class="m" style="padding:4px 12px;color:#5D5056">固定 オン: 書ける行 gray.2 / gray.1 と 外の行 gray.0 = 1.33 / 1.22</div>
+<div class="fc" style="gap:1px">
+<div class="f" style="height:28px;background:#EEE0E6"><div class="f ac" style="width:120px;background:#E2CCD6;border-bottom:1px solid #CFADBD"><div style="width:4px;align-self:stretch;background:#007B7B"></div><span style="padding-left:8px;color:#121011">トラック 1</span></div><div class="rel" style="margin:3px 0 3px 12px;width:140px;background:#DBC1CD;border:1px solid #BF98AA"><div style="height:2px;background:#007B7B"></div><div style="margin:5px 8px 0;height:2px;width:40px;background:#5D5056"></div></div></div>
+<div class="f" style="height:28px;background:#EEE0E6"><div class="f ac" style="width:120px;background:#DBC1CD;border-bottom:1px solid #CFADBD"><div style="width:4px;align-self:stretch;background:#1873B0"></div><span style="padding-left:8px;color:#121011">トラック 2</span></div><div class="rel" style="margin:3px 0 3px 12px;width:140px;background:#DBC1CD;border:1px solid #8E2879"><div style="height:2px;background:#8E2879"></div><div style="margin:5px 8px 0;height:2px;width:40px;background:#5D5056"></div></div></div>
+<div class="f" style="height:28px;background:#EEE0E6"><div class="f ac" style="width:120px;background:#E2CCD6;border-bottom:1px solid #CFADBD"><div style="width:4px;align-self:stretch;background:#4164E0"></div><span style="padding-left:8px;color:#121011">トラック 3</span></div><div class="rel" style="margin:3px 0 3px 12px;width:100px;background:#DBC1CD;border:1px solid #BF98AA"><div style="height:2px;background:#4164E0"></div><div style="margin:5px 8px 0;height:2px;width:40px;background:#5D5056"></div></div></div>
+<div class="f" style="height:28px;background:#EEE0E6"><div class="f ac" style="width:120px;background:#E2CCD6;border-bottom:1px solid #CFADBD"><div style="width:4px;align-self:stretch;background:#924CCC"></div><span style="padding-left:8px;color:#121011">トラック 4</span></div><div class="rel" style="margin:3px 0 3px 12px;width:140px;background:#DBC1CD;border:1px solid #9F251E"><div style="height:2px;background:#9F251E"></div><div style="margin:5px 8px 0;height:2px;width:40px;background:#9F251E"></div></div></div>
+<div class="f" style="height:28px;background:#EEE0E6"><div class="f ac" style="width:120px;background:#E2CCD6;border-bottom:1px solid #CFADBD"><div style="width:4px;align-self:stretch;background:#8E6800"></div><span style="padding-left:8px;color:#121011">トラック 5</span></div><div class="rel" style="margin:3px 0 3px 12px;width:140px;background:#DBC1CD;border:1px solid #BF98AA"><div style="height:2px;background:#8E6800"></div><div style="margin:5px 8px 0;height:2px;width:40px;background:#5D5056"></div></div></div>
+</div>
+<div class="f ac g8" style="padding:8px 12px"><div class="rel" style="width:200px;height:6px;background:#FBF9F9"><div class="abs" style="left:0;top:0;bottom:0;width:140px;background:#2C7D3A"></div><div class="abs" style="left:140px;top:0;bottom:0;width:56px;background:#8B6900"></div><div class="abs" style="left:196px;top:0;bottom:0;width:2px;background:#9F251E"></div></div><span class="m" style="color:#9F251E">0 dB</span></div>
+<div style="margin:0 12px 12px;padding:8px;background:#121011;color:#FBF9F9;border-radius:1px">用語の説明: スケール固定 ・ えらんだ音階の音だけに書きこめるようにする。</div>
+</div><div class="fc" style="width:400px;background:#171F1C;color:#D3D7D6;border:1px solid #3F514A">
+<div class="f ac g8" style="height:32px;padding:0 12px;background:#293531;border-bottom:1px solid #3F514A"><span class="s6" style="color:#F1F3F2">ミント ・ ダーク</span><span class="m" style="color:#8D9E98">mintDark</span></div>
+<div class="f" style="padding:8px 12px 0">
+<div class="fc" style="width:34px;height:40px;background:#040404;color:#F1F3F2;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">0</span></div>
+<div class="fc" style="width:34px;height:40px;background:#171F1C;color:#F1F3F2;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">1</span></div>
+<div class="fc" style="width:34px;height:40px;background:#1D2723;color:#F1F3F2;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">2</span></div>
+<div class="fc" style="width:34px;height:40px;background:#232E2A;color:#F1F3F2;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">3</span></div>
+<div class="fc" style="width:34px;height:40px;background:#293531;color:#F1F3F2;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">4</span></div>
+<div class="fc" style="width:34px;height:40px;background:#33423D;color:#F1F3F2;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">5</span></div>
+<div class="fc" style="width:34px;height:40px;background:#3F514A;color:#F1F3F2;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">6</span></div>
+<div class="fc" style="width:34px;height:40px;background:#637971;color:#040404;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">7</span></div>
+<div class="fc" style="width:34px;height:40px;background:#8D9E98;color:#040404;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">8</span></div>
+<div class="fc" style="width:34px;height:40px;background:#D3D7D6;color:#040404;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">9</span></div>
+<div class="fc" style="width:34px;height:40px;background:#F1F3F2;color:#040404;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">10</span></div>
+</div>
+<div class="f" style="padding:4px 12px 0;gap:2px">
+<div style="width:38px;height:20px;background:#5CF0B4" title="accent #5CF0B4"></div>
+<div style="width:38px;height:20px;background:#FF6A61" title="rec #FF6A61"></div>
+<div style="width:38px;height:20px;background:#4CD964" title="meter.ok #4CD964"></div>
+<div style="width:38px;height:20px;background:#FFD60A" title="meter.hot #FFD60A"></div>
+<div style="width:38px;height:20px;background:#FFD54A" title="track.1 #FFD54A"></div>
+<div style="width:38px;height:20px;background:#5ABDF2" title="track.2 #5ABDF2"></div>
+<div style="width:38px;height:20px;background:#6F8BED" title="track.3 #6F8BED"></div>
+<div style="width:38px;height:20px;background:#9765C9" title="track.4 #9765C9"></div>
+<div style="width:38px;height:20px;background:#FFD9F1" title="track.5 #FFD9F1"></div>
+</div>
+<div class="m" style="padding:2px 12px 0;color:#8D9E98">accent ・ rec ・ ok ・ hot ・ トラック 1〜5</div>
+<div class="f ac g4" style="height:32px;margin-top:8px;padding:0 12px;background:#293531;border-top:1px solid #3F514A;border-bottom:1px solid #3F514A;position:relative"><div style="position:absolute;left:0;right:0;top:0;height:2px;background:#5CF0B4"></div><span class="f ac" style="height:24px;padding:0 8px;border:1px solid #3F514A;background:#293531;color:#D3D7D6;border-radius:1px">スケール固定</span><span class="f ac" style="height:24px;padding:0 8px;border:1px solid #5CF0B4;background:#293531;color:#5CF0B4;border-radius:1px">スケール固定</span><span class="f ac" style="height:24px;padding:0 8px;border:1px solid #33423D;background:#293531;color:#637971;border-radius:1px">使えない</span><span class="f ac" style="height:24px;padding:0 8px;border:1px solid #FF6A61;background:#293531;color:#FF6A61;border-radius:1px">止</span><span class="f ac" style="width:20px;height:20px;border:1px solid #33423D;background:#171F1C;color:#8D9E98;justify-content:center">S</span><span class="f ac" style="width:20px;height:20px;border:1px solid #5CF0B4;background:#171F1C;color:#5CF0B4;justify-content:center">S</span><span class="f ac" style="width:24px;height:24px;border:1px solid #3F514A;background:#293531;justify-content:center"><span style="width:12px;height:12px;border-radius:50%;border:2px solid #FF6A61"></span></span></div>
+<div class="fc" style="background:#232E2A;padding:6px 12px;gap:2px">
+<div class="f ac" style="height:18px;color:#F1F3F2"><span class="x1">強調 ・ 数字 gray.10</span><span class="m" style="color:#8D9E98">12.60</span></div>
+<div class="f ac" style="height:18px;color:#D3D7D6"><span class="x1">本文 gray.9</span><span class="m" style="color:#8D9E98">9.67</span></div>
+<div class="f ac" style="height:18px;color:#8D9E98"><span class="x1">ラベル gray.8</span><span class="m" style="color:#8D9E98">5.00</span></div>
+<div class="f ac" style="height:18px;color:#637971"><span class="x1">使えない gray.7</span><span class="m" style="color:#8D9E98">3.01</span></div>
+<div class="f ac" style="height:22px;background:#293531;box-shadow:inset 2px 0 0 #5CF0B4;padding-left:8px;margin:0 -12px;padding-right:12px"><span class="x1">選んだ行</span><span class="m" style="color:#5CF0B4">オン</span><span class="m" style="color:#F1F3F2;margin-left:8px">オフ</span></div>
+</div>
+<div class="f" style="margin-top:8px;border-top:1px solid #3F514A">
+<div class="fc" style="width:64px;background:#171F1C">
+<div style="height:12px;border-bottom:1px solid #171F1C;background:#33423D;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #171F1C;background:#040404;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #171F1C;background:#33423D;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #171F1C;background:#040404;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #171F1C;background:#33423D;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #171F1C;background:#040404;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #171F1C;background:#33423D;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #171F1C;background:#33423D;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #171F1C;background:#040404;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #171F1C;background:#33423D;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #171F1C;background:#040404;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #171F1C;background:#33423D;margin-left:24px"></div>
+</div>
+<div class="rel" style="width:334px;height:144px;background:#171F1C">
+<div class="abs" style="left:0;right:0;top:0px;height:11px;background:#1D2723"></div>
+<div class="abs" style="left:0;right:0;top:12px;height:11px;background:#040404"></div>
+<div class="abs" style="left:0;right:0;top:24px;height:11px;background:#1D2723"></div>
+<div class="abs" style="left:0;right:0;top:36px;height:11px;background:#040404"></div>
+<div class="abs" style="left:0;right:0;top:48px;height:11px;background:#1D2723"></div>
+<div class="abs" style="left:0;right:0;top:60px;height:11px;background:#040404"></div>
+<div class="abs" style="left:0;right:0;top:72px;height:11px;background:#1D2723"></div>
+<div class="abs" style="left:0;right:0;top:84px;height:11px;background:#1D2723"></div>
+<div class="abs" style="left:0;right:0;top:96px;height:11px;background:#040404"></div>
+<div class="abs" style="left:0;right:0;top:108px;height:11px;background:#1D2723"></div>
+<div class="abs" style="left:0;right:0;top:120px;height:11px;background:#040404"></div>
+<div class="abs" style="left:0;right:0;top:132px;height:11px;background:#1D2723"></div>
+<div class="abs" style="left:0px;top:0;bottom:0;width:1px;background:#3F514A"></div>
+<div class="abs" style="left:21px;top:0;bottom:0;width:1px;background:#232E2A"></div>
+<div class="abs" style="left:42px;top:0;bottom:0;width:1px;background:#293531"></div>
+<div class="abs" style="left:63px;top:0;bottom:0;width:1px;background:#232E2A"></div>
+<div class="abs" style="left:84px;top:0;bottom:0;width:1px;background:#293531"></div>
+<div class="abs" style="left:104px;top:0;bottom:0;width:1px;background:#232E2A"></div>
+<div class="abs" style="left:125px;top:0;bottom:0;width:1px;background:#293531"></div>
+<div class="abs" style="left:146px;top:0;bottom:0;width:1px;background:#232E2A"></div>
+<div class="abs" style="left:167px;top:0;bottom:0;width:1px;background:#3F514A"></div>
+<div class="abs" style="left:188px;top:0;bottom:0;width:1px;background:#232E2A"></div>
+<div class="abs" style="left:209px;top:0;bottom:0;width:1px;background:#293531"></div>
+<div class="abs" style="left:230px;top:0;bottom:0;width:1px;background:#232E2A"></div>
+<div class="abs" style="left:250px;top:0;bottom:0;width:1px;background:#293531"></div>
+<div class="abs" style="left:271px;top:0;bottom:0;width:1px;background:#232E2A"></div>
+<div class="abs" style="left:292px;top:0;bottom:0;width:1px;background:#293531"></div>
+<div class="abs" style="left:313px;top:0;bottom:0;width:1px;background:#232E2A"></div>
+<div class="abs" style="left:334px;top:0;bottom:0;width:1px;background:#3F514A"></div>
+<div class="abs" style="left:1px;top:0px;width:62px;height:11px;background:#F1F3F2;border-left:2px solid #F1F3F2"></div>
+<div class="abs" style="left:85px;top:24px;width:83px;height:11px;background:#D3D7D6;border-left:2px solid #F1F3F2"></div>
+<div class="abs" style="left:168px;top:48px;width:41px;height:11px;background:#8D9E98;border-left:2px solid #F1F3F2"></div>
+<div class="abs" style="left:210px;top:84px;width:62px;height:11px;background:#5CF0B4;border-left:2px solid #F1F3F2"></div>
+<div class="abs" style="left:272px;top:108px;width:41px;height:11px;background:#F1F3F2;border-left:2px solid #F1F3F2"></div>
+<div class="abs" style="left:210px;top:60px;width:62px;height:11px;border:1px solid #637971"></div>
+<div class="abs" style="left:250px;top:0;bottom:0;width:1px;background:#5CF0B4"></div>
+<div class="abs" style="left:105px;top:132px;width:42px;height:11px;background:#FF6A61"></div>
+</div></div>
+<div class="m" style="padding:4px 12px;color:#8D9E98">固定 オン: 書ける行 gray.2 / gray.1 と 外の行 gray.0 = 1.33 / 1.22</div>
+<div class="fc" style="gap:1px">
+<div class="f" style="height:28px;background:#171F1C"><div class="f ac" style="width:120px;background:#232E2A;border-bottom:1px solid #33423D"><div style="width:4px;align-self:stretch;background:#FFD54A"></div><span style="padding-left:8px;color:#F1F3F2">トラック 1</span></div><div class="rel" style="margin:3px 0 3px 12px;width:140px;background:#293531;border:1px solid #3F514A"><div style="height:2px;background:#FFD54A"></div><div style="margin:5px 8px 0;height:2px;width:40px;background:#8D9E98"></div></div></div>
+<div class="f" style="height:28px;background:#171F1C"><div class="f ac" style="width:120px;background:#293531;border-bottom:1px solid #33423D"><div style="width:4px;align-self:stretch;background:#5ABDF2"></div><span style="padding-left:8px;color:#F1F3F2">トラック 2</span></div><div class="rel" style="margin:3px 0 3px 12px;width:140px;background:#293531;border:1px solid #5CF0B4"><div style="height:2px;background:#5CF0B4"></div><div style="margin:5px 8px 0;height:2px;width:40px;background:#8D9E98"></div></div></div>
+<div class="f" style="height:28px;background:#171F1C"><div class="f ac" style="width:120px;background:#232E2A;border-bottom:1px solid #33423D"><div style="width:4px;align-self:stretch;background:#6F8BED"></div><span style="padding-left:8px;color:#F1F3F2">トラック 3</span></div><div class="rel" style="margin:3px 0 3px 12px;width:100px;background:#293531;border:1px solid #3F514A"><div style="height:2px;background:#6F8BED"></div><div style="margin:5px 8px 0;height:2px;width:40px;background:#8D9E98"></div></div></div>
+<div class="f" style="height:28px;background:#171F1C"><div class="f ac" style="width:120px;background:#232E2A;border-bottom:1px solid #33423D"><div style="width:4px;align-self:stretch;background:#9765C9"></div><span style="padding-left:8px;color:#F1F3F2">トラック 4</span></div><div class="rel" style="margin:3px 0 3px 12px;width:140px;background:#293531;border:1px solid #FF6A61"><div style="height:2px;background:#FF6A61"></div><div style="margin:5px 8px 0;height:2px;width:40px;background:#FF6A61"></div></div></div>
+<div class="f" style="height:28px;background:#171F1C"><div class="f ac" style="width:120px;background:#232E2A;border-bottom:1px solid #33423D"><div style="width:4px;align-self:stretch;background:#FFD9F1"></div><span style="padding-left:8px;color:#F1F3F2">トラック 5</span></div><div class="rel" style="margin:3px 0 3px 12px;width:140px;background:#293531;border:1px solid #3F514A"><div style="height:2px;background:#FFD9F1"></div><div style="margin:5px 8px 0;height:2px;width:40px;background:#8D9E98"></div></div></div>
+</div>
+<div class="f ac g8" style="padding:8px 12px"><div class="rel" style="width:200px;height:6px;background:#040404"><div class="abs" style="left:0;top:0;bottom:0;width:140px;background:#4CD964"></div><div class="abs" style="left:140px;top:0;bottom:0;width:56px;background:#FFD60A"></div><div class="abs" style="left:196px;top:0;bottom:0;width:2px;background:#FF6A61"></div></div><span class="m" style="color:#FF6A61">0 dB</span></div>
+<div style="margin:0 12px 12px;padding:8px;background:#F1F3F2;color:#040404;border-radius:1px">用語の説明: スケール固定 ・ えらんだ音階の音だけに書きこめるようにする。</div>
+</div><div class="fc" style="width:400px;background:#DBE7E3;color:#2D3432;border:1px solid #89AB9F">
+<div class="f ac g8" style="height:32px;padding:0 12px;background:#B6CEC6;border-bottom:1px solid #89AB9F"><span class="s6" style="color:#0F1111">ミント ・ ライト</span><span class="m" style="color:#485852">mintLight</span></div>
+<div class="f" style="padding:8px 12px 0">
+<div class="fc" style="width:34px;height:40px;background:#F8FAF9;color:#0F1111;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">0</span></div>
+<div class="fc" style="width:34px;height:40px;background:#DBE7E3;color:#0F1111;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">1</span></div>
+<div class="fc" style="width:34px;height:40px;background:#D0DFDA;color:#0F1111;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">2</span></div>
+<div class="fc" style="width:34px;height:40px;background:#C4D7D1;color:#0F1111;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">3</span></div>
+<div class="fc" style="width:34px;height:40px;background:#B6CEC6;color:#0F1111;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">4</span></div>
+<div class="fc" style="width:34px;height:40px;background:#A0BDB3;color:#0F1111;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">5</span></div>
+<div class="fc" style="width:34px;height:40px;background:#89AB9F;color:#0F1111;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">6</span></div>
+<div class="fc" style="width:34px;height:40px;background:#617C73;color:#F8FAF9;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">7</span></div>
+<div class="fc" style="width:34px;height:40px;background:#485852;color:#F8FAF9;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">8</span></div>
+<div class="fc" style="width:34px;height:40px;background:#2D3432;color:#F8FAF9;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">9</span></div>
+<div class="fc" style="width:34px;height:40px;background:#0F1111;color:#F8FAF9;justify-content:flex-end;padding:2px"><span class="m" style="font-size:12px;line-height:14px">10</span></div>
+</div>
+<div class="f" style="padding:4px 12px 0;gap:2px">
+<div style="width:38px;height:20px;background:#0B603F" title="accent #0B603F"></div>
+<div style="width:38px;height:20px;background:#A0251E" title="rec #A0251E"></div>
+<div style="width:38px;height:20px;background:#2C7E3A" title="meter.ok #2C7E3A"></div>
+<div style="width:38px;height:20px;background:#8C6900" title="meter.hot #8C6900"></div>
+<div style="width:38px;height:20px;background:#8F6800" title="track.1 #8F6800"></div>
+<div style="width:38px;height:20px;background:#1874B0" title="track.2 #1874B0"></div>
+<div style="width:38px;height:20px;background:#4165E0" title="track.3 #4165E0"></div>
+<div style="width:38px;height:20px;background:#924DCC" title="track.4 #924DCC"></div>
+<div style="width:38px;height:20px;background:#BD3D84" title="track.5 #BD3D84"></div>
+</div>
+<div class="m" style="padding:2px 12px 0;color:#485852">accent ・ rec ・ ok ・ hot ・ トラック 1〜5</div>
+<div class="f ac g4" style="height:32px;margin-top:8px;padding:0 12px;background:#B6CEC6;border-top:1px solid #89AB9F;border-bottom:1px solid #89AB9F;position:relative"><div style="position:absolute;left:0;right:0;top:0;height:2px;background:#0B603F"></div><span class="f ac" style="height:24px;padding:0 8px;border:1px solid #89AB9F;background:#B6CEC6;color:#2D3432;border-radius:1px">スケール固定</span><span class="f ac" style="height:24px;padding:0 8px;border:1px solid #0B603F;background:#B6CEC6;color:#0B603F;border-radius:1px">スケール固定</span><span class="f ac" style="height:24px;padding:0 8px;border:1px solid #A0BDB3;background:#B6CEC6;color:#617C73;border-radius:1px">使えない</span><span class="f ac" style="height:24px;padding:0 8px;border:1px solid #A0251E;background:#B6CEC6;color:#A0251E;border-radius:1px">止</span><span class="f ac" style="width:20px;height:20px;border:1px solid #A0BDB3;background:#DBE7E3;color:#485852;justify-content:center">S</span><span class="f ac" style="width:20px;height:20px;border:1px solid #0B603F;background:#DBE7E3;color:#0B603F;justify-content:center">S</span><span class="f ac" style="width:24px;height:24px;border:1px solid #89AB9F;background:#B6CEC6;justify-content:center"><span style="width:12px;height:12px;border-radius:50%;border:2px solid #A0251E"></span></span></div>
+<div class="fc" style="background:#C4D7D1;padding:6px 12px;gap:2px">
+<div class="f ac" style="height:18px;color:#0F1111"><span class="x1">強調 ・ 数字 gray.10</span><span class="m" style="color:#485852">12.62</span></div>
+<div class="f ac" style="height:18px;color:#2D3432"><span class="x1">本文 gray.9</span><span class="m" style="color:#485852">8.48</span></div>
+<div class="f ac" style="height:18px;color:#485852"><span class="x1">ラベル gray.8</span><span class="m" style="color:#485852">5.01</span></div>
+<div class="f ac" style="height:18px;color:#617C73"><span class="x1">使えない gray.7</span><span class="m" style="color:#485852">3.02</span></div>
+<div class="f ac" style="height:22px;background:#B6CEC6;box-shadow:inset 2px 0 0 #0B603F;padding-left:8px;margin:0 -12px;padding-right:12px"><span class="x1">選んだ行</span><span class="m" style="color:#0B603F">オン</span><span class="m" style="color:#0F1111;margin-left:8px">オフ</span></div>
+</div>
+<div class="f" style="margin-top:8px;border-top:1px solid #89AB9F">
+<div class="fc" style="width:64px;background:#DBE7E3">
+<div style="height:12px;border-bottom:1px solid #DBE7E3;background:#A0BDB3;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #DBE7E3;background:#F8FAF9;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #DBE7E3;background:#A0BDB3;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #DBE7E3;background:#F8FAF9;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #DBE7E3;background:#A0BDB3;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #DBE7E3;background:#F8FAF9;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #DBE7E3;background:#A0BDB3;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #DBE7E3;background:#A0BDB3;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #DBE7E3;background:#F8FAF9;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #DBE7E3;background:#A0BDB3;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #DBE7E3;background:#F8FAF9;margin-left:24px"></div>
+<div style="height:12px;border-bottom:1px solid #DBE7E3;background:#A0BDB3;margin-left:24px"></div>
+</div>
+<div class="rel" style="width:334px;height:144px;background:#DBE7E3">
+<div class="abs" style="left:0;right:0;top:0px;height:11px;background:#D0DFDA"></div>
+<div class="abs" style="left:0;right:0;top:12px;height:11px;background:#F8FAF9"></div>
+<div class="abs" style="left:0;right:0;top:24px;height:11px;background:#D0DFDA"></div>
+<div class="abs" style="left:0;right:0;top:36px;height:11px;background:#F8FAF9"></div>
+<div class="abs" style="left:0;right:0;top:48px;height:11px;background:#D0DFDA"></div>
+<div class="abs" style="left:0;right:0;top:60px;height:11px;background:#F8FAF9"></div>
+<div class="abs" style="left:0;right:0;top:72px;height:11px;background:#D0DFDA"></div>
+<div class="abs" style="left:0;right:0;top:84px;height:11px;background:#D0DFDA"></div>
+<div class="abs" style="left:0;right:0;top:96px;height:11px;background:#F8FAF9"></div>
+<div class="abs" style="left:0;right:0;top:108px;height:11px;background:#D0DFDA"></div>
+<div class="abs" style="left:0;right:0;top:120px;height:11px;background:#F8FAF9"></div>
+<div class="abs" style="left:0;right:0;top:132px;height:11px;background:#D0DFDA"></div>
+<div class="abs" style="left:0px;top:0;bottom:0;width:1px;background:#89AB9F"></div>
+<div class="abs" style="left:21px;top:0;bottom:0;width:1px;background:#C4D7D1"></div>
+<div class="abs" style="left:42px;top:0;bottom:0;width:1px;background:#B6CEC6"></div>
+<div class="abs" style="left:63px;top:0;bottom:0;width:1px;background:#C4D7D1"></div>
+<div class="abs" style="left:84px;top:0;bottom:0;width:1px;background:#B6CEC6"></div>
+<div class="abs" style="left:104px;top:0;bottom:0;width:1px;background:#C4D7D1"></div>
+<div class="abs" style="left:125px;top:0;bottom:0;width:1px;background:#B6CEC6"></div>
+<div class="abs" style="left:146px;top:0;bottom:0;width:1px;background:#C4D7D1"></div>
+<div class="abs" style="left:167px;top:0;bottom:0;width:1px;background:#89AB9F"></div>
+<div class="abs" style="left:188px;top:0;bottom:0;width:1px;background:#C4D7D1"></div>
+<div class="abs" style="left:209px;top:0;bottom:0;width:1px;background:#B6CEC6"></div>
+<div class="abs" style="left:230px;top:0;bottom:0;width:1px;background:#C4D7D1"></div>
+<div class="abs" style="left:250px;top:0;bottom:0;width:1px;background:#B6CEC6"></div>
+<div class="abs" style="left:271px;top:0;bottom:0;width:1px;background:#C4D7D1"></div>
+<div class="abs" style="left:292px;top:0;bottom:0;width:1px;background:#B6CEC6"></div>
+<div class="abs" style="left:313px;top:0;bottom:0;width:1px;background:#C4D7D1"></div>
+<div class="abs" style="left:334px;top:0;bottom:0;width:1px;background:#89AB9F"></div>
+<div class="abs" style="left:1px;top:0px;width:62px;height:11px;background:#0F1111;border-left:2px solid #0F1111"></div>
+<div class="abs" style="left:85px;top:24px;width:83px;height:11px;background:#2D3432;border-left:2px solid #0F1111"></div>
+<div class="abs" style="left:168px;top:48px;width:41px;height:11px;background:#485852;border-left:2px solid #0F1111"></div>
+<div class="abs" style="left:210px;top:84px;width:62px;height:11px;background:#0B603F;border-left:2px solid #0F1111"></div>
+<div class="abs" style="left:272px;top:108px;width:41px;height:11px;background:#0F1111;border-left:2px solid #0F1111"></div>
+<div class="abs" style="left:210px;top:60px;width:62px;height:11px;border:1px solid #617C73"></div>
+<div class="abs" style="left:250px;top:0;bottom:0;width:1px;background:#0B603F"></div>
+<div class="abs" style="left:105px;top:132px;width:42px;height:11px;background:#A0251E"></div>
+</div></div>
+<div class="m" style="padding:4px 12px;color:#485852">固定 オン: 書ける行 gray.2 / gray.1 と 外の行 gray.0 = 1.31 / 1.21</div>
+<div class="fc" style="gap:1px">
+<div class="f" style="height:28px;background:#DBE7E3"><div class="f ac" style="width:120px;background:#C4D7D1;border-bottom:1px solid #A0BDB3"><div style="width:4px;align-self:stretch;background:#8F6800"></div><span style="padding-left:8px;color:#0F1111">トラック 1</span></div><div class="rel" style="margin:3px 0 3px 12px;width:140px;background:#B6CEC6;border:1px solid #89AB9F"><div style="height:2px;background:#8F6800"></div><div style="margin:5px 8px 0;height:2px;width:40px;background:#485852"></div></div></div>
+<div class="f" style="height:28px;background:#DBE7E3"><div class="f ac" style="width:120px;background:#B6CEC6;border-bottom:1px solid #A0BDB3"><div style="width:4px;align-self:stretch;background:#1874B0"></div><span style="padding-left:8px;color:#0F1111">トラック 2</span></div><div class="rel" style="margin:3px 0 3px 12px;width:140px;background:#B6CEC6;border:1px solid #0B603F"><div style="height:2px;background:#0B603F"></div><div style="margin:5px 8px 0;height:2px;width:40px;background:#485852"></div></div></div>
+<div class="f" style="height:28px;background:#DBE7E3"><div class="f ac" style="width:120px;background:#C4D7D1;border-bottom:1px solid #A0BDB3"><div style="width:4px;align-self:stretch;background:#4165E0"></div><span style="padding-left:8px;color:#0F1111">トラック 3</span></div><div class="rel" style="margin:3px 0 3px 12px;width:100px;background:#B6CEC6;border:1px solid #89AB9F"><div style="height:2px;background:#4165E0"></div><div style="margin:5px 8px 0;height:2px;width:40px;background:#485852"></div></div></div>
+<div class="f" style="height:28px;background:#DBE7E3"><div class="f ac" style="width:120px;background:#C4D7D1;border-bottom:1px solid #A0BDB3"><div style="width:4px;align-self:stretch;background:#924DCC"></div><span style="padding-left:8px;color:#0F1111">トラック 4</span></div><div class="rel" style="margin:3px 0 3px 12px;width:140px;background:#B6CEC6;border:1px solid #A0251E"><div style="height:2px;background:#A0251E"></div><div style="margin:5px 8px 0;height:2px;width:40px;background:#A0251E"></div></div></div>
+<div class="f" style="height:28px;background:#DBE7E3"><div class="f ac" style="width:120px;background:#C4D7D1;border-bottom:1px solid #A0BDB3"><div style="width:4px;align-self:stretch;background:#BD3D84"></div><span style="padding-left:8px;color:#0F1111">トラック 5</span></div><div class="rel" style="margin:3px 0 3px 12px;width:140px;background:#B6CEC6;border:1px solid #89AB9F"><div style="height:2px;background:#BD3D84"></div><div style="margin:5px 8px 0;height:2px;width:40px;background:#485852"></div></div></div>
+</div>
+<div class="f ac g8" style="padding:8px 12px"><div class="rel" style="width:200px;height:6px;background:#F8FAF9"><div class="abs" style="left:0;top:0;bottom:0;width:140px;background:#2C7E3A"></div><div class="abs" style="left:140px;top:0;bottom:0;width:56px;background:#8C6900"></div><div class="abs" style="left:196px;top:0;bottom:0;width:2px;background:#A0251E"></div></div><span class="m" style="color:#A0251E">0 dB</span></div>
+<div style="margin:0 12px 12px;padding:8px;background:#0F1111;color:#F8FAF9;border-radius:1px">用語の説明: スケール固定 ・ えらんだ音階の音だけに書きこめるようにする。</div>
+</div></div>
+</div></div>
+</x-dc>
+</body>
+</html>

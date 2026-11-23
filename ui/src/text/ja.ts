@@ -2069,6 +2069,7 @@ export const texts = {
   "theme.pinkLight": e("ピンク ・ ライト", "user:2026-11-23"),
   "theme.mintDark": e("ミント ・ ダーク", "user:2026-11-23"),
   "theme.mintLight": e("ミント ・ ライト", "user:2026-11-23"),
+  "menu.noteGlow": e("鳴っている音を光らせる", "user:2026-11-23"),
   "menu.playStart": e("再生", "user:2026-11-18"),
   "menu.stop": e("停止", "user:2026-11-18"),
   "menu.record": e("録音", "user:2026-11-18"),

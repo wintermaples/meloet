@@ -87,7 +87,6 @@ describe("fake intents", () => {
     const commands: Command[] = [
       { type: "typedKeys", on: true },
       { type: "typedKey", note: 60, down: true, tUs: 1000 },
-      { type: "setNoteGlow", on: false },
       { type: "repeatClips", clips: [1], count: 3 },
     ];
     for (const command of commands) await send(command);
@@ -95,7 +94,6 @@ describe("fake intents", () => {
     expect(after.song).toEqual(before.song);
     expect(after.transport).toEqual(before.transport);
     expect(after.keyboards).toEqual(before.keyboards);
-    expect(after.workspace.noteGlow).toBe(before.workspace.noteGlow);
     expect(after.shelf).toEqual(before.shelf);
     expect(after.presets).toEqual(before.presets);
   });

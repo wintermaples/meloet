@@ -3,6 +3,7 @@
      With 「ほかのトラックも見る」 on, the notes of other tracks are drawn on that canvas too, under the shown clip's notes (ghosts.ts).
      The keyboard column is one small canvas (pianoRollKeys), lit by held keys and sounding notes.
      Notes being dragged, and notes growing while recording, are one small canvas around only them (pianoRollLive). If they only move, they are moved with transform.
+     While playing, the sounding notes of the shown clip are lit in the track's color on that same canvas (round 12 E1, glow.ts), drawn again only when the set changes.
      The pianoRollLive box goes from the top left of the note area to the bottom edge of the CC lanes (CC lane drags go on the same canvas).
      The play line, the box for choosing, and text are HTML.
      The row height is the vertical zoom step (prView.rowPx, docs/history/design-notes.ja.md B-63). The note height is row − 1. The vertical − ＋ is in the corner left of the ruler.
@@ -38,11 +39,12 @@
   import { drumKeysOf, drumName, drumTerm, rollShowsDrums } from "./drums";
   import * as G from "./geom";
   import { ghostClips, ghostHidden, ghostShown, ghostTracks, ghostWindow, ghostWindowIndex, shownTrackId } from "./ghosts";
+  import { glowBox, glowFit, glowMaxWidth, glowShows, glowStep, sameNotes, type GlowSpan } from "./glow";
   import { noteMarks, paintLive, paintRoll, paintRollKeys, paintVelocityLane, type LivePicture, type RollPicture, type RollSizes } from "./paint";
   import { rollMenu, type RollMenuActions } from "./rollMenu";
   import { shown } from "./shown.svelte";
   import { originFor, shownFor } from "./shownNotes";
-  import { sameKeys, soundingKeys } from "./sounding";
+  import { keysOf, sameKeys, soundingNotes } from "./sounding";
   import {
     clampTopRow,
     dragReading,
@@ -104,6 +106,8 @@
   let liveHost = $state<HTMLElement>();
   let areaW = $state(0);
   let areaH = $state(0);
+  /** The note area's box as laid out (not rounded like areaH): the lit notes' box has exactly its height. */
+  let areaRect = $state.raw<DOMRectReadOnly>();
   let velH = $state(0);
   $effect(() => {
     prView.areaWidth = areaW;
@@ -508,10 +512,12 @@
 
   // ---- WebGL: 3 surfaces ----
 
-  const handles: Record<"roll" | "vel" | "keys" | "live", { update(s: GlSlot): void } | null> = { roll: null, vel: null, keys: null, live: null };
+  type SlotName = "roll" | "vel" | "keys" | "live" | "glow";
+  const handles: Record<SlotName, { update(s: GlSlot): void } | null> = { roll: null, vel: null, keys: null, live: null, glow: null };
   let rollPicture: RollPicture | null = null;
   let rollMarks: Uint8Array | null = null;
   let livePicture: LivePicture | null = null;
+  let glowPicture: LivePicture | null = null;
   let sounding: number[] = [];
   const isSounding = (k: number) => sounding.includes(k);
   function setSounding(keys: number[]): void {
@@ -538,7 +544,7 @@
     untrack(() => redraw("keys"));
   });
 
-  const SLOTS: Record<"roll" | "vel" | "keys" | "live", GlSlot> = {
+  const SLOTS: Record<SlotName, GlSlot> = {
     roll: { kind: "paint", paint: (out, box, ctx) => rollPicture && paintRoll(out, box, rollPicture, rollMarks, ctx.dpr) },
     vel: { kind: "paint", paint: (out, box, ctx) => rollPicture && paintVelocityLane(out, box, rollPicture, ctx.dpr) },
     keys: {
@@ -552,9 +558,10 @@
       },
     },
     live: { kind: "paint", paint: (out, box, ctx) => livePicture && paintLive(out, box, livePicture, ctx.dpr) },
+    glow: { kind: "paint", paint: (out, box, ctx) => glowPicture && paintLive(out, box, glowPicture, ctx.dpr) },
   };
 
-  function painted(node: HTMLElement, name: "roll" | "vel" | "keys" | "live") {
+  function painted(node: HTMLElement, name: SlotName) {
     const h = glSlot(node, SLOTS[name]);
     handles[name] = h;
     return {
@@ -564,7 +571,7 @@
       },
     };
   }
-  const redraw = (name: "roll" | "vel" | "keys" | "live") => handles[name]?.update(SLOTS[name]);
+  const redraw = (name: SlotName) => handles[name]?.update(SLOTS[name]);
 
   /** The shape of the drag that matters for the large surface's picture. While moving or changing length it does not change from the start, so the large surface is not redrawn. */
   const serials = new WeakMap<Drag, number>();
@@ -754,6 +761,112 @@
     untrack(() => redraw("live"));
   });
 
+  // ---- Sounding notes light up (round 12 E1, glow.ts). Worked out each frame from the play position; the box and picture change only with the set ----
+
+  /** The notes sounding now (indexes in soundFor's take), lit or not. The keyboard column lights their keys. */
+  let soundFor: G.Shown | null = null;
+  let soundNow: number[] = [];
+  const soundScratch: number[] = [];
+  let glowEl = $state<HTMLElement>();
+  /** The lit notes drawn now, and the view and take they were placed for. */
+  let glowShown: readonly GlowSpan[] = [];
+  let glowView: G.RollGeom | null = null;
+  let glowTake: G.Shown | null = null;
+  /** Placed again in the next frame: something the box depends on changed (with the roll's own picture), or the set changed. */
+  let glowStale = false;
+  /** A change shown in two frames, whose second is still to come. */
+  let glowPending = false;
+  let glowStyle = "";
+
+  const areaHeight = $derived(areaRect?.height ?? areaH);
+  const glowOn = $derived(
+    glowShows({
+      setting: app.workspace.noteGlow,
+      state: transport.state,
+      recordingShown: liveMode,
+      dragging: !!shownDrag,
+      tracks: song.tracks,
+      track: shown.track,
+    }),
+  );
+  const glowFace: ColorName = $derived(shown.track ? AG.trackColor(shown.track) : "color.accent");
+  const glowLimit = $derived(glowMaxWidth(app.workspace.viewportWidth, app.workspace.viewportHeight, areaHeight));
+  $effect(() => {
+    void [glowOn, g, sizes, glowFace, glowLimit, metrics.dpr];
+    glowStale = true;
+  });
+
+  /** The lit notes as they are placed in the view now: in rows and columns that show, cut to the note area. */
+  function glowSpans(notes: G.Shown, indexes: readonly number[]): GlowSpan[] {
+    const out: GlowSpan[] = [];
+    for (const i of indexes) {
+      const top = G.keyToY(g, notes.take.keys[i]!);
+      if (Number.isNaN(top) || top + rowH <= 0 || top >= areaHeight) continue;
+      const x0 = G.tickToX(g, G.noteStart(notes, i));
+      const x1 = drumGeom ? x0 + drumGeom.hitW + 1 : G.tickToX(g, G.noteEnd(notes, i));
+      const a = Math.max(0, x0);
+      const b = Math.min(areaW, x1);
+      if (b > a) out.push({ note: i, x0: a, x1: b });
+    }
+    return out;
+  }
+
+  function updateGlow(): void {
+    const notes = soundFor;
+    const target = glowOn && notes ? glowFit(glowSpans(notes, soundNow), glowLimit) : [];
+    const next = glowView === g && glowTake === notes ? glowStep(glowShown, target, glowLimit) : target;
+    glowPending = !sameNotes(next, target);
+    glowStale = false;
+    glowShown = next;
+    glowView = g;
+    glowTake = notes;
+    placeGlow();
+  }
+
+  /** Writes the box (moved by transform, edges on screen pixels, the note area's top and bottom) and asks for the picture. */
+  function placeGlow(): void {
+    const el = glowEl;
+    if (!el) return;
+    const box = glowBox(glowShown);
+    const dpr = metrics.dpr;
+    const x0 = box ? Math.floor(box.x0 * dpr) / dpr : 0;
+    const w = box ? Math.ceil(box.x1 * dpr) / dpr - x0 : 0;
+    const h = w > 0 ? areaHeight : 0;
+    const style = `${x0} ${w} ${h}`;
+    if (style !== glowStyle) {
+      glowStyle = style;
+      el.style.transform = `translateX(${x0}px)`;
+      el.style.width = `${w}px`;
+      el.style.height = `${h}px`;
+    }
+    const notes = glowTake;
+    const face = glowFace;
+    glowPicture =
+      w > 0 && notes
+        ? {
+            g,
+            sizes,
+            left: x0,
+            top: 0,
+            ty: 0,
+            areaH: areaHeight,
+            notes: glowShown.map((s) => ({ start: G.noteStart(notes, s.note), end: G.noteEnd(notes, s.note), key: notes.take.keys[s.note]!, face })),
+          }
+        : null;
+    redraw("glow");
+  }
+
+  /** Nothing sounds (stopped): the keyboard column and the notes go back. */
+  function quiet(): void {
+    soundFor = null;
+    soundNow = [];
+    setSounding([]);
+    glowShown = [];
+    glowTake = null;
+    glowPending = glowStale = false;
+    placeGlow();
+  }
+
   // ---- Moving things: the play line, page turns, sounding notes, the tip of notes being recorded ----
 
   let playLine = $state<HTMLElement | null>(null);
@@ -777,12 +890,22 @@
   function frame(): void {
     const tel = current.telemetry;
     const tick = shownTick(transport, tel, offsetUs === null ? null : performance.now() * 1000 + offsetUs);
+    const scrolled = prView.scrollTick;
     if (prView.follow && areaW > 0) {
       const x = AG.followScroll(tick * ppt, prView.scrollTick * ppt, areaW);
       if (x !== prView.scrollTick * ppt) prView.scrollTick = x / ppt;
     }
     placeLine(tick);
-    setSounding(soundingKeys(liveMode ? null : shown.take, shown.clip, tick));
+    const notes = liveMode ? null : n;
+    soundingNotes(notes && notes.take, shown.clip, tick, soundScratch);
+    if (notes !== soundFor || !sameKeys(soundScratch, soundNow)) {
+      soundFor = notes;
+      soundNow = soundScratch.slice();
+      setSounding(keysOf(notes && notes.take, soundNow));
+      glowStale = true;
+    }
+    // A page turn draws the note area again in the next frame; the lit notes are placed in that frame too.
+    if ((glowStale || glowPending) && prView.scrollTick === scrolled) updateGlow();
     if (rec) {
       const l = tel?.position?.lap ?? rec.lap;
       if (l !== lap) lap = l;
@@ -800,7 +923,7 @@
 
   $effect(() => {
     if (transport.state === "stopped") {
-      untrack(() => setSounding([]));
+      untrack(quiet);
       return;
     }
     if (offsetUs === null) {
@@ -1072,6 +1195,7 @@
       bind:this={area}
       bind:clientWidth={areaW}
       bind:clientHeight={areaH}
+      bind:contentRect={areaRect}
       style:cursor={cursorStyle}
       onpointerdown={(e) => down(e, "notes")}
       onpointermove={(e) => move(e, "notes")}
@@ -1129,6 +1253,7 @@
   {/if}
   <CcLanes {g} {meter} {step} take={liveMode ? null : n} {areaH} {liveHost} {onreading} />
   <div class="live-host" use:glRegion={"pianoRollLive"} bind:this={liveHost}>
+    <div class="glow-box" bind:this={glowEl} use:painted={"glow"} data-test="pr-glow"></div>
     {#if liveBox}
       <div
         class="live-box"
@@ -1334,6 +1459,14 @@
   }
   .live-box {
     position: absolute;
+  }
+  /* The box of the lit notes: written by placeGlow (moved by transform, as wide as the lit notes, as tall as the note area). */
+  .glow-box {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 0;
+    height: 0;
   }
   .box-frame {
     position: absolute;

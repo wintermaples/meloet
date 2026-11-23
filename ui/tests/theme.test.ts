@@ -210,16 +210,16 @@ describe("WebGL surfaces", () => {
 const rows = (entries: readonly ListEntry[]) => entries.filter((e): e is ListRow => e.kind === "row");
 
 describe("「表示 ▸ テーマ ▸」", () => {
-  it("the last row of 「表示」; the 6 themes in order, a mark on the one chosen; a row sends setTheme", () => {
+  it("the row after 「拡大率」 in 「表示」 (「鳴っている音を光らせる」 of round 12 comes after it); the 6 themes in order, a mark on the one chosen; a row sends setTheme", () => {
     for (const chosen of THEME_IDS) {
       const state: AppState = fakeState();
       state.workspace.theme = chosen;
       const sent: Command[] = [];
       const menus = topMenus(state, { state: () => state, send: (c) => sent.push(c), nav: { platform: "Linux x86_64" }, playTick: () => 0 }, "other");
       const view = rows(menus[2]!.entries);
-      const theme = view.at(-1)!;
+      const theme = view.at(-2)!;
       expect(theme.label).toBe("テーマ");
-      expect(view.at(-2)!.label).toBe("拡大率");
+      expect(view.at(-3)!.label).toBe("拡大率");
       const sub = rows(theme.sub!);
       expect(sub.map((r) => r.label)).toEqual(["ダーク", "ライト", "ピンク ・ ダーク", "ピンク ・ ライト", "ミント ・ ダーク", "ミント ・ ライト"]);
       expect(sub.map((r) => r.label)).toEqual(THEME_IDS.map((id) => t(`theme.${id}`)));

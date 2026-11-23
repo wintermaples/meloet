@@ -1202,6 +1202,15 @@ export const SCENES: Record<string, SceneDef> = {
     bands: ["pianoRoll"],
     meters: PIANO_ROLL_PLAYING,
   },
+  // Round 12 E1 (no mock board): F-PRPlay playing at 1.3.240, where C3 G3 and C5 sound (E4 and G4 have just ended) and light in the track's color.
+  pianoRollGlow: {
+    setup(s) {
+      aMelody(s, [14, QUANTIZED_TAKE, 15]);
+      s.transport.state = "playing";
+    },
+    bands: ["pianoRoll"],
+    meters: { ...PIANO_ROLL_PLAYING, position: { ...PIANO_ROLL_PLAYING.position!, tick: at("1.3.240") } },
+  },
   // Takes 1 and 2 are in the clip; take 3 is being recorded.
   pianoRollRec: {
     setup(s) {
@@ -5231,6 +5240,9 @@ function reduce(state: AppState, bands: FakeBands, rest: StatusMessage | null, s
     }
     case "setTheme":
       ws.theme = command.theme;
+      break;
+    case "setNoteGlow":
+      ws.noteGlow = command.on;
       break;
     case "toggleBand": {
       const mixerWasOpen = bands.bottom.includes("mixer");

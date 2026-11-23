@@ -3,7 +3,7 @@
 use std::borrow::Cow;
 
 use meloet_core::ai::{
-    AiAnswer, AiAsk, AiDone, AiNoteEdit, AiNoteWhy, AiPick, AiPlace, AiRefusal, AiShift,
+    AiAnswer, AiAsk, AiDone, AiNoteEdit, AiNoteWhy, AiPick, AiPlace, AiRefusal, AiShift, AiSong,
 };
 use meloet_model::{ClipEdge, Grid, Note, NoteField, QuantizeAlign, QuantizeSettings, TempoMap};
 use rmcp::model::CallToolResult;
@@ -18,6 +18,7 @@ use super::{
 };
 use crate::MAX_BAR;
 use crate::song::{self, Place};
+use crate::trackref::{TrackRef, id_of};
 
 /// The velocity of a note written as an array without one.
 const ARRAY_VELOCITY: u32 = 100;
@@ -176,8 +177,8 @@ fn span(map: &TempoMap, (start, end): (u64, u64)) -> Value {
 }
 
 /// What a write answers: the step, and for notes where they went, which were left out and
-/// which were cut.
-pub(super) fn notes_value(map: &TempoMap, d: &AiDone) -> Value {
+/// which were cut. `read` is the song as read before the write, for the track's id.
+pub(super) fn notes_value(map: &TempoMap, d: &AiDone, read: &AiSong) -> Value {
     let mut value = done_value(d);
     let Some(n) = &d.notes else {
         return value;
@@ -185,6 +186,7 @@ pub(super) fn notes_value(map: &TempoMap, d: &AiDone) -> Value {
     let mut clip = span(map, n.now);
     clip["id"] = json!(n.clip);
     clip["track"] = json!(n.track);
+    clip["track_id"] = json!(id_of(read, n.track));
     let not_written: Vec<Value> = (n.not_written.iter())
         .map(|w| {
             json!({
@@ -395,11 +397,10 @@ pub struct CopyNotesArgs {
     /// Only the notes that start before here (with `from`).
     #[serde(default)]
     pub to: Option<Place>,
-    /// The keys track to copy into (its number from 1): the clip there that holds the first
+    /// The keys track to copy into (number from 1, or id): the clip there that holds the first
     /// copied note, or a new clip as long as the notes need. Give this or `to_clip`.
     #[serde(default)]
-    #[schemars(range(min = 1, max = 64))]
-    pub to_track: Option<u32>,
+    pub to_track: Option<TrackRef>,
     /// The keys clip to copy into; it grows by bars to hold the notes. Give this or `to_track`.
     #[serde(default)]
     #[schemars(range(min = 1))]
@@ -443,11 +444,12 @@ impl Tools {
         &self,
         ask: AiAsk,
         map: &TempoMap,
+        read: &AiSong,
     ) -> Result<(AiDone, Value), CallToolResult> {
         let what = ask.name();
         match self.answer(ask).await? {
             AiAnswer::Done(d) => {
-                let value = notes_value(map, &d);
+                let value = notes_value(map, &d, read);
                 Ok((*d, value))
             }
             AiAnswer::Refused(r) => Err(failed(format!(
@@ -503,16 +505,16 @@ impl Tools {
         Parameters(a): Parameters<CopyNotesArgs>,
     ) -> Result<CallToolResult, McpError> {
         check!(self.allowed());
-        let to = match (a.to_track, a.to_clip) {
-            (Some(track), None) => AiPlace::Track(track),
-            (None, Some(clip)) => AiPlace::Clip(clip),
-            _ => return Ok(failed("give `to_track` or `to_clip`, one of them")),
-        };
         let transpose = a.transpose.unwrap_or(0);
         if !(-127..=127).contains(&transpose) {
             return Ok(failed("transpose by -127 to 127 keys"));
         }
         let read = check!(self.read().await);
+        let to = match (a.to_track, a.to_clip) {
+            (Some(track), None) => AiPlace::Track(check!(track.number(&read).map_err(failed))),
+            (None, Some(clip)) => AiPlace::Clip(clip),
+            _ => return Ok(failed("give `to_track` or `to_clip`, one of them")),
+        };
         let map = TempoMap::new(&read.song.doc.timeline);
         let tick = |p: &Place| p.tick(&map).map_err(failed);
         let pick = match (&a.notes, &a.from, &a.to) {
@@ -562,7 +564,7 @@ impl Tools {
             shift,
             transpose,
         };
-        let (d, value) = check!(self.put(ask, &map).await);
+        let (d, value) = check!(self.put(ask, &map, &read).await);
         let line = notes_line(&d, &value);
         Ok(done(format!("Copied: {line}\n{value}"), value))
     }

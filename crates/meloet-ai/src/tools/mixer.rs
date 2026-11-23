@@ -16,6 +16,7 @@ use serde_json::{Value, json};
 
 use super::{Tools, done, failed, instrument_of, refusal_text, track_of};
 use crate::song::{self, Sf2Arg};
+use crate::trackref::{TrackRef, id_text};
 use meloet_core::ai::AiSong;
 
 /// A strip that is not a track's.
@@ -47,10 +48,10 @@ pub(super) fn strip_ref(strip: StripId) -> StripRef {
     }
 }
 
-/// The strip of a track's number or of `bus`, one of them.
+/// The strip of a track or of `bus`, one of them.
 pub(super) fn strip_of(
     read: &AiSong,
-    track: Option<u32>,
+    track: Option<TrackRef>,
     bus: Option<BusArg>,
 ) -> Result<StripId, CallToolResult> {
     match (track, bus) {
@@ -113,6 +114,7 @@ pub(super) fn mixer(read: &AiSong) -> Value {
         .map(|(i, t)| {
             let mut v = channel_value(&t.channel);
             v["number"] = json!(i + 1);
+            v["id"] = json!(id_text(t.id));
             v["name"] = json!(t.name);
             v["muted"] = json!(t.muted);
             v["soloed"] = json!(soloed.contains(&t.id));
@@ -151,8 +153,7 @@ fn insert_at(read: &AiSong, strip: StripId, slot: usize) -> Option<&Insert> {
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 pub struct VolumeArgs {
     #[serde(default)]
-    #[schemars(range(min = 1, max = 64))]
-    pub track: Option<u32>,
+    pub track: Option<TrackRef>,
     #[serde(default)]
     pub bus: Option<BusArg>,
     /// dB, -60 to 6. Below -60 is silence (-inf).
@@ -163,8 +164,7 @@ pub struct VolumeArgs {
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 pub struct PanArgs {
     #[serde(default)]
-    #[schemars(range(min = 1, max = 64))]
-    pub track: Option<u32>,
+    pub track: Option<TrackRef>,
     #[serde(default)]
     pub bus: Option<BusArg>,
     /// -100 (all left) to 100 (all right); 0 is the middle.
@@ -181,8 +181,7 @@ pub enum SendArg {
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 pub struct SendArgs {
-    #[schemars(range(min = 1, max = 64))]
-    pub track: u32,
+    pub track: TrackRef,
     /// "a" (to return A) or "b" (to return B).
     pub send: SendArg,
     /// dB, -60 to 6. Below -60 sends nothing.
@@ -192,10 +191,10 @@ pub struct SendArgs {
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 pub struct MuteArgs {
-    /// A track's number. Give this or `bus` ("return_a" or "return_b"; the master has no mute).
+    /// A track (number or id). Give this or `bus` ("return_a" or "return_b"; the master
+    /// has no mute).
     #[serde(default)]
-    #[schemars(range(min = 1, max = 64))]
-    pub track: Option<u32>,
+    pub track: Option<TrackRef>,
     #[serde(default)]
     pub bus: Option<BusArg>,
     pub on: bool,
@@ -203,16 +202,14 @@ pub struct MuteArgs {
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 pub struct SoloArgs {
-    #[schemars(range(min = 1, max = 64))]
-    pub track: u32,
+    pub track: TrackRef,
     pub on: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 pub struct EffectArgs {
     #[serde(default)]
-    #[schemars(range(min = 1, max = 64))]
-    pub track: Option<u32>,
+    pub track: Option<TrackRef>,
     #[serde(default)]
     pub bus: Option<BusArg>,
     /// 1 to 4, top first.
@@ -227,8 +224,7 @@ pub struct EffectArgs {
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 pub struct SlotArgs {
     #[serde(default)]
-    #[schemars(range(min = 1, max = 64))]
-    pub track: Option<u32>,
+    pub track: Option<TrackRef>,
     #[serde(default)]
     pub bus: Option<BusArg>,
     #[schemars(range(min = 1, max = 4))]
@@ -238,8 +234,7 @@ pub struct SlotArgs {
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 pub struct MoveEffectArgs {
     #[serde(default)]
-    #[schemars(range(min = 1, max = 64))]
-    pub track: Option<u32>,
+    pub track: Option<TrackRef>,
     #[serde(default)]
     pub bus: Option<BusArg>,
     #[schemars(range(min = 1, max = 4))]
@@ -252,8 +247,7 @@ pub struct MoveEffectArgs {
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 pub struct BypassArgs {
     #[serde(default)]
-    #[schemars(range(min = 1, max = 64))]
-    pub track: Option<u32>,
+    pub track: Option<TrackRef>,
     #[serde(default)]
     pub bus: Option<BusArg>,
     #[schemars(range(min = 1, max = 4))]
@@ -264,8 +258,7 @@ pub struct BypassArgs {
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 pub struct InstrumentArgs {
-    #[schemars(range(min = 1, max = 64))]
-    pub track: u32,
+    pub track: TrackRef,
     /// A built-in sound's name from list_sounds.
     #[serde(default)]
     #[schemars(length(min = 1, max = 64))]

@@ -20,6 +20,7 @@ use serde_json::{Value, json};
 
 use super::mixer::{BusArg, screen_effect, slot_of, strip_of, strip_ref, unit_name};
 use super::{Tools, WAIT_FOR, closing, done, failed, refusal_text};
+use crate::trackref::TrackRef;
 
 /// Parameters a page of `get_plugin_params` gives when no `limit` is given, and at most.
 const PAGE: usize = 50;
@@ -47,8 +48,7 @@ const CHANGED: f64 = 0.005;
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 pub struct ParamsArgs {
     #[serde(default)]
-    #[schemars(range(min = 1, max = 64))]
-    pub track: Option<u32>,
+    pub track: Option<TrackRef>,
     #[serde(default)]
     pub bus: Option<BusArg>,
     /// The insert slot, 1 to 4. Leave out for the track's instrument plugin.
@@ -97,8 +97,7 @@ pub struct ParamsArgs {
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 pub struct ChoicesArgs {
     #[serde(default)]
-    #[schemars(range(min = 1, max = 64))]
-    pub track: Option<u32>,
+    pub track: Option<TrackRef>,
     #[serde(default)]
     pub bus: Option<BusArg>,
     /// The insert slot, 1 to 4. Leave out for the track's instrument plugin.
@@ -123,8 +122,7 @@ pub struct ChoicesArgs {
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 pub struct ParamArgs {
     #[serde(default)]
-    #[schemars(range(min = 1, max = 64))]
-    pub track: Option<u32>,
+    pub track: Option<TrackRef>,
     #[serde(default)]
     pub bus: Option<BusArg>,
     /// The insert slot, 1 to 4. Leave out for the track's instrument plugin.
@@ -162,8 +160,7 @@ pub struct OneParam {
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 pub struct SetParamsArgs {
     #[serde(default)]
-    #[schemars(range(min = 1, max = 64))]
-    pub track: Option<u32>,
+    pub track: Option<TrackRef>,
     #[serde(default)]
     pub bus: Option<BusArg>,
     /// The insert slot, 1 to 4. Leave out for the track's instrument plugin.
@@ -226,7 +223,7 @@ fn param_specs(kind: EffectKind) -> Vec<Value> {
 /// Where a plugin is: an insert slot, or the instrument of a track.
 fn place_of(
     read: &AiSong,
-    track: Option<u32>,
+    track: Option<TrackRef>,
     bus: Option<BusArg>,
     slot: Option<u32>,
 ) -> Result<PluginPlace, CallToolResult> {

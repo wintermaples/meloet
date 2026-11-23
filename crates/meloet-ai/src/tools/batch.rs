@@ -63,7 +63,7 @@ pub struct Operation {
     /// That tool's arguments, as in a call of its own. A value may be taken from the result
     /// of an earlier operation of this batch: write `{"result_of": 1, "field": "clip"}` in
     /// its place for the `clip` of operation 1's result (operations count from 1; results
-    /// have `clip`, `take` and `track` where the tool gives them).
+    /// have `clip`, `take`, `track` and `track_id` where the tool gives them).
     #[serde(default)]
     pub arguments: Option<JsonObject>,
 }

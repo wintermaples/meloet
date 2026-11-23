@@ -11,17 +11,17 @@ use rmcp::{
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::{Tools, closing, done, failed, refusal_text, track_of};
+use super::{Tools, closing, done, failed, refusal_text};
 use crate::song::{key_name, sound_name};
+use crate::trackref::{TrackRef, id_text};
 
 /// How long a plugin is given to name its keys.
 const PLUGIN_WAIT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 pub struct KeyNamesArgs {
-    /// The keys track's number (from 1), as song_overview lists it.
-    #[schemars(range(min = 1, max = 64))]
-    pub track: u32,
+    /// The keys track: its number (from 1) as song_overview lists it, or its id.
+    pub track: TrackRef,
 }
 
 fn source_name(source: AiKeySource) -> &'static str {
@@ -111,10 +111,11 @@ impl Tools {
     ) -> Result<CallToolResult, McpError> {
         check!(self.allowed());
         let read = check!(self.read().await);
-        let track = check!(track_of(&read, args.track)).clone();
+        let (number, track) = check!(args.track.find(&read).map_err(failed));
+        let track = track.clone();
         let until = Instant::now() + PLUGIN_WAIT;
         let mut map = loop {
-            match check!(self.answer(AiAsk::KeyNames { track: args.track }).await) {
+            match check!(self.answer(AiAsk::KeyNames { track: number }).await) {
                 AiAnswer::KeyNames(AiKeyNames::Known(map)) => break *map,
                 AiAnswer::KeyNames(AiKeyNames::Waiting) if Instant::now() < until => {}
                 AiAnswer::KeyNames(AiKeyNames::Waiting) => {
@@ -152,7 +153,8 @@ impl Tools {
             json!({ "low": low, "high": high, "low_note": key_name(low), "high_note": key_name(high) })
         });
         let value = json!({
-            "track": args.track,
+            "track": number,
+            "track_id": id_text(track.id),
             "track_name": track.name,
             "sound": sound_name(&map.sound),
             "kit": map.kit,
@@ -169,7 +171,7 @@ impl Tools {
         };
         let summary = format!(
             "Track {} \"{}\" ({}): {kind}, {} named keys ({}{}).\n{}\n{value}",
-            args.track,
+            number,
             track.name,
             sound_name(&map.sound),
             map.keys.iter().filter(|k| k.name.is_some()).count(),

@@ -50,6 +50,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::scratch::Scratch;
 use crate::song::{self, parse_at};
+use crate::trackref::{self, TrackRef};
 use crate::{MAX_BAR, Meloet};
 
 /// Notes one `write_notes` takes, and one `get_notes` gives.
@@ -167,8 +168,7 @@ pub struct WriteNotesArgs {
     /// clip of the track is in the way of the notes, nothing is written and the answer
     /// names the clip. Give this or `clip`.
     #[serde(default)]
-    #[schemars(range(min = 1, max = 64))]
-    pub track: Option<u32>,
+    pub track: Option<TrackRef>,
     /// A keys clip's id: it grows by bars to hold every note. Give this or `track`.
     #[serde(default)]
     #[schemars(range(min = 1))]
@@ -195,9 +195,8 @@ pub struct DeleteNotesArgs {
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 pub struct CreateClipArgs {
-    /// The keys track's number (from 1).
-    #[schemars(range(min = 1, max = 64))]
-    pub track: u32,
+    /// The keys track: its number (from 1) or its id ("id:7").
+    pub track: TrackRef,
     /// Where, as "bar.beat.tick": the clip starts at the head of that bar and is 4 bars long,
     /// or up to the next clip.
     pub at: String,
@@ -262,16 +261,16 @@ pub struct MeasureArgs {
     /// The last bar, measured to its end.
     #[schemars(range(min = 1, max = 9999))]
     pub to_bar: u32,
-    /// Track numbers (from 1) to measure, each alone; the mix then holds only these. Leave
-    /// out for every track.
+    /// Tracks (numbers from 1 or ids like "id:7") to measure, each alone; the mix then holds
+    /// only these. Leave out for every track.
     #[serde(default)]
     #[schemars(length(min = 1, max = 64))]
-    pub tracks: Option<Vec<u32>>,
-    /// Track numbers to measure each alone while the mix stays every track, mutes as in the
-    /// song. Not together with `tracks`.
+    pub tracks: Option<Vec<TrackRef>>,
+    /// Tracks (numbers or ids) to measure each alone while the mix stays every track, mutes
+    /// as in the song. Not together with `tracks`.
     #[serde(default)]
     #[schemars(length(min = 1, max = 64))]
-    pub alone: Option<Vec<u32>>,
+    pub alone: Option<Vec<TrackRef>>,
     /// Measure each track alone as if it were not muted (a mute lane is still followed); the
     /// mix keeps the song's mutes. Default false: a muted track is silent.
     #[serde(default)]
@@ -581,11 +580,14 @@ impl Tools {
     }
 }
 
-/// The track of number `number` (from 1) in what was read.
-fn track_of(read: &AiSong, number: u32) -> Result<&Arc<Track>, CallToolResult> {
-    (number.checked_sub(1))
-        .and_then(|i| read.song.doc.tracks.get(i as usize))
-        .ok_or_else(|| failed(refusal_text(&AiRefusal::NoSuchTrack(number))))
+/// The track `track` names in what was read.
+fn track_of(read: &AiSong, track: TrackRef) -> Result<&Arc<Track>, CallToolResult> {
+    track.find(read).map(|(_, t)| t).map_err(failed)
+}
+
+/// The number (from 1) of the track `track` names in what was read.
+fn number_of(read: &AiSong, track: TrackRef) -> Result<u32, CallToolResult> {
+    track.number(read).map_err(failed)
 }
 
 /// A path a tool may take: absolute, with no `..`, and not too long.
@@ -707,15 +709,15 @@ impl Tools {
         Parameters(args): Parameters<WriteNotesArgs>,
     ) -> Result<CallToolResult, McpError> {
         check!(self.allowed());
-        let at = match (args.track, args.clip) {
-            (Some(t), None) => AiPlace::Track(t),
-            (None, Some(c)) => AiPlace::Clip(c),
-            _ => return Ok(failed("give `track` or `clip`, one of them")),
-        };
         if args.notes.is_empty() || args.notes.len() > MAX_NOTES {
             return Ok(failed(format!("give 1 to {MAX_NOTES} notes")));
         }
         let read = check!(self.read().await);
+        let at = match (args.track, args.clip) {
+            (Some(t), None) => AiPlace::Track(check!(number_of(&read, t))),
+            (None, Some(c)) => AiPlace::Clip(c),
+            _ => return Ok(failed("give `track` or `clip`, one of them")),
+        };
         let map = TempoMap::new(&read.song.doc.timeline);
         let origin = match &args.origin {
             Some(origin) => Some(check!(origin.tick(&map).map_err(failed))),
@@ -723,7 +725,7 @@ impl Tools {
         };
         let notes = check!(notes::notes_in(&map, &args.notes, origin));
         let asked = notes.len();
-        let (d, value) = check!(self.put(AiAsk::WriteNotes { at, notes }, &map).await);
+        let (d, value) = check!(self.put(AiAsk::WriteNotes { at, notes }, &map, &read).await);
         let line = notes::notes_line(&d, &value);
         Ok(done(
             format!("Done: write notes. Of {asked} notes, {line}\n{value}"),
@@ -775,7 +777,7 @@ impl Tools {
         let read = check!(self.read().await);
         let map = TempoMap::new(&read.song.doc.timeline);
         let tick = check!(place(&map, &args.at));
-        let track = args.track;
+        let track = check!(number_of(&read, args.track));
         let ask = match (args.bars, &args.end) {
             (None, None) => AiAsk::CreateClip { track, tick },
             (Some(bars), None) if (1..=MAX_BAR).contains(&u64::from(bars)) => {
@@ -795,7 +797,7 @@ impl Tools {
                 )));
             }
         };
-        let (d, mut value) = check!(self.put(ask, &map).await);
+        let (d, mut value) = check!(self.put(ask, &map, &read).await);
         let made = check!(self.read().await);
         let clip = (made.song.doc.tracks.iter())
             .flat_map(|t| t.clips.iter())
@@ -899,7 +901,15 @@ impl Tools {
             args.plugin.as_deref(),
             args.sf2.as_ref()
         ));
-        Ok(self.write(AiAsk::AddTrack { instrument }).await)
+        let ask = AiAsk::AddTrack { instrument };
+        let what = ask.name();
+        let d = check!(self.ask(ask).await);
+        let mut value = done_value(&d);
+        if let Some(number) = d.track {
+            let read = check!(self.read().await);
+            value["track_id"] = json!(trackref::id_of(&read, number));
+        }
+        Ok(done(format!("Done: {what}.\n{value}"), value))
     }
 
     /// Takes back the last step of meloet's undo history (whoever made it), as the person's
@@ -945,6 +955,7 @@ impl Tools {
             .map(|(n, name, l)| {
                 let mut v = levels_value(l, rate);
                 v["number"] = json!(n);
+                v["id"] = json!(trackref::id_of(&read, *n));
                 v["name"] = json!(name);
                 v["muted"] = json!(levels.muted.contains(n));
                 v

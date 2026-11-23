@@ -12,6 +12,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::{Tools, done, failed, name_ok};
+use crate::trackref::id_text;
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 pub struct SaveMuteSetArgs {
@@ -50,6 +51,15 @@ fn numbers(read: &AiSong, ids: &[TrackId]) -> Vec<u32> {
     numbers
 }
 
+/// The ids of the tracks of `ids` that are in the song, in the order of [`numbers`].
+fn ids(read: &AiSong, ids: &[TrackId]) -> Vec<String> {
+    let mut there: Vec<(u32, TrackId)> = (ids.iter())
+        .filter_map(|&id| number(read, id).map(|n| (n, id)))
+        .collect();
+    there.sort_unstable_by_key(|(n, _)| *n);
+    there.into_iter().map(|(_, id)| id_text(id)).collect()
+}
+
 fn returns(muted: [bool; 2]) -> Vec<&'static str> {
     (Bus::ALL.into_iter())
         .filter(|b| muted[b.index()])
@@ -68,11 +78,15 @@ fn set_value(read: &AiSong, set: &MuteSet) -> Value {
     json!({
         "name": set.name,
         "tracks": numbers(read, &set.tracks),
+        "track_ids": ids(read, &set.tracks),
         "muted": numbers(read, &set.muted),
+        "muted_ids": ids(read, &set.muted),
         "soloed": numbers(read, &set.soloed),
+        "soloed_ids": ids(read, &set.soloed),
         "muted_returns": returns(set.muted_returns),
         "deleted_track_ids": recall.as_ref().map(|r| r.gone.iter().map(|t| t.0).collect::<Vec<_>>()),
         "not_in_set": recall.as_ref().map(|r| numbers(read, &r.not_in_set)),
+        "not_in_set_ids": recall.as_ref().map(|r| ids(read, &r.not_in_set)),
         "as_now": recall.is_some_and(|r| r.edit.is_none() && &r.soloed == soloed),
     })
 }
@@ -179,13 +193,11 @@ impl Tools {
         let after = check!(self.read().await);
         let solo_changed = after.song.session.soloed != *soloed;
         let changed = d.step.is_some() || solo_changed;
-        let muted: Vec<u32> = (after.song.doc.tracks.iter().enumerate())
-            .filter(|(_, t)| t.muted)
-            .map(|(i, _)| i as u32 + 1)
-            .collect();
-        let soloed_now: Vec<u32> = (after.song.doc.tracks.iter().enumerate())
-            .filter(|(_, t)| after.song.session.soloed.contains(&t.id))
-            .map(|(i, _)| i as u32 + 1)
+        let tracks = &after.song.doc.tracks;
+        let muted_ids: Vec<TrackId> = (tracks.iter()).filter(|t| t.muted).map(|t| t.id).collect();
+        let soloed_ids: Vec<TrackId> = (tracks.iter())
+            .filter(|t| after.song.session.soloed.contains(&t.id))
+            .map(|t| t.id)
             .collect();
         let gone: Vec<u32> = recall
             .as_ref()
@@ -196,12 +208,16 @@ impl Tools {
             "step": d.step,
             "undo_steps": d.undo_count,
             "solo_changed": solo_changed,
-            "muted": muted,
+            "muted": numbers(&after, &muted_ids),
+            "muted_ids": ids(&after, &muted_ids),
             "muted_returns": returns(after.song.doc.returns.each_ref().map(|r| r.muted)),
-            "soloed": soloed_now,
+            "soloed": numbers(&after, &soloed_ids),
+            "soloed_ids": ids(&after, &soloed_ids),
             "deleted_track_ids": gone,
             "not_in_set": recall.as_ref().map(|r| numbers(&before, &r.not_in_set)),
+            "not_in_set_ids": recall.as_ref().map(|r| ids(&before, &r.not_in_set)),
             "rested_lanes": recall.as_ref().map(|r| numbers(&before, &r.rested)),
+            "rested_lanes_ids": recall.as_ref().map(|r| ids(&before, &r.rested)),
         });
         let mut lines = vec![match changed {
             true => format!("The song is as the mute set \"{name}\" says now."),

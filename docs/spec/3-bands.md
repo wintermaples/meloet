@@ -7,7 +7,7 @@ From the top, the screen has the transport, the input meter, the arrange, the op
 | Transport | — (cannot fold) | 48 | 48 | Nothing pushes it |
 | Input meter | When slim: the link mark, the keyboard name, a keyboard 12 high, the held notes, velocity, sustain, pitch bend, modulation | 24 | 52 | 24 if even one lower band (piano roll, mixer, history) is open; 52 if none is open. It does not depend on the window height or on recording. Starting a recording or a count-in does not change its size |
 | Arrange | Band tab: the number of tracks. While the height is under 136, the overview (the lines of the clips, the border of the visible range, the play position). From 40 to 135, the overview is drawn stretched up and down | 40 | All the rest. From 136 (the 3 ruler rows, 72, + one track, 64) it becomes track rows | Pushes nothing. The lower bands take their smallest heights and the part they grow by, and the arrange gets what is left |
-| Piano roll | Band tab: the number of notes | 268 (toolbar 32 + ruler 20 + 10 note rows 120 + velocity 72 + CC tab 24) | Gets the rest, up to the largest, 736 (rows for 49 keys, 588) | Pushes the arrange down to 40. If it still does not fit, folds the older band |
+| Piano roll | Band tab: the number of notes | 292 (toolbar 32 + chord row 24 + ruler 20 + 10 note rows 120 + velocity 72 + CC tab 24; the chord row since round 10) | Gets the rest, up to the largest, 760 (rows for 49 keys, 588) | Pushes the arrange down to 40. If it still does not fit, folds the older band |
 | Mixer | Band tab: the value of the master fader (not the loudness. A new song is 0.0 dB) | 516 (toolbar 32 + strips 484; keeps a fader length of 120) | Gets the rest, up to the largest, 660 (fader length 264) | Pushes the arrange down to 40. If it still does not fit, folds the older band |
 | Undo history | Band tab: always 「取り消せる手 / 全部の手」 (「14 / 14」「12 / 14」「0 / 0」) | 248 (heading 32 + 8 rows + 1 row) | 248 | Pushes the arrange smaller |
 | Tempo and time signature changes | The number of changes (the tempo and time signature at the start of the song are not counted; a new song has 0), the current tempo and time signature | 24 | 72 | Inside the arrange. Pushes the tracks below it down |
@@ -307,14 +307,14 @@ From the top, the screen has the transport, the input meter, the arrange, the op
 
 ## Adding up the piano roll height
 
-With only the velocity band open, 332px is used around the note area (menu bar 24, transport 48, input meter 24, shrunk arrange 40, toolbar 32, ruler 20, velocity 72, CC tabs 24, band tabs 24, status line 24). The largest piano roll height is 49 keys, so the rows stop at 49, and the rest goes to the arrange.
+With only the velocity band open, 356px is used around the note area (menu bar 24, transport 48, input meter 24, shrunk arrange 40, toolbar 32, chord row 24, ruler 20, velocity 72, CC tabs 24, band tabs 24, status line 24). The largest piano roll height is 49 keys, so the rows stop at 49, and the rest goes to the arrange.
 
 | Window height | Input meter | Note area | Rows | Share of the screen |
 |---|---|---|---|---|
-| 448 | 24 | 116 px | 9 rows | 25.9 % |
-| 720 | 24 | 388 px | 32 rows | 53.9 % |
-| 768 | 24 | 436 px | 36 rows | 56.8 % |
-| 800 | 24 | 468 px | 39 rows | 58.5 % |
+| 448 | 24 | 92 px | 7 rows | 20.5 % |
+| 720 | 24 | 364 px | 30 rows | 50.6 % |
+| 768 | 24 | 412 px | 34 rows | 53.6 % |
+| 800 | 24 | 444 px | 37 rows | 55.5 % |
 | 1080 | 24 | 588 px | 49 rows | 54.4 % |
 
 ## Examples of splitting the height
@@ -323,8 +323,8 @@ The input meter is counted as 24 (because a lower band is open). "Fits" is the w
 
 | Open bands | Fits | Arrange starts to grow | Arrange becomes track rows | Window 800 | Window 1080 |
 |---|---|---|---|---|---|
-| Piano roll | 452 | 920 | 1016 | 40 / 616 | 200 / 736 |
+| Piano roll | 476 | 944 | 1040 | 40 / 616 | 176 / 760 |
 | Mixer | 700 | 844 | 940 | 40 / 616 | 276 / 660 |
 | Undo history | 432 | 432 | 528 | 408 / 248 | 688 / 248 |
-| Piano roll (new) + mixer | 968 | 1580 | 1676 | does not fit | 40 / 380 / 516 |
+| Piano roll (new) + mixer | 992 | 1604 | 1700 | does not fit | 40 / 380 / 516 |
 | Mixer (new) + undo history | 948 | 1092 | 1188 | does not fit | 40 / 648 / 248 |

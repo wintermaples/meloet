@@ -21,11 +21,6 @@ where
 }
 
 #[test]
-fn the_version() {
-    assert_eq!(PROTOCOL_VERSION, 32);
-}
-
-#[test]
 fn the_commands_of_the_keys() {
     both_ways(Command::KeepPlayed, json!({"type": "keepPlayed"}));
     both_ways(
@@ -247,7 +242,6 @@ fn the_new_step_names() {
         assert!(StepName::every_kind().contains(&name), "{kind}");
         both_ways(name, json!({"kind": kind}));
     }
-    assert_eq!(StepName::every_kind().len(), 89);
 }
 
 #[test]

@@ -110,7 +110,7 @@ fn a_copy_is_one_step_right_below_the_track_and_selected() {
     cmd(
         m,
         Command::FoldLane {
-            track: 1,
+            home: meloet_protocol::LaneHome::Track { track: 1 },
             target: on_reverb,
             folded: true,
         },
@@ -158,7 +158,7 @@ fn a_copy_is_one_step_right_below_the_track_and_selected() {
         "the take is shared"
     );
     assert!(view.automation.folded.contains(&LaneRef {
-        track: copy.id,
+        home: meloet_protocol::LaneHome::Track { track: copy.id },
         target: copied,
     }));
 
@@ -189,7 +189,7 @@ fn a_copy_is_one_step_right_below_the_track_and_selected() {
             .automation
             .folded
             .iter()
-            .all(|l| l.track != copy.id)
+            .all(|l| l.home.track() != Some(copy.id))
     );
     cmd(m, Command::Redo);
     assert_eq!(ids(m), [1, copy.id, 2]);

@@ -1,5 +1,6 @@
 //! Song, tracks and instrument references. Pure data: no I/O, no threads.
 
+pub mod arp;
 pub mod arrange;
 pub mod audio;
 pub mod automation;
@@ -12,6 +13,7 @@ pub mod history;
 #[cfg(test)]
 mod id_book;
 pub mod instrument;
+pub mod knobs;
 pub mod mixer;
 pub mod mute_sets;
 pub mod notes;
@@ -25,6 +27,7 @@ pub mod tempo_map;
 pub mod time;
 pub mod timeline;
 
+pub use arp::{ARP_GATE_PERCENT, ARP_KEYS_MAX, ARP_OCTAVES_MAX, Arp, ArpRate, ArpShape};
 pub use arrange::{ClipEdge, ClipEdited, ClipsSplit};
 pub use audio::clips::{
     FadeEnd, ImportPlan, ImportedAudio, ImportedClip, fit_fades, import_audio, remove_audio,
@@ -42,8 +45,8 @@ pub use audio::stretch::{
     set_clip_keep_formant, set_clip_semitones, set_source_tempo, source_tempo_guesses,
 };
 pub use audio::{
-    AudioId, AudioShape, AudioSource, AudioTake, ClipGain, SourceTempo, TrackKind,
-    VOCAL_TRACK_NAME, VocalInput,
+    AudioId, AudioShape, AudioSource, AudioTake, ClipGain, CompPiece, SourceTempo,
+    TUNE_STRENGTH_MAX, TrackKind, Tune, VOCAL_TRACK_NAME, VocalInput,
 };
 pub use automation::{AutoPoint, AutoTarget, Lane, LaneId};
 pub use chunked::ChunkedVec;
@@ -53,6 +56,7 @@ pub use instrument::{
     BuiltinInstrument, GmFamily, InstrumentGroup, InstrumentRef, Kept, PluginRef, SF2_DRUM_BANK,
     Sf2Ref,
 };
+pub use knobs::{SOUND_KNOB_DEFAULTS, SoundKnob, SoundKnobs};
 pub use mixer::{
     Bus, Channel, Gain, INSERT_SLOTS, Insert, InsertId, Inserts, Pan, PluginChange, PluginPlace,
     Return, Sends, StripId,

@@ -10,7 +10,7 @@ const BAR: u64 = 4 * Q;
 
 /// The new song with a vocal track (id 40) below the piano: two clips that share an audio
 /// file, the first with two takes, one of them recorded inside a tempo ramp.
-fn vocal_song() -> Song {
+pub(super) fn vocal_song() -> Song {
     let mut song = Song::new_default();
     let tempo = song.doc.timeline.tempo;
     let source = |id: u32, file: &str, sha256: Option<[u8; 32]>| {
@@ -69,6 +69,7 @@ fn vocal_song() -> Song {
                 shape,
             },
             active,
+            comp: Vec::new(),
         })
     };
     let shaped = AudioShape {
@@ -79,6 +80,7 @@ fn vocal_song() -> Song {
         semitones: -2,
         cents: 15,
         keep_formant: false,
+        tune: None,
     };
     let keys = Track::clone(&song.doc.tracks[0]);
     song.doc.tracks.push(Arc::new(Track {

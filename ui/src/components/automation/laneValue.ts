@@ -2,7 +2,7 @@
 // Every lane value is "the position of the knob the person sees", 0 to 1. The line is straight in position, and sideways straight in ticks.
 // The screen works out the value on the line itself from the points and the play line position (values are not streamed).
 
-import type { AutoTarget, LaneName, LanePoints, LaneRef, LaneView, TrackView } from "../../bridge";
+import type { AutoTarget, LaneHome, LaneName, LanePoints, LaneRef, LaneView, TrackView } from "../../bridge";
 import { EFFECT_PARAMS, type EffectParam } from "../../bridge/types";
 import { t } from "../../text/ja";
 import { dbToFrac, faderText, fracToDb, panText } from "../mixer/scale";
@@ -42,8 +42,12 @@ export const targetKey = (target: AutoTarget): string => {
 };
 export const sameTarget = (a: AutoTarget, b: AutoTarget) => targetKey(a) === targetKey(b);
 export const laneKey = (track: number, target: AutoTarget) => `${track}/${targetKey(target)}`;
+/** The home of a track's lanes in the intents (`LaneHome`). */
+export const trackHome = (track: number): LaneHome => ({ kind: "track", track });
+/** Whether the lane is a lane of that track. */
+export const isOnTrack = (lane: LaneRef, track: number) => lane.home.kind === "track" && lane.home.track === track;
 export const hasLaneRef = (list: readonly LaneRef[], track: number, target: AutoTarget) =>
-  list.some((l) => l.track === track && sameTarget(l.target, target));
+  list.some((l) => isOnTrack(l, track) && sameTarget(l.target, target));
 
 /** The track's lane for that thing. */
 export const laneOf = (track: Pick<TrackView, "lanes">, target: AutoTarget): LaneView | undefined =>
@@ -94,6 +98,8 @@ export function positionText(name: LaneName, pos: number): string | null {
     }
     case "plugin":
       return null;
+    case "knob":
+      return t("param.value.percent", { value: String(Math.round(pos * 100)) });
   }
 }
 

@@ -45,11 +45,13 @@ fn sample_timeline() -> TimelineView {
                 id: 1,
                 tick: 0,
                 name: "イントロ".into(),
+                section: SectionUse::Usable,
             },
             MarkerView {
                 id: 4,
                 tick: 6 * BAR,
                 name: "マーカー 4".into(),
+                section: SectionUse::NotOnBars,
             },
         ],
         selected: Some(TimelineRef::Marker { id: 4 }),
@@ -60,7 +62,7 @@ fn sample_timeline() -> TimelineView {
 
 fn volume_lane() -> LaneRef {
     LaneRef {
-        track: 7,
+        home: LaneHome::Track { track: 7 },
         target: AutoTarget::Volume,
     }
 }
@@ -69,7 +71,7 @@ pub(super) fn sample_state() -> AppState {
     AppState {
         automation: AutomationView {
             folded: vec![LaneRef {
-                track: 7,
+                home: LaneHome::Track { track: 7 },
                 target: AutoTarget::Insert {
                     insert: 12,
                     param: 0,
@@ -157,7 +159,16 @@ pub(super) fn sample_state() -> AppState {
                     take_id: 6,
                     take_offset: -(Q as i64),
                     note_count: 23,
+                    comp: Vec::new(),
                 }],
+                arp: Arp {
+                    on: true,
+                    shape: ArpShape::UpDown,
+                    rate: ArpRate::Eighth,
+                    triplet: true,
+                    octaves: 2,
+                    hold: true,
+                },
             }],
             returns: [
                 ReturnView {
@@ -192,6 +203,14 @@ pub(super) fn sample_state() -> AppState {
                     None,
                     None,
                 ],
+                lanes: vec![LaneView {
+                    target: AutoTarget::Volume,
+                    name: LaneName::Volume,
+                    lane_id: 40,
+                    points: 2,
+                    step: false,
+                    resting: false,
+                }],
             },
             play_target: Some(7),
             loop_range: Some(TickSpan {
@@ -300,6 +319,9 @@ pub(super) fn sample_state() -> AppState {
                 sf2: 2,
                 audio: 0,
             }),
+            language: Language::Ja,
+            mono_listen: true,
+            spectrum: true,
         },
         library: LibraryView {
             sf2: vec![Sf2FileView {
@@ -1422,8 +1444,9 @@ fn state_json_is_camel_case_and_round_trips() {
                "tempoPoints": [{"tick": 4 * BAR, "tempoBpm": 104.0, "ramp": true},
                                {"tick": 8 * BAR, "tempoBpm": 120.0, "ramp": false}],
                "meterChanges": [{"bar": 8, "meterNum": 3, "meterDen": 4}],
-               "markers": [{"id": 1, "tick": 0, "name": "イントロ"},
-                           {"id": 4, "tick": 6 * BAR, "name": "マーカー 4"}],
+               "markers": [{"id": 1, "tick": 0, "name": "イントロ", "section": "usable"},
+                           {"id": 4, "tick": 6 * BAR, "name": "マーカー 4",
+                            "section": "notOnBars"}],
                "selected": {"kind": "marker", "id": 4},
                "renaming": 4,
                "open": true})
@@ -1498,7 +1521,9 @@ fn state_json_is_camel_case_and_round_trips() {
     assert_eq!(
         v["state"]["song"]["master"],
         json!({"gainDb": 0.0, "pan": -5,
-               "slots": [slot(3, "limiter"), null, null, null]})
+               "slots": [slot(3, "limiter"), null, null, null],
+               "lanes": [{"target": {"kind": "volume"}, "name": {"kind": "volume"}, "laneId": 40,
+                          "points": 2, "step": false, "resting": false}]})
     );
     assert_eq!(
         v["state"]["params"]["selected"]["insert"],
@@ -1516,7 +1541,8 @@ fn state_json_is_camel_case_and_round_trips() {
     assert_eq!(
         v["state"]["song"]["tracks"][0]["clips"][0],
         json!({"id": 4, "name": "ピアノ", "start": 4 * BAR, "end": 8 * BAR, "take": 2, "takes": 3,
-               "takeId": 6, "takeOffset": -(Q as i64), "noteCount": 23, "audio": null})
+               "takeId": 6, "takeOffset": -(Q as i64), "noteCount": 23, "audio": null,
+               "comp": []})
     );
     assert_eq!(
         v["state"]["song"]["loopRange"],
@@ -3635,9 +3661,11 @@ fn automation_json_shape() {
     );
     assert_eq!(
         v["automation"],
-        json!({"folded": [{"track": 7, "target": {"kind": "insert", "insert": 12, "param": 0}}],
-               "armed": [{"track": 7, "target": {"kind": "volume"}}],
-               "writing": [{"lane": {"track": 7, "target": {"kind": "volume"}},
+        json!({"folded": [{"home": {"kind": "track", "track": 7},
+                           "target": {"kind": "insert", "insert": 12, "param": 0}}],
+               "armed": [{"home": {"kind": "track", "track": 7}, "target": {"kind": "volume"}}],
+               "writing": [{"lane": {"home": {"kind": "track", "track": 7},
+                                     "target": {"kind": "volume"}},
                             "fromTick": 6 * BAR}],
                "held": [],
                "selected": {"laneId": 31, "points": [{"start": 1, "end": 4}]}})
@@ -3705,25 +3733,25 @@ fn automation_and_history_command_json_shape() {
     let cases = [
         (
             Command::AddLane {
-                track: 7,
+                home: LaneHome::Track { track: 7 },
                 target: AutoTarget::Pan,
             },
-            json!({"type": "addLane", "track": 7, "target": {"kind": "pan"}}),
+            json!({"type": "addLane", "home": {"kind": "track", "track": 7}, "target": {"kind": "pan"}}),
         ),
         (
             Command::DeleteLane {
-                track: 7,
+                home: LaneHome::Track { track: 7 },
                 target: volume,
             },
-            json!({"type": "deleteLane", "track": 7, "target": {"kind": "volume"}}),
+            json!({"type": "deleteLane", "home": {"kind": "track", "track": 7}, "target": {"kind": "volume"}}),
         ),
         (
             Command::FoldLane {
-                track: 7,
+                home: LaneHome::Track { track: 7 },
                 target: volume,
                 folded: true,
             },
-            json!({"type": "foldLane", "track": 7, "target": {"kind": "volume"},
+            json!({"type": "foldLane", "home": {"kind": "track", "track": 7}, "target": {"kind": "volume"},
                    "folded": true}),
         ),
         (
@@ -3768,19 +3796,19 @@ fn automation_and_history_command_json_shape() {
         ),
         (
             Command::SetLaneWrite {
-                track: 7,
+                home: LaneHome::Track { track: 7 },
                 target: volume,
                 on: true,
             },
-            json!({"type": "setLaneWrite", "track": 7, "target": {"kind": "volume"},
+            json!({"type": "setLaneWrite", "home": {"kind": "track", "track": 7}, "target": {"kind": "volume"},
                    "on": true}),
         ),
         (
             Command::RestoreLane {
-                track: 7,
+                home: LaneHome::Track { track: 7 },
                 target: AutoTarget::Send { bus: SendBus::A },
             },
-            json!({"type": "restoreLane", "track": 7,
+            json!({"type": "restoreLane", "home": {"kind": "track", "track": 7},
                    "target": {"kind": "send", "bus": "a"}}),
         ),
         (
@@ -3981,7 +4009,7 @@ fn every_step_name_has_a_kind_of_its_own() {
                 .to_owned()
         })
         .collect();
-    assert_eq!(kinds.len(), 89);
+    assert_eq!(kinds.len(), 99);
     kinds.sort();
     kinds.dedup();
     assert_eq!(kinds.len(), all.len(), "a kind is listed twice");
@@ -4050,8 +4078,10 @@ fn history_and_automation_status_json_shape() {
         (
             StatusMessage::AutomationMoving {
                 tracks: vec![piano.clone()],
+                master: false,
             },
-            json!({"id": "automationMoving", "tracks": [{"number": 1, "name": "ピアノ"}]}),
+            json!({"id": "automationMoving", "tracks": [{"number": 1, "name": "ピアノ"}],
+                   "master": false}),
         ),
         (StatusMessage::NothingToRedo, json!({"id": "nothingToRedo"})),
     ];

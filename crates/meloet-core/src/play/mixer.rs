@@ -714,6 +714,8 @@ impl Play {
                 Picked::Sound(track, instrument) => Some(SelectedParams::Sound(SelectedSound {
                     track: track.0,
                     sound: sound_name(instrument),
+                    // round12 stub: E3
+                    knobs: None,
                 })),
             });
         ParamsView {
@@ -740,6 +742,7 @@ impl Play {
             gain_db: gain_view(master.gain),
             pan: master.pan.get(),
             slots: self.slots_of(StripId::Master, &master.inserts),
+            lanes: super::wave3::master_lanes_view(self.doc()),
         }
     }
 

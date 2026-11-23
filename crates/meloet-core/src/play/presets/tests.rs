@@ -156,7 +156,13 @@ fn a_parameter_a_lane_moves_stays_and_the_status_line_says_how_many() {
         insert,
         param: compressor::THRESHOLD,
     };
-    cmd(m, Command::AddLane { track: 1, target });
+    cmd(
+        m,
+        Command::AddLane {
+            home: meloet_protocol::LaneHome::Track { track: 1 },
+            target,
+        },
+    );
     let lane = (m.view().song.tracks[0].lanes.iter())
         .find(|l| l.target == target)
         .unwrap()

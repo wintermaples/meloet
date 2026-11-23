@@ -41,6 +41,8 @@ fn two_tracks() -> Doc {
         muted: false,
         clips: Vec::new(),
         automation: Vec::new(),
+        arp: Default::default(),
+        knobs: Default::default(),
     }));
     doc
 }

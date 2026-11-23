@@ -113,7 +113,7 @@ export function fakeStretch(
   const shape = { follow: source !== null, semitones: 0, cents: 0, keepFormant: true, ...more };
   const follows = shape.follow && source !== null;
   return {
-    stretch: { ...shape, sourceBpm: source?.tempoBpm ?? null, ratio: follows ? songBpm / source.tempoBpm : null },
+    stretch: { ...shape, sourceBpm: source?.tempoBpm ?? null, ratio: follows ? songBpm / source.tempoBpm : null, tune: null },
     sourceTempo: follows ? source : null,
   };
 }
@@ -134,11 +134,12 @@ export function fakeAudioClip(a: FakeAudio, more: Partial<AudioClipView> = {}): 
     gainDb: 0,
     state: a.missing ? "missing" : a.growingTo !== undefined ? "loading" : "ready",
     ...fakeStretch(steadyTempo(FAKE_SONG_BPM), FAKE_SONG_BPM),
+    takes: [],
     ...more,
   };
 }
 
 /** A vocal clip. Its take id is the clip's id + 1, as recorded clips have it in the fake. */
 export function fakeVocalClip(id: number, name: string, start: number, end: number, audio: AudioClipView, takeOffset = 0): ClipView {
-  return { id, name, start, end, take: 1, takes: 1, takeId: id + 1, takeOffset, noteCount: 0, audio };
+  return { id, name, start, end, take: 1, takes: 1, takeId: id + 1, takeOffset, noteCount: 0, audio, comp: [] };
 }

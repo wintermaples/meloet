@@ -6,6 +6,6 @@ import { openContextMenu } from "../menu/contextMenu.svelte";
 
 export function laneMenu(e: MouseEvent, track: TrackView, lane: LaneView, busy: boolean): void {
   openContextMenu(e.clientX, e.clientY, [
-    { kind: "row", label: "lane.delete", usable: !busy, run: () => send({ type: "deleteLane", track: track.id, target: lane.target }) },
+    { kind: "row", label: "lane.delete", usable: !busy, run: () => send({ type: "deleteLane", home: { kind: "track", track: track.id }, target: lane.target }) },
   ]);
 }

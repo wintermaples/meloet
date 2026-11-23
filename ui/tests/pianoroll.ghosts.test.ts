@@ -33,7 +33,7 @@ const is = (name: Parameters<typeof rgb>[0]) => Array.from(Float32Array.from(rgb
 const GRAY6 = is("color.gray.6");
 
 function clip(id: number, start: number, end: number, over: Partial<ClipView> = {}): ClipView {
-  return { id, name: "", start, end, take: 1, takes: 1, takeId: id + 100, takeOffset: 0, noteCount: 0, audio: null, ...over };
+  return { id, name: "", start, end, take: 1, takes: 1, takeId: id + 100, takeOffset: 0, noteCount: 0, audio: null, comp: [], ...over };
 }
 
 function picture(ghosts: GhostPicture | null, over: Partial<RollPicture> = {}): RollPicture {

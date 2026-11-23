@@ -4,9 +4,11 @@ use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
-use crate::audio::{AudioId, AudioShape, AudioSource, AudioTake, TrackKind};
+use crate::arp::Arp;
+use crate::audio::{AudioId, AudioShape, AudioSource, AudioTake, CompPiece, TrackKind};
 use crate::automation::{AutoTarget, Lane};
 use crate::chunked::ChunkedVec;
+use crate::knobs::SoundKnobs;
 use crate::mixer::{self, Channel, Return, Sends};
 use crate::mute_sets::MuteSet;
 use crate::roll::{QuantizeSettings, RollSettings};
@@ -222,6 +224,9 @@ pub struct Clip {
     pub takes: ClipTakes,
     /// The take shown and played.
     pub active: usize,
+    /// 「いいとこ取り」 of a vocal clip (round 12, A8), in the order of `from`: which take
+    /// sounds where. Empty: `active` sounds all along (always for a keys clip).
+    pub comp: Vec<CompPiece>,
 }
 
 impl Clip {
@@ -304,6 +309,10 @@ pub struct Track {
     pub clips: Vec<Arc<Clip>>,
     /// The automation lanes, in the order they were added; one for a target at most.
     pub automation: Vec<Arc<Lane>>,
+    /// 「アルペジオ」 (round 12, E2).
+    pub arp: Arp,
+    /// The knobs of a built-in sound (round 12, E3); kept whatever the sound.
+    pub knobs: SoundKnobs,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -334,6 +343,8 @@ pub struct Doc {
     /// Return A and return B.
     pub returns: [Arc<Return>; 2],
     pub master: Arc<Channel>,
+    /// The master's automation lanes (round 12, M5): of its volume only.
+    pub master_lanes: Vec<Arc<Lane>>,
     /// The audio table: every audio file a take of the song plays, in the order of id.
     pub audio: Arc<Vec<Arc<AudioSource>>>,
     /// The next clip, take, marker, insert or audio id to give out.
@@ -362,9 +373,12 @@ impl Doc {
                 muted: false,
                 clips: Vec::new(),
                 automation: Vec::new(),
+                arp: Arp::default(),
+                knobs: SoundKnobs::default(),
             })],
             returns: mixer::new_song_returns(),
             master: mixer::new_song_master(),
+            master_lanes: Vec::new(),
             audio: Arc::default(),
             next_id: mixer::NEW_SONG_NEXT_ID,
         }

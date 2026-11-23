@@ -32,7 +32,7 @@ export function laneAddEntries(track: TrackView, busy: boolean): MenuEntry[] {
     text: laneNameText(name),
     usable: !busy,
     checked: laneOf(track, target) !== undefined,
-    run: () => send({ type: "addLane", track: id, target }),
+    run: () => send({ type: "addLane", home: { kind: "track", track: id }, target }),
   }));
   const params = paramsCommand(track);
   rows.push({ kind: "separator" }, { kind: "row", label: "lane.addEffectParams", usable: params !== null, run: () => params && send(params) });

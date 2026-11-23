@@ -2,6 +2,7 @@
 import type { ChooserView } from "./ChooserView";
 import type { FileDropView } from "./FileDropView";
 import type { Hint } from "./Hint";
+import type { Language } from "./Language";
 import type { LatencyDialogView } from "./LatencyDialogView";
 import type { LayoutView } from "./LayoutView";
 import type { RecoveryView } from "./RecoveryView";
@@ -37,4 +38,18 @@ latencyDialog: LatencyDialogView | null,
  * E1 「表示 ▸ 鳴っている音を光らせる」 (`Command::SetNoteGlow`): while playing, the notes
  * the play line is on light up in the piano roll.
  */
-noteGlow: boolean, };
+noteGlow: boolean, 
+/**
+ * E7 「表示 ▸ 音の動きを見せる」 (`Command::SetSpectrum`): the 24 bars left of 「マスター」
+ * in the top band (the telemetry's `spectrum`).
+ */
+spectrum: boolean, 
+/**
+ * M3 「モノで聞く」 is on (`Command::SetMonoListen`). Not saved; off at start.
+ */
+monoListen: boolean, 
+/**
+ * D4 the language the settings name (`Command::SetLanguage`). The screen loads itself
+ * again when it differs from `HelloReply::language`.
+ */
+language: Language, };

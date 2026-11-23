@@ -2,7 +2,7 @@
 
 use meloet_core::ai::{AiAsk, AiSong};
 use meloet_model::{AutoPoint, AutoTarget, Bus, Gain, Pan, StripId, TempoMap};
-use meloet_protocol::{AutoTarget as ScreenTarget, Command, SendBus};
+use meloet_protocol::{AutoTarget as ScreenTarget, Command, LaneHome, SendBus};
 use rmcp::model::CallToolResult;
 use rmcp::{
     ErrorData as McpError, handler::server::wrapper::Parameters, schemars, tool, tool_router,
@@ -251,7 +251,8 @@ impl Tools {
         if t.lane(model).is_some() {
             return Ok(self.no_change().await);
         }
-        Ok(self.screen(Command::AddLane { track, target }).await)
+        let home = LaneHome::Track { track };
+        Ok(self.screen(Command::AddLane { home, target }).await)
     }
 
     /// Deletes an automation lane with its points, as one undo step.
@@ -269,7 +270,8 @@ impl Tools {
         check!(self.allowed());
         let read = check!(self.read().await);
         let (track, _, target) = check!(target_of(&read, a.track, a.target, a.slot, a.param));
-        Ok(self.screen(Command::DeleteLane { track, target }).await)
+        let home = LaneHome::Track { track };
+        Ok(self.screen(Command::DeleteLane { home, target }).await)
     }
 
     /// Writes points into a lane (add it first with add_lane), as one undo step.

@@ -20,7 +20,7 @@ describe("shape of protocol 24", () => {
   it("a new song has no audio clips, no sounds being made, and no tall rows", () => {
     expect(PROTOCOL_VERSION).toBeGreaterThanOrEqual(24);
     const s = fakeState();
-    expect(s.audioWork).toEqual({ jobs: [] });
+    expect(s.audioWork).toEqual({ jobs: [], bounce: null });
     expect(s.arrange.tallTrack).toBeNull();
     expect(s.transport.recordingFaults).toBeNull();
     expect(s.workspace.fileDrop).toBeNull();
@@ -94,10 +94,10 @@ describe("fake scenes (F7-AudioEdit, F7-AudioDrop, F7-AudioMissing, R11-Audio)",
     expect([left!.takeId, right!.takeId, left!.takeOffset, right!.takeOffset]).toEqual([71, 71, 0, -2 * BAR]);
     expect(left!.audio).toMatchObject({ audio: 60, file: "歌 テイク 1.wav", sampleRate: 48000, bits: 24, channels: 1, resampled: false, fadeIn: 0, fadeOut: TPQ, gainDb: 0, state: "ready" });
     expect(right!.audio).toMatchObject({ audio: 60, firstFrame: 0, frames: 480000, fadeIn: TPQ / 4, fadeOut: 0, gainDb: -3 });
-    expect(right!.audio!.stretch).toEqual({ follow: true, sourceBpm: 96, ratio: 1, semitones: 0, cents: 0, keepFormant: true });
+    expect(right!.audio!.stretch).toEqual({ follow: true, sourceBpm: 96, ratio: 1, semitones: 0, cents: 0, keepFormant: true, tune: null });
     expect([left!.noteCount, right!.noteCount]).toEqual([0, 0]);
     expect(s.arrange).toMatchObject({ selectedClips: [72], selectedClip: 72, pianoRollClip: null, tallTrack: null });
-    const selected: SelectedParams = { kind: "clip", track: VOCAL, clip: 72, missing: null };
+    const selected: SelectedParams = { kind: "clip", track: VOCAL, clip: 72, missing: null, tuneUsable: false };
     expect(s.params.selected).toEqual(selected);
     expect(s.workspace.layout.rightOpen).toContain("params");
     expect(s.transport.position).toBe(6 * BAR);
@@ -140,6 +140,7 @@ describe("fake scenes (F7-AudioEdit, F7-AudioDrop, F7-AudioMissing, R11-Audio)",
       track: VOCAL,
       clip: 70,
       missing: { audio: 64, file: "歌 テイク 1.wav", wasAt: "はじめての曲/音/歌 テイク 1.wav" },
+      tuneUsable: false,
     });
     expect(s.status.message).toEqual({ id: "audioMissing", count: 2 });
     expect(s.song.file).toBe("saved");
@@ -153,7 +154,7 @@ describe("fake scenes (F7-AudioEdit, F7-AudioDrop, F7-AudioMissing, R11-Audio)",
     const clip = vocalOf(s).clips[0]!;
     expect(clip.audio).toMatchObject({ file: "ドラム.mp3", sampleRate: 44100, bits: null, channels: 2, resampled: true, state: "loading" });
     expect(clip.audio!.stretch).toMatchObject({ follow: false, sourceBpm: null });
-    expect(s.audioWork).toEqual({ jobs: [{ kind: "loading", audio: 62, clip: null, percent: 40 }] });
+    expect(s.audioWork).toEqual({ jobs: [{ kind: "loading", audio: 62, clip: null, percent: 40 }], bounce: null });
     expect(t("clip.loading", { percent: s.audioWork.jobs[0]!.percent })).toBe("読みこんでいます 40 %");
     expect(s.status.message).toMatchObject({ id: "audioImported", file: "ドラム.mp3", tick: 4 * BAR });
   });

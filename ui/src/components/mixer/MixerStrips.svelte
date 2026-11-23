@@ -59,7 +59,7 @@
       pan: lookOf(track, { kind: "pan" }),
       sends: [lookOf(track, { kind: "send", bus: "a" }), lookOf(track, { kind: "send", bus: "b" })],
       row: autoRow,
-      restore: volume?.resting && !busy ? () => send({ type: "restoreLane", track: track.id, target: { kind: "volume" } }) : null,
+      restore: volume?.resting && !busy ? () => send({ type: "restoreLane", home: { kind: "track", track: track.id }, target: { kind: "volume" } }) : null,
     };
   }
   /** Returns and the master have no lanes (A-19, item 7). Only the row under the value is shown, to keep the heights equal. */

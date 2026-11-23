@@ -93,12 +93,14 @@ fn sample_audio_clip() -> AudioClipView {
             semitones: 0,
             cents: 0,
             keep_formant: true,
+            tune: None,
         },
         source_tempo: Some(SourceTempoView {
             tempo_bpm: 120.0,
             head_ramp: false,
             tempo_points: Vec::new(),
         }),
+        takes: Vec::new(),
     }
 }
 
@@ -110,8 +112,9 @@ fn audio_clip_json_shape() {
                "channels": 1, "resampled": true, "firstFrame": 12_000, "frames": 441_000,
                "fadeIn": 240, "fadeOut": 0, "gainDb": -3.0, "state": "ready",
                "stretch": {"follow": true, "sourceBpm": 120.0, "ratio": 1.0, "semitones": 0,
-                           "cents": 0, "keepFormant": true},
-               "sourceTempo": {"tempoBpm": 120.0, "headRamp": false, "tempoPoints": []}}),
+                           "cents": 0, "keepFormant": true, "tune": null},
+               "sourceTempo": {"tempoBpm": 120.0, "headRamp": false, "tempoPoints": []},
+               "takes": []}),
     );
     assert_eq!(
         json!([
@@ -140,17 +143,19 @@ fn audio_clip_json_shape() {
                 semitones: 2,
                 cents: -30,
                 keep_formant: false,
+                tune: None,
             },
             source_tempo: None,
             ..sample_audio_clip()
         }),
+        comp: Vec::new(),
     };
     let v = to_json(&clip);
     assert_eq!(v["audio"]["bits"], Value::Null);
     assert_eq!(
         v["audio"]["stretch"],
         json!({"follow": false, "sourceBpm": null, "ratio": null, "semitones": 2,
-               "cents": -30, "keepFormant": false})
+               "cents": -30, "keepFormant": false, "tune": null})
     );
     assert_eq!(v["audio"]["sourceTempo"], Value::Null);
     assert_eq!(serde_json::from_value::<ClipView>(v).unwrap(), clip);
@@ -267,10 +272,12 @@ fn drag_events_and_sections_json_shape() {
                     percent: 34,
                 },
             ],
+            bounce: None,
         }),
         json!({"section": "audioWork", "value": {"jobs": [
             {"kind": "loading", "audio": 31, "clip": null, "percent": 40},
-            {"kind": "rendering", "audio": 31, "clip": 9, "percent": 34}]}}),
+            {"kind": "rendering", "audio": 31, "clip": 9, "percent": 34}],
+            "bounce": null}}),
     );
     both_ways(
         SelectedParams::Clip(SelectedClip {
@@ -281,10 +288,11 @@ fn drag_events_and_sections_json_shape() {
                 file: "歌 テイク 1.wav".to_owned(),
                 was_at: Some("はじめての曲/音/歌 テイク 1.wav".to_owned()),
             }),
+            tune_usable: false,
         }),
         json!({"kind": "clip", "track": 6, "clip": 9, "missing": {
             "audio": 31, "file": "歌 テイク 1.wav",
-            "wasAt": "はじめての曲/音/歌 テイク 1.wav"}}),
+            "wasAt": "はじめての曲/音/歌 テイク 1.wav"}, "tuneUsable": false}),
     );
     both_ways(
         RecordingFaults {

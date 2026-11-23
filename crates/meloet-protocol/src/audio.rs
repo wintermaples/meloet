@@ -7,6 +7,7 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 use crate::timeline::TempoPointView;
+use crate::{AudioTakeView, BounceView, TuneView};
 
 /// The range of a vocal clip's volume in dB (spec 3 「クリップの音量」): there is no −∞.
 pub const CLIP_GAIN_MIN_DB: f32 = -60.0;
@@ -77,6 +78,9 @@ pub struct AudioClipView {
     /// the take has a tempo. The tempo the audio was played at, as tempo points from the
     /// take's tick 0, for placing the waveform.
     pub source_tempo: Option<SourceTempoView>,
+    /// Round 12 A8: every take of the clip, in the order of the clip's takes (the shown one
+    /// too), for the rows of the band 「いいとこ取り」.
+    pub takes: Vec<AudioTakeView>,
 }
 
 /// The tempo the audio of a take was played or sung at: `meloet_model::SourceTempo`. The
@@ -134,6 +138,8 @@ pub struct StretchView {
     pub cents: i8,
     /// 「声の感じを保つ」.
     pub keep_formant: bool,
+    /// Round 12 M7 「音程を寄せる」; `None` at strength 0.
+    pub tune: Option<TuneView>,
 }
 
 /// The parameters panel shows 「選んだクリップ」 (spec 3, 93-4): exactly one clip is selected
@@ -151,6 +157,8 @@ pub struct SelectedClip {
     /// (`Command::FindAudio`) and 「曲から外す」 (`Command::RemoveMissing`) in place of the
     /// groups.
     pub missing: Option<MissingAudioView>,
+    /// Round 12 M7: the row 「音程を寄せる」 can be used; `false` shows it disabled.
+    pub tune_usable: bool,
 }
 
 /// The panel 「選んだクリップ」 for two or more vocal clips (spec 3, 40-A; `ParamsView::clips`):
@@ -200,6 +208,9 @@ pub struct MissingAudioView {
 pub struct AudioWorkView {
     /// In the order they were started. A job is gone when it is done.
     pub jobs: Vec<AudioJob>,
+    /// Round 12 A7: the keys being turned into audio (`Command::BounceToAudio`,
+    /// `Command::BounceTrack`); `None` when none is.
+    pub bounce: Option<BounceView>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -274,6 +285,16 @@ pub enum StretchChange {
     Cents { cents: f64 },
     /// 「声の感じを保つ」.
     KeepFormant { on: bool },
+    /// Round 12 M7 「音程を寄せる」, the strength in percent: to the nearest whole number
+    /// inside 0..=`TUNE_STRENGTH_MAX`, sent when the drag of the bar ends (the screen alone
+    /// moves while it goes on). From 0 the clip takes the song's scale (`PianoRollView::scale`)
+    /// with it; to 0 the scale it kept goes (`StretchView::tune` is `None`). One step
+    /// (`StepName::SetClipTune`). In `Command::SetClipsStretch` it does nothing.
+    TuneStrength { percent: f64 },
+    /// M7 「いまのスケールにする」: the clip takes the song's scale now. Nothing at strength 0,
+    /// or when it has that scale already. One step (`StepName::SetClipTune`). In
+    /// `Command::SetClipsStretch` it does nothing.
+    TuneScale,
 }
 
 /// Where files let go of over the window go when two or more of them are audio (spec 3,

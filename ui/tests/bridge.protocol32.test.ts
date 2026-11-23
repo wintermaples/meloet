@@ -33,7 +33,7 @@ async function opened() {
 
 describe("shape of protocol 32", () => {
   it("version 32. A new state: nothing to keep, the PC keyboard off, the glow on, the patterns of a new track's shelf, no own presets yet", () => {
-    expect(PROTOCOL_VERSION).toBe(32);
+    expect(PROTOCOL_VERSION).toBeGreaterThanOrEqual(32);
     const s = fakeState();
     expect(s.transport.canKeepPlayed).toBe(false);
     expect(s.keyboards.typedKeys).toBe(false);

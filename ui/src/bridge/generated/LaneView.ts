@@ -3,7 +3,7 @@ import type { AutoTarget } from "./AutoTarget";
 import type { LaneName } from "./LaneName";
 
 /**
- * The header of a lane, in `TrackView::lanes`.
+ * The header of a lane, in `TrackView::lanes` and `MasterView::lanes`.
  */
 export type LaneView = { target: AutoTarget, name: LaneName, 
 /**

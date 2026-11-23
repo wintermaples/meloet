@@ -49,6 +49,7 @@ fn song() -> Song {
             shape: AudioShape::RECORDED,
         },
         active: 1,
+        comp: Vec::new(),
     };
     let keys = Track::clone(&song.doc.tracks[0]);
     song.doc.tracks.push(Arc::new(Track {

@@ -92,6 +92,8 @@ fn song(rng: &mut Rng) -> Song {
         muted: false,
         clips: Vec::new(),
         automation: Vec::new(),
+        arp: Default::default(),
+        knobs: Default::default(),
     }));
     let take = |rng: &mut Rng, origin: u64, length: u64| NewTake {
         origin,

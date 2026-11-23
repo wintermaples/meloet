@@ -37,11 +37,12 @@ fn a_clip_that_follows_json_shape() {
         semitones: 2,
         cents: 0,
         keep_formant: true,
+        tune: None,
     };
     both_ways(
         stretch,
         json!({"follow": true, "sourceBpm": 96.0, "ratio": 1.25, "semitones": 2, "cents": 0,
-               "keepFormant": true}),
+               "keepFormant": true, "tune": null}),
     );
     both_ways(
         SourceTempoView {
@@ -73,9 +74,10 @@ fn a_clip_that_follows_json_shape() {
             semitones: -1,
             cents: 30,
             keep_formant: false,
+            tune: None,
         },
         json!({"follow": false, "sourceBpm": null, "ratio": null, "semitones": -1,
-               "cents": 30, "keepFormant": false}),
+               "cents": 30, "keepFormant": false, "tune": null}),
     );
 }
 
@@ -183,7 +185,9 @@ fn the_audio_being_made_json_shape() {
                 clip: Some(70),
                 percent: 34,
             }],
+            bounce: None,
         },
-        json!({"jobs": [{"kind": "rendering", "audio": 60, "clip": 70, "percent": 34}]}),
+        json!({"jobs": [{"kind": "rendering", "audio": 60, "clip": 70, "percent": 34}],
+               "bounce": null}),
     );
 }

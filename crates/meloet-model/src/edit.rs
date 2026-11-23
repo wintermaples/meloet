@@ -3,8 +3,10 @@
 
 use std::sync::Arc;
 
+use crate::arp::Arp;
 use crate::automation::{AutoTarget, Lane, LaneId};
 use crate::history::StepKind;
+use crate::knobs::SoundKnobs;
 use crate::mixer::{self, Channel, InsertId};
 use crate::song::{
     Clip, ClipId, ClipTake, ClipTakes, ControlPoint, ControlValue, Doc, Note, Take, TakeId, Track,
@@ -197,6 +199,7 @@ pub fn add_recording(
         end: range.end(),
         takes: ClipTakes::Keys(merged),
         active: first_new + active,
+        comp: Vec::new(),
     });
     let at = clips.partition_point(|c| c.start < clip.start);
     clips.insert(at, clip);
@@ -501,6 +504,8 @@ fn add_track_of(
             muted: false,
             clips: Vec::new(),
             automation: Vec::new(),
+            arp: Arp::default(),
+            knobs: SoundKnobs::default(),
         }),
     );
     doc.next_id = ids.0;

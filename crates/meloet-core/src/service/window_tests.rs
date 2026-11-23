@@ -944,7 +944,10 @@ fn lanes_move_the_plugins(core: &Core, seen: &Seen, keys: [&str; 2], params: [&'
     let lines = [[0.2f32, 0.8], [0.9, 0.3]];
     let lanes = |s: &AppState| s.song.tracks[index].lanes.clone();
     for (target, line) in targets.into_iter().zip(lines) {
-        core.send(Command::AddLane { track, target });
+        core.send(Command::AddLane {
+            home: meloet_protocol::LaneHome::Track { track },
+            target,
+        });
         for (tick, value) in [(0, line[0]), (LANE_END, line[1])] {
             let all = lanes(&core.snapshot().state);
             let lane = all.iter().find(|l| l.target == target).expect("the lane");

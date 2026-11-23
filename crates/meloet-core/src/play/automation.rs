@@ -19,8 +19,8 @@ use meloet_model::edit::{Edit, EditError};
 use meloet_model::effects::{EffectKind as ModelEffect, ParamShape};
 use meloet_model::{Bus, Gain, InstrumentRef, Pan, PluginPlace, StepKind, StripId, TrackId};
 use meloet_protocol::{
-    AutoSelection, AutoTarget, AutomationView, LaneName, LanePoint, LanePoints, LaneRef, LaneView,
-    SendBus, StatusMessage, TransportState, WritingLane,
+    AutoSelection, AutoTarget, AutomationView, LaneHome, LaneName, LanePoint, LanePoints, LaneRef,
+    LaneView, SendBus, StatusMessage, TransportState, WritingLane,
 };
 
 use super::mixer::effect_kind;
@@ -188,7 +188,7 @@ pub(super) fn protocol_target(target: ModelTarget) -> AutoTarget {
 
 fn lane_ref((track, target): LaneKey) -> LaneRef {
     LaneRef {
-        track: track.0,
+        home: LaneHome::Track { track: track.0 },
         target: protocol_target(target),
     }
 }
@@ -1156,7 +1156,11 @@ impl Play {
             .filter(|t| t.lane(ModelTarget::Volume).is_some_and(|l| l.moves()))
             .filter_map(|t| self.track_ref(t.id))
             .collect();
-        (!tracks.is_empty()).then_some(StatusMessage::AutomationMoving { tracks })
+        // round12 stub: M5 (the master's lane)
+        (!tracks.is_empty()).then_some(StatusMessage::AutomationMoving {
+            tracks,
+            master: false,
+        })
     }
 }
 

@@ -6,4 +6,4 @@ import type { TrackRef } from "./TrackRef";
  * Where the step was made, the right column of a row ("ピアノロール", "ミキサー", "アレンジ",
  * "4 パッド"; mock R10-History).
  */
-export type StepPlace = { "kind": "arrange" } | { "kind": "pianoRoll" } | { "kind": "mixer" } | { "kind": "track", track: TrackRef, } | { "kind": "pluginWindow", strip: StripName, };
+export type StepPlace = { "kind": "arrange" } | { "kind": "pianoRoll" } | { "kind": "mixer" } | { "kind": "track", track: TrackRef, } | { "kind": "pluginWindow", strip: StripName, } | { "kind": "master" };

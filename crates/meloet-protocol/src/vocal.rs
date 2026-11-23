@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{SoundName, TrackRef};
+use crate::{SoundKnobsView, SoundName, TrackRef};
 
 /// Which channels of the input a vocal track records (spec 3 「歌のトラックの見出し」): the
 /// three rows of the list under 「入口 1 ・ モノ ▾」.
@@ -198,8 +198,9 @@ pub struct KeptVocals {
 /// A sound with no parameters in the parameters panel (spec 3, 19-A): one that comes with
 /// meloet ("最初から入っている") or a preset of an SF2 file ("SF2"). The panel says "この音色
 /// には、動かせるパラメータがありません。" and offers 「音源を入れかえる…」
-/// (`Command::OpenShelf` with `ShelfMode::Replace`).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// (`Command::OpenShelf` with `ShelfMode::Replace`). From round 12 (E3) a sound that comes
+/// with meloet has the four rows of `knobs` instead.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct SelectedSound {
@@ -207,6 +208,9 @@ pub struct SelectedSound {
     pub track: u32,
     /// `SoundName::Builtin` or `SoundName::Sf2`, never a plugin.
     pub sound: SoundName,
+    /// E3 「明るさ」「立ち上がり」「のび」「ゆれ」 (`Command::SetSoundKnob`). `None` for an SF2
+    /// preset: no parameters.
+    pub knobs: Option<SoundKnobsView>,
 }
 
 /// A vocal track in a sentence of the status line: "6 歌（入口 1）".

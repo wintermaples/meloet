@@ -1423,6 +1423,11 @@ export const texts = {
   "msg.presetOverwritten": e("「{name}」を上書きしました", "builder:2026-11-24", { name: "いつものピアノ" }),
   "msg.presetLanesKept": e("レーンが動かしている {count} つのパラメータは、そのままにしました", "builder:2026-11-24", { count: "2" }),
   "msg.tooManyPresets": e("{effect}のプリセットは {max} 個までなので、これ以上残せません。", "builder:2026-11-24", { effect: "コンプレッサー", max: "100" }),
+  // Round 12 E3: the knobs of a built-in sound (the round's spec).
+  "knob.brightness": e("明るさ", "user:2026-11-23"),
+  "knob.attack": e("立ち上がり", "user:2026-11-23"),
+  "knob.release": e("のび", "user:2026-11-23"),
+  "knob.vibrato": e("ゆれ", "user:2026-11-23"),
   // How values are written (number and unit; the examples in the spec 3 rule on parameter names). The part after the key prefix is unit of EFFECT_PARAMS.
   "param.value.s": e("{value} s", "spec:3", { value: "2.40" }),
   "param.value.ms": e("{value} ms", "spec:3", { value: "20" }),
@@ -2984,6 +2989,17 @@ export const stepNames: Readonly<Record<StepName["kind"], Entry>> = {
   repeatClips: e("クリップをくり返す", "user:2026-11-23"),
   applyPreset: e("プリセットを使う", "user:2026-11-23"),
   lowerAll: e("全部のトラックを下げる", "user:2026-11-23"),
+  setArp: e("アルペジオを変える", "user:2026-11-23"),
+  setSoundKnob: e("音のつまみを変える", "user:2026-11-23"),
+  duplicateSection: e("区間を複製", "user:2026-11-23"),
+  deleteSection: e("区間を消して詰める", "user:2026-11-23"),
+  insertSpace: e("空きを入れる", "user:2026-11-23"),
+  bounce: e("音のクリップにする", "user:2026-11-23"),
+  addFadeOut: e("フェードアウトをつける", "user:2026-11-23"),
+  setComp: e("いいとこ取り", "user:2026-11-23"),
+  // The spec names only the step of 「いいとこ取り」; this one undoes it with the verb of 「もとに戻す」 (「外し」).
+  clearComp: e("いいとこ取りを外す", "builder:2026-11-24"),
+  setClipTune: e("音程を寄せる", "user:2026-11-23"),
 };
 
 export interface Term {

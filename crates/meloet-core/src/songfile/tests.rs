@@ -63,6 +63,7 @@ fn rich_song(name: &str, notes_per_take: u64) -> Song {
                     .collect(),
             ),
             active,
+            comp: Vec::new(),
         })
     };
     let mut doc = Doc::new_default();
@@ -1180,6 +1181,8 @@ fn added_song() -> Song {
             muted: false,
             clips: Vec::new(),
             automation: Vec::new(),
+            arp: Default::default(),
+            knobs: Default::default(),
         }));
     }
     let mverb = PluginRef::new(MVERB, "MVerb", "DISTRHO", "").with_state([9u8, 8, 7].into());

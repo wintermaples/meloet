@@ -62,6 +62,8 @@ fn hello(protocol_version: u32) -> HelloReply {
         protocol_version: PROTOCOL_VERSION,
         ok: protocol_version == PROTOCOL_VERSION,
         mono_us: clock::mono_us(),
+        // round12 stub: D4
+        language: meloet_protocol::Language::Ja,
     }
 }
 

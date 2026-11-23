@@ -52,7 +52,7 @@ function scripted(version = PROTOCOL_VERSION) {
   const transport: Transport = {
     async hello(protocolVersion) {
       calls.push("hello");
-      return { protocolVersion: version, ok: protocolVersion === version, monoUs: 0 };
+      return { protocolVersion: version, ok: protocolVersion === version, monoUs: 0, language: "ja" };
     },
     async subscribe(onMessage, onTelemetry) {
       calls.push("subscribe");

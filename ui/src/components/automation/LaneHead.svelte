@@ -14,7 +14,7 @@
   import { builtinOf } from "../params/selected";
   import { livePosition, pointsOf } from "./autoState.svelte";
   import { laneMenu } from "./laneMenu";
-  import { handPosition, hasLaneRef, laneMoves, positionText, valueAt } from "./laneValue";
+  import { handPosition, hasLaneRef, isOnTrack, laneMoves, positionText, trackHome, valueAt } from "./laneValue";
 
   let { track, lane }: { track: TrackView; lane: LaneView } = $props();
 
@@ -23,7 +23,7 @@
   const held = $derived(hasLaneRef(automation.held, track.id, lane.target));
   const resting = $derived(lane.resting || held);
   const armed = $derived(hasLaneRef(automation.armed, track.id, lane.target));
-  const writing = $derived(automation.writing.some((w) => w.lane.track === track.id && JSON.stringify(w.lane.target) === JSON.stringify(lane.target)));
+  const writing = $derived(automation.writing.some((w) => isOnTrack(w.lane, track.id) && JSON.stringify(w.lane.target) === JSON.stringify(lane.target)));
   const title = $derived(termParts(t("lane.title", { target: laneNameText(lane.name) }), "オートメーション"));
 
   /** A value set by a step of a built-in effect is known only while the params panel shows that slot. */
@@ -73,7 +73,7 @@
   }
 
   function fold(): void {
-    send({ type: "foldLane", track: track.id, target: lane.target, folded: true });
+    send({ type: "foldLane", home: trackHome(track.id), target: lane.target, folded: true });
   }
   function context(e: MouseEvent): void {
     e.preventDefault();
@@ -95,7 +95,7 @@
         class="m-btn small"
         aria-disabled={!usable || undefined}
         data-test="lane-restore"
-        onclick={() => usable && send({ type: "restoreLane", track: track.id, target: lane.target })}>{t("lane.restore")}</button
+        onclick={() => usable && send({ type: "restoreLane", home: trackHome(track.id), target: lane.target })}>{t("lane.restore")}</button
       >
       <span class="m-lbl live" use:coverWhile={{ on: visible, stamp }}
         ><span class="in" data-test="lane-state"
@@ -109,7 +109,7 @@
         aria-pressed={armed}
         aria-disabled={busy || undefined}
         data-test="lane-write"
-        onclick={() => !busy && send({ type: "setLaneWrite", track: track.id, target: lane.target, on: !armed })}>{t("lane.write")}</button
+        onclick={() => !busy && send({ type: "setLaneWrite", home: trackHome(track.id), target: lane.target, on: !armed })}>{t("lane.write")}</button
       >
       <span class="m-lbl live" use:coverWhile={{ on: visible, stamp }}
         ><span class="in" data-test="lane-state"

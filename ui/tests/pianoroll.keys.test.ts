@@ -227,7 +227,7 @@ describe("Mod V pastes what was copied last (notes or clips)", () => {
 
   it("the shown take not fetched yet: the clip's range comes from the song", () => {
     copied.last = "notes";
-    const clip = { id: 90, name: "A", start: 8 * TPQ, end: 16 * TPQ, take: 1, takes: 1, takeId: 91, takeOffset: 0, noteCount: 0, audio: null };
+    const clip = { id: 90, name: "A", start: 8 * TPQ, end: 16 * TPQ, take: 1, takes: 1, takeId: 91, takeOffset: 0, noteCount: 0, audio: null, comp: [] };
     state.song = { ...state.song, tracks: state.song.tracks.map((t, i) => (i === 0 ? { ...t, clips: [clip] } : t)) };
     state.arrange = { ...state.arrange, pianoRollClip: clip.id };
     deps = { ...deps, pianoRoll: () => null };

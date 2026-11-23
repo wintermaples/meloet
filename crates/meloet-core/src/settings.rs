@@ -8,7 +8,7 @@ use meloet_model::BuiltinInstrument;
 use meloet_model::effects::EffectKind as ModelEffect;
 use meloet_protocol::{
     CLICK_VOLUME_MAX_DB, CLICK_VOLUME_MIN_DB, ClickSound, ClickWhen, DEFAULT_FIXED_VELOCITY,
-    EffectKind, EffectRef, RecordFormat, SoundRef, Theme,
+    EffectKind, EffectRef, Language, RecordFormat, SoundRef, Theme,
 };
 use serde::{Deserialize, Serialize};
 
@@ -30,6 +30,11 @@ pub struct Settings {
     pub note_glow: bool,
     /// 「作者」 of 「曲の情報」 of the export (round 12, F2).
     pub export_artist: String,
+    /// 「表示 ▸ 音の動きを見せる」 (round 12, E7; `Command::SetSpectrum`).
+    pub spectrum: bool,
+    /// 「ことば / Language」 (round 12, D4; `Command::SetLanguage`). `None`: not chosen yet, the
+    /// PC's language decides.
+    pub language: Option<Language>,
     pub metronome: bool,
     /// 「メトロノーム ▾」 (round 12, R3; `Command::SetClick`).
     pub click: ClickSettings,
@@ -181,6 +186,8 @@ impl Default for Settings {
             theme: Theme::default(),
             note_glow: true,
             export_artist: String::new(),
+            spectrum: true,
+            language: None,
             metronome: false,
             click: ClickSettings::default(),
             count_in_bars: DEFAULT_COUNT_IN_BARS,
@@ -213,6 +220,11 @@ struct OnDisk {
     note_glow: bool,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     export_artist: String,
+    #[serde(default = "yes")]
+    spectrum: bool,
+    /// `"ja"` or `"en"`; missing, or a name this meloet does not know: not chosen.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    language: Option<String>,
     #[serde(default)]
     metronome: bool,
     /// dB. Missing: 0; out of range: put at the nearer end.
@@ -400,6 +412,8 @@ pub fn load(dir: &Path) -> Settings {
                 .unwrap_or_default(),
             note_glow: disk.note_glow,
             export_artist: disk.export_artist,
+            spectrum: disk.spectrum,
+            language: disk.language.as_deref().and_then(Language::from_name),
             metronome: disk.metronome,
             count_in_bars: if crate::play::COUNT_IN_BARS.contains(&disk.count_in_bars) {
                 disk.count_in_bars
@@ -454,6 +468,8 @@ pub fn save(dir: &Path, settings: &Settings) -> std::io::Result<()> {
         theme: Some(settings.theme.name().to_owned()),
         note_glow: settings.note_glow,
         export_artist: settings.export_artist.clone(),
+        spectrum: settings.spectrum,
+        language: settings.language.map(|l| l.name().to_owned()),
         metronome: settings.metronome,
         click_volume_db: Some(settings.click.volume_db),
         click_sound: Some(settings.click.sound.name().to_owned()),
@@ -601,6 +617,8 @@ mod tests {
             theme: Theme::MintLight,
             note_glow: false,
             export_artist: "わたし".into(),
+            spectrum: false,
+            language: Some(Language::En),
             metronome: true,
             click: ClickSettings {
                 volume_db: -12.5,
@@ -717,6 +735,8 @@ mod tests {
                 theme: Theme::Dark,
                 note_glow: true,
                 export_artist: String::new(),
+                spectrum: true,
+                language: None,
                 metronome: false,
                 click: ClickSettings {
                     volume_db: 0.0,
@@ -784,6 +804,40 @@ mod tests {
             let settings = Settings {
                 click,
                 check_updates: false,
+                ..Settings::default()
+            };
+            save(&dir, &settings).unwrap();
+            assert_eq!(load(&dir), settings);
+        }
+    }
+
+    /// Round 12 E7 and D4: missing, the spectrum is on and no language is chosen; a language
+    /// this meloet does not know is not chosen either.
+    #[test]
+    fn the_spectrum_and_the_language_read_back() {
+        let dir = temp_dir("language");
+        let write = |rest: &str| {
+            std::fs::write(
+                dir.join("settings.json"),
+                format!(r#"{{"version":1,"output":null,"scale":100{rest}}}"#),
+            )
+            .unwrap();
+        };
+        write("");
+        let loaded = load(&dir);
+        assert_eq!((loaded.spectrum, loaded.language), (true, None));
+        write(r#","spectrum":false,"language":"en""#);
+        let loaded = load(&dir);
+        assert_eq!(
+            (loaded.spectrum, loaded.language),
+            (false, Some(Language::En))
+        );
+        write(r#","language":"fr""#);
+        assert_eq!(load(&dir).language, None);
+        for language in [None, Some(Language::Ja), Some(Language::En)] {
+            let settings = Settings {
+                language,
+                spectrum: false,
                 ..Settings::default()
             };
             save(&dir, &settings).unwrap();

@@ -35,7 +35,7 @@ const WIDTH = 1000;
 const METER = { num: 4, den: 4 };
 
 function clip(id: number, fromBar: number, toBar: number): ClipView {
-  return { id, name: `クリップ ${id}`, start: (fromBar - 1) * BAR, end: (toBar - 1) * BAR, take: 1, takes: 1, takeId: 100 + id, takeOffset: 0, noteCount: 0, audio: null };
+  return { id, name: `クリップ ${id}`, start: (fromBar - 1) * BAR, end: (toBar - 1) * BAR, take: 1, takes: 1, takeId: 100 + id, takeOffset: 0, noteCount: 0, audio: null, comp: [] };
 }
 
 // 1 bar is 64 px, rows 64 high, clips 3 px in from the row; the name strip is line.mark 2 + 16 (scale 100 %).

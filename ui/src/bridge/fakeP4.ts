@@ -96,7 +96,7 @@ export function reduceP4(
   let next = Math.max(0, ...takes.keys(), ...song.tracks.flatMap((t) => t.clips.flatMap((c) => [c.id, c.takeId]))) + 1;
   const take: FakeTake = { id: next++, length: BAR, notes: fakeHits() };
   takes.set(take.id, take);
-  const clip: ClipView = { id: next++, name: kit.name, start, end, take: 1, takes: 1, takeId: take.id, takeOffset: 0, noteCount: take.notes.length, audio: null };
+  const clip: ClipView = { id: next++, name: kit.name, start, end, take: 1, takes: 1, takeId: take.id, takeOffset: 0, noteCount: take.notes.length, audio: null, comp: [] };
   kit.clips = [...kit.clips, clip].sort((a, b) => a.start - b.start);
   arrange.selectedClips = [clip.id];
   arrange.selectedClip = clip.id;

@@ -18,7 +18,7 @@ vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));
 const scene = (name: string) => fakeScene(name)!;
 const BAR = 4 * TPQ;
 const TRACK = 10;
-const volume = (number: number): LaneRef => ({ track: TRACK + number, target: { kind: "volume" } });
+const volume = (number: number): LaneRef => ({ home: { kind: "track", track: TRACK + number }, target: { kind: "volume" } });
 
 describe("protocol 21 shape", () => {
   it("version is 23 (after 22). A new song has no bands and 0 steps in history. Inserts have ids (1, 2, 3 in a new song)", () => {
@@ -32,20 +32,20 @@ describe("protocol 21 shape", () => {
 
   it("intents: a band is pointed at by track and target, a point by laneId and index. A history jump uses the row index and the step number", () => {
     const commands: Command[] = [
-      { type: "addLane", track: 11, target: { kind: "pan" } },
-      { type: "addLane", track: 11, target: { kind: "send", bus: "a" } },
-      { type: "addLane", track: 11, target: { kind: "mute" } },
-      { type: "addLane", track: 11, target: { kind: "instrument", param: 1000 } },
-      { type: "addLane", track: 11, target: { kind: "insert", insert: 5, param: 0 } },
-      { type: "deleteLane", track: 11, target: { kind: "volume" } },
-      { type: "foldLane", track: 11, target: { kind: "volume" }, folded: true },
+      { type: "addLane", home: { kind: "track", track: 11 }, target: { kind: "pan" } },
+      { type: "addLane", home: { kind: "track", track: 11 }, target: { kind: "send", bus: "a" } },
+      { type: "addLane", home: { kind: "track", track: 11 }, target: { kind: "mute" } },
+      { type: "addLane", home: { kind: "track", track: 11 }, target: { kind: "instrument", param: 1000 } },
+      { type: "addLane", home: { kind: "track", track: 11 }, target: { kind: "insert", insert: 5, param: 0 } },
+      { type: "deleteLane", home: { kind: "track", track: 11 }, target: { kind: "volume" } },
+      { type: "foldLane", home: { kind: "track", track: 11 }, target: { kind: "volume" }, folded: true },
       { type: "addAutoPoint", lane: 501, tick: 4 * BAR + 2 * TPQ, value: null },
       { type: "addAutoPoint", lane: 501, tick: 4 * BAR + 2 * TPQ, value: 0.52 },
       { type: "moveAutoPoints", lane: 501, points: [1, 2], dTick: TPQ, dValue: -0.05 },
       { type: "deleteAutoPoints", lane: 501, points: [1] },
       { type: "selectAutoPoints", lane: 501, points: [1, 2, 3] },
-      { type: "setLaneWrite", track: 11, target: { kind: "volume" }, on: true },
-      { type: "restoreLane", track: 11, target: { kind: "volume" } },
+      { type: "setLaneWrite", home: { kind: "track", track: 11 }, target: { kind: "volume" }, on: true },
+      { type: "restoreLane", home: { kind: "track", track: 11 }, target: { kind: "volume" } },
       { type: "historyJump", index: 11, step: 11 },
     ];
     expect(new Set(commands.map((c) => c.type)).size).toBe(10);
@@ -57,7 +57,7 @@ describe("step names (spec 3 (Y19))", () => {
   const filled = (e: Entry) => fill(e.text, e.example ?? {});
 
   it("every kind in the protocol has a name, and no name is outside the protocol (fails if even one step has no name)", () => {
-    expect(STEP_NAME_KINDS.length).toBe(89);
+    expect(STEP_NAME_KINDS.length).toBe(99);
     expect(names.map(([kind]) => kind).sort()).toEqual([...STEP_NAME_KINDS].sort());
     for (const [kind, e] of names) {
       expect(e.text.trim(), kind).not.toBe("");
@@ -114,6 +114,7 @@ describe("step names (spec 3 (Y19))", () => {
 
   it("temporary names of steps not in the list (builder; returned to the design in docs/history/design-notes.ja.md B-92). The other temporary names went into the chapter 3 list in version 11 (92-7)", () => {
     expect(Object.fromEntries(names.filter(([, e]) => e.source.startsWith("builder:")).map(([kind, e]) => [kind, e.text]))).toEqual({
+      clearComp: "いいとこ取りを外す",
       cutClips: "クリップを切り取る",
       cutNotes: "ノートを切り取る",
       importAudio: "音のファイルを入れる",
@@ -251,7 +252,10 @@ describe("fake scenes: automation", () => {
     expect(lanesOf(s, 1)[2]!.target).toEqual({ kind: "insert", insert: compressor.id, param: 0 });
     expect(new Set(s.song.tracks.flatMap((t) => t.slots).concat(s.song.returns.flatMap((r) => r.slots), s.song.master.slots).filter((i) => i !== null).map((i) => i.id)).has(0)).toBe(false);
     expect(s.automation).toEqual({
-      folded: [{ track: TRACK + 1, target: { kind: "pan" } }, { track: TRACK + 1, target: lanesOf(s, 1)[2]!.target }],
+      folded: [
+        { home: { kind: "track", track: TRACK + 1 }, target: { kind: "pan" } },
+        { home: { kind: "track", track: TRACK + 1 }, target: lanesOf(s, 1)[2]!.target },
+      ],
       armed: [volume(1)],
       writing: [{ lane: volume(1), fromTick: 5 * BAR + 2 * TPQ }],
       held: [],
@@ -274,7 +278,7 @@ describe("fake scenes: automation", () => {
     const auto = scene("mixerAuto").state;
     expect(auto.workspace.layout.lower.map((b) => b.band)).toEqual(["mixer"]);
     expect([lanesOf(auto, 1)[0]!.laneId, lanesOf(auto, 4)[0]!.laneId]).toEqual([501, 504]);
-    expect(auto.status.message).toEqual({ id: "automationMoving", tracks: [{ number: 1, name: "ピアノ" }, { number: 4, name: "パッド" }] });
+    expect(auto.status.message).toEqual({ id: "automationMoving", tracks: [{ number: 1, name: "ピアノ" }, { number: 4, name: "パッド" }], master: false });
     // At the play line (9.2.000), the 「1 ピアノ」 line is −2.4 dB (the mock's fader number), 「4 パッド」 is −10.5 dB.
     const t = createFakeTransport(auto);
     const piano = decodeLane(await t.lane(501));
@@ -336,36 +340,36 @@ describe("fake behavior", () => {
   it("fold / 「● 書く」 / choose / restore / add band / delete", async () => {
     const { t, state } = await connected("autoRest");
     const piano = TRACK + 1;
-    await t.send({ type: "foldLane", track: piano, target: { kind: "volume" }, folded: true });
+    await t.send({ type: "foldLane", home: { kind: "track", track: piano }, target: { kind: "volume" }, folded: true });
     expect(state().automation.folded.map((l) => l.target.kind)).toEqual(["pan", "insert", "volume"]);
     // A resting band does not turn to 「書く」. Restoring is 1 step, and the status line says so.
-    await t.send({ type: "setLaneWrite", track: piano, target: { kind: "volume" }, on: true });
+    await t.send({ type: "setLaneWrite", home: { kind: "track", track: piano }, target: { kind: "volume" }, on: true });
     expect(state().automation.armed).toEqual([]);
-    await t.send({ type: "restoreLane", track: piano, target: { kind: "volume" } });
+    await t.send({ type: "restoreLane", home: { kind: "track", track: piano }, target: { kind: "volume" } });
     expect(state().song.tracks[0]!.lanes[0]!.resting).toBe(false);
     expect([state().song.undoCount, state().history.total, state().history.current]).toEqual([18, 18, 18]);
     expect(state().status.message).toEqual({ id: "automationRestored", track: { number: 1, name: "ピアノ" }, target: { kind: "volume" } });
-    await t.send({ type: "setLaneWrite", track: piano, target: { kind: "volume" }, on: true });
+    await t.send({ type: "setLaneWrite", home: { kind: "track", track: piano }, target: { kind: "volume" }, on: true });
     expect(state().automation.armed).toEqual([volume(1)]);
     await t.send({ type: "selectAutoPoints", lane: 501, points: [3, 1, 2] });
     expect(state().automation.selected).toEqual({ laneId: 501, points: [{ start: 1, end: 4 }] });
     await t.send({ type: "selectAutoPoints", lane: 501, points: [] });
     expect(state().automation.selected).toBeNull();
 
-    await t.send({ type: "addLane", track: piano, target: { kind: "mute" } });
+    await t.send({ type: "addLane", home: { kind: "track", track: piano }, target: { kind: "mute" } });
     const mute = state().song.tracks[0]!.lanes.at(-1)!;
     expect([mute.name, mute.points, mute.step, mute.resting]).toEqual([{ kind: "mute" }, 0, true, false]);
     expect(decodeLane(await t.lane(mute.laneId)).ticks.length).toBe(0);
     // A band that exists only opens (not a step).
     const steps = state().song.undoCount;
-    await t.send({ type: "addLane", track: piano, target: { kind: "pan" } });
+    await t.send({ type: "addLane", home: { kind: "track", track: piano }, target: { kind: "pan" } });
     expect(state().automation.folded.some((l) => l.target.kind === "pan")).toBe(false);
     expect(state().song.undoCount).toBe(steps);
-    await t.send({ type: "deleteLane", track: piano, target: { kind: "volume" } });
+    await t.send({ type: "deleteLane", home: { kind: "track", track: piano }, target: { kind: "volume" } });
     expect(state().song.tracks[0]!.lanes.map((l) => l.name.kind)).toEqual(["pan", "builtin", "mute"]);
     expect(state().automation.armed).toEqual([]);
     // A track whose instrument is not a plugin cannot get an instrument parameter band.
-    await t.send({ type: "addLane", track: piano, target: { kind: "instrument", param: 1 } });
+    await t.send({ type: "addLane", home: { kind: "track", track: piano }, target: { kind: "instrument", param: 1 } });
     expect(state().song.tracks[0]!.lanes).toHaveLength(3);
   });
 
@@ -423,8 +427,8 @@ describe("status line text", () => {
 
   it("mock F6-MixerAuto text, and temporary forms", () => {
     expect(says(scene("mixerAuto").state.status.message!, scene("mixerAuto").state)).toBe("1 ピアノ と 4 パッド の音量は、オートメーションで動いています");
-    expect(says({ id: "automationMoving", tracks: [piano] })).toBe("1 ピアノ の音量は、オートメーションで動いています");
-    expect(says({ id: "automationMoving", tracks: [piano, { number: 2, name: "ベース" }, pad] })).toBe("1 ピアノ、2 ベース と 4 パッド の音量は、オートメーションで動いています");
+    expect(says({ id: "automationMoving", tracks: [piano], master: false })).toBe("1 ピアノ の音量は、オートメーションで動いています");
+    expect(says({ id: "automationMoving", tracks: [piano, { number: 2, name: "ベース" }, pad], master: false })).toBe("1 ピアノ、2 ベース と 4 パッド の音量は、オートメーションで動いています");
     // A step with no (what) shows no parentheses.
     expect(says({ id: "undone", name: { kind: "recovered" }, what: { kind: "none" } })).toBe("「なおすためのファイルから戻す」を取り消しました。やりなおすには Ctrl Shift Z");
     expect(says({ id: "redone", name: { kind: "pluginWindow", plugin: "Surge XT" }, what: { kind: "none" } })).toBe("「Surge XT の窓で変えた所」をやりなおしました。");

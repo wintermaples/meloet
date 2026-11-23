@@ -298,6 +298,7 @@ fn with_new_clip(
             offset: 0,
         }]),
         active: 0,
+        comp: Vec::new(),
     });
     let mut clips = old.clips.clone();
     let at = clips.partition_point(|c| c.start < start);

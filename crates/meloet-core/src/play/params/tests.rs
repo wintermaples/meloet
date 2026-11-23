@@ -440,7 +440,12 @@ fn the_plugin_the_panel_shows_is_watched_and_its_lanes_are_the_rows_written() {
     r.cmd(Command::SelectInsert { insert: None });
     r.settle();
     r.host.watches.clear();
-    let lane = |r: &mut Rig, target| r.cmd(Command::AddLane { track, target });
+    let lane = |r: &mut Rig, target| {
+        r.cmd(Command::AddLane {
+            home: meloet_protocol::LaneHome::Track { track },
+            target,
+        })
+    };
 
     // Nothing is watched while the panel shows no plugin, lanes or not.
     lane(&mut r, AutoTarget::Instrument { param: MODE });
@@ -500,7 +505,12 @@ fn the_names_of_the_lanes_parameters_come_whatever_the_panel_shows() {
     let insert = r.m.view().song.tracks[0].slots[0].as_ref().unwrap().id;
     r.cmd(Command::SelectInsert { insert: None });
     r.settle();
-    let lane = |r: &mut Rig, target| r.cmd(Command::AddLane { track, target });
+    let lane = |r: &mut Rig, target| {
+        r.cmd(Command::AddLane {
+            home: meloet_protocol::LaneHome::Track { track },
+            target,
+        })
+    };
 
     // The panel shows nothing: the plugin is asked for its list, once.
     let effects = lane(&mut r, AutoTarget::Instrument { param: MODE });
@@ -546,7 +556,10 @@ fn the_names_of_the_lanes_parameters_come_whatever_the_panel_shows() {
 
     // The rows of the history name the parameter too, also of a lane that is gone.
     let target = AutoTarget::Instrument { param: MODE };
-    r.cmd(Command::DeleteLane { track, target });
+    r.cmd(Command::DeleteLane {
+        home: meloet_protocol::LaneHome::Track { track },
+        target,
+    });
     let rows = r.m.history_rows(1, 99);
     let named: Vec<(StepName, Option<String>)> = (rows.into_iter())
         .filter_map(|row| match row.what {

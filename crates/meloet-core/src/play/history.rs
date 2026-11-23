@@ -75,6 +75,19 @@ impl Around<'_> {
             })
     }
 
+    /// A2: the section of `marker`, named by the marker as it was before the step (or after
+    /// it, for one the step made).
+    fn section(&self, marker: meloet_model::MarkerId, bars: u32) -> StepWhat {
+        let name = (self.before.marker(marker)).or_else(|| self.after.marker(marker));
+        match name {
+            Some(m) => StepWhat::Section {
+                name: m.name.clone(),
+                bars,
+            },
+            None => StepWhat::None,
+        }
+    }
+
     fn clip_track(&self, clip: ClipId) -> Option<StepPlace> {
         let (track, _) = self.after.clip(clip).or_else(|| self.before.clip(clip))?;
         Some(StepPlace::Track {
@@ -1078,6 +1091,70 @@ pub(crate) fn step_text(row: &StepRow) -> (StepName, StepWhat, Option<StepPlace>
         ),
         StepKind::Recovered => (StepName::Recovered, StepWhat::None, None),
         StepKind::DiscardRecovered => (StepName::DiscardRecovered, StepWhat::None, None),
+        // Round 12, waves 3 and 4.
+        StepKind::SetArp { track } => (
+            StepName::SetArp,
+            StepWhat::Track {
+                track: a.track(track),
+            },
+            on_track(track),
+        ),
+        StepKind::SetSoundKnob { track, knob } => {
+            let value = |doc: &Doc| doc.track(track).map(|t| t.knobs.get(knob));
+            (
+                StepName::SetSoundKnob,
+                match (value(a.before), value(a.after)) {
+                    (Some(from), Some(to)) => StepWhat::SoundKnob {
+                        track: a.track(track),
+                        knob: super::wave3::knob_view(knob),
+                        from,
+                        to,
+                    },
+                    _ => StepWhat::Track {
+                        track: a.track(track),
+                    },
+                },
+                on_track(track),
+            )
+        }
+        StepKind::DuplicateSection { marker, bars } => {
+            (StepName::DuplicateSection, a.section(marker, bars), arrange)
+        }
+        StepKind::DeleteSection { marker, bars } => {
+            (StepName::DeleteSection, a.section(marker, bars), arrange)
+        }
+        StepKind::InsertSpace { marker, bars } => {
+            (StepName::InsertSpace, a.section(marker, bars), arrange)
+        }
+        StepKind::Bounce { track } => (
+            StepName::Bounce,
+            StepWhat::Track {
+                track: a.track(track),
+            },
+            arrange,
+        ),
+        StepKind::AddFadeOut { range } => (
+            StepName::AddFadeOut,
+            StepWhat::Bars {
+                span: Around::bars(a.after, range),
+            },
+            Some(StepPlace::Master),
+        ),
+        StepKind::SetComp { clip } => (
+            StepName::SetComp,
+            named(a.after.clip(clip).map(|(_, c)| c.name.clone())),
+            a.clip_track(clip),
+        ),
+        StepKind::ClearComp { clip } => (
+            StepName::ClearComp,
+            named(a.after.clip(clip).map(|(_, c)| c.name.clone())),
+            a.clip_track(clip),
+        ),
+        StepKind::SetClipTune { clip } => (
+            StepName::SetClipTune,
+            named(a.after.clip(clip).map(|(_, c)| c.name.clone())),
+            a.clip_track(clip),
+        ),
     }
 }
 

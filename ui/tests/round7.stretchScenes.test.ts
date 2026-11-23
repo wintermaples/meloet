@@ -152,7 +152,7 @@ describe("the 4 rows of stretch and pitch (protocol 25 scenes)", () => {
     unmount(mounted!);
     mounted = null;
     const other = scene("stretchRendering");
-    other.audioWork = { jobs: [{ kind: "rendering", audio: 1, clip: 9999, percent: 34 }] };
+    other.audioWork = { jobs: [{ kind: "rendering", audio: 1, clip: 9999, percent: 34 }], bounce: null };
     panel(other);
     expect(q('[data-test="clip-rendering"]')).toBeNull();
   });
@@ -160,7 +160,7 @@ describe("the 4 rows of stretch and pitch (protocol 25 scenes)", () => {
 
 describe("text rules", () => {
   it("mark: × has 2 decimals and 1.00 is not shown. Pitch is 「+2」「−1 ・ +30」「+0 ・ −20」 (cents have a sign too; spec 3, how to read the mark), not shown when 0", () => {
-    const base = { follow: true, sourceBpm: 96, ratio: null, semitones: 0, cents: 0, keepFormant: true };
+    const base = { follow: true, sourceBpm: 96, ratio: null, semitones: 0, cents: 0, keepFormant: true, tune: null };
     expect(clipMarks(base)).toBe(NO_MARKS);
     expect(clipMarks({ ...base, ratio: 1.25, semitones: 2 })).toEqual(["×1.25", "+2"]);
     expect(clipMarks({ ...base, ratio: 1.004, semitones: -1, cents: 30 })).toEqual(["−1 ・ +30"]);

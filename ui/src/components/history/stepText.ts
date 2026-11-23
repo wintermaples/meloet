@@ -49,6 +49,8 @@ export function laneNameText(name: LaneName): string {
       return name.param === null
         ? t("lane.pluginParam", { plugin: spaced(name.plugin) })
         : t("lane.param", { effect: spaced(name.plugin), param: name.param });
+    case "knob":
+      return t(`knob.${name.knob}`);
   }
 }
 
@@ -156,6 +158,12 @@ export function stepWhatText(name: StepName, what: StepWhat, ctx: StepContext): 
     // 「歌 テイク 1 ・ −3.0 → 0.0 dB」: the same form as a mixer gain step (provisional; spec 3 (92-3) has no clip gain).
     case "clipGain":
       return t("history.gain", { strip: what.name, from: faderText(what.fromDb), to: faderText(what.toDb) });
+    // round12 stub: E3 (the knob and its values)
+    case "soundKnob":
+      return trackLabel(what.track);
+    // round12 stub: A2 (the bars)
+    case "section":
+      return what.name;
   }
 }
 
@@ -174,6 +182,8 @@ export function stepPlaceText(place: StepPlace | null, ctx: StepContext): string
       return trackLabel(place.track);
     case "pluginWindow":
       return t("history.placePluginWindow", { strip: stripText(place.strip, ctx) });
+    case "master":
+      return t("mixer.master");
   }
 }
 

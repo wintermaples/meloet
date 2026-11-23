@@ -47,10 +47,10 @@ describe("fake scenes (mock F7-Stretch, spec 3 (28-A, Y22))", () => {
   it("stretch: a clip sung at 76.80 follows a 96.00 song (×1.25), +2 semitones. The sound is ready", () => {
     const s = scene("stretch").state;
     const audio = audioOf(s);
-    expect(audio.stretch).toEqual({ follow: true, sourceBpm: 76.8, ratio: 1.25, semitones: 2, cents: 0, keepFormant: true });
+    expect(audio.stretch).toEqual({ follow: true, sourceBpm: 76.8, ratio: 1.25, semitones: 2, cents: 0, keepFormant: true, tune: null });
     expect(audio.sourceTempo).toEqual({ tempoBpm: 76.8, headRamp: false, tempoPoints: [] });
     expect(s.audioWork.jobs).toEqual([]);
-    expect(s.params.selected).toEqual({ kind: "clip", track: vocalOf(s).id, clip: CLIP, missing: null });
+    expect(s.params.selected).toEqual({ kind: "clip", track: vocalOf(s).id, clip: CLIP, missing: null, tuneUsable: false });
     expect(s.arrange.selectedClips).toEqual([CLIP]);
   });
 
@@ -65,12 +65,12 @@ describe("fake scenes (mock F7-Stretch, spec 3 (28-A, Y22))", () => {
 
   it("stretchPitch: pitch only (−1, 30). The recorded tempo stays, so the ratio is 1 (no mark)", () => {
     const audio = audioOf(scene("stretchPitch").state);
-    expect(audio.stretch).toEqual({ follow: true, sourceBpm: 96, ratio: 1, semitones: -1, cents: 30, keepFormant: false });
+    expect(audio.stretch).toEqual({ follow: true, sourceBpm: 96, ratio: 1, semitones: -1, cents: 30, keepFormant: false, tune: null });
   });
 
   it("stretchNoTempo: an imported file. Does not follow, the source tempo is 「—」 (null), no ratio or point list", () => {
     const audio = audioOf(scene("stretchNoTempo").state);
-    expect(audio.stretch).toEqual({ follow: false, sourceBpm: null, ratio: null, semitones: 0, cents: 0, keepFormant: true });
+    expect(audio.stretch).toEqual({ follow: false, sourceBpm: null, ratio: null, semitones: 0, cents: 0, keepFormant: true, tune: null });
     expect(audio.sourceTempo).toBeNull();
     expect(audio.file).toBe("ドラム.wav");
   });
@@ -100,7 +100,7 @@ describe("fake scenes (mock F7-Stretch, spec 3 (28-A, Y22))", () => {
   it("older scenes: a recorded song is 96.00 with ratio 1. Clips that do not follow have no ratio or point list", () => {
     const edit = scene("audioEdit").state;
     for (const clip of vocalOf(edit).clips) {
-      expect(clip.audio!.stretch).toEqual({ follow: true, sourceBpm: 96, ratio: 1, semitones: 0, cents: 0, keepFormant: true });
+      expect(clip.audio!.stretch).toEqual({ follow: true, sourceBpm: 96, ratio: 1, semitones: 0, cents: 0, keepFormant: true, tune: null });
       expect(clip.audio!.sourceTempo).toEqual({ tempoBpm: 96, headRamp: false, tempoPoints: [] });
     }
     const kinds = vocalOf(scene("audioKinds").state).clips;

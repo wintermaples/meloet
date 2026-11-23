@@ -91,5 +91,15 @@ export const STEP_NAME_KINDS: readonly StepName["kind"][] = [
   "placePattern",
   "repeatClips",
   "applyPreset",
-  "lowerAll"
+  "lowerAll",
+  "setArp",
+  "setSoundKnob",
+  "duplicateSection",
+  "deleteSection",
+  "insertSpace",
+  "bounce",
+  "addFadeOut",
+  "setComp",
+  "clearComp",
+  "setClipTune"
 ];

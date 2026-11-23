@@ -80,7 +80,7 @@ describe("selected clip panel (spec 3 (93-4), mock F7-AudioEdit)", () => {
 
   it("a file with a different sample rate shows 「44100 Hz（曲に合わせて鳴らします）」; formats with no bits do not show it", () => {
     const s = scene("audioLoading");
-    s.params.selected = { kind: "clip", track: vocalRow(s).vocal.id, clip: 70, missing: null };
+    s.params.selected = { kind: "clip", track: vocalRow(s).vocal.id, clip: 70, missing: null, tuneUsable: false };
     show(ParamsPanel, s, { onfold: () => {} });
     expect(text(q('[data-test="clip-file"]'))).toBe("6 歌 ・ ドラム.mp3 ・ 44100 Hz（曲に合わせて鳴らします）");
     expect(text(q('[data-test="clip-source-tempo"]'))).toBe("この音のテンポ さがす —");

@@ -20,4 +20,8 @@ clip: number,
  * (`Command::FindAudio`) and 「曲から外す」 (`Command::RemoveMissing`) in place of the
  * groups.
  */
-missing: MissingAudioView | null, };
+missing: MissingAudioView | null, 
+/**
+ * Round 12 M7: the row 「音程を寄せる」 can be used; `false` shows it disabled.
+ */
+tuneUsable: boolean, };

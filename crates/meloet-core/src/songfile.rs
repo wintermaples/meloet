@@ -169,6 +169,13 @@ struct ShapeFile {
     semitones: i8,
     cents: i8,
     keep_formant: bool,
+    /// Round 12 M7 (`wave3`).
+    #[serde(
+        default,
+        deserialize_with = "or_default",
+        skip_serializing_if = "Option::is_none"
+    )]
+    tune: Option<wave3::TuneFile>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -306,6 +313,19 @@ struct TrackFile {
     /// once the inserts have their ids.
     #[serde(default)]
     automation: Vec<serde_json::Value>,
+    /// Round 12 E2 and E3 (`wave3`).
+    #[serde(
+        default,
+        deserialize_with = "or_default",
+        skip_serializing_if = "Option::is_none"
+    )]
+    arp: Option<wave3::ArpFile>,
+    #[serde(
+        default,
+        deserialize_with = "or_default",
+        skip_serializing_if = "Option::is_none"
+    )]
+    knobs: Option<wave3::KnobsFile>,
 }
 
 /// `{"target": {"kind": "volume"}, "step": false, "resting": false, "points": [[0, 0.8],
@@ -474,6 +494,9 @@ struct MasterFile {
     pan: i64,
     #[serde(default)]
     inserts: Vec<SlotFile>,
+    /// Round 12 M5: the lanes of the master's volume (`wave3`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    automation: Vec<serde_json::Value>,
 }
 
 fn unity() -> Option<f64> {
@@ -743,6 +766,7 @@ fn mixer_file(doc: &Doc) -> MixerFile {
             gain_db: doc.master.gain.db(),
             pan: i64::from(doc.master.pan.get()),
             inserts: slots_file(&doc.master.inserts),
+            automation: wave3::master_lanes_file(&doc.master_lanes),
         },
     }
 }
@@ -949,6 +973,13 @@ struct ClipFile {
     /// On a vocal clip, whose takes are then ids of `audioTakes`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     shape: Option<ShapeFile>,
+    /// Round 12 A8 (`wave3`).
+    #[serde(
+        default,
+        deserialize_with = "or_default",
+        skip_serializing_if = "Option::is_none"
+    )]
+    comp: Option<Vec<(u64, usize)>>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1202,7 +1233,9 @@ pub fn encode(song: &Song) -> Vec<u8> {
                         semitones: s.semitones,
                         cents: s.cents,
                         keep_formant: s.keep_formant,
+                        tune: wave3::tune_file(s.tune),
                     }),
+                    comp: Some(wave3::comp_file(c)).filter(|p| !p.is_empty()),
                 })
                 .collect(),
             plugins: Vec::new(),
@@ -1217,6 +1250,8 @@ pub fn encode(song: &Song) -> Vec<u8> {
                     serde_json::to_value(file).expect("a lane always serializes")
                 })
                 .collect(),
+            arp: wave3::arp_file(&t.arp),
+            knobs: wave3::knobs_file(&t.knobs),
         })
         .collect();
     let s = &song.session;
@@ -1584,7 +1619,10 @@ fn to_song(file: SongFile) -> Option<Song> {
             return None;
         }
     }
-    let (returns, master) = d.mixer.map(|m| (m.returns, m.master)).unzip();
+    let (returns, mut master) = d.mixer.map(|m| (m.returns, m.master)).unzip();
+    let master_lane_files = (master.as_mut())
+        .map(|m| std::mem::take(&mut m.automation))
+        .unwrap_or_default();
     let tracks_n = d.tracks.len();
     if tracks_n > MAX_TRACKS {
         return None;
@@ -1650,6 +1688,7 @@ fn to_song(file: SongFile) -> Option<Song> {
                         semitones: shape.semitones,
                         cents: shape.cents,
                         keep_formant: shape.keep_formant,
+                        tune: wave3::tune_of(shape.tune.as_ref()),
                     };
                     let fades = shape.fade_in.checked_add(shape.fade_out)?;
                     (shape.is_valid() && fades <= c.end - c.start).then_some(())?;
@@ -1669,6 +1708,12 @@ fn to_song(file: SongFile) -> Option<Song> {
                     }
                 }
             };
+            let comp = wave3::comp_of(
+                c.comp.unwrap_or_default(),
+                kind.is_vocal(),
+                c.end - c.start,
+                c.takes.len(),
+            );
             clips.push(Arc::new(Clip {
                 id: ClipId(c.id),
                 name: c.name,
@@ -1676,6 +1721,7 @@ fn to_song(file: SongFile) -> Option<Song> {
                 end: c.end,
                 takes: clip_takes,
                 active: c.active,
+                comp,
             }));
         }
         tracks.push(Arc::new(Track {
@@ -1693,6 +1739,8 @@ fn to_song(file: SongFile) -> Option<Song> {
             muted: t.muted,
             clips,
             automation: Vec::new(),
+            arp: wave3::arp_of(t.arp),
+            knobs: wave3::knobs_of(t.knobs),
         }));
         lane_files.push(t.automation);
     }
@@ -1777,6 +1825,7 @@ fn to_song(file: SongFile) -> Option<Song> {
             }),
             None => mixer::new_song_master(),
         },
+        master_lanes: Vec::new(),
         audio: Arc::new(audio_table),
         next_id: d.next_id,
     };
@@ -1804,6 +1853,7 @@ fn to_song(file: SongFile) -> Option<Song> {
         let track = Arc::make_mut(slot);
         track.automation = lanes_of(track, files, &mut doc.next_id)?;
     }
+    doc.master_lanes = wave3::master_lanes_of(master_lane_files, &mut doc.next_id)?;
     let known = |id: u32| track_ids.contains(&id).then_some(TrackId(id));
     let roll = roll_settings(&s);
     let session = Session {
@@ -2021,3 +2071,6 @@ fn sync_dir(_: &Path) -> io::Result<()> {
 mod tests;
 #[cfg(test)]
 mod vocal_tests;
+mod wave3;
+#[cfg(test)]
+mod wave3_tests;

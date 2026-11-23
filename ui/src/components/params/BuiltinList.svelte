@@ -59,7 +59,7 @@
     return {
       on: tr !== null && target !== null && laneOf(tr, target) !== undefined,
       usable: tr !== null && target !== null && !busy,
-      add: () => tr && target && send({ type: "addLane", track: tr.id, target }),
+      add: () => tr && target && send({ type: "addLane", home: { kind: "track", track: tr.id }, target }),
     };
   }
   /** The value the band moves (the bar position in the params panel → value). */

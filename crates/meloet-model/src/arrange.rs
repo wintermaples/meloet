@@ -605,6 +605,7 @@ pub fn join_clips(doc: &Doc, clips: &[ClipId]) -> Result<(Edit, ClipId), EditErr
             offset: 0,
         }]),
         active: 0,
+        comp: Vec::new(),
     });
     let mut kept = track.clips.clone();
     kept.splice(low..=high, [clip]);

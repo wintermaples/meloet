@@ -48,6 +48,8 @@ fn two_tracks() -> Doc {
         muted: false,
         clips: Vec::new(),
         automation: Vec::new(),
+        arp: Default::default(),
+        knobs: Default::default(),
     }));
     doc
 }
@@ -1004,6 +1006,7 @@ fn an_audio_clip_repeats_with_its_takes_and_shape() {
             shape,
         },
         active: 0,
+        comp: Vec::new(),
     };
     doc.tracks[1] = Arc::new(Track {
         kind: TrackKind::Vocal {

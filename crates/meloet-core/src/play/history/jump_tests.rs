@@ -422,7 +422,7 @@ fn act(w: &mut World, rng: &mut Rng, round: usize, ctx: &str) {
             }
         }
         37 => commands.push(Command::AddLane {
-            track,
+            home: meloet_protocol::LaneHome::Track { track },
             target: match rng.below(2) {
                 0 => AutoTarget::Volume,
                 _ => AutoTarget::Pan,

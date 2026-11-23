@@ -1954,12 +1954,16 @@ impl Play {
                     take_id: c.active_take_id().0,
                     take_offset: c.active_zero() - c.start as i64,
                     note_count: c.note_count() as u32,
-                    audio: c.active_audio().and_then(|take| {
-                        let source = &take.take.source;
-                        let (state, resampled) =
-                            (self.audio_state(source), self.audio_resampled(source));
-                        vocal::audio_clip_view(c, &map, state, resampled)
-                    }),
+                    audio: c
+                        .active_audio()
+                        .and_then(|take| {
+                            let source = &take.take.source;
+                            let (state, resampled) =
+                                (self.audio_state(source), self.audio_resampled(source));
+                            vocal::audio_clip_view(c, &map, state, resampled)
+                        })
+                        .map(|a| self.with_takes(a, c)),
+                    comp: wave3::comp_view(c),
                 })
                 .collect()
         })
@@ -2892,6 +2896,7 @@ mod sounds;
 mod timeline;
 mod tracks;
 pub(crate) mod vocal;
+pub(crate) mod wave3;
 mod windows;
 
 pub use audio::ClipGains;

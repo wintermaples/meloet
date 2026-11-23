@@ -243,6 +243,19 @@ fn every_step_kind() -> Vec<StepKind> {
             kind,
         },
         LowerAll { count: 4 },
+        SetArp { track },
+        SetSoundKnob {
+            track,
+            knob: meloet_model::SoundKnob::Brightness,
+        },
+        DuplicateSection { marker, bars: 8 },
+        DeleteSection { marker, bars: 8 },
+        InsertSpace { marker, bars: 4 },
+        Bounce { track },
+        AddFadeOut { range },
+        SetComp { clip },
+        ClearComp { clip },
+        SetClipTune { clip },
     ];
     for kind in &all {
         match kind {
@@ -344,7 +357,17 @@ fn every_step_kind() -> Vec<StepKind> {
             | PlacePattern { .. }
             | RepeatClips { .. }
             | ApplyPreset { .. }
-            | LowerAll { .. } => {}
+            | LowerAll { .. }
+            | SetArp { .. }
+            | SetSoundKnob { .. }
+            | DuplicateSection { .. }
+            | DeleteSection { .. }
+            | InsertSpace { .. }
+            | Bounce { .. }
+            | AddFadeOut { .. }
+            | SetComp { .. }
+            | ClearComp { .. }
+            | SetClipTune { .. } => {}
         }
     }
     all
@@ -496,7 +519,7 @@ fn the_history_section_counts_and_the_rows_say_what_each_step_did() {
     cmd(
         &mut m,
         Command::AddLane {
-            track: 1,
+            home: meloet_protocol::LaneHome::Track { track: 1 },
             target: meloet_protocol::AutoTarget::Volume,
         },
     );

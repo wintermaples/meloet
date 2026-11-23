@@ -4,4 +4,4 @@
  * What `Command::SetClipStretch` changes: one row of the group 「のび縮み ・ 音の高さ」. A
  * number outside its range is put into it; one that is not a number does nothing.
  */
-export type StretchChange = { "kind": "follow", on: boolean, } | { "kind": "sourceBpm", bpm: number, } | { "kind": "semitones", semitones: number, } | { "kind": "cents", cents: number, } | { "kind": "keepFormant", on: boolean, };
+export type StretchChange = { "kind": "follow", on: boolean, } | { "kind": "sourceBpm", bpm: number, } | { "kind": "semitones", semitones: number, } | { "kind": "cents", cents: number, } | { "kind": "keepFormant", on: boolean, } | { "kind": "tuneStrength", percent: number, } | { "kind": "tuneScale" };

@@ -23,6 +23,7 @@ meloet は、MIDI 鍵盤を買ったばかりの人のための DAW です。こ
 |---|---|
 | `/usr/bin/meloet` | meloet 本体 |
 | `/usr/bin/meloet-plughost` | プラグインを動かす係（meloet が自分で起こします。じかに起動する物ではありません） |
+| `/usr/bin/meloet-mcp` | AI のアプリと meloet をつなぐ橋（AI のアプリが起こします。じかに起動する物ではありません。「AI とつなぐ」を見てください） |
 | `/usr/share/applications/meloet.desktop` | アプリの一覧に出すための物 |
 | `/usr/share/doc/meloet/` | ライセンス（`LICENSE-MIT`、`LICENSE-APACHE`）と、使っている部品の帰属表示（`NOTICE`） |
 
@@ -77,7 +78,7 @@ AI のアプリ（Claude Code や Claude Desktop など、MCP という約束で
 
 ### AI のアプリに登録する
 
-AI のアプリが `/usr/bin/meloet-mcp` を起こし、それが meloet の口につなぎます。meloet を先に起動して、「AI とつなぐ」をオンにしておいてください。
+AI のアプリが `/usr/bin/meloet-mcp` を起こし、それが meloet の口につなぎます。AI のアプリを先に起動してもかまいません。meloet で「AI とつなぐ」をオンにすると、次に AI に頼んだときに、ひとりでにつながります。録音中と書き出し中は、AI は曲を変えられません。
 
 Claude Code では、端末で次を 1 回打ちます。
 

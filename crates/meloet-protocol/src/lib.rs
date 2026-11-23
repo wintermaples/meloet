@@ -64,7 +64,7 @@ pub use vocal::{
     VocalRef,
 };
 
-pub const PROTOCOL_VERSION: u32 = 27;
+pub const PROTOCOL_VERSION: u32 = 28;
 
 /// Screen → Rust. Intent only; Rust decides what the state becomes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -208,8 +208,13 @@ pub enum Command {
     /// the song's markers with this one. The marker is selected and its name field is open
     /// (`TimelineView::renaming`); the status line says `StatusMessage::MarkerAdded`. Markers
     /// may share a tick.
+    ///
+    /// `tick`: `None` for K. `Some` for a double click on an empty place of the marker row and
+    /// 「ここにマーカーを足す」 of its right-click menu: the marker goes there, snapped by Rust
+    /// to the nearest head of a beat; otherwise as K.
     AddMarker {
         name: String,
+        tick: Option<u64>,
     },
     /// A double click on a marker, F2 on the selected one, "名前を変える": opens its name
     /// field (`TimelineView::renaming`) and selects it. No step.
@@ -619,6 +624,20 @@ pub enum Command {
         key: u8,
         velocity: u8,
     },
+    /// The chord stamp of the write tool: a note on each of `keys`, all from `start` and
+    /// `length` long, as one step named as `AddNote`'s (`StepName::WriteNote`, 「（何を）」 the
+    /// count of notes). As `AddNote` otherwise: a note past the clip makes the clip longer, and
+    /// `take: None` makes a clip. Keys past 127 are left out, and a key given twice is written
+    /// once; with the scale locked (not on a drum kit), keys outside it are left out, as
+    /// `Audition` does. With no key left it does nothing, but says
+    /// `StatusMessage::OutOfScale` for the first key when the scale left them all out.
+    AddNotes {
+        take: Option<u32>,
+        start: u64,
+        length: u64,
+        keys: Vec<u8>,
+        velocity: u8,
+    },
     /// A drag, ← → (a grid step), ↑ ↓ (1 or 12 keys). `copy`: Alt + drag and Mod D (the copies
     /// are selected afterwards).
     MoveNotes {
@@ -835,6 +854,13 @@ pub enum Command {
     SetVelocityFixed {
         on: bool,
         value: u8,
+    },
+    /// 「重ねる」 of the transport band (`TransportView::overdub`). While on, recording on a keys
+    /// track adds the notes to the shown take of the clip it overlaps, one step for each pass
+    /// of the loop, instead of making new takes; vocal tracks record takes all the same. A
+    /// meloet setting (settings.json), not part of the song, and not a step.
+    SetOverdub {
+        on: bool,
     },
     /// Mod Shift S and the file menu (B-59). Rust shows the PC's save window, titled
     /// "名前をつけて保存", with the song's name filled in. The folder `<name>/<name>.meloet` is made
@@ -1133,6 +1159,44 @@ pub enum Command {
     /// While playing the line is where it is heard when Rust takes the command. Not while
     /// counting in or recording.
     SplitClips,
+    /// 「ここで切る」 of the right-click menu of a clip: cuts `clip` in two at `tick`, which the
+    /// screen has snapped to the lines the ruler shows. Otherwise as `SplitClips` for that one
+    /// clip: the same step name (`StepName::SplitClips`), `StatusMessage::ClipSplit`, the right
+    /// half selected. Nothing happens when `tick` is not inside the clip. Not while counting
+    /// in or recording.
+    SplitClipAt {
+        clip: u32,
+        tick: u64,
+    },
+    /// Mod J, 「つなげる」 of the right-click menu of a clip and 「編集 ▸ クリップをつなげる」:
+    /// two or more keys clips of one track become one clip, which keeps the id and the name of
+    /// the earliest. The gaps between them become empty parts of the clip. The clip has one
+    /// take: the shown takes joined; the other takes are not kept (undo brings them back).
+    /// Nothing happens with fewer than two clips, a vocal clip among them, or clips of
+    /// different tracks. One step (`StepName::JoinClips`, 「（何を）」 the count of clips). Not
+    /// while counting in or recording.
+    JoinClips {
+        clips: Vec<u32>,
+    },
+    /// Enter in the name field of a clip, keys or vocal (pressing its name twice, F2 with the
+    /// clip selected, 「名前を変える」 of the right-click menu, the name in the panel
+    /// 「選んだクリップ」). Spaces around the name are left out. An empty name, or one of spaces
+    /// only, or the same name, keeps the old name and is no step. One step
+    /// (`StepName::RenameClip`, 「（何を）」 `StepWhat::Renamed`).
+    RenameClip {
+        clip: u32,
+        name: String,
+    },
+    /// A double click on an empty place of a keys track in the arrange, and 「ここにクリップを
+    /// 作る」 of its right-click menu: an empty clip from the head of the bar of `tick`, 4 bars
+    /// long or up to the next clip, named after the track, as one step
+    /// (`StepName::WriteClip`). The clip is selected, and the piano roll opens and shows it.
+    /// Nothing happens when `tick` is inside a clip, or on a vocal track. Not while counting
+    /// in or recording.
+    CreateClip {
+        track: u32,
+        tick: u64,
+    },
     /// A value of a vocal clip, as one step: the end of a drag of the volume line or of a
     /// fade handle, a double click on the volume line (`GainDb` 0), and a value typed into
     /// the panel 「選んだクリップ」. `value` is ticks, or dB for `GainDb`. Rust puts it into
@@ -2165,6 +2229,8 @@ pub struct TransportView {
     /// `None`: every block of the vocal recording going on, or of the last one, is what
     /// came in.
     pub recording_faults: Option<RecordingFaults>,
+    /// 「重ねる」 (`Command::SetOverdub`).
+    pub overdub: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -3501,3 +3567,5 @@ mod tests25;
 mod tests26;
 #[cfg(test)]
 mod tests27;
+#[cfg(test)]
+mod tests28;

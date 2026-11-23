@@ -12,6 +12,7 @@ import { FLUID, emptyLibrary, fullLibrary, lv2Key, row as pluginRow, vst3Key } f
 import { FAKE_TABLES, FakeParamTables, SURGE_AUTOMATED, fakeParamCount } from "./fakeParams";
 import { FAKE_SONG_BPM, fakeAudioClip, fakePeaks, fakeStretch, fakeVocalClip, steadyTempo, type FakeAudio } from "./fakeAudio";
 import { advancePack, fakeClipsPanel, fakeSolo, fakeSounds, packAsking, packFailed, packFetching, reduceClips27, reducePack, withPack } from "./fakeRound8";
+import { reduceRound10 } from "./fakeRound10";
 import {
   CLIP_CENTS_MAX,
   CLIP_SEMITONES_MAX,
@@ -573,6 +574,7 @@ export function fakeState(): AppState {
       recording: null,
       recordingVocals: [],
       recordingFaults: null,
+      overdub: false,
     },
     arrange: arrangeOf(null),
     pianoRoll: {
@@ -760,7 +762,7 @@ function songDialog(kind: SongDialogKind, title = "はじめての曲", previous
 /** Ticks in a bar of 4/4. */
 const BAR = 4 * TPQ;
 
-interface FakeTake {
+export interface FakeTake {
   id: number;
   length: number;
   /** The take a quantized take was made from. */
@@ -4937,6 +4939,8 @@ export function createFakeTransport(initial?: AppState): Transport {
   const clipboard: FakeClipboard = { clips: [] };
   const vocalMemo: FakeVocalMemo = { monitorSaid: false };
   const tables = new FakeParamTables();
+  // The rows of the history band: the scene's, and those of the steps the fake made since.
+  const historyRows: HistoryRow[] = [...(scene?.history ?? [])];
   let rev = 1;
   let listener: ((message: ServerMessage) => void) | null = null;
   const start = performance.now();
@@ -4981,13 +4985,19 @@ export function createFakeTransport(initial?: AppState): Transport {
       return { rev, state };
     },
     async send(command) {
+      const round10 = reduceRound10(state, bands, command, FAKE_TAKES);
+      if (round10?.row) {
+        historyRows.length = Math.min(historyRows.length, round10.row.index - 1);
+        historyRows[round10.row.index - 1] = round10.row;
+      }
       const changes =
+        round10?.changes ??
         reducePack(state, command) ??
         reduceClips27(state, command) ??
         reduceExport(state, command) ??
         reduceAudio(state, command) ??
         reduceRound7(state, command, vocalMemo) ??
-        reduceRound6(state, command, scene?.history ?? []) ??
+        reduceRound6(state, command, historyRows) ??
         reduce(state, bands, rest, command, clipboard, nowUs());
       // Two or more vocal clips selected: the panel 「まとめて変える」 in place of the one clip's.
       const arranged = (changes.find((c) => c.section === "arrange")?.value ?? state.arrange) as ArrangeView;
@@ -5048,7 +5058,7 @@ export function createFakeTransport(initial?: AppState): Transport {
       return fakePeaks(file, level, first, count);
     },
     async historyRows(from, to) {
-      return fakeHistoryRows(scene?.history ?? [], state.history.total, from, to);
+      return fakeHistoryRows(historyRows, state.history.total, from, to);
     },
     async liveNotes() {
       return scene?.live ?? NO_LIVE;

@@ -57,7 +57,7 @@ describe("手の名前（仕様書 3 章 Y19）", () => {
   const filled = (e: Entry) => fill(e.text, e.example ?? {});
 
   it("約束のどの種類にも名前があり、約束にない名前はない（名前のない手が 1 つでもあると落ちる）", () => {
-    expect(STEP_NAME_KINDS.length).toBe(74);
+    expect(STEP_NAME_KINDS.length).toBe(77);
     expect(names.map(([kind]) => kind).sort()).toEqual([...STEP_NAME_KINDS].sort());
     for (const [kind, e] of names) {
       expect(e.text.trim(), kind).not.toBe("");
@@ -100,11 +100,10 @@ describe("手の名前（仕様書 3 章 Y19）", () => {
     expect(spec).toContain("テンポ ・ 拍子の変更を消す");
     expect(spec).toContain("コンプレッサーの「しきい値」を変える");
     for (const [kind, e] of names.filter(([, x]) => x.source === "spec:3")) expect(spec, kind).toContain(filled(e));
-    // 一覧にあって、手にない名前: 「クリップを書く」（クリップだけを書く手はない）、
-    // 「パラメータを変える」（「コンプレッサーの「しきい値」を変える」の形で出す）、プラグインの窓（6 章の文で出す）。
+    // 一覧にあって、手にない名前: 「パラメータを変える」（「コンプレッサーの「しきい値」を変える」の形で出す）、プラグインの窓（6 章の文で出す）。
     // 「戻した変更をすてる」は 6 章の「戻した変更をすてる（最後に保存した形にする）」。
     const used = new Set(names.map(([, e]) => filled(e).replace(/（[^）]*）$/, "")));
-    expect(spec.filter((name) => !used.has(name))).toEqual(["クリップを書く", "パラメータを変える", "（プラグイン）の窓で変えた所"]);
+    expect(spec.filter((name) => !used.has(name))).toEqual(["パラメータを変える", "（プラグイン）の窓で変えた所"]);
   });
 
   it("出どころが spec:6 ・ mock の名前は、そこにそのまま書いてある", () => {

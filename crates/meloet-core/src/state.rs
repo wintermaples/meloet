@@ -1537,7 +1537,10 @@ impl Model {
             }
             Command::SelectTimeline { target } => self.say(|p| p.select_timeline(target)),
             Command::DeleteTimeline { target } => self.play.delete_timeline(target, effects),
-            Command::AddMarker { name } => self.say(|p| p.add_marker(&name, effects)),
+            Command::AddMarker { name, tick: None } => {
+                self.say(|p| p.add_marker(&name, effects));
+            }
+            Command::AddMarker { tick: Some(_), .. } => {}
             Command::OpenMarkerName { id } => self.play.open_marker_name(id),
             Command::RenameMarker { id, name } => self.play.rename_marker(id, &name, effects),
             Command::CloseMarkerName => self.play.close_marker_name(),
@@ -1685,6 +1688,10 @@ impl Model {
                 mode,
             } => self.drop_audio(drop, track, tick, mode, effects),
             Command::SplitClips => self.split_clips(effects),
+            Command::SplitClipAt { .. }
+            | Command::JoinClips { .. }
+            | Command::RenameClip { .. }
+            | Command::CreateClip { .. } => {}
             Command::SetClipField { clip, field, value } => {
                 if let Some(n) = self.play.set_clip_field(clip, field, value, effects) {
                     self.notice = Some(n);
@@ -1749,6 +1756,7 @@ impl Model {
             }
             Command::ToggleMute { track } => self.play.toggle_mute(track, effects),
             Command::ToggleSolo { track } => self.play.toggle_solo(track),
+            Command::SetOverdub { .. } => {}
             Command::SetVelocityFixed { on, value } => {
                 let fixed = VelocityFixed {
                     on,
@@ -1854,6 +1862,7 @@ impl Model {
             Command::CopyNotes { take, notes } => self.play.copy_notes(take, &notes),
             Command::CutNotes { take, notes } => self.play.cut_notes(take, &notes, effects),
             Command::PasteNotes { at } => self.notice = self.play.paste_notes(at, effects),
+            Command::AddNotes { .. } => {}
             Command::SetGrid { division, triplet } => self.play.set_grid(division, triplet),
             Command::SetMusicalScale { root, mode, lock } => {
                 self.play.set_musical_scale(root, mode, lock);

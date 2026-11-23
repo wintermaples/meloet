@@ -220,6 +220,7 @@ pub(super) fn sample_state() -> AppState {
                 clip: Some(4),
                 lap: 1,
             }),
+            overdub: false,
         },
         arrange: ArrangeView {
             selected_clips: vec![4, 9],
@@ -2940,8 +2941,9 @@ fn timeline_json_shape() {
         (
             Command::AddMarker {
                 name: "マーカー 4".into(),
+                tick: None,
             },
-            json!({"type": "addMarker", "name": "マーカー 4"}),
+            json!({"type": "addMarker", "name": "マーカー 4", "tick": null}),
         ),
         (
             Command::OpenMarkerName { id: 2 },
@@ -3887,7 +3889,7 @@ fn every_step_name_has_a_kind_of_its_own() {
                 .to_owned()
         })
         .collect();
-    assert_eq!(kinds.len(), 74);
+    assert_eq!(kinds.len(), 77);
     kinds.sort();
     kinds.dedup();
     assert_eq!(kinds.len(), all.len(), "a kind is listed twice");

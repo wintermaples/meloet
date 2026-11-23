@@ -76,5 +76,8 @@ export const STEP_NAME_KINDS: readonly StepName["kind"][] = [
   "setClipFade",
   "setClipFollow",
   "setSourceTempo",
-  "setClipPitch"
+  "setClipPitch",
+  "renameClip",
+  "joinClips",
+  "writeClip"
 ];

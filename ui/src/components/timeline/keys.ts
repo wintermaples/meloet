@@ -46,6 +46,6 @@ export function timelineKeyCommand(k: TimelineKey, c: TimelineKeyContext, timeli
     return { type: "deleteTimeline", target: sel };
   }
   const letter = /^[a-z]$/i.test(k.key) ? k.key.toLowerCase() : k.code === "KeyK" ? "k" : null;
-  if (letter === "k") return { type: "addMarker", name: t("marker.newName", { count: timeline.markers.length + 1 }) };
+  if (letter === "k") return { type: "addMarker", name: t("marker.newName", { count: timeline.markers.length + 1 }), tick: null };
   return null;
 }

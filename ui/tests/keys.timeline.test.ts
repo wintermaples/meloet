@@ -32,7 +32,7 @@ describe("handleKeydown（テンポ ・ 拍子の変更とマーカー）", () =
 
   it("K: 再生の線の所に「マーカー 4」。送ったあとは Delete がマーカーの側へ", () => {
     const ev = press("k", { code: "KeyK" });
-    expect(sent).toEqual([{ type: "addMarker", name: "マーカー 4" }]);
+    expect(sent).toEqual([{ type: "addMarker", name: "マーカー 4", tick: null }]);
     expect(ev.defaultPrevented).toBe(true);
     expect(lastPick.kind).toBe("timeline");
   });

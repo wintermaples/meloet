@@ -178,7 +178,7 @@ describe("キー（仕様書 4 章）", () => {
   const typing = { ...plain, typing: true };
 
   it("K で「マーカー 4」。文字を打っている最中は効かない", () => {
-    expect(timelineKeyCommand(k("k"), plain, tl)).toEqual({ type: "addMarker", name: "マーカー 4" });
+    expect(timelineKeyCommand(k("k"), plain, tl)).toEqual({ type: "addMarker", name: "マーカー 4", tick: null });
     expect(timelineKeyCommand(k("k"), typing, tl)).toBeNull();
   });
   it("Alt → ・ Alt ← は打っている最中も効く", () => {

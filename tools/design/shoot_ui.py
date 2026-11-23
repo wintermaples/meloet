@@ -357,6 +357,14 @@ BOARDS = {
     # sets and of a batch of the AI link.
     "mixerMuteSets": None,
     "mixerMuteSetsFull": None,
+    "mixerMuteSetsMenu": None,
+    "mixerMuteSetsRename": None,
+    "mixerMuteSetsSaving": None,
+    "mixerMuteSetsOverwrite": None,
+    "mixerMuteSetsTaken": None,
+    "mixerMuteSetsFullMenu": None,
+    "menuTrackMuteSets": None,
+    "menuTrackMuteSetsSaving": None,
     "historyMuteSets": None,
 }
 # Double-clicks the Vel cell of a row of the note list and types into the field (R3-Lanes: "96|" and "200").
@@ -700,6 +708,18 @@ const row = document.querySelector('[data-test="history-list"] .row[data-index="
 row.dispatchEvent(new PointerEvent("%s", { bubbles: true, button: 0 }));
 """
 
+# Types a name into the name box of the mute sets (B-97-3).
+TYPE_MUTE_SET = """
+const field = document.querySelector('[data-test="mute-set-name"]');
+field.value = "%s";
+field.dispatchEvent(new Event("input", { bubbles: true }));
+"""
+
+# Scrolls a list row into view (a list taller than the window scrolls).
+SCROLL_TO_ROW = """
+document.querySelector('%s').scrollIntoView({ block: "nearest" });
+"""
+
 # Puts the keys on the history band and presses these keys.
 HISTORY_KEYS = """
 const list = document.querySelector('[data-test="history-list"]');
@@ -758,6 +778,24 @@ CLICKS = {
     "menuEditFade": ("muted", '[data-menu="1"]'),
     "fadeOutBox": ("muted", "js:" + FADE_BOX % ""),
     "fadeOutAdded": ("muted", "js:" + FADE_BOX % (ENTER_IN_FADE_BOX % "")),
+    # B-97-3, B-97-5 (the owner's answers): 「ミュートのセット ▾」 at the head of the mixer band opened, its 「名前を変える ▸」,
+    # the name box of 「いまのミュートを残す…」 with a new name and with a name taken (written over), the rename box with
+    # the name of another set (refused), the list of a song with 64 sets with the pointer on the disabled save row, and
+    # 「トラック ▸ ミュートのセット ▸」 of the menu bar.
+    "mixerMuteSetsMenu": ("mixerMuteSets", '[data-test="mute-sets-button"]'),
+    "mixerMuteSetsRename": ("mixerMuteSets", ('[data-test="mute-sets-button"]', '[data-test="context-menu"] [data-row="5"]')),
+    "mixerMuteSetsSaving": ("mixerMuteSets", ('[data-test="mute-sets-button"]', '[data-test="context-menu"] [data-row="4"]',
+                                              "js:" + TYPE_MUTE_SET % "ドラムだけ")),
+    "mixerMuteSetsOverwrite": ("mixerMuteSets", ('[data-test="mute-sets-button"]', '[data-test="context-menu"] [data-row="4"]',
+                                                 "js:" + TYPE_MUTE_SET % "シンセなし")),
+    "mixerMuteSetsTaken": ("mixerMuteSets", ('[data-test="mute-sets-button"]', '[data-test="context-menu"] [data-row="5"]',
+                                             '[data-test="context-menu-sub"] [data-row="0"]', "js:" + TYPE_MUTE_SET % "シンセなし")),
+    "mixerMuteSetsFullMenu": ("mixerMuteSetsFull", ('[data-test="mute-sets-button"]',
+                                                    "js:" + SCROLL_TO_ROW % '[data-test="context-menu"] [data-row="65"]',
+                                                    "mouse:document.querySelector('[data-test=\"context-menu\"] [data-row=\"65\"]')")),
+    "menuTrackMuteSets": ("mixerMuteSets", ('[data-menu="5"]', '[data-test="menubar-list"] [data-row="3"]')),
+    "menuTrackMuteSetsSaving": ("mixerMuteSets", ('[data-menu="5"]', '[data-test="menubar-list"] [data-row="3"]',
+                                                  '[data-test="menubar-list-sub"] [data-row="4"]', "js:" + TYPE_MUTE_SET % "ドラムだけ")),
     "fadeOutLonger": ("masterFade", "js:" + FADE_BOX % (ENTER_IN_FADE_BOX % "99")),
     "menuMarker": ("sections", marker_menu("イントロ")),
     "menuMarkerOffBars": ("sections", (marker_menu("Aメロ"), MARKER_ROW % "消して詰める")),
@@ -1047,8 +1085,16 @@ ONLY = {
     "paramsSaturation": [(1280, 800, 100)],
     "paramsSoundKnobs": [(1280, 800, 100), (1280, 800, 125)],
     "paramsSoundDrums": [(1280, 800, 100)],
-    "mixerMuteSets": [(1280, 800, 100)],
+    "mixerMuteSets": [(1280, 800, 100), (1280, 800, 125), (1920, 1080, 100)],
     "mixerMuteSetsFull": [(1280, 800, 100)],
+    "mixerMuteSetsMenu": [(1280, 800, 100), (1920, 1080, 100)],
+    "mixerMuteSetsRename": [(1280, 800, 100)],
+    "mixerMuteSetsSaving": [(1280, 800, 100)],
+    "mixerMuteSetsOverwrite": [(1280, 800, 100)],
+    "mixerMuteSetsTaken": [(1280, 800, 100)],
+    "mixerMuteSetsFullMenu": [(1280, 800, 100)],
+    "menuTrackMuteSets": [(1280, 800, 100), (1280, 800, 125)],
+    "menuTrackMuteSetsSaving": [(1280, 800, 125)],
     "historyMuteSets": [(1280, 800, 100)],
 }
 scenes = args[1:] or list(BOARDS)

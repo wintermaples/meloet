@@ -206,13 +206,21 @@ describe("the mixer strip", () => {
   beforeEach(() => vi.useFakeTimers({ toFake: ["requestAnimationFrame", "cancelAnimationFrame"] }));
   afterEach(() => vi.useRealTimers());
 
-  it("shows 「アルペジオ」 in the heading only while on; a press turns it off", () => {
+  it("every strip has the row under its heading; 「アルペジオ」 shows in it only while on; a press turns it off", () => {
     const s = scene("arpOn");
     const [first, second] = s.song.tracks;
     show(MixerStrips, s);
+    const strips = qa('[data-test="mixer-strip"]');
+    const rows = qa('[data-test="mixer-arp-row"]');
+    expect(rows).toHaveLength(strips.length);
+    for (const row of rows) {
+      expect(row.previousElementSibling!.classList.contains("head")).toBe(true);
+      expect(row.nextElementSibling!.getAttribute("data-test")).toBe("mixer-frame");
+    }
     const chips = qa('[data-test="mixer-arp"]');
     expect(chips.map((c) => [text(c), c.closest('[data-test="mixer-strip"]')!.getAttribute("data-strip")])).toEqual([["アルペジオ", `track-${first!.id}`]]);
-    expect(chips[0]!.parentElement!.classList.contains("head")).toBe(true);
+    expect(chips[0]!.parentElement!.getAttribute("data-test")).toBe("mixer-arp-row");
+    expect(q(`[data-strip="track-${first!.id}"] .head`)!.textContent).not.toContain("アルペジオ");
     chips[0]!.click();
     expect(app.sent).toEqual([{ type: "setArp", track: first!.id, arp: { ...first!.arp, on: false } }]);
     expect(second!.arp.on).toBe(false);

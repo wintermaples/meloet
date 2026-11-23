@@ -113,11 +113,11 @@ describe("Mod K", () => {
     expect(play.rows.filter((r) => r.label === "キーで弾く")).toEqual([{ label: "キーで弾く", keys: "Ctrl K" }]);
   });
 
-  it("is the last row of the 「再生」 menu, checked while on", () => {
+  it("is the row of the 「再生」 menu before 「アルペジオ」, checked while on", () => {
     for (const on of [false, true]) {
       const r = rig(typedState(on));
       const play = topMenus(r.state.now, r.deps, "other").find((m) => m.label === "再生")!;
-      const row = play.entries.filter((e): e is ListRow => e.kind === "row").at(-1)!;
+      const row = play.entries.filter((e): e is ListRow => e.kind === "row").at(-2)!;
       expect([row.label, row.key, row.checked, row.usable]).toEqual(["キーで弾く", "Ctrl K", on, true]);
       row.run!();
       expect(r.sent).toEqual([{ type: "typedKeys", on: !on }]);

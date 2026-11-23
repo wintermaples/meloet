@@ -1499,6 +1499,18 @@ export const texts = {
   "mixer.master": e("マスター", "mock:F4-Mixer"),
   "mixer.output": e("出口 ・ {name}", "mock:F4-Mixer", { name: "ヘッドホン" }),
   "mixer.db": e("dB", "mock:F4-Mixer"),
+  // Mute sets (B-97-3, B-97-5): 「ミュートのセット ▾」 at the head of the mixer band, its list, the name box and what Enter does in it.
+  "mixer.muteSets": e("ミュートのセット ▾", "builder:2026-11-24"),
+  "menu.muteSets": e("ミュートのセット", "builder:2026-11-24"),
+  "mixer.muteSetSave": e("いまのミュートを残す…", "builder:2026-11-24"),
+  "mixer.muteSetRename": e("名前を変える", "builder:2026-11-24"),
+  "mixer.muteSetDelete": e("消す", "builder:2026-11-24"),
+  "mixer.muteSetsFull": e("セットは {max} 個までです", "builder:2026-11-24", { max: "64" }),
+  "mixer.muteSetName": e("ミュートのセットの名前", "builder:2026-11-24"),
+  "mixer.muteSetReadSave": e("Enter で「{name}」を残します", "builder:2026-11-24", { name: "ドラムとベースだけ" }),
+  "mixer.muteSetReadOverwrite": e("Enter で「{name}」を上書きします", "builder:2026-11-24", { name: "ドラムとベースだけ" }),
+  "mixer.muteSetReadRename": e("Enter で名前を「{name}」に変えます", "builder:2026-11-24", { name: "ピアノとドラム" }),
+  "mixer.muteSetTaken": e("「{name}」はもうあります", "builder:2026-11-24", { name: "シンセなし" }),
 
   // Arrange
   "arrange.title": e("アレンジ", "mock:F-Empty"),
@@ -2124,6 +2136,8 @@ export const texts = {
   // E2 (round 12): the arpeggio of the track the keyboards play (the input meter, its ▾ window, the mixer strip).
   "input.arp": e("アルペジオ", "user:2026-11-23"),
   "input.arpMenu": e("アルペジオの設定", "builder:2026-11-24"),
+  // The 「再生」 menu row for the same on/off as 「アルペジオ」 (B-98-6, the lead's proposal chosen by the owner).
+  "menu.arp": e("アルペジオ", "user:2026-11-24"),
   "arp.on": e("オン", "user:2026-11-23"),
   "arp.off": e("オフ", "user:2026-11-23"),
   "arp.shape": e("形", "user:2026-11-23"),

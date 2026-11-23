@@ -11,6 +11,7 @@
   import { clockOffsetUs, keyIsDown, type TrackView } from "../bridge";
   import { menuOpened } from "../lib/menu";
   import ArpWindow from "./ArpWindow.svelte";
+  import { arpBusy, arpTarget, arpToggle } from "./arpTarget";
   import type { Scale } from "../design/tokens";
   import { keyboardLayout } from "../gl/keyboard";
   import { glRegion, glSlot } from "../gl/slot";
@@ -58,14 +59,11 @@
     switchTypedKeys(!typedOn, { send, post, clockOffsetUs });
   }
   // E2: the arpeggio of the track the keyboards play. Not for a vocal track; nothing can be changed while counting in or recording.
-  const arpTrack = $derived.by(() => {
-    const track = app?.song.tracks.find((x) => x.id === app.song.keysTarget);
-    return track && track.kind.kind !== "vocal" ? track : null;
-  });
-  const arpBusy = $derived(app?.transport.state === "countIn" || app?.transport.state === "recording");
-  const arpUsable = $derived(arpTrack !== null && !arpBusy);
+  const arpTrack = $derived(app ? arpTarget(app) : null);
+  const arpUsable = $derived(app ? arpToggle(app) !== null : false);
   function toggleArp(): void {
-    if (arpUsable) send({ type: "setArp", track: arpTrack!.id, arp: { ...arpTrack!.arp, on: !arpTrack!.arp.on } });
+    const command = app ? arpToggle(app) : null;
+    if (command) send(command);
   }
   // The ▾ window: only the screen holds "open" (as the metronome window). Esc and a press outside close it.
   let arpOpen = $state(false);
@@ -731,7 +729,7 @@
   </div>
   {#if arpOpen && arpTrack}
     <div class="popup" style:left="{arpAnchor.left}px" style:top="{arpAnchor.top}px" use:toBody bind:this={arpPopup}>
-      <ArpWindow track={arpTrack.id} arp={arpTrack.arp} busy={arpBusy} label={t("input.arpMenu")} />
+      <ArpWindow track={arpTrack.id} arp={arpTrack.arp} busy={app ? arpBusy(app) : false} label={t("input.arpMenu")} />
     </div>
   {/if}
 {/if}

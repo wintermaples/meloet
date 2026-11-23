@@ -1,5 +1,5 @@
 <!-- An open lower band (piano roll, mixer, undo history). The piano roll includes its content (pianoroll/PianoRoll.svelte).
-     The mixer is the tool row (the signal flow text and the meter unit; mock F4-Mixer) and the strips (mixer/MixerStrips.svelte). The undo history is history/HistoryHead.svelte and history/HistoryList.svelte. The heading row is the top row of the band in A-Mixer and F-History. Pressing 「▾ 名前」 folds the band (B-74). -->
+     The mixer is the tool row (the signal flow text and the meter unit; mock F4-Mixer; 「ミュートのセット ▾」 in the room they leave) and the strips (mixer/MixerStrips.svelte). The undo history is history/HistoryHead.svelte and history/HistoryList.svelte. The heading row is the top row of the band in A-Mixer and F-History. Pressing 「▾ 名前」 folds the band (B-74). -->
 <script lang="ts">
   import type { Band } from "../bridge";
   import { term } from "../lib/tip.svelte";
@@ -9,6 +9,7 @@
   import HistoryList from "./history/HistoryList.svelte";
   import { metrics } from "./metrics.svelte";
   import MixerStrips from "./mixer/MixerStrips.svelte";
+  import MuteSetsButton from "./mixer/MuteSetsButton.svelte";
   import PianoRoll from "./pianoroll/PianoRoll.svelte";
 
   let { band, height }: { band: Band; height: number } = $props();
@@ -37,6 +38,7 @@
       {#if band === "mixer"}
         <span class="m-lbl">{t("mixer.flow")}</span>
         <span class="m-spacer"></span>
+        <MuteSetsButton />
         <span class="m-lbl">{t("mixer.meterUnit")} <span class="m-num" use:term={"dB"}>{t("mixer.db")}</span></span>
       {:else if band === "history"}
         <HistoryHead />

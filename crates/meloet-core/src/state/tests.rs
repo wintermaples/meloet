@@ -1142,6 +1142,41 @@ fn a_theme_is_a_setting_and_not_a_step() {
     assert_eq!(m.view().workspace.theme, Theme::Light);
 }
 
+/// E1 「表示 ▸ 鳴っている音を光らせる」: a meloet setting like the theme, on at first, taken while
+/// recording too, never a step.
+#[test]
+fn the_note_glow_is_a_setting_and_not_a_step() {
+    let mut m = fresh();
+    assert!(m.view().workspace.note_glow);
+    assert!(
+        cmd(&mut m, Command::SetNoteGlow { on: true }).is_empty(),
+        "already on"
+    );
+    let before = m.view();
+    let effects = cmd(&mut m, Command::SetNoteGlow { on: false });
+    assert_eq!(
+        effects,
+        [Effect::SaveSettings(Box::new(Settings {
+            note_glow: false,
+            ..Settings::default()
+        }))]
+    );
+    let after = m.view();
+    assert!(!after.workspace.note_glow);
+    assert_eq!(
+        AppState::changes_from(&before, &after),
+        [meloet_protocol::Change::Workspace(after.workspace.clone())]
+    );
+    assert_eq!(after.song.undo_count, 0);
+
+    let mut m = playing();
+    cmd(&mut m, Command::Record);
+    assert!(m.play.busy());
+    let effects = cmd(&mut m, Command::SetNoteGlow { on: false });
+    assert!(matches!(effects.as_slice(), [Effect::SaveSettings(s)] if !s.note_glow));
+    assert!(!m.view().workspace.note_glow);
+}
+
 #[test]
 fn arrange_lower_than_one_track_row_is_drawn_as_the_overview() {
     let mut m = fresh();
@@ -2025,7 +2060,6 @@ fn the_commands_of_round_12_wave_2_are_taken_and_change_nothing_yet() {
             down: true,
             t_us: 1_000,
         },
-        Command::SetNoteGlow { on: false },
         Command::ShelfSelectPattern {
             id: Some("eightBeat".into()),
         },

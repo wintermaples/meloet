@@ -1470,8 +1470,11 @@ impl Model {
             Command::KeepPlayed => {}
             // round12 stub: R2
             Command::TypedKeys { .. } | Command::TypedKey { .. } => {}
-            // round12 stub: E1
-            Command::SetNoteGlow { .. } => {}
+            Command::SetNoteGlow { on } if on == self.note_glow => {}
+            Command::SetNoteGlow { on } => {
+                self.note_glow = on;
+                effects.push(Effect::SaveSettings(self.settings()));
+            }
             Command::ShelfSelectPattern { id } => {
                 if self.bands.side_is_open(SidePanel::Shelf) {
                     self.play.select_pattern(id);

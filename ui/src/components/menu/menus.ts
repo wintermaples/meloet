@@ -173,6 +173,7 @@ export function topMenus(state: AppState, deps: KeyDeps, platform: Platform): To
     plain("menu.theme", true, undefined, {
       sub: THEME_IDS.map((id) => choice(t(`theme.${id}`), id === state.workspace.theme, true, send({ type: "setTheme", theme: id }))),
     }),
+    plain("menu.noteGlow", true, send({ type: "setNoteGlow", on: !state.workspace.noteGlow }), { checked: state.workspace.noteGlow }),
   ];
 
   const tr = state.transport;

@@ -61,6 +61,9 @@ BOARDS = {
     "pianoRollGhost": None,
     "pianoRollGhostMenu": None,
     "pianoRollGhostFolded": None,
+    # Round 12, E1: sounding notes lit while playing, and the View menu with its check.
+    "pianoRollGlow": None,
+    "pianoRollGlowMenu": None,
     "mixer": "F4-Mixer",
     "history": "F-History",
     "shelf": "F-ShelfArrange",
@@ -617,6 +620,8 @@ CLICKS = {
     "pianoRollGhost": ("pianoRollGhost", '[data-test="pr-ghost"]'),
     "pianoRollGhostMenu": ("pianoRollGhost", ('[data-test="pr-ghost"]', '[data-test="pr-ghost-menu"]')),
     "pianoRollGhostFolded": ("pianoRollGhost", ('[data-test="pr-ghost-menu"]', '[data-test="pr-ghost-tracks"] [data-row="0"]')),
+    # E1 (round 12): 表示 opened, with 「鳴っている音を光らせる」 checked at its end.
+    "pianoRollGlowMenu": ("pianoRollGlow", '[data-menu="2"]'),
 }
 SIZES = [(1280, 800), (1920, 1080)]
 SCALES = [100, 150]
@@ -674,6 +679,8 @@ ONLY = {
     "pianoRollGhost": [(1920, 1080, 100)],
     "pianoRollGhostMenu": [(1920, 1080, 100)],
     "pianoRollGhostFolded": [(1280, 800, 100), (1280, 800, 150)],
+    "pianoRollGlow": [(1280, 800, 100), (1920, 1080, 100)],
+    "pianoRollGlowMenu": [(1280, 800, 100)],
     "noteListTyping": [(1280, 800, 100)],
     "noteListBroken": [(1280, 800, 100)],
     "ccLanes": [(1280, 800, 100), (1920, 1080, 100), (1920, 1080, 150)],

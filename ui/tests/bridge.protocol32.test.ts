@@ -88,7 +88,6 @@ describe("fake intents", () => {
       { type: "keepPlayed" },
       { type: "typedKeys", on: true },
       { type: "typedKey", note: 60, down: true, tUs: 1000 },
-      { type: "setNoteGlow", on: false },
       { type: "repeatClips", clips: [1], count: 3 },
       { type: "lowerAllTracks", db: 6 },
       { type: "dismissTooLoud" },
@@ -98,7 +97,6 @@ describe("fake intents", () => {
     expect(after.song).toEqual(before.song);
     expect(after.transport).toEqual(before.transport);
     expect(after.keyboards).toEqual(before.keyboards);
-    expect(after.workspace.noteGlow).toBe(before.workspace.noteGlow);
     expect(after.shelf).toEqual(before.shelf);
     expect(after.presets).toEqual(before.presets);
   });

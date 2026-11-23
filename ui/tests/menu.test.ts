@@ -97,6 +97,7 @@ describe("menu contents (B-59)", () => {
       "縦に縮小",
       "拡大率 ▸",
       "テーマ ▸",
+      "鳴っている音を光らせる",
     ]);
     expect(keyed(3)).toEqual(["再生 Space", "停止 Space", "録音 R", "先頭へ Home", "ループ L", "メトロノーム C", "カウントイン ▸"]);
     expect(keyed(4)).toEqual(["道具 ▸", "クオンタイズ Q", "もとの位置へ戻す", "グリッド ▸", "三連符", "スケール固定 ▸"]);
@@ -269,6 +270,21 @@ describe("menu contents (B-59)", () => {
     expect(row(menus[5]!.entries, "ミュート").checked).toBe(true);
     expect(row(menus[5]!.entries, "ソロ").checked).toBe(false);
     expect(row(menus[5]!.entries, "録音待機").checked).toBe(true);
+  });
+
+  it("表示 ▸ 鳴っている音を光らせる: checked while on (on at first), pressing turns it the other way; usable while recording too (E1)", () => {
+    const sent: Command[] = [];
+    const s = withClip((s) => (s.transport.state = "recording"));
+    const glow = () => row(topMenus(s, depsOf(s, sent), "other")[2]!.entries, "鳴っている音を光らせる");
+    expect([glow().checked, glow().usable, glow().key]).toEqual([true, true, undefined]);
+    glow().run!();
+    s.workspace.noteGlow = false;
+    expect(glow().checked).toBe(false);
+    glow().run!();
+    expect(sent).toEqual([
+      { type: "setNoteGlow", on: false },
+      { type: "setNoteGlow", on: true },
+    ]);
   });
 
   it("最近ひらいた曲 ▸: the songs newest first with their place, then 一覧を消す; only a disabled まだありません when empty (A5)", () => {

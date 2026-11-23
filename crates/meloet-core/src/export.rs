@@ -13,6 +13,7 @@
 //! starts another; the format, the sample rate and the bits belong to the last step and
 //! leave it running.
 
+pub(crate) mod analysis;
 #[cfg(test)]
 pub(crate) mod fixture;
 pub(crate) mod job;
@@ -25,13 +26,14 @@ pub(crate) mod told;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use meloet_model::{Doc, TickRange};
+use meloet_model::{Doc, TickRange, TrackId};
 use meloet_protocol::{
     Command, ExportChange, ExportCheck, ExportDialogView, ExportFailure, ExportFormat, ExportRange,
     ExportRunView, ExportSolo, ExportStoppedPlugin, ExportTail, ExportView, PluginSlotRef,
     RecordFormat, TickSpan, TrackRef,
 };
 
+use crate::ai::{AiAnalysis, AiBandLayout};
 use crate::plugins::shown_path;
 use crate::settings::SAMPLE_RATE_CHOICES;
 
@@ -73,9 +75,23 @@ pub struct ExportJob {
     pub skip: Vec<PluginSlotRef>,
     /// The rate the playing engine runs at.
     pub sample_rate: u32,
-    /// For the AI link: the mix, then (with `per_track`) each track alone, are rendered for
+    /// For the AI link: the mix, then each track of [`Measuring::alone`], are rendered for
     /// their levels only, answered with [`ExportNews::Measured`]; no file is kept.
-    pub measure: bool,
+    pub measure: Option<Measuring>,
+}
+
+/// What a job of the AI link measures besides the mix (docs/architecture.md 24-12).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Measuring {
+    /// Rendered alone after the mix, in this order.
+    pub alone: Vec<TrackId>,
+    /// Those sound even when the song mutes them; the mix keeps the song's mutes.
+    pub ignore_mute: bool,
+    pub bands: Option<AiBandLayout>,
+    /// Places in `alone` of the tracks whose every pair is compared band by band.
+    pub compare: Vec<usize>,
+    /// Ticks inside the span where sections after the first begin, rising.
+    pub cuts: Vec<u64>,
 }
 
 /// Where a rendered job goes, and as what.
@@ -126,6 +142,8 @@ pub enum ExportNews {
     Measured {
         job: u64,
         passes: Vec<crate::ai::PassLevels>,
+        /// With bands or sections asked for.
+        analysis: Option<Box<AiAnalysis>>,
     },
 }
 
@@ -430,7 +448,7 @@ impl Exporting {
             realtime: asked.realtime,
             skip: scene.stopped_plugins.iter().map(|p| p.slot).collect(),
             sample_rate: scene.sample_rate,
-            measure: false,
+            measure: None,
         })));
         dialog.job = Some(Job {
             id: self.last_job,

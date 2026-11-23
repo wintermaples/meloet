@@ -74,7 +74,7 @@ impl Place {
             realtime: false,
             skip: Vec::new(),
             sample_rate: RATE,
-            measure: false,
+            measure: None,
         }
     }
 

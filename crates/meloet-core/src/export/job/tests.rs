@@ -7,7 +7,9 @@ use meloet_model::{InstrumentRef, PluginRef, StripId, TempoMap, edit, mixer};
 use meloet_protocol::{ExportFormat, PluginSlotRef, PluginWindowKind, RecordFormat};
 
 use super::*;
+use crate::ai::{AiAnalysis, AiBandLayout};
 use crate::audiofiles::decode::Decoder;
+use crate::export::Measuring;
 use crate::export::fixture::{BAR, BLOCK, Place, RATE, Run, loud, read_wav, song};
 use crate::plugins::hosts::DEFAULT_GEOMETRY;
 
@@ -81,6 +83,7 @@ fn taker(path: &Path, head: u64, range: u64, tail: ExportTail) -> Taker {
         squares: 0.0,
         written: 0,
         over: false,
+        listen: None,
     }
 }
 
@@ -607,4 +610,88 @@ fn a_plugin_that_does_not_load_fails_the_export_by_its_name() {
     let run = place.start(place.setup(place.job(3, &doc, span, ExportTail::Off)));
     run.rendered();
     assert!(run.pass(0) != stopped);
+}
+
+/// What a job that measures answered.
+fn measured(run: &Run) -> (Vec<PassLevels>, Option<Box<AiAnalysis>>) {
+    let seen = run.until("measured", |n| {
+        matches!(n, ExportNews::Measured { .. } | ExportNews::Failed { .. })
+    });
+    match seen.into_iter().last() {
+        Some(ExportNews::Measured {
+            passes, analysis, ..
+        }) => (passes, analysis),
+        other => panic!("the job did not measure: {other:?}"),
+    }
+}
+
+fn measuring(alone: Vec<TrackId>, ignore_mute: bool) -> Measuring {
+    Measuring {
+        alone,
+        ignore_mute,
+        bands: None,
+        compare: Vec::new(),
+        cuts: Vec::new(),
+    }
+}
+
+#[test]
+fn a_muted_track_is_measured_alone_as_if_it_sounded_and_the_mix_keeps_it_muted() {
+    let place = Place::new("export-measure-mute");
+    let (doc, parts) = song();
+    place.files_of(&doc);
+    let muted = edit::toggle_mute(&doc, parts.lead).unwrap().doc;
+    let span = (0, 2 * BAR);
+    let measure = |id: u64, doc: &Doc, ignore_mute: bool| {
+        let mut job = place.job(id, doc, span, ExportTail::Off);
+        job.per_track = true;
+        job.measure = Some(measuring(vec![parts.lead, parts.drums], ignore_mute));
+        measured(&place.start(place.setup(job))).0
+    };
+    let sounding = measure(1, &doc, false);
+    let kept = measure(2, &muted, false);
+    let ignored = measure(3, &muted, true);
+    assert_eq!(sounding.len(), 3);
+    assert!(sounding[1].peak > 0.01, "{sounding:?}");
+    // Muted and not ignored: silent alone, and out of the mix.
+    assert_eq!(kept[1].peak, 0.0, "{kept:?}");
+    assert!(kept[0].rms < sounding[0].rms, "{kept:?} {sounding:?}");
+    // Ignored: alone it sounds as it does unmuted, and the mix still leaves it out.
+    assert_eq!(ignored[1], sounding[1]);
+    assert_eq!(ignored[2], sounding[2]);
+    assert_eq!(ignored[0], kept[0]);
+    assert!(ignored[1].lufs.is_some() && kept[1].lufs.is_none());
+}
+
+#[test]
+fn a_job_that_measures_bands_and_sections_answers_for_every_rendering() {
+    let place = Place::new("export-measure-bands");
+    let (doc, parts) = song();
+    place.files_of(&doc);
+    let mut job = place.job(1, &doc, (0, 4 * BAR), ExportTail::Off);
+    job.per_track = true;
+    job.measure = Some(Measuring {
+        alone: vec![parts.lead, parts.drums, parts.vocals],
+        ignore_mute: false,
+        bands: Some(AiBandLayout::Octave),
+        compare: vec![0, 2],
+        cuts: vec![BAR, 3 * BAR],
+    });
+    let (passes, analysis) = measured(&place.start(place.setup(job)));
+    let analysis = analysis.expect("bands were asked for");
+    assert_eq!(passes.len(), 4);
+    assert_eq!(analysis.bands.len(), 10);
+    assert_eq!(analysis.levels.len(), 4);
+    assert!(analysis.levels.iter().all(|l| l.len() == 10));
+    let shares: f64 = analysis.levels[0].iter().map(|b| b.share).sum();
+    assert!(shares > 0.9 && shares <= 1.0 + 1e-9, "{shares}");
+    let pairs: Vec<(usize, usize)> = analysis.overlaps.iter().map(|o| (o.a, o.b)).collect();
+    assert_eq!(pairs, [(0, 2)]);
+    let edges: Vec<(u64, u64)> = (analysis.sections.iter())
+        .map(|s| (s.start, s.end))
+        .collect();
+    assert_eq!(edges, [(0, BAR), (BAR, 3 * BAR), (3 * BAR, 4 * BAR)]);
+    let frames: u64 = analysis.sections.iter().map(|s| s.passes[0].frames).sum();
+    assert_eq!(frames, passes[0].frames);
+    assert!(analysis.sections.iter().all(|s| s.passes.len() == 4));
 }

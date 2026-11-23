@@ -949,14 +949,20 @@ impl Core {
             }
             match news.recv_timeout(Duration::from_millis(100)) {
                 Ok(ExportNews::Counted { percent, .. }) => progress(percent),
-                Ok(ExportNews::Measured { passes, .. }) => {
+                Ok(ExportNews::Measured {
+                    passes, analysis, ..
+                }) => {
                     let mut passes = passes.into_iter();
                     let master = passes.next().ok_or(AiRefusal::Closing)?;
+                    let muted = (job.tracks.iter()).filter(|t| t.2).map(|t| t.0);
+                    let muted = muted.collect();
                     let tracks = job.tracks.into_iter().zip(passes);
                     return Ok(AiLevels {
                         sample_rate: job.sample_rate,
                         master,
-                        tracks: tracks.map(|((n, name), p)| (n, name, p)).collect(),
+                        tracks: tracks.map(|((n, name, _), p)| (n, name, p)).collect(),
+                        muted,
+                        analysis,
                     });
                 }
                 Ok(ExportNews::Failed { reason, .. }) => {
@@ -1035,11 +1041,11 @@ impl Drop for Core {
 }
 
 /// A measuring job of the AI link as it was given out: the tracks are numbered and named as
-/// the song had them then.
+/// the song had them then, and whether it muted them.
 struct AiJob {
     id: u64,
     sample_rate: u32,
-    tracks: Vec<(u32, String)>,
+    tracks: Vec<(u32, String, bool)>,
 }
 
 /// What the sinks of the MIDI thread and the device watcher need, to make new ones.

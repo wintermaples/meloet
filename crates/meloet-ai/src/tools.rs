@@ -11,6 +11,7 @@ macro_rules! check {
     };
 }
 
+mod analyze;
 mod arrange;
 mod automation;
 mod batch;
@@ -26,13 +27,13 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use meloet_core::ai::{
-    AiAnswer, AiAsk, AiBusy, AiDone, AiInstrument, AiMeasure, AiOutcome, AiPlace, AiRefusal, AiSong,
+    AiAnswer, AiAsk, AiBusy, AiDone, AiInstrument, AiOutcome, AiPlace, AiRefusal, AiSong,
 };
-use meloet_model::{BuiltinInstrument, Note, TempoMap, TickRange, Track};
+use meloet_model::{BuiltinInstrument, Note, TempoMap, Track};
 use meloet_protocol::Command;
 use rmcp::model::{
-    CallToolResult, ContentBlock, Implementation, ProgressNotificationParam, RequestMetaObject,
-    ServerCapabilities, ServerConfig,
+    CallToolResult, ContentBlock, Implementation, RequestMetaObject, ServerCapabilities,
+    ServerConfig,
 };
 use rmcp::{
     ErrorData as McpError, Peer, RoleServer, ServerHandler,
@@ -247,6 +248,15 @@ pub struct MeasureArgs {
     #[serde(default)]
     #[schemars(length(min = 1, max = 64))]
     pub tracks: Option<Vec<u32>>,
+    /// Track numbers to measure each alone while the mix stays every track, mutes as in the
+    /// song. Not together with `tracks`.
+    #[serde(default)]
+    #[schemars(length(min = 1, max = 64))]
+    pub alone: Option<Vec<u32>>,
+    /// Measure each track alone as if it were not muted (a mute lane is still followed); the
+    /// mix keeps the song's mutes. Default false: a muted track is silent.
+    #[serde(default)]
+    pub ignore_mute: bool,
 }
 
 fn text(t: impl Into<String>) -> Vec<ContentBlock> {
@@ -400,6 +410,8 @@ fn levels_value(l: &meloet_core::ai::PassLevels, rate: u32) -> Value {
     json!({
         "peak_dbfs": db(l.peak),
         "rms_dbfs": db(l.rms),
+        "lufs": analyze::lufs(l.lufs),
+        "short_term_max_lufs": analyze::lufs(l.lufs_short_max),
         "over_0db_places": l.over,
         "seconds": if rate > 0 { (l.frames as f64 / f64::from(rate) * 100.0).round() / 100.0 } else { 0.0 },
     })
@@ -428,7 +440,8 @@ impl Tools {
                 + Self::arrange_router()
                 + Self::files_router()
                 + Self::sets_router()
-                + Self::render_router(),
+                + Self::render_router()
+                + Self::analyze_router(),
         }
     }
 
@@ -892,10 +905,10 @@ impl Tools {
         Ok(self.write(AiAsk::Undo).await)
     }
 
-    /// Renders bars of the song as the export would (without the tail after the range) and
-    /// gives numbers, not audio: the mix's peak (dBFS, before the output's clip), RMS, places
-    /// over 0 dB, and the same for each track played alone with its sends. It takes a while
-    /// (each track is one more rendering); progress is sent when asked for.
+    /// Renders bars of the song as the export would (no tail) and gives numbers, not audio:
+    /// the mix's peak (dBFS, before the output's clip), RMS, integrated LUFS and places over
+    /// 0 dB, and the same for each track played alone with its sends. Solo is ignored. Each
+    /// track is one more rendering; progress is sent when asked for.
     #[tool(annotations(title = "Measure mix", read_only_hint = true, open_world_hint = false))]
     async fn measure_mix(
         &self,
@@ -905,95 +918,56 @@ impl Tools {
         ct: CancellationToken,
     ) -> Result<CallToolResult, McpError> {
         check!(self.allowed());
-        if args.from_bar == 0 || args.to_bar < args.from_bar || u64::from(args.to_bar) > MAX_BAR {
-            return Ok(failed(format!("give 1 <= from_bar <= to_bar <= {MAX_BAR}")));
-        }
-        if args
-            .tracks
-            .as_ref()
-            .is_some_and(|t| t.is_empty() || t.len() > 64)
-        {
-            return Ok(failed("give 1 to 64 track numbers, or leave `tracks` out"));
-        }
         let read = check!(self.read().await);
-        let map = TempoMap::new(&read.song.doc.timeline);
-        let start = map.tick_of_bar(u64::from(args.from_bar) - 1);
-        let end = map.tick_of_bar(u64::from(args.to_bar));
-        let seconds = map.seconds_at(end as f64) - map.seconds_at(start as f64);
-        if seconds > MAX_MEASURE_S {
-            return Ok(failed(format!(
-                "that is {seconds:.0} s of the song; measure at most {MAX_MEASURE_S:.0} s at a time"
-            )));
-        }
-        let Some(span) = TickRange::new(start, end) else {
-            return Ok(failed("the range is empty"));
-        };
-        let ask = AiMeasure {
-            span,
-            tracks: args.tracks.clone(),
-        };
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<u8>();
-        let meloet = self.meloet.clone();
-        let stop = ct.clone();
-        let mut job = tokio::task::spawn_blocking(move || {
-            let mut progress = |percent| {
-                let _ = tx.send(percent);
-            };
-            meloet.measure(ask, &mut progress, &|| stop.is_cancelled())
-        });
-        let token = meta.get_progress_token();
-        let mut last = None;
-        let answer = loop {
-            tokio::select! {
-                answer = &mut job => break answer,
-                Some(percent) = rx.recv() => {
-                    if let Some(token) = &token
-                        && last.is_none_or(|l| percent > l)
-                    {
-                        last = Some(percent);
-                        let note = ProgressNotificationParam::new(token.clone(), f64::from(percent))
-                            .with_total(100.0);
-                        let _ = peer.notify_progress(note).await;
-                    }
-                }
-            }
-        };
-        let levels = match answer {
-            Ok(Ok(levels)) => levels,
-            Ok(Err(r)) => return Ok(failed(format!("Could not measure: {}.", refusal_text(&r)))),
-            Err(_) => return Ok(closing()),
-        };
+        let ask = check!(analyze::measure_ask(
+            &read,
+            args.from_bar,
+            args.to_bar,
+            args.tracks.as_deref(),
+            args.alone.as_deref(),
+            args.ignore_mute,
+        ));
+        let mix = analyze::mix_text(&ask);
+        let levels = check!(self.run_measure(ask, &meta, &peer, &ct).await);
         let rate = levels.sample_rate;
         let tracks: Vec<Value> = (levels.tracks.iter())
             .map(|(n, name, l)| {
                 let mut v = levels_value(l, rate);
                 v["number"] = json!(n);
                 v["name"] = json!(name);
+                v["muted"] = json!(levels.muted.contains(n));
                 v
             })
             .collect();
         let master = levels_value(&levels.master, rate);
         let mut lines = vec![format!(
-            "Bars {} to {}: the mix peaks at {}, RMS {}, {} places over 0 dB.",
+            "Bars {} to {} (mix: {mix}; solo ignored): the mix peaks at {}, RMS {}, {} LUFS, {} \
+             places over 0 dB.",
             args.from_bar,
             args.to_bar,
             shown_db(&master["peak_dbfs"]),
             shown_db(&master["rms_dbfs"]),
+            analyze::shown_lufs(&master["lufs"]),
             levels.master.over,
         )];
         for t in &tracks {
             lines.push(format!(
-                "Track {} \"{}\": peak {}, RMS {}.",
+                "Track {} \"{}\"{}: peak {}, RMS {}, {} LUFS.",
                 t["number"],
                 t["name"].as_str().unwrap_or(""),
+                analyze::muted_note(t["muted"] == true, args.ignore_mute),
                 shown_db(&t["peak_dbfs"]),
                 shown_db(&t["rms_dbfs"]),
+                analyze::shown_lufs(&t["lufs"]),
             ));
         }
         let value = json!({
             "from_bar": args.from_bar,
             "to_bar": args.to_bar,
             "sample_rate": rate,
+            "mix": mix,
+            "solo_ignored": true,
+            "ignore_mute": args.ignore_mute,
             "master": master,
             "tracks": tracks,
         });

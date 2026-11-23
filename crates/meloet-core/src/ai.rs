@@ -493,6 +493,33 @@ pub struct AiMeasure {
     pub span: TickRange,
     /// Track numbers from 1; `None`: every track. Only these tracks are in the master's mix.
     pub tracks: Option<Vec<u32>>,
+    /// Track numbers from 1 to render alone; `None`: the tracks of the mix. Each must be in
+    /// the mix.
+    pub alone: Option<Vec<u32>>,
+    /// A track rendered alone sounds even when the song mutes it (a lane that moves the mute
+    /// is still followed). The mix keeps the song's mutes.
+    pub ignore_mute: bool,
+    /// Bands, overlap and sections, besides the levels.
+    pub analysis: Option<AiAnalysisAsk>,
+}
+
+/// How the sound is cut into frequency bands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AiBandLayout {
+    /// Low (below 120 Hz), low-mid (to 500 Hz), mid (to 2 kHz), high-mid (to 6 kHz), high.
+    Five,
+    /// Octaves centred on 31.5 Hz to 16 kHz (base 10, as IEC 61260 names them).
+    Octave,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AiAnalysisAsk {
+    pub bands: AiBandLayout,
+    /// Tracks rendered alone (numbers from 1) whose every pair is compared band by band.
+    pub compare: Vec<u32>,
+    /// Where sections begin, in ticks inside the range, rising; the range's start begins the
+    /// first. Empty: no sections.
+    pub cuts: Vec<u64>,
 }
 
 /// What to render into files, through the export's own engine.
@@ -551,6 +578,10 @@ pub struct PassLevels {
     /// Places over 0 dB, as 「書き出す前のたしかめ」 counts them.
     pub over: u32,
     pub frames: u64,
+    /// Integrated loudness in LUFS (ITU-R BS.1770-4, gated); `None`: too short or silent.
+    pub lufs: Option<f32>,
+    /// The loudest 3 s (short-term loudness) in LUFS.
+    pub lufs_short_max: Option<f32>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -559,4 +590,72 @@ pub struct AiLevels {
     pub master: PassLevels,
     /// Number from 1, name, levels of the track played alone (with its sends and the master).
     pub tracks: Vec<(u32, String, PassLevels)>,
+    /// The numbers of those tracks that the song mutes.
+    pub muted: Vec<u32>,
+    pub analysis: Option<Box<AiAnalysis>>,
+}
+
+/// A frequency band, from `low_hz` up to `high_hz` (at most half the sample rate).
+#[derive(Debug, Clone, PartialEq)]
+pub struct AiBand {
+    pub name: &'static str,
+    pub low_hz: f64,
+    pub high_hz: f64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct AiBandLevel {
+    /// Mean square of the band over the range, both channels averaged, as `rms` squared.
+    pub power: f64,
+    /// Of the rendering's whole power, 0..=1.
+    pub share: f64,
+}
+
+/// How much two tracks sound in one band at the same time.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct AiShared {
+    /// Mean over the range of the smaller of the two band powers of each short window.
+    pub power: f64,
+    /// That, over the band power of the louder track: 0 never together, 1 the same all along.
+    pub score: f64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AiOverlap {
+    /// Indexes into [`AiLevels::tracks`].
+    pub a: usize,
+    pub b: usize,
+    /// In the order of [`AiAnalysis::bands`].
+    pub bands: Vec<AiShared>,
+}
+
+/// The levels of a part of a rendering.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct AiLoudness {
+    pub peak: f32,
+    pub rms: f32,
+    pub lufs: Option<f32>,
+    pub lufs_short_max: Option<f32>,
+    pub frames: u64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AiSection {
+    /// Ticks.
+    pub start: u64,
+    pub end: u64,
+    /// The mix, then each track alone, in the order of [`AiLevels::tracks`].
+    pub passes: Vec<AiLoudness>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AiAnalysis {
+    /// Empty when no bands were asked for.
+    pub bands: Vec<AiBand>,
+    /// The length of one window of the analysis, in seconds; windows overlap by half.
+    pub window_s: f64,
+    /// The mix, then each track alone: the level of each band.
+    pub levels: Vec<Vec<AiBandLevel>>,
+    pub overlaps: Vec<AiOverlap>,
+    pub sections: Vec<AiSection>,
 }

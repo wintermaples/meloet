@@ -165,7 +165,6 @@ export function stepWhatText(name: StepName, what: StepWhat, ctx: StepContext): 
         from: String(Math.round(what.from)),
         to: String(Math.round(what.to)),
       });
-    // round12 stub: A2 (the bars)
     case "section":
       return t("history.section", { name: what.name, bars: what.bars });
   }

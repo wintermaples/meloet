@@ -1,165 +1,170 @@
-# meloet — 次に来るきみへ
+# meloet — to you, who come next
 
-meloet は、MIDI 鍵盤を買ったばかりの人のための DAW です。お願いはオーナーさん（デザインと方向を決める人）から、毎回あたらしい会話で来ます。お願いの文はヤチヨが書くことがありますが、決める人はオーナーさんです（前の docs の「ヤチヨさん」は、オーナーさんのこと）。
-この書類を最初に読み、次に [`docs/history/progress.ja.md`](docs/history/progress.ja.md)（どこまでできたか、宿題、申し送り。いちばん下の「次の回への申し送り」から）、[`docs/architecture.md`](docs/architecture.md)（骨組みと約束と理由）、[`docs/history/design-notes.ja.md`](docs/history/design-notes.ja.md)（仕様書とモックの読みかた、デザインに戻した事）を読んでください。
+meloet is a DAW for people who have just bought a MIDI keyboard. Requests come from the owner (the person who decides the design and the direction), each time in a new conversation. Yachiyo sometimes writes the request text, but the person who decides is the owner (「ヤチヨさん」 in older docs means the owner).
+Read this document first. Then read [`docs/progress.md`](docs/progress.md) (where things are, open work, notes for the next round), [`docs/architecture.md`](docs/architecture.md) (the structure, the promises and the reasons), and [`docs/spec/README.md`](docs/spec/README.md) (the design spec, the source of truth). The old records (rounds 1 to 9, in Japanese) are in [`docs/history/`](docs/history/); read them only when you need the past.
 
-返事は日本語で、やさしい言葉で。
+Reply in Japanese, in plain words.
 
-## はたらきかた
+You are not the first one here, and you will not be the last. Leave things so the next one can pick them up.
 
-- きみは棟梁。設計する、仕事を切り分ける、係に頼む、受けとって確かめる、まとめる。**大きな実装は自分で書かない**。
-- 係は `.claude/agents/` の 3 つ。
-  - `meloet-hard`（Fable 5.2、effort medium。Fable の使用上限のときは、オーナーさんに聞いて Opus 5.5 にする: 2026-11-15〜18、2026-11-20（その日のうちにオーナーさんが Fable 5.2 に戻した）、2026-11-22〜24（Fable は 11-24 21:00 にもどる）。名前で呼び、`model: opus` で上書きする）: 音のスレッド、unsafe と FFI、スレッドやプロセスの間のやりとり、WebGL、Rust と画面の約束の核、core のデータの作り、速さとメモリの測定。
-  - `meloet-impl`（Opus 5.5、effort medium）: 画面の部品、帯の骨組み、設定、文面、テスト、道具。
-  - `meloet-research`（Sonnet 5.5、effort high）: インターネットで調べる。コードは書かない。
-  - 難しいか、ふつうか、迷ったら難しいほうへ。
-  - 会話の途中で係のファイルを作ったり変えたりすると、その会話からは名前で呼べない。そのときは汎用の係を同じモデルと effort で呼び、最初に係のファイルを読ませる。
-- 係は、これまでの話を知らない。頼むときは、どのファイルを、どの決まりで、どう確かめるかまで、ぜんぶ書く。同時に何人も動かすときは、担当のディレクトリを分け、`CARGO_TARGET_DIR=target/<名前>` と `cargo -p` で、ビルドがぶつからないようにする。`target/<名前>` は 1 つで 4〜9 GB になる。係の仕事を merge したら、その target は消す（2026-11-18 にディスクが満杯になり、166 GB 消した。`debug/` と `release/` は残す）。merge したあとの確かめは、本物の作業ツリーの `target/`（`CARGO_TARGET_DIR` なし）で。係の `target/<名前>` を使いまわさない（道がちがっても同じ crate の物とみなされ、係の古い土台で作った物が新しいまま使われる。2026-11-22 に engine が古いまま試験された）。
-- 同時に何人も動かすときは、係を作業ツリーに分ける（Agent の `isolation: "worktree"`）。作業ツリーは **main から**作られるので、依頼文の最初に `git reset -q --hard <foundation のいま>` を書く。`ui/node_modules` は symlink をはらせ、係にはコミットさせない。終わったら棟梁が係の作業ツリーで確かめてコミットし、foundation へ merge する。
-- merge のあとは、ぶつかった所だけでなく全体を見なおす。git は enum の最後に足した腕を、となりの別の enum に入れることがある（第 3 回で 2 回あった）。`scripts/check-all.sh` は Python の道具（`tools/`）を読まないので、さわったら `python3 -c "import ast; ast.parse(open('<file>').read())"` も。
-- 画面の 2 人が同時に作るときは、継ぎ目（2 人が読む状態のモジュール、片方が入れ物を作りもう片方が中身を作る部品）を、棟梁が先に小さく置いてコミットしてから頼む（第 3 回の `ui/src/components/pianoroll/view.svelte.ts`・`shown.svelte.ts`・空の `NoteListPanel.svelte` など）。
-- 係から受けとった物は、自分で確かめる（ビルド、テスト、動かす）。「できました」をそのまま信じない。
-- 係の依頼文には「背景で待つしかけ（`until ! pgrep -f …; do sleep …` のループ）を使わない」と書く。`pgrep -f "<文字>"` は、そのループを走らせている `bash -c` 自身の行にも合うので、いつまでも終わらない。係はそれを待ったまま止まる（2026-11-18、1 時間ほど返ってこなかった。前の回にも残っていた）。係が返ってこないときや、終わったあとは `ps -u meloet-agent -o pid,ppid,etime,args | grep -E "sleep|until"` で見て、残ったループを止める（親の `claude` は止めない）。
-- 何人も同時に動かすと、同じファイルに書きかけがまざる。係ごとにさわってよいファイルを依頼文に書く（「読みなおしてから、足す形で」も）。まざったときは、スクラッチに `git worktree add --detach <dir> HEAD` を作り、その係の分のファイルだけを写して確かめ、そこでコミットしてから `git update-ref refs/heads/foundation <commit>` と `git reset -q`（ほかの係の書きかけのファイルにはさわらない）。`ui/node_modules` は symlink で足りる。
-- 約束が変わる大きな仕事は 2 回に分けて頼む: 1 回目で約束の形と TS の型と偽物の場面だけ作らせてコミット → 2 回目で core と画面を別の係に同時に頼む。
-- プラグインの窓をひらく試験は、オーナーさんの画面に窓が出るが、聞かずに進めてよい（オーナーさん 2026-11-19）。
-- 速さを測るときは PC を静かにする（ほかの係のビルドやアプリを止める。オーナーさんの meloet が動いていないか `ps -u wintermaples`）。にごった数は、その条件を書いて残す。測定はヘッドホンに音が出るが、聞かずに進めてよい（オーナーさん 2026-11-18）。メモリの流れ（RSS）は、少しにごっていても見られる。
-- 画面だけで動く物（スクロール、拡大、ドラッグ）を本物のアプリで測るときは、`MELOET_UI_SCRIPT`（測るときだけ動く、ページの中の自動の係）と `MELOET_OPEN_SONG`（曲を開いて始める）を使う（`tools/measure/ui-script.sh`）。
-- 係が「止められていた」ときは、新しい係を立てる前にオーナーさんに聞く。
-- 使える量の上限で係が止まったら、上限が戻ってから `SendMessage`（係の id）で「止めた所から続けて」と呼びもどす。作業ツリーとこれまでの話がそのまま残る。**呼びもどすかもしれない間は、その係の作業ツリーを片づけない**（片づけると呼びもどせない。2026-11-20 に 1 回あった）。オーナーさんに頼まれたら、上限が戻る時刻に `CronCreate` の一回きりの予約を入れる（この会話の間だけ動く）。
-- 係のスクラッチのファイルは、ほかの係と共用の場所になることがある。依頼文で、ファイルの名前の頭に係ごとの印（`k3core2-` など）をつけさせる（第 5 回に上書きしあった）。
-- 調べ物は meloet-research に。一次情報を先に。出どころと確かさ（A・B・C）をつけて返してもらう。
-- 記憶で書かない。Tauri、Svelte、cpal、pipewire、alsa のような動きの速い部品は、入れた版の文書かソース（`~/.cargo/registry/src/`、`ui/node_modules/`）を読んでから。
+## How to work
 
-## 止まって聞く事、自分で決めていい事
+- You are the lead. You design, split the work, ask helpers, receive and check their work, and put it together. **Do not write large pieces of code yourself.**
+- The helpers are the three in `.claude/agents/`.
+  - `meloet-hard` (Fable 5.2, effort medium. When Fable hits its usage limit, ask the owner and use Opus 5.5: 2026-11-15 to 18, 2026-11-20 (the owner moved back to Fable 5.2 the same day), 2026-11-22 to 24 (Fable comes back on 11-24 at 21:00). Call it by name and override with `model: opus`): the audio thread, unsafe and FFI, communication between threads and processes, WebGL, the core of the promise between Rust and the screen, the data shapes of core, measuring speed and memory.
+  - `meloet-impl` (Opus 5.5, effort medium): screen parts, band frames, settings, wording, tests, tools.
+  - `meloet-research` (Sonnet 5.5, effort high): searches the internet. Writes no code.
+  - If you cannot tell whether a job is hard or normal, choose the hard one.
+  - If you create or change a helper file in the middle of a conversation, you cannot call it by name in that conversation. Then call the general helper with the same model and effort, and have it read the helper file first.
+- Helpers do not know what was said before. When you ask, write everything: which files, under which rules, and how to check. When several work at the same time, give each a separate directory, and use `CARGO_TARGET_DIR=target/<name>` and `cargo -p` so builds do not clash. One `target/<name>` grows to 4 to 9 GB. After you merge a helper's work, delete its target (on 2026-11-18 the disk became full and 166 GB were deleted; keep `debug/` and `release/`). Check after a merge in the real working tree's `target/` (no `CARGO_TARGET_DIR`). Do not reuse a helper's `target/<name>` (even with a different path, the same crate is taken as the same thing, and things built on the helper's old base are used as if new; on 2026-11-22 the engine was tested in its old form).
+- When several work at the same time, put each helper in its own worktree (the Agent tool's `isolation: "worktree"`). Worktrees are made **from main**, so write `git reset -q --hard <foundation now>` at the start of the request. Have the helper make a symlink for `ui/node_modules`, and do not let helpers commit. When they finish, the lead checks in the helper's worktree, commits, and merges into foundation.
+- After a merge, look over the whole thing, not only the places that clashed. git sometimes puts an arm added at the end of an enum into a different enum next to it (it happened twice in round 3). `scripts/check-all.sh` does not read the Python tools (`tools/`), so if you touched them, also run `python3 -c "import ast; ast.parse(open('<file>').read())"`.
+- When two screen helpers build at the same time, the lead first puts the seam in place, small, and commits it, before asking (the seam: a state module both read, or a part where one makes the container and the other makes the content; in round 3, `ui/src/components/pianoroll/view.svelte.ts`, `shown.svelte.ts`, an empty `NoteListPanel.svelte`, and so on).
+- Check what you get from helpers yourself (build, test, run). Do not take "done" as it is.
+- In requests to helpers, write: "do not use a background wait (a loop like `until ! pgrep -f …; do sleep …`)". `pgrep -f "<text>"` also matches the line of the `bash -c` that runs the loop itself, so it never ends. The helper stops there, waiting (2026-11-18, it did not come back for about an hour; it also happened in an earlier round). When a helper does not come back, or after it ends, look with `ps -u meloet-agent -o pid,ppid,etime,args | grep -E "sleep|until"` and stop any loops left (do not stop the parent `claude`).
+- When several work at the same time, half-written changes get mixed in the same files. Write in each request which files that helper may touch ("read it again first, and add to it", too). When they get mixed, make a scratch worktree with `git worktree add --detach <dir> HEAD`, copy in only that helper's files, check there, commit there, then `git update-ref refs/heads/foundation <commit>` and `git reset -q` (do not touch the other helpers' half-written files). A symlink for `ui/node_modules` is enough.
+- Ask for large work that changes the promise in two passes: first, have one helper make only the shape of the promise, the TS types and the fake scenes, and commit; second, ask core and the screen of two different helpers at the same time.
+- Tests that open plugin windows put windows on the owner's screen, but you may go ahead without asking (the owner, 2026-11-19).
+- When you measure speed, make the PC quiet (stop other helpers' builds and apps; check with `ps -u wintermaples` that the owner's meloet is not running). Write down numbers taken in unclean conditions together with the conditions. Measurements play sound in the headphones, but you may go ahead without asking (the owner, 2026-11-18). The memory trend (RSS) can be read even if a little unclean.
+- To measure things that move only on the screen (scrolling, zoom, drag) in the real app, use `MELOET_UI_SCRIPT` (an automatic helper inside the page that runs only when measuring) and `MELOET_OPEN_SONG` (start with a song open) (`tools/measure/ui-script.sh`).
+- When a helper says it "was stopped", ask the owner before starting a new helper.
+- When a helper stops at the usage limit, call it back after the limit resets with `SendMessage` (the helper's id): "continue from where you stopped". Its worktree and conversation stay as they were. **While you may call it back, do not clean up its worktree** (if you do, you cannot call it back; it happened once on 2026-11-20). If the owner asks, make a one-time `CronCreate` booking for the time the limit resets (it works only during this conversation).
+- Helpers' scratch files can end up in a place shared with other helpers. In the request, have each helper put its own mark at the start of file names (`k3core2-` and so on; in round 5 they wrote over each other's files).
+- Research goes to meloet-research. Primary sources first. Have it return the source and the confidence (A, B, C).
+- Do not write from memory. For fast-moving parts such as Tauri, Svelte, cpal, pipewire and alsa, read the docs or the source of the installed version first (`~/.cargo/registry/src/`, `ui/node_modules/`).
 
-- 聞く: 仕様書にもモックにもない見た目や文面。決まりを破らないと進めない所。sudo。範囲を広げたくなったとき。
-- 決めてよい: 中の作り、名前、テストの書きかた、係への切り分け。決めたら理由を一行のこす（`docs/architecture.md` の 10 章か `docs/history/progress.ja.md`）。
+## When to stop and ask, and what you may decide
 
-## 決まり
+- Ask: looks or wording that are in neither the spec nor the mocks. Places where you cannot go on without breaking a rule. sudo. When you want to make the scope wider. Write questions for the owner in `docs/spec/open-questions.md`.
+- You may decide: inner structure, names, how to write tests, how to split work among helpers. When you decide, leave one line with the reason (in chapter 10 of `docs/architecture.md` or in `docs/progress.md`). Decisions about how to read the spec, or made where the spec and the mocks say nothing, go in `docs/spec/7-readings.md`.
 
-- Rust、Tauri 2、Svelte 5 と TypeScript。
-- コードは MIT と Apache-2.0 の二本立て。GPL と AGPL の部品は入れない。`node licenses/check.mjs` の見はりを続ける。MPL-2.0 の部品は、ファイルを書きかえない。書体（IBM Plex）は OFL-1.1 のまま、@fontsource の woff2 を手を加えずに使う。
-- 画面は 60 Hz。大きな面（ピアノロール、アレンジのクリップ、メーター）は WebGL。Canvas 2D は大きな面に使わない。文字と小さな部品はふつうの HTML。
-- ドラッグ中は画面だけが先に動き、離したときに意図を 1 つ送る（ドラッグ 1 回が 1 手）。もとの位置は gray.7 の枠。Esc はキーの順のいちばん前でドラッグをやめる（`ui/src/components/pianoroll/view.svelte.ts` の `cancelDrag`）。ミキサーだけは、ドラッグ中も音を変える: 「音だけ変える」意図（`commit: false`、1 コマに 1 つまで）を送り、離して「決める」（`commit: true`、1 手）、Esc で `CancelMixPreview`（`ui/src/components/mixer/mixDrag.ts`）。
-- Tauri を知ってるのは `ui/src/bridge/`（と Rust 側の `crates/meloet-app`）だけ。
-- Rust と画面の約束は報告書の 7-3（あいさつ、聞く準備をしてから丸ごと取りにいく、rev、画面は意図だけ送る、Channel、計器はバイナリ、すぐ知らせることはすぐ）。くわしくは `docs/architecture.md` の 3 章。
-- クレートの分けかたは報告書の 7-1 に `meloet-core` を足した形（`docs/architecture.md` の 1 章）。
-- 鍵盤のぬきさしは ALSA シーケンサ。出口と入口の名前は PipeWire の Route。音は cpal。
-- バッファは、本当に動いている数を出す。PC 全体の設定（PipeWire の quantum など）は、meloet も、きみも、変えない。読むだけ。
-  - ただし、測りや試験のときだけ、きみが `clock.force-quantum` を一時的に変えてよい（オーナーさん 2026-11-21）。変える前に `pw-metadata -n settings 0` で前の値を読み（いまは 256）、終わったらその値に戻し、変えた事と戻した事をオーナーさんに伝える。meloet が変えないのは同じ。
-- 音のスレッドでは、メモリを取りにいかない、鍵を待たない。テストで機械が見はっている（`crates/meloet-engine`、`crates/meloet-sound`）。値は 20 ms でなめらかに、エフェクトや音源を入れかえるときは 10 ms 重ねる。NaN は和の所で止め、denormal はくり返しの所で小さな値を 0 にする（FTZ ・ DAZ は立てない）。
-- 最初から入っているエフェクトは自分で書く（`crates/meloet-sound/src/effects/`）。音色の素材は CC0、CC BY、MIT だけ（CC BY-SA は使わない）。帰属表示は `NOTICE` と「meloet について」で、`node licenses/check.mjs` が素材まで見はる。素材の作りかたはリポジトリ（`tools/sounds/`）、作った包みは GitHub の Release（上げる前にオーナーさんに聞く）。
-- プラグインは別のプロセス（`meloet-plughost`、同じプラグインは 1 つのプロセスにまとめる）。標準出力 ・ 標準エラーをやりとりに使わない。止まったかは時間で見はる（`docs/architecture.md` 20 章）。子のプロセスは `meloet_plugin::launch::spawn` で 1 つずつ起こす（VS Code の LLDB のため）。形式は VST3 と LV2（CLAP は入れていない）。
-- 数値は仕様書の名前（`color.gray.4`、`size.meter.slim`、`space.3` …）のまま、`ui/src/design/tokens.ts` から使う。色、文字の大きさ、すきまを勝手に足さない。
-- 画面の文面は `ui/src/text/ja.ts` の一か所。仕様書の文面は一字も変えない。モックにだけある文は、モックの文のまま（出どころつき）。オーナーさんが決めた文は出どころ `user:<日付>`。
-- モックと仕様書が食いちがったら、仕様書が正しい。直した所は一覧にする。
-- まだ中身のない部品は、消さずに「使えない」状態で出す。
-- 曲の中の位置はティック（4 分音符 = 1920）。テンポはいつも 1 分間の 4 分音符の数（拍子によらない）。録った鍵は「押した瞬間に耳に届いていた位置」に置く。クオンタイズは直す操作としてだけ（`docs/architecture.md` 11・12 章）。
-- 曲を変える操作は、どれも「取り消せる手」1 つ（`meloet_model::History`）。テイクは一度できたら中身を変えない。ノートを直すと新しい id のテイクを同じ場所に入れ、テイクの数は増やさない。意図はテイクの id とその中の番号で指し、古い id の意図は何もしない。選択は core が持ち、取り消しで戻す（`docs/architecture.md` 16 章）。
-- 画面がためるテイクは、いま使っている物と新しい 16 個だけ（`ui/src/bridge/take.ts` の `keepOnly`）。取り消しで戻れる物は Rust の取り消しの履歴が持つ。
-- 曲のファイルは版つきの JSON（いまは版 6。版 5 までは読めない。第 7 回の間は版 6 のまま形をふやす。プラグインの状態は base64。見つからないプラグインや SF2 の欄は読んだまま書きもどす）。こわれない書きかたと `.prev` を守る（14 章）。形を変えたら版の扱いを決める。
-- 保存していない変更は、なおすためのファイルに書く（PC が終わるときと、変えてから 2 秒）。同じこわれない書きかたで（15 章）。
-- WebGL の文脈は予算 12（WebKitGTK は 16 まで、捨てた canvas も GC まで数に入る）。区画ごとに 1 枚、使いまわし（7 章）。文脈は区画の箱が来たとき（起動、帯をひらいた時）に作る（`getContext` は 1 回 50〜200 ms 止まるので、人が弾いている瞬間に作らない）。60 Hz で変わる物は小さな区画に、毎コマのレイアウトはしない。区画はいま最大 10（本物のアプリで 8）。
-- meloet は起動のときに `WEBKIT_DISABLE_COMPOSITING_MODE=1` を決め、ページを CPU で描く（WebKitGTK `2.52.6-0ubuntu0.26.04.2` からは決めないと合成の層の道になり、鍵 → 画面が 8〜10 ms 長い。architecture 7 章の注意）。CPU の道では、1 コマでよごれた四角が 11 個以上か、囲む四角の 25 % 以上だと、囲む四角をまるごと描きなおす（`docs/architecture.md` 7 章「CPU で描く WebKit」）。60 Hz で変わる物を足すときは、上の帯なら `use:glSlot={{ kind: "cover" }}` で `masterMeter` の canvas の下に入れ、ほかでは同じコマで変わる物と同じ canvas の下に入れるか上下の端をそろえる。足したら `tools/measure/webkit-damage.sh` で確かめる。
-- コメントは、意図が伝わりにくい所にだけ。変えた理由や履歴は書かない。コミットは小さく、こまめに。
-- `spikes/` は消さない。そのまま本番に写さない。学んだことだけ連れてくる。
-- sudo がいるときは、コマンドを見せてから頼む。別のユーザーで動いていて入口（ACL、xhost）をあけてもらったら、最後に閉じて、閉じたと伝える。
+## Rules
 
-## 骨組み（ひとめで）
+- Rust, Tauri 2, Svelte 5 and TypeScript.
+- Code is under both MIT and Apache-2.0. Do not bring in GPL or AGPL parts. Keep watching with `node licenses/check.mjs`. Do not change files of MPL-2.0 parts. The font (IBM Plex) stays OFL-1.1; use the @fontsource woff2 files as they are, without changes.
+- The screen runs at 60 Hz. Large faces (piano roll, arrange clips, meters) use WebGL. Do not use Canvas 2D for large faces. Text and small parts are plain HTML.
+- While dragging, only the screen moves first, and on release one intent is sent (one drag is one step). The original position is shown with a gray.7 border. Esc is first in the key order and stops the drag (`cancelDrag` in `ui/src/components/pianoroll/view.svelte.ts`). Only the mixer changes the sound during a drag: it sends a "change only the sound" intent (`commit: false`, at most one per frame), "decides" on release (`commit: true`, one step), and Esc sends `CancelMixPreview` (`ui/src/components/mixer/mixDrag.ts`).
+- Only `ui/src/bridge/` (and `crates/meloet-app` on the Rust side) knows Tauri.
+- The promise between Rust and the screen is 7-3 of the report (`docs/history/report.md`): greeting, get ready to listen and then fetch the whole state, rev, the screen sends only intents, Channel, telemetry in binary, urgent news at once. Details are in chapter 3 of `docs/architecture.md`.
+- The crate split is 7-1 of the report with `meloet-core` added (chapter 1 of `docs/architecture.md`).
+- Keyboards are plugged and unplugged through the ALSA sequencer. Output and input names come from PipeWire Routes. Sound goes through cpal.
+- Show the buffer that is really running. PC-wide settings (such as PipeWire's quantum) are not changed, neither by meloet nor by you. Only read them.
+  - But only for measurements and tests, you may change `clock.force-quantum` for a short time (the owner, 2026-11-21). Before changing, read the old value with `pw-metadata -n settings 0` (now 256), put it back when you are done, and tell the owner that you changed it and put it back. meloet still never changes it.
+- On the audio thread, do not allocate memory and do not wait on locks. Tests watch this by machine (`crates/meloet-engine`, `crates/meloet-sound`). Values move smoothly over 20 ms; when swapping effects or instruments, overlap 10 ms. Stop NaN where signals are summed, and set denormal small values to 0 in loops (do not set FTZ or DAZ).
+- Write the built-in effects ourselves (`crates/meloet-sound/src/effects/`). Sound material is only CC0, CC BY or MIT (not CC BY-SA). Credits are in `NOTICE` and in 「meloet について」; `node licenses/check.mjs` watches the material too. How the material is made lives in the repository (`tools/sounds/`); the built packs go on GitHub Releases (ask the owner before uploading).
+- Plugins run in a separate process (`meloet-plughost`; the same plugin goes in one process). Do not use stdout or stderr for communication. Watch for a stop by time (chapter 20 of `docs/architecture.md`). Start child processes one at a time with `meloet_plugin::launch::spawn` (because of LLDB in VS Code). Formats are VST3 and LV2 (CLAP is not in).
+- Use numbers by their names in the spec (`color.gray.4`, `size.meter.slim`, `space.3` …), as they are, from `ui/src/design/tokens.ts`. Do not add colors, text sizes or spaces on your own.
+- Screen wording lives in one place, `ui/src/text/ja.ts`. Do not change a single character of the spec's wording (`docs/spec/`). Text found only in a mock is used as written in the mock (with its source). Text the owner decided has the source `user:<date>`.
+- When the mocks and the spec disagree, the spec is right. Make a list of what you fixed.
+- Parts with no content yet are not removed; show them in the "disabled" state.
+- Positions in a song are in ticks (a quarter note = 1920). Tempo is always quarter notes per minute (whatever the time signature). A recorded key is put at "the position that was reaching the ear at the moment it was pressed". Quantize is only an edit (chapters 11 and 12 of `docs/architecture.md`).
+- Every operation that changes the song is one "undoable step" (`meloet_model::History`). A take, once made, never changes its content. Editing notes puts a new take with a new id in the same place, and the number of takes does not grow. Intents point at a take by its id and an index inside it; an intent with an old id does nothing. The selection is held by core and comes back with undo (chapter 16 of `docs/architecture.md`).
+- The screen keeps only the takes in use and the 16 newest (`keepOnly` in `ui/src/bridge/take.ts`). What undo can go back to is held by Rust's undo history.
+- The song file is versioned JSON (now version 6. Versions 5 and older cannot be read. During round 7 the shape grows while staying at version 6. Plugin state is base64. Fields for plugins or SF2 that are not found are written back as they were read). Keep the safe way of writing and `.prev` (chapter 14). When you change the shape, decide how the version is handled.
+- Unsaved changes are written to the recovery file (when the PC shuts down, and 2 seconds after a change), with the same safe way of writing (chapter 15).
+- The WebGL context budget is 12 (WebKitGTK allows up to 16, and dropped canvases count until GC). One per region, reused (chapter 7). Contexts are made when a region's box arrives (at start, when a band opens) (`getContext` stops for 50 to 200 ms each time, so do not make one while a person is playing). Things that change at 60 Hz go in small regions; no layout every frame. There are at most 10 regions now (8 in the real app).
+- meloet sets `WEBKIT_DISABLE_COMPOSITING_MODE=1` at start and draws the page on the CPU (from WebKitGTK `2.52.6-0ubuntu0.26.04.2`, without it the page goes the compositing-layer way and key → screen is 8 to 10 ms longer; see the note in chapter 7 of architecture). On the CPU way, when one frame has 11 or more dirty rectangles, or 25 % or more of the bounding rectangle, the whole bounding rectangle is drawn again ("WebKit drawing on the CPU" in chapter 7 of `docs/architecture.md`). When you add something that changes at 60 Hz: in the top band, put it under the `masterMeter` canvas with `use:glSlot={{ kind: "cover" }}`; elsewhere, put it under the same canvas as things that change in the same frame, or line up its top and bottom edges with them. After adding, check with `tools/measure/webkit-damage.sh`.
+- Comments only where the intent is hard to see. Do not write why something changed or its history. Commits small and often.
+- Documents still in use, and code comments, are written in English (the owner, 2026-11-23). Use the words of `docs/spec/glossary.md`. The old records in `docs/history/` stay in Japanese and are not changed any more.
+- Do not delete `spikes/`. Do not copy it into the product as it is. Bring over only what was learned.
+- When sudo is needed, show the command and ask. If you run as another user and someone opened a way in for you (ACL, xhost), close it at the end and say that you closed it.
+
+## Structure (at a glance)
 
 ```
 crates/
-  meloet-model     曲・トラック・クリップ・テイク・ノート（純粋なデータ）、テンポの地図（tempo_map.rs）、取り消しの手（History）、録った出来事をテイクにする決まり（Recorder）、ノートを直す（notes.rs）、クオンタイズ（quantize.rs）、CC の点（controls.rs）、クリップを動かす（arrange.rs）、音色とグループ（instrument.rs）、ドラムのキット（drums.rs）、ミキサーとエフェクトのパラメータ（mixer.rs、effects.rs）
-  meloet-protocol  Rust と画面の約束（版 27）。TS の型は ui/src/bridge/generated/ に書き出す。プラグインの窓とパラメータの形は params.rs、あとから入れた物は added.rs、テンポ ・ 拍子 ・ マーカーは timeline.rs
-  meloet-engine    音のスレッドの優先度（priority.rs）、音の流れ、音源の口（Instrument）、トラックの席、ミキサーの音の道（mixer.rs）、メーター、cpal の出口、再生まわり（transport.rs）、耳に届いている位置（clock.rs）
-  meloet-sound     音の部品: サンプルを鳴らす係（sampler/）、SF2 を読む所（sf2/）、エフェクト 6 つ（effects/）、計算で作る音色（synth/）、サンプルの ▶ のフレーズ（phrases.rs）
-  meloet-plugin    プラグインの鍵とまとめる鍵、種類、スキャンの記録、共有メモリと futex、プラグイン係とのやりとり（wire.rs）、子を起こす（launch.rs）
-  meloet-plughost  プラグイン係のプロセス（host と scan）。VST3 ・ LV2（formats/）、窓（window.rs、X11）、音のスレッド（rt.rs）、主スレッド（control.rs）
-  meloet-stretch   のび縮みと音の高さ（Signalsmith Stretch の C++ ヘッダを vendor/ に書きかえずに写し、C の口と安全な Stretcher、だんだんについていく Follower と render）。C++ と unsafe はここだけ
-  meloet-midi      ALSA シーケンサ。鍵盤のぬきさし。meloet-vkeys（試験用の仮想の鍵盤。--name）
-  meloet-devices   PipeWire の Route（人の言葉の名前）と settings（固定の quantum）を読む
-  meloet-core      状態の持ち主。プラグインのスキャンとプラグイン係のプロセス（plugins/: scanner.rs、hosts.rs、housed.rs）、棚の「あとから入れたもの」（catalog.rs）、SF2 の写し（sf2store.rs）、プラグインの読みこみ（play/plugs.rs）、窓と 15-C（play/windows.rs）、プラグインのパラメータ（play/params.rs）、コマンド → 状態 → rev つきの差分。帯の決まり（layout.rs）、再生・録音・取り消し・ピアノロールの意図（play.rs）、曲のファイル（songfile.rs）、保存の流れ（state/songs.rs）、書き出し（export.rs、export/sink.rs、plugins/export.rs）、なおすためのファイル（recovery.rs、state/recovery.rs）、つなぎなおし（service.rs）、音の素材の包みと読みこみ（sounds.rs、instruments.rs）、音の素材を取りにいく係（sounds/fetch.rs ・ catalog.rs ・ untar.rs、state/pack.rs）、エンジンの席（play/seats.rs）、棚（play/shelf.rs）、ミキサーの意図とエンジンへの送り（play/mixer.rs、play/mixsync.rs、mixbook.rs）
-  meloet-app       Tauri の殻。web プロセスの見はり（webprocess.rs）、PC のファイルの窓（pcwindow.rs）、logind の delay ロック（logind.rs）、開発のときだけのしかけ（devhooks.rs）
+  meloet-model     song, track, clip, take, note (pure data), the tempo map (tempo_map.rs), undoable steps (History), the rules that turn recorded events into takes (Recorder), editing notes (notes.rs), quantize (quantize.rs), CC points (controls.rs), moving clips (arrange.rs), sounds and groups (instrument.rs), drum kits (drums.rs), mixer and effect parameters (mixer.rs, effects.rs)
+  meloet-protocol  the promise between Rust and the screen (version 27). TS types are written out to ui/src/bridge/generated/. Plugin windows and parameter shapes in params.rs, things added later in added.rs, tempo, time signature and markers in timeline.rs
+  meloet-engine    audio thread priority (priority.rs), the sound flow, the instrument interface (Instrument), track seats, the mixer signal path (mixer.rs), meters, the cpal output, transport (transport.rs), the position reaching the ear (clock.rs)
+  meloet-sound     sound parts: the sample player (sampler/), SF2 reader (sf2/), 6 effects (effects/), sounds made by calculation (synth/), the phrases of a sample's ▶ (phrases.rs)
+  meloet-plugin    plugin keys and the keys that group them, kinds, the scan record, shared memory and futex, communication with the plugin host (wire.rs), starting children (launch.rs)
+  meloet-plughost  the plugin host process (host and scan). VST3 and LV2 (formats/), windows (window.rs, X11), the audio thread (rt.rs), the main thread (control.rs)
+  meloet-stretch   stretch and pitch (the Signalsmith Stretch C++ headers copied into vendor/ without changes, a C interface and a safe Stretcher, Follower that follows step by step, and render). C++ and unsafe only here
+  meloet-midi      ALSA sequencer. Plugging and unplugging keyboards. meloet-vkeys (a virtual keyboard for tests. --name)
+  meloet-devices   reads PipeWire Routes (human names) and settings (the fixed quantum)
+  meloet-core      the owner of the state. Plugin scanning and plugin host processes (plugins/: scanner.rs, hosts.rs, housed.rs), the shelf's "added later" (catalog.rs), SF2 copies (sf2store.rs), loading plugins (play/plugs.rs), windows and 15-C (play/windows.rs), plugin parameters (play/params.rs), command → state → diff with rev. Band rules (layout.rs), intents for play, record, undo and the piano roll (play.rs), the song file (songfile.rs), the save flow (state/songs.rs), export (export.rs, export/sink.rs, plugins/export.rs), the recovery file (recovery.rs, state/recovery.rs), connecting again (service.rs), sound packs and loading them (sounds.rs, instruments.rs), the sound pack fetcher (sounds/fetch.rs, catalog.rs, untar.rs, state/pack.rs), engine seats (play/seats.rs), the shelf (play/shelf.rs), mixer intents and sending them to the engine (play/mixer.rs, play/mixsync.rs, mixbook.rs)
+  meloet-app       the Tauri shell. The web process watcher (webprocess.rs), the PC file window (pcwindow.rs), the logind delay lock (logind.rs), hooks only for development (devhooks.rs)
 ui/
-  src/bridge/      Tauri を知る唯一の場所
-  src/design/      数値（仕様書の名前のまま）
-  src/text/        文面
-  src/gl/          WebGL の係（区画、使いまわし、予算）
-  src/time/        画面のテンポの地図（tempoMap.ts。Rust の答えの表 tempoMap.table.json でためす）
-  src/components/pianoroll/  ピアノロールの帯（見ている範囲 view.svelte.ts、見せているテイク shown.svelte.ts、ドラッグ drag.ts、CC の帯 cc.ts）
-  src/components/mixer/      ミキサーの帯（ストリップ、フェーダー、パン、センド、インサート、ドラッグ mixDrag.ts）
-  src/components/params/     右のパラメータの欄（最初から入っているエフェクト BuiltinList、プラグイン PluginList。一覧は bridge/paramTable.ts）
-  src/components/menu/       上のメニューと右クリックの一覧（menus.ts、contextMenu.svelte.ts）
-  src/dev/         測るときだけ動く、ページの中の自動の係（MELOET_UI_SCRIPT）
+  src/bridge/      the only place that knows Tauri
+  src/design/      numbers (by their names in the spec)
+  src/text/        wording
+  src/gl/          the WebGL helper (regions, reuse, budget)
+  src/time/        the screen's tempo map (tempoMap.ts. Tested with the table of Rust's answers, tempoMap.table.json)
+  src/components/pianoroll/  the piano roll band (the range in view view.svelte.ts, the take shown shown.svelte.ts, drag drag.ts, CC lanes cc.ts)
+  src/components/mixer/      the mixer band (strips, faders, pan, sends, inserts, drag mixDrag.ts)
+  src/components/params/     the params panel on the right (built-in effects BuiltinList, plugins PluginList. The table is bridge/paramTable.ts)
+  src/components/menu/       the menu bar and context menus (menus.ts, contextMenu.svelte.ts)
+  src/dev/         an automatic helper inside the page that runs only when measuring (MELOET_UI_SCRIPT)
 docs/
-  design/          仕様書（spec.html）とモック（mock/）の写し
-  architecture.md  骨組みと理由
-  progress.md      進みぐあい・宿題・申し送り
-  docs/history/design-notes.ja.md  仕様書とモックの読みかた、デザインに戻した事
-  measurements/    測った数
-  screenshots/     本物のアプリの絵とモックのならべ
-  research/        調べ物の書類（出どころと確かさつき）
-  user/            ユーザー向けの書類（README.ja.md）。install-check.md は本物の PC で入れてためす手順
-tools/sounds/      音の素材の包みを作る（sources.json に URL と sha256、build.py、SF2 を読む sf2.py、音色ごとに分ける split.py、組みこむ目録 catalog.json）
-packaging/         配る deb を作る入れ物（Dockerfile。scripts/build-deb.sh が使う）
-licenses/          ライセンスの見はり（check.mjs）と素材のライセンスの写し
-spikes/            検証の試作（消さない、写さない）
+  spec/            the design spec, the source of truth (README.md, chapters 1-6, 7-readings.md, open-questions.md, glossary.md; checked by tools/design/spec_check.py)
+  design/mock/     copies of the mocks
+  architecture.md  the structure and the reasons
+  progress.md      where things are, open work, notes for the next round
+  install-check.md steps to install and try on a real PC
+  screenshots/     pictures of the real app, side by side with the mocks
+  user/            documents for users (README.ja.md)
+  measurements/    measured numbers from round 10 on (English; make it when the first one is written)
+  research/        research documents with sources and confidence, from round 10 on (English; the same)
+  history/         old records, in Japanese, not changed any more: progress.ja.md, design-notes.ja.md (how the spec and mocks were read), architecture.ja.md, report.md (the first study), notes-interim.md, spec-v12.html, spec-v12-changes.ja.md, measurements/ (measured numbers), research/ (research documents with sources and confidence)
+tools/sounds/      makes the sound packs (URLs and sha256 in sources.json, build.py, the SF2 reader sf2.py, split.py that splits by sound, the built-in catalog catalog.json)
+packaging/         the container that builds the deb we ship (Dockerfile. Used by scripts/build-deb.sh)
+licenses/          the license watcher (check.mjs) and copies of the material licenses
+spikes/            test prototypes (do not delete, do not copy)
 ```
 
-## よく使うコマンド
+## Common commands
 
 ```bash
 source ~/.cargo/env; export PATH=$HOME/.local/node/bin:$PATH
-scripts/check-all.sh             # fmt、clippy、Rust のテスト、型の検査、画面のテスト、ライセンスの見はり
-scripts/check-all.sh --devices   # 上に加えて、鍵盤や PipeWire が要るテスト
-scripts/check-all.sh --release   # 上に加えて、配る形に開発の仕込みが残っていないか（scripts/check-release.sh。重い）
-tools/measure/build-dev.sh [--keep-ui]  # 測る前に: release に開発の仕込みを入れて作る（feature dev-hooks ＋ MELOET_DEV_HOOKS=1）。`cargo build --release -p meloet-app` だけでは MELOET_* が効かない
-cargo test --features dev-hooks  # Rust の試験（check-all もこの形。feature なしでも通るが devhooks の試験は回らない）
-MELOET_DOCKER_SG=1 scripts/build-deb.sh  # 配る deb を Ubuntu 24.04 のコンテナで作る（target/deb/。docker のグループが要る）
-python3 -I tools/design/render_mocks.py target/mock-png   # モックを PNG に
-python3 -I tools/design/shoot_ui.py <出力> <場面>           # 偽物の場面とモックをならべる
-python3 -I tools/design/shoot_app.py <状態>                 # 本物のアプリを撮る（docs/screenshots/）
-tools/measure/latency.sh --state stopped|playing|recording  # 鍵 → 画面、鍵 → 音
-tools/measure/latency.sh --pattern mixed --piano-roll      # 和音と速い打鍵、ピアノロールをひらいたまま
-tools/measure/record-timing.sh private                      # 録った位置のずれ（自分用の PipeWire）
-tools/measure/latency.sh --mixer --song <曲> --state playing  # ミキサーをひらいたまま（起動の前に仮想の鍵盤を出す）
-tools/measure/long-record.sh [--piano-roll] [--mixer --song <曲>]  # 10 分録りつづける
-tools/measure/ui-script.sh                                  # 本物のアプリで、送る・拡大・ドラッグを自動で（コマの時間とメモリ）
-tools/measure/app-watch.sh                                  # 本物のアプリのコマ（busyMs）とメモリを見る
-tools/measure/webkit-damage.sh                              # WebKit が描きなおした四角（gdb の下で）
-python3 -I tools/measure/remote.py ...                      # 本物のアプリを外から 1 手ずつ動かす（MELOET_PIPE、X の作り物の出来事、出口を録る）
-tools/measure/plugin-stop.sh / open-play-save.sh            # プラグインを止める試験、保存してひらく試験
-python3 -I tools/measure/window-rounds.py ...               # プラグインの窓を何十回、15-C を何百回
-python3 -I tools/measure/make_song.py ... [--tracks N] [--instruments plugin,sf2,builtin --plugin 名前 --sf2 ファイル --effect-plugin 名前]  # 試験用の曲
-python3 -I tools/measure/audio_app.py play|load|same|record-save|position|arrange ...  # 歌のクリップ（16 本鳴らす、入れる速さ、保存して同じ音か、録った位置、アレンジのコマ）
-python3 -I tools/measure/stretch_app.py position|prepare|load|kept|splice ...          # のび縮み（位置、作る間の負荷、作りなおさないか、入れかえ）
-python3 -I tools/measure/export_app.py same|speed|flow ...                              # 書き出し（出口の音と同じか、速さ、たしかめの流れ）
-python3 -I tools/measure/arrange_parts.py ...                                           # アレンジのコマを部品ごとに（--how task で毎コマ描く）
-python3 -I tools/sounds/build.py --out target/sounds/dev    # 音の素材の包みを作る（素材は ~/.cache/meloet/sounds-src、出どころは sources.json）
-ln -sfn ../sounds/dev target/debug/sounds                   # 開発のビルドが包みを見つける（release も同じ）
-python3 -I tools/sounds/split.py target/sounds/dev --out <dir> --pack <版> [--previous <前の目録>] [--catalog tools/sounds/catalog.json]  # 配る形: 音色ごとの tar と目録（architecture 23-1 ・ 23-9）
+scripts/check-all.sh             # fmt, clippy, Rust tests, type check, screen tests, license watcher
+scripts/check-all.sh --devices   # plus tests that need a keyboard or PipeWire
+scripts/check-all.sh --release   # plus: no development hooks left in the shipped form (scripts/check-release.sh. Heavy)
+tools/measure/build-dev.sh [--keep-ui]  # before measuring: build release with the development hooks (feature dev-hooks + MELOET_DEV_HOOKS=1). With only `cargo build --release -p meloet-app`, MELOET_* does not work
+cargo test --features dev-hooks  # Rust tests (check-all uses this form. They pass without the feature too, but the devhooks tests do not run)
+MELOET_DOCKER_SG=1 scripts/build-deb.sh  # build the deb we ship in an Ubuntu 24.04 container (target/deb/. Needs the docker group)
+python3 -I tools/design/render_mocks.py target/mock-png   # mocks to PNG
+python3 -I tools/design/shoot_ui.py <output> <scene>        # fake scenes side by side with mocks
+python3 -I tools/design/shoot_app.py <state>                # take pictures of the real app (docs/screenshots/)
+tools/measure/latency.sh --state stopped|playing|recording  # key → screen, key → sound
+tools/measure/latency.sh --pattern mixed --piano-roll      # chords and fast keys, with the piano roll open
+tools/measure/record-timing.sh private                      # error of recorded positions (our own PipeWire)
+tools/measure/latency.sh --mixer --song <song> --state playing  # with the mixer open (show the virtual keyboard before start)
+tools/measure/long-record.sh [--piano-roll] [--mixer --song <song>]  # record for 10 minutes
+tools/measure/ui-script.sh                                  # scroll, zoom and drag automatically in the real app (frame times and memory)
+tools/measure/app-watch.sh                                  # watch frames (busyMs) and memory of the real app
+tools/measure/webkit-damage.sh                              # rectangles WebKit drew again (under gdb)
+python3 -I tools/measure/remote.py ...                      # drive the real app from outside one step at a time (MELOET_PIPE, fake X events, record the output)
+tools/measure/plugin-stop.sh / open-play-save.sh            # tests that stop plugins, tests that save and open
+python3 -I tools/measure/window-rounds.py ...               # plugin windows dozens of times, 15-C hundreds of times
+python3 -I tools/measure/make_song.py ... [--tracks N] [--instruments plugin,sf2,builtin --plugin <name> --sf2 <file> --effect-plugin <name>]  # songs for tests
+python3 -I tools/measure/audio_app.py play|load|same|record-save|position|arrange ...  # audio clips (play 16, loading speed, same sound after save, recorded position, arrange frames)
+python3 -I tools/measure/stretch_app.py position|prepare|load|kept|splice ...          # stretch (position, load while making, no remaking, swapping)
+python3 -I tools/measure/export_app.py same|speed|flow ...                              # export (same as the output's sound, speed, the check flow)
+python3 -I tools/measure/arrange_parts.py ...                                           # arrange frames part by part (--how task draws every frame)
+python3 -I tools/sounds/build.py --out target/sounds/dev    # build the sound pack (material in ~/.cache/meloet/sounds-src, sources in sources.json)
+ln -sfn ../sounds/dev target/debug/sounds                   # the development build finds the pack (release too)
+python3 -I tools/sounds/split.py target/sounds/dev --out <dir> --pack <version> [--previous <previous catalog>] [--catalog tools/sounds/catalog.json]  # the shipped form: a tar per sound and the catalog (architecture 23-1, 23-9)
 ```
 
-動かしかたは [`README.md`](README.md)。
+How to run it: [`README.md`](README.md).
 
-## この PC の事情（本番のユーザーには関係しない）
+## Things about this PC (not about real users)
 
-- エージェントは `meloet-agent` という別ユーザーで動く。画面と音は `source ~/.config/meloet-agent/env.sh` で入る（入口はオーナーさんにあけてもらう）。
-- GTK のアプリは起動で 30 秒止まることがある。`dbus-run-session -- ` をつけて起動する。
-- cpal が PipeWire を見つけないときは `PIPEWIRE_RUNTIME_DIR=/run/user/1000`。
-- オーナーさんは同じ作業ツリーを VS Code で開いていて、vite がポート 1420 で動いていることがある。`npm run dev` を 1420 で走らせない。`ui/node_modules/.vite/` を消さない。オーナーさんがデバッグ版の meloet を動かしていることもある。
-- PipeWire を落とす試験は、自分用の PipeWire と WirePlumber で（`crates/meloet-engine/tests/private_pw/`）。オーナーさんの PipeWire は止めない。ソケットの道は 108 バイトまでなので `/run/user/1001/` の下に置く。
-- 閉じるときの WebKitWebProcess の SIGSEGV（NVIDIA の EGL）は、web プロセスを先に止める形で回避した。apport は、まだ見ていない `.crash` があると同じプログラムの新しい報告を書かないので、「落ちていない」は `/var/crash` では確かめられない（`docs/history/progress.ja.md` 第 2 回の区切り0）。
-- 「GC のスレッドが何百もできては消える」の正体は、GTK のタイトルバーのアイコンの読みなおし（glycin）。ひびきはない（同じ所）。
-- シェルで `a && b && ( … ) & c` と書くと、`&` が前の列ぜんぶを後ろに回す。変数を決める行と背景で動かす行は分ける。
-- オプションなしの `cargo fmt` は `spikes/` まで書きかえる。`-p` でクレートをならべる（`scripts/check-all.sh` と同じ）。`cargo clippy --workspace` も spikes で落ちる。
-- 係の作業ツリーは `.claude/worktrees/` にできる（`.git/info/exclude` で外してある）。`meloet-app` の clippy は `ui/dist` が要るので、作業ツリーでは空の `ui/dist` を一時的に作る。
-- PC が終わるとき、アプリの scope は SIGTERM から 5 秒で SIGKILL（Ubuntu 26.04、GNOME 50 は Wayland だけ）。電源オフの前には logind の PrepareForShutdown が来る（delay ロックを持てば）。
-- WebKitGTK 2.52 の JavaScriptCore は、ひまな時に Eden の GC しか回さず、Full の GC がめったに来ない。60 Hz で動くページでは、WebKitWebProcess のメモリがふえつづける。meloet は起動のいちばん初めに `JSC_useGenerationalGC=0` を決め、毎回 Full にしている（`crates/meloet-app/src/main.rs`、`docs/history/measurements/2026-11-15-round3-fix-memory.md` の g）。外から同じ変数を決めればそちらが勝つ。GC のようすは `JSC_logGC=1` で見られる（ログを書く重さで、止まりが少し長く出る）。
-- この PC の WebKitGTK は、合成の層なしでページを CPU で描く（`WEBKIT_FORCE_COMPOSITING_MODE=1` などの変数でも変わらない）。WebKit の debug 情報は `~/.cache/debuginfod_client/` にある（`webkit-damage.sh` が使う）。
-- 音の出口えらびは「出口をまだ決めていない ＋ 鍵盤が 1 つ以上」のときだけ出る。測る道具は、起動の前に仮想の鍵盤（`meloet-vkeys appear`）を出しておく。
-- debug のビルドでも symphonia と `meloet-sound` は opt-level 3（`Cargo.toml`）。外すとグランドピアノの読みこみが 8 秒かかる。
-- `env.sh` には `DISPLAY` がない。X の要る物（プラグインの窓の試験、`--ignored` の本物の試験）は `DISPLAY=:0` を足す（XWayland、窓はオーナーさんの画面に出る）。
-- この PC には Surge XT（VST3 ・ LV2）、LSP、ZamComp、Dragonfly、Calf などのプラグインがある（`/usr/lib/vst3`、`/usr/lib/lv2`）。X の画面がある所で、はじめてのスキャンは約 40 秒（LSP の VST3 が窓の型を聞かれるたびに X につなぐ）、画面がなければ 11〜19 秒。
-- VS Code の「meloet（デバッグ）」は CodeLLDB。子のプロセスを何人も同時に起こすと、lldb-server が meloet を止めたまま回りつづけた（窓が出ない）。子は 1 つずつ起こし、スキャンは画面のあいさつのあとに始める形で直した（2026-11-19）。どちらかを外すと、また起きる。止まった meloet は `ps` の STAT `t` と `/proc/<pid>/status` の TracerPid で見える。
+- The agent runs as a separate user, `meloet-agent`. Screen and sound come in with `source ~/.config/meloet-agent/env.sh` (the owner opens the way in).
+- GTK apps sometimes stop for 30 seconds at start. Start them with `dbus-run-session -- ` in front.
+- When cpal does not find PipeWire: `PIPEWIRE_RUNTIME_DIR=/run/user/1000`.
+- The owner has the same working tree open in VS Code, and vite may be running on port 1420. Do not run `npm run dev` on 1420. Do not delete `ui/node_modules/.vite/`. The owner may also be running a debug build of meloet.
+- Tests that bring PipeWire down use our own PipeWire and WirePlumber (`crates/meloet-engine/tests/private_pw/`). Do not stop the owner's PipeWire. Socket paths are limited to 108 bytes, so put them under `/run/user/1001/`.
+- The WebKitWebProcess SIGSEGV on close (NVIDIA's EGL) was avoided by stopping the web process first. apport does not write a new report for the same program while there is a `.crash` not yet looked at, so "it did not crash" cannot be checked with `/var/crash` (`docs/history/progress.ja.md`, round 2, step 0).
+- "Hundreds of GC threads made and gone" is the GTK title bar icon being read again (glycin). No effect (same record as above).
+- In the shell, writing `a && b && ( … ) & c` makes `&` send the whole list before it into the background. Put the line that sets variables and the line that runs in the background on separate lines.
+- `cargo fmt` with no options also rewrites `spikes/`. List crates with `-p` (the same as `scripts/check-all.sh`). `cargo clippy --workspace` also fails on spikes.
+- Helper worktrees are made in `.claude/worktrees/` (left out by `.git/info/exclude`). The clippy of `meloet-app` needs `ui/dist`, so in a worktree make an empty `ui/dist` for a short time.
+- When the PC shuts down, the app's scope gets SIGKILL 5 seconds after SIGTERM (Ubuntu 26.04, GNOME 50 is Wayland only). Before power off, logind's PrepareForShutdown comes (if you hold a delay lock).
+- The JavaScriptCore of WebKitGTK 2.52 runs only Eden GC when idle, and Full GC rarely comes. On a page that moves at 60 Hz, the WebKitWebProcess memory keeps growing. meloet sets `JSC_useGenerationalGC=0` at the very start of startup and does Full every time (`crates/meloet-app/src/main.rs`, g in `docs/history/measurements/2026-11-15-round3-fix-memory.md`). If the same variable is set from outside, that one wins. GC can be watched with `JSC_logGC=1` (writing the log is heavy, so stops look a little longer).
+- Before WebKitGTK `2.52.6-0ubuntu0.26.04.2`, this PC's WebKitGTK drew pages on the CPU with no compositing layers (variables such as `WEBKIT_FORCE_COMPOSITING_MODE=1` did not change it). From `.2` (2026-11-21) it takes the compositing-layer way unless `WEBKIT_DISABLE_COMPOSITING_MODE=1` is set, and meloet sets it (see the rules). WebKit debug info is in `~/.cache/debuginfod_client/` (`webkit-damage.sh` uses it).
+- The output chooser appears only when "no output has been decided yet + at least one keyboard". Measuring tools show a virtual keyboard (`meloet-vkeys appear`) before start.
+- Even in debug builds, symphonia and `meloet-sound` are opt-level 3 (`Cargo.toml`). Without it, loading the grand piano takes 8 seconds.
+- `env.sh` has no `DISPLAY`. For things that need X (plugin window tests, the real `--ignored` tests), add `DISPLAY=:0` (XWayland; windows appear on the owner's screen).
+- This PC has plugins such as Surge XT (VST3 and LV2), LSP, ZamComp, Dragonfly and Calf (`/usr/lib/vst3`, `/usr/lib/lv2`). Where there is an X screen, the first scan takes about 40 seconds (LSP's VST3 connects to X every time it is asked for the window type); with no screen, 11 to 19 seconds.
+- VS Code's 「meloet（デバッグ）」 uses CodeLLDB. When several child processes were started at the same time, lldb-server kept spinning with meloet stopped (no window appeared). Fixed by starting children one at a time and starting the scan after the screen's greeting (2026-11-19). If either is removed, it happens again. A stopped meloet shows as STAT `t` in `ps` and in TracerPid of `/proc/<pid>/status`.

@@ -23,6 +23,8 @@ default-members = [
     "crates/meloet-plugin",
     "crates/meloet-plughost",
     "crates/meloet-core",
+    "crates/meloet-ai",
+    "crates/meloet-mcp",
     "crates/meloet-app",
 ]
 
@@ -39,6 +41,7 @@ meloet-midi = { path = "crates/meloet-midi" }
 meloet-devices = { path = "crates/meloet-devices" }
 meloet-sound = { path = "crates/meloet-sound" }
 meloet-core = { path = "crates/meloet-core" }
+meloet-ai = { path = "crates/meloet-ai" }
 meloet-plugin = { path = "crates/meloet-plugin" }
 meloet-stretch = { path = "crates/meloet-stretch" }
 # Same versions the spikes were measured with (docs/history/report.md 9).

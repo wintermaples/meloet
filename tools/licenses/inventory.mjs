@@ -5,7 +5,7 @@
 //   node tools/licenses/inventory.mjs texts DIR    DIR/texts.json: every license text, for the about dialog (npm run build)
 //   node tools/licenses/inventory.mjs check        exit 1 when NOTICE or licenses.json no longer match the parts
 //
-// Rust: the crates inside the binaries meloet ships (BINARIES: the app and the plugin host process), for
+// Rust: the crates inside the binaries meloet ships (BINARIES: the app, the plugin host process and the AI bridge), for
 // the target of this PC: cargo tree from each over normal dependencies only (as `cargo build -p` resolves
 // features); dev and build dependencies, proc-macro crates (they run in the compiler, nothing of them is
 // linked) and the workspace crates are left out. Licenses and folders come from cargo metadata.
@@ -26,7 +26,7 @@ export const LIST_PATH = join("ui", "src", "components", "about", "generated", "
 export const NOTICE_PATH = "NOTICE";
 
 /** The workspace crates that are shipped as programs. */
-export const BINARIES = ["meloet-app", "meloet-plughost"];
+export const BINARIES = ["meloet-app", "meloet-plughost", "meloet-mcp"];
 export const UPSTREAM_PATH = join("licenses", "upstream.json");
 
 const TEXT_FILE = /^(licen[cs]e|copying|copyright|notice|unlicense)([-._].*)?$/i;

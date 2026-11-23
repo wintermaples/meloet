@@ -284,8 +284,10 @@ pub enum Input {
     },
     /// The answer to [`Effect::PickAudio`]; empty when the window was put away.
     AudioPicked(Vec<PathBuf>),
-    /// From the AI socket's thread: what the port is doing now. Nothing sends it yet.
+    /// From the AI socket's thread: what the port is doing now.
     AiPort(meloet_protocol::AiPort),
+    /// From the AI link: a write. The answer is kept for [`Model::take_ai_answer`].
+    Ai(crate::ai::AiAsk),
     /// From the thread that reads audio files in: the answers to [`Effect::BringAudio`],
     /// [`Effect::WatchAudio`] and [`Effect::FindAudio`].
     Audio(AudioNews),
@@ -589,6 +591,8 @@ pub enum Effect {
     Export(crate::export::ExportAsk),
     /// For the thread that fetches the sound pack. Answers come as [`Input::Pack`].
     Pack(PackAsk),
+    /// Open (`true`) or close the AI link's socket. Its thread answers with [`Input::AiPort`].
+    AiLink(bool),
 }
 
 pub struct Model {
@@ -1198,6 +1202,7 @@ impl Model {
             Input::Pack(news) => self.pack_news(news, &mut effects),
             Input::ScreenUp => self.pack_screen_up(&mut effects),
             Input::AiPort(port) => self.ai.port_said(port),
+            Input::Ai(ask) => self.ai_ask(ask, &mut effects),
         }
         self.settle_export(&mut effects);
         if !self.play.is_moving() {
@@ -1768,6 +1773,7 @@ impl Model {
             Command::SetAiLink { on } => {
                 if self.ai.set(on) {
                     effects.push(Effect::SaveSettings(self.settings()));
+                    effects.push(Effect::AiLink(on));
                 }
             }
             Command::SetVelocityFixed { on, value } => {

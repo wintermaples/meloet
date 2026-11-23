@@ -2720,6 +2720,7 @@ fn index_ranges(sorted: &[u32]) -> Vec<IndexRange> {
     out
 }
 
+mod ai;
 mod audio;
 mod audiosync;
 mod automation;

@@ -6,6 +6,7 @@
 //! - [`plugins`]: the scan for plugins and the processes they sound in.
 
 mod added;
+pub mod ai;
 pub mod audiofiles;
 mod catalog;
 pub mod export;

@@ -20,6 +20,7 @@ use super::render::{ExportEngine, Plugs};
 use super::sink::{self, SinkSpec};
 use super::told::{KnownPlugins, Told};
 use super::{ExportJob, ExportNews, ExportTarget};
+use crate::ai::PassLevels;
 use crate::audiofiles::resample::Resample;
 use crate::audiofiles::wav::{CacheWav, WavPcm};
 use crate::audiofiles::{AudioStore, Playable};
@@ -167,6 +168,7 @@ struct Rendered {
     path: PathBuf,
     /// The track it is, for 「トラックごと」.
     name: Option<String>,
+    levels: PassLevels,
 }
 
 fn go(
@@ -178,8 +180,19 @@ fn go(
 ) -> Result<(), Ended> {
     let job = &setup.job;
     fs::create_dir_all(&setup.work)?;
+    if job.measure {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&setup.work, fs::Permissions::from_mode(0o700))?;
+    }
     let mut target = None;
     let rendered = render(&setup, targets, stop, tell, &mut target)?;
+    if job.measure {
+        tell(ExportNews::Measured {
+            job: job.id,
+            passes: rendered.iter().map(|r| r.levels).collect(),
+        });
+        return Ok(());
+    }
     let target = match target {
         Some(target) => target,
         None => loop {
@@ -291,12 +304,11 @@ fn render(
     drop(plugs);
     engine.open_files();
 
-    let passes: Vec<Option<(TrackId, String)>> = if job.per_track {
-        (doc.tracks.iter())
-            .map(|t| Some((t.id, t.name.clone())))
-            .collect()
-    } else {
-        vec![None]
+    let each_track = (doc.tracks.iter()).map(|t| Some((t.id, t.name.clone())));
+    let passes: Vec<Option<(TrackId, String)>> = match (job.per_track, job.measure) {
+        (true, true) => std::iter::once(None).chain(each_track).collect(),
+        (true, false) => each_track.collect(),
+        (false, _) => vec![None],
     };
     let mut watch = Watch {
         job: job.id,
@@ -337,12 +349,16 @@ fn render(
                 watch.saw(written, peak, over, tell);
                 Ok(())
             };
-            let frames = render_pass(&mut engine, job, &path, i > 0, realtime, &mut each)?;
+            let levels = render_pass(&mut engine, job, &path, i > 0, realtime, &mut each)?;
             watch.over_before = watch.over;
-            watch.longest = watch.longest.max(frames);
+            watch.longest = watch.longest.max(levels.frames);
+            if job.measure {
+                let _ = fs::remove_file(&path);
+            }
             rendered.push(Rendered {
                 path,
                 name: pass.map(|(_, name)| name),
+                levels,
             });
         }
         Ok(())
@@ -450,6 +466,8 @@ struct Taker {
     rate: u32,
     peak: f32,
     places: OverPlaces,
+    /// The sum of every sample squared, for the levels of the AI link.
+    squares: f64,
     written: u64,
     over: bool,
 }
@@ -506,6 +524,10 @@ impl Taker {
         }
         self.peak = self.peak.max(peak_of(samples));
         self.places.feed(samples);
+        self.squares += samples
+            .iter()
+            .map(|s| f64::from(*s) * f64::from(*s))
+            .sum::<f64>();
         self.written += (samples.len() / 2) as u64;
         self.out.write(samples)
     }
@@ -548,7 +570,7 @@ impl Taker {
 
 /// Plays the range once and writes it to `path`. `each` is called after every block with
 /// the frames of the range written so far, the largest sample and the places over 0 dB.
-/// Returns the frames of the file.
+/// Returns the frames of the file and what was in them.
 fn render_pass(
     engine: &mut ExportEngine,
     job: &ExportJob,
@@ -556,7 +578,7 @@ fn render_pass(
     anew: bool,
     realtime: bool,
     each: &mut dyn FnMut(u64, f32, u32) -> Result<(), Ended>,
-) -> Result<u64, Ended> {
+) -> Result<PassLevels, Ended> {
     let range = range_frames(engine, job.span);
     engine.play_from(job.span.start(), anew);
     let mut taker = Taker {
@@ -571,6 +593,7 @@ fn render_pass(
         rate: job.sample_rate,
         peak: 0.0,
         places: OverPlaces::new(job.sample_rate),
+        squares: 0.0,
         written: 0,
         over: false,
     };
@@ -604,7 +627,16 @@ fn render_pass(
         }
     };
     match result {
-        Ok(()) => Ok(taker.out.finish()?),
+        Ok(()) => {
+            let frames = taker.out.finish()?;
+            let samples = taker.written.saturating_mul(2).max(1);
+            Ok(PassLevels {
+                peak: taker.peak,
+                rms: (taker.squares / samples as f64).sqrt() as f32,
+                over: taker.places.count,
+                frames,
+            })
+        }
         Err(e) => {
             taker.out.abandon();
             Err(e)

@@ -78,6 +78,7 @@ fn taker(path: &Path, head: u64, range: u64, tail: ExportTail) -> Taker {
         rate: RATE,
         peak: 0.0,
         places: OverPlaces::new(RATE),
+        squares: 0.0,
         written: 0,
         over: false,
     }

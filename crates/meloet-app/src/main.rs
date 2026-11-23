@@ -379,6 +379,16 @@ fn shell_request(
     }
 }
 
+/// The socket of 「AI とつなぐ」 follows the switch; the core holds the link, and ends it when
+/// the core ends.
+fn start_ai_link(core: &Arc<meloet_core::Core>) {
+    let meloet = Arc::new(meloet_ai::CoreLink(Arc::downgrade(core)));
+    match meloet_ai::AiLink::start(meloet, meloet_ai::Options::from_env()) {
+        Ok(link) => core.set_ai_switch(Box::new(move |on| link.switch(on))),
+        Err(e) => eprintln!("meloet: no thread for the AI link: {e}"),
+    }
+}
+
 fn main() {
     set_jsc_options();
     #[cfg(feature = "dev-hooks")]
@@ -386,6 +396,7 @@ fn main() {
     let core = Arc::new(meloet_core::Core::start(
         meloet_core::CoreOptions::from_env(),
     ));
+    start_ai_link(&core);
     let shell_side: Core = core.clone();
     let window_side = shell_side.clone();
     tauri::Builder::default()

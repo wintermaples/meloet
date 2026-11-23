@@ -36,8 +36,10 @@ use meloet_protocol::{
 use meloet_sound::phrases::{self, PhrasePlayer};
 use meloet_sound::sampler::{LoadError, SampleBank};
 
+use crate::ai::{AiAnswer, AiAsk, AiLevels, AiMeasure, AiRefusal, AiSong, AiSwitch};
 use crate::audiofiles::keeper::AudioNews;
 use crate::audiofiles::{AudioStore, Settling};
+use crate::export::{ExportAsk, ExportNews};
 use crate::hub::{Hub, MessageSink, TelemetrySink};
 use crate::instruments;
 use crate::made::{MadeKey, MadePlan, only_audio_differs, seat_audio};
@@ -312,6 +314,19 @@ enum Msg {
     /// A look at the worker, for a test.
     #[cfg(test)]
     Peek(Box<dyn FnOnce(&mut Worker) + Send>),
+    /// The AI link reads the song.
+    AiSong(Sender<AiSong>),
+    /// The AI link writes.
+    Ai(AiAsk, Sender<AiAnswer>),
+    /// The AI link measures: the job's id or why not, then its news on `news`.
+    AiMeasure {
+        ask: AiMeasure,
+        news: Sender<ExportNews>,
+        reply: Sender<Result<AiJob, AiRefusal>>,
+    },
+    /// The AI link gives a measurement up.
+    AiDrop(u64),
+    AiSwitch(AiSwitch),
     Stop,
 }
 
@@ -639,6 +654,8 @@ impl Core {
                 devices,
                 audio_retry_at: None,
                 plugins,
+                ai_switch: None,
+                ai_jobs: 0,
             };
             std::thread::Builder::new()
                 .name("meloet-core".into())
@@ -861,6 +878,78 @@ impl Core {
         answer.recv().ok().flatten()
     }
 
+    /// Where the switch 「AI とつなぐ」 goes: at once with how it is, and again with every
+    /// change. Does not wait.
+    pub fn set_ai_switch(&self, switch: AiSwitch) {
+        let _ = self.tx.send(Msg::AiSwitch(switch));
+    }
+
+    /// What the AI link's socket is doing. Does not wait.
+    pub fn ai_port(&self, port: meloet_protocol::AiPort) {
+        let _ = self.tx.send(Msg::Input(Input::AiPort(port), None));
+    }
+
+    /// The song as it is now, for the AI link. `None` once the core has ended.
+    pub fn ai_song(&self) -> Option<AiSong> {
+        let (reply, answer) = mpsc::channel();
+        self.tx.send(Msg::AiSong(reply)).ok()?;
+        answer.recv().ok()
+    }
+
+    /// A write of the AI link, as one step. Waits until it is done.
+    pub fn ai(&self, ask: AiAsk) -> AiAnswer {
+        let (reply, answer) = mpsc::channel();
+        if self.tx.send(Msg::Ai(ask, reply)).is_err() {
+            return AiAnswer::Refused(AiRefusal::Closing);
+        }
+        answer
+            .recv()
+            .unwrap_or(AiAnswer::Refused(AiRefusal::Closing))
+    }
+
+    /// Renders `ask` through the export's engine and measures it, on the caller's thread.
+    /// `progress` hears 0..=100 as it goes; when `cancelled` says so, the job is given up.
+    pub fn ai_measure(
+        &self,
+        ask: AiMeasure,
+        progress: &mut dyn FnMut(u8),
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<AiLevels, AiRefusal> {
+        let (news_tx, news) = mpsc::channel();
+        let (reply, answer) = mpsc::channel();
+        let msg = Msg::AiMeasure {
+            ask,
+            news: news_tx,
+            reply,
+        };
+        self.tx.send(msg).map_err(|_| AiRefusal::Closing)?;
+        let job = answer.recv().map_err(|_| AiRefusal::Closing)??;
+        loop {
+            if cancelled() {
+                let _ = self.tx.send(Msg::AiDrop(job.id));
+                return Err(AiRefusal::Unchanged);
+            }
+            match news.recv_timeout(Duration::from_millis(100)) {
+                Ok(ExportNews::Counted { percent, .. }) => progress(percent),
+                Ok(ExportNews::Measured { passes, .. }) => {
+                    let mut passes = passes.into_iter();
+                    let master = passes.next().ok_or(AiRefusal::Closing)?;
+                    let tracks = job.tracks.into_iter().zip(passes);
+                    return Ok(AiLevels {
+                        sample_rate: job.sample_rate,
+                        master,
+                        tracks: tracks.map(|((n, name), p)| (n, name, p)).collect(),
+                    });
+                }
+                Ok(ExportNews::Failed { reason, .. }) => {
+                    return Err(AiRefusal::ExportFailed(format!("{reason:?}")));
+                }
+                Ok(_) | Err(RecvTimeoutError::Timeout) => {}
+                Err(RecvTimeoutError::Disconnected) => return Err(AiRefusal::Closing),
+            }
+        }
+    }
+
     fn input(&self, input: Input) -> u64 {
         let (reply, rev) = mpsc::channel();
         if self.tx.send(Msg::Input(input, Some(reply))).is_err() {
@@ -874,6 +963,14 @@ impl Drop for Core {
     fn drop(&mut self) {
         self.stop();
     }
+}
+
+/// A measuring job of the AI link as it was given out: the tracks are numbered and named as
+/// the song had them then.
+struct AiJob {
+    id: u64,
+    sample_rate: u32,
+    tracks: Vec<(u32, String)>,
 }
 
 /// What the sinks of the MIDI thread and the device watcher need, to make new ones.
@@ -2054,6 +2151,10 @@ struct Worker {
     exports: export::Exports,
     /// The thread that fetches the sound pack.
     fetcher: Option<Fetcher>,
+    /// Where the switch 「AI とつなぐ」 goes.
+    ai_switch: Option<AiSwitch>,
+    /// The AI link's jobs given out.
+    ai_jobs: u64,
 }
 
 /// The threads behind the plugins. Dropped when the core ends: scanning children are killed,
@@ -2444,6 +2545,24 @@ impl Worker {
                 }
                 #[cfg(test)]
                 Ok(Msg::Peek(look)) => look(&mut self),
+                Ok(Msg::AiSong(reply)) => {
+                    let _ = reply.send(self.model.ai_song());
+                }
+                Ok(Msg::Ai(ask, reply)) => {
+                    self.handle(Input::Ai(ask));
+                    let answer = self.model.take_ai_answer();
+                    let _ = reply.send(answer.unwrap_or(AiAnswer::Refused(AiRefusal::Closing)));
+                }
+                Ok(Msg::AiMeasure { ask, news, reply }) => {
+                    let _ = reply.send(self.ai_measure(&ask, news));
+                }
+                Ok(Msg::AiDrop(job)) => {
+                    self.export_ask(ExportAsk::Drop { job });
+                }
+                Ok(Msg::AiSwitch(switch)) => {
+                    switch(self.model.ai_on());
+                    self.ai_switch = Some(switch);
+                }
                 Err(RecvTimeoutError::Timeout) => {}
                 Ok(Msg::Stop) | Err(RecvTimeoutError::Disconnected) => break,
             }
@@ -2480,6 +2599,31 @@ impl Worker {
         self.audio.close(&self.shared.stream);
         self.exports.end();
         drop(self.plugins.take());
+        // What the AI link still waits for gets no answer now, rather than never.
+        drop(rx);
+        drop(self.ai_switch.take());
+    }
+
+    fn ai_measure(
+        &mut self,
+        ask: &AiMeasure,
+        news: Sender<ExportNews>,
+    ) -> Result<AiJob, AiRefusal> {
+        if self.ai_jobs() > 0 {
+            return Err(AiRefusal::Measuring);
+        }
+        self.ai_jobs += 1;
+        let id = export::AI_JOBS + self.ai_jobs;
+        let (job, tracks) = self.model.ai_measure_job(ask, id)?;
+        let sample_rate = job.sample_rate;
+        if let Some(input) = self.export_render(Box::new(job), Some(news)) {
+            self.handle(input);
+        }
+        Ok(AiJob {
+            id,
+            sample_rate,
+            tracks,
+        })
     }
 
     /// Takes in what the engine said about the recording, and what the listener hears now.
@@ -2833,6 +2977,11 @@ impl Worker {
                     // Here and now: meloet may end right after.
                     Effect::ClearWorkAudio => self.audio_store.clear_work(),
                     Effect::Export(ask) => inputs.extend(self.export_ask(ask)),
+                    Effect::AiLink(on) => {
+                        if let Some(switch) = &self.ai_switch {
+                            switch(on);
+                        }
+                    }
                     Effect::Pack(ask) => {
                         if let Some(fetcher) = &self.fetcher {
                             match ask {

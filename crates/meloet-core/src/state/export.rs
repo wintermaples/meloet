@@ -12,7 +12,7 @@ impl Model {
         self
     }
 
-    fn export_scene(&self) -> Scene<'_> {
+    pub(super) fn export_scene(&self) -> Scene<'_> {
         let doc = &self.play.song().doc;
         let soloed = &self.play.song().session.soloed;
         Scene {

@@ -1,6 +1,7 @@
 // 「鳴っている音を光らせる」 in the note area (round 12 E1): while playing, the sounding notes of the shown clip are painted in the track's
-// color on the small pianoRollLive canvas (the `.glow-box` slot), whose box is as tall as the note area and as wide as the lit notes. The
-// slot is asked to draw again only when the set changes, never every frame. Off with the setting, on a muted track, and when stopped.
+// color on the small pianoRollLive canvas (the `.glow-box` slot), whose box is as tall as the note area and starts at the lit notes. The
+// slot is asked to draw again only when the set changes, never every frame, and the box stays put while the lit notes stay inside it.
+// Off with the setting, on a muted track, and when stopped.
 import { flushSync, mount, unmount } from "svelte";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, TakeNotes } from "../src/bridge";
@@ -14,6 +15,7 @@ import { runFrameCallbacks, watchSlots, type GlSlot } from "../src/gl/slot";
 import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 import * as app from "./fake-app.svelte";
 import * as shown from "./fake-shown.svelte";
+import { take } from "./pianoroll-fixture";
 
 vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));
 vi.mock("../src/components/pianoroll/shown.svelte", () => import("./fake-shown.svelte"));
@@ -127,6 +129,38 @@ describe("the lit notes while playing", () => {
     runFrameCallbacks();
     expect(updates).toBe(after + 1);
     expect(faces()).toHaveLength(3);
+  });
+
+  it("while the lit notes change inside the box, only its picture is drawn again: the box neither moves nor changes size", async () => {
+    const s = await play();
+    const clip = s.song.tracks[0]!.clips[0]!;
+    // Eighth notes C4 E4 G4, each a sixteenth after the last, from 2.1.000: the lit ones move right, inside the first box.
+    const bar2 = 4 * TPQ;
+    const notes = take(
+      [
+        [bar2, TPQ / 2, 60],
+        [bar2 + TPQ / 4, TPQ / 2, 64],
+        [bar2 + TPQ / 2, TPQ / 2, 67],
+      ],
+      clip.takeId,
+    );
+    shown.setShown({ clip, track: s.song.tracks[0]!, take: notes });
+    at(bar2 + TPQ / 4);
+    flushSync();
+    runFrameCallbacks();
+    const place = () => [box().style.transform, box().style.width, box().style.height];
+    const before = place();
+    expect(before[0]).not.toBe("translateX(0px)");
+    expect(faces()).toHaveLength(2);
+    const drawn = updates;
+    for (const tick of [bar2 + TPQ / 2, bar2 + (3 * TPQ) / 4]) {
+      at(tick);
+      flushSync();
+      runFrameCallbacks();
+    }
+    expect(updates).toBe(drawn + 2);
+    expect(place()).toEqual(before);
+    expect(faces()).toHaveLength(1);
   });
 
   it("nothing where nothing sounds (after the clip's end)", async () => {

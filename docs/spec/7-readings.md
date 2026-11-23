@@ -619,6 +619,7 @@ The rules are in spec 3, "Rules added in round 12"; how each is built is archite
 | Drum rows | The square lights while its note sounds (the note's own length). | the developers' decision |
 | Mute, count-in, recording, drags | Only the mute button and solo count (a mute lane is not read). Not lit in the count-in. Nothing lights while the clip being recorded is shown; recording on another track lights the shown clip. Not lit while notes are dragged. | the developers' reading |
 | The box and the cap | The lit box is the note area's full height (chapter 7 rule), and the cap is a width (15 % of the window's area over the note area's height) with a two-frame change, in place of the request's "32 notes at most": the cost is set by the width, not by the count. Reasoned, not measured (B-98-9). | the developers' decision |
+| The box stays put (after measuring, 2026-11-24) | The canvas box is not as wide as the lit notes: a new one leaves one to two steps of 32 px to their right and stays while they stay inside it, so most changes only draw the canvas again (no layout, no new size, fewer changed rectangles). Not visible. The lit notes and the cap are as above; the count is not narrowed, and the setting stays on at first (measurements, "E1 after the fix"). | the developers' decision |
 | The menu row's place | Last in 「表示」 (now followed by E7's row). | the developers' decision |
 
 ### P4 Drum patterns

@@ -3,7 +3,7 @@
      With 「ほかのトラックも見る」 on, the notes of other tracks are drawn on that canvas too, under the shown clip's notes (ghosts.ts).
      The keyboard column is one small canvas (pianoRollKeys), lit by held keys and sounding notes.
      Notes being dragged, and notes growing while recording, are one small canvas around only them (pianoRollLive). If they only move, they are moved with transform.
-     While playing, the sounding notes of the shown clip are lit in the track's color on that same canvas (round 12 E1, glow.ts), drawn again only when the set changes.
+     While playing, the sounding notes of the shown clip are lit in the track's color on that same canvas (round 12 E1, glow.ts), drawn again only when the set changes, in a box that stays put while they stay inside it.
      The pianoRollLive box goes from the top left of the note area to the bottom edge of the CC lanes (CC lane drags go on the same canvas).
      The play line, the box for choosing, and text are HTML.
      The row height is the vertical zoom step (prView.rowPx, docs/history/design-notes.ja.md B-63). The note height is row − 1. The vertical − ＋ is in the corner left of the ruler.
@@ -39,7 +39,7 @@
   import { drumKeysOf, drumName, drumTerm, rollShowsDrums } from "./drums";
   import * as G from "./geom";
   import { ghostClips, ghostHidden, ghostShown, ghostTracks, ghostWindow, ghostWindowIndex, shownTrackId } from "./ghosts";
-  import { glowBox, glowFit, glowMaxWidth, glowShows, glowStep, sameNotes, type GlowSpan } from "./glow";
+  import { glowFit, glowMaxWidth, glowNext, glowShows, type GlowBox, type GlowSpan } from "./glow";
   import { noteMarks, paintLive, paintRoll, paintRollKeys, paintVelocityLane, type LivePicture, type RollPicture, type RollSizes } from "./paint";
   import { rollMenu, type RollMenuActions } from "./rollMenu";
   import { shown } from "./shown.svelte";
@@ -768,10 +768,12 @@
   let soundNow: number[] = [];
   const soundScratch: number[] = [];
   let glowEl = $state<HTMLElement>();
-  /** The lit notes drawn now, and the view and take they were placed for. */
+  /** The lit notes drawn now, their box (CSS px of the note area; null: none), and the view, take and pixel ratio they were placed for. */
   let glowShown: readonly GlowSpan[] = [];
+  let glowAt: GlowBox | null = null;
   let glowView: G.RollGeom | null = null;
   let glowTake: G.Shown | null = null;
+  let glowDpr = 0;
   /** Placed again in the next frame: something the box depends on changed (with the roll's own picture), or the set changed. */
   let glowStale = false;
   /** A change shown in two frames, whose second is still to come. */
@@ -814,23 +816,25 @@
   function updateGlow(): void {
     const notes = soundFor;
     const target = glowOn && notes ? glowFit(glowSpans(notes, soundNow), glowLimit) : [];
-    const next = glowView === g && glowTake === notes ? glowStep(glowShown, target, glowLimit) : target;
-    glowPending = !sameNotes(next, target);
+    const dpr = metrics.dpr;
+    const next = glowNext(glowOn ? glowAt : null, glowShown, target, glowLimit, areaW, dpr, glowView !== g || glowTake !== notes || glowDpr !== dpr);
+    glowPending = next.pending;
     glowStale = false;
-    glowShown = next;
+    glowShown = next.lit;
+    glowAt = next.box;
     glowView = g;
     glowTake = notes;
+    glowDpr = dpr;
     placeGlow();
   }
 
-  /** Writes the box (moved by transform, edges on screen pixels, the note area's top and bottom) and asks for the picture. */
+  /** Writes the box (moved by transform, the note area's top and bottom) and asks for the picture. */
   function placeGlow(): void {
     const el = glowEl;
     if (!el) return;
-    const box = glowBox(glowShown);
-    const dpr = metrics.dpr;
-    const x0 = box ? Math.floor(box.x0 * dpr) / dpr : 0;
-    const w = box ? Math.ceil(box.x1 * dpr) / dpr - x0 : 0;
+    const box = glowAt;
+    const x0 = box ? box.x0 : 0;
+    const w = box ? box.x1 - box.x0 : 0;
     const h = w > 0 ? areaHeight : 0;
     const style = `${x0} ${w} ${h}`;
     if (style !== glowStyle) {
@@ -862,6 +866,7 @@
     soundNow = [];
     setSounding([]);
     glowShown = [];
+    glowAt = null;
     glowTake = null;
     glowPending = glowStale = false;
     placeGlow();
@@ -1460,7 +1465,7 @@
   .live-box {
     position: absolute;
   }
-  /* The box of the lit notes: written by placeGlow (moved by transform, as wide as the lit notes, as tall as the note area). */
+  /* The box of the lit notes: written by placeGlow (moved by transform, kept while the lit notes stay inside it, as tall as the note area). */
   .glow-box {
     position: absolute;
     left: 0;

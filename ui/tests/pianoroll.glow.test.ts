@@ -8,7 +8,19 @@ import { decodeTake } from "../src/bridge/take";
 import { trackColor } from "../src/components/arrangeGeom";
 import { noteName } from "../src/components/meterFormat";
 import * as G from "../src/components/pianoroll/geom";
-import { GLOW_AREA, glowBox, glowFit, glowMaxWidth, glowShows, glowStep, sameNotes, trackPlays, type GlowSpan, type GlowWhen } from "../src/components/pianoroll/glow";
+import {
+  GLOW_AREA,
+  GLOW_STEP,
+  glowBox,
+  glowFit,
+  glowMaxWidth,
+  glowNext,
+  glowPlace,
+  glowShows,
+  trackPlays,
+  type GlowSpan,
+  type GlowWhen,
+} from "../src/components/pianoroll/glow";
 import { paintLive, paintRoll, type RollPicture } from "../src/components/pianoroll/paint";
 import { keysOf, soundingKeys, soundingNotes } from "../src/components/pianoroll/sounding";
 import { Batch } from "../src/gl/batch";
@@ -78,9 +90,9 @@ describe("the notes sounding at the play position", () => {
     // At the default zoom the two are far apart: the change is shown in two frames, never as one box around both.
     const shown = [span(1, 600, 640)];
     const target = [span(0, 0, 40)];
-    const first = glowStep(shown, target, 500);
-    expect(first).toEqual([]);
-    expect(glowStep(first, target, 500)).toBe(target);
+    const first = glowNext({ x0: 600, x1: 704 }, shown, target, 500, 800, 1, false);
+    expect(first).toEqual({ lit: [], box: null, pending: true });
+    expect(glowNext(first.box, first.lit, target, 500, 800, 1, false)).toEqual({ lit: target, box: { x0: 0, x1: 96 }, pending: false });
   });
 
   it("a tempo change read through the screen's tempo map: the same note sounds longer in seconds after the song slows down", () => {
@@ -182,24 +194,57 @@ describe("the box of the lit notes", () => {
     expect(notesOf(glowFit([span(0, 0, 300), span(1, 250, 550)], 400))).toEqual([0]);
   });
 
-  it("a change in one frame when old and new fit in one box; else first only the notes that stay lit, then the new ones", () => {
+  it("a new box starts at the lit notes and is one or two steps wider to their right, in whole steps, at most the limit", () => {
+    expect(GLOW_STEP).toBe(32);
+    expect(glowPlace({ x0: 100.4, x1: 140.2 }, 500, 1000, 1)).toEqual({ x0: 100, x1: 196 });
+    expect(glowPlace({ x0: 100, x1: 164 }, 500, 1000, 1)).toEqual({ x0: 100, x1: 196 });
+    expect(glowPlace({ x0: 100, x1: 165 }, 500, 1000, 1)).toEqual({ x0: 100, x1: 228 });
+    // At 150 %: edges on device pixels (two thirds of a CSS px).
+    const b = glowPlace({ x0: 100.5, x1: 140 }, 500, 1000, 1.5);
+    expect([b.x0 * 1.5, b.x1 * 1.5]).toEqual([150, 294]);
+    // Never wider than the limit, and never narrower than the notes.
+    expect(glowPlace({ x0: 0, x1: 480 }, 500, 1000, 1)).toEqual({ x0: 0, x1: 500 });
+    expect(glowPlace({ x0: 0, x1: 500.5 }, 500, 1000, 1)).toEqual({ x0: 0, x1: 501 });
+    // Near the right edge it moves left, keeping its width.
+    expect(glowPlace({ x0: 950, x1: 990 }, 500, 1000, 1)).toEqual({ x0: 904, x1: 1000 });
+  });
+
+  it("the box stays while the lit notes change inside it: the canvas is drawn again, not moved or resized", () => {
+    const kept = { x0: 100, x1: 196 };
+    const shown = [span(0, 100, 140)];
+    const next = [span(0, 100, 140), span(1, 130, 160)];
+    expect(glowNext(kept, shown, next, 500, 1000, 1, false)).toEqual({ lit: next, box: kept, pending: false });
+    // Nothing lit for a moment (a rest): the box stays, empty.
+    expect(glowNext(kept, next, [], 500, 1000, 1, false)).toEqual({ lit: [], box: kept, pending: false });
+    // Past its right edge: a new box from the lit notes' left edge.
+    const on = [span(1, 130, 160), span(2, 150, 210)];
+    expect(glowNext(kept, next, on, 500, 1000, 1, false).box).toEqual({ x0: 130, x1: 258 });
+    // Much wider than the lit notes need (a wide chord ended): a narrower box.
+    const wide = { x0: 100, x1: 400 };
+    expect(glowNext(wide, [span(3, 100, 400)], [span(4, 300, 320)], 500, 1000, 1, false).box).toEqual({ x0: 300, x1: 364 });
+    // From nothing, and after a page turn, zoom or another take (fresh), a new box at once.
+    expect(glowNext(null, [], next, 500, 1000, 1, false).box).toEqual({ x0: 100, x1: 196 });
+    expect(glowNext({ x0: 700, x1: 796 }, shown, next, 500, 1000, 1, true)).toEqual({ lit: next, box: { x0: 100, x1: 196 }, pending: false });
+  });
+
+  it("a change in one frame when the old and new boxes fit in the limit together; else first only the notes that stay lit, then the new ones", () => {
     const shown = [span(0, 100, 300), span(1, 200, 400)];
+    const kept = { x0: 100, x1: 400 };
     const near = [span(1, 200, 400), span(2, 380, 500)];
-    expect(glowStep(shown, near, 500)).toBe(near);
+    expect(glowNext(kept, shown, near, 500, 1000, 1, false)).toEqual({ lit: near, box: { x0: 200, x1: 552 }, pending: false });
     const far = [span(1, 200, 400), span(3, 390, 700)];
-    const first = glowStep(shown, far, 500);
-    expect(notesOf(first)).toEqual([1]);
-    expect(glowBox(first)).toEqual({ x0: 200, x1: 400 });
-    expect(glowStep(first, far, 500)).toBe(far);
-    expect(sameNotes(first, [span(1, 0, 1)])).toBe(true);
-    expect(sameNotes(first, far)).toBe(false);
+    const first = glowNext(kept, shown, far, 500, 1000, 1, false);
+    expect(notesOf(first.lit)).toEqual([1]);
+    expect(first).toMatchObject({ box: { x0: 200, x1: 400 }, pending: true });
+    expect(glowNext(first.box, first.lit, far, 500, 1000, 1, false)).toEqual({ lit: far, box: { x0: 200, x1: 700 }, pending: false });
   });
 
   it("all go out at once, and light from nothing at once", () => {
     const shown = [span(0, 0, 600)];
-    expect(glowStep(shown, [], 600)).toEqual([]);
+    expect(glowNext({ x0: 0, x1: 600 }, shown, [], 600, 1000, 1, false)).toEqual({ lit: [], box: { x0: 0, x1: 600 }, pending: false });
+    expect(glowNext(null, shown, [], 600, 1000, 1, false)).toEqual({ lit: [], box: null, pending: false });
     const target = [span(1, 0, 400)];
-    expect(glowStep([], target, 400)).toBe(target);
+    expect(glowNext(null, [], target, 400, 1000, 1, false)).toEqual({ lit: target, box: { x0: 0, x1: 400 }, pending: false });
   });
 });
 

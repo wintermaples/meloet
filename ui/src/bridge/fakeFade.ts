@@ -33,13 +33,13 @@ function lineAt(points: readonly [number, number][], tick: number): number | nul
 }
 
 /**
- * The head of the fade-out that is there when a new one from `start` starts on it (Rust `old_fade`): the last line of
- * `points` when it goes down to the bottom and `start` is on it, after its head.
+ * The head of the fade-out that is there when a new one from `start` takes its place (Rust `old_fade`): the last line of
+ * `points` when it goes down to the bottom and its head is before `start`, wherever it ends.
  */
 function oldFade(points: readonly [number, number][], start: number): readonly [number, number] | null {
   const head = points[points.length - 2];
   const foot = points[points.length - 1];
-  return head && foot && foot[1] === 0 && head[0] < start && start <= foot[0] ? head : null;
+  return head && foot && foot[1] === 0 && head[0] < start ? head : null;
 }
 
 export interface FakeFade {
@@ -65,8 +65,11 @@ export function fakeFadeOut(
   const bar = map.meterAt(end).bar;
   const start = bar < bars ? 0 : end - (map.tickOfBar(bar) - map.tickOfBar(bar - bars));
   const moves = lane !== null && !lane.resting && lane.points.length > 0;
-  const kept = (lane?.points ?? []).filter(([tick]) => tick < start).map((p): [number, number] => [p[0], p[1]]);
-  const head = moves ? oldFade(lane.points, start) : null;
+  const fade = lane ? oldFade(lane.points, start) : null;
+  // Up to the old fade's head: its end goes too when it lies before the start.
+  const before = fade ? lane!.points.slice(0, -1) : (lane?.points ?? []).filter(([tick]) => tick < start);
+  const kept = before.map((p): [number, number] => [p[0], p[1]]);
+  const head = moves ? fade : null;
   // The old fade's head is the last point kept; it goes when the line comes to it flat (nothing heard changes).
   if (head && (kept.length < 2 || kept[kept.length - 2]![1] === head[1])) kept.pop();
   const from = head?.[1] ?? (moves ? lineAt(lane.points, start) : null) ?? fakeFaderPlace(song.master.gainDb);

@@ -31,12 +31,6 @@ The readings behind these are in [chapter 7](7-readings.md), A-29; how each is b
 - From: architecture 25-26; chapter 7 A-29 (E2).
 
 
-### B-98-36 M5: a fade-out added again after the song grew
-
-- Question: when clips are added after an old fade-out and the fade-out is added again, the old fade (a line going down to −∞ in the middle of the song) lies before the new start, so it stays, and the new fade goes from −∞ to −∞: silence. Should "the lane's last line going down to −∞" be removed wherever it lies, so the new fade replaces the old one?
-- Now: points before the new start are never touched (chapter 7 A-29, M5).
-- From: the helper "fade" (2026-11-24).
-
 ### B-98-37 The batch row's N
 
 - Question: 「まとめて変える（N 個）」 counts the operations that changed the song (a batch of 15 with one that changed nothing shows 14; a batch with one change keeps that step's own name), while the AI's answer says "15 operations". Right, or the number sent?

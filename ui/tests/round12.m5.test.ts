@@ -429,10 +429,35 @@ describe("the fake's fade-out (Rust's rule)", () => {
     const drawn: [number, number][] = [[BAR, 0.25], [2 * BAR, 0.5], [4 * BAR, 0.75], [6 * BAR, 0.25], [8 * BAR, 0]];
     expect(again(drawn, 3)).toEqual([[BAR, 0.25], [2 * BAR, 0.5], [4 * BAR, 0.75], [5 * BAR, 0.5], [8 * BAR, 0]]);
     expect(again(drawn, 1)).toEqual([[BAR, 0.25], [2 * BAR, 0.5], [4 * BAR, 0.75], [6 * BAR, 0.25], [7 * BAR, 0.25], [8 * BAR, 0]]);
-    // A line down to the bottom that ends before the new start is no fade to start on.
-    expect(again([[0, 0.9], [2 * BAR, 0]], 2)).toEqual([[0, 0.9], [2 * BAR, 0], [6 * BAR, 0], [8 * BAR, 0]]);
+    // A line drawn down to the bottom long before the end is the fade that is there: the new one takes its place.
+    expect(again([[0, 0.9], [2 * BAR, 0]], 2)).toEqual([[6 * BAR, 0.9], [8 * BAR, 0]]);
     // A fade whose end lies after the song's end now (made when the end was the bar's head).
     expect(again([[6 * BAR, 0.8], [9 * BAR, 0]], 1)).toEqual([[7 * BAR, 0.8], [8 * BAR, 0]]);
+  });
+  it("again after the song grew: the old fade in the middle of the song goes, wherever it ends", () => {
+    const again = (end: number, points: [number, number][], bars: number, resting = false) => {
+      const fade = fakeFadeOut(song([end]), timeline, { points, resting }, bars);
+      return fade === null || fade === "noClips" ? null : fade.points;
+    };
+    const first: [number, number][] = [[4 * BAR, 0.8], [8 * BAR, 0]];
+    // Wholly before the new start: the value before the old fade is held up to the new start.
+    expect(again(16 * BAR, first, 2)).toEqual([[14 * BAR, 0.8], [16 * BAR, 0]]);
+    expect(again(16 * BAR, again(16 * BAR, first, 2)!, 2)).toEqual([[14 * BAR, 0.8], [16 * BAR, 0]]);
+    // The old end between the new start and the new end, on the new start, and the whole old fade after the start.
+    expect(again(9 * BAR, first, 2)).toEqual([[7 * BAR, 0.8], [9 * BAR, 0]]);
+    expect(again(9 * BAR, first, 1)).toEqual([[8 * BAR, 0.8], [9 * BAR, 0]]);
+    expect(again(9 * BAR, first, 6)).toEqual([[3 * BAR, 0.8], [9 * BAR, 0]]);
+    expect(again(9 * BAR, first, 5)).toEqual([[4 * BAR, 0.8], [9 * BAR, 0]]);
+    // The lane comes into the old head from another value: the head stays and its value is held.
+    const risen: [number, number][] = [[0, 0.5], [4 * BAR, 0.75], [8 * BAR, 0]];
+    expect(again(16 * BAR, risen, 4)).toEqual([[0, 0.5], [4 * BAR, 0.75], [12 * BAR, 0.75], [16 * BAR, 0]]);
+    // Only the last line is a fade: a line to the bottom with points after it stays.
+    const dip: [number, number][] = [[2 * BAR, 0.75], [4 * BAR, 0], [6 * BAR, 0.5]];
+    expect(again(16 * BAR, dip, 2)).toEqual([...dip, [14 * BAR, 0.5], [16 * BAR, 0]]);
+    expect(again(16 * BAR, [...dip, [8 * BAR, 0]], 2)).toEqual([...dip, [14 * BAR, 0.5], [16 * BAR, 0]]);
+    expect(again(16 * BAR, [[2 * BAR, 0.75], [4 * BAR, 0], [6 * BAR, 0]], 2)).toEqual([[2 * BAR, 0.75], [4 * BAR, 0], [14 * BAR, 0], [16 * BAR, 0]]);
+    // A lane at rest: the old fade's end goes, its head stays, and the start is the fader's.
+    expect(again(8 * BAR, [[BAR, 0.25], [2 * BAR, 0.5], [4 * BAR, 0]], 2, true)).toEqual([[BAR, 0.25], [2 * BAR, 0.5], [6 * BAR, 0.8], [8 * BAR, 0]]);
   });
   it("through the fake: a lane is made, replaced under a new id, woken; the same fade again is nothing", async () => {
     const s = scene("muted");

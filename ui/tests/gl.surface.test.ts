@@ -71,6 +71,8 @@ function box(rect: DOMRect, parent: HTMLElement = document.body): HTMLElement {
 
 /** The batch keeps colors as 32-bit floats. */
 const f32 = (c: readonly number[]) => c.map(Math.fround);
+/** The readings telemetry version 5 added, as when nothing is measured. */
+const TELEMETRY_V5 = { masterReductionDb: 0, spectrum: new Uint8Array(24), lufsShort: null, lufsIntegrated: null, truePeakDb: null };
 
 const actions: { destroy(): void }[] = [];
 function region(node: HTMLElement, name: RegionName): HTMLElement {
@@ -257,6 +259,7 @@ describe("WebGL surfaces", () => {
       returnPeaks: new Float32Array([0.5, 0, 0, 1.5]),
       trackPeaks: new Float32Array(18),
       mics: [],
+      ...TELEMETRY_V5,
     });
     frame();
 
@@ -334,6 +337,7 @@ describe("WebGL surfaces", () => {
         returnPeaks: new Float32Array(4),
         trackPeaks: new Float32Array(24).fill(peak),
         mics: [],
+        ...TELEMETRY_V5,
       });
     engine.setTracks(tracks(12));
     frame();
@@ -421,6 +425,7 @@ describe("WebGL surfaces", () => {
         returnPeaks: new Float32Array(4),
         trackPeaks: new Float32Array(24).fill(peak),
         mics: [],
+        ...TELEMETRY_V5,
       });
     now.mockReturnValue(1016);
     levels(0.5);
@@ -457,6 +462,7 @@ describe("WebGL surfaces", () => {
       returnPeaks: new Float32Array(4),
       trackPeaks: new Float32Array([track, track]),
       mics: [],
+      ...TELEMETRY_V5,
     });
     engine.onTelemetry(telemetry(0.1));
     frame();

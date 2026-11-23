@@ -350,6 +350,35 @@ pub(crate) fn step_text(row: &StepRow) -> (StepName, StepWhat, Option<StepPlace>
         })
     };
     match row.kind {
+        // Round 12, wave 2.
+        StepKind::KeepPlayed { track, clip, .. } => (
+            StepName::KeepPlayed,
+            match a.after.clip(clip) {
+                Some((_, c)) => StepWhat::Take {
+                    number: count(c.active + 1),
+                },
+                None => StepWhat::None,
+            },
+            on_track(track),
+        ),
+        StepKind::PlacePattern { track, .. } => (
+            StepName::PlacePattern,
+            StepWhat::Track {
+                track: a.track(track),
+            },
+            arrange,
+        ),
+        StepKind::RepeatClips { count: n } => (StepName::RepeatClips, clips(n), arrange),
+        StepKind::ApplyPreset { strip, kind, .. } => (
+            StepName::ApplyPreset,
+            StepWhat::Effect {
+                effect: EffectName::Builtin {
+                    effect: effect_kind(kind),
+                },
+            },
+            a.strip_place(strip),
+        ),
+        StepKind::LowerAll { .. } => (StepName::LowerAll, StepWhat::None, mixer),
         StepKind::Record { track, clip, .. } => (
             StepName::Record,
             match a.after.clip(clip) {

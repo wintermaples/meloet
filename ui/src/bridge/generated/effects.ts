@@ -2,7 +2,7 @@
 import type { EffectKind } from "./EffectKind";
 
 /** The effects that come with meloet, in the order of the shelf. */
-export const EFFECT_KINDS: readonly EffectKind[] = ["eq4","compressor","reverb","delay","chorus","limiter"];
+export const EFFECT_KINDS: readonly EffectKind[] = ["eq4","compressor","reverb","delay","chorus","limiter","gate","deEsser","saturation"];
 
 /** The insert slots of every strip. */
 export const INSERT_SLOTS = 4;
@@ -113,6 +113,38 @@ export const EFFECT_PARAMS: { readonly [K in EffectKind]: readonly EffectParam[]
       "group": null,
       "id": "makeup",
       "max": 24.0,
+      "min": 0.0,
+      "shape": "continuous",
+      "steps": [],
+      "unit": "db"
+    }
+  ],
+  "deEsser": [
+    {
+      "default": 6500.0,
+      "group": null,
+      "id": "frequency",
+      "max": 10000.0,
+      "min": 3000.0,
+      "shape": "continuous",
+      "steps": [],
+      "unit": "hz"
+    },
+    {
+      "default": -30.0,
+      "group": null,
+      "id": "threshold",
+      "max": 0.0,
+      "min": -60.0,
+      "shape": "continuous",
+      "steps": [],
+      "unit": "db"
+    },
+    {
+      "default": 8.0,
+      "group": null,
+      "id": "reduction",
+      "max": 18.0,
       "min": 0.0,
       "shape": "continuous",
       "steps": [],
@@ -309,6 +341,38 @@ export const EFFECT_PARAMS: { readonly [K in EffectKind]: readonly EffectParam[]
       "unit": "db"
     }
   ],
+  "gate": [
+    {
+      "default": -45.0,
+      "group": null,
+      "id": "threshold",
+      "max": 0.0,
+      "min": -80.0,
+      "shape": "continuous",
+      "steps": [],
+      "unit": "db"
+    },
+    {
+      "default": -60.0,
+      "group": null,
+      "id": "range",
+      "max": 0.0,
+      "min": -60.0,
+      "shape": "continuous",
+      "steps": [],
+      "unit": "db"
+    },
+    {
+      "default": 120.0,
+      "group": null,
+      "id": "release",
+      "max": 1000.0,
+      "min": 5.0,
+      "shape": "continuous",
+      "steps": [],
+      "unit": "ms"
+    }
+  ],
   "limiter": [
     {
       "default": -0.3,
@@ -411,6 +475,48 @@ export const EFFECT_PARAMS: { readonly [K in EffectKind]: readonly EffectParam[]
       "shape": "continuous",
       "steps": [],
       "unit": "percent"
+    }
+  ],
+  "saturation": [
+    {
+      "default": 6.0,
+      "group": null,
+      "id": "drive",
+      "max": 36.0,
+      "min": 0.0,
+      "shape": "continuous",
+      "steps": [],
+      "unit": "db"
+    },
+    {
+      "default": 20000.0,
+      "group": null,
+      "id": "tone",
+      "max": 20000.0,
+      "min": 1000.0,
+      "shape": "continuous",
+      "steps": [],
+      "unit": "hz"
+    },
+    {
+      "default": 100.0,
+      "group": null,
+      "id": "mix",
+      "max": 100.0,
+      "min": 0.0,
+      "shape": "continuous",
+      "steps": [],
+      "unit": "percent"
+    },
+    {
+      "default": 0.0,
+      "group": null,
+      "id": "output",
+      "max": 6.0,
+      "min": -24.0,
+      "shape": "continuous",
+      "steps": [],
+      "unit": "db"
     }
   ]
 };

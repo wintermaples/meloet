@@ -414,12 +414,12 @@ fn chooser_confirm_chooses_saves_and_opens() {
     assert_eq!(
         effects,
         [
-            Effect::SaveSettings(Settings {
+            Effect::SaveSettings(Box::new(Settings {
                 output: Some(USB.into()),
                 output_name: Some("USB スピーカー".into()),
                 scale: 100,
                 ..Settings::default()
-            }),
+            })),
             open(USB_NODE),
         ]
     );
@@ -632,12 +632,12 @@ fn settings_dialog() {
     assert_eq!(
         effects,
         [
-            Effect::SaveSettings(Settings {
+            Effect::SaveSettings(Box::new(Settings {
                 output: Some(USB.into()),
                 output_name: Some("USB スピーカー".into()),
                 scale: 100,
                 ..Settings::default()
-            }),
+            })),
             open(USB_NODE),
         ]
     );
@@ -1041,12 +1041,12 @@ fn viewport_is_css_px_and_the_rules_work_at_100_percent() {
     let effects = cmd(&mut m, Command::SetScale { percent: 150 });
     assert_eq!(
         effects,
-        [Effect::SaveSettings(Settings {
+        [Effect::SaveSettings(Box::new(Settings {
             output: None,
             output_name: None,
             scale: 150,
             ..Settings::default()
-        })]
+        }))]
     );
     cmd(
         &mut m,
@@ -1122,10 +1122,10 @@ fn a_theme_is_a_setting_and_not_a_step() {
     );
     assert_eq!(
         effects,
-        [Effect::SaveSettings(Settings {
+        [Effect::SaveSettings(Box::new(Settings {
             theme: Theme::MintDark,
             ..Settings::default()
-        })]
+        }))]
     );
     let after = m.view();
     assert_eq!(after.workspace.theme, Theme::MintDark);
@@ -1211,12 +1211,12 @@ fn open_bands(m: &Model) -> Vec<Band> {
 }
 
 fn saved(scale: u16) -> Effect {
-    Effect::SaveSettings(Settings {
+    Effect::SaveSettings(Box::new(Settings {
         output: None,
         output_name: None,
         scale,
         ..Settings::default()
-    })
+    }))
 }
 
 #[test]
@@ -1361,10 +1361,10 @@ fn a_scale_that_does_not_fit_is_not_taken() {
     viewport(&mut m, 1100.0, 600.0);
     assert_eq!(
         cmd(&mut m, Command::SetScale { percent: 125 }),
-        [Effect::SaveSettings(Settings {
+        [Effect::SaveSettings(Box::new(Settings {
             scale: 125,
-            ..m.settings()
-        })]
+            ..*m.settings()
+        }))]
     );
     assert_eq!(status(&m), idle());
 
@@ -1758,6 +1758,9 @@ fn the_shelf_starts_closed_with_the_two_favorites_and_a_star_is_a_setting() {
     assert_eq!(
         shelf,
         ShelfView {
+            patterns: Vec::new(),
+            selected_pattern: None,
+            pattern_sample: None,
             mode: ShelfMode::NewTrack,
             available: vec![InstrumentKind::Sine],
             selected_sound: None,
@@ -1981,6 +1984,122 @@ fn a_song_with_what_this_pc_does_not_have_keeps_it_and_says_so() {
     assert_eq!(m.play().song().doc, song.doc);
 }
 
+/// Protocol 32 (round 12, wave 2): every new intent is taken, and until its feature is built
+/// it changes nothing, as an intent with an old id.
+#[test]
+fn the_commands_of_round_12_wave_2_are_taken_and_change_nothing_yet() {
+    use meloet_protocol::{
+        ExportChange, ExportFormat, InsertRef, PresetRef, PresetsView, StripRef,
+    };
+    let mut m = fresh();
+    let before = m.view();
+    assert!(!before.transport.can_keep_played);
+    assert!(!before.keyboards.typed_keys);
+    assert!(before.workspace.note_glow);
+    assert_eq!(before.presets, PresetsView::default());
+    assert_eq!(
+        (
+            before.shelf.patterns.len(),
+            &before.shelf.selected_pattern,
+            &before.shelf.pattern_sample
+        ),
+        (0, &None, &None)
+    );
+    let insert = InsertRef {
+        strip: StripRef::Master,
+        slot: 0,
+    };
+    let commands = [
+        Command::KeepPlayed,
+        Command::TypedKeys { on: true },
+        Command::TypedKey {
+            note: 60,
+            down: true,
+            t_us: 1_000,
+        },
+        Command::SetNoteGlow { on: false },
+        Command::ShelfSelectPattern {
+            id: Some("eightBeat".into()),
+        },
+        Command::PlayPattern {
+            id: "eightBeat".into(),
+        },
+        Command::PlacePattern {
+            id: "eightBeat".into(),
+        },
+        Command::RepeatClips {
+            clips: vec![99],
+            count: 3,
+        },
+        Command::ApplyPreset {
+            insert,
+            preset: PresetRef::Factory {
+                id: "finish".into(),
+            },
+        },
+        Command::SavePreset {
+            insert,
+            name: "いつもの".into(),
+        },
+        Command::DeletePreset {
+            effect: EffectKind::Limiter,
+            name: "いつもの".into(),
+        },
+        Command::LowerAllTracks { db: 6.0 },
+        Command::DismissTooLoud,
+    ];
+    for command in commands {
+        assert_eq!(cmd(&mut m, command.clone()), [], "{command:?}");
+    }
+    assert_eq!(AppState::changes_from(&before, &m.view()), []);
+
+    // The export does not offer mp3 yet and does not take it; the song's information changes
+    // nothing yet.
+    cmd(&mut m, Command::OpenExport);
+    let dialog = m.view().export.dialog.expect("the dialog");
+    assert_eq!(dialog.formats, [ExportFormat::Wav, ExportFormat::Flac]);
+    assert_eq!(
+        (
+            dialog.mp3_kbps,
+            dialog.mp3_kbps_choices.len(),
+            &dialog.title,
+            &dialog.artist,
+            &dialog.picture,
+            dialog.picture_usable
+        ),
+        (192, 0, &before.song.name, &String::new(), &None, false)
+    );
+    for change in [
+        ExportChange::Format {
+            format: ExportFormat::Mp3,
+        },
+        ExportChange::Mp3Kbps { kbps: 320 },
+        ExportChange::Title {
+            title: "別の題名".into(),
+        },
+        ExportChange::Artist {
+            artist: "わたし".into(),
+        },
+        ExportChange::ChoosePicture,
+        ExportChange::RemovePicture,
+    ] {
+        cmd(&mut m, Command::SetExport { change });
+    }
+    assert_eq!(m.view().export.dialog, Some(dialog));
+
+    // The settings are read and written back as they are.
+    let settings = Settings {
+        note_glow: false,
+        export_artist: "わたし".into(),
+        ..Settings::default()
+    };
+    let mut m = Model::new(settings.clone());
+    assert!(!m.view().workspace.note_glow);
+    cmd(&mut m, Command::OpenExport);
+    assert_eq!(m.view().export.dialog.expect("the dialog").artist, "わたし");
+    assert_eq!(*m.settings(), settings);
+}
+
 /// Protocol 31 (round 12, wave 1): every new intent is taken, and until its feature is built
 /// it changes nothing, as an intent with an old id.
 #[test]
@@ -2073,5 +2192,5 @@ fn the_commands_of_round_12_are_taken_and_change_nothing_yet() {
         ),
         (-12.0, ClickSound::Cowbell, ClickWhen::RecordingOnly, false)
     );
-    assert_eq!(m.settings(), settings);
+    assert_eq!(*m.settings(), settings);
 }

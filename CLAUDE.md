@@ -79,7 +79,7 @@ You are not the first one here, and you will not be the last. Leave things so th
 ```
 crates/
   meloet-model     song, track, clip, take, note (pure data), the tempo map (tempo_map.rs), undoable steps (History), the rules that turn recorded events into takes (Recorder), editing notes (notes.rs), quantize (quantize.rs), CC points (controls.rs), moving clips (arrange.rs), sounds and groups (instrument.rs), drum kits (drums.rs), mixer and effect parameters (mixer.rs, effects.rs)
-  meloet-protocol  the promise between Rust and the screen (version 31). TS types are written out to ui/src/bridge/generated/. Plugin windows and parameter shapes in params.rs, things added later in added.rs, tempo, time signature and markers in timeline.rs
+  meloet-protocol  the promise between Rust and the screen (version 32; the telemetry binary is version 5). TS types are written out to ui/src/bridge/generated/. Plugin windows and parameter shapes in params.rs, things added later in added.rs, tempo, time signature and markers in timeline.rs
   meloet-engine    audio thread priority (priority.rs), the sound flow, the instrument interface (Instrument), track seats, the mixer signal path (mixer.rs), meters, the cpal output, transport (transport.rs), the position reaching the ear (clock.rs)
   meloet-sound     sound parts: the sample player (sampler/), SF2 reader (sf2/), 6 effects (effects/), sounds made by calculation (synth/), the phrases of a sample's ▶ (phrases.rs)
   meloet-plugin    plugin keys and the keys that group them, kinds, the scan record, shared memory and futex, communication with the plugin host (wire.rs, version 7), starting children (launch.rs)

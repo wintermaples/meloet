@@ -372,7 +372,7 @@ describe("status line (spec 2 (Export progress), spec 6, mock F7-Export, F7-Expo
     expect(app.sent).toEqual([{ type: "showExported" }]);
     unmount(mounted!);
     const s = scene("exportDone");
-    s.export.run = { state: "done", file: "ピアノ.wav", files: 4, place: "~/ミュージック/はじめての曲/", lengthS: 40, sampleRate: 48000, bits: "bits24", wave: [], lufs: null, truePeakDb: null };
+    s.export.run = { state: "done", file: "ピアノ.wav", files: 4, place: "~/ミュージック/はじめての曲/", lengthS: 40, sampleRate: 48000, bits: "bits24", wave: [], lufs: null, truePeakDb: null, mp3Kbps: null };
     show(StatusLine, s);
     expect(text(q(".status .message"))).toBe("書き出しました: ~/ミュージック/はじめての曲/");
   });

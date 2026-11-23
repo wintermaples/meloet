@@ -27,8 +27,21 @@ export {
   RECENT_SHOWN,
   SCALE_MODES,
 } from "./types";
+export {
+  EXPORT_MP3_DEFAULT_KBPS,
+  EXPORT_MP3_KBPS,
+  EXPORT_PICTURE_MAX_BYTES,
+  FACTORY_PRESETS,
+  PATTERN_GROUPS,
+  PRESET_NAME_MAX,
+  PRESETS_PER_EFFECT,
+  REPEAT_COUNT_DEFAULT,
+  REPEAT_COUNT_MAX,
+  TYPED_KEYBOARD_ID,
+  type FactoryPreset,
+} from "./types";
 export { levelFor, type LevelPeaks } from "./peaks";
-export { keyIsDown, positionAt, type MicMeter, type Telemetry, type TransportReading } from "./telemetry";
+export { keyIsDown, positionAt, SPECTRUM_BANDS, type MicMeter, type Telemetry, type TransportReading } from "./telemetry";
 export { CONTROL_CC, CONTROL_PITCH_BEND, NO_FROM, type TakeNotes } from "./take";
 export type { LanePoints } from "./lane";
 export type { HistoryRowStore } from "./historyRows";

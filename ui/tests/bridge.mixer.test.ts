@@ -27,7 +27,7 @@ describe("protocol 14: fake scene (mixer)", () => {
     ]);
     expect(s.song.master).toMatchObject({ gainDb: 0, pan: 0, inserts: ["limiter", null, null, null] });
     const insert: InsertRef = { strip: { kind: "return", bus: "a" }, slot: 0 };
-    expect(s.params.selected).toEqual({ kind: "builtin", insert, effect: "reverb", values: [2.4, 60, 20, 6000, 120, 100, 100], row: 0 });
+    expect(s.params.selected).toEqual({ kind: "builtin", insert, effect: "reverb", values: [2.4, 60, 20, 6000, 120, 100, 100], row: 0, preset: null });
     expect(s.status.message).toEqual({ id: "paramSelected", loopBars: { from: 5, to: 9 }, insert, effect: "reverb", param: 0 });
     expect(s.transport.state).toBe("playing");
     expect(s.workspace.layout.lower.map((b) => b.band)).toEqual(["mixer"]);
@@ -61,8 +61,8 @@ describe("protocol 14: fake scene (mixer)", () => {
 describe("protocol 14: the effect table and its text", () => {
   const has = (key: string) => expect(key in texts, key).toBe(true);
 
-  it("6 effects, and every parameter has a name", () => {
-    expect(EFFECT_KINDS).toEqual(["eq4", "compressor", "reverb", "delay", "chorus", "limiter"]);
+  it("9 effects, and every parameter has a name", () => {
+    expect(EFFECT_KINDS).toEqual(["eq4", "compressor", "reverb", "delay", "chorus", "limiter", "gate", "deEsser", "saturation"]);
     for (const kind of EFFECT_KINDS) {
       has(`effect.${kind}`);
       for (const p of EFFECT_PARAMS[kind]) {
@@ -119,7 +119,7 @@ describe("protocol 14: the fake's commit and sound-only preview", () => {
     const s = scene("shelfEffects");
     const master: InsertRef = { strip: { kind: "master" }, slot: 0 };
     const picked = run(s, { type: "selectInsert", insert: master })!;
-    expect(picked.params.selected).toEqual({ kind: "builtin", insert: master, effect: "limiter", values: [-0.3, 0, 100], row: null });
+    expect(picked.params.selected).toEqual({ kind: "builtin", insert: master, effect: "limiter", values: [-0.3, 0, 100], row: null, preset: null });
     expect(picked.showParams).toBe(true);
     expect(run(s, { type: "selectInsert", insert: { strip: { kind: "master" }, slot: 1 } })!.params.selected).toBeNull();
     expect(builtinOf(run(s, { type: "selectParam", param: 6 })!.params)!.row).toBe(6);
@@ -129,7 +129,7 @@ describe("protocol 14: the fake's commit and sound-only preview", () => {
     const added = run(s, { type: "shelfConfirm" })!;
     const track = { kind: "track", id: s.song.tracks[0]!.id } as const;
     expect(added.song.tracks[0]!.inserts).toEqual([null, "compressor", null, null]);
-    expect(added.params.selected).toEqual({ kind: "builtin", insert: { strip: track, slot: 1 }, effect: "compressor", values: effectDefaults("compressor"), row: null });
+    expect(added.params.selected).toEqual({ kind: "builtin", insert: { strip: track, slot: 1 }, effect: "compressor", values: effectDefaults("compressor"), row: null, preset: null });
     expect(added.shelf.mode).toEqual({ kind: "newTrack" });
     expect(added.shelf.selectedEffect).toBeNull();
     const after = { ...s, song: added.song, params: added.params, shelf: added.shelf };

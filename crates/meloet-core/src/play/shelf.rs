@@ -469,6 +469,10 @@ impl Play {
         });
         let (starred_sounds, favorite_effects) = stars;
         ShelfView {
+            // round12 stub: P4
+            patterns: Vec::new(),
+            selected_pattern: None,
+            pattern_sample: None,
             selected_sound: trial.map(sound_ref),
             current_sound: current.map(sound_ref),
             loading_sound: loading.map(sound_ref),

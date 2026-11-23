@@ -1,5 +1,6 @@
 //! The built-in effects and their parameter tables (spec chapter 3 for reverb and delay,
-//! docs/architecture.md 19-3 for the other four).
+//! docs/architecture.md 19-3 for the other four, the round 12 spec M6 for gate, de-esser and
+//! saturation).
 //!
 //! A parameter is addressed by its position in its effect's table; the same number goes to the
 //! effect on the audio thread. A value is an `f32` in the parameter's own unit. The names here
@@ -13,6 +14,9 @@ pub enum EffectKind {
     Delay,
     Chorus,
     Limiter,
+    Gate,
+    DeEsser,
+    Saturation,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -256,6 +260,38 @@ pub mod limiter {
     pub const RELEASE: u32 = 2;
 }
 
+/// Positions in the gate's table.
+pub mod gate {
+    /// 「しきい値」.
+    pub const THRESHOLD: u32 = 0;
+    /// 「下げる量」: how far below the sound is brought (−60 dB at most).
+    pub const RANGE: u32 = 1;
+    /// 「戻る速さ」.
+    pub const RELEASE: u32 = 2;
+}
+
+/// Positions in the de-esser's table.
+pub mod de_esser {
+    /// 「周波数」: the band above it is watched and lowered.
+    pub const FREQUENCY: u32 = 0;
+    /// 「しきい値」.
+    pub const THRESHOLD: u32 = 1;
+    /// 「下げる量」: the most the band is lowered.
+    pub const REDUCTION: u32 = 2;
+}
+
+/// Positions in the saturation's table.
+pub mod saturation {
+    /// 「ひずみ」.
+    pub const DRIVE: u32 = 0;
+    /// 「明るさ」: the low-pass after the curve.
+    pub const TONE: u32 = 1;
+    /// 「まぜる量」.
+    pub const MIX: u32 = 2;
+    /// 「出る大きさ」.
+    pub const OUTPUT: u32 = 3;
+}
+
 /// One step of the delay's interval: its name in the song file and its length in quarter notes.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DelayInterval {
@@ -358,14 +394,36 @@ const LIMITER: [ParamSpec; 3] = [
     cont("release", Unit::Ms, 1.0, 1000.0, 100.0),
 ];
 
+const GATE: [ParamSpec; 3] = [
+    cont("threshold", Unit::Db, -80.0, 0.0, -45.0),
+    cont("range", Unit::Db, -60.0, 0.0, -60.0),
+    cont("release", Unit::Ms, 5.0, 1000.0, 120.0),
+];
+
+const DE_ESSER: [ParamSpec; 3] = [
+    cont("frequency", Unit::Hz, 3000.0, 10000.0, 6500.0),
+    cont("threshold", Unit::Db, -60.0, 0.0, -30.0),
+    cont("reduction", Unit::Db, 0.0, 18.0, 8.0),
+];
+
+const SATURATION: [ParamSpec; 4] = [
+    cont("drive", Unit::Db, 0.0, 36.0, 6.0),
+    cont("tone", Unit::Hz, 1000.0, 20000.0, 20000.0),
+    cont("mix", Unit::Percent, 0.0, 100.0, 100.0),
+    cont("output", Unit::Db, -24.0, 6.0, 0.0),
+];
+
 impl EffectKind {
-    pub const ALL: [EffectKind; 6] = [
+    pub const ALL: [EffectKind; 9] = [
         EffectKind::Eq4,
         EffectKind::Compressor,
         EffectKind::Reverb,
         EffectKind::Delay,
         EffectKind::Chorus,
         EffectKind::Limiter,
+        EffectKind::Gate,
+        EffectKind::DeEsser,
+        EffectKind::Saturation,
     ];
 
     /// The name written to the song file.
@@ -377,6 +435,9 @@ impl EffectKind {
             EffectKind::Delay => "delay",
             EffectKind::Chorus => "chorus",
             EffectKind::Limiter => "limiter",
+            EffectKind::Gate => "gate",
+            EffectKind::DeEsser => "deEsser",
+            EffectKind::Saturation => "saturation",
         }
     }
 
@@ -393,6 +454,9 @@ impl EffectKind {
             EffectKind::Delay => &DELAY,
             EffectKind::Chorus => &CHORUS,
             EffectKind::Limiter => &LIMITER,
+            EffectKind::Gate => &GATE,
+            EffectKind::DeEsser => &DE_ESSER,
+            EffectKind::Saturation => &SATURATION,
         }
     }
 
@@ -478,6 +542,60 @@ mod tests {
         assert_eq!(at(EffectKind::Limiter, limiter::CEILING), "ceiling");
         assert_eq!(at(EffectKind::Limiter, limiter::GAIN), "gain");
         assert_eq!(at(EffectKind::Limiter, limiter::RELEASE), "release");
+        assert_eq!(at(EffectKind::Gate, gate::THRESHOLD), "threshold");
+        assert_eq!(at(EffectKind::Gate, gate::RANGE), "range");
+        assert_eq!(at(EffectKind::Gate, gate::RELEASE), "release");
+        assert_eq!(at(EffectKind::DeEsser, de_esser::FREQUENCY), "frequency");
+        assert_eq!(at(EffectKind::DeEsser, de_esser::THRESHOLD), "threshold");
+        assert_eq!(at(EffectKind::DeEsser, de_esser::REDUCTION), "reduction");
+        assert_eq!(at(EffectKind::Saturation, saturation::DRIVE), "drive");
+        assert_eq!(at(EffectKind::Saturation, saturation::TONE), "tone");
+        assert_eq!(at(EffectKind::Saturation, saturation::MIX), "mix");
+        assert_eq!(at(EffectKind::Saturation, saturation::OUTPUT), "output");
+    }
+
+    /// The table of the round 12 spec M6: names in the song file, ranges and defaults.
+    #[test]
+    fn the_three_of_round_12() {
+        let row = |kind: EffectKind| {
+            (kind.params().iter())
+                .map(|p| (p.name, p.unit, p.min, p.max, p.default))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            [
+                EffectKind::Gate,
+                EffectKind::DeEsser,
+                EffectKind::Saturation
+            ]
+            .map(EffectKind::name),
+            ["gate", "deEsser", "saturation"]
+        );
+        assert_eq!(
+            row(EffectKind::Gate),
+            [
+                ("threshold", Unit::Db, -80.0, 0.0, -45.0),
+                ("range", Unit::Db, -60.0, 0.0, -60.0),
+                ("release", Unit::Ms, 5.0, 1000.0, 120.0),
+            ]
+        );
+        assert_eq!(
+            row(EffectKind::DeEsser),
+            [
+                ("frequency", Unit::Hz, 3000.0, 10000.0, 6500.0),
+                ("threshold", Unit::Db, -60.0, 0.0, -30.0),
+                ("reduction", Unit::Db, 0.0, 18.0, 8.0),
+            ]
+        );
+        assert_eq!(
+            row(EffectKind::Saturation),
+            [
+                ("drive", Unit::Db, 0.0, 36.0, 6.0),
+                ("tone", Unit::Hz, 1000.0, 20000.0, 20000.0),
+                ("mix", Unit::Percent, 0.0, 100.0, 100.0),
+                ("output", Unit::Db, -24.0, 6.0, 0.0),
+            ]
+        );
     }
 
     #[test]

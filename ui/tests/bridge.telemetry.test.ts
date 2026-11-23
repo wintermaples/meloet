@@ -2,18 +2,18 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { decodeTelemetry, keyIsDown, positionAt } from "../src/bridge/telemetry";
 // Both files are written by `cargo test -p meloet-protocol` from the Rust encoder.
-import expected from "./fixtures/telemetry-v4.json";
+import expected from "./fixtures/telemetry-v5.json";
 
 function fixtureBytes(): Uint8Array {
   const here = decodeURIComponent(new URL(import.meta.url).pathname);
   const dir = here.slice(0, here.lastIndexOf("/"));
-  return new Uint8Array(readFileSync(`${dir}/fixtures/telemetry-v4.bin`));
+  return new Uint8Array(readFileSync(`${dir}/fixtures/telemetry-v5.bin`));
 }
 
-describe("telemetry binary, version 4", () => {
+describe("telemetry binary, version 5", () => {
   it("(d) reads what Rust wrote", () => {
     const bytes = fixtureBytes();
-    expect(bytes.length).toBe(92 + 8 * (expected.trackPeaks.length / 2) + 16 * expected.mics.length);
+    expect(bytes.length).toBe(124 + 8 * (expected.trackPeaks.length / 2) + 16 * expected.mics.length);
     expect(expected.mics.length).toBe(2);
 
     const t = decodeTelemetry(bytes.buffer as ArrayBuffer);
@@ -34,7 +34,14 @@ describe("telemetry binary, version 4", () => {
       returnPeaks: Array.from(t.returnPeaks),
       trackPeaks: Array.from(t.trackPeaks),
       mics: t.mics,
+      masterReductionDb: t.masterReductionDb,
+      spectrum: Array.from(t.spectrum),
+      lufsShort: t.lufsShort,
+      lufsIntegrated: t.lufsIntegrated,
+      truePeakDb: t.truePeakDb,
     }).toEqual(expected);
+    // The sample has a reading of each kind and one with none.
+    expect([expected.lufsShort, expected.lufsIntegrated, expected.truePeakDb]).toEqual([-13.2, null, -1.4]);
   });
 
   it("reads the same from a view that does not start at byte 0", () => {
@@ -52,16 +59,16 @@ describe("telemetry binary, version 4", () => {
     kind[0] = 2;
     expect(() => decodeTelemetry(kind)).toThrow(/kind/);
     const version = good.slice();
-    version[1] = 3;
+    version[1] = 4;
     expect(() => decodeTelemetry(version)).toThrow(/version/);
     const state = good.slice();
     state[64] = 4;
     expect(() => decodeTelemetry(state)).toThrow(/transport state/);
-    expect(() => decodeTelemetry(good.subarray(0, 91))).toThrow(/shorter/);
-    expect(() => decodeTelemetry(good.subarray(0, good.length - 1))).toThrow(/expected 140/);
+    expect(() => decodeTelemetry(good.subarray(0, 123))).toThrow(/shorter/);
+    expect(() => decodeTelemetry(good.subarray(0, good.length - 1))).toThrow(/expected 172/);
     const mics = good.slice();
     mics[88] = 3;
-    expect(() => decodeTelemetry(mics)).toThrow(/expected 156/);
+    expect(() => decodeTelemetry(mics)).toThrow(/expected 188/);
   });
 
   it("goes on from the heard position with ticksPerUs, and has none when the flag is off", () => {

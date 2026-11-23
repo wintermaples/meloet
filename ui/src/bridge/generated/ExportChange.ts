@@ -8,4 +8,4 @@ import type { RecordFormat } from "./RecordFormat";
 /**
  * What `Command::SetExport` sets. None is a step: the song does not change.
  */
-export type ExportChange = { "kind": "range", range: ExportRange, } | { "kind": "format", format: ExportFormat, } | { "kind": "advancedOpen", open: boolean, } | { "kind": "sampleRate", hz: number, } | { "kind": "bits", bits: RecordFormat, } | { "kind": "tail", tail: ExportTail, } | { "kind": "realtime", on: boolean, } | { "kind": "loudness", loudness: ExportLoudness, };
+export type ExportChange = { "kind": "range", range: ExportRange, } | { "kind": "format", format: ExportFormat, } | { "kind": "advancedOpen", open: boolean, } | { "kind": "sampleRate", hz: number, } | { "kind": "bits", bits: RecordFormat, } | { "kind": "tail", tail: ExportTail, } | { "kind": "realtime", on: boolean, } | { "kind": "loudness", loudness: ExportLoudness, } | { "kind": "mp3Kbps", kbps: number, } | { "kind": "title", title: string, } | { "kind": "artist", artist: string, } | { "kind": "choosePicture" } | { "kind": "removePicture" };

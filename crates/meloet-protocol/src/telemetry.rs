@@ -1,4 +1,4 @@
-//! Telemetry binary, version 4, little-endian. The layout table is docs/architecture.md 3-3;
+//! Telemetry binary, version 5, little-endian. The layout table is docs/architecture.md 3-3;
 //! this file is the one place that fixes it. `ui/src/bridge/telemetry.ts` reads it.
 
 use std::fmt;
@@ -6,8 +6,12 @@ use std::fmt;
 use crate::TransportState;
 
 pub const TELEMETRY_KIND: u8 = 1;
-pub const TELEMETRY_VERSION: u8 = 4;
-pub const TELEMETRY_HEADER_LEN: usize = 92;
+pub const TELEMETRY_VERSION: u8 = 5;
+pub const TELEMETRY_HEADER_LEN: usize = 124;
+/// The value of `lufs_short`, `lufs_integrated` and `true_peak` when there is none.
+pub const TELEMETRY_NO_VALUE: i16 = i16::MIN;
+/// E7: the bars of `Telemetry::spectrum`, low to high.
+pub const SPECTRUM_BANDS: usize = 24;
 /// One mic meter: the track's id, the peak left and right, the flags and 3 spare bytes.
 pub const TELEMETRY_MIC_LEN: usize = 16;
 
@@ -69,7 +73,7 @@ pub struct MicMeter {
     pub stereo: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Telemetry {
     pub seq: u32,
     /// CLOCK_MONOTONIC, nanoseconds, when Rust sent this.
@@ -96,6 +100,48 @@ pub struct Telemetry {
     /// The vocal tracks whose input is metered now (selected, or with the ● on), in the
     /// order of the tracks. Empty while the input is not open.
     pub mics: Vec<MicMeter>,
+    /// M2: how far the master's limiter holds the sound down, in 0.1 dB (25.5 dB at most),
+    /// the most since the last send. 0 when it does not, or there is no limiter.
+    pub master_reduction: u8,
+    /// E7: the master's sound from low to high, 40 Hz to 16 kHz in 24 bands, each −72..0 dB
+    /// as 0..=255, falling 30 dB a second. All 0 when silent.
+    pub spectrum: [u8; SPECTRUM_BANDS],
+    /// M3 「いまの大きさ」: LUFS of the last 3 s, in 0.01 LU. `TELEMETRY_NO_VALUE` when there
+    /// is none (silence, nothing measured yet).
+    pub lufs_short: i16,
+    /// M3 「曲ぜんたい」: LUFS since the play started, in 0.01 LU, or `TELEMETRY_NO_VALUE`.
+    pub lufs_integrated: i16,
+    /// M3 「トゥルーピーク」: the highest since the play started, in 0.01 dBTP, or
+    /// `TELEMETRY_NO_VALUE`.
+    pub true_peak: i16,
+}
+
+impl Default for Telemetry {
+    fn default() -> Self {
+        Telemetry {
+            seq: 0,
+            sent_ns: 0,
+            keys_low: 0,
+            keys_high: 0,
+            last_velocity: 0,
+            sustain: 0,
+            modulation: 0,
+            running: false,
+            master_clipped: false,
+            pitch_bend: 0,
+            load_permille: 0,
+            master_peak: [0.0; 2],
+            transport: None,
+            return_peaks: [[0.0; 2]; 2],
+            track_peaks: Vec::new(),
+            mics: Vec::new(),
+            master_reduction: 0,
+            spectrum: [0; SPECTRUM_BANDS],
+            lufs_short: TELEMETRY_NO_VALUE,
+            lufs_integrated: TELEMETRY_NO_VALUE,
+            true_peak: TELEMETRY_NO_VALUE,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -187,6 +233,12 @@ impl Telemetry {
         }
         out.extend_from_slice(&m.to_le_bytes());
         out.extend_from_slice(&[0, 0]);
+        out.extend_from_slice(&self.lufs_short.to_le_bytes());
+        out.extend_from_slice(&self.lufs_integrated.to_le_bytes());
+        out.extend_from_slice(&self.true_peak.to_le_bytes());
+        out.push(self.master_reduction);
+        out.push(0);
+        out.extend_from_slice(&self.spectrum);
         for pair in &self.track_peaks {
             for v in pair {
                 out.extend_from_slice(&v.to_le_bytes());
@@ -270,6 +322,11 @@ impl Telemetry {
                     }
                 })
                 .collect(),
+            lufs_short: i16::from_le_bytes(at(bytes, 92)),
+            lufs_integrated: i16::from_le_bytes(at(bytes, 94)),
+            true_peak: i16::from_le_bytes(at(bytes, 96)),
+            master_reduction: bytes[98],
+            spectrum: at(bytes, 100),
         })
     }
 
@@ -290,6 +347,11 @@ impl Telemetry {
             && self.return_peaks == other.return_peaks
             && self.track_peaks == other.track_peaks
             && self.mics == other.mics
+            && self.master_reduction == other.master_reduction
+            && self.spectrum == other.spectrum
+            && self.lufs_short == other.lufs_short
+            && self.lufs_integrated == other.lufs_integrated
+            && self.true_peak == other.true_peak
     }
 }
 

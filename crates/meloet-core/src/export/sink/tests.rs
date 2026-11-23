@@ -199,7 +199,10 @@ fn what_a_format_does_not_take_is_refused_and_a_file_given_up_is_gone() {
     let path = dir.join("a.flac");
     assert!(create(&path, spec(ExportFormat::Flac, RecordFormat::Bits32)).is_err());
     assert!(!path.exists());
-    for format in ExportFormat::ALL {
+    // round12 stub: F2 (mp3 is refused until it can be written)
+    assert!(create(&path, spec(ExportFormat::Mp3, RecordFormat::Bits16)).is_err());
+    assert!(!path.exists());
+    for format in [ExportFormat::Wav, ExportFormat::Flac] {
         let mut sink = create(&path, spec(format, RecordFormat::Bits16)).unwrap();
         sink.write(&[0.1; 64]).unwrap();
         assert!(path.exists());

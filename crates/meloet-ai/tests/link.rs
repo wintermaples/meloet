@@ -547,7 +547,7 @@ fn the_mixer_and_its_effects_are_steps() {
     assert_eq!(steps(&r), at);
 
     let effects = ok(&mut c, "list_effects", json!({}));
-    assert_eq!(effects["builtin"].as_array().unwrap().len(), 6);
+    assert_eq!(effects["builtin"].as_array().unwrap().len(), 9);
     assert_eq!(effects["builtin"][2]["params"][0]["name"], "decay");
     let instruments = ok(&mut c, "list_instruments", json!({}));
     assert!(instruments["builtin"].as_array().unwrap().len() > 20);

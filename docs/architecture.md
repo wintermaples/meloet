@@ -115,18 +115,19 @@ The state is split into sections. A change replaces a changed section whole (no 
 | `sounds` | (Round 8) the sound pack as this PC has it, and its fetch (23-7) |
 | `recent` | (Protocol 31, round 12 A5) the songs opened lately for 「最近ひらいた曲 ▸」: an id, the name and the place as shown; the full path stays in Rust |
 | `updates` | (Protocol 31, round 12 D1) the switch 「新しい版をたしかめる」 and the newer version found |
+| `presets` | (Protocol 32, round 12 M1) the names of 「自分で残したもの」 of each built-in effect; the presets themselves stay in Rust |
 | `status` | The notice on the left of the status line (kind of text and the values to put in) |
 
 The screen's wording is not kept in Rust. Rust sends only "the kind of text (ID) and the values to put in", and the screen matches it to the text in `ui/src/text/`.
 
 The full list of sections is `AppState` in `crates/meloet-protocol/src/lib.rs`.
 
-### 3-3. The telemetry binary (version 4, little-endian)
+### 3-3. The telemetry binary (version 5, little-endian)
 
 | Offset | Type | Content |
 |---|---|---|
 | 0 | u8 | kind = 1 (telemetry) |
-| 1 | u8 | version = 4 |
+| 1 | u8 | version = 5 |
 | 2 | u16 | number of tracks n |
 | 4 | u32 | serial number |
 | 8 | u64 | the time Rust sent it (CLOCK_MONOTONIC, ns) |
@@ -148,10 +149,16 @@ The full list of sections is `AppState` in `crates/meloet-protocol/src/lib.rs`.
 | 72 | f32 × 4 | return A peak left, right; return B peak left, right (after inserts, fader and pan; round 4) |
 | 88 | u16 | number of mic meters m (round 7; 0 while no input is open) |
 | 90 | u16 | 0 (spare) |
-| 92 | f32 × 2n | per-track peak left, right (after fader and pan) |
-| 92 + 8n | 16 × m | mic meters (one per vocal track, in track order): track id u32; input peak left, right f32 × 2 (before the fader; mono has the same value in both); flags u8 (bit0: reached 0 dB, bit1: stereo); three 0 bytes |
+| 92 | i16 | short-term loudness, the last 3 s of the master (0.01 LU; −32768 = none) (round 12 M3) |
+| 94 | i16 | integrated loudness since the play started (0.01 LU; −32768 = none) (M3) |
+| 96 | i16 | true peak since the play started (0.01 dBTP; −32768 = none) (M3) |
+| 98 | u8 | how far the master's limiter holds the sound down, the most since the last send (0.1 dB, 25.5 dB at most; 0 = not at all, or no limiter) (M2) |
+| 99 | u8 | 0 (spare) |
+| 100 | u8 × 24 | the master's sound from low to high, 40 Hz to 16 kHz in 24 bands, each −72..0 dB as 0..255 (E7) |
+| 124 | f32 × 2n | per-track peak left, right (after fader and pan) |
+| 124 + 8n | 16 × m | mic meters (one per vocal track, in track order): track id u32; input peak left, right f32 × 2 (before the fader; mono has the same value in both); flags u8 (bit0: reached 0 dB, bit1: stereo); three 0 bytes |
 
-Screen position = `tick + (Rust's now − send time) × ticks per µs`. While bit2 is 0 (sound not running yet), bytes 48–71 are 0 and the screen uses `transport.position`. When stopped, the transport's numbers and the play line use `transport.position` (it comes at once as a change); when moving, the telemetry position (`shownTick` in `ui/src/components/time.ts`). The layout is fixed in one place, `crates/meloet-protocol/src/telemetry.rs`.
+Screen position = `tick + (Rust's now − send time) × ticks per µs`. While bit2 is 0 (sound not running yet), bytes 48–71 are 0 and the screen uses `transport.position`. Version 5 (protocol 32, round 12, 25-2) put bytes 92–123 before the tracks; every reading there is in `same_readings`, so a change in it alone is sent. The screen reads the loudness as LUFS or dBTP (`null` for none) and the reduction as dB (`ui/src/bridge/telemetry.ts`). When stopped, the transport's numbers and the play line use `transport.position` (it comes at once as a change); when moving, the telemetry position (`shownTick` in `ui/src/components/time.ts`). The layout is fixed in one place, `crates/meloet-protocol/src/telemetry.rs`.
 
 ### 3-4. The take content binary (version 2, little-endian)
 
@@ -2701,3 +2708,15 @@ The owner's request of 2026-11-23 for four waves of features (`docs/history/roun
 - Protocol **31** holds every shape of wave 1; the behaviour behind each new intent is a stub in core, marked `// round12 stub: <ID>` (`grep -rn "round12 stub"`), which changes nothing as an intent with an old id does. New sections `recent` and `updates` (D1's notice and A5's list change apart from everything else). New step names: 「ベロシティを割合で変える」「ベロシティをだんだん変える」「ベロシティをばらつかせる」「次の音までのばす」「トラックを複製」「ノーマライズ」「逆にする」 (84 kinds). Numbers and lists for the screen in `ui/src/bridge/generated/round12.ts`.
 - Settings (still version 1): `click_volume_db` (−24..+6, put into range), `click_sound`, `click_when` (an unknown name gives the default), `check_updates` (missing: on).
 - The shell opens an `https://` address in the browser and a file with the PC's app for it (`ShellRequest::OpenUrl` / `OpenFile`, `xdg-open` in `pcwindow.rs`).
+
+### 25-2 Protocol 32 and telemetry 5 (wave 2, first pass)
+- Protocol **32** holds every shape of wave 2 (R1, R2, P2, E1, P4, A1, M1, M6, M2, F2); stubs as in 25-1 (`// round12 stub: <ID>`). P2 needs none (it draws takes the screen has).
+- **Intents**: `KeepPlayed` (R1); `TypedKeys {on}`, `TypedKey {note, down, tUs}` (R2; the PC keyboard is a keyboard of the list with the id `TYPED_KEYBOARD_ID` while on, at `TYPED_KEY_VELOCITY` unless the velocity is fixed); `SetNoteGlow {on}` (E1); `ShelfSelectPattern {id}`, `PlayPattern {id}`, `PlacePattern {id}` (P4; `PlayPattern` is new because `PlaySample` names an instrument); `RepeatClips {clips, count}` (A1, 1..=`REPEAT_COUNT_MAX`); `ApplyPreset {insert, preset}`, `SavePreset {insert, name}`, `DeletePreset {effect, name}` with `PresetRef::Factory {id}` / `User {name}` (M1); `LowerAllTracks {db}`, `DismissTooLoud` (M2); `SetExport` with `mp3Kbps`, `title`, `artist`, `choosePicture`, `removePicture` (F2; `ExportChange` is no longer `Copy`).
+- **State**: `transport.canKeepPlayed` (changes only when it turns), `keyboards.typedKeys`, `workspace.noteGlow`, `shelf.patterns` / `selectedPattern` / `patternSample`, `params.selected.preset` (the preset the values equal, for the name on 「プリセット ▾」), the new section `presets` (user preset names), the export dialog's `mp3Kbps`, `mp3KbpsChoices`, `title`, `artist`, `picture`, `pictureUsable`, and `Done.mp3Kbps`. `ExportFormat::Mp3` exists but is not in `formats` and is refused until F2 passes its acceptance conditions.
+- **Status lines**: `nothingToKeep`, `typedKeysOn`, `patternNeedsFourFour`, `presetOverwritten`, `presetLanesKept`, `tooManyPresets`, `tooLoud {byDb, lowerDb, limiter}` (the measured dB and the one 「下げる」 uses, rounded up into 1..12; the spec's example 「2.1 dB 越えています」 shows the measured one), `exportPictureTooLarge`, `exportPictureUnreadable`. Overlaps of P4 and A1 use the overlap notices there are.
+- **Found missing by wave 1** (added in this pass): `clipWorkFailed {count}` (A9: the audio of clips could not be read or written) and `ValueField::Percent` / `Amount` (P3: 「割合」 10..300 and 「ばらつき」 1..32 typed out of range).
+- **Step names** (89 kinds): 「さっきの演奏を残す」「パターンを置く」「クリップをくり返す」「プリセットを使う」「全部のトラックを下げる」; the rows say a take, the track, the clips, the effect and nothing.
+- **Effects**: `gate`, `deEsser`, `saturation` with the tables of the spec (model `effects.rs`, protocol `EffectKind`, the song file by these names). Until M6 they pass the sound through (`meloet-sound/src/effects/pass.rs`). The song file stays at 7: a meloet that does not know a name reads the slot as empty, and 0.3.x does not open 7 at all. 「はじめから入っているもの」 of M1 are `meloet_model::presets` (empty until M1), written for the screen as `ui/src/bridge/generated/presets.ts`.
+- **Telemetry 5** (3-3): short-term and integrated loudness and true peak (i16, 0.01, −32768 none), the master limiter's reduction (u8, 0.1 dB), 24 bands (u8). The core sends "none" and 0 until M2, E7 and M3.
+- **Settings** (still version 1): `note_glow` (missing: on), `export_artist` (missing: empty). `Effect::SaveSettings` holds a `Box<Settings>` (`Model::settings` returns one): the settings had grown past what clippy lets an enum variant be next to the others.
+- Numbers for the screen in `ui/src/bridge/generated/round12wave2.ts`.

@@ -17,7 +17,7 @@
   import { bitsOf, checkLines, clips, detailsSummary, rangeLabel, soloText, spanText, tailText } from "./exportText";
 
   const RANGES: ExportRange[] = ["song", "loop", "tracks"];
-  const FORMAT_NAMES: Record<ExportFormat, TextKey> = { wav: "export.formatWav", flac: "export.formatFlac" };
+  const FORMAT_NAMES: Record<ExportFormat, TextKey> = { wav: "export.formatWav", flac: "export.formatFlac", mp3: "export.formatMp3" };
   const TAILS: ExportTail[] = ["untilSilent", "off"];
 
   const app = $derived(current.state);

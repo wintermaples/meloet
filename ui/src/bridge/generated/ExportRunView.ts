@@ -57,4 +57,8 @@ wave: Array<number>,
  * E9 the loudness and the true peak of the file as written (after F1's gain).
  * `None` for several files, and for silence.
  */
-lufs: number | null, truePeakDb: number | null, } | { "state": "cancelled" } | { "state": "failed", reason: ExportFailure, };
+lufs: number | null, truePeakDb: number | null, 
+/**
+ * F2: an mp3 was written at this bitrate (E9 shows it in place of `bits`).
+ */
+mp3Kbps: number | null, } | { "state": "cancelled" } | { "state": "failed", reason: ExportFailure, };

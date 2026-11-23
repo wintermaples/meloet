@@ -90,6 +90,11 @@ export function telemetryWith(t: Partial<Omit<Telemetry, "keys">> & { keys?: num
     returnPeaks: new Float32Array(4),
     trackPeaks: new Float32Array(2),
     mics: [],
+    masterReductionDb: 0,
+    spectrum: new Uint8Array(24),
+    lufsShort: null,
+    lufsIntegrated: null,
+    truePeakDb: null,
     ...t,
     keys,
   };

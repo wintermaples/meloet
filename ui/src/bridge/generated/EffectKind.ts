@@ -6,4 +6,4 @@
  * (`ui/src/bridge/generated/effects.ts`), written from `meloet_model::effects`; the names
  * shown are the screen's (`ja.ts`).
  */
-export type EffectKind = "eq4" | "compressor" | "reverb" | "delay" | "chorus" | "limiter";
+export type EffectKind = "eq4" | "compressor" | "reverb" | "delay" | "chorus" | "limiter" | "gate" | "deEsser" | "saturation";

@@ -36,6 +36,9 @@ pub(super) fn screen_effect(kind: EffectKind) -> ScreenEffect {
         EffectKind::Delay => ScreenEffect::Delay,
         EffectKind::Chorus => ScreenEffect::Chorus,
         EffectKind::Limiter => ScreenEffect::Limiter,
+        EffectKind::Gate => ScreenEffect::Gate,
+        EffectKind::DeEsser => ScreenEffect::DeEsser,
+        EffectKind::Saturation => ScreenEffect::Saturation,
     }
 }
 

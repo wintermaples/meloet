@@ -51,6 +51,6 @@ fn processing_and_parameter_changes_do_not_allocate() {
             }
         }
     }
-    assert_eq!(blocks, 2400);
+    assert_eq!(blocks, 400 * EffectKind::ALL.len() as u64);
     assert_eq!(common::audio_block_counts(), (0, 0));
 }

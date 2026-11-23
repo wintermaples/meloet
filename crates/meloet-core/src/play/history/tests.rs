@@ -230,6 +230,19 @@ fn every_step_kind() -> Vec<StepKind> {
         DuplicateTrack { track },
         NormalizeClips { count: 2 },
         ReverseClips { count: 1 },
+        KeepPlayed {
+            track,
+            clip,
+            takes: 1,
+        },
+        PlacePattern { track, clip },
+        RepeatClips { count: 3 },
+        ApplyPreset {
+            strip,
+            slot: 0,
+            kind,
+        },
+        LowerAll { count: 4 },
     ];
     for kind in &all {
         match kind {
@@ -326,7 +339,12 @@ fn every_step_kind() -> Vec<StepKind> {
             | Legato { .. }
             | DuplicateTrack { .. }
             | NormalizeClips { .. }
-            | ReverseClips { .. } => {}
+            | ReverseClips { .. }
+            | KeepPlayed { .. }
+            | PlacePattern { .. }
+            | RepeatClips { .. }
+            | ApplyPreset { .. }
+            | LowerAll { .. } => {}
         }
     }
     all

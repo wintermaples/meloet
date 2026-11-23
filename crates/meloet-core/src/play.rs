@@ -2032,6 +2032,8 @@ impl Play {
                 }
             },
             can_play: open,
+            // round12 stub: R1
+            can_keep_played: false,
             can_record: open
                 && (self.song.keys_target().is_some()
                     || !self.song.session.armed_vocals.is_empty())

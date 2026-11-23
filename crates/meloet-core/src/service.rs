@@ -3785,6 +3785,14 @@ fn telemetry_loop(hub: &Hub, shared: &Shared, meters: &EngineMeters, tx: &Sender
                 }
                 mics
             },
+            // round12 stub: M2
+            master_reduction: 0,
+            // round12 stub: E7
+            spectrum: [0; meloet_protocol::SPECTRUM_BANDS],
+            // round12 stub: M3
+            lufs_short: meloet_protocol::TELEMETRY_NO_VALUE,
+            lufs_integrated: meloet_protocol::TELEMETRY_NO_VALUE,
+            true_peak: meloet_protocol::TELEMETRY_NO_VALUE,
         };
         let fresh = hub.take_telemetry_fresh();
         if fresh || !last.as_ref().is_some_and(|l| l.same_readings(&now)) {

@@ -13,6 +13,7 @@ import type { OutputsView } from "./OutputsView";
 import type { ParamsView } from "./ParamsView";
 import type { PianoRollView } from "./PianoRollView";
 import type { PluginsView } from "./PluginsView";
+import type { PresetsView } from "./PresetsView";
 import type { RecentSong } from "./RecentSong";
 import type { ShelfView } from "./ShelfView";
 import type { SongView } from "./SongView";
@@ -32,4 +33,8 @@ recent: Array<RecentSong>,
 /**
  * D1: 「新しい版をたしかめる」 and the version it found.
  */
-updates: UpdatesView, status: StatusView, };
+updates: UpdatesView, 
+/**
+ * M1: 「自分で残したもの」 of the presets. Not part of the song.
+ */
+presets: PresetsView, status: StatusView, };

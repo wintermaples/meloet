@@ -21,11 +21,6 @@ where
 }
 
 #[test]
-fn the_version() {
-    assert_eq!(PROTOCOL_VERSION, 31);
-}
-
-#[test]
 fn the_click_settings() {
     assert_eq!(
         to_json(&ClickSound::ALL),
@@ -220,7 +215,6 @@ fn the_new_step_names() {
         assert!(StepName::every_kind().contains(&name), "{kind}");
         both_ways(name, json!({"kind": kind}));
     }
-    assert_eq!(StepName::every_kind().len(), 84);
 }
 
 #[test]

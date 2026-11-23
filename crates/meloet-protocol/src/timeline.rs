@@ -71,7 +71,31 @@ pub struct MarkerView {
     pub id: u32,
     pub tick: u64,
     pub name: String,
+    /// Round 12 A2: whether the rows 「この区間をすぐ後ろに複製」「この区間を消して詰める」
+    /// 「この前に空きを入れる…」 of its menu can be used.
+    pub section: SectionUse,
 }
+
+/// The section of a marker (round 12 A2): from it to the next marker that is later, or after
+/// the last one to the song's end (the latest clip end, up to the head of a bar), as
+/// `Command::LoopFromMarker` takes it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub enum SectionUse {
+    /// Both ends are heads of bars, and it is not empty.
+    Usable,
+    /// An end is not the head of a bar: the rows are disabled, with the tool tip
+    /// 「区間の両端が小節の頭のときに使えます」.
+    NotOnBars,
+    /// It has no length: the last marker at the song's end, or later.
+    Empty,
+}
+
+/// A2 「この前に空きを入れる…」 (`Command::InsertSpace`): the bars its box starts at, and the
+/// most it takes (from 1).
+pub const INSERT_SPACE_BARS_DEFAULT: u32 = 4;
+pub const INSERT_SPACE_BARS_MAX: u32 = 64;
 
 /// A tempo point, a meter change or a marker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

@@ -66,6 +66,7 @@ function clip(id: number, name: string, fromBar: number, toBar: number, take = 1
     takeOffset: 0,
     noteCount: 0,
     audio: null,
+    comp: [],
   };
 }
 

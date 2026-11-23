@@ -171,6 +171,8 @@ impl Play {
             });
         AudioWorkView {
             jobs: loading.chain(making).collect(),
+            // round12 stub: A7
+            bounce: None,
         }
     }
 
@@ -324,6 +326,8 @@ impl Play {
                     None => return,
                 }
             }
+            // round12 stub: M7
+            StretchChange::TuneStrength { .. } | StretchChange::TuneScale => return,
         };
         if let Ok(e) = edited {
             self.apply(e, effects);
@@ -458,7 +462,9 @@ impl Play {
                     effects,
                 );
             }
-            StretchChange::SourceBpm { .. } => {}
+            StretchChange::SourceBpm { .. }
+            | StretchChange::TuneStrength { .. }
+            | StretchChange::TuneScale => {}
         }
     }
 

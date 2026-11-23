@@ -77,7 +77,7 @@ describe("the 「帯」 button in the head (spec 2, spec 3 (94-9, 36-B), mock F8
       t("status.laneAddOpen", { track: t("track.label", { number: second.number, name: second.name }) }),
     );
     menuRows()[0]!.run();
-    expect(app.sent.at(-1)).toEqual({ type: "addLane", track: second.id, target: { kind: "volume" } });
+    expect(app.sent.at(-1)).toEqual({ type: "addLane", home: { kind: "track", track: second.id }, target: { kind: "volume" } });
     closeContextMenu();
     flushSync();
     expect(button.classList.contains("on")).toBe(false);

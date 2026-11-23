@@ -12,6 +12,7 @@ use crate::audio::AudioId;
 use crate::automation::AutoTarget;
 use crate::edit::Edit;
 use crate::effects::EffectKind;
+use crate::knobs::SoundKnob;
 use crate::mixer::{Bus, PluginPlace, StripId};
 use crate::notes::NoteField;
 use crate::song::{ClipId, Doc, MarkerId};
@@ -494,6 +495,52 @@ pub enum StepKind {
     /// 「全部のトラックを下げる」 (round 12, M2): `count` tracks were lowered.
     LowerAll {
         count: usize,
+    },
+    /// 「アルペジオを変える」 (round 12, E2).
+    SetArp {
+        track: TrackId,
+    },
+    /// 「音のつまみを変える」 (round 12, E3): the values are in the `Doc`s around the step.
+    SetSoundKnob {
+        track: TrackId,
+        knob: SoundKnob,
+    },
+    /// 「区間を複製」 (round 12, A2): the section of `marker`, which the `Doc` before the step
+    /// has, `bars` long.
+    DuplicateSection {
+        marker: MarkerId,
+        bars: u32,
+    },
+    /// 「区間を消して詰める」 (round 12, A2): as `DuplicateSection`.
+    DeleteSection {
+        marker: MarkerId,
+        bars: u32,
+    },
+    /// 「空きを入れる」 (round 12, A2): `bars` before `marker`.
+    InsertSpace {
+        marker: MarkerId,
+        bars: u32,
+    },
+    /// 「音のクリップにする」 (round 12, A7): `track` is the new vocal track, which the `Doc`
+    /// after the step has.
+    Bounce {
+        track: TrackId,
+    },
+    /// 「フェードアウトをつける」 (round 12, M5): over `range` of the master's volume.
+    AddFadeOut {
+        range: TickRange,
+    },
+    /// 「いいとこ取り」 (round 12, A8).
+    SetComp {
+        clip: ClipId,
+    },
+    /// 「いいとこ取りを外す」 (round 12, A8).
+    ClearComp {
+        clip: ClipId,
+    },
+    /// 「音程を寄せる」 of a vocal clip (round 12, M7): its strength or its scale.
+    SetClipTune {
+        clip: ClipId,
     },
 }
 

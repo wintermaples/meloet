@@ -33,6 +33,7 @@ const clip = (id: number, fromBar: number, toBar: number, takes = 1) => ({
   takeOffset: 0,
   noteCount: 0,
   audio: null,
+  comp: [],
 });
 const track = (number: number, clips: ReturnType<typeof clip>[], color = number): TrackView => ({
   id: number,
@@ -52,6 +53,7 @@ const track = (number: number, clips: ReturnType<typeof clip>[], color = number)
   slots: [null, null, null, null],
   lanes: [],
   clips,
+  arp: { on: false, shape: "up", rate: "sixteenth", triplet: false, octaves: 1, hold: false },
 });
 
 describe("clip picture (spec 2 (Clip), mock Main)", () => {

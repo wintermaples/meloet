@@ -159,7 +159,8 @@ fn one_file_let_go_of_over_a_vocal_track_goes_there_as_one_step() {
         Some(SelectedParams::Clip(SelectedClip {
             track: vocal,
             clip: clip.id,
-            missing: None
+            missing: None,
+            tune_usable: false,
         }))
     );
     let rows = m.history_rows(steps + 1, steps + 1);
@@ -570,6 +571,7 @@ fn a_missing_file_is_said_looked_for_and_taken_out() {
                 file: "歌.mp3".into(),
                 was_at: None,
             }),
+            tune_usable: false,
         }))
     );
     // 「さがす…」: the PC's window, then the audio thread; the song does not change.

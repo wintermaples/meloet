@@ -472,6 +472,8 @@ impl Model {
                 track: track.0,
                 clip: clip.0,
                 missing,
+                // round12 stub: M7
+                tune_usable: false,
             })),
             clips: None,
         }

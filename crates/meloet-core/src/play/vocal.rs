@@ -62,8 +62,10 @@ pub(super) fn audio_clip_view(
             semitones: shape.semitones,
             cents: shape.cents,
             keep_formant: shape.keep_formant,
+            tune: super::wave3::tune_view(shape),
         },
         source_tempo,
+        takes: Vec::new(),
     })
 }
 
@@ -649,6 +651,7 @@ mod tests {
             end: 15_360,
             takes: ClipTakes::Vocal { takes, shape },
             active: 0,
+            comp: Vec::new(),
         };
         let shape = AudioShape {
             fade_in: 240,
@@ -688,8 +691,10 @@ mod tests {
                     semitones: 2,
                     cents: -30,
                     keep_formant: true,
+                    tune: None,
                 },
                 source_tempo: None,
+                takes: Vec::new(),
             }
         );
         let sync = Some(SourceTempo {

@@ -198,6 +198,7 @@ fn a_new_song() {
             soloed: false,
             lanes: vec![],
             clips: vec![],
+            arp: Default::default(),
         }]
     );
     assert!(state.library.pack_missing);
@@ -225,6 +226,7 @@ fn a_new_song() {
             gain_db: Some(0.0),
             pan: 0,
             slots: first_slot(3, EffectKind::Limiter),
+            lanes: Vec::new(),
         }
     );
     assert_eq!(state.params, ParamsView::default());

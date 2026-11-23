@@ -1,6 +1,7 @@
 //! Automation (protocol 21; docs/architecture.md 21-5, 21-8, 21-15).
 //!
-//! A lane belongs to a track and moves one thing of it. `song` has each lane's header only;
+//! A lane belongs to a track and moves one thing of it; the master has a lane of its volume
+//! (protocol 33, round 12 M5). `song` has each lane's header only;
 //! the points are the reply of the `lane` invoke, binary, kept by the screen by `lane_id` as
 //! takes are: a lane whose points change gets a new `lane_id`.
 //!
@@ -15,9 +16,9 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{EffectKind, IndexRange, SendBus};
+use crate::{EffectKind, IndexRange, SendBus, SoundKnob};
 
-/// What a lane moves. The returns and the master have no lanes.
+/// What a lane moves. The returns have no lanes, and the master only one of `Volume`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(
@@ -33,7 +34,8 @@ pub enum AutoTarget {
         bus: SendBus,
     },
     Mute,
-    /// A parameter of the plugin that is the track's instrument: `ParamRow::id`.
+    /// A parameter of the plugin that is the track's instrument: `ParamRow::id`. Of a sound
+    /// that comes with meloet (round 12 E3), a knob: its place in `SoundKnob::ALL`.
     Instrument {
         param: u32,
     },
@@ -47,15 +49,46 @@ pub enum AutoTarget {
     },
 }
 
-/// A lane as commands name it. `track` is `TrackView::id`. A track has one lane at most for
-/// a target.
+/// Whose a lane is (round 12 M5): a track's (`TrackView::lanes`) or the master's
+/// (`MasterView::lanes`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum LaneHome {
+    /// `track` is `TrackView::id`.
+    Track {
+        track: u32,
+    },
+    Master,
+}
+
+impl LaneHome {
+    /// The track's id; `None` for the master.
+    pub fn track(self) -> Option<u32> {
+        match self {
+            LaneHome::Track { track } => Some(track),
+            LaneHome::Master => None,
+        }
+    }
+}
+
+/// A lane as commands name it. A track, and the master, has one lane at most for a target.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct LaneRef {
-    pub track: u32,
+    pub home: LaneHome,
     pub target: AutoTarget,
 }
+
+/// M5 「曲の終わりにフェードアウトをつける…」 (`Command::AddFadeOut`): the bars its box starts
+/// at, and the most it takes (from 1).
+pub const FADE_OUT_BARS_DEFAULT: u32 = 4;
+pub const FADE_OUT_BARS_MAX: u32 = 16;
 
 /// What a lane moves, as its header ("オートメーション ・ 音量"), the status line and the
 /// history band name it.
@@ -84,9 +117,13 @@ pub enum LaneName {
         plugin: String,
         param: Option<String>,
     },
+    /// A knob of a sound that comes with meloet (round 12 E3): the screen has its name.
+    Knob {
+        knob: SoundKnob,
+    },
 }
 
-/// The header of a lane, in `TrackView::lanes`.
+/// The header of a lane, in `TrackView::lanes` and `MasterView::lanes`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]

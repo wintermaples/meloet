@@ -40,6 +40,8 @@ pub(crate) fn three_tracks(m: &mut Model) -> Vec<Effect> {
             muted: false,
             clips: Vec::new(),
             automation: Vec::new(),
+            arp: Default::default(),
+            knobs: Default::default(),
         }));
     }
     cmd(m, Command::OpenSong);

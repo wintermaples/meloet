@@ -215,6 +215,7 @@ pub fn overdub_recording(
         end,
         takes: ClipTakes::Keys(takes),
         active,
+        comp: Vec::new(),
     });
     let mut clips: Vec<Arc<Clip>> = (old.clips.iter().enumerate())
         .filter(|(i, _)| !hit.contains(i))

@@ -90,11 +90,12 @@ impl Play {
                     meter_den: c.meter.den(),
                 })
                 .collect(),
-            markers: (doc.markers.iter())
-                .map(|m| MarkerView {
+            markers: (doc.markers.iter().zip(super::wave3::sections(doc)))
+                .map(|(m, section)| MarkerView {
                     id: m.id.0,
                     tick: m.tick,
                     name: m.name.clone(),
+                    section,
                 })
                 .collect(),
             selected: self.tl.selected,

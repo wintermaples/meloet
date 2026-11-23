@@ -15,7 +15,7 @@ use meloet_model::{
     MarkerId, Meter, Note, Pan, PluginPlace, PluginRef, StripId, TakeId, Tempo, TempoMap, TrackId,
     arrange, mixer, quantize, timeline as timeline_edit,
 };
-use meloet_protocol::{ClipField, Command, PluginState, SendBus, TimelineRef};
+use meloet_protocol::{ClipField, Command, LaneHome, PluginState, SendBus, TimelineRef};
 
 use super::automation::model_target;
 use super::history::StepNotes;
@@ -416,7 +416,10 @@ impl Play {
                 // A value that is no number, or the value the clip has.
                 Some(_) => Err(EditError::Unchanged),
             },
-            C::AddLane { track, target } => {
+            C::AddLane {
+                home: LaneHome::Track { track },
+                target,
+            } => {
                 let (track, target) = (TrackId(*track), model_target(*target));
                 match doc.track(track) {
                     None => Err(EditError::NoSuchTrack(track)),
@@ -425,9 +428,10 @@ impl Play {
                     Some(_) => auto_edit::add_lane(doc, track, target, false).map(drop),
                 }
             }
-            C::DeleteLane { track, target } => {
-                auto_edit::delete_lane(doc, TrackId(*track), model_target(*target)).map(drop)
-            }
+            C::DeleteLane {
+                home: LaneHome::Track { track },
+                target,
+            } => auto_edit::delete_lane(doc, TrackId(*track), model_target(*target)).map(drop),
             _ => return cannot("an AI may not send that intent"),
         };
         match tried {

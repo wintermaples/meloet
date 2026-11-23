@@ -35,7 +35,7 @@ describe("WorkShown (the shown progress)", () => {
     shown.forget();
     vi.useRealTimers();
   });
-  const set = (jobs: AudioJob[]) => (work = { jobs });
+  const set = (jobs: AudioJob[]) => (work = { jobs, bounce: null });
   const later = (ms: number) => {
     now += ms;
     vi.advanceTimersByTime(ms);
@@ -134,7 +134,7 @@ describe("under the clip, the panel and the status line show the same % at the s
   };
   function withPercent(base: FakeState, percent: number): FakeState {
     const job = base.audioWork.jobs[0]!;
-    return { ...base, audioWork: { jobs: [{ ...job, percent }] } };
+    return { ...base, audioWork: { jobs: [{ ...job, percent }], bounce: null } };
   }
 
   it("even with a % every 200 ms, all 3 change together every 500 ms", () => {
@@ -164,7 +164,7 @@ describe("under the clip, the panel and the status line show the same % at the s
     const base = scene("stretchRendering");
     showAll(base);
     vi.advanceTimersByTime(100);
-    app.setState({ ...base, audioWork: { jobs: [] } });
+    app.setState({ ...base, audioWork: { jobs: [], bounce: null } });
     flushSync();
     expect(target.querySelector('[data-test="audio-clip-rendering"]')).toBeNull();
     expect(target.querySelector('[data-test="clip-rendering"]')).toBeNull();
@@ -203,7 +203,7 @@ describe("the number of job table lookups does not grow with the number of clips
         return Reflect.get(target, key, receiver);
       },
     });
-    app.setState({ ...base, song: { ...base.song, tracks: base.song.tracks.map((tr) => (tr.id === vocal.id ? track : tr)) }, audioWork: { jobs: watched } });
+    app.setState({ ...base, song: { ...base.song, tracks: base.song.tracks.map((tr) => (tr.id === vocal.id ? track : tr)) }, audioWork: { jobs: watched, bounce: null } });
     mounted = mount(AudioClipNotes, { target, props: { view: { ...view, width: 1e7 }, dims, tracks: [track] } });
     flushSync();
     expect(target.querySelectorAll('[data-test="audio-clip-rendering"]').length).toBe(jobs);

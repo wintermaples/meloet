@@ -95,6 +95,7 @@ fn three_tracks(m: &mut Model) {
                 shape: AudioShape::RECORDED,
             },
             active: 0,
+            comp: Vec::new(),
         })
     };
     song.doc.tracks.push(Arc::new(Track {

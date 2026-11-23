@@ -13,7 +13,7 @@
   import * as A from "./autoGeom";
   import { playTick, pointsOf } from "./autoState.svelte";
   import { handAt } from "./handValue";
-  import { sameTarget } from "./laneValue";
+  import { isOnTrack, sameTarget } from "./laneValue";
 
   interface Props {
     track: TrackView;
@@ -23,7 +23,7 @@
   }
   let { track, lane, top, view }: Props = $props();
 
-  const writing = $derived(current.state!.automation.writing.find((w) => w.lane.track === track.id && sameTarget(w.lane.target, lane.target)) ?? null);
+  const writing = $derived(current.state!.automation.writing.find((w) => isOnTrack(w.lane, track.id) && sameTarget(w.lane.target, lane.target)) ?? null);
   const playing = $derived(current.state!.transport.state !== "stopped");
   const points = $derived(pointsOf(lane.laneId));
   const committed = $derived(points && points.id === lane.laneId ? A.pointList(points) : []);

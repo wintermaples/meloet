@@ -236,3 +236,32 @@ export {
   TYPED_KEYBOARD_ID,
 } from "./generated/round12wave2";
 export { FACTORY_PRESETS, type FactoryPreset } from "./generated/presets";
+// Protocol 33 (round 12, waves 3 and 4): the arpeggio, the knobs of a built-in sound, sections, keys made audio, the master's
+// lane, 「いいとこ取り」, 「音程を寄せる」, the language.
+export type { Arp } from "./generated/Arp";
+export type { ArpRate } from "./generated/ArpRate";
+export type { ArpShape } from "./generated/ArpShape";
+export type { AudioTakeView } from "./generated/AudioTakeView";
+export type { BounceView } from "./generated/BounceView";
+export type { CompPiece } from "./generated/CompPiece";
+export type { LaneHome } from "./generated/LaneHome";
+export type { Language } from "./generated/Language";
+export type { SectionUse } from "./generated/SectionUse";
+export type { SoundKnob } from "./generated/SoundKnob";
+export type { SoundKnobsView } from "./generated/SoundKnobsView";
+export type { TuneView } from "./generated/TuneView";
+export {
+  ARP_KEYS_MAX,
+  ARP_OCTAVES_MAX,
+  ARP_RATES,
+  ARP_SHAPES,
+  COMP_ROWS_MAX,
+  FADE_OUT_BARS_DEFAULT,
+  FADE_OUT_BARS_MAX,
+  INSERT_SPACE_BARS_DEFAULT,
+  INSERT_SPACE_BARS_MAX,
+  LANGUAGES,
+  SOUND_KNOB_DEFAULTS,
+  SOUND_KNOBS,
+  TUNE_STRENGTH_MAX,
+} from "./generated/round12wave3";

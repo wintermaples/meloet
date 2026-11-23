@@ -30,6 +30,8 @@ fn big_song() -> Song {
             muted: false,
             clips: Vec::new(),
             automation: Vec::new(),
+            arp: Default::default(),
+            knobs: Default::default(),
         }));
     }
     let take = |origin: u64, notes: usize, step: u64| NewTake {

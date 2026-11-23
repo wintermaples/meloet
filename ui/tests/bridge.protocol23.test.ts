@@ -93,8 +93,8 @@ describe("shape of protocol 23", () => {
   });
 
   it("params panel: a sound with no parameters to move (19-A)", () => {
-    const builtin: SelectedParams = { kind: "sound", track: 11, sound: { kind: "builtin", instrument: "grandPiano" } };
-    const sf2: SelectedParams = { kind: "sound", track: 12, sound: { kind: "sf2", name: "Clean Guitar", file: "FluidR3_GM.sf2" } };
+    const builtin: SelectedParams = { kind: "sound", track: 11, sound: { kind: "builtin", instrument: "grandPiano" }, knobs: null };
+    const sf2: SelectedParams = { kind: "sound", track: 12, sound: { kind: "sf2", name: "Clean Guitar", file: "FluidR3_GM.sf2" }, knobs: null };
     expect([builtin.kind, sf2.kind]).toEqual(["sound", "sound"]);
     const s = scene("paramsSound").state;
     expect(s.params.selected).toEqual(builtin);

@@ -40,6 +40,21 @@ export {
   TYPED_KEYBOARD_ID,
   type FactoryPreset,
 } from "./types";
+export {
+  ARP_KEYS_MAX,
+  ARP_OCTAVES_MAX,
+  ARP_RATES,
+  ARP_SHAPES,
+  COMP_ROWS_MAX,
+  FADE_OUT_BARS_DEFAULT,
+  FADE_OUT_BARS_MAX,
+  INSERT_SPACE_BARS_DEFAULT,
+  INSERT_SPACE_BARS_MAX,
+  LANGUAGES,
+  SOUND_KNOB_DEFAULTS,
+  SOUND_KNOBS,
+  TUNE_STRENGTH_MAX,
+} from "./types";
 export { levelFor, type LevelPeaks } from "./peaks";
 export { keyIsDown, positionAt, SPECTRUM_BANDS, type MicMeter, type Telemetry, type TransportReading } from "./telemetry";
 export { CONTROL_CC, CONTROL_PITCH_BEND, NO_FROM, type TakeNotes } from "./take";

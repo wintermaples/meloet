@@ -1066,7 +1066,7 @@ fn an_effect_taken_out_says_how_many_lanes_went_with_it() {
         cmd(
             m,
             Command::AddLane {
-                track: 1,
+                home: meloet_protocol::LaneHome::Track { track: 1 },
                 target: AutoTarget::Insert { insert, param },
             },
         );
@@ -1075,7 +1075,7 @@ fn an_effect_taken_out_says_how_many_lanes_went_with_it() {
     cmd(
         m,
         Command::AddLane {
-            track: 1,
+            home: meloet_protocol::LaneHome::Track { track: 1 },
             target: AutoTarget::Volume,
         },
     );

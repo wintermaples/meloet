@@ -337,7 +337,7 @@ describe("the 19-A params panel (mock F7-Answers92)", () => {
 
   it("SF2 sounds have the format mark 「SF2」", () => {
     const s = scene("paramsSound");
-    s.params.selected = { kind: "sound", track: s.song.tracks[0]!.id, sound: { kind: "sf2", name: "Clean Guitar", file: "FluidR3_GM.sf2" } };
+    s.params.selected = { kind: "sound", track: s.song.tracks[0]!.id, sound: { kind: "sf2", name: "Clean Guitar", file: "FluidR3_GM.sf2" }, knobs: null };
     show(ParamsPanel, s, { onfold: () => {} });
     expect(text(q('[data-test="params-name"]'))).toBe("Clean Guitar");
     expect(text(q('[data-test="params-format"]'))).toBe("SF2");

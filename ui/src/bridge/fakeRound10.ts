@@ -123,7 +123,7 @@ export function reduceRound10(
       const start = Math.max(head, ...track.clips.filter((c) => c.end <= tick).map((c) => c.end));
       const end = Math.min(map.tickOfBar(map.meterAt(tick).bar + NEW_CLIP_BARS), ...track.clips.filter((c) => c.start > tick).map((c) => c.start));
       const take = newTake(end - start, []);
-      const clip: ClipView = { id: next++, name: track.name, start, end, take: 1, takes: 1, takeId: take.id, takeOffset: 0, noteCount: 0, audio: null };
+      const clip: ClipView = { id: next++, name: track.name, start, end, take: 1, takes: 1, takeId: take.id, takeOffset: 0, noteCount: 0, audio: null, comp: [] };
       track.clips = [...track.clips, clip].sort((a, b) => a.start - b.start);
       song.playTarget = track.id;
       show(clip);
@@ -138,7 +138,7 @@ export function reduceRound10(
       if (busy) return nothing;
       const id = Math.max(0, ...timeline.markers.map((m) => m.id)) + 1;
       const tick = nearestBeat(map, command.tick ?? transport.position);
-      timeline.markers = [...timeline.markers, { id, tick, name: command.name }].sort((a, b) => a.tick - b.tick || a.id - b.id);
+      timeline.markers = [...timeline.markers, { id, tick, name: command.name, section: "usable" as const }].sort((a, b) => a.tick - b.tick || a.id - b.id);
       timeline.selected = { kind: "marker", id };
       timeline.renaming = id;
       message = { id: "markerAdded", name: command.name };
@@ -198,7 +198,7 @@ export function reduceRound10(
           const start = Math.max(barHead(at), ...track.clips.filter((c) => c.end <= at).map((c) => c.end));
           const end = Math.min(map.tickOfBar(map.meterAt(at).bar + NEW_CLIP_BARS), ...track.clips.filter((c) => c.start > at).map((c) => c.start));
           const take = newTake(end - start, []);
-          const clip: ClipView = { id: next++, name: track.name, start, end, take: 1, takes: 1, takeId: take.id, takeOffset: 0, noteCount: 0, audio: null };
+          const clip: ClipView = { id: next++, name: track.name, start, end, take: 1, takes: 1, takeId: take.id, takeOffset: 0, noteCount: 0, audio: null, comp: [] };
           track.clips = [...track.clips, clip].sort((a, b) => a.start - b.start);
           f = { track, clip };
           length = Math.min(length, end - at);

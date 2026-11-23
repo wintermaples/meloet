@@ -2,6 +2,6 @@
 import type { SendBus } from "./SendBus";
 
 /**
- * What a lane moves. The returns and the master have no lanes.
+ * What a lane moves. The returns have no lanes, and the master only one of `Volume`.
  */
 export type AutoTarget = { "kind": "volume" } | { "kind": "pan" } | { "kind": "send", bus: SendBus, } | { "kind": "mute" } | { "kind": "instrument", param: number, } | { "kind": "insert", insert: number, param: number, };

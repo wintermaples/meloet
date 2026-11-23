@@ -117,6 +117,7 @@ mod tests {
                 shape: AudioShape::RECORDED,
             },
             active: 0,
+            comp: Vec::new(),
         }
     }
 

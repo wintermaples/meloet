@@ -114,7 +114,7 @@ describe("placing the first note does not change the view", () => {
 
     // The core answer: a 4-bar clip from the bar start, with one note in it.
     const head = Math.floor(c.start / BAR) * BAR;
-    const made: ClipView = { id: 900, name: track.name, start: head, end: head + 4 * BAR, take: 1, takes: 1, takeId: 901, takeOffset: 0, noteCount: 1, audio: null };
+    const made: ClipView = { id: 900, name: track.name, start: head, end: head + 4 * BAR, take: 1, takes: 1, takeId: 901, takeOffset: 0, noteCount: 1, audio: null, comp: [] };
     const next = structuredClone(empty);
     next.song.tracks[0]!.clips = [made];
     next.arrange = { ...next.arrange, selectedClips: [900], selectedClip: 900, pianoRollClip: 900 };

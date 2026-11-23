@@ -19,7 +19,7 @@
   import * as A from "./autoGeom";
   import { playTick, pointsOf } from "./autoState.svelte";
   import { laneMenu } from "./laneMenu";
-  import { bareText, handPosition, hasLaneRef, positionText, valueAt } from "./laneValue";
+  import { bareText, handPosition, hasLaneRef, isOnTrack, positionText, valueAt } from "./laneValue";
 
   interface Props {
     track: TrackView;
@@ -210,7 +210,7 @@
 
   // ---- The rec border of the part being written (from the start of writing to the play line. The line moves every frame, so only the right edge is written per frame) ----
 
-  const writing = $derived(automation.writing.find((w) => w.lane.track === track.id && JSON.stringify(w.lane.target) === JSON.stringify(lane.target)) ?? null);
+  const writing = $derived(automation.writing.find((w) => isOnTrack(w.lane, track.id) && JSON.stringify(w.lane.target) === JSON.stringify(lane.target)) ?? null);
   let recFrame = $state<HTMLElement | null>(null);
   let drawnWidth = NaN;
   function placeRec(): void {

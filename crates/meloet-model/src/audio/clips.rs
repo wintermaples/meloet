@@ -271,6 +271,7 @@ pub fn import_audio(
                 },
             },
             active: 0,
+            comp: Vec::new(),
         });
         made.push(ImportedClip {
             track,

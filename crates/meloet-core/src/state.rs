@@ -771,6 +771,10 @@ pub struct Model {
     /// 「新しい版をたしかめる」 (round 12, D1): a meloet setting.
     check_updates: bool,
     updates: updates::UpdatesSide,
+    /// 「音の動きを見せる」 (round 12, E7): a meloet setting.
+    spectrum: bool,
+    /// 「ことば / Language」 (round 12, D4) as the settings have it.
+    language: Option<meloet_protocol::Language>,
 }
 
 /// Audio files let go of over the window (`Model::pending_drop`).
@@ -892,6 +896,8 @@ impl Model {
             ai: ai::AiSide::new(settings.ai_link),
             check_updates: settings.check_updates,
             updates: updates::UpdatesSide::default(),
+            spectrum: settings.spectrum,
+            language: settings.language,
         }
     }
 
@@ -1915,15 +1921,42 @@ impl Model {
             Command::DeleteSelected => self.play.delete_selected(effects),
             Command::StepTake { delta } => self.notice = self.play.step_take(delta, effects),
             Command::DeleteTake { clip } => self.play.delete_take(clip, effects),
-            Command::AddLane { track, target } => self.play.add_lane(track, target, effects),
-            Command::DeleteLane { track, target } => {
+            Command::AddLane {
+                home: meloet_protocol::LaneHome::Track { track },
+                target,
+            } => self.play.add_lane(track, target, effects),
+            Command::DeleteLane {
+                home: meloet_protocol::LaneHome::Track { track },
+                target,
+            } => {
                 self.play.delete_lane(track, target, effects);
             }
             Command::FoldLane {
-                track,
+                home: meloet_protocol::LaneHome::Track { track },
                 target,
                 folded,
             } => self.play.fold_lane(track, target, folded),
+            // round12 stub: M5
+            Command::AddLane {
+                home: meloet_protocol::LaneHome::Master,
+                ..
+            }
+            | Command::DeleteLane {
+                home: meloet_protocol::LaneHome::Master,
+                ..
+            }
+            | Command::FoldLane {
+                home: meloet_protocol::LaneHome::Master,
+                ..
+            }
+            | Command::SetLaneWrite {
+                home: meloet_protocol::LaneHome::Master,
+                ..
+            }
+            | Command::RestoreLane {
+                home: meloet_protocol::LaneHome::Master,
+                ..
+            } => {}
             Command::AddAutoPoint { lane, tick, value } => {
                 self.play.add_auto_point(lane, tick, value, effects);
             }
@@ -1941,10 +1974,17 @@ impl Model {
             Command::SelectAutoPoints { lane, points } => {
                 self.play.select_auto_points(lane, points);
             }
-            Command::SetLaneWrite { track, target, on } => {
+            Command::SetLaneWrite {
+                home: meloet_protocol::LaneHome::Track { track },
+                target,
+                on,
+            } => {
                 self.play.set_lane_write(track, target, on);
             }
-            Command::RestoreLane { track, target } => {
+            Command::RestoreLane {
+                home: meloet_protocol::LaneHome::Track { track },
+                target,
+            } => {
                 self.say(|p| p.restore_lane(track, target, effects));
             }
             Command::HistoryJump { index, step } => {
@@ -2326,6 +2366,36 @@ impl Model {
             Command::SetCheckUpdates { on } => self.set_check_updates(on, effects),
             Command::OpenReleasePage => self.open_release_page(effects),
             Command::DismissNewVersion => self.dismiss_new_version(),
+
+            // round12 stub: E2
+            Command::SetArp { .. } => {}
+
+            // round12 stub: E3
+            Command::SetSoundKnob { .. } => {}
+
+            // round12 stub: E7
+            Command::SetSpectrum { .. } => {}
+
+            // round12 stub: M3
+            Command::SetMonoListen { .. } => {}
+
+            // round12 stub: A2
+            Command::DuplicateSection { .. }
+            | Command::DeleteSection { .. }
+            | Command::InsertSpace { .. } => {}
+
+            // round12 stub: A7
+            Command::BounceToAudio { .. } | Command::BounceTrack { .. } => {}
+            Command::CancelBounce => {}
+
+            // round12 stub: M5
+            Command::AddFadeOut { .. } => {}
+
+            // round12 stub: A8
+            Command::SetComp { .. } | Command::ClearComp { .. } => {}
+
+            // round12 stub: D4
+            Command::SetLanguage { .. } => {}
         }
         None
     }
@@ -2648,6 +2718,8 @@ impl Model {
             shelf: self.catalog.settings().clone(),
             sound: self.sound.clone(),
             pack_fetch: self.pack.wanted,
+            spectrum: self.spectrum,
+            language: self.language,
         })
     }
 
@@ -2826,6 +2898,11 @@ impl Model {
                 file_drop: self.file_drop.clone(),
                 latency_dialog: self.latency_dialog_view(),
                 note_glow: self.note_glow,
+                spectrum: self.spectrum,
+                // round12 stub: M3
+                mono_listen: false,
+                // round12 stub: D4 (the screen is Japanese until the English table is there)
+                language: meloet_protocol::Language::Ja,
             },
             shelf: self.shelf_view(&library),
             library,
@@ -3174,6 +3251,7 @@ fn song_view(
                 soloed: play.is_soloed(t.id),
                 lanes: play.lanes_of(t.id),
                 clips: play.clips_of(t.id),
+                arp: crate::play::wave3::arp_view(&t.arp),
             })
             .collect(),
         returns: play.returns_view(),
@@ -3259,3 +3337,5 @@ mod speed;
 mod tests;
 #[cfg(test)]
 mod vocal_tests;
+#[cfg(test)]
+mod wave3_tests;

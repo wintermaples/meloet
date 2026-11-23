@@ -12,12 +12,12 @@ Branch: each piece of work is done on its own branch made from `main` (`fea/`, `
 
 | What | Version | Where |
 |---|---|---|
-| Contract between Rust and the screen (protocol) | 32 | `crates/meloet-protocol/src/lib.rs` (`PROTOCOL_VERSION`), architecture 24-5, 24-11, 24-15, 25-1 and 25-2 |
+| Contract between Rust and the screen (protocol) | 33 | `crates/meloet-protocol/src/lib.rs` (`PROTOCOL_VERSION`), architecture 24-5, 24-11, 24-15, 25-1, 25-2 and 25-3 |
 | Telemetry binary | 5 | architecture 3-3 and 25-2 |
 | Take content binary | 2 | architecture 3-4 |
 | Peaks answer | kind 4, version 1 | `crates/meloet-protocol/src/audio.rs` |
 | Lane points binary | 1 | `crates/meloet-protocol/src/automation.rs` |
-| Song file | 7 (reads 6 too; versions 5 and older cannot be read) | `crates/meloet-core/src/songfile.rs`, architecture 14, 22-3 and 25-1 |
+| Song file | 7 (reads 6 too; versions 5 and older cannot be read) | `crates/meloet-core/src/songfile.rs`, architecture 14, 22-3, 25-1 and 25-3 |
 | Recovery file | 3 (reads 2 too) | `crates/meloet-core/src/recovery.rs`, architecture 15 and 25-1 |
 | Wire to the plugin host | 7 | `crates/meloet-plugin/src/wire.rs`, architecture 24-16 E and I |
 | Sound pack catalog | format `meloet-sounds-catalog`, version 1; pack `2026.11.2` | `tools/sounds/catalog.json`, architecture 23-1 and 23-9 |

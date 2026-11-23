@@ -159,6 +159,7 @@ mod tests {
                 shape,
             },
             active: 0,
+            comp: Vec::new(),
         })
     }
 

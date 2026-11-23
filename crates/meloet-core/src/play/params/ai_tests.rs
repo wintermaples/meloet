@@ -130,7 +130,7 @@ fn a_lane_on_one_parameter_sets_none_of_them() {
     let mut r = Rig::new();
     let (surge, track, place) = surge(&mut r);
     r.cmd(Command::AddLane {
-        track,
+        home: meloet_protocol::LaneHome::Track { track },
         target: AutoTarget::Instrument { param: MODE },
     });
     r.settle();
@@ -262,7 +262,7 @@ fn values_of_a_built_in_effect_are_one_step() {
         AiAnswer::Refused(AiRefusal::NoSuchParam(40))
     );
     r.cmd(Command::AddLane {
-        track,
+        home: meloet_protocol::LaneHome::Track { track },
         target: AutoTarget::Insert {
             insert: id.0,
             param: 3,

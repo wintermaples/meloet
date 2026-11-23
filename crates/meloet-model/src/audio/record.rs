@@ -191,6 +191,7 @@ pub fn add_vocal_recordings(
                 shape,
             },
             active,
+            comp: Vec::new(),
         });
         let at = clips.partition_point(|c| c.start < clip.start);
         clips.insert(at, clip);

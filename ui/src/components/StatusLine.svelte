@@ -111,6 +111,7 @@
     controlValue: ["ccList.value", null],
     percent: ["value.percent", "value.percentRange"],
     amount: ["value.amount", "value.amountRange"],
+    bars: ["value.bar", null],
   };
 
   const track = (r: TrackRef) => t("track.label", { number: r.number, name: r.name });

@@ -446,3 +446,68 @@ fn a_track_that_is_not_there_or_no_id_left() {
     };
     assert_eq!(duplicate_track(&full, T1), Err(EditError::OutOfIds));
 }
+
+/// Round 12 (E2, E3, A8, M7): what a track holds of waves 3 and 4 names no id, and the copy
+/// has it as it is.
+#[test]
+fn the_arpeggio_the_knobs_a_comp_and_a_tune_are_copied() {
+    let (e, vocal) = add_vocal_track(&Doc::new_default(), None).unwrap();
+    let recording = VocalRecording {
+        track: vocal,
+        audio: NewAudio {
+            uid: [7; 16],
+            file: "歌 9.wav".into(),
+            frames: 192_000,
+            sample_rate: 48_000,
+            channels: 1,
+            bits: Some(24),
+        },
+        takes: [0, 96_000]
+            .map(|first_frame| NewAudioTake {
+                origin: 0,
+                length: 4 * Q,
+                first_frame,
+                frames: 96_000,
+            })
+            .to_vec(),
+    };
+    let mut doc = add_vocal_recordings(&e.doc, vec![recording], None)
+        .unwrap()
+        .0
+        .doc;
+    let piano = Arc::make_mut(&mut doc.tracks[0]);
+    piano.arp = crate::Arp {
+        on: true,
+        octaves: 3,
+        ..crate::Arp::default()
+    };
+    piano.knobs = (crate::SoundKnobs::default())
+        .with(crate::SoundKnob::Release, 90.0)
+        .unwrap();
+    let singer = Arc::make_mut(&mut doc.tracks[1]);
+    let clip = Arc::make_mut(&mut singer.clips[0]);
+    assert_eq!(clip.takes.len(), 2);
+    clip.comp = vec![
+        crate::CompPiece { from: 0, take: 0 },
+        crate::CompPiece { from: Q, take: 1 },
+    ];
+    let crate::ClipTakes::Vocal { shape, .. } = &mut clip.takes else {
+        panic!("a vocal clip");
+    };
+    shape.tune = Some(crate::Tune {
+        root: 2,
+        mode: crate::ScaleMode::Dorian,
+        strength: 40,
+    });
+    for track in [T1, vocal] {
+        let d = duplicate_track(&doc, track).unwrap();
+        let new = &d.edit.doc;
+        let (a, b) = (new.track(track).unwrap(), new.track(d.track).unwrap());
+        assert_eq!((b.arp, b.knobs), (a.arp, a.knobs));
+        for (x, y) in a.clips.iter().zip(&b.clips) {
+            assert_eq!(y.comp, x.comp);
+            assert_eq!(y.takes.shape(), x.takes.shape());
+        }
+        ids_once(new);
+    }
+}

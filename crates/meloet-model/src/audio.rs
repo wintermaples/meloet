@@ -3,6 +3,7 @@
 
 use std::sync::Arc;
 
+use crate::roll::ScaleMode;
 use crate::song::TakeId;
 use crate::tempo_map::TempoPoint;
 use crate::time::Tempo;
@@ -157,6 +158,8 @@ pub struct AudioShape {
     pub cents: i8,
     /// 「声の感じを保つ」.
     pub keep_formant: bool,
+    /// 「音程を寄せる」 (round 12, M7). `None`: strength 0, the audio as it is.
+    pub tune: Option<Tune>,
 }
 
 impl AudioShape {
@@ -172,11 +175,44 @@ impl AudioShape {
         semitones: 0,
         cents: 0,
         keep_formant: true,
+        tune: None,
     };
 
     pub fn is_valid(&self) -> bool {
-        self.semitones.abs() <= Self::SEMITONES_MAX && self.cents.abs() <= Self::CENTS_MAX
+        self.semitones.abs() <= Self::SEMITONES_MAX
+            && self.cents.abs() <= Self::CENTS_MAX
+            && self.tune.is_none_or(|t| t.is_valid())
     }
+}
+
+/// 「音程を寄せる」 of a vocal clip (round 12, M7): the sung pitch is brought toward the
+/// nearest note of the scale the clip took when the strength left 0, by `strength` percent.
+/// Changing the song's scale later does not change it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Tune {
+    /// 0..=11 is C..B.
+    pub root: u8,
+    pub mode: ScaleMode,
+    /// 1..=`TUNE_STRENGTH_MAX` percent.
+    pub strength: u8,
+}
+
+impl Tune {
+    pub fn is_valid(&self) -> bool {
+        self.root <= 11 && (1..=TUNE_STRENGTH_MAX).contains(&self.strength)
+    }
+}
+
+/// The strength of 「音程を寄せる」 at its end, in percent.
+pub const TUNE_STRENGTH_MAX: u8 = 100;
+
+/// A part of a vocal clip of 「いいとこ取り」 (round 12, A8): from `from` (ticks from the
+/// clip's start) to the next piece's `from` (to the clip's end for the last), take `take`
+/// (its place in the clip's takes) sounds. The takes do not change.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct CompPiece {
+    pub from: u64,
+    pub take: usize,
 }
 
 pub mod clips;

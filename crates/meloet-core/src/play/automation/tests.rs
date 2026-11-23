@@ -16,7 +16,7 @@ const VOLUME: AutoTarget = AutoTarget::Volume;
 
 fn volume_ref() -> LaneRef {
     LaneRef {
-        track: 1,
+        home: meloet_protocol::LaneHome::Track { track: 1 },
         target: VOLUME,
     }
 }
@@ -68,7 +68,7 @@ fn with_volume_lane(m: &mut Model) {
     cmd(
         m,
         Command::AddLane {
-            track: 1,
+            home: meloet_protocol::LaneHome::Track { track: 1 },
             target: VOLUME,
         },
     );
@@ -129,7 +129,7 @@ fn the_engine_gets_the_lanes_that_move_and_not_one_at_rest() {
     let effects = cmd(
         m,
         Command::AddLane {
-            track: 1,
+            home: meloet_protocol::LaneHome::Track { track: 1 },
             target: VOLUME,
         },
     );
@@ -181,7 +181,7 @@ fn the_engine_gets_the_lanes_that_move_and_not_one_at_rest() {
     let effects = cmd(
         m,
         Command::RestoreLane {
-            track: 1,
+            home: meloet_protocol::LaneHome::Track { track: 1 },
             target: VOLUME,
         },
     );
@@ -200,7 +200,7 @@ fn a_mute_lane_takes_the_place_of_the_mute_put_by_hand() {
     let effects = cmd(
         m,
         Command::AddLane {
-            track: 1,
+            home: meloet_protocol::LaneHome::Track { track: 1 },
             target: mute,
         },
     );
@@ -243,7 +243,7 @@ fn lanes_and_points_are_steps_and_the_selection_comes_back_with_undo() {
     cmd(
         m,
         Command::AddLane {
-            track: 1,
+            home: meloet_protocol::LaneHome::Track { track: 1 },
             target: VOLUME,
         },
     );
@@ -256,7 +256,7 @@ fn lanes_and_points_are_steps_and_the_selection_comes_back_with_undo() {
     cmd(
         m,
         Command::FoldLane {
-            track: 1,
+            home: meloet_protocol::LaneHome::Track { track: 1 },
             target: VOLUME,
             folded: true,
         },
@@ -265,7 +265,7 @@ fn lanes_and_points_are_steps_and_the_selection_comes_back_with_undo() {
     cmd(
         m,
         Command::AddLane {
-            track: 1,
+            home: meloet_protocol::LaneHome::Track { track: 1 },
             target: VOLUME,
         },
     );
@@ -364,7 +364,7 @@ fn lanes_and_points_are_steps_and_the_selection_comes_back_with_undo() {
     cmd(
         m,
         Command::DeleteLane {
-            track: 1,
+            home: meloet_protocol::LaneHome::Track { track: 1 },
             target: VOLUME,
         },
     );
@@ -391,7 +391,7 @@ fn a_deleted_lane_leaves_the_value_where_the_line_was() {
     cmd(
         m,
         Command::DeleteLane {
-            track: 1,
+            home: meloet_protocol::LaneHome::Track { track: 1 },
             target: VOLUME,
         },
     );
@@ -431,7 +431,7 @@ fn a_hand_on_a_moving_fader_rests_its_lane_with_the_value_in_one_step() {
     let effects = cmd(
         m,
         Command::RestoreLane {
-            track: 1,
+            home: meloet_protocol::LaneHome::Track { track: 1 },
             target: VOLUME,
         },
     );
@@ -468,7 +468,7 @@ fn a_typed_value_rests_the_lane_while_writing_too() {
     cmd(
         m,
         Command::SetLaneWrite {
-            track: 1,
+            home: meloet_protocol::LaneHome::Track { track: 1 },
             target: VOLUME,
             on: true,
         },
@@ -491,7 +491,7 @@ fn writing_puts_what_was_heard_where_it_was_heard_and_is_one_step() {
     cmd(
         m,
         Command::SetLaneWrite {
-            track: 1,
+            home: meloet_protocol::LaneHome::Track { track: 1 },
             target: VOLUME,
             on: true,
         },
@@ -553,7 +553,7 @@ fn stopping_ends_the_writing_and_the_rest_of_the_drag_goes_nowhere() {
     cmd(
         m,
         Command::SetLaneWrite {
-            track: 1,
+            home: meloet_protocol::LaneHome::Track { track: 1 },
             target: VOLUME,
             on: true,
         },
@@ -593,7 +593,7 @@ fn a_loop_written_over_is_kept_pass_by_pass() {
     cmd(
         m,
         Command::SetLaneWrite {
-            track: 1,
+            home: meloet_protocol::LaneHome::Track { track: 1 },
             target: VOLUME,
             on: true,
         },
@@ -632,7 +632,7 @@ fn the_mute_writes_a_point_or_rests() {
     cmd(
         m,
         Command::AddLane {
-            track: 1,
+            home: meloet_protocol::LaneHome::Track { track: 1 },
             target: mute,
         },
     );
@@ -648,7 +648,7 @@ fn the_mute_writes_a_point_or_rests() {
     cmd(
         m,
         Command::SetLaneWrite {
-            track: 1,
+            home: meloet_protocol::LaneHome::Track { track: 1 },
             target: mute,
             on: true,
         },
@@ -671,14 +671,14 @@ fn a_song_keeps_its_lanes_and_folds_through_the_file() {
     cmd(
         m,
         Command::AddLane {
-            track: 1,
+            home: meloet_protocol::LaneHome::Track { track: 1 },
             target: AutoTarget::Pan,
         },
     );
     cmd(
         m,
         Command::FoldLane {
-            track: 1,
+            home: meloet_protocol::LaneHome::Track { track: 1 },
             target: AutoTarget::Pan,
             folded: true,
         },
@@ -798,8 +798,14 @@ mod random {
             let n = lane.map_or(1, |l| l.points.max(1) as u64);
             let value = rng.below(101) as f32 / 100.0;
             let command = match rng.below(20) {
-                0 | 1 => Command::AddLane { track: 1, target },
-                2 => Command::DeleteLane { track: 1, target },
+                0 | 1 => Command::AddLane {
+                    home: meloet_protocol::LaneHome::Track { track: 1 },
+                    target,
+                },
+                2 => Command::DeleteLane {
+                    home: meloet_protocol::LaneHome::Track { track: 1 },
+                    target,
+                },
                 3..=5 => Command::AddAutoPoint {
                     lane: lane_id,
                     tick: rng.below(64) * (Q / 4),
@@ -816,13 +822,16 @@ mod random {
                     points: vec![rng.below(n) as u32],
                 },
                 8 => Command::SetLaneWrite {
-                    track: 1,
+                    home: meloet_protocol::LaneHome::Track { track: 1 },
                     target,
                     on: rng.below(3) > 0,
                 },
-                9 => Command::RestoreLane { track: 1, target },
+                9 => Command::RestoreLane {
+                    home: meloet_protocol::LaneHome::Track { track: 1 },
+                    target,
+                },
                 10 => Command::FoldLane {
-                    track: 1,
+                    home: meloet_protocol::LaneHome::Track { track: 1 },
                     target,
                     folded: rng.below(2) == 0,
                 },
@@ -929,7 +938,10 @@ mod plugins {
         r.cmd(Command::SelectInstrument { track });
         r.settle();
         let target = AutoTarget::Instrument { param: LEVEL };
-        r.cmd(Command::AddLane { track, target });
+        r.cmd(Command::AddLane {
+            home: meloet_protocol::LaneHome::Track { track },
+            target,
+        });
         let lane = r.m.view().song.tracks[0].lanes[0].lane_id;
         r.cmd(Command::AddAutoPoint {
             lane,
@@ -998,7 +1010,10 @@ mod plugins {
             }
         );
         let target = AutoTarget::Instrument { param: MODE };
-        r.cmd(Command::AddLane { track, target });
+        r.cmd(Command::AddLane {
+            home: meloet_protocol::LaneHome::Track { track },
+            target,
+        });
         assert!(
             r.m.view().song.tracks[0].lanes[1].step,
             "the mode comes in steps"
@@ -1020,7 +1035,7 @@ mod plugins {
             "the engine lets go of the lane at once"
         );
         let held = LaneRef {
-            track,
+            home: meloet_protocol::LaneHome::Track { track },
             target: AutoTarget::Instrument { param: LEVEL },
         };
         assert_eq!(r.m.view().automation.held, [held]);
@@ -1070,7 +1085,7 @@ mod plugins {
         let (surge, track, _) = surge_with_lane(&mut r);
         let target = AutoTarget::Instrument { param: LEVEL };
         r.cmd(Command::SetLaneWrite {
-            track,
+            home: meloet_protocol::LaneHome::Track { track },
             target,
             on: true,
         });

@@ -17,6 +17,7 @@ import { reduceUpdates } from "./fakeUpdates";
 import { CLICK_VOLUME_MAX_DB, CLICK_VOLUME_MIN_DB } from "./types";
 import { fakeLoudnessOf } from "./fakeLoudness";
 import { reduceA9 } from "./fakeA9";
+import { FAKE_ARP_OFF } from "./fakeWave3";
 import {
   CLIP_CENTS_MAX,
   CLIP_SEMITONES_MAX,
@@ -519,7 +520,7 @@ function newSongMixer(): Pick<SongView, "returns" | "master"> {
       { gainDb: 0, pan: 0, muted: false, inserts: firstInsert("reverb"), slots: builtinSlots(firstInsert("reverb"), 1) },
       { gainDb: 0, pan: 0, muted: false, inserts: firstInsert("delay"), slots: builtinSlots(firstInsert("delay"), 2) },
     ],
-    master: { gainDb: 0, pan: 0, inserts: firstInsert("limiter"), slots: builtinSlots(firstInsert("limiter"), 3) },
+    master: { gainDb: 0, pan: 0, inserts: firstInsert("limiter"), slots: builtinSlots(firstInsert("limiter"), 3), lanes: [] },
   };
 }
 
@@ -553,6 +554,7 @@ export function fakeState(): AppState {
           soloed: false,
           lanes: [],
           clips: [],
+          arp: FAKE_ARP_OFF,
         },
       ],
       ...newSongMixer(),
@@ -618,6 +620,9 @@ export function fakeState(): AppState {
       fileDrop: null,
       latencyDialog: null,
       noteGlow: true,
+      spectrum: true,
+      monoListen: false,
+      language: "ja",
     },
     shelf: closedShelf(),
     library: emptyLibrary(),
@@ -645,7 +650,7 @@ export function fakeState(): AppState {
       recordFormat: "bits24",
       latency: { reportedMs: null, measuredMs: null, manualMs: null, used: "reported", usedMs: null },
     },
-    audioWork: { jobs: [] },
+    audioWork: { jobs: [], bounce: null },
     export: { dialog: null, run: null },
     sounds: fakeSounds(),
     aiLink: { on: false, port: "closed" },
@@ -836,6 +841,7 @@ function fakeClip(id: number, name: string, fromBar: number, toBar: number, take
     takeOffset: 0,
     noteCount: FAKE_TAKES.get(takeId)!.notes.length,
     audio: null,
+    comp: [],
   };
 }
 
@@ -1708,6 +1714,7 @@ function bandSong(s: AppState, tracks = BAND_TRACKS): void {
       FAKE_TAKES.set(take.id, take);
       return fakeClip(++id, name, from, to, 1, [take.id]);
     }),
+    arp: FAKE_ARP_OFF,
   }));
   s.song.playTarget = BAND_TRACK_ID + 1;
   s.song.undoCount = 14;
@@ -2427,9 +2434,9 @@ SCENES.windowUndo = {
 // ---- round 6, step 1: tempo and meter changes, markers (protocol 20) ----
 
 const MARKERS: TimelineView["markers"] = [
-  { id: 1, tick: 0, name: "イントロ" },
-  { id: 2, tick: 4 * BAR, name: "Aメロ" },
-  { id: 3, tick: 9 * BAR, name: "サビ" },
+  { id: 1, tick: 0, name: "イントロ", section: "usable" as const },
+  { id: 2, tick: 4 * BAR, name: "Aメロ", section: "usable" as const },
+  { id: 3, tick: 9 * BAR, name: "サビ", section: "usable" as const },
 ];
 
 /** The band's song with the three markers of R10-Markers (bars 1, 5 and 10), the play line at bar 7. */
@@ -2459,9 +2466,9 @@ SCENES.tempo = {
         { bar: 12, meterNum: 4, meterDen: 4 },
       ],
       markers: [
-        { id: 1, tick: 0, name: "イントロ" },
-        { id: 2, tick: 4 * BAR, name: "Aメロ" },
-        { id: 3, tick: fourFour, name: "サビ" },
+        { id: 1, tick: 0, name: "イントロ", section: "usable" as const },
+        { id: 2, tick: 4 * BAR, name: "Aメロ", section: "usable" as const },
+        { id: 3, tick: fourFour, name: "サビ", section: "usable" as const },
       ],
       selected: { kind: "tempoPoint", tick: 4 * BAR },
       open: true,
@@ -2491,7 +2498,7 @@ SCENES.tempoFolded = {
 SCENES.markerAdded = {
   setup(s) {
     markerSong(s);
-    const added = { id: 4, tick: 6 * BAR, name: "マーカー 4" };
+    const added = { id: 4, tick: 6 * BAR, name: "マーカー 4", section: "usable" as const };
     s.timeline.markers = [MARKERS[0]!, MARKERS[1]!, added, MARKERS[2]!].map((m) => ({ ...m }));
     s.timeline.selected = { kind: "marker", id: added.id };
     s.timeline.renaming = added.id;
@@ -2524,9 +2531,9 @@ SCENES.pianoRollMarkers = {
   setup(s) {
     pianoRollSong(s);
     s.timeline.markers = [
-      { id: 1, tick: 0, name: "イントロ" },
-      { id: 2, tick: 2 * BAR + 2 * TPQ, name: "Aメロ" },
-      { id: 3, tick: 4 * BAR, name: "サビ" },
+      { id: 1, tick: 0, name: "イントロ", section: "usable" as const },
+      { id: 2, tick: 2 * BAR + 2 * TPQ, name: "Aメロ", section: "usable" as const },
+      { id: 3, tick: 4 * BAR, name: "サビ", section: "usable" as const },
     ];
   },
   bands: ["pianoRoll"],
@@ -2590,7 +2597,7 @@ const EDIT_VOLUME = fakeLane(510, [["1.1.000", 0.64], ["3.1.000", 0.73], ["4.1.0
 const EDIT_VOLUME_ADDED = fakeLane(511, [["1.1.000", 0.64], ["3.1.000", 0.73], ["4.1.000", 0.6], ["5.3.000", 0.52], ["6.1.000", 0.45], ["7.3.000", 0.64]]);
 
 const VOLUME: AutoTarget = { kind: "volume" };
-const laneOf = (number: number, target: AutoTarget): LaneRef => ({ track: BAND_TRACK_ID + number, target });
+const laneOf = (number: number, target: AutoTarget): LaneRef => ({ home: { kind: "track", track: BAND_TRACK_ID + number }, target });
 const PIANO_REF: TrackRef = { number: 1, name: "ピアノ" };
 const PAD_REF: TrackRef = { number: 4, name: "パッド" };
 
@@ -2650,7 +2657,7 @@ SCENES.mixerAuto = {
     s.song.tracks[3]!.lanes = [laneView(VOLUME, { kind: "volume" }, PAD_VOLUME)];
   },
   bands: ["mixer"],
-  after: (s) => (s.status.message = { id: "automationMoving", tracks: [PIANO_REF, PAD_REF] }),
+  after: (s) => (s.status.message = { id: "automationMoving", tracks: [PIANO_REF, PAD_REF], master: false }),
   meters: autoMeters("9.2.000"),
 };
 // F6-MixerRest: the fader of 「4 パッド」 was taken to −12 dB by hand; under it 「休み」 and 「もどす」.
@@ -2812,7 +2819,7 @@ SCENES.headTempo = {
 SCENES.pianoRollMarker = {
   setup(s) {
     pianoRollSong(s);
-    s.timeline.markers = [{ id: 1, tick: BAR, name: "サビ" }];
+    s.timeline.markers = [{ id: 1, tick: BAR, name: "サビ", section: "usable" as const }];
   },
   bands: ["pianoRoll"],
   meters: QUIET,
@@ -2824,25 +2831,26 @@ SCENES.pianoRollMarker = {
  * step is listed. `null`: not one of these commands.
  */
 function reduceRound6(state: AppState, command: Command, rows: readonly HistoryRow[]): Change[] | null {
-  const same = (a: LaneRef, b: LaneRef) => a.track === b.track && JSON.stringify(a.target) === JSON.stringify(b.target);
+  const same = (a: LaneRef, b: LaneRef) => JSON.stringify(a.home) === JSON.stringify(b.home) && JSON.stringify(a.target) === JSON.stringify(b.target);
   const without = (list: LaneRef[], lane: LaneRef) => list.filter((l) => !same(l, lane));
   const automation = structuredClone(state.automation);
   const song = structuredClone(state.song);
   let message: StatusMessage | null = null;
   const found = (lane: LaneRef) => {
-    const track = song.tracks.find((t) => t.id === lane.track);
+    // round12 stub: M5 (the master's lane)
+    const track = song.tracks.find((t) => lane.home.kind === "track" && t.id === lane.home.track);
     const index = track ? track.lanes.findIndex((l) => JSON.stringify(l.target) === JSON.stringify(lane.target)) : -1;
     return track && index >= 0 ? { track, index, view: track.lanes[index]! } : null;
   };
   switch (command.type) {
     case "foldLane": {
-      const lane: LaneRef = { track: command.track, target: command.target };
+      const lane: LaneRef = { home: command.home, target: command.target };
       if (!found(lane)) return [];
       automation.folded = command.folded ? [...without(automation.folded, lane), lane] : without(automation.folded, lane);
       break;
     }
     case "setLaneWrite": {
-      const lane: LaneRef = { track: command.track, target: command.target };
+      const lane: LaneRef = { home: command.home, target: command.target };
       const had = found(lane);
       if (!had || had.view.resting) return [];
       automation.armed = command.on ? [...without(automation.armed, lane), lane] : without(automation.armed, lane);
@@ -2853,7 +2861,7 @@ function reduceRound6(state: AppState, command: Command, rows: readonly HistoryR
       automation.selected = command.points.length > 0 ? { laneId: command.lane, points: toRanges(command.points) } : null;
       break;
     case "restoreLane": {
-      const had = found({ track: command.track, target: command.target });
+      const had = found({ home: command.home, target: command.target });
       if (!had?.view.resting) return [];
       had.view.resting = false;
       song.undoCount += 1;
@@ -2862,7 +2870,7 @@ function reduceRound6(state: AppState, command: Command, rows: readonly HistoryR
       break;
     }
     case "deleteLane": {
-      const lane: LaneRef = { track: command.track, target: command.target };
+      const lane: LaneRef = { home: command.home, target: command.target };
       const had = found(lane);
       if (!had) return [];
       had.track.lanes.splice(had.index, 1);
@@ -2874,8 +2882,8 @@ function reduceRound6(state: AppState, command: Command, rows: readonly HistoryR
       break;
     }
     case "addLane": {
-      const lane: LaneRef = { track: command.track, target: command.target };
-      const track = song.tracks.find((t) => t.id === lane.track);
+      const lane: LaneRef = { home: command.home, target: command.target };
+      const track = song.tracks.find((t) => lane.home.kind === "track" && t.id === lane.home.track);
       if (!track) return [];
       automation.folded = without(automation.folded, lane);
       if (found(lane)) break;
@@ -3165,7 +3173,7 @@ SCENES.recoverVocal = {
 SCENES.paramsSound = {
   setup(s) {
     bandSong(s);
-    s.params.selected = { kind: "sound", track: BAND_TRACK_ID + 1, sound: { kind: "builtin", instrument: "grandPiano" } };
+    s.params.selected = { kind: "sound", track: BAND_TRACK_ID + 1, sound: { kind: "builtin", instrument: "grandPiano" }, knobs: null };
   },
   bands: ["params"],
   after: (s) => (s.status.message = { id: "noParams", sound: { kind: "builtin", instrument: "grandPiano" } }),
@@ -3202,7 +3210,7 @@ function audioEditSong(s: AppState): void {
   ];
   vocalTrackOf(s).clips[1]!.takeId = LEFT_CLIP + 1;
   s.arrange = { ...arrangeOf(RIGHT_CLIP), pianoRollClip: null };
-  s.params.selected = { kind: "clip", track: VOCAL_TRACK_ID, clip: RIGHT_CLIP, missing: null };
+  s.params.selected = { kind: "clip", track: VOCAL_TRACK_ID, clip: RIGHT_CLIP, missing: null, tuneUsable: false };
   s.transport.position = 6 * BAR;
   s.song.undoCount = 22;
   s.status.message = { id: "clipSplit", name: "歌 テイク 1", tick: 6 * BAR, count: 1 };
@@ -3258,6 +3266,7 @@ SCENES.audioMissing = {
       track: VOCAL_TRACK_ID,
       clip: LEFT_CLIP,
       missing: { audio: 64, file: TAKE_1.file, wasAt: `はじめての曲/音/${TAKE_1.file}` },
+      tuneUsable: false,
     };
   },
   bands: ["params"],
@@ -3270,7 +3279,7 @@ SCENES.audioLoading = {
   setup(s) {
     vocalSong(s, { armed: false, monitor: false, selected: true });
     vocalTrackOf(s).clips = [fakeVocalClip(LEFT_CLIP, "ドラム", 4 * BAR, 76 * BAR, fakeAudioClip(LONG_MP3, fakeStretch(null, FAKE_SONG_BPM)))];
-    s.audioWork = { jobs: [{ kind: "loading", audio: LONG_MP3.id, clip: null, percent: 40 }] };
+    s.audioWork = { jobs: [{ kind: "loading", audio: LONG_MP3.id, clip: null, percent: 40 }], bounce: null };
     s.song.undoCount = 15;
   },
   after: (s) => (s.status.message = { id: "audioImported", file: LONG_MP3.file, track: VOCAL_REF, tick: 4 * BAR, count: 1, skipped: 0 }),
@@ -3290,8 +3299,8 @@ SCENES.audioKinds = {
       fakeVocalClip(76, "歌 テイク 1", 6 * BAR, 8 * BAR, fakeAudioClip(FAKE_AUDIO.get(64)!)),
     ];
     s.arrange = { ...arrangeOf(RIGHT_CLIP), pianoRollClip: null };
-    s.params.selected = { kind: "clip", track: VOCAL_TRACK_ID, clip: RIGHT_CLIP, missing: null };
-    s.audioWork = { jobs: [{ kind: "rendering", audio: DRUMS_WAV.id, clip: 74, percent: 34 }] };
+    s.params.selected = { kind: "clip", track: VOCAL_TRACK_ID, clip: RIGHT_CLIP, missing: null, tuneUsable: false };
+    s.audioWork = { jobs: [{ kind: "rendering", audio: DRUMS_WAV.id, clip: 74, percent: 34 }], bounce: null };
   },
   bands: ["params"],
   meters: QUIET,
@@ -3317,7 +3326,7 @@ function stretchSong(s: AppState, name: string, audio: AudioClipView): void {
   vocalSong(s, { armed: true, monitor: false, selected: true });
   vocalTrackOf(s).clips = [fakeVocalClip(LEFT_CLIP, name, 4 * BAR, 6 * BAR, audio)];
   s.arrange = { ...arrangeOf(LEFT_CLIP), pianoRollClip: null };
-  s.params.selected = { kind: "clip", track: VOCAL_TRACK_ID, clip: LEFT_CLIP, missing: null };
+  s.params.selected = { kind: "clip", track: VOCAL_TRACK_ID, clip: LEFT_CLIP, missing: null, tuneUsable: false };
   s.transport.position = 4 * BAR;
   s.song.undoCount = 14;
 }
@@ -3331,7 +3340,7 @@ SCENES.stretch = { setup: (s) => stretchSong(s, "歌 テイク 1", STRETCHED()),
 SCENES.stretchRendering = {
   setup(s) {
     stretchSong(s, "歌 テイク 1", STRETCHED());
-    s.audioWork = { jobs: [{ kind: "rendering", audio: TAKE_1.id, clip: LEFT_CLIP, percent: 34 }] };
+    s.audioWork = { jobs: [{ kind: "rendering", audio: TAKE_1.id, clip: LEFT_CLIP, percent: 34 }], bounce: null };
   },
   bands: ["params"],
   meters: QUIET,
@@ -3375,7 +3384,7 @@ SCENES.stretchRamp = {
       fakeVocalClip(RIGHT_CLIP, "歌 テイク 2", 5 * BAR, 9 * BAR, fakeAudioClip(HARMONY, fakeStretch(steadyTempo(FAKE_SONG_BPM), 108))),
     ];
     s.arrange = { ...arrangeOf(RIGHT_CLIP), pianoRollClip: null };
-    s.params.selected = { kind: "clip", track: VOCAL_TRACK_ID, clip: RIGHT_CLIP, missing: null };
+    s.params.selected = { kind: "clip", track: VOCAL_TRACK_ID, clip: RIGHT_CLIP, missing: null, tuneUsable: false };
   },
   bands: ["params"],
   meters: QUIET,
@@ -3805,6 +3814,9 @@ export function reduceAudio(state: AppState, command: Command): Change[] | null 
         if (!Number.isNaN(change.bpm)) setSourceBpm(clip, Math.min(SOURCE_BPM_MAX, Math.max(SOURCE_BPM_MIN, Math.round(change.bpm * 100) / 100)));
       } else if (change.kind === "semitones") {
         if (!Number.isNaN(change.semitones)) stretch.semitones = whole(change.semitones, CLIP_SEMITONES_MAX);
+      } else if (change.kind === "tuneStrength" || change.kind === "tuneScale") {
+        // round12 stub: M7
+        return [];
       } else if (!Number.isNaN(change.cents)) stretch.cents = whole(change.cents, CLIP_CENTS_MAX);
       return stepped(song);
     }
@@ -3893,6 +3905,7 @@ export function reduceRound7(state: AppState, command: Command, memo: FakeVocalM
         soloed: false,
         lanes: [],
         clips: [],
+        arp: FAKE_ARP_OFF,
         instrument: "sine",
         inserts: noInserts(),
       });
@@ -4676,6 +4689,7 @@ export function reduceTracks(
           soloed: false,
           lanes: [],
           clips: [],
+          arp: FAKE_ARP_OFF,
         });
         renumber();
         song.playTarget = id;
@@ -4879,7 +4893,8 @@ export function reduceMixer(
       if (!t || t.kind.kind !== "keys" || t.standIn) break;
       if (t.sound.kind === "plugin") break;
       const sound = soundNameOf(t.sound);
-      params.selected = { kind: "sound", track: t.id, sound };
+      // round12 stub: E3
+      params.selected = { kind: "sound", track: t.id, sound, knobs: null };
       showParams = true;
       notice = { id: "noParams", sound };
       break;
@@ -5253,7 +5268,7 @@ export function createFakeTransport(initial?: AppState): Transport {
 
   return {
     async hello(protocolVersion) {
-      return { protocolVersion: PROTOCOL_VERSION, ok: protocolVersion === PROTOCOL_VERSION, monoUs: nowUs() };
+      return { protocolVersion: PROTOCOL_VERSION, ok: protocolVersion === PROTOCOL_VERSION, monoUs: nowUs(), language: "ja" };
     },
     async subscribe(onMessage, onTelemetry) {
       listener = onMessage;

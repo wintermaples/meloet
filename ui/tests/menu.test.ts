@@ -27,7 +27,7 @@ const settle = async () => {
   flushSync();
 };
 
-const CLIP: ClipView = { id: 5, name: "Aメロ", start: 0, end: 16 * TPQ, take: 1, takes: 2, takeId: 7, takeOffset: 0, noteCount: 2, audio: null };
+const CLIP: ClipView = { id: 5, name: "Aメロ", start: 0, end: 16 * TPQ, take: 1, takes: 2, takeId: 7, takeOffset: 0, noteCount: 2, audio: null, comp: [] };
 
 function withClip(edit: (s: AppState) => void = () => {}): AppState {
   const s = fakeState();

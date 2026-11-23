@@ -50,7 +50,8 @@ place: string,
 lengthS: number, sampleRate: number, bits: RecordFormat, 
 /**
  * E9 the dialog 「書き出しました」: the file's waveform as `EXPORT_WAVE_BARS` bars, each
- * the largest absolute sample of its part, 0..=255. Empty for several files.
+ * the largest absolute sample of its part, 0..=255. Empty for 「トラックごと」
+ * (`ExportRange::Tracks`), however many files that wrote (one track too).
  */
 wave: Array<number>, 
 /**

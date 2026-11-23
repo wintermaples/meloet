@@ -800,17 +800,20 @@ fn markers_move_go_and_step() {
             MarkerView {
                 id: a,
                 tick: 4 * BAR,
-                name: "A".into()
+                name: "A".into(),
+                section: meloet_protocol::SectionUse::Usable,
             },
             MarkerView {
                 id: b,
                 tick: 8 * BAR,
-                name: "B".into()
+                name: "B".into(),
+                section: meloet_protocol::SectionUse::Empty,
             },
             MarkerView {
                 id: c,
                 tick: 8 * BAR,
-                name: "C".into()
+                name: "C".into(),
+                section: meloet_protocol::SectionUse::Empty,
             },
         ]
     );
@@ -1224,7 +1227,8 @@ fn the_section_as_the_screen_gets_it() {
             markers: vec![MarkerView {
                 id,
                 tick: BAR,
-                name: "A".into()
+                name: "A".into(),
+                section: meloet_protocol::SectionUse::Empty,
             }],
             selected: marker(id),
             renaming: Some(id),

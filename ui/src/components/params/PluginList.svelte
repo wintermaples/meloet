@@ -198,11 +198,11 @@
     const track = markTrack;
     if (track === null) return;
     if (s.kind === "instrument") {
-      send({ type: "addLane", track, target: { kind: "instrument", param } });
+      send({ type: "addLane", home: { kind: "track", track }, target: { kind: "instrument", param } });
       return;
     }
     const id = current.state!.song.tracks.find((tr) => tr.id === track)?.slots[s.insert.slot]?.id;
-    if (id !== undefined) send({ type: "addLane", track, target: { kind: "insert", insert: id, param } });
+    if (id !== undefined) send({ type: "addLane", home: { kind: "track", track }, target: { kind: "insert", insert: id, param } });
   }
   const key = (e: PluginEntry) => e.id;
 </script>

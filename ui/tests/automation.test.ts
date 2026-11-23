@@ -77,7 +77,7 @@ describe("track rows and band order", () => {
   ] as unknown as TrackView[];
   const d = { trackH: 64, laneH: 48, rowH: 24 };
   it("an open band is 48 each, folded bands share the 「▸」 row (24). A track with no bands has no row", () => {
-    const r = A.arrangeRows(tracks, [{ track: 1, target: { kind: "pan" } }], d);
+    const r = A.arrangeRows(tracks, [{ home: { kind: "track", track: 1 }, target: { kind: "pan" } }], d);
     expect(r.tops).toEqual([0, 64 + 48 + 24]);
     expect(r.lanes.map((l) => l.top)).toEqual([64]);
     expect(r.rows.map((x) => x.top)).toEqual([112]);
@@ -215,9 +215,9 @@ describe("arrange bands (mocks F6-AutoRec / F6-AutoRest)", () => {
     closeContextMenu();
     const track = scene("autoRest").song.tracks[0]!.id;
     expect(app.sent).toEqual([
-      { type: "restoreLane", track, target: { kind: "volume" } },
-      { type: "foldLane", track, target: { kind: "volume" }, folded: true },
-      { type: "addLane", track, target: { kind: "pan" } },
+      { type: "restoreLane", home: { kind: "track", track }, target: { kind: "volume" } },
+      { type: "foldLane", home: { kind: "track", track }, target: { kind: "volume" }, folded: true },
+      { type: "addLane", home: { kind: "track", track }, target: { kind: "pan" } },
     ]);
   });
   it("under a track with bands, the rows move down (clip name positions too)", () => {
@@ -245,7 +245,7 @@ describe("mixer (mocks F6-MixerAuto / F6-MixerRest)", () => {
     expect(text(rows[3]!)).toBe("休み もどす");
     expect(qa("[data-test=mixer-fader]")[3]!.classList.contains("auto")).toBe(false);
     q("[data-test=mixer-auto-restore]")!.click();
-    expect(app.sent).toEqual([{ type: "restoreLane", track: scene("mixerRest").song.tracks[3]!.id, target: { kind: "volume" } }]);
+    expect(app.sent).toEqual([{ type: "restoreLane", home: { kind: "track", track: scene("mixerRest").song.tracks[3]!.id }, target: { kind: "volume" } }]);
   });
   it("with no bands, the row under the value is not shown", () => {
     show(MixerStrips, scene("mixer"));

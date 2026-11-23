@@ -10,8 +10,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    BarSpan, ControlKind, EffectKind, EffectName, LaneName, SendBus, SoundName, TrackRef,
-    VocalInput,
+    BarSpan, ControlKind, EffectKind, EffectName, LaneName, SendBus, SoundKnob, SoundName,
+    TrackRef, VocalInput,
 };
 
 /// The section `history`.
@@ -192,6 +192,27 @@ pub enum StepName {
     ApplyPreset,
     /// M2 `Command::LowerAllTracks`.
     LowerAll,
+    // Protocol 33 (round 12, waves 3 and 4).
+    /// E2 `Command::SetArp`.
+    SetArp,
+    /// E3 `Command::SetSoundKnob`.
+    SetSoundKnob,
+    /// A2 `Command::DuplicateSection`.
+    DuplicateSection,
+    /// A2 `Command::DeleteSection`.
+    DeleteSection,
+    /// A2 `Command::InsertSpace`.
+    InsertSpace,
+    /// A7 `Command::BounceToAudio` and `Command::BounceTrack`.
+    Bounce,
+    /// M5 `Command::AddFadeOut`.
+    AddFadeOut,
+    /// A8 `Command::SetComp`.
+    SetComp,
+    /// A8 `Command::ClearComp`.
+    ClearComp,
+    /// M7 `StretchChange::TuneStrength` and `StretchChange::TuneScale`.
+    SetClipTune,
 }
 
 impl StepName {
@@ -297,6 +318,16 @@ impl StepName {
             RepeatClips,
             ApplyPreset,
             LowerAll,
+            SetArp,
+            SetSoundKnob,
+            DuplicateSection,
+            DeleteSection,
+            InsertSpace,
+            Bounce,
+            AddFadeOut,
+            SetComp,
+            ClearComp,
+            SetClipTune,
         ];
         // A kind added to the enum and not to the list above does not build.
         for name in &all {
@@ -389,7 +420,17 @@ impl StepName {
                 | PlacePattern
                 | RepeatClips
                 | ApplyPreset
-                | LowerAll => {}
+                | LowerAll
+                | SetArp
+                | SetSoundKnob
+                | DuplicateSection
+                | DeleteSection
+                | InsertSpace
+                | Bounce
+                | AddFadeOut
+                | SetComp
+                | ClearComp
+                | SetClipTune => {}
             }
         }
         all
@@ -564,6 +605,20 @@ pub enum StepWhat {
         from_db: f32,
         to_db: f32,
     },
+    // Protocol 33 (round 12).
+    /// E3 `StepName::SetSoundKnob`: a knob of `track`, percent before and after.
+    SoundKnob {
+        track: TrackRef,
+        knob: SoundKnob,
+        from: f32,
+        to: f32,
+    },
+    /// A2 the steps on a section: the name of its marker, and how many bars (the section's
+    /// length; for `StepName::InsertSpace` the bars put in).
+    Section {
+        name: String,
+        bars: u32,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -609,4 +664,6 @@ pub enum StepPlace {
     PluginWindow {
         strip: StripName,
     },
+    /// Round 12 M5: the master's lane, at the foot of the arrange ("マスター").
+    Master,
 }

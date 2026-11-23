@@ -72,7 +72,7 @@ const rows = () => (contextMenu.open?.entries ?? []).filter((e): e is MenuRow =>
 const labels = () => (contextMenu.open?.entries ?? []).map((e) => (e.kind === "row" ? e.label : "-"));
 
 function clip(id: number, name: string, fromBar: number, toBar: number, take = 1, takes = 1): ClipView {
-  return { id, name, start: (fromBar - 1) * BAR, end: (toBar - 1) * BAR, take, takes, takeId: 100 + id, takeOffset: 0, noteCount: 0, audio: null };
+  return { id, name, start: (fromBar - 1) * BAR, end: (toBar - 1) * BAR, take, takes, takeId: 100 + id, takeOffset: 0, noteCount: 0, audio: null, comp: [] };
 }
 const AUDIO = { id: 7, file: "歌.wav", sampleRate: 48000, bits: 24, channels: 1, frames: 8 * 48000 };
 const vocalClip = (id: number, name: string, fromBar: number, toBar: number) => fakeVocalClip(id, name, (fromBar - 1) * BAR, (toBar - 1) * BAR, fakeAudioClip(AUDIO));

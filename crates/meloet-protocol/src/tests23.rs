@@ -352,9 +352,11 @@ fn selected_sound_and_step_what_json_shape() {
                 name: "Clean Guitar".to_owned(),
                 file: "FluidR3_GM.sf2".to_owned(),
             },
+            knobs: None,
         }),
         json!({"kind": "sound", "track": 1,
-               "sound": {"kind": "sf2", "name": "Clean Guitar", "file": "FluidR3_GM.sf2"}}),
+               "sound": {"kind": "sf2", "name": "Clean Guitar", "file": "FluidR3_GM.sf2"},
+               "knobs": null}),
     );
     let pad = TrackRef {
         number: 4,

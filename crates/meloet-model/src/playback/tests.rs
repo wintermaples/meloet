@@ -87,6 +87,7 @@ fn clip(start: u64, end: u64, offset: i64, take: Take) -> Clip {
             offset,
         }]),
         active: 0,
+        comp: Vec::new(),
     }
 }
 

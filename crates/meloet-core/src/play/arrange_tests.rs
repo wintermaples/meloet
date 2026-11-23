@@ -225,6 +225,8 @@ fn three_clips() -> (Play, ClipId, ClipId, ClipId) {
         muted: false,
         clips: Vec::new(),
         automation: Vec::new(),
+        arp: Default::default(),
+        knobs: Default::default(),
     }));
     let mut ids = Vec::new();
     for (track, origin, key) in [(1, 0, 60), (1, 4 * BAR, 62), (2, 2 * BAR, 40)] {

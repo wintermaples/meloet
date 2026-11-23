@@ -9,11 +9,16 @@
 mod added;
 mod ai;
 mod app;
+mod arp;
 mod audio;
 mod automation;
+mod bounce;
 mod click;
+mod comp;
 mod export;
 mod history;
+mod knobs;
+mod language;
 mod pack;
 mod params;
 mod patterns;
@@ -34,6 +39,7 @@ pub use added::{
 };
 pub use ai::{AiLinkView, AiPort};
 pub use app::{RECENT_SHOWN, RecentSong, UpdatesView};
+pub use arp::{ARP_KEYS_MAX, ARP_OCTAVES_MAX, Arp, ArpRate, ArpShape};
 pub use audio::{
     AUDIO_EXTENSIONS, AudioClipState, AudioClipView, AudioJob, AudioJobKind, AudioWorkView,
     CLIP_CENTS_MAX, CLIP_GAIN_MAX_DB, CLIP_GAIN_MIN_DB, CLIP_SEMITONES_MAX, ClipField, DropMode,
@@ -42,10 +48,13 @@ pub use audio::{
     SelectedClips, SourceTempoView, StretchChange, StretchView,
 };
 pub use automation::{
-    AutoSelection, AutoTarget, AutomationView, LANE_HEADER_LEN, LANE_KIND, LANE_POINT_LEN,
-    LANE_VERSION, LaneError, LaneName, LanePoint, LanePoints, LaneRef, LaneView, WritingLane,
+    AutoSelection, AutoTarget, AutomationView, FADE_OUT_BARS_DEFAULT, FADE_OUT_BARS_MAX,
+    LANE_HEADER_LEN, LANE_KIND, LANE_POINT_LEN, LANE_VERSION, LaneError, LaneHome, LaneName,
+    LanePoint, LanePoints, LaneRef, LaneView, WritingLane,
 };
+pub use bounce::BounceView;
 pub use click::{CLICK_VOLUME_MAX_DB, CLICK_VOLUME_MIN_DB, ClickSound, ClickWhen};
+pub use comp::{AudioTakeView, COMP_ROWS_MAX, CompPiece, TUNE_STRENGTH_MAX, TuneView};
 pub use export::{
     EXPORT_MATCH_LUFS, EXPORT_MATCH_QUIETEST_LUFS, EXPORT_MATCH_TRUE_PEAK_DB,
     EXPORT_MP3_DEFAULT_KBPS, EXPORT_MP3_KBPS, EXPORT_MP3_SAMPLE_RATES, EXPORT_PICTURE_MAX_BYTES,
@@ -54,6 +63,8 @@ pub use export::{
     ExportSolo, ExportStoppedPlugin, ExportTail, ExportView,
 };
 pub use history::{HistoryRow, HistoryView, MeterValue, StepName, StepPlace, StepWhat, StripName};
+pub use knobs::{SOUND_KNOB_DEFAULTS, SoundKnob, SoundKnobsView};
+pub use language::Language;
 pub use pack::{PackFailure, PackFetchView, SoundsView};
 pub use params::{
     EffectName, NamedInsert, ParamEnd, ParamGroup, ParamKind, ParamRef, ParamRow, ParamTable,
@@ -72,14 +83,17 @@ pub use telemetry::{
 };
 
 pub use theme::Theme;
-pub use timeline::{MarkerView, MeterChangeView, TempoPointView, TimelineRef, TimelineView};
+pub use timeline::{
+    INSERT_SPACE_BARS_DEFAULT, INSERT_SPACE_BARS_MAX, MarkerView, MeterChangeView, SectionUse,
+    TempoPointView, TimelineRef, TimelineView,
+};
 pub use vocal::{
     KeptVocals, LATENCY_CLICKS, LatencyDialogView, LatencyFailure, LatencyMeasure, LatencySource,
     LatencyView, RecordFormat, SelectedSound, TrackKindView, VocalInput, VocalRecordingView,
     VocalRef,
 };
 
-pub const PROTOCOL_VERSION: u32 = 32;
+pub const PROTOCOL_VERSION: u32 = 33;
 
 /// Screen → Rust. Intent only; Rust decides what the state becomes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -505,8 +519,10 @@ pub enum Command {
     },
     /// A row of the parameters panel is chosen (a click, ↑ ↓): `SelectedInsert::row` or
     /// `SelectedPlugin::row`. `param` is the parameter's place in the effect's table for an
-    /// effect that comes with meloet, `ParamRow::id` for a plugin. The status line then says
-    /// `StatusMessage::ParamSelected` or `StatusMessage::PluginParamSelected`. `None`, or a
+    /// effect that comes with meloet, `ParamRow::id` for a plugin, and (round 12 E3) the
+    /// knob's place in `SoundKnob::ALL` for a sound that comes with meloet
+    /// (`SoundKnobsView::row`). The status line then says `StatusMessage::ParamSelected`,
+    /// `StatusMessage::PluginParamSelected` or `StatusMessage::SoundKnobSelected`. `None`, or a
     /// number the effect has no parameter for: no row.
     SelectParam {
         param: Option<u32>,
@@ -584,14 +600,17 @@ pub enum Command {
     SelectAllClips,
     /// Delete: every selected clip (`ArrangeView::selected_clips`), as one step.
     DeleteSelected,
-    /// ◂ ▸, T, Shift T on the selected clip. -1 is the take before, 1 the take after.
+    /// ◂ ▸, T, Shift T on the selected clip. -1 is the take before, 1 the take after. On a
+    /// clip with 「いいとこ取り」 (round 12 A8) the comp goes too, in the same step, and the
+    /// take sounds whole.
     StepTake {
         delta: i32,
     },
     /// "テイクを消す" (the right-click menu of a clip, the track menu): the take `clip` shows,
     /// as one step. The clip then shows the take before it (the next one when it was the first),
     /// and the takes after it move up a number. Nothing happens to a clip with one take, while
-    /// recording or counting in, or to a clip that is gone.
+    /// recording or counting in, or to a clip that is gone, nor (round 12 A8) to a clip with
+    /// 「いいとこ取り」 (`ClipView::comp`).
     DeleteTake {
         clip: u32,
     },
@@ -1037,26 +1056,32 @@ pub enum Command {
         missing: MissingRef,
     },
     // Automation (spec 3 Y16, docs/architecture.md 21-5 to 21-11). A lane is named
-    // by its track and target; points by `LaneView::lane_id` and their places in the lane,
+    // by its home (a track, or from protocol 33 the master) and target; points by
+    // `LaneView::lane_id` and their places in the lane,
     // and a command with a `lane` that is no lane's id now does nothing. Moving a fader or a
     // parameter by hand stays what it was (`SetGain`, `SetParam`, …): Rust makes it rest the
     // lane, or write into it while 「● 書く」 is on and the song plays.
     /// 「▸ パン」 of the row under the track's header, and the mark at the right of a row of
     /// the parameters panel: makes the lane, empty and unfolded, as one step. When the track
     /// has the lane already it is unfolded, which is no step. Nothing for a target the track
-    /// does not have (no such insert, an instrument that is no plugin).
+    /// does not have (no such insert, an instrument that is no plugin; from round 12 E3 a
+    /// sound that comes with meloet has `Instrument { param }` for each knob it uses,
+    /// `SoundKnobsView::usable`). The master
+    /// (`LaneHome::Master`, round 12 M5) has a lane of `AutoTarget::Volume` only: for another
+    /// target nothing happens. The master's row at the foot of the arrange is there while
+    /// `MasterView::lanes` is not empty.
     AddLane {
-        track: u32,
+        home: LaneHome,
         target: AutoTarget,
     },
     /// 「帯を消す」: the lane goes with its points, as one step.
     DeleteLane {
-        track: u32,
+        home: LaneHome,
         target: AutoTarget,
     },
     /// ▾ and ▸ of a lane's header. No step.
     FoldLane {
-        track: u32,
+        home: LaneHome,
         target: AutoTarget,
         folded: bool,
     },
@@ -1092,14 +1117,14 @@ pub enum Command {
     /// 「● 書く」 of a lane's header (spec 3, 16-B). No step, not saved; nothing for a lane
     /// that rests.
     SetLaneWrite {
-        track: u32,
+        home: LaneHome,
         target: AutoTarget,
         on: bool,
     },
     /// 「もどす」 of a resting lane, in its header and under the fader: the lane moves its
     /// target again. One step.
     RestoreLane {
-        track: u32,
+        home: LaneHome,
         target: AutoTarget,
     },
     /// 「ここまで戻す」 and Enter on a row of the history band (spec 3, Y19): row `index`
@@ -1451,7 +1476,8 @@ pub enum Command {
         clips: Vec<u32>,
     },
     /// A9 「逆にする」: the shown take of each vocal clip becomes a new take of its audio
-    /// backwards. One step (「逆にする」) once the files are made.
+    /// backwards. One step (「逆にする」) once the files are made. From round 12 A8 a clip
+    /// with 「いいとこ取り」 (`ClipView::comp`) is passed by.
     ReverseClips {
         clips: Vec<u32>,
     },
@@ -1559,6 +1585,119 @@ pub enum Command {
     },
     /// M2 「閉じる」 on `StatusMessage::TooLoud`: not again until the next play.
     DismissTooLoud,
+    // Protocol 33 (round 12, waves 3 and 4). As before: each of them that changes the song is
+    // one step, and does nothing while counting in or recording.
+    /// E2 「アルペジオ」 of the input band (on the keys target), its small window, and the mark
+    /// above 「音源」 on the mixer strip: the track's arpeggio becomes `arp` (`TrackView::arp`),
+    /// as one step for each command (「アルペジオを変える」). `octaves` is put into
+    /// 1..=`ARP_OCTAVES_MAX`. Nothing for a vocal track, or `arp` the track has already.
+    SetArp {
+        track: u32,
+        arp: Arp,
+    },
+    /// E3 a knob of a sound that comes with meloet (`SelectedSound::knobs`), as the mixer's
+    /// knobs: a drag sends `commit: false` (only the sound changes, at most one a frame) and
+    /// `commit: true` when let go (one step, 「音のつまみを変える」); a value typed (a double
+    /// click on the number) is sent with `commit: true` and put into 0..=100 by Rust;
+    /// `CancelMixPreview` (Esc) ends the preview. `instrument` is the sound the screen shows:
+    /// when the track has another sound by now, the command is dropped. Nothing for a knob
+    /// the sound does not use (`SoundKnobsView::usable`).
+    SetSoundKnob {
+        track: u32,
+        instrument: InstrumentKind,
+        knob: SoundKnob,
+        value: f32,
+        commit: bool,
+    },
+    /// E7 「表示 ▸ 音の動きを見せる」 (`WorkspaceView::spectrum`). A meloet setting
+    /// (settings.json), not part of the song, and not a step.
+    SetSpectrum {
+        on: bool,
+    },
+    /// M3 「モノで聞く」 (`WorkspaceView::mono_listen`): the output is left and right mixed
+    /// (over 20 ms), only for listening: not in the song, not kept in the settings, not in an
+    /// export, and off at start. Not a step.
+    SetMonoListen {
+        on: bool,
+    },
+    /// A2 「この区間をすぐ後ろに複製」 of a marker's menu: the section of `marker`
+    /// (`MarkerView::section`) is copied right after itself (the clips cut at its ends; new
+    /// clips sharing the takes, the lane points, tempo points, meter changes and markers), and
+    /// what was after it moves back. One step (「区間を複製」). Only with
+    /// `SectionUse::Usable`; nothing past the song's limit (`StatusMessage::SongTooLong`).
+    /// The selection is let go, and the play line stays.
+    DuplicateSection {
+        marker: u32,
+    },
+    /// A2 「この区間を消して詰める」: everything of the section goes (its marker too) and what
+    /// was after it comes forward. One step (「区間を消して詰める」); otherwise as
+    /// `DuplicateSection`.
+    DeleteSection {
+        marker: u32,
+    },
+    /// A2 「この前に空きを入れる…」 and Enter in its box: everything from the marker's tick on
+    /// (the marker too) moves back by `bars` bars of the meter there, 1..=
+    /// `INSERT_SPACE_BARS_MAX`. One step (「空きを入れる」); otherwise as `DuplicateSection`.
+    InsertSpace {
+        marker: u32,
+        bars: u32,
+    },
+    /// A7 「音のクリップにする」 of the right-click menu of keys clips: the track of `clips`
+    /// sounds alone, through its instrument and inserts (fader 0 dB, pan in the middle, no
+    /// sends, no inserts of the master), from the earliest start to the latest end and its
+    /// tail (10 s at most), in a background job (`AudioWorkView::bounce`). When done, one
+    /// step (「音のクリップにする」): a new vocal track right below with the audio, its name
+    /// 「（元の名前）（音）」, the volume, pan and sends of the track; the track is muted.
+    /// Nothing for clips of more than one track or no keys clip; refused
+    /// (`StatusMessage::BounceBusy`) while an export, the AI link's export or another bounce
+    /// runs or the export dialog is open, and at 64 tracks (`StatusMessage::TooManyTracks`).
+    /// When the job is done: while counting in or recording, the step waits for the end; a
+    /// track that is gone by then, or another song, throws the audio away
+    /// (`StatusMessage::BounceGone`); 64 tracks by then, too (`StatusMessage::TooManyTracks`).
+    BounceToAudio {
+        clips: Vec<u32>,
+    },
+    /// A7 「このトラックを音にする」 of the right-click menu of a keys track's head: as
+    /// `BounceToAudio`, from the first clip's start to the last clip's end. A track with no
+    /// clip: `StatusMessage::NothingToBounce`.
+    BounceTrack {
+        track: u32,
+    },
+    /// A7 「やめる」 of the status line while bouncing: the job stops, what it made is thrown
+    /// away (`StatusMessage::BounceCancelled`).
+    CancelBounce,
+    /// M5 「編集 ▸ 曲の終わりにフェードアウトをつける…」 and Enter in its box: on the master's
+    /// volume lane (made when there is none), a point at `bars` bars (1..=`FADE_OUT_BARS_MAX`)
+    /// before the song's end (the latest clip end, up to the head of a bar; the song's head
+    /// when it is shorter) with the master's volume there as it sounds now (the lane's value
+    /// when the lane moves, else the fader), and one at the end at the bottom (−∞), a
+    /// straight line between; points after that start go, and a lane that rests moves again.
+    /// One step (「フェードアウトをつける」). With no clip: `StatusMessage::FadeOutNoClips`.
+    AddFadeOut {
+        bars: u32,
+    },
+    /// A8 the end of a drag over a take's row of the band 「いいとこ取り」: the clip's comp
+    /// becomes `pieces` (`ClipView::comp`), one step (「いいとこ取り」). `span` is the clip's
+    /// start and end as the screen drew the band: when the clip has another start or end by
+    /// now, or `pieces` break the rules of `CompPiece` (the first at 0, in the order of
+    /// `from`, inside the clip, no two in a row of one take) or name no take of the clip,
+    /// nothing happens. Only for a vocal clip of two takes or more. The takes do not change.
+    SetComp {
+        clip: u32,
+        span: TickSpan,
+        pieces: Vec<CompPiece>,
+    },
+    /// A8 「もとに戻す」 of the band: the comp goes, and the shown take sounds whole. One step
+    /// (「いいとこ取りを外す」). Nothing for a clip with no comp.
+    ClearComp {
+        clip: u32,
+    },
+    /// D4 「ことば / Language」 of the settings: kept in the settings (settings.json), and
+    /// `WorkspaceView::language` follows; the screen then loads itself again. Not while
+    /// counting in or recording (the row is disabled then). Not a step.
+    SetLanguage {
+        language: Language,
+    },
 }
 
 /// A note of `Command::AddNotesAt`. `start` is a song position.
@@ -1712,6 +1851,10 @@ pub enum ValueField {
     Percent,
     /// P3 「ばらつき」, ±1..=32 (`Command::RandomVelocity::amount`).
     Amount,
+    /// Round 12 (protocol 33): a count of bars typed into a box, with its `range` ("1〜64"):
+    /// A2 「この前に空きを入れる…」 (1..=`INSERT_SPACE_BARS_MAX`) and M5 「フェードアウト」
+    /// (1..=`FADE_OUT_BARS_MAX`).
+    Bars,
 }
 
 /// A strip of the mixer. The returns are always these two, and there is one master.
@@ -2188,6 +2331,8 @@ pub struct TrackView {
     pub lanes: Vec<LaneView>,
     /// In order of start, never overlapping.
     pub clips: Vec<ClipView>,
+    /// Round 12 E2 「アルペジオ」 (`Command::SetArp`). Off for a vocal track.
+    pub arp: Arp,
 }
 
 /// A return strip. It has no sends, no instrument and no clips; its S and ● are unusable.
@@ -2211,6 +2356,9 @@ pub struct MasterView {
     /// −100 to 100, as a track's (mock F4-Mixer).
     pub pan: i8,
     pub slots: SlotsView,
+    /// Round 12 M5: the master's lanes, of its volume only (`LaneHome::Master`). While there
+    /// is one, the arrange has the row 「マスター」 at the foot of the tracks.
+    pub lanes: Vec<LaneView>,
 }
 
 /// The parameters panel: the selected insert or instrument, and for an effect that comes
@@ -2268,6 +2416,10 @@ pub struct ClipView {
     /// A clip of a vocal track: `take_id` names a take of audio, which `take_notes` does not
     /// have, and `note_count` is 0. `None` for a clip of notes.
     pub audio: Option<AudioClipView>,
+    /// Round 12 A8 「いいとこ取り」 of a vocal clip, every piece; empty when it has none (and
+    /// always for a clip of notes). While it is not empty the pieces sound, not `take` alone,
+    /// and 「テイクを消す」 is disabled.
+    pub comp: Vec<CompPiece>,
 }
 
 /// The sounds that come with meloet (spec 3 「最初から入っている音色をふやす」（84）), in the
@@ -2701,6 +2853,14 @@ pub struct WorkspaceView {
     /// E1 「表示 ▸ 鳴っている音を光らせる」 (`Command::SetNoteGlow`): while playing, the notes
     /// the play line is on light up in the piano roll.
     pub note_glow: bool,
+    /// E7 「表示 ▸ 音の動きを見せる」 (`Command::SetSpectrum`): the 24 bars left of 「マスター」
+    /// in the top band (the telemetry's `spectrum`).
+    pub spectrum: bool,
+    /// M3 「モノで聞く」 is on (`Command::SetMonoListen`). Not saved; off at start.
+    pub mono_listen: bool,
+    /// D4 the language the settings name (`Command::SetLanguage`). The screen loads itself
+    /// again when it differs from `HelloReply::language`.
+    pub language: Language,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -3539,6 +3699,8 @@ pub enum StatusMessage {
     /// います". Not said when `MixerPassesBy` is.
     AutomationMoving {
         tracks: Vec<TrackRef>,
+        /// Round 12 M5: the master's fader too (named after the tracks).
+        master: bool,
     },
     /// Mod Shift Z with no step to redo (not in spec 6; after `NothingToUndo`):
     /// "やりなおせる手がありません。"
@@ -3803,6 +3965,47 @@ pub enum StatusMessage {
     ClipWorkFailed {
         count: u32,
     },
+    // Protocol 33 (round 12, waves 3 and 4).
+    /// E3 a row of the knobs is chosen (`SoundKnobsView::row`), as `ParamSelected`: "1 ピアノ ・
+    /// 「明るさ」をえらんでいます".
+    SoundKnobSelected {
+        loop_bars: Option<BarSpan>,
+        track: TrackRef,
+        knob: SoundKnob,
+    },
+    /// M3 while 「モノで聞く」 is on: 「モノで聞いています」. Said when it is turned on and
+    /// again in place of the summary while it stays on.
+    MonoListening,
+    /// A2 the song would pass its limit (`MAX_TICK`): nothing was done.
+    SongTooLong,
+    /// A7 the audio was put on its new track (`track`).
+    Bounced {
+        track: TrackRef,
+    },
+    /// A7 `Command::CancelBounce`: nothing was made.
+    BounceCancelled,
+    /// A7 the job could not make the audio: nothing was made.
+    BounceFailed {
+        reason: ExportFailure,
+    },
+    /// A7 the track the audio was made from was deleted meanwhile: the audio was thrown
+    /// away.
+    BounceGone,
+    /// A7 not now: an export, the AI link's export or another bounce runs, or the export
+    /// dialog is open (one background job at a time).
+    BounceBusy,
+    /// A7 `Command::BounceTrack` on a track with no clip.
+    NothingToBounce,
+    /// A7 `Command::OpenExport` while a bounce runs: the dialog does not open.
+    ExportWaitsForBounce,
+    /// M5 「● 書く」 of the master's lane is on and the song plays, as `AutomationWriting`.
+    MasterAutomationWriting,
+    /// M5 the master's fader was moved by hand, as `AutomationRested`.
+    MasterAutomationRested,
+    /// M5 「もどす」 of the master's lane, as `AutomationRestored`.
+    MasterAutomationRestored,
+    /// M5 `Command::AddFadeOut` in a song with no clip: there is no end to fade to.
+    FadeOutNoClips,
 }
 
 /// The selected notes of the piano roll, for the status line.
@@ -3990,6 +4193,9 @@ pub struct HelloReply {
     pub protocol_version: u32,
     pub ok: bool,
     pub mono_us: u64,
+    /// Round 12 D4: the language of the screen, decided before its first paint (with the
+    /// page's `lang`).
+    pub language: Language,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -4021,3 +4227,5 @@ mod tests30;
 mod tests31;
 #[cfg(test)]
 mod tests32;
+#[cfg(test)]
+mod tests33;

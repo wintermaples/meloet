@@ -762,6 +762,7 @@ fn converted(
     let out = match target.format {
         ExportFormat::Wav => read_wav(&target.path),
         ExportFormat::Flac => read_flac(&target.path).1,
+        ExportFormat::Mp3 => unreachable!("mp3 is not a format of this test"),
     };
     (lufs, peak, out)
 }

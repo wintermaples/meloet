@@ -16,12 +16,16 @@ use crate::ai::{
     AiAnswer, AiAsk, AiBusy, AiDone, AiEffect, AiInstrument, AiMeasure, AiOutcome, AiRefusal,
     AiRender, AiRenderWhat, AiSong, screen_allowed, screen_no_step,
 };
-use crate::export::{ExportJob, ExportTarget};
+use crate::export::{ExportJob, ExportTarget, Measuring};
 use crate::play::ai::{AiPoints, AiPut, AiWrote};
 use meloet_protocol::ExportTail;
 
 /// Outcomes of asks with a ticket that are kept for the AI link to read.
 const OUTCOMES: usize = 16;
+
+/// A track a measurement renders alone: its number and name in the song, and whether the
+/// song mutes it.
+pub type AloneTrack = (u32, String, bool);
 
 #[derive(Debug, Default)]
 pub(super) struct AiSide {
@@ -427,15 +431,47 @@ impl Model {
         Ok((doc, named))
     }
 
-    /// A job of the export that renders `ask` for its levels, with this id.
-    /// The tracks rendered alone come after the mix, as numbered and named in the song.
+    /// A job of the export that renders `ask` for its levels, with this id, and the tracks
+    /// rendered alone after the mix.
     pub fn ai_measure_job(
         &self,
         ask: &AiMeasure,
         id: u64,
-    ) -> Result<(ExportJob, Vec<(u32, String)>), AiRefusal> {
+    ) -> Result<(ExportJob, Vec<AloneTrack>), AiRefusal> {
         self.ai_render_free()?;
-        let (doc, named) = self.ai_tracks(ask.tracks.as_deref())?;
+        let (doc, mixed) = self.ai_tracks(ask.tracks.as_deref())?;
+        let named = match &ask.alone {
+            Some(alone) => self.ai_tracks(Some(alone))?.1,
+            None => mixed,
+        };
+        let song = &self.play.song().doc;
+        let mut alone = Vec::new();
+        let mut muted = Vec::new();
+        for (n, _) in &named {
+            let track = &song.tracks[*n as usize - 1];
+            if doc.track(track.id).is_none() {
+                return Err(AiRefusal::NoSuchTrack(*n));
+            }
+            alone.push(track.id);
+            muted.push(track.muted);
+        }
+        let analysis = ask.analysis.as_ref();
+        let mut compare = Vec::new();
+        for &n in analysis.map_or(&[][..], |a| &a.compare) {
+            let at = (named.iter().position(|(m, _)| *m == n)).ok_or(AiRefusal::NoSuchTrack(n))?;
+            if !compare.contains(&at) {
+                compare.push(at);
+            }
+        }
+        let mut cuts: Vec<u64> = (analysis.map_or(&[][..], |a| &a.cuts).iter())
+            .copied()
+            .filter(|&t| t > ask.span.start() && t < ask.span.end())
+            .collect();
+        cuts.sort_unstable();
+        cuts.dedup();
+        let named = (named.into_iter().zip(muted))
+            .map(|((n, name), muted)| (n, name, muted))
+            .collect();
         let scene = self.export_scene();
         let job = ExportJob {
             id,
@@ -446,7 +482,13 @@ impl Model {
             realtime: false,
             skip: scene.stopped_plugins.iter().map(|p| p.slot).collect(),
             sample_rate: scene.sample_rate,
-            measure: true,
+            measure: Some(Measuring {
+                alone,
+                ignore_mute: ask.ignore_mute,
+                bands: analysis.map(|a| a.bands),
+                compare,
+                cuts,
+            }),
         };
         Ok((job, named))
     }
@@ -522,7 +564,7 @@ impl Model {
             realtime: false,
             skip: scene.stopped_plugins.iter().map(|p| p.slot).collect(),
             sample_rate: scene.sample_rate,
-            measure: false,
+            measure: None,
         };
         let target = ExportTarget {
             path: ask.to.clone(),

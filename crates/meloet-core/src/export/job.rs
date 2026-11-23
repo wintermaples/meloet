@@ -16,6 +16,7 @@ use std::time::{Duration, Instant};
 use meloet_model::{Doc, InstrumentRef, PluginPlace, TickRange, TrackId};
 use meloet_protocol::{EXPORT_TAIL_MAX_S, ExportFailure, ExportTail};
 
+use super::analysis::{self, Heard, Listener};
 use super::render::{ExportEngine, Plugs};
 use super::sink::{self, SinkSpec};
 use super::told::{KnownPlugins, Told};
@@ -169,6 +170,8 @@ struct Rendered {
     /// The track it is, for 「トラックごと」.
     name: Option<String>,
     levels: PassLevels,
+    /// What a job that measures heard.
+    heard: Option<Heard>,
 }
 
 fn go(
@@ -180,16 +183,32 @@ fn go(
 ) -> Result<(), Ended> {
     let job = &setup.job;
     fs::create_dir_all(&setup.work)?;
-    if job.measure {
+    if job.measure.is_some() {
         use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(&setup.work, fs::Permissions::from_mode(0o700))?;
     }
     let mut target = None;
-    let rendered = render(&setup, targets, stop, tell, &mut target)?;
-    if job.measure {
+    let mut rendered = render(&setup, targets, stop, tell, &mut target)?;
+    if let Some(measure) = &job.measure {
+        let heard: Vec<Heard> = (rendered.iter_mut())
+            .map(|r| r.heard.take().unwrap_or_default())
+            .collect();
+        let analysis = (measure.bands.is_some() || !measure.cuts.is_empty()).then(|| {
+            let bands = (measure.bands)
+                .map_or_else(Vec::new, |layout| analysis::bands(layout, job.sample_rate));
+            Box::new(analysis::gather(
+                bands,
+                job.sample_rate,
+                &heard,
+                &measure.compare,
+                job.span,
+                &measure.cuts,
+            ))
+        });
         tell(ExportNews::Measured {
             job: job.id,
             passes: rendered.iter().map(|r| r.levels).collect(),
+            analysis,
         });
         return Ok(());
     }
@@ -305,11 +324,21 @@ fn render(
     engine.open_files();
 
     let each_track = (doc.tracks.iter()).map(|t| Some((t.id, t.name.clone())));
-    let passes: Vec<Option<(TrackId, String)>> = match (job.per_track, job.measure) {
-        (true, true) => std::iter::once(None).chain(each_track).collect(),
-        (true, false) => each_track.collect(),
-        (false, _) => vec![None],
+    let passes: Vec<Option<(TrackId, String)>> = match (&job.measure, job.per_track) {
+        (Some(measure), _) => {
+            let alone = (measure.alone.iter()).filter_map(|id| doc.track(*id));
+            let alone = alone.map(|t| Some((t.id, t.name.clone())));
+            std::iter::once(None).chain(alone).collect()
+        }
+        (None, true) => each_track.collect(),
+        (None, false) => vec![None],
     };
+    let cuts: Vec<u64> = (job.measure.iter())
+        .flat_map(|m| m.cuts.iter())
+        .map(|&tick| frames_to(&engine, job.span, tick))
+        .collect();
+    let bands = (job.measure.as_ref().and_then(|m| m.bands))
+        .map(|layout| analysis::bands(layout, job.sample_rate));
     let mut watch = Watch {
         job: job.id,
         passes: passes.len() as u64,
@@ -328,9 +357,22 @@ fn render(
     let result: Result<(), Ended> = (|| {
         for (i, pass) in passes.into_iter().enumerate() {
             if let Some((track, _)) = &pass {
+                let unmuted;
+                let doc = match &job.measure {
+                    Some(m) if m.ignore_mute => {
+                        unmuted = unmute(doc, *track);
+                        &unmuted
+                    }
+                    _ => doc,
+                };
                 let solo = Told::of(doc, Some(*track), &setup.known, &job.skip);
                 engine.set_silent(solo.silent());
             }
+            let listen = job.measure.as_ref().map(|m| {
+                let keep = i > 0 && m.compare.contains(&(i - 1));
+                let bands = bands.as_deref().map(|b| (b, keep));
+                Listener::new(job.sample_rate, bands, &cuts)
+            });
             watch.pass = i as u64;
             let path = setup.work.join(format!("pass-{i}.wav"));
             let mut each = |written: u64, peak: f32, over: u32| -> Result<(), Ended> {
@@ -349,16 +391,18 @@ fn render(
                 watch.saw(written, peak, over, tell);
                 Ok(())
             };
-            let levels = render_pass(&mut engine, job, &path, i > 0, realtime, &mut each)?;
+            let (levels, heard) =
+                render_pass(&mut engine, job, &path, i > 0, realtime, &mut each, listen)?;
             watch.over_before = watch.over;
             watch.longest = watch.longest.max(levels.frames);
-            if job.measure {
+            if job.measure.is_some() {
                 let _ = fs::remove_file(&path);
             }
             rendered.push(Rendered {
                 path,
                 name: pass.map(|(_, name)| name),
                 levels,
+                heard,
             });
         }
         Ok(())
@@ -379,9 +423,23 @@ fn render(
 /// How many frames the range has: from where the engine starts to play to the first frame
 /// at or past the range's end, as the engine counts them.
 fn range_frames(engine: &ExportEngine, span: TickRange) -> u64 {
+    frames_to(engine, span, span.end())
+}
+
+/// The frames from the range's start to `tick`, as the engine counts them.
+fn frames_to(engine: &ExportEngine, span: TickRange, tick: u64) -> u64 {
     let map = engine.map();
     let from = map.seconds_at(span.start() as f64);
-    map.frame_of(span.end() as f64, from, f64::from(engine.rate()))
+    map.frame_of(tick as f64, from, f64::from(engine.rate()))
+}
+
+/// The song with `track` not muted (a lane that moves its mute still does).
+fn unmute(doc: &Doc, track: TrackId) -> Doc {
+    let mut doc = doc.clone();
+    for t in doc.tracks.iter_mut().filter(|t| t.id == track) {
+        Arc::make_mut(t).muted = false;
+    }
+    doc
 }
 
 /// What 「書き出す前のたしかめ」 is told.
@@ -470,6 +528,8 @@ struct Taker {
     squares: f64,
     written: u64,
     over: bool,
+    /// Hears the range for the AI link.
+    listen: Option<Listener>,
 }
 
 fn peak_of(samples: &[f32]) -> f32 {
@@ -540,6 +600,9 @@ impl Taker {
         let of_range = self.range_left.min((block.len() / 2) as u64);
         self.range_left -= of_range;
         let (range, after) = block.split_at(of_range as usize * 2);
+        if let Some(listen) = &mut self.listen {
+            listen.feed(range);
+        }
         self.write(range)?;
         if self.range_left > 0 || self.head_left > 0 {
             return Ok(());
@@ -570,7 +633,7 @@ impl Taker {
 
 /// Plays the range once and writes it to `path`. `each` is called after every block with
 /// the frames of the range written so far, the largest sample and the places over 0 dB.
-/// Returns the frames of the file and what was in them.
+/// Returns the frames of the file and what was in them, and what `listen` heard of the range.
 fn render_pass(
     engine: &mut ExportEngine,
     job: &ExportJob,
@@ -578,7 +641,8 @@ fn render_pass(
     anew: bool,
     realtime: bool,
     each: &mut dyn FnMut(u64, f32, u32) -> Result<(), Ended>,
-) -> Result<PassLevels, Ended> {
+    listen: Option<Listener>,
+) -> Result<(PassLevels, Option<Heard>), Ended> {
     let range = range_frames(engine, job.span);
     engine.play_from(job.span.start(), anew);
     let mut taker = Taker {
@@ -596,6 +660,7 @@ fn render_pass(
         squares: 0.0,
         written: 0,
         over: false,
+        listen,
     };
     let started = Instant::now();
     let block = engine.block() as u64;
@@ -630,12 +695,16 @@ fn render_pass(
         Ok(()) => {
             let frames = taker.out.finish()?;
             let samples = taker.written.saturating_mul(2).max(1);
-            Ok(PassLevels {
+            let heard = taker.listen.map(Listener::finish);
+            let levels = PassLevels {
                 peak: taker.peak,
                 rms: (taker.squares / samples as f64).sqrt() as f32,
                 over: taker.places.count,
                 frames,
-            })
+                lufs: heard.as_ref().and_then(|h| h.lufs),
+                lufs_short_max: heard.as_ref().and_then(|h| h.lufs_short_max),
+            };
+            Ok((levels, heard))
         }
         Err(e) => {
             taker.out.abandon();

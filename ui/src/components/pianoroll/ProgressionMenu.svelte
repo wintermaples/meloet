@@ -3,7 +3,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import type { MusicalScale } from "../../bridge";
-  import { t } from "../../text/ja";
+  import { t } from "../../text";
   import { PROGRESSIONS, progressionText, type Progression } from "./chords";
 
   interface Props {

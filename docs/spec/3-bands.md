@@ -462,6 +462,11 @@ From the top, the screen has the transport, the input meter, the arrange, the op
   - Leaving 0, the clip takes the song's scale and keeps it; 「いまのスケールにする」 takes it again (disabled at 0 and when it already has that scale). Where a voice sounds its pitch moves toward the nearest note of the scale by distance × strength, smoothed over 50 ms; where no voice sounds nothing moves. It works with semitones, cents, 「声の感じを保つ」 and 「曲のテンポについていく」 (applied after semitones and cents), and the audio is made in the background like any stretch. Tip on the label: 「ひとりの声や、音が1つずつの楽器に使えます」.
   - Disabled when the file is missing, for a clip with 「いいとこ取り」, and while counting in or recording. Step 「音程を寄せる」.
 - **D2**: an AppImage can be built as a trial; it registers no menu entry and no `.meloet` type, and opens a song given as its argument. `meloet --mcp [args]` runs the AI bridge (the same as `meloet-mcp`). Not published until the owner decides (open question B-98-2).
+- **D4, English wording**:
+  - 「表示」 has 「ことば / Language ▸」 after 「テーマ ▸」, with 「日本語」 and 「English」 (the chosen one checked; the row reads the same in both languages). Kept as a meloet setting, not in the song; not a step. Disabled while counting in or recording. At the first start (nothing chosen yet) it follows the PC's language: `LC_ALL`, then `LC_MESSAGES`, then `LANG`, Japanese when it starts with `ja`, English otherwise.
+  - Choosing loads the screen again in that language (the window, the sound and the song stay as they are).
+  - In English: all the wording of the screen, the step names, the term tips, the titles of the PC file windows, and the names of a new song, a new track and a new vocal track (decided by the language when they are made; they do not change later). 「使い方をひらく」 opens the English user guide. Not changed: the names inside a song's folder (`音`, `work/音`), names already in a song, logs, and the sentences of the AI link.
+  - Japanese is the source; English follows it. Where English is longer than the room, it is reworded shorter; nothing is widened.
 
 ## Adding up the piano roll height
 

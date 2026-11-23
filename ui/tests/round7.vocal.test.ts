@@ -12,7 +12,7 @@ import ParamsPanel from "../src/components/params/ParamsPanel.svelte";
 import StatusLine from "../src/components/StatusLine.svelte";
 import { Levels } from "../src/gl/levels";
 import { watchSlots, type GlSlot } from "../src/gl/slot";
-import { t } from "../src/text/ja";
+import { t } from "../src/text";
 import * as app from "./fake-app.svelte";
 
 vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));

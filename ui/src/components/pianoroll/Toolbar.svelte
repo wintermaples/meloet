@@ -9,7 +9,7 @@
   import { menuOpened } from "../../lib/menu";
   import { term, tip } from "../../lib/tip.svelte";
   import { current, send } from "../../state/app.svelte";
-  import { t, type TextKey } from "../../text/ja";
+  import { t, type TextKey } from "../../text";
   import ChoiceMenu from "../ChoiceMenu.svelte";
   import { toolbarWithGhost, type ToolbarParts } from "../fit";
   import { gridText, scaleName, termParts, textParts } from "../format";

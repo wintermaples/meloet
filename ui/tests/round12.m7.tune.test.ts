@@ -8,7 +8,7 @@ import { fakeScene, reduceAudio, type FakeState } from "../src/bridge/fake";
 import ParamsPanel from "../src/components/params/ParamsPanel.svelte";
 import { cancelDrag, dragReading } from "../src/components/pianoroll/view.svelte";
 import { hideTip, TIP_DELAY_MS, tipView } from "../src/lib/tip.svelte";
-import { t } from "../src/text/ja";
+import { t } from "../src/text";
 import * as app from "./fake-app.svelte";
 
 vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));

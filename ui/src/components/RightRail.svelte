@@ -3,7 +3,7 @@
 <script lang="ts">
   import type { Band } from "../bridge";
   import { current, send } from "../state/app.svelte";
-  import { t } from "../text/ja";
+  import { t } from "../text";
   import { metrics } from "./metrics.svelte";
   import ParamsPanel from "./params/ParamsPanel.svelte";
   import { allRows, rowCount } from "./params/paramRows";

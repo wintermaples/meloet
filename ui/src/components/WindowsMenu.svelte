@@ -4,7 +4,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import type { Command, PluginWindowView } from "../bridge";
-  import { t } from "../text/ja";
+  import { t } from "../text";
   import WindowMark from "./WindowMark.svelte";
 
   interface Props {

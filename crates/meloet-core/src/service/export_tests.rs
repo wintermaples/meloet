@@ -410,7 +410,7 @@ fn three_takes(place: &Place) -> (Doc, meloet_model::ClipId) {
 
     let doc = Doc::new_default();
     let doc = (mixer::remove_effect(&doc, StripId::Master, 0).unwrap()).doc;
-    let (e, vocals) = edit::add_vocal_track(&doc, None).unwrap();
+    let (e, vocals) = edit::add_vocal_track(&doc, None, meloet_model::Language::Ja).unwrap();
     let mut doc = e.doc;
     let mut clip = None;
     for n in 1..=3u8 {

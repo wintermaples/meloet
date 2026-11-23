@@ -5,7 +5,7 @@
   import { onMount } from "svelte";
   import { ARP_OCTAVES_MAX, ARP_RATES, ARP_SHAPES, type Arp, type ArpRate, type ArpShape } from "../bridge";
   import { send } from "../state/app.svelte";
-  import { t, type TextKey } from "../text/ja";
+  import { t, type TextKey } from "../text";
 
   interface Props {
     track: number;

@@ -9,7 +9,7 @@ import { standInTip } from "../src/components/sounds";
 import StatusLine from "../src/components/StatusLine.svelte";
 import TrackHeads from "../src/components/TrackHeads.svelte";
 import { closeMenu } from "../src/lib/menu";
-import { t } from "../src/text/ja";
+import { t } from "../src/text";
 import * as app from "./fake-app.svelte";
 
 vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));

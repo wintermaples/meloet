@@ -3,7 +3,7 @@
      Focus with Tab; ↑ ↓ by 1 dB, 0.1 dB with Shift, Home for 0.0 dB, Enter to type (spec 3 (86-7); the box is in the value place of Strip). -->
 <script lang="ts">
   import type { MixControl } from "./control.svelte";
-  import { t } from "../../text/ja";
+  import { t } from "../../text";
   import { metrics } from "../metrics.svelte";
   import { dbToFrac, SCALE_MARKS } from "./scale";
 

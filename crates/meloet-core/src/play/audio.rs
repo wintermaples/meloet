@@ -568,7 +568,7 @@ impl Play {
             plan => plan,
         };
         let (edit, made): (_, Vec<ImportedClip>) =
-            meloet_model::import_audio(self.doc(), files, plan, tick).ok()?;
+            meloet_model::import_audio(self.doc(), files, plan, tick, self.names).ok()?;
         if edit.doc.tracks.len() > super::MAX_TRACKS {
             return None;
         }

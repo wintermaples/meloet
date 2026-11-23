@@ -1,7 +1,7 @@
 // The metronome window's numbers (round 12 R3): the volume bar and 「テンポを手拍子で」. Pure; knows no DOM.
 
 import { CLICK_VOLUME_MAX_DB, CLICK_VOLUME_MIN_DB } from "../bridge";
-import { t } from "../text/ja";
+import { t } from "../text";
 
 /** The taps the tempo is worked out from, at most. */
 export const TAP_KEEP = 8;

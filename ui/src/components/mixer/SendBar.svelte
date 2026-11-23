@@ -3,7 +3,7 @@
      Keys (spec 3 (86-7)): ↑ ↓ by 1 dB, 0.1 dB with Shift, Home for the amount when the track was added (TrackView.sendDefaults), Enter to type. -->
 <script lang="ts">
   import type { SendBus } from "../../bridge";
-  import { t } from "../../text/ja";
+  import { t } from "../../text";
   import { metrics } from "../metrics.svelte";
   import { mixControl } from "./control.svelte";
   import ValueField from "../params/ValueField.svelte";

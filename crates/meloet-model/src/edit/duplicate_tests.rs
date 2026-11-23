@@ -320,7 +320,7 @@ fn undo_takes_the_copy_away_and_redo_brings_it_back() {
 
 #[test]
 fn a_vocal_track_is_copied_with_its_input_and_its_audio() {
-    let (e, track) = add_vocal_track(&Doc::new_default(), None).unwrap();
+    let (e, track) = add_vocal_track(&Doc::new_default(), None, crate::Language::Ja).unwrap();
     let doc = set_vocal_input(&e.doc, track, VocalInput::Stereo12)
         .unwrap()
         .doc;
@@ -451,7 +451,7 @@ fn a_track_that_is_not_there_or_no_id_left() {
 /// has it as it is.
 #[test]
 fn the_arpeggio_the_knobs_a_comp_and_a_tune_are_copied() {
-    let (e, vocal) = add_vocal_track(&Doc::new_default(), None).unwrap();
+    let (e, vocal) = add_vocal_track(&Doc::new_default(), None, crate::Language::Ja).unwrap();
     let recording = VocalRecording {
         track: vocal,
         audio: NewAudio {

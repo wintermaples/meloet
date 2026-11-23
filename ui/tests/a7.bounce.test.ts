@@ -10,7 +10,7 @@ import { bounceable } from "../src/components/arrange/bounce";
 import { contextMenu, type MenuRow } from "../src/components/menu/contextMenu.svelte";
 import StatusLine from "../src/components/StatusLine.svelte";
 import { trackContextMenu } from "../src/components/trackMenu";
-import { t } from "../src/text/ja";
+import { t } from "../src/text";
 import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 import * as app from "./fake-app.svelte";
 

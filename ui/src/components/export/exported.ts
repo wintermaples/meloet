@@ -1,7 +1,7 @@
 // What the dialog 「書き出しました」 shows when an export is done (round 12 E9). Pure functions that do not know the DOM.
 // Core holds whether it is open: it is open while `export.run` is `done`, and `closeExport` closes it.
 import type { AppState, ExportRunView } from "../../bridge";
-import { t } from "../../text/ja";
+import { t } from "../../text";
 import { dbNumber, SILENT_DB } from "../format";
 import { bitsOf, peakNumber } from "./exportText";
 

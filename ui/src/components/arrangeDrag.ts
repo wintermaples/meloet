@@ -4,7 +4,7 @@
 // Coordinates are the same as arrangeGeom.ts (x from the left edge of the visible part, y from the top of the track rows, CSS px).
 
 import { REPEAT_COUNT_MAX, type ClipEdge, type ClipView, type Command, type TrackView } from "../bridge";
-import { t } from "../text/ja";
+import { t } from "../text";
 import { blockAt, clipBox, trackRowAt, type Box, type LaneDims, type View } from "./arrangeGeom";
 import { positionText, signed, snapTick } from "./pianoroll/geom";
 import { barFloat, barsMap } from "../time/bars";

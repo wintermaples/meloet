@@ -15,7 +15,7 @@ import {
   type ShelfView,
   type SoundRef,
 } from "../bridge";
-import { t, type TextKey } from "../text/ja";
+import { t, type TextKey } from "../text";
 import { rowHasKey, sameEffect, sameSound } from "./sounds";
 
 /** "patterns": the drum patterns (P4), only in the shelf of a new track (shelfPatterns.ts). */

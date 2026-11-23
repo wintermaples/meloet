@@ -41,7 +41,7 @@
   import { bounceable } from "./arrange/bounce";
   import { clipEdit, renameCommand, startClipRename, stopClipRename } from "./clipName.svelte";
   import { current, send } from "../state/app.svelte";
-  import { t } from "../text/ja";
+  import { t } from "../text";
   import * as CD from "./arrangeDrag";
   import * as G from "./arrangeGeom";
   import { gridText, tempoText, termParts, textParts } from "./format";

@@ -23,7 +23,7 @@ import { reduceA7 } from "./fakeA7";
 import { reduceA9 } from "./fakeA9";
 import { fakeCompWindow, fakeTakes, reduceComp } from "./fakeComp";
 import { fakeUserPreset, presetOf, reducePresets } from "./fakePresets";
-import { FAKE_ARP_OFF, fakeKnobs, fakeSetSoundKnob, fakeSpectrum, reduceArp, reduceMonoListen, reduceSpectrum } from "./fakeWave3";
+import { FAKE_ARP_OFF, fakeKnobs, fakeSetSoundKnob, fakeSpectrum, languageFromUrl, reduceArp, reduceLanguage, reduceMonoListen, reduceSpectrum } from "./fakeWave3";
 import { fakeFadeOut } from "./fakeFade";
 import {
   CLIP_CENTS_MAX,
@@ -5765,6 +5765,8 @@ export function createFakeTransport(initial?: AppState): Transport {
   let state = initial ?? scene?.state ?? fakeState();
   const urlTheme = initial || scene ? null : themeFromUrl();
   if (urlTheme) state.workspace.theme = urlTheme;
+  const urlLanguage = initial ? null : languageFromUrl();
+  if (urlLanguage) state.workspace.language = urlLanguage;
   const bands = scene?.bands ?? new FakeBands((state.workspace.viewportHeight * 100) / state.workspace.scale);
   if (!scene) for (const l of state.workspace.layout.lower) bands.bottom.push(l.band);
   if (!scene) bands.side = [...state.workspace.layout.rightOpen];
@@ -5798,7 +5800,7 @@ export function createFakeTransport(initial?: AppState): Transport {
 
   return {
     async hello(protocolVersion) {
-      return { protocolVersion: PROTOCOL_VERSION, ok: protocolVersion === PROTOCOL_VERSION, monoUs: nowUs(), language: "ja" };
+      return { protocolVersion: PROTOCOL_VERSION, ok: protocolVersion === PROTOCOL_VERSION, monoUs: nowUs(), language: state.workspace.language };
     },
     async subscribe(onMessage, onTelemetry) {
       listener = onMessage;
@@ -5838,6 +5840,7 @@ export function createFakeTransport(initial?: AppState): Transport {
         reduceUpdates(state, command) ??
         reduceSpectrum(state, command) ??
         reduceMonoListen(state, command) ??
+        reduceLanguage(state, command) ??
         reduceClips27(state, command) ??
         reduceComp(state, command, FAKE_AUDIO) ??
         reduceA9(state, command, FAKE_AUDIO) ??

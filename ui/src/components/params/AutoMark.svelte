@@ -3,7 +3,7 @@
      (writing automation). Inserts of returns A and B and of the master make no band, so they are disabled
      (docs/history/design-notes.ja.md A-19, item 7). -->
 <script lang="ts">
-  import { t } from "../../text/ja";
+  import { t } from "../../text";
 
   let { on, usable, add }: { on: boolean; usable: boolean; add: () => void } = $props();
 </script>

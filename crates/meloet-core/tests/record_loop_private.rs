@@ -79,6 +79,7 @@ fn loop_recording_makes_one_take_per_lap_with_notes() {
     let config = pw.dir().join("config-meloet");
     record_timing::write_settings(&config, private_pw::SINK);
     let core = Core::start(CoreOptions {
+        pc_language: meloet_protocol::Language::Ja,
         config_dir: Some(config),
         measure_dir: None,
         midi: Some(midi),

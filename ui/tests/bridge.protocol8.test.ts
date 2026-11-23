@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createFakeTransport, fakeScene } from "../src/bridge/fake";
 import type { AppState, Change, Command, ServerMessage } from "../src/bridge/types";
-import { t } from "../src/text/ja";
+import { t } from "../src/text";
 import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 
 const BAR = 4 * TPQ;

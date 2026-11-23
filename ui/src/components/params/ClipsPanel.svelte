@@ -6,7 +6,7 @@
 <script lang="ts">
   import { CLIP_CENTS_MAX, CLIP_SEMITONES_MAX, type SelectedClips, type StretchChange } from "../../bridge";
   import { current, send } from "../../state/app.svelte";
-  import { STATUS_JOIN, t } from "../../text/ja";
+  import { STATUS_JOIN, t } from "../../text";
   import { dbNumber, textParts } from "../format";
   import { parseDb } from "../mixer/scale";
   import { stripName } from "../mixer/stripName";

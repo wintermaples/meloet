@@ -8,7 +8,7 @@ import {
   type InstrumentKind,
   type SoundKnob,
 } from "../../bridge/types";
-import { t } from "../../text/ja";
+import { t } from "../../text";
 
 /** Which knob of which track's sound a row moves; `instrument` is the sound the row was shown for. */
 export interface KnobRef {

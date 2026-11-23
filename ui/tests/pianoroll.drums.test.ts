@@ -14,7 +14,8 @@ import { drumFitRowPx, drumView, prView, zoomRowsBy } from "../src/components/pi
 import { THEME_IDS, palettes } from "../src/design/themes";
 import { Batch } from "../src/gl/batch";
 import { hexToRgb, rgb } from "../src/gl/color";
-import { findTerm, t, texts } from "../src/text/ja";
+import { findTerm, t } from "../src/text";
+import { texts } from "../src/text/ja";
 import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 import { sectionText, specDocument } from "./design-sources";
 import { take } from "./pianoroll-fixture";

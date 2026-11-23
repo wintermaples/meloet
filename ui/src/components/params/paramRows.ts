@@ -5,7 +5,7 @@ import {
   type EffectKind,
   type EffectParam,
 } from "../../bridge/types";
-import { t, type TextKey } from "../../text/ja";
+import { t, type TextKey } from "../../text";
 
 const MINUS = "−";
 

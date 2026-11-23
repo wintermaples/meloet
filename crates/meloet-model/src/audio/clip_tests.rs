@@ -54,7 +54,7 @@ fn song() -> Song {
     let keys = Track::clone(&song.doc.tracks[0]);
     song.doc.tracks.push(Arc::new(Track {
         id: TrackId(2),
-        name: VOCAL_TRACK_NAME.to_owned(),
+        name: vocal_track_name(crate::Language::Ja).to_owned(),
         kind: TrackKind::Vocal {
             input: VocalInput::Mono1,
         },
@@ -160,7 +160,7 @@ fn a_vocal_track_is_added_named_and_given_another_input() {
     use crate::edit::{add_vocal_track, set_vocal_input};
     use crate::history::StepKind;
     let doc = Song::new_default().doc;
-    let (added, id) = add_vocal_track(&doc, None).unwrap();
+    let (added, id) = add_vocal_track(&doc, None, crate::Language::Ja).unwrap();
     assert_eq!(added.step, StepKind::AddTrack { track: id });
     let track = added.doc.track(id).unwrap();
     assert_eq!(track.name, "歌");
@@ -168,7 +168,7 @@ fn a_vocal_track_is_added_named_and_given_another_input() {
     assert_eq!(track.color.get(), 2);
     assert_eq!(track.sends, [crate::Gain::SILENT; 2]);
     assert!(track.clips.is_empty());
-    let (second, id2) = add_vocal_track(&added.doc, Some(TrackId(1))).unwrap();
+    let (second, id2) = add_vocal_track(&added.doc, Some(TrackId(1)), crate::Language::Ja).unwrap();
     assert_eq!(second.doc.tracks[1].id, id2);
     assert_eq!(second.doc.tracks[1].name, "歌 2");
 

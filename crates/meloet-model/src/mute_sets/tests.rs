@@ -11,7 +11,10 @@ fn three_tracks() -> Doc {
     let mut doc = Doc::new_default();
     for _ in 0..2 {
         let below = doc.tracks.last().map(|t| t.id);
-        doc = add_track(&doc, below, InstrumentRef::SINE).unwrap().0.doc;
+        doc = add_track(&doc, below, InstrumentRef::SINE, crate::Language::Ja)
+            .unwrap()
+            .0
+            .doc;
     }
     doc
 }
@@ -139,7 +142,7 @@ fn a_track_gone_is_skipped_and_a_new_one_is_left_as_it_is() {
         .unwrap()
         .doc;
     let doc = delete_track(&doc, t3).unwrap().doc;
-    let (e, t4) = add_track(&doc, Some(t2), InstrumentRef::SINE).unwrap();
+    let (e, t4) = add_track(&doc, Some(t2), InstrumentRef::SINE, crate::Language::Ja).unwrap();
     assert!(t4 > t3, "ids are not given again");
     let doc = mute(&mute(&e.doc, t4), T1);
     let r = recall_mute_set(&doc, &BTreeSet::from([t4]), "A").unwrap();

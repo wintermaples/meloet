@@ -3,7 +3,7 @@
 
 import { PATTERN_GROUPS, type AppState, type PatternGroup, type PatternView } from "../bridge";
 import { TempoMap } from "../time/tempoMap";
-import { t, type TextKey } from "../text/ja";
+import { t, type TextKey } from "../text";
 import { trackDrums } from "./pianoroll/drums";
 
 export type PatternEntry =

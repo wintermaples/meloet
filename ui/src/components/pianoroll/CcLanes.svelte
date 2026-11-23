@@ -9,7 +9,7 @@
   import { glSlot, type GlSlot } from "../../gl/slot";
   import { platformOf } from "../../keys/keys";
   import { current, send } from "../../state/app.svelte";
-  import { t } from "../../text/ja";
+  import { t } from "../../text";
   import { metrics } from "../metrics.svelte";
   import type { Meter } from "../time";
   import { mapOf } from "../../time/bars";

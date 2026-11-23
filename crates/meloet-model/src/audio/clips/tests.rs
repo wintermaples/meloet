@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use super::*;
 use crate::arrange::{ClipEdge, set_clip_length, set_clip_start, split_clips, trim_clip};
-use crate::audio::{SourceTempo, TrackKind, VOCAL_TRACK_NAME, VocalInput};
+use crate::audio::{SourceTempo, TrackKind, VocalInput, vocal_track_name};
 use crate::history::History;
 use crate::song::Song;
 use crate::{TICKS_PER_QUARTER, Tempo};
@@ -62,7 +62,7 @@ fn doc() -> Doc {
     let keys = Track::clone(&song.doc.tracks[0]);
     song.doc.tracks.push(Arc::new(Track {
         id: VOCAL,
-        name: VOCAL_TRACK_NAME.to_owned(),
+        name: vocal_track_name(crate::Language::Ja).to_owned(),
         kind: TrackKind::Vocal {
             input: VocalInput::Mono1,
         },
@@ -302,7 +302,14 @@ fn files_in_a_row_go_one_after_the_other_and_around_what_is_there() {
         file("b.mp3", 96_000, 48_000),
         file("c.mp3", 48_000, 48_000),
     ];
-    let (e, made) = import_audio(&doc, files, ImportPlan::InRow(Some(VOCAL)), 0).unwrap();
+    let (e, made) = import_audio(
+        &doc,
+        files,
+        ImportPlan::InRow(Some(VOCAL)),
+        0,
+        crate::Language::Ja,
+    )
+    .unwrap();
     assert_eq!(e.step, StepKind::ImportAudio { count: 3 });
     assert_eq!(e.doc.tracks.len(), 3);
     let spare = e.doc.tracks[2].id;
@@ -346,21 +353,49 @@ fn files_in_a_row_go_one_after_the_other_and_around_what_is_there() {
 fn files_apart_get_a_track_each_from_the_same_tick() {
     let doc = doc();
     let files = vec![file("a.mp3", 48_000, 48_000), file("b.mp3", 48_000, 48_000)];
-    let (e, made) = import_audio(&doc, files, ImportPlan::Separate, 3 * BAR).unwrap();
+    let (e, made) = import_audio(
+        &doc,
+        files,
+        ImportPlan::Separate,
+        3 * BAR,
+        crate::Language::Ja,
+    )
+    .unwrap();
     assert_eq!(e.doc.tracks.len(), 4);
     assert!(made.iter().all(|m| m.start == 3 * BAR));
     assert_ne!(made[0].track, made[1].track);
     assert!(made.iter().all(|m| m.track != VOCAL));
     // One file with no track named: a new track; on a keys track: nothing.
     let one = vec![file("a.mp3", 48_000, 48_000)];
-    let (e, made) = import_audio(&doc, one.clone(), ImportPlan::InRow(None), 0).unwrap();
+    let (e, made) = import_audio(
+        &doc,
+        one.clone(),
+        ImportPlan::InRow(None),
+        0,
+        crate::Language::Ja,
+    )
+    .unwrap();
     assert_eq!((e.doc.tracks.len(), made[0].track), (3, e.doc.tracks[2].id));
     assert_eq!(
-        import_audio(&doc, one, ImportPlan::InRow(Some(TrackId(1))), 0).unwrap_err(),
+        import_audio(
+            &doc,
+            one,
+            ImportPlan::InRow(Some(TrackId(1))),
+            0,
+            crate::Language::Ja
+        )
+        .unwrap_err(),
         EditError::WrongKind
     );
     assert_eq!(
-        import_audio(&doc, Vec::new(), ImportPlan::Separate, 0).unwrap_err(),
+        import_audio(
+            &doc,
+            Vec::new(),
+            ImportPlan::Separate,
+            0,
+            crate::Language::Ja
+        )
+        .unwrap_err(),
         EditError::Unchanged
     );
 }
@@ -373,6 +408,7 @@ fn a_file_taken_out_takes_its_clips_and_its_takes() {
         vec![file("a.mp3", 48_000, 48_000)],
         ImportPlan::InRow(Some(VOCAL)),
         0,
+        crate::Language::Ja,
     )
     .unwrap();
     let with = e.doc;

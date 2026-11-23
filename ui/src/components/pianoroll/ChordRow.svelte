@@ -8,7 +8,7 @@
   import { mapOf } from "../../time/bars";
   import { term } from "../../lib/tip.svelte";
   import { current, send } from "../../state/app.svelte";
-  import { t } from "../../text/ja";
+  import { t } from "../../text";
   import { scaleName } from "../format";
   import { Auditioner, fixedOr100 } from "./audition";
   import { chooseChord, chordPick } from "./chordPick.svelte";

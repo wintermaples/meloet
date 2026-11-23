@@ -4,7 +4,7 @@
 // y is CSS px from the top edge of the lane; x is the same horizontal coordinate as the note area.
 
 import { CONTROL_CC, CONTROL_PITCH_BEND, type Command, type ControlKind, type IndexRange, type TakeNotes } from "../../bridge";
-import { t } from "../../text/ja";
+import { t } from "../../text";
 import { pad3, signed4 } from "../meterFormat";
 import type { Meter } from "../time";
 import { indexesOf, positionText, snapTick, tickToX, xToTick, type RollGeom, type Shown } from "./geom";

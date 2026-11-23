@@ -2,7 +2,7 @@
 // Paste is disabled. In WebKitGTK 2.52, execCommand("paste") does nothing and returns false unless the shell (Tauri's enable_clipboard_access)
 // allows it. queryCommandEnabled("paste") still returns true, so it cannot tell. Mod V inside the box works.
 
-import { t } from "../../text/ja";
+import { t } from "../../text";
 import type { MenuEntry } from "./contextMenu.svelte";
 
 const NON_TEXT_INPUTS = new Set(["button", "checkbox", "color", "file", "hidden", "image", "radio", "range", "reset", "submit"]);

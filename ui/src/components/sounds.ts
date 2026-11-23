@@ -11,7 +11,7 @@ import type {
   SoundView,
   StandIn,
 } from "../bridge";
-import { t, type TextKey } from "../text/ja";
+import { STATUS_JOIN, t, type TextKey } from "../text";
 
 /** Whether two instruments are the same. Plugins compare by key (one key per format). */
 export function sameSound(a: SoundRef | null | undefined, b: SoundRef | null | undefined): boolean {
@@ -87,7 +87,7 @@ export const formatName = (f: PluginFormat) => t(`plugin.format.${f}`);
 export function formatsTip(row: PluginRowView): string {
   const order: PluginFormat[] = ["lv2", "vst3"];
   const names = order.filter((f) => row.formats.some((x) => x.format === f)).map(formatName);
-  return t("shelf.formatsTip", { formats: names.join(" ・ ") });
+  return t("shelf.formatsTip", { formats: names.join(STATUS_JOIN) });
 }
 
 /** The key names of an SF2 drum kit (the table in spec 3). null for keys not in the table. */

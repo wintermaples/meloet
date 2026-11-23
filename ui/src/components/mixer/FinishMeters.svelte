@@ -8,7 +8,7 @@
   import { onMount } from "svelte";
   import { glSlot } from "../../gl/slot";
   import { current, onTelemetry, send } from "../../state/app.svelte";
-  import { t } from "../../text/ja";
+  import { t } from "../../text";
   import { FINISH_TEXT_MS, calmly, finishTarget, finishTexts, type FinishTexts } from "./finish";
 
   const mono = $derived(current.state?.workspace.monoListen ?? false);

@@ -4,7 +4,7 @@
   import { onMount } from "svelte";
   import { SCALES, type Scale } from "../design/tokens";
   import type { Platform } from "../keys/keys";
-  import { t } from "../text/ja";
+  import { t } from "../text";
 
   interface Props {
     scale: number;

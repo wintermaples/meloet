@@ -202,6 +202,7 @@ fn play_what_was_recorded(
         songs_dir: None,
         state_dir: Some(state.clone()),
         cache_dir: Some(root.join("cache")),
+        pc_language: meloet_protocol::Language::Ja,
         sounds_dir: None,
         pack: None,
         updates: None,

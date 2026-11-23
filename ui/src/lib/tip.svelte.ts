@@ -1,6 +1,6 @@
 // Term tips (spec 2 "Term tip", spec 5). Only one on the screen. Tip.svelte draws tipView.
 import type { Action } from "svelte/action";
-import { findTerm } from "../text/ja";
+import { findTerm } from "../text";
 
 /** From when the mouse stops until it shows (spec 2: 0.6 s). */
 export const TIP_DELAY_MS = 600;

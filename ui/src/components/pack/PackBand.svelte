@@ -4,7 +4,7 @@
      When the input meter is slim (a lower band is open), the 2 lines go on 1 line. -->
 <script lang="ts">
   import { current, send } from "../../state/app.svelte";
-  import { t } from "../../text/ja";
+  import { t } from "../../text";
   import Button from "../Button.svelte";
   import { againLabel, askLines, failedLines, fetchingLines, percentOf, type PackBand } from "./pack";
 

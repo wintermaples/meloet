@@ -13,7 +13,7 @@
   import { onDestroy, onMount, untrack } from "svelte";
   import type { ClipView, TrackView } from "../../bridge";
   import { current, send } from "../../state/app.svelte";
-  import { t } from "../../text/ja";
+  import { t } from "../../text";
   import { clipBox, rowHeight, rowTop, type Box, type LaneDims, type View } from "../arrangeGeom";
   import { dbNumber } from "../format";
   import { clipLengthLabel } from "../params/clipFields";

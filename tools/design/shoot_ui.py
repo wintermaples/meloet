@@ -13,6 +13,8 @@ Names in CLICKS shoot a scene after clicking something (a menu open), through th
 are printed in the same order as with --jobs=1.
 --theme= takes one or more ids of THEME_IDS in ui/src/design/themes.ts (comma list), or all; the
 files of each theme end in -<id>. All themes share one build and one vite preview.
+--lang=en shoots the screen in English (the fake's ?lang=en); the files end in -en and have no mock board
+next to them (the mocks are Japanese).
 """
 import concurrent.futures, hashlib, json, os, re, shutil, signal, socket, subprocess, sys, tempfile, threading, time, urllib.request
 
@@ -20,8 +22,11 @@ from PIL import Image, ImageDraw
 
 root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 ui = os.path.join(root, "ui")
-args = [a for a in sys.argv[1:] if not a.startswith(("--theme=", "--jobs=")) and a != "--build"]
+args = [a for a in sys.argv[1:] if not a.startswith(("--theme=", "--jobs=", "--lang=")) and a != "--build"]
 force_build = "--build" in sys.argv[1:]
+lang = next((a.split("=", 1)[1] for a in sys.argv[1:] if a.startswith("--lang=")), "ja")
+if lang not in ("ja", "en"):
+    sys.exit(f"--lang= takes ja or en, not {lang}")
 theme_arg = next((a.split("=", 1)[1] for a in sys.argv[1:] if a.startswith("--theme=")), "")
 jobs = int(next((a.split("=", 1)[1] for a in sys.argv[1:] if a.startswith("--jobs=")), "8"))
 if theme_arg == "all":
@@ -1208,15 +1213,37 @@ def shoot(port, theme, scene, w, h, scale):
         raise RuntimeError(f"{scene}-{w}x{h}-{scale}{f'-{theme}' if theme else ''}: {e!r}") from e
 
 
+# The words of the screen the clicks look for, as ui/src/text/en.ts writes them (the names in the fake songs stay).
+EN_WORDS = {
+    "横に拡大": "Zoom in",
+    "いいとこ取り": "Comping",
+    "くり返す": "Repeat",
+    "フェードアウト": "Fade out",
+    'includes("色")': 'includes("Color")',
+    "消して詰める": "close the gap",
+    "複製": "Duplicate",
+    "空きを入れる": "Insert space",
+    'input.value = "ループ"': 'input.value = "Loop"',
+}
+
+
+def in_lang(selector):
+    if lang == "ja":
+        return selector
+    for ja, en in EN_WORDS.items():
+        selector = selector.replace(ja, en)
+    return selector
+
+
 def shoot_one(port, theme, scene, w, h, scale):
-    theme_query = f"&theme={theme}" if theme else ""
-    stem = f"{scene}-{w}x{h}-{scale}{f'-{theme}' if theme else ''}"
+    theme_query = (f"&theme={theme}" if theme else "") + (f"&lang={lang}" if lang != "ja" else "")
+    stem = f"{scene}-{w}x{h}-{scale}{f'-{theme}' if theme else ''}{f'-{lang}' if lang != 'ja' else ''}"
     shot = os.path.join(shots, stem + ".png")
     profile = tempfile.mkdtemp(prefix="shoot-")
     try:
         if scene in CLICKS:
             base, selector = CLICKS[scene]
-            selectors = json.dumps([selector] if isinstance(selector, str) else list(selector))
+            selectors = json.dumps([in_lang(s) for s in ([selector] if isinstance(selector, str) else list(selector))])
             code, err = call(["node", "--input-type=module", "-e", CLICK_SHOT, str(free_port()),
                               f"http://127.0.0.1:{port}/?scene={base}&scale={scale}{theme_query}", selectors, shot, str(w), str(h), profile],
                              timeout=180, env=env)
@@ -1233,7 +1260,7 @@ def shoot_one(port, theme, scene, w, h, scale):
     finally:
         shutil.rmtree(profile, ignore_errors=True)
     left = Image.open(shot).convert("RGB")
-    board = BOARDS.get(scene)
+    board = BOARDS.get(scene) if lang == "ja" else None
     right = Image.new("RGB", (w, h), (40, 0, 40))
     if board and os.path.exists(os.path.join(mocks, board + ".png")):
         m = Image.open(os.path.join(mocks, board + ".png")).convert("RGB")
@@ -1266,7 +1293,7 @@ else:
     with open(STAMP, "w", encoding="utf-8") as f:
         f.write(want + "\n")
 
-boards = sorted({BOARDS[s] for s in scenes if BOARDS.get(s)})
+boards = sorted({BOARDS[s] for s in scenes if BOARDS.get(s)}) if lang == "ja" else []
 with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, jobs)) as mock_pool:
     list(mock_pool.map(lambda b: run([sys.executable, "-I", os.path.join(root, "tools", "design", "render_mocks.py"), mocks, b],
                                      stdout=subprocess.DEVNULL), boards))

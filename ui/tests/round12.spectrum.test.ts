@@ -13,7 +13,7 @@ import Transport from "../src/components/Transport.svelte";
 import { Batch } from "../src/gl/batch";
 import { rgb } from "../src/gl/color";
 import { paintSpectrum } from "../src/gl/paint";
-import { t } from "../src/text/ja";
+import { t } from "../src/text";
 import * as app from "./fake-app.svelte";
 
 vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));

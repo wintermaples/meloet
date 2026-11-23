@@ -13,7 +13,7 @@
   import ScrollArea from "../../lib/ScrollArea.svelte";
   import { term, tip } from "../../lib/tip.svelte";
   import { current, send } from "../../state/app.svelte";
-  import { t } from "../../text/ja";
+  import { t } from "../../text";
   import ChoiceMenu from "../ChoiceMenu.svelte";
   import { gridText, scaleName } from "../format";
   import { keyLabel, rollShowsDrums, selectedKeysFull, selectedKeysText } from "./drums";

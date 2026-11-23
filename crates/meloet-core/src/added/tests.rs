@@ -36,7 +36,10 @@ fn song() -> Doc {
         preset("Old.sf2", SF2_DRUM_BANK, 0, "Kit"),
         preset("FluidR3_GM.sf2", 0, 27, "Clean Guitar"),
     ] {
-        doc = edit::add_track(&doc, None, instrument).unwrap().0.doc;
+        doc = edit::add_track(&doc, None, instrument, meloet_model::Language::Ja)
+            .unwrap()
+            .0
+            .doc;
     }
     let surge_track = StripId::Track(doc.tracks[1].id);
     let mverb = || plugin(MVERB, "MVerb", "");

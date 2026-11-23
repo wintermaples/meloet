@@ -14,7 +14,7 @@ import { attachKeys, handleKeydown, handleKeyup, type KeyDeps } from "../src/key
 import { keyListGroups } from "../src/keys/keyList";
 import { keyAction, type KeyInput } from "../src/keys/keys";
 import { resetTypedKeys, typedHeld, typedKeys, typedNote } from "../src/keys/typed.svelte";
-import { t } from "../src/text/ja";
+import { t } from "../src/text";
 import * as app from "./fake-app.svelte";
 
 vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));

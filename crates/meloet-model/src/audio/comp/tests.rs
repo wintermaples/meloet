@@ -4,8 +4,8 @@ use super::*;
 use crate::arrange::{ClipEdge, move_clips, repeat_clips, split_clips, trim_clip};
 use crate::audio::record::{NewAudio, NewAudioTake, VocalRecording, add_vocal_recordings};
 use crate::audio::{
-    AudioId, AudioShape, AudioSource, AudioTake, SourceTempo, TrackKind, VOCAL_TRACK_NAME,
-    VocalInput,
+    AudioId, AudioShape, AudioSource, AudioTake, SourceTempo, TrackKind, VocalInput,
+    vocal_track_name,
 };
 use crate::edit::{delete_take, duplicate_track, switch_take};
 use crate::sections::delete_section;
@@ -67,7 +67,7 @@ fn song() -> Doc {
     let keys = Track::clone(&song.doc.tracks[0]);
     song.doc.tracks.push(Arc::new(Track {
         id: TrackId(2),
-        name: VOCAL_TRACK_NAME.to_owned(),
+        name: vocal_track_name(crate::Language::Ja).to_owned(),
         kind: TrackKind::Vocal {
             input: VocalInput::Mono1,
         },

@@ -29,7 +29,7 @@ fn ramped() -> (Doc, TrackId) {
         .unwrap()
         .doc;
     let doc = timeline::set_tempo_ramp(&doc, 2 * BAR, true).unwrap().doc;
-    let (e, track) = edit::add_vocal_track(&doc, None).unwrap();
+    let (e, track) = edit::add_vocal_track(&doc, None, meloet_model::Language::Ja).unwrap();
     (e.doc, track)
 }
 

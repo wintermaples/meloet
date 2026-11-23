@@ -16,7 +16,7 @@ import { contextMenu, type MenuRow } from "../src/components/menu/contextMenu.sv
 import { cancelDrag } from "../src/components/pianoroll/view.svelte";
 import TrackHeads from "../src/components/TrackHeads.svelte";
 import type { GlRect, GlSlot } from "../src/gl/slot";
-import { t } from "../src/text/ja";
+import { t } from "../src/text";
 import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 import * as app from "./fake-app.svelte";
 

@@ -5,7 +5,7 @@
   import { onDestroy, onMount, tick as nextTick } from "svelte";
   import { INSERT_SPACE_BARS_DEFAULT, INSERT_SPACE_BARS_MAX, type MarkerView, type TimelineView } from "../../bridge";
   import { send } from "../../state/app.svelte";
-  import { t } from "../../text/ja";
+  import { t } from "../../text";
   import { nearestBeatTick } from "../../time/bars";
   import type { TempoMap } from "../../time/tempoMap";
   import { tickToX, xToTick, type View } from "../arrangeGeom";

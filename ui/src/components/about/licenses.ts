@@ -2,7 +2,7 @@
 // The list (generated/licenses.json) is made by tools/licenses/inventory.mjs, and licenses/check.mjs checks that it is not out of date.
 // The full license texts are large, so npm run build writes them to dist/licenses/texts.json, read when the second page opens.
 
-import { t } from "../../text/ja";
+import { t } from "../../text";
 import generated from "./generated/licenses.json";
 
 export interface Part {

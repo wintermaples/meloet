@@ -2,7 +2,7 @@
 // Position 「7. 1. 0000」, length 「2. 0. 0000」 (bar . beat . tick, all from 0), fade 「0.0480」 (beat . tick; B-94-28).
 
 import type { StretchView } from "../../bridge";
-import { t } from "../../text/ja";
+import { t } from "../../text";
 import { signed } from "../pianoroll/geom";
 import { parseNoteLength, parseNotePosition } from "../pianoroll/noteFields";
 import { noteLengthText } from "../format";

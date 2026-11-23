@@ -3,7 +3,7 @@
 <script lang="ts">
   import type { TrackView } from "../../bridge";
   import { current } from "../../state/app.svelte";
-  import { t } from "../../text/ja";
+  import { t } from "../../text";
   import { hasLaneRef } from "./laneValue";
   import { openLaneAdd } from "./laneAdd.svelte";
 

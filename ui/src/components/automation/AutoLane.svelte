@@ -8,7 +8,7 @@
   import type { LaneView } from "../../bridge";
   import { everyGlFrame, glSlot } from "../../gl/slot";
   import { current, send } from "../../state/app.svelte";
-  import { t } from "../../text/ja";
+  import { t } from "../../text";
   import type { TempoMap } from "../../time/tempoMap";
   import { tickToX, type View } from "../arrangeGeom";
   import { metrics } from "../metrics.svelte";

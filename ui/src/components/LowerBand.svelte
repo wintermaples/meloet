@@ -4,7 +4,7 @@
   import type { Band } from "../bridge";
   import { term } from "../lib/tip.svelte";
   import { send } from "../state/app.svelte";
-  import { t, type TextKey } from "../text/ja";
+  import { t, type TextKey } from "../text";
   import HistoryHead from "./history/HistoryHead.svelte";
   import HistoryList from "./history/HistoryList.svelte";
   import { metrics } from "./metrics.svelte";

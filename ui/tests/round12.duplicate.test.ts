@@ -6,7 +6,7 @@ import { createFakeTransport, fakeScene, FakeBands, reduceTracks, type FakeState
 import type { MenuRow } from "../src/components/menu/contextMenu.svelte";
 import StatusLine from "../src/components/StatusLine.svelte";
 import { trackContextMenu } from "../src/components/trackMenu";
-import { t } from "../src/text/ja";
+import { t } from "../src/text";
 import * as app from "./fake-app.svelte";
 
 vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));

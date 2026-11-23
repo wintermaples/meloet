@@ -200,7 +200,7 @@ fn a_point_there_already_is_not_written_twice() {
 
 #[test]
 fn vocal_tracks_and_empty_passes_are_turned_away() {
-    let (edit, vocal) = add_vocal_track(&Doc::new_default(), None).unwrap();
+    let (edit, vocal) = add_vocal_track(&Doc::new_default(), None, crate::Language::Ja).unwrap();
     let played = new_take(0, BAR, vec![note(0, Q, 40)]);
     assert_eq!(
         overdub_recording(&edit.doc, vocal, played).unwrap_err(),

@@ -1,6 +1,6 @@
 // Functions that do not know the DOM, used by the scan strip, the stopped-plugins dialog and plugin locations (spec 2, spec 3 Y13, spec 6).
 import type { PluginFormat, ScanStopReason } from "../../bridge";
-import { STATUS_JOIN, t, type TextKey } from "../../text/ja";
+import { STATUS_JOIN, t, type TextKey } from "../../text";
 import { textParts } from "../format";
 
 export interface ScanStripText {

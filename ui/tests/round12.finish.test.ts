@@ -11,7 +11,7 @@ import { rgb } from "../src/gl/color";
 import { dbToLength } from "../src/gl/level";
 import { paintLoudness, paintSpectrum } from "../src/gl/paint";
 import { regionOf } from "../src/gl/slot";
-import { t } from "../src/text/ja";
+import { t } from "../src/text";
 import * as app from "./fake-app.svelte";
 
 vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));

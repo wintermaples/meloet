@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, Command } from "../src/bridge";
 import { createFakeTransport, fakeScene, reduceMixer, type FakeState } from "../src/bridge/fake";
 import StatusLine from "../src/components/StatusLine.svelte";
-import { t } from "../src/text/ja";
+import { t } from "../src/text";
 import * as app from "./fake-app.svelte";
 
 vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));

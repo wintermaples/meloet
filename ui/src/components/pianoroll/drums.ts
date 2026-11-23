@@ -3,7 +3,7 @@
 // Names are drum piece names (DRUM_ROWS names for built-in kits, the GM key number table for SF2); keys not in the table use note names.
 
 import { DRUM_ROWS, INSTRUMENT_GROUPS, type AppState, type ClipView, type InstrumentKind, type KeyCount, type TrackView } from "../../bridge";
-import { t, type TextKey } from "../../text/ja";
+import { t, type TextKey } from "../../text";
 import { noteName } from "../meterFormat";
 import { gmDrumName } from "../sounds";
 

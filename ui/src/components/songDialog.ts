@@ -1,6 +1,6 @@
 // Text and buttons of the song dialog (spec 6 "Not saved", "Cannot save", "Song file is broken"). Pure functions that do not know the DOM.
 import type { SongAnswer, SongDialogView } from "../bridge";
-import { t, type TextKey } from "../text/ja";
+import { t, type TextKey } from "../text";
 
 export interface SongDialogButton {
   answer: SongAnswer;

@@ -382,6 +382,7 @@ fn the_real_keyboard_and_headphones_show_up_within_two_seconds() {
         plugins: None,
         sf2_dir: None,
         cache_dir: None,
+        pc_language: meloet_protocol::Language::Ja,
     });
     let deadline = Instant::now() + Duration::from_secs(2);
     loop {
@@ -439,6 +440,7 @@ fn the_remembered_headphones_open_and_silence_sends_no_telemetry() {
         plugins: None,
         sf2_dir: None,
         cache_dir: None,
+        pc_language: meloet_protocol::Language::Ja,
     });
     let (_messages, telemetry) = subscribe(&core);
 

@@ -1,6 +1,6 @@
 <!-- The head side of the band 「いいとこ取り」 (round 12, A8): 「▾ いいとこ取り」 (pressing it closes the band), then the name of each take's row. -->
 <script lang="ts">
-  import { t } from "../../text/ja";
+  import { t } from "../../text";
   import { metrics } from "../metrics.svelte";
   import { bandHeight } from "./comp";
   import { closeComp, type OpenComp } from "./compState.svelte";

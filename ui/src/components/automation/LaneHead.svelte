@@ -8,7 +8,7 @@
   import { glSlot } from "../../gl/slot";
   import { term } from "../../lib/tip.svelte";
   import { current, send } from "../../state/app.svelte";
-  import { t } from "../../text/ja";
+  import { t } from "../../text";
   import { laneNameText } from "../history/stepText";
   import { termParts, textParts, type TextPart } from "../format";
   import { builtinOf } from "../params/selected";

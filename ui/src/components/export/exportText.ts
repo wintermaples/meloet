@@ -1,7 +1,7 @@
 // Text of the export dialog and the progress in the status line (spec 3 34-B, spec 6; mock F7-Export, F7-Exporting, F-Export; docs/history/design-notes.ja.md B-94-69 to 75).
 // Pure functions that do not know the DOM.
 import { EXPORT_MATCH_LUFS, EXPORT_MATCH_TRUE_PEAK_DB, EXPORT_TAIL_MAX_S, RECORD_FORMATS, type ExportCheck, type ExportDialogView, type ExportFailure, type ExportLoudnessResult, type ExportRunView, type ExportSolo, type RecordFormat } from "../../bridge";
-import { t, type TextKey } from "../../text/ja";
+import { t, type TextKey } from "../../text";
 import { dbNumber, SILENT_DB, textParts, type TextPart } from "../format";
 import { barBeatTick, positionText, type Bars } from "../time";
 

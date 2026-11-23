@@ -343,7 +343,7 @@ fn saved_then_changed(dir: &Path, songs: &Path) -> (Song, Song, PathBuf) {
 
 fn start_from(dir: &Path) -> (Model, Vec<Effect>) {
     let mut m = ready();
-    let start = recovery_start(dir).expect("a recovery file");
+    let start = recovery_start(dir, meloet_model::Language::Ja).expect("a recovery file");
     let effects = m.handle(Input::RecoveryFound(Box::new(start)));
     (m, effects)
 }
@@ -619,7 +619,7 @@ fn the_recovery_hint_waits_behind_the_output_chooser() {
         port: 0,
     }));
     m.handle(Input::RecoveryFound(Box::new(
-        recovery_start(&dir).unwrap(),
+        recovery_start(&dir, meloet_model::Language::Ja).unwrap(),
     )));
     assert!(m.view().workspace.chooser.is_some());
     assert_eq!(m.view().workspace.recovery, None);
@@ -741,10 +741,12 @@ fn a_file_with_only_its_head_is_not_left_behind() {
     left_recording(&dir, 0);
     let file = crate::vocalrec::work_audio_dir(&dir).join("歌 9.wav");
     assert_eq!(fs::metadata(&file).unwrap().len(), 44);
-    assert!(recovery_start(&dir).is_some_and(|start| matches!(
-        start,
-        crate::state::RecoveryStart::Read { vocals: None, .. }
-    )));
+    assert!(
+        recovery_start(&dir, meloet_model::Language::Ja).is_some_and(|start| matches!(
+            start,
+            crate::state::RecoveryStart::Read { vocals: None, .. }
+        ))
+    );
     assert!(!file.exists());
     assert!(!dir.join(crate::vocalrec::REC_NOTE).exists());
     let _ = fs::remove_dir_all(dir);

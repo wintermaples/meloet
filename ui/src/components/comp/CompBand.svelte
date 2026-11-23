@@ -8,7 +8,7 @@
   import type { CompPiece } from "../../bridge";
   import { glSlot, type GlWave } from "../../gl/slot";
   import { current, send } from "../../state/app.svelte";
-  import { t } from "../../text/ja";
+  import { t } from "../../text";
   import type { TempoMap } from "../../time/tempoMap";
   import * as W from "../arrange/wave";
   import type { WaveBook } from "../arrange/wavePeaks.svelte";

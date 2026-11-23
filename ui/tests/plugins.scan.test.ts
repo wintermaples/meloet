@@ -13,7 +13,7 @@ import Shelf from "../src/components/Shelf.svelte";
 import StatusLine from "../src/components/StatusLine.svelte";
 import { shelfHasKeys, shelfUi } from "../src/components/tracks.svelte";
 import { handleKeydown } from "../src/keys/attach";
-import { t } from "../src/text/ja";
+import { t } from "../src/text";
 import * as app from "./fake-app.svelte";
 
 vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));

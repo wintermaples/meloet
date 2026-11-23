@@ -4,7 +4,7 @@
 <script lang="ts">
   import type { PluginsView } from "../../bridge";
   import { send } from "../../state/app.svelte";
-  import { t } from "../../text/ja";
+  import { t } from "../../text";
   import Button from "../Button.svelte";
   import { placesReveal } from "./scan";
 

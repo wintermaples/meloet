@@ -185,6 +185,7 @@ pub fn import_audio(
     files: Vec<ImportedAudio>,
     plan: ImportPlan,
     tick: u64,
+    language: crate::Language,
 ) -> Result<(Edit, Vec<ImportedClip>), EditError> {
     if files.is_empty() {
         return Err(EditError::Unchanged);
@@ -232,7 +233,7 @@ pub fn import_audio(
         let track = match wanted {
             Some(track) => track,
             None => {
-                let (e, track) = add_vocal_track(&new, None)?;
+                let (e, track) = add_vocal_track(&new, None, language)?;
                 new = e.doc;
                 spare = Some(track);
                 track

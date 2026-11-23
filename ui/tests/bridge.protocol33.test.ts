@@ -84,7 +84,7 @@ describe("fake intents", () => {
       { type: "clearComp", clip: 99 },
       { type: "setClipStretch", clip: 99, change: { kind: "tuneStrength", percent: 50 } },
       { type: "setClipStretch", clip: 99, change: { kind: "tuneScale" } },
-      { type: "setLanguage", language: "en" },
+      { type: "setLanguage", language: "ja" },
     ];
     for (const command of commands) await send(command);
     const after = await now();

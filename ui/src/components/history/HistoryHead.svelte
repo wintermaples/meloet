@@ -2,7 +2,7 @@
 <script lang="ts">
   import { platformOf } from "../../keys/keys";
   import { current, send } from "../../state/app.svelte";
-  import { t } from "../../text/ja";
+  import { t } from "../../text";
   import { textParts, type TextPart } from "../format";
 
   const history = $derived(current.state!.history);

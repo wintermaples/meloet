@@ -1,6 +1,6 @@
 <!-- Where the term tip is shown. Only one, in App. -->
 <script lang="ts">
-  import { TERM_SEPARATOR } from "../text/ja";
+  import { TERM_SEPARATOR } from "../text";
   import { tipView, watchCutText } from "./tip.svelte";
 
   $effect(() => watchCutText());

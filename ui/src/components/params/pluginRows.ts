@@ -4,7 +4,7 @@
 // Parameters that only receive the keyboard's knobs (ParamTable.keyboardKnobs) are shown only while searching, in the last group 「鍵盤のつまみを受ける所」 (spec 3 (91-3)).
 
 import type { ParamGroup, ParamKind, ParamRow, ParamTable } from "../../bridge";
-import { t } from "../../text/ja";
+import { t } from "../../text";
 
 /** With more than this, start with the groups folded. */
 export const FOLD_OVER = 40;

@@ -2,7 +2,7 @@
      「音が出ました」: spec 6 "Sound came out", mock F-Connect3. The empty arrange: mock F-Empty. -->
 <script lang="ts">
   import { current } from "../state/app.svelte";
-  import { t } from "../text/ja";
+  import { t } from "../text";
   import { textParts } from "./format";
 
   const hint = $derived(current.state?.workspace.hint ?? null);

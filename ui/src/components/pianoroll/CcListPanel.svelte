@@ -8,7 +8,7 @@
   import { tick, untrack } from "svelte";
   import ScrollArea from "../../lib/ScrollArea.svelte";
   import { current, send } from "../../state/app.svelte";
-  import { t } from "../../text/ja";
+  import { t } from "../../text";
   import { metrics } from "../metrics.svelte";
   import {
     CC_FIELD_ORDER,

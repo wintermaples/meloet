@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { TERM_SEPARATOR, fill, findTerm, t, terms, texts, type Entry } from "../src/text/ja";
+import { enStepNames, enTerms, enTexts, type EnText } from "../src/text/en";
+import { t } from "../src/text";
+import { TERM_SEPARATOR, fill, findTerm, stepNames, terms, texts, type Entry } from "../src/text/ja";
 import { headers, mockScreenText, rows, sectionTables, sectionText, specDocument } from "./design-sources";
 
 // crates/ is outside ui/, so read it with Node's fs as in design-sources.ts.
@@ -170,6 +172,48 @@ describe("source form", () => {
 
   it("draft: text is only the proposal for the sound pack's 「手を加えたこと」 (before the owner checks it)", () => {
     expect(entries.filter(([, e]) => e.source.startsWith("draft:")).every(([k]) => k.startsWith("about.changes."))).toBe(true);
+  });
+});
+
+describe("the English table (round 12 D4: Japanese is the source, English follows it)", () => {
+  const holes = (text: string) => [...new Set([...text.matchAll(/\{(\w+)\}/g)].map((m) => m[1]!))].sort();
+  const forms = (e: EnText) => (typeof e === "string" ? [e] : [e.one, e.other]);
+
+  it("has every key of the Japanese table and no other", () => {
+    expect(Object.keys(enTexts).sort()).toEqual(Object.keys(texts).sort());
+    expect(Object.keys(enStepNames).sort()).toEqual(Object.keys(stepNames).sort());
+  });
+
+  it("each text has the same holes as the Japanese, in every form; a pair is chosen by one of them", () => {
+    for (const [key, e] of entries) {
+      const en = enTexts[key as keyof typeof enTexts];
+      for (const form of forms(en)) expect(holes(form), key).toEqual(holes(e.text));
+      if (typeof en !== "string") expect(holes(e.text), key).toContain(en.by);
+    }
+    for (const [kind, e] of Object.entries(stepNames)) expect(holes(enStepNames[kind as keyof typeof enStepNames]), kind).toEqual(holes(e.text));
+  });
+
+  it("a text that is not empty in Japanese is not empty in English, and no Japanese is left in it", () => {
+    const japanese = /[぀-ヿ㐀-鿿]/;
+    // 「ことば / Language」 and 「日本語」 read the same in both, so that the setting can be found in either.
+    const both = ["menu.language", "language.ja", "language.en"];
+    for (const key of both) expect(enTexts[key as keyof typeof enTexts], key).toBe(texts[key as keyof typeof texts].text);
+    for (const [key, e] of entries) {
+      for (const form of forms(enTexts[key as keyof typeof enTexts])) {
+        if (e.text.trim() !== "") expect(form.trim(), key).not.toBe("");
+        if (!both.includes(key)) expect(form, key).not.toMatch(japanese);
+      }
+    }
+    for (const name of Object.values(enStepNames)) expect(name).not.toMatch(japanese);
+  });
+
+  it("every term has its English word and tip, by its Japanese word", () => {
+    expect(Object.keys(enTerms).sort()).toEqual(terms.map((x) => x.term).sort());
+    for (const { term, description } of Object.values(enTerms)) {
+      expect(term.trim()).not.toBe("");
+      expect(description.trim()).not.toBe("");
+    }
+    expect(new Set(Object.values(enTerms).map((x) => x.term)).size, "English words are unique").toBe(terms.length);
   });
 });
 

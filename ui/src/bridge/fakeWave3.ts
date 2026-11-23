@@ -1,8 +1,8 @@
 // The fake's part of protocol 33 (round 12, waves 3 and 4). Until each feature is built, the fake takes its intents
 // and changes nothing, as Rust does (`// round12 stub: <ID>`).
 import type { FakeState } from "./fake";
-import { ARP_OCTAVES_MAX, INSTRUMENT_GROUPS, SOUND_KNOB_DEFAULTS, SOUND_KNOBS } from "./types";
-import type { Arp, Change, Command, HistoryRow, InstrumentKind, SelectedParams, SoundKnobsView, StatusMessage } from "./types";
+import { ARP_OCTAVES_MAX, INSTRUMENT_GROUPS, LANGUAGES, SOUND_KNOB_DEFAULTS, SOUND_KNOBS } from "./types";
+import type { Arp, Change, Command, HistoryRow, InstrumentKind, Language, SelectedParams, SoundKnobsView, StatusMessage } from "./types";
 
 /** E2: the arpeggio a track starts with (off). */
 export const FAKE_ARP_OFF: Arp = { on: false, shape: "up", rate: "sixteenth", triplet: false, octaves: 1, hold: false };
@@ -33,6 +33,29 @@ export function reduceSpectrum(state: FakeState, command: Command): Change[] | n
   if (command.type !== "setSpectrum") return null;
   if (state.workspace.spectrum === command.on) return [];
   return [{ section: "workspace", value: { ...state.workspace, spectrum: command.on } }];
+}
+
+/**
+ * D4 「ことば / Language」: a setting, not a step; refused while counting in or recording. The fake keeps the choice in the
+ * address (`?lang=`), so the page that loads itself again starts in it. `null`: not this command.
+ */
+export function reduceLanguage(state: FakeState, command: Command): Change[] | null {
+  if (command.type !== "setLanguage") return null;
+  const busy = state.transport.state === "recording" || state.transport.state === "countIn";
+  if (busy || state.workspace.language === command.language) return [];
+  if (typeof location !== "undefined" && typeof history !== "undefined") {
+    const url = new URL(location.href);
+    url.searchParams.set("lang", command.language);
+    history.replaceState(history.state, "", url);
+  }
+  return [{ section: "workspace", value: { ...state.workspace, language: command.language } }];
+}
+
+/** `?lang=en`: the fake starts in that language. */
+export function languageFromUrl(): Language | null {
+  if (typeof location === "undefined") return null;
+  const asked = new URLSearchParams(location.search).get("lang");
+  return LANGUAGES.find((l) => l === asked) ?? null;
 }
 
 /**

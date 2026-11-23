@@ -7,7 +7,7 @@
   import { INSERT_SLOTS } from "../../bridge/types";
   import { glSlot, type MeterSource } from "../../gl/slot";
   import { term, tip } from "../../lib/tip.svelte";
-  import { t } from "../../text/ja";
+  import { t } from "../../text";
   import { metrics } from "../metrics.svelte";
   import ValueField from "../params/ValueField.svelte";
   import AutoMark from "../params/AutoMark.svelte";

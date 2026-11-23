@@ -30,7 +30,7 @@
   import { current, onEvent, send } from "../state/app.svelte";
   import { shownWork } from "../state/audioWork.svelte";
   import { exportShown } from "../state/exportShown.svelte";
-  import { LIST_COMMA, STATUS_JOIN, t, type TextKey } from "../text/ja";
+  import { LIST_COMMA, SENTENCE_END, SENTENCE_JOIN, STATUS_JOIN, t, textLanguage, type TextKey } from "../text";
   import { about } from "./about/about.svelte";
   import { keyList } from "./keylist/keyList.svelte";
   import { runShown } from "./export/exportText";
@@ -127,9 +127,9 @@
   /** 「2 ベース の コンプレッサー 」 (with a space at the end). */
   const insertTarget = (i: InsertRef, e: EffectName) => t("status.insertTarget", { strip: insertStrip(i), effect: effectName(e) });
   /** The 「（名前）」 of the window texts in spec 6: the place and the plugin name, with a space at the end. Only the name for a plugin being tried in the shelf (docs/history/design-notes.ja.md A-17). */
-  const windowName = (name: string, slot: PluginSlotRef | null) => `${slot ? t("status.windowPlace", { strip: slotName(slot), name }) : name} `;
+  const windowName = (name: string, slot: PluginSlotRef | null) => spaced(slot ? t("status.windowPlace", { strip: slotName(slot), name }) : name);
   /** A name given by the plugin gets a space before the following 「は」 or 「の」 (「Surge XT の」). */
-  const spaced = (name: string) => `${name} `;
+  const spaced = (name: string) => (textLanguage() === "en" ? name : `${name} `);
   const MINUS = "−";
   const plainNumber = (n: number) => String(n).replace("-", MINUS);
   const mb = (bytes: number) => Math.round(bytes / 1_000_000);
@@ -191,6 +191,9 @@
     return pieces.filter((p) => p.length > 0).flatMap((p, i) => (i === 0 ? p : [{ text: STATUS_JOIN, hole: null }, ...p]));
   }
 
+  /** A sentence that follows another one directly. */
+  const gapBefore = (parts: TextPart[]): TextPart[] => (parts.length > 0 && SENTENCE_JOIN ? [{ text: SENTENCE_JOIN, hole: null }, ...parts] : parts);
+
   /** The pass going on overdubs a clip: that clip's name. */
   const overdubName = $derived.by(() => {
     const r = app.transport.recording;
@@ -222,10 +225,10 @@
   function withLanes(shown: Shown, lanesRemoved: number): Shown {
     if (lanesRemoved <= 0) return shown;
     const gone = textParts("msg.lanesAlsoGone", { count: lanesRemoved });
-    const at = shown.parts.findIndex((p) => p.hole === null && p.text.includes("。"));
+    const at = shown.parts.findIndex((p) => p.hole === null && p.text.includes(SENTENCE_END));
     if (at < 0) return { ...shown, parts: [...shown.parts, ...gone] };
     const part = shown.parts[at]!;
-    const cut = part.text.indexOf("。");
+    const cut = part.text.indexOf(SENTENCE_END);
     const parts = [
       ...shown.parts.slice(0, at),
       { text: part.text.slice(0, cut), hole: null },
@@ -524,7 +527,7 @@
         return { parts: joined(textParts("sf2.added", { file: m.file, count: m.presets, kits: m.kits }), skippedParts(m.skipped)), strong: [], button: null };
       case "sf2AddedMany":
         return {
-          parts: [...textParts("sf2.addedMany", { count: m.added, file: m.first, others: m.added - 1 }), ...skippedParts(m.skipped)],
+          parts: [...textParts("sf2.addedMany", { count: m.added, file: m.first, others: m.added - 1 }), ...gapBefore(skippedParts(m.skipped))],
           strong: [],
           button: null,
         };

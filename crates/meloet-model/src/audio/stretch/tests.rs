@@ -34,7 +34,14 @@ fn doc() -> (Doc, ClipId) {
         sha256: [3; 32],
         name: "ドラム".to_owned(),
     };
-    let (e, made) = import_audio(&song.doc, vec![file], ImportPlan::Separate, BAR).unwrap();
+    let (e, made) = import_audio(
+        &song.doc,
+        vec![file],
+        ImportPlan::Separate,
+        BAR,
+        crate::Language::Ja,
+    )
+    .unwrap();
     (e.doc, made[0].clip)
 }
 

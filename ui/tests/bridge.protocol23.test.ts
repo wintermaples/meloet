@@ -8,7 +8,7 @@ import { SCENES, encodeTelemetry, fakeScene, fakeState } from "../src/bridge/fak
 import { LATENCY_CLICKS, RECORD_FORMATS, VOCAL_INPUTS } from "../src/bridge/types";
 import { TELEMETRY_HEADER_LEN, TELEMETRY_MIC_LEN, TELEMETRY_VERSION, decodeTelemetry } from "../src/bridge/telemetry";
 import { stepNameText, stepWhatText } from "../src/components/history/stepText";
-import { t } from "../src/text/ja";
+import { t } from "../src/text";
 import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 
 const scene = (name: string) => fakeScene(name)!;

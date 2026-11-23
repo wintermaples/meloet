@@ -13,13 +13,13 @@ mod single;
 mod takes;
 mod webprocess;
 
-use std::sync::atomic::{AtomicU16, AtomicU64, Ordering::Relaxed};
+use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU64, Ordering::Relaxed};
 use std::sync::{Arc, Mutex, OnceLock, Weak};
 use std::time::Duration;
 
 use meloet_core::ShellRequest;
 use meloet_protocol::{
-    Change, Command, HelloReply, PROTOCOL_VERSION, SendReply, ServerMessage, Snapshot,
+    Change, Command, HelloReply, Language, PROTOCOL_VERSION, SendReply, ServerMessage, Snapshot,
 };
 use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::webview::PageLoadEvent;
@@ -59,13 +59,26 @@ fn set_jsc_options() {
 }
 
 #[tauri::command]
-fn hello(protocol_version: u32) -> HelloReply {
+fn hello(protocol_version: u32, core: State<'_, Core>) -> HelloReply {
+    let language = core.snapshot().state.workspace.language;
+    ENGLISH.store(language == Language::En, Relaxed);
     HelloReply {
         protocol_version: PROTOCOL_VERSION,
         ok: protocol_version == PROTOCOL_VERSION,
         mono_us: clock::mono_us(),
-        // round12 stub: D4
-        language: meloet_protocol::Language::Ja,
+        language,
+    }
+}
+
+/// The language of the page, as its greeting took it: the page loads itself again whenever
+/// the language changes, so the PC's windows the shell shows follow it.
+static ENGLISH: AtomicBool = AtomicBool::new(false);
+
+fn page_language() -> Language {
+    if ENGLISH.load(Relaxed) {
+        Language::En
+    } else {
+        Language::Ja
     }
 }
 
@@ -391,7 +404,7 @@ fn shell_request(
     let fallback = shared.clone();
     let asked = window.run_on_main_thread(move || {
         if let Some(answer) = shared.lock().unwrap_or_else(|e| e.into_inner()).take() {
-            pcwindow::pick(&on_main, pick, folder, answer);
+            pcwindow::pick(&on_main, pick, page_language(), folder, answer);
         }
     });
     if let Err(e) = asked {

@@ -9,7 +9,7 @@
   import { glRegion } from "../../gl/slot";
   import HScrollbar from "../../lib/HScrollbar.svelte";
   import { current, send } from "../../state/app.svelte";
-  import { t } from "../../text/ja";
+  import { t } from "../../text";
   import { soundRefName, soundViewName, standInTip } from "../sounds";
   import { openContextMenu } from "../menu/contextMenu.svelte";
   import { selectedInsert, windowOf } from "../params/selected";

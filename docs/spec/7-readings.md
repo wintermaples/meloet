@@ -794,3 +794,18 @@ The rules are in spec 3, "Rules added in round 12"; how each is built is archite
 | `--mcp` | Not limited to the AppImage (harmless for the deb). | the developers' decision |
 | A relative song argument | Read from `OWD`; without it a relative path did not open. | the developers' decision |
 | Not done | The LGPL source offer and the patched WebKit library (B-98-2): stopped rather than ship something unclear; nothing is published. | the request ("stop rather than ship something unclear") |
+
+### D4 English wording
+
+| Where | Rule | Basis |
+|---|---|---|
+| Where the setting is | The request says "in the settings" without a place; the theme, its model, is a row of 「表示」, so 「ことば / Language ▸」 is the row after 「テーマ ▸」 with 「日本語」 and 「English」. Disabled while counting in or recording (the core refuses then). | the developers' decision |
+| The row's words | 「ことば / Language」, 「日本語」, 「English」 are the same in both tables, so a person who cannot read the current language finds them. | the request's 「ことば / Language」, 「日本語／English」 (user:2026-11-23) |
+| The PC's language | The first of `LC_ALL`, `LC_MESSAGES`, `LANG` that is set and not empty decides (the POSIX order for messages); none set, or `C`, is English. Until a language is chosen it is read at every start, so the setting stays "not chosen". | the developers' decision |
+| Names of new things | 「はじめての曲」 "My first song"; track names: Piano, Guitar, Bass, Drums, Pad, Winds, Synth, Organ, Mallets; SF2 families: Strings, Ensemble, Brass, Reeds, Pipes, Ethnic, Percussion, Sound effects, Synth; 「歌」 "Vocal". At the first start the untouched new song is made in the PC's language; after a change only new things follow it. | the developers' translation |
+| PC file window titles | "Open", "Choose a folder", "Save as", "Export", "Choose a folder to export to". | the developers' translation |
+| Joints | 「 ・ 」 → " · ", 「、」 → ", ", two sentences one after the other get a space; 「（…の帯も消えました）」 goes before the first "." as before the first 「。」. | the developers' decision |
+| Numbers | A text whose noun follows a number has a form for 1 and one for any other number (`n(by, one, other)` in en.ts); Japanese is unchanged. | the request |
+| Term tips | Looked up by the Japanese word as before; in English a name shown in English (drum names, …) finds its term too. Explanations that said "also called 「ハイカット」" where the English word is that name now leave it out. | the developers' decision |
+| Shortened to fit (1280×800 at 150 %) | 「アレンジ 全体」 "Arrange · all"; 「公開の目安は…」 "Target …"; 「センド B の戻り」 "Send B return"; 「出口 ・ …」 (mixer) "Out · …"; 「もとの位置へ戻す」 (quantize panel) "Put back"; 「新しい版をたしかめる」 "Check for updates"; 「いま … ・ 点 5」 "Now … · 5 pts"; 「録った音の位置」 "Recorded position"; 「次の音までのばす」 "Stretch to next"; 「さがす枠を空にすると…」 "Clear the search to go back to the groups"; the output chooser's help; 「鍵盤を USB でつなぐと…」 "Plug in a USB keyboard and it shows here. Or write with the mouse."; 「音源 202」 (shelf tab) "Instr. 202"; 「選択 80 83」 (velocity band) "Sel. 80 83"; 「止」 (stopped insert) "■". | the developers' decision (the request: reword, do not widen) |
+| shoot_ui.py | `--lang=en` adds `&lang=en`, names the files `-en`, puts no mock beside them, and turns the Japanese words the clicks look for into the English ones (`EN_WORDS`). | the developers' decision |

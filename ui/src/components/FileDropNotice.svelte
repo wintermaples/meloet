@@ -8,7 +8,7 @@
      Rust receives the files (it asks the PC). The screen only shows this; it cannot be pressed (it does not block what is under it). Esc is in keys/attach.ts. -->
 <script lang="ts">
   import type { FileDropView } from "../bridge";
-  import { t } from "../text/ja";
+  import { t } from "../text";
   import { dropModeFor, dropPlaceAt, fileDrag } from "./arrange/fileDrag.svelte";
 
   let { drop }: { drop: FileDropView } = $props();

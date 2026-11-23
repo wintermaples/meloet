@@ -8,7 +8,7 @@
   import { onMount, untrack } from "svelte";
   import { CLICK_SOUNDS, CLICK_WHENS, type ClickSound, type ClickWhen, type Command, type TransportView } from "../bridge";
   import { send } from "../state/app.svelte";
-  import { t, type TextKey } from "../text/ja";
+  import { t, type TextKey } from "../text";
   import { tempoText } from "./format";
   import { metrics } from "./metrics.svelte";
   import { TapTempo, clickDbAt, clickDbText, clickFrac, parseClickDb } from "./metronome";

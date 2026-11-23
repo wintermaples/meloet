@@ -361,9 +361,15 @@ pub struct Doc {
 }
 
 impl Doc {
+    /// [`Doc::new_in`] Japanese.
     pub fn new_default() -> Doc {
+        Doc::new_in(crate::Language::Ja)
+    }
+
+    /// The song a person starts from, its names in `language`.
+    pub fn new_in(language: crate::Language) -> Doc {
         Doc {
-            name: "はじめての曲".to_owned(),
+            name: crate::first_song_name(language).to_owned(),
             timeline: Arc::new(Timeline::new(
                 Tempo::from_centi(9_600).expect("96.00 is in range"),
                 Meter::FOUR_FOUR,
@@ -373,7 +379,7 @@ impl Doc {
             loop_range: None,
             tracks: vec![Arc::new(Track {
                 id: TrackId(1),
-                name: "ピアノ".to_owned(),
+                name: InstrumentRef::GRAND_PIANO.track_name(language).to_owned(),
                 color: TrackColor::for_index(0),
                 kind: TrackKind::Keys,
                 instrument: InstrumentRef::GRAND_PIANO,
@@ -461,9 +467,14 @@ impl Song {
         (self.session.play_target.and_then(keys)).or(self.session.last_keys.and_then(keys))
     }
 
+    /// [`Song::new_in`] Japanese.
     pub fn new_default() -> Song {
+        Song::new_in(crate::Language::Ja)
+    }
+
+    pub fn new_in(language: crate::Language) -> Song {
         Song {
-            doc: Doc::new_default(),
+            doc: Doc::new_in(language),
             session: Session {
                 play_target: Some(TrackId(1)),
                 last_keys: None,

@@ -3,7 +3,7 @@
 // When something not selected is right-clicked, the part selects only it before calling. Right click opens the list with every tool.
 // Insert and instrument slots are not selected (selecting opens the plugin window). The rows act on that slot.
 
-import { t, type TextKey } from "../../text/ja";
+import { t, type TextKey } from "../../text";
 import type { ListEntry } from "./menus";
 
 export interface MenuRow {

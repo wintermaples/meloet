@@ -67,7 +67,10 @@ fn song() -> Doc {
         doc = e.doc;
     }
     let bass = InstrumentRef::Builtin(BuiltinInstrument::SynthLead);
-    doc = add_track(&doc, None, bass).unwrap().0.doc;
+    doc = add_track(&doc, None, bass, crate::Language::Ja)
+        .unwrap()
+        .0
+        .doc;
     doc
 }
 
@@ -153,7 +156,7 @@ fn undo_takes_the_whole_step_back_and_redo_brings_it() {
 #[test]
 fn a_name_that_is_taken_gets_a_number_and_the_clip_follows_the_songs_tempo_map() {
     let mut doc = song();
-    let (e, vocal) = add_vocal_track(&doc, None).unwrap();
+    let (e, vocal) = add_vocal_track(&doc, None, crate::Language::Ja).unwrap();
     doc = rename_track(&e.doc, vocal, "ピアノ（音）").unwrap().doc;
     // From the second bar the song is twice as fast.
     let fast = Tempo::from_centi(19_200).unwrap();
@@ -169,7 +172,7 @@ fn a_name_that_is_taken_gets_a_number_and_the_clip_follows_the_songs_tempo_map()
 #[test]
 fn a_vocal_track_bad_audio_or_no_track_change_nothing() {
     let doc = song();
-    let (e, vocal) = add_vocal_track(&doc, None).unwrap();
+    let (e, vocal) = add_vocal_track(&doc, None, crate::Language::Ja).unwrap();
     assert_eq!(
         bounce_track(&e.doc, vocal, audio(10), 0),
         Err(EditError::WrongKind)

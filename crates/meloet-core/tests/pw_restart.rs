@@ -57,6 +57,7 @@ fn the_core_waits_for_pipewire_and_comes_back_after_it_stopped() {
     // No PipeWire at start: nothing is said, and the remembered output opens once it is there.
     pw.kill();
     let core = Core::start(CoreOptions {
+        pc_language: meloet_protocol::Language::Ja,
         config_dir: Some(config),
         measure_dir: None,
         midi: None,

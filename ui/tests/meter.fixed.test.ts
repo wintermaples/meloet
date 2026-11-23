@@ -6,7 +6,7 @@ import InputMeter from "../src/components/InputMeter.svelte";
 import { cancelDrag } from "../src/components/pianoroll/view.svelte";
 import HScrollbar from "../src/lib/HScrollbar.svelte";
 import { tipView } from "../src/lib/tip.svelte";
-import { t } from "../src/text/ja";
+import { t } from "../src/text";
 import * as app from "./fake-app.svelte";
 
 vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));

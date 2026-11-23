@@ -571,6 +571,8 @@ pub struct Play {
     audio: audio::AudioBook,
     /// 「自分で残したもの」 of the PC (round 12, M1).
     user_presets: crate::presets::UserPresets,
+    /// The language the names of new songs and tracks are made in (round 12, D4).
+    names: meloet_model::Language,
 }
 
 impl Play {
@@ -633,6 +635,7 @@ impl Play {
             voices_sent: Vec::new(),
             uid_seed: 0,
             user_presets: crate::presets::UserPresets::default(),
+            names: meloet_model::Language::Ja,
             faults: None,
             audio: audio::AudioBook::default(),
         };
@@ -681,6 +684,26 @@ impl Play {
     }
 
     /// Counting in or recording: the song is not to be changed or replaced.
+    /// The language of the names of songs and tracks made from now on. At the start, the new
+    /// song nobody touched yet is made again in it; later, what is there keeps its names.
+    pub fn set_names(&mut self, names: meloet_model::Language, at_start: bool) {
+        let plain = at_start && self.song == Song::new_in(self.names);
+        let made = at_start && self.song == self.new_song();
+        self.names = names;
+        if plain || made {
+            self.song = if plain {
+                Song::new_in(names)
+            } else {
+                self.new_song()
+            };
+            self.seats = Seats::for_song(&self.song.doc);
+        }
+    }
+
+    pub fn names(&self) -> meloet_model::Language {
+        self.names
+    }
+
     pub fn busy(&self) -> bool {
         matches!(
             self.state,

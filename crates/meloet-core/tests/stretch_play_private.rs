@@ -171,6 +171,7 @@ fn follow_the_tempo(root: &Path, buffer: u32, attempt: u32) -> Option<(Vec<f64>,
     );
     settings(&config, buffer);
     let core = Core::start(CoreOptions {
+        pc_language: meloet_protocol::Language::Ja,
         config_dir: Some(config),
         measure_dir: None,
         midi: None,

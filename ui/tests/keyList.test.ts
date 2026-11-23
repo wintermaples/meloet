@@ -10,7 +10,7 @@ import { keyNames, topMenus, type ListRow } from "../src/components/menu/menus";
 import StatusLine from "../src/components/StatusLine.svelte";
 import { handleKeydown, type KeyDeps } from "../src/keys/attach";
 import { ACTION_ROWS, KEY_GROUPS, keyListGroups, OTHER_ROWS } from "../src/keys/keyList";
-import { t } from "../src/text/ja";
+import { t } from "../src/text";
 import * as app from "./fake-app.svelte";
 
 vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));

@@ -5,7 +5,7 @@
   import type { AutoTarget, SelectedSound, SoundKnobsView } from "../../bridge";
   import { SOUND_KNOBS } from "../../bridge/types";
   import { current, send } from "../../state/app.svelte";
-  import { t } from "../../text/ja";
+  import { t } from "../../text";
   import { livePosition } from "../automation/autoState.svelte";
   import { laneMoves, laneOf } from "../automation/laneValue";
   import ParamRow from "./ParamRow.svelte";

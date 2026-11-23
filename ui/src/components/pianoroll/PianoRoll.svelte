@@ -5,7 +5,7 @@
   import { onMount } from "svelte";
   import { line, space } from "../../design/tokens";
   import { current } from "../../state/app.svelte";
-  import { t } from "../../text/ja";
+  import { t } from "../../text";
   import ChoiceMenu from "../ChoiceMenu.svelte";
   import { textWidth } from "../fit";
   import { menuOpened } from "../../lib/menu";

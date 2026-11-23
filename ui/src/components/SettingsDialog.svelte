@@ -12,7 +12,7 @@
   import ScrollArea from "../lib/ScrollArea.svelte";
   import { term } from "../lib/tip.svelte";
   import { current, send } from "../state/app.svelte";
-  import { t } from "../text/ja";
+  import { t } from "../text";
   import Button from "./Button.svelte";
   import EndpointRow from "./EndpointRow.svelte";
   import UnusableEndpoints from "./UnusableEndpoints.svelte";

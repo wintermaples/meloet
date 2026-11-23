@@ -5,7 +5,7 @@
      Esc while dragging goes back to before moving (onDragCancel in view.svelte.ts). -->
 <script lang="ts">
   import { onMount, untrack } from "svelte";
-  import { t } from "../../text/ja";
+  import { t } from "../../text";
   import { onDragCancel } from "./view.svelte";
   import ValueField from "../params/ValueField.svelte";
   import { readScaled } from "../valueClamp";

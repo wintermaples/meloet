@@ -399,6 +399,56 @@ fn home_with_the_loop_on_goes_to_its_head_then_to_the_song_start() {
 }
 
 #[test]
+fn a_late_second_home_goes_to_the_loop_head_again() {
+    let m = &mut ready();
+    cmd(
+        m,
+        Command::SetLoop {
+            from_bar: 5,
+            to_bar: 9,
+        },
+    );
+    // Stopped: a second Home counts only within the time.
+    hear(m, 1_000_000, 0.0, TransportState::Stopped, 0);
+    assert_eq!(
+        ops(&cmd(m, Command::GoToStart)),
+        [EngineOp::Locate { tick: 4 * BAR }]
+    );
+    hear(m, 1_400_000, 0.0, TransportState::Stopped, 0);
+    assert_eq!(
+        ops(&cmd(m, Command::GoToStart)),
+        [EngineOp::Locate { tick: 0 }],
+        "400 ms later: in time"
+    );
+    cmd(m, Command::Locate { tick: 6 * BAR });
+    hear(m, 2_000_000, 0.0, TransportState::Stopped, 0);
+    cmd(m, Command::GoToStart);
+    hear(m, 2_600_000, 0.0, TransportState::Stopped, 0);
+    assert_eq!(
+        ops(&cmd(m, Command::GoToStart)),
+        [EngineOp::Locate { tick: 4 * BAR }],
+        "600 ms later: the head again"
+    );
+
+    // Playing: the same.
+    cmd(m, Command::PlayStop);
+    hear(m, 3_000_000, (5 * BAR) as f64, TransportState::Playing, 0);
+    cmd(m, Command::GoToStart);
+    hear(m, 3_800_000, (4 * BAR) as f64, TransportState::Playing, 0);
+    assert_eq!(
+        ops(&cmd(m, Command::GoToStart)),
+        [EngineOp::Locate { tick: 4 * BAR }],
+        "800 ms later while playing"
+    );
+    hear(m, 4_100_000, (4 * BAR) as f64, TransportState::Playing, 0);
+    assert_eq!(
+        ops(&cmd(m, Command::GoToStart)),
+        [EngineOp::Locate { tick: 0 }],
+        "300 ms later while playing"
+    );
+}
+
+#[test]
 fn record_in_a_song_with_no_tracks_says_so() {
     let m = &mut ready();
     assert!(m.view().transport.can_record);

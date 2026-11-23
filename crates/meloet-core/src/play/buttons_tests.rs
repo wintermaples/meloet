@@ -124,6 +124,36 @@ fn left_and_right_go_a_bar_to_the_heads_of_bars() {
 }
 
 #[test]
+fn left_pressed_fast_while_playing_goes_back_a_bar_each_time() {
+    let m = &mut ready();
+    press(m, Button::Play);
+    // The listener is in bar 5 (from 1) and still hears it as the line is sent back.
+    let hear = |m: &mut Model, t_us: u64, tick: u64| {
+        m.set_now(
+            t_us,
+            Some(Heard {
+                tick: tick as f64,
+                state: TransportState::Playing,
+                lap: 0,
+            }),
+        );
+    };
+    hear(m, 1_000_000, 4 * BAR + 500);
+    press(m, Button::Left);
+    assert_eq!(position(m), 4 * BAR);
+    hear(m, 1_050_000, 4 * BAR + 600);
+    press(m, Button::Left);
+    assert_eq!(position(m), 3 * BAR);
+    hear(m, 1_100_000, 4 * BAR + 700);
+    press(m, Button::Left);
+    assert_eq!(position(m), 2 * BAR);
+    // Once the heard line has caught up, it is read again.
+    hear(m, 1_500_000, 2 * BAR + 2000);
+    press(m, Button::Left);
+    assert_eq!(position(m), 2 * BAR);
+}
+
+#[test]
 fn up_and_down_select_the_next_track_and_stop_at_the_ends() {
     let m = &mut ready();
     three_tracks(m);

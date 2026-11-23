@@ -35,6 +35,11 @@ const DEFAULT_LOOP_BARS: u64 = 4;
 /// ticks of the core thread.
 const SEND_PASS_AHEAD_S: f64 = 0.15;
 pub const COUNT_IN_BARS: [u8; 3] = [0, 1, 2];
+/// A second Home within this time goes on from the loop's head to the song's start.
+const HOME_AGAIN_US: u64 = 500_000;
+/// After a locate while moving, the heard line still shows the old place for a moment
+/// (output delay, telemetry rate); until then the line is where it was sent.
+const HEARD_CATCH_UP_US: u64 = 200_000;
 
 /// What the listener hears now, read from the engine's clock by the core thread.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -451,8 +456,10 @@ pub struct Play {
     state: TransportState,
     /// Where play and record start from; while moving, where it started.
     position: u64,
-    /// While playing: the last move of the play line was Home to the loop's head.
-    homed: bool,
+    /// When Home last sent the play line to the loop's head (`now_us`); cleared by any other move.
+    homed_at_us: Option<u64>,
+    /// When the play line was last sent somewhere (`now_us`).
+    located_at_us: Option<u64>,
     metronome: bool,
     /// 「重ねる」: a recording on a keys track adds to the clip there. Read when a recording
     /// starts and at each pass of a loop.
@@ -543,7 +550,8 @@ impl Play {
             history: History::new(),
             state: TransportState::Stopped,
             position: 0,
-            homed: false,
+            homed_at_us: None,
+            located_at_us: None,
             metronome,
             overdub: false,
             count_in_bars: if COUNT_IN_BARS.contains(&count_in_bars) {
@@ -705,7 +713,8 @@ impl Play {
                     _ => self.position,
                 };
                 self.position = from;
-                self.homed = false;
+                self.homed_at_us = None;
+                self.located_at_us = None;
                 self.state = TransportState::Playing;
                 self.last_heard = None;
                 effects.push(Effect::Engine(EngineOp::Play { from }));
@@ -850,33 +859,43 @@ impl Play {
             return;
         }
         self.position = tick;
-        self.homed = false;
+        self.homed_at_us = None;
+        self.located_at_us = Some(self.now_us);
         effects.push(Effect::Engine(EngineOp::Locate { tick }));
     }
 
-    /// Home: with the loop on, to the loop's head; from there, to the song's start. While
-    /// playing the line does not stay at the head, so a Home just before counts as being there.
+    /// Home: with the loop on, to the loop's head; a second Home within `HOME_AGAIN_US` goes
+    /// on to the song's start. While playing the line does not stay at the head, so the
+    /// position sent counts as being there.
     pub fn go_to_start(&mut self, effects: &mut Vec<Effect>) {
         if self.busy() {
             return;
         }
+        let again = self
+            .homed_at_us
+            .is_some_and(|t| self.now_us.saturating_sub(t) <= HOME_AGAIN_US);
         let head = self.loop_on().map(|r| r.start()).filter(|&head| {
-            let at_head = if self.state == TransportState::Playing {
-                self.homed && self.position == head
-            } else {
-                self.play_line() == head
-            };
+            let at_head = again
+                && if self.state == TransportState::Playing {
+                    self.position == head
+                } else {
+                    self.play_line() == head
+                };
             !at_head
         });
         self.locate(head.unwrap_or(0), effects);
-        self.homed = head.is_some();
+        self.homed_at_us = head.map(|_| self.now_us);
     }
 
     /// Where the play line is: while moving, what the listener hears.
     fn play_line(&self) -> u64 {
-        self.heard
-            .and_then(|h| h.moving_tick())
-            .unwrap_or(self.position)
+        let just_sent = self
+            .located_at_us
+            .is_some_and(|t| self.now_us.saturating_sub(t) < HEARD_CATCH_UP_US);
+        match self.heard.and_then(|h| h.moving_tick()) {
+            Some(heard) if !just_sent => heard,
+            _ => self.position,
+        }
     }
 
     /// Returns whether it changed (the settings are then saved).

@@ -259,6 +259,31 @@ pub enum AiAsk {
         param: u32,
         value: f64,
     },
+    /// Parameters of a plugin (id, value 0..=1), all set and then made one step of the
+    /// plugin's state. The answer is `pending` with a ticket for [`AiAsk::ParamsSet`].
+    SetPluginParams {
+        place: PluginPlace,
+        values: Vec<(u32, f64)>,
+    },
+    /// How the set of a ticket of [`AiAsk::SetPluginParams`] (or `SetPluginParam`) ended:
+    /// answered with [`AiParams::Set`], or `Waiting` until the plugin has said its state.
+    /// Not a write.
+    ParamsSet {
+        ticket: u64,
+    },
+    /// The texts a plugin shows for these values of a parameter (each 0..=1), without
+    /// setting anything: answered with [`AiParams::Texts`], or `Waiting`. Not a write.
+    ParamTexts {
+        place: PluginPlace,
+        param: u32,
+        values: Vec<f64>,
+    },
+    /// Parameters of the built-in effect in a slot (index, value in its unit), as one step.
+    SetEffectParams {
+        strip: StripId,
+        slot: usize,
+        values: Vec<(u32, f32)>,
+    },
     /// The parameters of a plugin, read: answered with [`AiAnswer::Params`]. Not a write.
     PluginParams {
         place: PluginPlace,
@@ -365,6 +390,9 @@ pub fn batchable(ask: &AiAsk) -> bool {
             | AiAsk::Rollback { .. }
             | AiAsk::SetPluginParam { .. }
             | AiAsk::PluginParams { .. }
+            | AiAsk::SetPluginParams { .. }
+            | AiAsk::ParamsSet { .. }
+            | AiAsk::ParamTexts { .. }
             | AiAsk::PluginState { .. }
             | AiAsk::SetPluginState { .. }
             | AiAsk::KeyNames { .. }
@@ -439,6 +467,10 @@ impl AiAsk {
             AiAsk::MoveAutomation { .. } => "move automation points",
             AiAsk::DeleteAutomation { .. } => "delete automation points",
             AiAsk::SetPluginParam { .. } => "set the plugin parameter",
+            AiAsk::SetPluginParams { .. } => "set the plugin parameters",
+            AiAsk::ParamsSet { .. } => "learn how the parameters were set",
+            AiAsk::ParamTexts { .. } => "read the parameter's texts",
+            AiAsk::SetEffectParams { .. } => "set the effect parameters",
             AiAsk::PluginParams { .. } => "read the plugin's parameters",
             AiAsk::PluginState { .. } => "read the plugin's state",
             AiAsk::SetPluginState { .. } => "set the plugin's state",
@@ -524,12 +556,18 @@ pub struct AiParam {
     pub steps: u32,
     pub labels: Vec<String>,
     pub automatable: bool,
+    /// It is there only to take a keyboard's knobs (MIDI CC).
+    pub midi_cc: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AiParams {
     /// The plugin was asked; ask again in a moment.
     Waiting,
+    /// One for each value of [`AiAsk::ParamTexts`]; `None` where the plugin has no text.
+    Texts(Vec<Option<String>>),
+    /// How a set of [`AiAsk::SetPluginParams`] ended.
+    Set(AiParamsSet),
     Listed(Vec<AiParam>),
 }
 
@@ -618,6 +656,42 @@ pub enum AiState {
     Got(AiPluginState),
 }
 
+/// How a set of plugin parameters the AI link asked for ended.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AiParamsSet {
+    /// In the order asked.
+    pub params: Vec<AiParamNow>,
+    pub end: AiSetEnd,
+    pub undo_count: u32,
+}
+
+/// A parameter that was set, and what the plugin answered.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AiParamNow {
+    pub id: u32,
+    pub asked: f64,
+    /// The value the plugin took (0..=1), with its text; `None` when it did not answer or
+    /// does not tell.
+    pub value: Option<f64>,
+    pub text: Option<String>,
+}
+
+/// Whether the song holds what a set of plugin parameters did.
+#[derive(Debug, Clone, PartialEq)]
+pub enum AiSetEnd {
+    /// The plugin's new state went into the song as this step.
+    Step(Option<Box<HistoryRow>>),
+    /// The plugin's state is the one the song has: no step.
+    Same,
+    /// The plugin did not say its state (it stopped, or did not answer).
+    NoState,
+    /// The song's state was put back into the plugin before it said its state (undo, redo):
+    /// the values are gone from it again.
+    Overtaken,
+    /// The plugin is not at its place in the song any more.
+    Gone,
+}
+
 /// What a write did.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AiDone {
@@ -632,9 +706,10 @@ pub struct AiDone {
     pub notes: Option<Box<AiNotesDone>>,
     /// The track added, as its number from 1.
     pub track: Option<u32>,
-    /// The ask goes on: its outcome comes under this ticket in [`AiSong::outcomes`].
+    /// The ask goes on: its outcome comes under this ticket in [`AiSong::outcomes`]; with
+    /// `pending`, [`AiAsk::ParamsSet`] tells it.
     pub ticket: Option<u64>,
-    /// The step comes later (a plugin's parameter): `undo_count` grows then.
+    /// The step comes later (a plugin's parameter), if at all: see `ticket`.
     pub pending: bool,
 }
 
@@ -702,6 +777,12 @@ pub enum AiRefusal {
     PluginBusy,
     /// The parameter has an automation lane: write the lane.
     HasLane,
+    /// This parameter has an automation lane; nothing was set.
+    LaneDrives(u32),
+    /// The effect has no parameter of this index.
+    NoSuchParam(u32),
+    /// No set of parameters has this ticket (it is too old).
+    NoSuchSet,
     NoSuchLane,
     NoSuchPoint,
     SlotTaken,

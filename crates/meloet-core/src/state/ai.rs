@@ -159,6 +159,18 @@ impl Model {
                 Ok(state) => AiAnswer::State(state),
                 Err(refused) => AiAnswer::Refused(refused),
             },
+            AiAsk::ParamsSet { ticket } => match self.play.ai_params_set(ticket) {
+                Ok(params) => AiAnswer::Params(params),
+                Err(refused) => AiAnswer::Refused(refused),
+            },
+            AiAsk::ParamTexts {
+                place,
+                param,
+                values,
+            } => match self.play.ai_param_texts(place, param, values, effects) {
+                Ok(params) => AiAnswer::Params(params),
+                Err(refused) => AiAnswer::Refused(refused),
+            },
             ask => match self.ai_in_turn(ask, effects) {
                 Ok(done) => AiAnswer::Done(Box::new(done)),
                 Err(refused) => AiAnswer::Refused(refused),
@@ -461,7 +473,7 @@ impl Model {
                 param,
                 value,
             } => {
-                (self.play).ai_set_plugin_param(place, param, value, effects)?;
+                let set = (self.play).ai_set_plugin_param(place, param, value, effects)?;
                 return Ok(AiDone {
                     step: None,
                     undo_count: before,
@@ -469,11 +481,15 @@ impl Model {
                     take: None,
                     notes: None,
                     track: None,
-                    ticket: None,
+                    ticket: Some(set),
                     pending: true,
                 });
             }
-            AiAsk::PluginParams { .. } | AiAsk::KeyNames { .. } | AiAsk::PluginState { .. } => {
+            AiAsk::PluginParams { .. }
+            | AiAsk::KeyNames { .. }
+            | AiAsk::PluginState { .. }
+            | AiAsk::ParamsSet { .. }
+            | AiAsk::ParamTexts { .. } => {
                 return Err(AiRefusal::Cannot("that is a read, not a write".into()));
             }
             AiAsk::SetPluginState { place, state } => {
@@ -491,6 +507,27 @@ impl Model {
                     ticket: Some(ticket),
                     pending: true,
                 });
+            }
+            AiAsk::SetPluginParams { place, values } => {
+                let set = (self.play).ai_set_plugin_params(place, &values, effects)?;
+                return Ok(AiDone {
+                    step: None,
+                    undo_count: before,
+                    clip: None,
+                    take: None,
+                    notes: None,
+                    track: None,
+                    ticket: Some(set),
+                    pending: true,
+                });
+            }
+            AiAsk::SetEffectParams {
+                strip,
+                slot,
+                values,
+            } => {
+                no_step = !(self.play).ai_set_effect_params(strip, slot, &values, effects)?;
+                AiWrote::default()
             }
             AiAsk::Save | AiAsk::SaveAs { .. } | AiAsk::Open { .. } | AiAsk::NewSong => {
                 if !self.song_free() {

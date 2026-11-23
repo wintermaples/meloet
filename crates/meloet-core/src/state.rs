@@ -354,6 +354,12 @@ pub enum PluginSaid {
         param: u32,
         read: Option<TextValue>,
     },
+    /// The answer to [`PluginAsk::Texts`]: one for each value, `None` where the plugin has
+    /// no text.
+    Texts {
+        ask: u64,
+        texts: Vec<Option<String>>,
+    },
     /// The person took hold of a parameter in the plugin's window (`on`), or let go of it
     /// (VST3 `beginEdit` / `endEdit`, LV2 `ui:touch`, else 0.5 s after the last change).
     /// While held the plugin passes over the automation of it by itself. `t_us`: when the
@@ -400,6 +406,13 @@ pub enum PluginAsk {
     PutState { state: Arc<[u8]> },
     /// What value the typed text stands for. Answer with [`PluginSaid::TextRead`].
     ReadText { param: u32, text: String },
+    /// The texts it shows for these values of a parameter (each 0..=1), without setting
+    /// anything. Answer with [`PluginSaid::Texts`] and the same `ask`.
+    Texts {
+        ask: u64,
+        param: u32,
+        values: Vec<f64>,
+    },
     /// The parameters panel shows the plugin now (`on`), or no longer does. While it does,
     /// a [`PluginSaid::Param`] comes for what the lanes do to its parameters
     /// (docs/architecture.md 21-8).
@@ -420,8 +433,13 @@ pub enum StateAsk {
     Left(u64),
     /// After this parameter was set from the parameters panel, for the step. `puts`: how
     /// many states had been put back into the plugin by then; an answer that comes after
-    /// another one was put back is of no use.
-    Param { param: u32, puts: u32 },
+    /// another one was put back is of no use. `ai`: the set of the AI link this step is
+    /// for, whose end it tells.
+    Param {
+        param: u32,
+        puts: u32,
+        ai: Option<u64>,
+    },
 }
 
 /// Where [`Effect::SaveSong`] writes.

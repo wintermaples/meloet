@@ -194,6 +194,10 @@ impl FakeHost {
                 });
                 PluginSaid::TextRead { param, read }
             }
+            PluginAsk::Texts { ask, param, values } => PluginSaid::Texts {
+                ask,
+                texts: (values.iter()).map(|v| Some(text_of(param, *v))).collect(),
+            },
         })
     }
 

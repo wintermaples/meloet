@@ -7,10 +7,11 @@
 //! changed, was given another state or loaded again) is a table with a new number; the old
 //! one stays until the new one has come.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 
-use meloet_model::{PluginChange, PluginPlace, StripId};
+use meloet_model::effects::EffectKind;
+use meloet_model::{EditError, PluginChange, PluginPlace, StripId, mixer};
 use meloet_plugin::wire::{ParamInfo, ParamNow, ParamShape, TextValue};
 use meloet_protocol::{
     ParamEnd, ParamGroup, ParamKind, ParamRef, ParamRow, ParamTable, ParamValue, ParamValues,
@@ -20,7 +21,7 @@ use meloet_protocol::{
 use super::Play;
 use super::automation::{LetGo, NAMES_ASK};
 use super::mixer::Picked;
-use crate::ai::{AiParams, AiRefusal};
+use crate::ai::{AiParamNow, AiParams, AiParamsSet, AiRefusal, AiSetEnd};
 use crate::state::{Effect, PluginAsk, PluginSaid, StateAsk};
 
 /// The least time between two `ParamValues` messages: 30 a second at most.
@@ -72,12 +73,46 @@ pub(super) struct Panel {
     ai_lists: HashMap<u64, Vec<ParamInfo>>,
     /// The plugins asked for a list for the AI link, and when (`now_us`).
     ai_asked: Vec<(u64, u64)>,
+    /// The sets of parameters the AI link asked for, the newest last; the last few that
+    /// ended are kept for it to read.
+    ai_sets: VecDeque<AiSet>,
+    ai_sets_made: u64,
+    /// Texts of values the AI link asked plugins for, until it takes them.
+    ai_texts: Vec<AiTexts>,
+    ai_texts_asked: u64,
+}
+
+/// Parameters of one plugin the AI link set, until the step of its state is made or not.
+#[derive(Debug)]
+struct AiSet {
+    ticket: u64,
+    /// The plugin, by the ticket of its load.
+    plugin: u64,
+    params: Vec<AiParamNow>,
+    /// Which of `params` the plugin has answered for.
+    answered: Vec<bool>,
+    /// With the undo count then.
+    end: Option<(AiSetEnd, u32)>,
+}
+
+#[derive(Debug)]
+struct AiTexts {
+    ask: u64,
+    plugin: u64,
+    param: u32,
+    values: Vec<f64>,
+    asked_us: u64,
+    texts: Option<Vec<Option<String>>>,
 }
 
 /// The `ask` of a list of parameters for the AI link.
 const AI_PARAMS_ASK: u64 = u64::MAX - 1;
 /// How long a list asked for the AI link is waited for before it is asked again.
 const AI_ASK_AGAIN_US: u64 = 2_000_000;
+/// Sets of the AI link that ended and are kept for it to read.
+const AI_SETS_KEPT: usize = 16;
+/// Sets that have not ended are dropped beyond this many (a plugin that never answers).
+const AI_SETS_MOST: usize = 64;
 
 fn ai_param(info: ParamInfo) -> crate::ai::AiParam {
     let steps = match info.shape {
@@ -95,6 +130,7 @@ fn ai_param(info: ParamInfo) -> crate::ai::AiParam {
         steps,
         labels: info.labels,
         automatable: info.automatable,
+        midi_cc: info.midi_cc,
     }
 }
 
@@ -215,29 +251,194 @@ impl Play {
 
     /// The AI link sets a parameter of the plugin at `place`, as the panel does when a value
     /// is typed: the step comes with the plugin's state. Not for a parameter a lane moves.
+    /// Returns the ticket of the set.
     pub(crate) fn ai_set_plugin_param(
         &mut self,
         place: PluginPlace,
         param: u32,
         value: f64,
         effects: &mut Vec<Effect>,
-    ) -> Result<(), AiRefusal> {
+    ) -> Result<u64, AiRefusal> {
         let ticket = self.ai_ticket(place)?;
-        if !value.is_finite() {
-            return Err(AiRefusal::Unchanged);
-        }
         let key = self.ticket_lane(ticket, param);
         if key.is_some_and(|key| self.lane_at(key).is_some()) {
             return Err(AiRefusal::HasLane);
         }
-        self.before_param(ticket, effects);
-        let ask = PluginAsk::SetParam {
-            param,
-            value: value.clamp(0.0, 1.0),
+        self.ai_set_plugin_params(place, &[(param, value)], effects)
+    }
+
+    /// The AI link sets parameters of the plugin at `place`, every one before the plugin is
+    /// asked for its state once: one step. Nothing is set when a lane moves one of them.
+    /// Returns the ticket of the set; [`Play::ai_params_set`] tells how it ended.
+    pub(crate) fn ai_set_plugin_params(
+        &mut self,
+        place: PluginPlace,
+        values: &[(u32, f64)],
+        effects: &mut Vec<Effect>,
+    ) -> Result<u64, AiRefusal> {
+        let plugin = self.ai_ticket(place)?;
+        let Some(&(first, _)) = values.first() else {
+            return Err(AiRefusal::Unchanged);
         };
-        effects.push(Effect::AskPlugin { ticket, ask });
-        self.param_set(ticket, param, effects);
-        Ok(())
+        if values.iter().any(|(_, value)| !value.is_finite()) {
+            return Err(AiRefusal::Unchanged);
+        }
+        for &(param, _) in values {
+            let key = self.ticket_lane(plugin, param);
+            if key.is_some_and(|key| self.lane_at(key).is_some()) {
+                return Err(AiRefusal::LaneDrives(param));
+            }
+        }
+        self.before_param(plugin, effects);
+        for &(param, value) in values {
+            let value = value.clamp(0.0, 1.0);
+            let ask = PluginAsk::SetParam { param, value };
+            effects.push(Effect::AskPlugin {
+                ticket: plugin,
+                ask,
+            });
+        }
+        self.panel.ai_sets_made += 1;
+        let ticket = self.panel.ai_sets_made;
+        let puts = self.plugs.of(plugin).map_or(0, |plug| plug.puts);
+        let ask = StateAsk::Param {
+            param: first,
+            puts,
+            ai: Some(ticket),
+        };
+        effects.push(Effect::AskPlugin {
+            ticket: plugin,
+            ask: PluginAsk::State(ask),
+        });
+        let params = (values.iter())
+            .map(|&(id, asked)| AiParamNow {
+                id,
+                asked: asked.clamp(0.0, 1.0),
+                value: None,
+                text: None,
+            })
+            .collect();
+        let sets = &mut self.panel.ai_sets;
+        sets.push_back(AiSet {
+            ticket,
+            plugin,
+            answered: vec![false; values.len()],
+            params,
+            end: None,
+        });
+        while sets.iter().filter(|s| s.end.is_some()).count() > AI_SETS_KEPT
+            || sets.len() > AI_SETS_MOST
+        {
+            let at = sets.iter().position(|s| s.end.is_some()).unwrap_or(0);
+            sets.remove(at);
+        }
+        Ok(ticket)
+    }
+
+    /// How the AI link's set of `ticket` ended, or `Waiting`.
+    pub(crate) fn ai_params_set(&self, ticket: u64) -> Result<AiParams, AiRefusal> {
+        let set = (self.panel.ai_sets.iter())
+            .find(|s| s.ticket == ticket)
+            .ok_or(AiRefusal::NoSuchSet)?;
+        Ok(match &set.end {
+            None => AiParams::Waiting,
+            Some((end, undo_count)) => AiParams::Set(AiParamsSet {
+                params: set.params.clone(),
+                end: end.clone(),
+                undo_count: *undo_count,
+            }),
+        })
+    }
+
+    fn ai_set_ended(&mut self, ticket: u64, end: AiSetEnd) {
+        let undo_count = self.undo_count();
+        if let Some(set) = self.panel.ai_sets.iter_mut().find(|s| s.ticket == ticket) {
+            set.end = Some((end, undo_count));
+        }
+    }
+
+    /// The AI link asks the plugin at `place` for its texts of some values of a parameter:
+    /// the texts once it said them, else `Waiting`.
+    pub(crate) fn ai_param_texts(
+        &mut self,
+        place: PluginPlace,
+        param: u32,
+        values: Vec<f64>,
+        effects: &mut Vec<Effect>,
+    ) -> Result<AiParams, AiRefusal> {
+        let plugin = self.ai_ticket(place)?;
+        let same = |t: &AiTexts| t.plugin == plugin && t.param == param && t.values == values;
+        let texts = &mut self.panel.ai_texts;
+        if let Some(at) = texts.iter().position(|t| same(t) && t.texts.is_some()) {
+            let said = texts.remove(at).texts.unwrap_or_default();
+            return Ok(AiParams::Texts(said));
+        }
+        let now = self.now_us;
+        texts.retain(|t| now.saturating_sub(t.asked_us) < AI_ASK_AGAIN_US);
+        if !texts.iter().any(same) {
+            self.panel.ai_texts_asked += 1;
+            let ask = self.panel.ai_texts_asked;
+            let values_asked = values.clone();
+            texts.push(AiTexts {
+                ask,
+                plugin,
+                param,
+                values,
+                asked_us: now,
+                texts: None,
+            });
+            effects.push(Effect::AskPlugin {
+                ticket: plugin,
+                ask: PluginAsk::Texts {
+                    ask,
+                    param,
+                    values: values_asked,
+                },
+            });
+        }
+        Ok(AiParams::Waiting)
+    }
+
+    /// The AI link sets parameters of the built-in effect in a slot, each brought into its
+    /// range, as one step. Nothing is set when a lane moves one of them. `false`: every value
+    /// was so already.
+    pub(crate) fn ai_set_effect_params(
+        &mut self,
+        strip: StripId,
+        slot: usize,
+        values: &[(u32, f32)],
+        effects: &mut Vec<Effect>,
+    ) -> Result<bool, AiRefusal> {
+        let insert = self.doc().insert(strip, slot).ok_or(AiRefusal::SlotEmpty)?;
+        let kind: EffectKind = insert.kind().ok_or(AiRefusal::NoSuchEffect)?;
+        for &(param, value) in values {
+            kind.param(param).ok_or(AiRefusal::NoSuchParam(param))?;
+            if !value.is_finite() {
+                return Err(AiRefusal::Unchanged);
+            }
+            if let Some((key, _)) = self.param_lane(strip, slot, kind, param, value)
+                && self.lane_at(key).is_some()
+            {
+                return Err(AiRefusal::LaneDrives(param));
+            }
+        }
+        let mut doc = self.doc().clone();
+        let mut step = None;
+        for &(param, value) in values {
+            match mixer::set_param(&doc, strip, slot, kind, param, value) {
+                Ok(edit) => {
+                    doc = edit.doc;
+                    step.get_or_insert(edit.step);
+                }
+                Err(EditError::Unchanged) => {}
+                Err(_) => return Err(AiRefusal::NoSuchEffect),
+            }
+        }
+        let Some(step) = step else {
+            return Ok(false);
+        };
+        self.apply(meloet_model::Edit { doc, step }, effects);
+        Ok(true)
     }
 
     /// Before the panel changes a parameter that it is not dragging already: a drag of
@@ -259,9 +460,10 @@ impl Play {
     /// makes the step.
     fn param_set(&mut self, ticket: u64, param: u32, effects: &mut Vec<Effect>) {
         let puts = self.plugs.of(ticket).map_or(0, |plug| plug.puts);
+        let ai = None;
         effects.push(Effect::AskPlugin {
             ticket,
-            ask: PluginAsk::State(StateAsk::Param { param, puts }),
+            ask: PluginAsk::State(StateAsk::Param { param, puts, ai }),
         });
     }
 
@@ -378,6 +580,22 @@ impl Play {
     /// A parameter of a plugin has this value now. Kept for the next `ParamValues` when the
     /// panel shows the plugin; a parameter that is not in its list is passed over.
     fn param_now(&mut self, ticket: u64, now: ParamNow) {
+        // The answers of one plugin come in the order asked: the oldest set waiting for this
+        // one takes it; a value said after that (moved in the window) goes to the newest.
+        let sets = &mut self.panel.ai_sets;
+        let open = |s: &AiSet, answered: bool| {
+            s.plugin == ticket
+                && s.end.is_none()
+                && (s.params.iter().zip(&s.answered)).any(|(p, a)| p.id == now.id && *a == answered)
+        };
+        let at = (sets.iter().position(|s| open(s, false)))
+            .or_else(|| sets.iter().rposition(|s| open(s, true)));
+        if let Some(set) = at.map(|at| &mut sets[at]) {
+            let rows = set.params.iter_mut().zip(set.answered.iter_mut());
+            for (param, answered) in rows.filter(|(p, _)| p.id == now.id) {
+                (param.value, param.text, *answered) = (now.value, now.text.clone(), true);
+            }
+        }
         if self.panel.ticket != Some(ticket) {
             return;
         }
@@ -646,6 +864,11 @@ impl Play {
             PluginSaid::TextRead { param, read } => {
                 return self.text_read(ticket, param, read, effects);
             }
+            PluginSaid::Texts { ask, texts } => {
+                if let Some(asked) = self.panel.ai_texts.iter_mut().find(|t| t.ask == ask) {
+                    asked.texts = Some(texts);
+                }
+            }
         }
         None
     }
@@ -660,11 +883,29 @@ impl Play {
         match (ask, state) {
             (StateAsk::Base, Some(state)) => self.base_said(ticket, &state),
             (StateAsk::Ai, state) => self.ai_state_said(ticket, state),
-            (StateAsk::Param { param, puts }, Some(state)) => {
-                if self.plugs.of(ticket).is_some_and(|plug| plug.puts == puts) {
+            (StateAsk::Param { param, puts, ai }, Some(state)) => {
+                let (steps, plug) = (self.undo_count(), self.plugs.of(ticket));
+                let placed = plug.is_some_and(|plug| self.place_of(plug.spot).is_some());
+                let current = plug.is_some_and(|plug| plug.puts == puts);
+                if current {
                     self.visit_goes_on_from(ticket, &state);
                     self.plugin_changed(ticket, state, PluginChange::Param(param), effects);
                 }
+                if let Some(ai) = ai {
+                    let now = self.undo_count();
+                    let end = match (placed, current) {
+                        (false, _) => AiSetEnd::Gone,
+                        (true, false) => AiSetEnd::Overtaken,
+                        _ if now > steps => {
+                            AiSetEnd::Step(self.history_rows(now, now).pop().map(Box::new))
+                        }
+                        _ => AiSetEnd::Same,
+                    };
+                    self.ai_set_ended(ai, end);
+                }
+            }
+            (StateAsk::Param { ai: Some(ai), .. }, None) => {
+                self.ai_set_ended(ai, AiSetEnd::NoState)
             }
             (StateAsk::Base | StateAsk::Param { .. }, None) => {}
             (StateAsk::Entered(_) | StateAsk::Left(_), state) => {
@@ -674,5 +915,7 @@ impl Play {
     }
 }
 
+#[cfg(test)]
+mod ai_tests;
 #[cfg(test)]
 mod tests;

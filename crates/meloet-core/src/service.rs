@@ -3218,6 +3218,14 @@ impl Worker {
                 };
                 hosts.read_text(id, param, text, Box::new(done));
             }
+            PluginAsk::Texts { ask, param, values } => {
+                let done = move |texts: Result<_, HostError>| {
+                    if let Ok(texts) = texts {
+                        say(PluginSaid::Texts { ask, texts });
+                    }
+                };
+                hosts.texts(id, param, values, Box::new(done));
+            }
             PluginAsk::Watch { on } => hosts.watch(id, on),
         }
         None

@@ -457,6 +457,35 @@ pub struct StepRow<'a> {
     pub after: &'a Doc,
 }
 
+/// A place in the history, kept to make one step of the steps that follow it
+/// ([`History::merge`]) or to take them back ([`History::rewind`]).
+#[derive(Debug, Clone)]
+pub struct Mark {
+    /// How many steps were done.
+    undo: usize,
+    /// The number the `Doc` had.
+    version: u64,
+    /// The steps that could be redone, which the first step after the mark drops.
+    redo: Vec<Step>,
+}
+
+impl Mark {
+    /// How many steps were done at the mark.
+    pub fn undo_count(&self) -> usize {
+        self.undo
+    }
+
+    /// How many steps could be redone at the mark.
+    pub fn redo_count(&self) -> usize {
+        self.redo.len()
+    }
+
+    /// A rewind to the mark leaves no step to redo.
+    pub fn forget_redo(&mut self) {
+        self.redo.clear();
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct History {
     undo: Vec<Step>,
@@ -516,6 +545,69 @@ impl History {
         doc.next_id = self.next_id;
         self.version = self.next_version;
         self.next_version += 1;
+        true
+    }
+
+    pub fn mark(&self) -> Mark {
+        Mark {
+            undo: self.undo.len(),
+            version: self.version,
+            redo: self.redo.clone(),
+        }
+    }
+
+    /// The steps made since `mark` are the newest ones done, nothing was undone since the
+    /// last of them, and the `Doc` has the number `end`.
+    fn since(&self, mark: &Mark, end: u64) -> bool {
+        self.version == end
+            && self.redo.is_empty()
+            && (self.undo.get(mark.undo)).is_some_and(|first| first.version == mark.version)
+    }
+
+    /// Makes one step of the steps made since `mark`, named as the last of them: one row,
+    /// one undo, one redo. The `Doc` stays as it is and gets a new number, as the step is
+    /// another one now. Only when the `Doc` has the number `end` and those steps are the
+    /// newest ones done. Returns how many steps they were; 0 or 1, and nothing changes,
+    /// when there is nothing to make one of.
+    pub fn merge(&mut self, mark: &Mark, end: u64) -> usize {
+        if !self.since(mark, end) {
+            return 0;
+        }
+        let steps = self.undo.len() - mark.undo;
+        if steps < 2 {
+            return steps;
+        }
+        let kind = self.undo[self.undo.len() - 1].kind;
+        self.undo.truncate(mark.undo + 1);
+        self.undo[mark.undo].kind = kind;
+        if self.saved == self.version {
+            self.saved = self.next_version;
+        }
+        self.version = self.next_version;
+        self.next_version += 1;
+        steps
+    }
+
+    /// Takes back every step made since `mark` and forgets them: the `Doc`, its number and
+    /// the steps that can be redone are those of the mark again. Ids given out since are
+    /// not given again. Only when the `Doc` has the number `end` and those steps are the
+    /// newest ones done (or none was made); else `false`, and nothing changes.
+    pub fn rewind(&mut self, doc: &mut Doc, mark: Mark, end: u64) -> bool {
+        if self.version != end {
+            return false;
+        }
+        if self.undo.len() == mark.undo && self.version == mark.version {
+            return true;
+        }
+        if !self.since(&mark, end) {
+            return false;
+        }
+        let first = self.undo.drain(mark.undo..).next().expect("a step");
+        let other = std::mem::replace(doc, first.doc);
+        self.next_id = self.next_id.max(other.next_id).max(doc.next_id);
+        doc.next_id = self.next_id;
+        self.version = mark.version;
+        self.redo = mark.redo;
         true
     }
 

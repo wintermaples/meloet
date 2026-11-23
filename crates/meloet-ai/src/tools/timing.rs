@@ -295,7 +295,7 @@ impl Tools {
             return Ok(failed("the song has no loop range; set one with set_loop"));
         }
         if read.song.session.loop_on == a.on {
-            return Ok(failed("it is so already; nothing was done"));
+            return Ok(self.no_change().await);
         }
         Ok(self.screen(Command::ToggleLoop).await)
     }

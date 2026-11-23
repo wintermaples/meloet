@@ -62,6 +62,32 @@ pub enum AiAsk {
         instrument: AiInstrument,
     },
     Undo,
+    /// Opens the batch `batch` (a number of the asker's own): the steps of the asks that
+    /// follow in [`AiAsk::InBatch`] become one step with [`AiAsk::Commit`], or are taken
+    /// back with [`AiAsk::Rollback`]. Until then every other write of the AI link is
+    /// refused.
+    Begin {
+        batch: u64,
+    },
+    /// An ask of the open batch `batch`. Refused, and nothing is done, once anyone else has
+    /// changed the song or its history since the batch's last ask. Not for the asks of
+    /// [`batchable`].
+    InBatch {
+        batch: u64,
+        ask: Box<AiAsk>,
+    },
+    /// Closes the batch. Its steps are one step now; `step` is that step's row. `step` is
+    /// `None` when the batch made no step, or when its steps could not be made one (anyone
+    /// else changed the song or its history since the batch's last ask).
+    Commit {
+        batch: u64,
+    },
+    /// Closes the batch and takes back what it did, the solo marks and the loop's switch
+    /// too. Refused when it cannot be taken back (meloet records, or anyone else changed
+    /// the song or its history since): the batch is closed and its steps stay.
+    Rollback {
+        batch: u64,
+    },
     /// An intent the screen sends too, as the AI's step. Tracks are named by id, as the
     /// screen names them. Only the intents of [`screen_allowed`].
     Screen(Command),
@@ -200,6 +226,26 @@ pub fn screen_allowed(command: &Command) -> bool {
     )
 }
 
+/// Asks that can be in a batch ([`AiAsk::InBatch`]): not those that end later (a ticket, a
+/// plugin's step), not `Undo`, not a read, and no batch inside a batch.
+pub fn batchable(ask: &AiAsk) -> bool {
+    !matches!(
+        ask,
+        AiAsk::Undo
+            | AiAsk::Begin { .. }
+            | AiAsk::InBatch { .. }
+            | AiAsk::Commit { .. }
+            | AiAsk::Rollback { .. }
+            | AiAsk::SetPluginParam { .. }
+            | AiAsk::PluginParams { .. }
+            | AiAsk::Save
+            | AiAsk::SaveAs { .. }
+            | AiAsk::Open { .. }
+            | AiAsk::NewSong
+            | AiAsk::ImportAudio { .. }
+    )
+}
+
 /// Intents of [`screen_allowed`] that are no step.
 pub(crate) fn screen_no_step(command: &Command) -> bool {
     matches!(command, Command::ToggleSolo { .. } | Command::ToggleLoop)
@@ -278,6 +324,10 @@ impl AiAsk {
             AiAsk::SetTempo { .. } => "set the tempo",
             AiAsk::AddMarker { .. } => "add a marker",
             AiAsk::AddTrack { .. } => "add a track",
+            AiAsk::Begin { .. } => "start the batch",
+            AiAsk::InBatch { ask, .. } => ask.name(),
+            AiAsk::Commit { .. } => "finish the batch",
+            AiAsk::Rollback { .. } => "take back the batch",
             AiAsk::Undo => "undo",
         }
     }
@@ -390,8 +440,17 @@ pub enum AiRefusal {
     OffTheSong,
     BadNote,
     BadTempo,
-    /// It would leave the song as it is.
+    /// The song is so already: nothing was to do. Not a failure.
     Unchanged,
+    /// It cannot be done; the text says why, for the AI.
+    Cannot(String),
+    /// A batch is open (another call's): no other write until it is closed.
+    BatchOpen,
+    /// This ask cannot be a part of a batch.
+    NotInBatch,
+    /// The batch is not open (any more), or anyone else changed the song or its history
+    /// since the batch's last ask.
+    BatchLost,
     TooManyTracks,
     NothingToUndo,
     /// Another measurement is running.

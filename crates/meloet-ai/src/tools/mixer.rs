@@ -548,7 +548,7 @@ impl Tools {
             StripId::Master => return Ok(failed("the master has no mute")),
         };
         if muted == args.on {
-            return Ok(failed("it is so already; nothing was done"));
+            return Ok(self.no_change().await);
         }
         Ok(self.screen(command).await)
     }
@@ -570,7 +570,7 @@ impl Tools {
         let read = check!(self.read().await);
         let id = check!(track_of(&read, args.track)).id;
         if read.song.session.soloed.contains(&id) == args.on {
-            return Ok(failed("it is so already; nothing was done"));
+            return Ok(self.no_change().await);
         }
         Ok(self.screen(Command::ToggleSolo { track: id.0 }).await)
     }
@@ -681,7 +681,7 @@ impl Tools {
             return Ok(failed(refusal_text(&meloet_core::ai::AiRefusal::SlotEmpty)));
         };
         if insert.bypassed == args.on {
-            return Ok(failed("it is so already; nothing was done"));
+            return Ok(self.no_change().await);
         }
         let insert = InsertRef {
             strip: strip_ref(strip),

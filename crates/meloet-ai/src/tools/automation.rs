@@ -253,7 +253,7 @@ impl Tools {
         let (track, model, target) = check!(target_of(&read, a.track, a.target, a.slot, a.param));
         let t = check!(track_of(&read, a.track));
         if t.lane(model).is_some() {
-            return Ok(failed("the track has that lane already"));
+            return Ok(self.no_change().await);
         }
         Ok(self.screen(Command::AddLane { track, target }).await)
     }

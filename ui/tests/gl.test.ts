@@ -19,6 +19,14 @@ interface NodeFs {
 const fs = (globalThis as unknown as { process: { getBuiltinModule(id: "node:fs"): NodeFs } }).process.getBuiltinModule("node:fs");
 const here = import.meta.url;
 const mockHtml = (board: string) => fs.readFileSync(new URL(`../../docs/design/mock/${board}.dc.html`, here), "utf8");
+/** The dark grays the mock boards were drawn with, before the contrast fix of user:2026-11-23 (docs/spec/1-tokens.md). */
+const mockColors: Partial<Record<keyof typeof colors, string>> = {
+  "color.gray.0": "#0A0A0A",
+  "color.gray.3": "#1A1A1A",
+  "color.gray.5": "#2C2C2C",
+  "color.gray.6": "#3A3A3A",
+  "color.gray.7": "#5E5E5E",
+};
 
 const hex = (name: keyof typeof colors) => [...hexToRgb(colors[name])];
 const batch = (w = 4000, h = 4000) => {
@@ -295,11 +303,11 @@ describe("rect lists", () => {
     expect(ofColor(b, "color.gray.0").length).toBe(20);
 
     const html = mockHtml("F-Connect1");
-    const white = `width:${FULL.white.w}px;height:${FULL.white.h}px;border:1px solid ${colors["color.gray.5"]};border-left:0;background:${colors["color.gray.3"]}`;
-    const black = `width:${FULL.black.w}px;height:${FULL.black.h}px;background:${colors["color.gray.0"]};border:1px solid ${colors["color.gray.6"]}`;
+    const white = `width:${FULL.white.w}px;height:${FULL.white.h}px;border:1px solid ${mockColors["color.gray.5"]};border-left:0;background:${mockColors["color.gray.3"]}`;
+    const black = `width:${FULL.black.w}px;height:${FULL.black.h}px;background:${mockColors["color.gray.0"]};border:1px solid ${mockColors["color.gray.6"]}`;
     expect(html.split(white).length - 1).toBe(29);
     expect(html.split(black).length - 1).toBe(20);
-    expect(html).toContain(`<div class="f" style="border-left:1px solid ${colors["color.gray.5"]};flex-shrink:0">`);
+    expect(html).toContain(`<div class="f" style="border-left:1px solid ${mockColors["color.gray.5"]};flex-shrink:0">`);
   });
   it("slim keyboard: draws black keys too (1 + 29 × 8, height 12; black keys width 5, height 7). A pressed black key is accent", () => {
     const b = batch();
@@ -322,8 +330,8 @@ describe("rect lists", () => {
     const { slim: s, narrow: n } = KEY_FORMS;
     const html = mockHtml("F-MeterLongName");
     const key = (white: { w: number; h: number }, black: { w: number; h: number }) =>
-      `<div class="rel" style="width:${white.w}px;height:${white.h}px;border:1px solid ${colors["color.gray.6"]};border-left:0;background:${colors["color.gray.3"]}">` +
-      `<div class="abs" style="z-index:1;top:-1px;right:-${(black.w + 1) / 2}px;width:${black.w}px;height:${black.h}px;background:${colors["color.gray.0"]};border:1px solid ${colors["color.gray.7"]}">`;
+      `<div class="rel" style="width:${white.w}px;height:${white.h}px;border:1px solid ${mockColors["color.gray.6"]};border-left:0;background:${mockColors["color.gray.3"]}">` +
+      `<div class="abs" style="z-index:1;top:-1px;right:-${(black.w + 1) / 2}px;width:${black.w}px;height:${black.h}px;background:${mockColors["color.gray.0"]};border:1px solid ${mockColors["color.gray.7"]}">`;
     expect(html.split(key(s.white, s.black)).length - 1).toBeGreaterThan(0);
     expect(html.split(key(n.white, n.black)).length - 1).toBeGreaterThan(0);
     expect(html.split(key(FULL.white, FULL.black)).length - 1).toBeGreaterThan(0);

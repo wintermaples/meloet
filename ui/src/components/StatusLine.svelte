@@ -53,6 +53,7 @@
   import { mapOf } from "../time/bars";
   import { positionText, shownTick } from "./time";
   import ZoomMenu from "./ZoomMenu.svelte";
+  import { overdubClipName } from "./clipEdits";
 
   const app = $derived(current.state!);
   /** ピアノロールがドラムの行を見せている（選んだノートと鳴っている音を楽器の名前で）。 */
@@ -179,6 +180,21 @@
   /** 文の部分どうしを「 ・ 」でつなぐ（仕様書 6 章「止まっているときの状態行の左」）。 */
   function joined(...pieces: TextPart[][]): TextPart[] {
     return pieces.filter((p) => p.length > 0).flatMap((p, i) => (i === 0 ? p : [{ text: STATUS_JOIN, hole: null }, ...p]));
+  }
+
+  /** 「重ねる」 on and the keyboard recording going into a clip: that clip's name. */
+  const overdubName = $derived.by(() => {
+    const r = app.transport.recording;
+    return r && app.transport.overdub ? overdubClipName(app.song.tracks, r) : null;
+  });
+
+  /** Recording with 「重ねる」 (mock P10-Overdub); the loop part only in a loop. */
+  function overdubParts(who: TrackRef, clip: string, loop: { from: number; to: number; lap: number } | null): TextPart[] {
+    return joined(
+      textParts("msg.overdubRecording", { track: track(who), clip }),
+      loop ? textParts("msg.overdubLap", loop) : [],
+      textParts("msg.overdubKept", { clip }),
+    );
   }
 
   /**
@@ -403,8 +419,10 @@
       case "countingIn":
         return plain("msg.countingInRest", { beats: beatsLeft(m.beats) });
       case "recording":
+        if (overdubName !== null) return { parts: overdubParts(m.track, overdubName, null), strong: [], button: null };
         return plain("msg.recording", { track: track(m.track), take: m.take });
       case "loopRecording":
+        if (overdubName !== null) return { parts: overdubParts(m.track, overdubName, { from: m.fromBar, to: m.toBar, lap: m.lap }), strong: [], button: null };
         return plain("msg.loopRecording", { track: track(m.track), from: m.fromBar, to: m.toBar, lap: m.lap });
       case "takeSwitched":
         return plain("msg.takeSwitched", { track: track(m.track), clip: m.clip, take: m.take, takes: m.takes });
@@ -801,7 +819,7 @@
 
   function recordingParts(m: Extract<StatusMessage, { id: "recording" }>): TextPart[] {
     return joined(
-      textParts("msg.recordingPianoRoll", { track: track(m.track), take: m.take }),
+      overdubName !== null ? overdubParts(m.track, overdubName, null) : textParts("msg.recordingPianoRoll", { track: track(m.track), take: m.take }),
       held.length > 0 ? textParts("status.held", { keys: keysLabel(held, heldDrums) }) : [],
     );
   }

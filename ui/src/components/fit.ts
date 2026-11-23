@@ -47,6 +47,22 @@ export function transportParts(available: number, widths: TransportWidths, stubs
   return foldParts(TRANSPORT_ORDER, available, widths, stubs);
 }
 
+/**
+ * The transport with 「重ねる」 (round 10, 7 A-27: it hides before 「ループ」, which never hides). It hides only when
+ * nothing else is left to hide. overdub is the width it adds (with the gap before it).
+ */
+export function transportWithOverdub(
+  available: number,
+  widths: TransportWidths,
+  stubs: TransportStubs,
+  overdub: number,
+): TransportParts & { overdub: boolean } {
+  const parts = transportParts(available - overdub, widths, stubs);
+  const need = TRANSPORT_ORDER.reduce((sum, k) => sum + (parts[k] ? widths[k] : (stubs[k] ?? 0)), widths.base);
+  if (need + overdub <= available) return { ...parts, overdub: true };
+  return { ...transportParts(available, widths, stubs), overdub: false };
+}
+
 /** ピアノロールの道具の列で引っこめる順: 道具のキー、クリップの文（モック F-PR150）。 */
 const TOOLBAR_ORDER = ["keys", "info"] as const;
 export type ToolbarPart = (typeof TOOLBAR_ORDER)[number];

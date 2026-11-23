@@ -125,6 +125,8 @@ export function topMenus(state: AppState, deps: KeyDeps, platform: Platform): To
     act("menu.delete", { kind: "deleteSelected" }, t("key.delete"), toArrange ? { usable: state.arrange.selectedClips.length > 0 && !busy } : {}),
     { kind: "separator" },
     act("menu.selectAll", { kind: "selectAll" }, k.mod(t("key.selectAll"))),
+    act("menu.splitClip", { kind: "splitClips" }, t("key.split")),
+    act("menu.joinClips", { kind: "joinClips" }, k.mod(t("key.join"))),
   ];
 
   const scale = state.workspace.scale;

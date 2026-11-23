@@ -9,7 +9,7 @@
   import { current, onTelemetry, send } from "../state/app.svelte";
   import { t } from "../text/ja";
   import ChoiceMenu from "./ChoiceMenu.svelte";
-  import { transportParts, type TransportParts } from "./fit";
+  import { transportWithOverdub, type TransportParts } from "./fit";
   import { PeakHold, peakNumberText, peakText, tempoText } from "./format";
   import { metrics } from "./metrics.svelte";
   import NumberField from "./NumberField.svelte";
@@ -48,7 +48,7 @@
   const COVER: GlSlot = { kind: "cover" };
   let row = $state<HTMLElement>();
   let ruler = $state<HTMLElement>();
-  let parts = $state<TransportParts>({ keys: true, songName: true, load: true, countIn: true, positionLabels: true });
+  let parts = $state<TransportParts & { overdub: boolean }>({ keys: true, songName: true, load: true, countIn: true, positionLabels: true, overdub: true });
 
   // ボタンの右はしのキー（仕様書 4 章、モック F-WideArrange）。停止とカウントインには書かない。
   const KEYS = [t("key.toStart"), t("key.playStop"), t("key.record"), t("key.loop"), t("key.metronome")] as const;
@@ -75,8 +75,9 @@
     const shownKeys = parts.keys ? keys : 0;
     // すきま（m-spacer）は残りの幅を取るので、幅は数えず、両どなりのすきまだけ数える。
     const widths = fixed.reduce((sum, el) => sum + (el.classList.contains("m-spacer") ? 0 : el.offsetWidth), 0);
-    const base = pad + widths + gap * Math.max(0, fixed.length - 1) - shownLabels - shownKeys;
-    parts = transportParts(
+    const overdub = w("overdub") + metrics.px("space.1");
+    const base = pad + widths + gap * Math.max(0, fixed.length - 1) - shownLabels - shownKeys - (parts.overdub ? overdub : 0);
+    parts = transportWithOverdub(
       row.clientWidth,
       {
         base,
@@ -88,6 +89,7 @@
       },
       // メトロノームの ▾ は、すきまなくくっつく（左のすきまを打ち消す）。
       { songName: w("songStub") + gap, countIn: w("countInStub") },
+      overdub,
     );
   }
 
@@ -379,6 +381,17 @@
       use:term={"ループ"}
       onclick={() => send({ type: "toggleLoop" })}>{t("transport.loop")}{@render key(3)}</button
     >
+    {#if parts.overdub}
+      <!-- Stays accent while recording (7 A-27); no key for now. -->
+      <button
+        class="m-btn"
+        class:on={transport.overdub}
+        aria-pressed={transport.overdub}
+        data-test="transport-overdub"
+        use:term={"重ねる"}
+        onclick={() => send({ type: "setOverdub", on: !transport.overdub })}>{t("transport.overdub")}</button
+      >
+    {/if}
   </div>
 
   <div class="position" class:narrow={!parts.positionLabels}>
@@ -494,6 +507,7 @@
     <span class="m-btn" data-part="countIn">{@render countInLabel()}</span>
     <span class="m-btn counting" data-part="countInCounting">{@render countingIn()}</span>
     <span class="m-btn metronome-stub" data-part="countInStub">▾</span>
+    <span class="m-btn" data-part="overdub">{t("transport.overdub")}</span>
     <span class="m-lbl" data-part="label-0">{t("transport.position")}</span>
     <span class="m-readout" data-part="readout-0">{position}</span>
     <span class="m-lbl" data-part="label-1">{t("transport.time")}</span>

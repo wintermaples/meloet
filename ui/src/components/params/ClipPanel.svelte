@@ -6,10 +6,12 @@
      上下のドラッグ（離したときに 1 手）か 2 回押して打ちこむ。音を作っている間は、欄の上に進みの棒（audioWork の rendering）。
      音のファイルが見つからないときは、グループのかわりに見つからない物の知らせ（「さがす…」「曲から外す」）。 -->
 <script lang="ts">
+  import { tick, untrack } from "svelte";
   import { CLIP_CENTS_MAX, CLIP_SEMITONES_MAX, type ClipField, type ClipView, type SelectedClip, type StretchChange, type ValueField as ValueFieldName } from "../../bridge";
   import { current, send } from "../../state/app.svelte";
   import { shownWork } from "../../state/audioWork.svelte";
   import { askWhole } from "../automation/coverIf";
+  import { clipEdit, renameCommand, startClipRename, stopClipRename } from "../clipName.svelte";
   import { STATUS_JOIN, t } from "../../text/ja";
   import { mapOf } from "../../time/bars";
   import Button from "../Button.svelte";
@@ -38,6 +40,37 @@
     if (audio.bits !== null) parts.push(t("clipParams.bits", { bits: audio.bits }));
     return parts.join(STATUS_JOIN);
   });
+
+  // ---- The name, typed in place (mock P10-ClipName (b)) ----
+  const naming = $derived(clip !== null && clipEdit.place === "params" && clipEdit.renaming === clip.id);
+  let nameDraft = $state("");
+  let nameField = $state<HTMLInputElement>();
+  $effect(() => {
+    if (!naming) return;
+    if (busy) {
+      stopClipRename();
+      return;
+    }
+    nameDraft = untrack(() => clip!.name);
+    void tick().then(() => {
+      nameField?.focus();
+      nameField?.select();
+    });
+  });
+  function nameKey(e: KeyboardEvent): void {
+    if (e.isComposing || !clip) return;
+    if (e.key === "Enter") {
+      e.preventDefault();
+      e.stopPropagation();
+      stopClipRename();
+      const command = renameCommand(clip.id, clip.name, nameDraft);
+      if (command) send(command);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      stopClipRename();
+    }
+  }
 
   let folded = $state<string[]>([]);
   const toggle = (group: string) => (folded = folded.includes(group) ? folded.filter((g) => g !== group) : [...folded, group]);
@@ -160,8 +193,25 @@
   {@const shown = texts(clip)}
   <div class="who" data-test="clip-params">
     <div class="line">
-      <span class="m-name name" data-test="params-name">{clip.name}</span>
-      <span class="m-lbl">{t("clipParams.selected")}</span>
+      {#if naming}
+        <input
+          class="name-field"
+          type="text"
+          spellcheck="false"
+          autocomplete="off"
+          aria-label={t("menu.renameClip")}
+          data-test="params-name-field"
+          bind:this={nameField}
+          bind:value={nameDraft}
+          onkeydown={nameKey}
+          onblur={() => naming && stopClipRename()}
+        />
+      {:else}
+        <button class="m-plain m-name name" class:live={!busy} disabled={busy} data-test="params-name" onclick={() => clip && startClipRename(clip.id, "params")}
+          >{clip.name}</button
+        >
+        <span class="m-lbl">{t("clipParams.selected")}</span>
+      {/if}
     </div>
     <span class="m-lbl file" data-test="clip-file">{fileLine}</span>
   </div>
@@ -299,10 +349,35 @@
     min-width: 0;
     white-space: nowrap;
   }
+  /* The name and its box sit one space.1 ＋ line.hair further left, so the text stays in line with the file line (P10-ClipName (b)). */
+  .name,
+  .name-field {
+    box-sizing: border-box;
+    height: var(--part-input-height);
+    margin-left: calc(-1 * (var(--space-1) + var(--line-hair)));
+    padding: 0 var(--space-1);
+    border: var(--line-hair) solid transparent;
+    border-radius: var(--radius-1);
+  }
   .name {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+    cursor: default;
+  }
+  .name.live:hover {
+    border-color: var(--color-gray-8);
+    cursor: text;
+  }
+  .name-field {
+    flex: 1;
+    min-width: 0;
+    background: var(--color-gray-0);
+    border-color: var(--color-gray-10);
+    color: var(--color-gray-10);
+    font: inherit;
+    font-weight: var(--text-s-weight-600);
+    outline: none;
   }
   .file {
     white-space: normal;

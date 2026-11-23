@@ -1106,6 +1106,8 @@ export const texts = {
   "transport.stop": e("停止", "mock:Main"),
   "transport.record": e("録音", "mock:Main"),
   "transport.loop": e("ループ", "mock:Main"),
+  // The overdub switch (mock P10-Overdub, option A; the owner kept the mock's words).
+  "transport.overdub": e("重ねる", "user:2026-11-23"),
   "transport.position": e("小節 . 拍 . ティック", "mock:Main"),
   "transport.time": e("時間", "mock:Main"),
   "transport.tempo": e("テンポ", "mock:Main"),
@@ -1436,6 +1438,11 @@ export const texts = {
   "arrange.recordingClip": e("● 録音中 テイク {take}", "mock:F-ArrangeRec", {
     take: "2",
   }),
+  // While overdubbing (mock P10-Overdub). The status line is the mock's sentence cut at 「 ・ 」 into 3; without a loop the 2nd is left out.
+  "arrange.overdubClip": e("● 重ねて録音中 {clip}", "user:2026-11-23", { clip: "イントロ" }),
+  "msg.overdubRecording": e("{track} の {clip} に重ねて録音", "user:2026-11-23", { track: "1 ピアノ", clip: "イントロ" }),
+  "msg.overdubLap": e("ループ {from}–{to} の {lap} 周目", "user:2026-11-23", { from: "1", to: "4", lap: "2" }),
+  "msg.overdubKept": e("止めても {clip} に足したまま（取り消しで戻せます）", "user:2026-11-23", { clip: "イントロ" }),
   "arrange.takeTag": e("{take}/{takes}", "mock:F-Takes", {
     take: "2",
     takes: "3",
@@ -1908,6 +1915,14 @@ export const texts = {
   "menu.prevTake": e("前のテイク", "user:2026-11-18"),
   "menu.deleteTake": e("テイクを消す", "user:2026-11-18"),
   "menu.openInPianoRoll": e("ピアノロールでひらく", "user:2026-11-18"),
+  // Round 10 rows of the context menus and of 「編集」 (spec 3, "Rules added in round 10").
+  "menu.splitHere": e("ここで切る", "spec:3"),
+  "menu.join": e("つなげる", "spec:3"),
+  "menu.renameClip": e("名前を変える", "spec:3"),
+  "menu.createClipHere": e("ここにクリップを作る", "spec:3"),
+  "menu.addMarkerHere": e("ここにマーカーを足す", "spec:3"),
+  "menu.splitClip": e("クリップを切る", "spec:3"),
+  "menu.joinClips": e("クリップをつなげる", "spec:3"),
   // ベロシティ固定（B-66）とベロシティをまとめて変える（B-67）。
   "input.velocityFixed": e("固定", "user:2026-11-18"),
   "inspector.matchVelocity": e("そろえる", "user:2026-11-18"),
@@ -2410,6 +2425,8 @@ export const texts = {
   "key.zoomIn": e("+", "spec:4"),
   "key.zoomOut": e("−", "spec:4"),
   "key.take": e("T", "spec:4"),
+  "key.split": e("S", "spec:4"),
+  "key.join": e("J", "spec:4"),
   "key.mute": e("M", "spec:4"),
   "key.solo": e("S", "spec:4"),
   // meloet を終わる Mod Q（4 章の表にはない。docs/history/design-notes.ja.md B-59）。
@@ -2795,6 +2812,11 @@ export const terms: readonly Term[] = [
   st("メトロノーム", "拍に合わせて鳴るクリック音。"),
   st("カウントイン", "録音が始まる前に鳴る合図の拍。"),
   st("ループ", "決めた範囲をくり返し再生する。"),
+  {
+    term: "重ねる",
+    description: "録るとき、いまのクリップのノートを残したまま、弾いたノートを足していく。ループで録ると、1 周ごとに足す。テイクはふえない。戻すときは取り消しで。",
+    source: "user:2026-11-23",
+  },
   st("マーカー", "曲の中の場所につける名札。"),
   st("テイク", "同じ場所を録りなおした 1 回ぶん。前のテイクも消えずに残る。"),
   st("録音待機", "録音ボタンを押したとき、このトラックに録る、という印。"),

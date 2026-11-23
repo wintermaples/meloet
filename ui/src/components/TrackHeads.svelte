@@ -16,6 +16,7 @@
   import { current, send } from "../state/app.svelte";
   import { findTerm, t } from "../text/ja";
   import { dbNumber } from "./format";
+  import { shownTick } from "./time";
   import { openContextMenu } from "./menu/contextMenu.svelte";
   import { metrics } from "./metrics.svelte";
   import { onDragCancel } from "./pianoroll/view.svelte";
@@ -158,7 +159,8 @@
     const select = song.playTarget !== track.id && !busy;
     if (select) send({ type: "selectTrack", track: track.id, fromArm: false });
     const armed = track.kind.kind === "keys" && song.keysTarget === track.id;
-    openContextMenu(e.clientX, e.clientY, trackContextMenu(current.state!, track, armed || select, send, shiftKey));
+    const playTick = shownTick(current.state!.transport, current.telemetry, null);
+    openContextMenu(e.clientX, e.clientY, trackContextMenu(current.state!, track, armed || select, send, shiftKey, playTick));
   }
 
   function replaceInstrument(track: TrackView): void {

@@ -38,6 +38,8 @@ export type KeyAction =
   /** えらんだクリップの次のテイク（1）、前のテイク（-1）。 */
   | { kind: "stepTake"; delta: 1 | -1 }
   | { kind: "splitClips" }
+  /** Mod J: join the chosen keyboard clips of one track (spec 4, round 10). */
+  | { kind: "joinClips" }
   | { kind: "deleteSelected" }
   | { kind: "newSong" }
   | { kind: "openSong" }
@@ -66,7 +68,7 @@ export type KeyAction =
   | { kind: "cut" }
   | { kind: "copy" }
   | { kind: "paste" }
-  /** F2: 選んだトラックの名前を変える（その場の入力の枠）。 */
+  /** F2: 選んだトラックの名前を変える（その場の入力の枠）。With a clip chosen, the clip's name instead (round 10). */
   | { kind: "renameTrack" }
   // 棚の中（仕様書 4 章）。行を上下にえらぶ、えらんだ音源を入れる、サンプルを聞く ・ 止める、お気に入りの印。
   | { kind: "shelfStep"; delta: 1 | -1 }
@@ -153,6 +155,7 @@ export function keyAction(k: KeyInput, typing: boolean, platform: Platform, cont
     if (l === "s") return { kind: "saveSong" };
     if (l === "z") return { kind: "undo" };
     if (l === "q") return { kind: "quit" };
+    if (l === "j") return { kind: "joinClips" };
     // 文字を打っている最中の Mod A ・ X ・ C ・ V は、枠の中の文字のもの。
     if (l && MOD_EDITS[l] && !(typing && l !== "d")) return MOD_EDITS[l]!;
     if (!k.alt && (k.key === "," || k.code === "Comma")) return { kind: "audioSettings" };

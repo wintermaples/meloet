@@ -31,8 +31,10 @@ describe("仕様書 5 章「用語の説明」", () => {
     expect(terms.filter((x) => x.source === "spec:5").map((x) => [x.term, x.description])).toEqual(specTerms);
   });
 
-  it("仕様書の外の用語はない。「仮の音」は「サイン波」になった（仕様書 3 章）", () => {
-    expect(terms.filter((x) => x.source !== "spec:5")).toEqual([]);
+  it("仕様書の外の用語は、第 10 回の案のモックの「重ねる」だけ（文はモックのまま）。「仮の音」は「サイン波」になった（仕様書 3 章）", () => {
+    const outside = terms.filter((x) => x.source !== "spec:5");
+    expect(outside.map((x) => [x.term, x.source])).toEqual([["重ねる", "user:2026-11-23"]]);
+    expect(readRepoFile("docs/design/proposals/P10-Overdub.dc.html")).toContain(`${outside[0]!.term}${TERM_SEPARATOR}${outside[0]!.description}`);
     expect(findTerm("仮の音")).toBeUndefined();
     expect(findTerm(t("instrument.sine"))?.term).toBe("サイン波");
   });

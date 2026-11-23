@@ -1499,7 +1499,7 @@ impl Model {
                 let setup = input.map(|i| (i, self.sound.record_format, self.latency_x_us()));
                 self.notice = self.play.record(can_play, setup, effects);
             }
-            Command::GoToStart => self.play.locate(0, effects),
+            Command::GoToStart => self.play.go_to_start(effects),
             Command::Locate { tick } => self.play.locate(tick, effects),
             Command::SetTempo { bpm } => self.say(|p| p.set_tempo(bpm, effects)),
             Command::SetMeter { num, den } => self.say(|p| p.set_meter(num, den, effects)),
@@ -1838,7 +1838,7 @@ impl Model {
             }
             Command::CopyNotes { take, notes } => self.play.copy_notes(take, &notes),
             Command::CutNotes { take, notes } => self.play.cut_notes(take, &notes, effects),
-            Command::PasteNotes { at } => self.play.paste_notes(at, effects),
+            Command::PasteNotes { at } => self.notice = self.play.paste_notes(at, effects),
             Command::SetGrid { division, triplet } => self.play.set_grid(division, triplet),
             Command::SetMusicalScale { root, mode, lock } => {
                 self.play.set_musical_scale(root, mode, lock);

@@ -339,6 +339,66 @@ fn the_loop_turned_on_with_no_range_takes_four_bars_from_the_current_one() {
 }
 
 #[test]
+fn home_with_the_loop_on_goes_to_its_head_then_to_the_song_start() {
+    let m = &mut ready();
+    cmd(
+        m,
+        Command::SetLoop {
+            from_bar: 5,
+            to_bar: 9,
+        },
+    );
+    cmd(m, Command::Locate { tick: 6 * BAR });
+    assert_eq!(
+        ops(&cmd(m, Command::GoToStart)),
+        [EngineOp::Locate { tick: 4 * BAR }]
+    );
+    assert_eq!(
+        ops(&cmd(m, Command::GoToStart)),
+        [EngineOp::Locate { tick: 0 }],
+        "at the loop's head already"
+    );
+    assert_eq!(
+        ops(&cmd(m, Command::GoToStart)),
+        [EngineOp::Locate { tick: 4 * BAR }]
+    );
+    // Before the loop too, the head comes first.
+    cmd(m, Command::Locate { tick: BAR });
+    cmd(m, Command::GoToStart);
+    assert_eq!(m.view().transport.position, 4 * BAR);
+
+    // While playing the line moves on from the head: a Home just before counts.
+    cmd(m, Command::PlayStop);
+    hear(m, 1, (5 * BAR) as f64, TransportState::Playing, 0);
+    assert_eq!(
+        ops(&cmd(m, Command::GoToStart)),
+        [EngineOp::Locate { tick: 4 * BAR }],
+        "playing from the head, but no Home since"
+    );
+    hear(m, 2, (4 * BAR + 300) as f64, TransportState::Playing, 0);
+    assert_eq!(
+        ops(&cmd(m, Command::GoToStart)),
+        [EngineOp::Locate { tick: 0 }]
+    );
+    // Another move of the line in between: the head again.
+    cmd(m, Command::Locate { tick: 4 * BAR });
+    hear(m, 3, (4 * BAR + 300) as f64, TransportState::Playing, 0);
+    assert_eq!(
+        ops(&cmd(m, Command::GoToStart)),
+        [EngineOp::Locate { tick: 4 * BAR }]
+    );
+    cmd(m, Command::PlayStop);
+
+    // The loop off: the song's start, as before.
+    cmd(m, Command::ToggleLoop);
+    cmd(m, Command::Locate { tick: 6 * BAR });
+    assert_eq!(
+        ops(&cmd(m, Command::GoToStart)),
+        [EngineOp::Locate { tick: 0 }]
+    );
+}
+
+#[test]
 fn record_in_a_song_with_no_tracks_says_so() {
     let m = &mut ready();
     assert!(m.view().transport.can_record);

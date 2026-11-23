@@ -748,25 +748,112 @@ fn cut_copy_and_paste() {
     p.copy_notes(t, &[1, 0]);
     assert_eq!(p.piano_roll_view().clipboard_notes, 2);
     assert_eq!(p.undo_count(), 0, "copying is not a step");
-    p.paste_notes(2 * BAR - 200, e);
-    // Only the first fits before the clip end.
+    assert_eq!(p.paste_notes(2 * BAR - 200, e), None);
+    // The second ends past the clip: it grows by a bar, in the same step.
     assert_eq!(p.undo_count(), 1);
-    assert_eq!(shown_take(&p).unwrap().notes.len(), 3);
-    assert_eq!(p.note_sel.notes, [2]);
+    assert_eq!(shown_take(&p).unwrap().notes.len(), 4);
+    assert_eq!(p.note_sel.notes, [2, 3]);
+    assert_eq!(
+        (p.shown().unwrap().start, p.shown().unwrap().end),
+        (BAR, 3 * BAR)
+    );
     let t = shown_id(&p);
     p.cut_notes(t, &[0, 2], e);
     assert_eq!(p.undo_count(), 2, "cut is one step");
-    assert_eq!(shown_take(&p).unwrap().notes.len(), 1);
+    assert_eq!(shown_take(&p).unwrap().notes.len(), 2);
     assert_eq!(p.piano_roll_view().clipboard_notes, 2);
     let kept = p.clipboard.clone();
     assert_eq!(kept[0].start, 0);
     assert_eq!(kept[1].start, BAR - 200);
     p.paste_notes(BAR, e);
     assert_eq!(p.note_sel.notes, [0, 2]);
-    assert_eq!(shown_take(&p).unwrap().notes.len(), 3);
-    // Nothing fits: no step.
-    p.paste_notes(2 * BAR, e);
+    assert_eq!(shown_take(&p).unwrap().notes.len(), 4);
     assert_eq!(p.undo_count(), 3);
+}
+
+/// The owner's report: notes copied in one track's clip could not be pasted in another track's.
+#[test]
+fn notes_paste_into_a_clip_of_another_track() {
+    let mut p = two_notes();
+    let e = &mut Vec::new();
+    let t = shown_id(&p);
+    p.copy_notes(t, &[0, 1]);
+    let mut s = p.song().clone();
+    s.doc = add_recording(
+        &s.doc,
+        TrackId(1),
+        vec![NewTake {
+            origin: 4 * BAR,
+            length: BAR,
+            notes: Vec::new(),
+            controls: Vec::new(),
+        }],
+        0,
+    )
+    .unwrap()
+    .0
+    .doc;
+    let mut track = Track::clone(&s.doc.tracks[0]);
+    track.id = TrackId(2);
+    track.clips = vec![s.doc.tracks[0].clips[1].clone()];
+    let mut one = Track::clone(&s.doc.tracks[0]);
+    one.clips.truncate(1);
+    s.doc.tracks = vec![Arc::new(one), Arc::new(track)];
+    let other = s.doc.tracks[1].clips[0].id;
+    let clipboard = p.clipboard.clone();
+    let mut p = fresh(s);
+    p.clipboard = clipboard;
+    p.select_clip(Some(other.0));
+    assert_eq!(p.shown().unwrap().id, other);
+    // At the song's start, before the clip: the clip grows back to bar 1.
+    assert_eq!(p.paste_notes(0, e), None);
+    assert_eq!(p.undo_count(), 1, "pasting and growing are one step");
+    let c = p.shown().unwrap().clone();
+    assert_eq!((c.start, c.end), (0, 5 * BAR));
+    assert_eq!(shown_take(&p).unwrap().notes.len(), 2);
+    p.undo(e);
+    let c = p.shown().unwrap().clone();
+    assert_eq!((c.start, c.end), (4 * BAR, 5 * BAR));
+    assert!(shown_take(&p).unwrap().notes.is_empty());
+    // At the clip's head, as Mod V does when the play line is outside it.
+    p.paste_notes(4 * BAR, e);
+    let c = p.shown().unwrap().clone();
+    assert_eq!((c.start, c.end), (4 * BAR, 5 * BAR));
+    assert_eq!(shown_take(&p).unwrap().notes.len(), 2);
+}
+
+#[test]
+fn pasting_says_so_when_the_clip_cannot_grow() {
+    let mut p = two_notes();
+    let e = &mut Vec::new();
+    let t = shown_id(&p);
+    p.copy_notes(t, &[0, 1]);
+    let mut s = p.song().clone();
+    s.doc = add_recording(
+        &s.doc,
+        TrackId(1),
+        vec![NewTake {
+            origin: 3 * BAR,
+            length: BAR,
+            notes: Vec::new(),
+            controls: Vec::new(),
+        }],
+        0,
+    )
+    .unwrap()
+    .0
+    .doc;
+    let clipboard = p.clipboard.clone();
+    let mut p = fresh(s);
+    p.clipboard = clipboard;
+    p.select_clip(Some(p.song().doc.tracks[0].clips[0].id.0));
+    let before = p.song().doc.clone();
+    assert_eq!(
+        p.paste_notes(3 * BAR - 10, e),
+        Some(StatusMessage::ClipsNotPasted)
+    );
+    assert_eq!(p.song().doc, before);
+    assert_eq!(p.undo_count(), 0);
 }
 
 #[test]

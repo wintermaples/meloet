@@ -276,6 +276,11 @@ export function keyRangeOf(n: Shown | null): { low: number; high: number } | nul
   return low <= high ? { low, high } : null;
 }
 
+/** What a clip opened shows at first: the loop when it is on and overlaps the clip, else the whole clip. */
+export function openSpan(clip: { start: number; end: number }, loop: { start: number; end: number } | null): { start: number; end: number } {
+  return loop && loop.start < clip.end && clip.start < loop.end ? { start: loop.start, end: loop.end } : { start: clip.start, end: clip.end };
+}
+
 /**
  * ひらいたときの横の拡大: クリップがノートの場所に入る、いちばん大きい段（モックは 1280 で 1 拍 40、1920 で 80）。
  * width は拡大率をかけた CSS px、scale は拡大率。

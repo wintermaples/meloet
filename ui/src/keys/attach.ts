@@ -38,6 +38,7 @@ import { pickTimeline } from "../components/timeline/pick";
 import { closeMenu, menuVisible } from "../lib/menu";
 import { hideTip, tipVisible } from "../lib/tip.svelte";
 import { current } from "../state/app.svelte";
+import { copied } from "../state/copied";
 import {
   isTyping,
   keyAction,
@@ -108,6 +109,11 @@ function pianoRollKey(
       break;
     default:
       return undefined;
+  }
+  // Paste follows what was copied last, wherever the keys point.
+  if (action.kind === "paste" && copied.last !== null) {
+    if (copied.last === "clips" || !pianoRollOpen(state)) return undefined;
+    toPianoRoll = true;
   }
   if (!pianoRollOpen(state) || (!toPianoRoll && prView.focus !== "pianoRoll"))
     return ARRANGE_TOO.has(action.kind) ? undefined : null;

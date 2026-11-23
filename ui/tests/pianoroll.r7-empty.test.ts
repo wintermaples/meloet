@@ -5,6 +5,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import type { AppState, ClipView, Command, TakeNotes, TrackView } from "../src/bridge";
 import { createFakeTransport, fakeScene } from "../src/bridge/fake";
 import { decodeTake } from "../src/bridge/take";
+import { fitQuarterPx } from "../src/components/pianoroll/geom";
 import Roll from "../src/components/pianoroll/Roll.svelte";
 import { DEFAULT_ROW_PX, prPanels, prView, pxPerTick, rowHeight } from "../src/components/pianoroll/view.svelte";
 import * as app from "./fake-app.svelte";
@@ -215,5 +216,43 @@ describe("ノートをぜんぶ消しても、時間の位置は数のまま", (
     expect(c.take).toBe(700);
     expect(Number.isFinite(c.start)).toBe(true);
     expect(c.start).toBeGreaterThanOrEqual(clip.start);
+  });
+});
+
+describe("opening a clip with the loop on", () => {
+  async function openWith(loopOn: boolean, loop: { start: number; end: number }): Promise<ClipView> {
+    const { s, clip, track, take: t } = await pianoRollSong();
+    s.song = { ...s.song, loopOn, loopRange: loop };
+    const none = structuredClone(s);
+    none.arrange = { ...none.arrange, pianoRollClip: null };
+    app.setState(none);
+    shown.setShown({ clip: null, track, take: null });
+    prView.quarterPx = 10;
+    prView.scrollTick = 20 * BAR;
+    show();
+    arrive(s, clip, track, t);
+    return clip;
+  }
+
+  it("the loop overlapping the clip: the step that just holds the loop, from the loop's head", async () => {
+    const { clip } = await pianoRollSong();
+    await openWith(true, { start: clip.start + BAR, end: clip.start + 2 * BAR });
+    expect(prView.scrollTick).toBe(clip.start + BAR);
+    // One bar in 696: 4 quarters of 160.
+    expect(prView.quarterPx).toBe(160);
+  });
+
+  it("the loop apart from the clip, or off: the whole clip, as before", async () => {
+    const { clip } = await pianoRollSong();
+    const fit = fitQuarterPx(clip.end - clip.start, W, 100);
+    await openWith(true, { start: clip.end + BAR, end: clip.end + 2 * BAR });
+    expect(prView.scrollTick).toBe(clip.start);
+    expect(prView.quarterPx).toBe(fit);
+    unmount(mounted!);
+    mounted = null;
+    prView.shownClip = null;
+    await openWith(false, { start: clip.start + BAR, end: clip.start + 2 * BAR });
+    expect(prView.scrollTick).toBe(clip.start);
+    expect(prView.quarterPx).toBe(fit);
   });
 });

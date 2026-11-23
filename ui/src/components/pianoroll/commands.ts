@@ -33,8 +33,11 @@ export function pianoRollCommand(key: PianoRollKey, c: PianoRollKeyContext): Com
   const meter: Meter = { num: c.state.timeline.meterNum, den: c.state.timeline.meterDen };
   const step = gridTicks(pr.grid, meter);
   if (key.kind === "paste") {
-    if (pr.clipboardNotes === 0) return null;
-    return { type: "pasteNotes", at: Math.max(0, snapTick(c.playTick, step)) };
+    const range = pasteRange(c);
+    if (pr.clipboardNotes === 0 || !range) return null;
+    // Outside the clip, at its head: the clip grows only as far as the notes need.
+    const inside = c.playTick >= range.from && c.playTick < range.to;
+    return { type: "pasteNotes", at: inside ? Math.max(0, snapTick(c.playTick, step)) : range.from };
   }
   if (key.kind === "selectAll") return { type: "selectAllNotes" };
   const n = c.shown;
@@ -74,4 +77,15 @@ export function pianoRollCommand(key: PianoRollKey, c: PianoRollKeyContext): Com
     case "copy":
       return { type: "copyNotes", take, notes };
   }
+}
+
+/** The range in the song of the clip the piano roll shows, or null when it shows none. */
+function pasteRange(c: PianoRollKeyContext): { from: number; to: number } | null {
+  if (c.shown) return c.shown;
+  const id = c.state.arrange.pianoRollClip;
+  for (const track of c.state.song.tracks) {
+    const clip = track.clips.find((x) => x.id === id && x.audio === null);
+    if (clip) return { from: clip.start, to: clip.end };
+  }
+  return null;
 }

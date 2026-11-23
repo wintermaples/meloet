@@ -9,6 +9,7 @@ import {
   type Event,
   type Telemetry,
 } from "../bridge";
+import { noteCopied } from "./copied";
 
 let state = $state.raw<AppState | null>(null);
 let rev = $state(0);
@@ -77,6 +78,7 @@ export async function start(): Promise<void> {
 
 /** Resolves to the rev after the command (null if it failed). The same rev as before means nothing changed. */
 export function send(command: Command): Promise<number | null> {
+  noteCopied(command);
   return bridgeSend(command).catch((e) => {
     failure = String(e);
     return null;

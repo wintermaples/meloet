@@ -425,8 +425,10 @@
           return;
         }
         // 欄をたたんだすぐあとは、bind の幅がまだ前の物なので、いまの幅を読む。
-        prView.quarterPx = G.fitQuarterPx(clip.end - clip.start, area?.clientWidth || w, scale);
-        prView.scrollTick = clip.start;
+        const song = current.state?.song;
+        const span = G.openSpan(clip, song?.loopOn ? song.loopRange : null);
+        prView.quarterPx = G.fitQuarterPx(span.end - span.start, area?.clientWidth || w, scale);
+        prView.scrollTick = span.start;
         fitKeysFor = clip.takeId;
       }
       if (fitKeysFor !== null && notes && notes.take.id === fitKeysFor) {

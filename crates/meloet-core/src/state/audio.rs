@@ -471,9 +471,9 @@ impl Model {
             selected: Some(SelectedParams::Clip(SelectedClip {
                 track: track.0,
                 clip: clip.0,
+                // Audio that is not found cannot be listened to.
+                tune_usable: missing.is_none() && self.play.tune_usable(clip),
                 missing,
-                // round12 stub: M7
-                tune_usable: false,
             })),
             clips: None,
         }

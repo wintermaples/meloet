@@ -22,6 +22,7 @@ import { fakeUserPreset, presetOf, reducePresets } from "./fakePresets";
 import { FAKE_ARP_OFF } from "./fakeWave3";
 import {
   CLIP_CENTS_MAX,
+  TUNE_STRENGTH_MAX,
   CLIP_SEMITONES_MAX,
   EFFECT_PARAMS,
   FACTORY_PRESETS,
@@ -3313,7 +3314,7 @@ function audioEditSong(s: AppState): void {
   ];
   vocalTrackOf(s).clips[1]!.takeId = LEFT_CLIP + 1;
   s.arrange = { ...arrangeOf(RIGHT_CLIP), pianoRollClip: null };
-  s.params.selected = { kind: "clip", track: VOCAL_TRACK_ID, clip: RIGHT_CLIP, missing: null, tuneUsable: false };
+  s.params.selected = { kind: "clip", track: VOCAL_TRACK_ID, clip: RIGHT_CLIP, missing: null, tuneUsable: true };
   s.transport.position = 6 * BAR;
   s.song.undoCount = 22;
   s.status.message = { id: "clipSplit", name: "歌 テイク 1", tick: 6 * BAR, count: 1 };
@@ -3402,7 +3403,7 @@ SCENES.audioKinds = {
       fakeVocalClip(76, "歌 テイク 1", 6 * BAR, 8 * BAR, fakeAudioClip(FAKE_AUDIO.get(64)!)),
     ];
     s.arrange = { ...arrangeOf(RIGHT_CLIP), pianoRollClip: null };
-    s.params.selected = { kind: "clip", track: VOCAL_TRACK_ID, clip: RIGHT_CLIP, missing: null, tuneUsable: false };
+    s.params.selected = { kind: "clip", track: VOCAL_TRACK_ID, clip: RIGHT_CLIP, missing: null, tuneUsable: true };
     s.audioWork = { jobs: [{ kind: "rendering", audio: DRUMS_WAV.id, clip: 74, percent: 34 }], bounce: null };
   },
   bands: ["params"],
@@ -3429,7 +3430,7 @@ function stretchSong(s: AppState, name: string, audio: AudioClipView): void {
   vocalSong(s, { armed: true, monitor: false, selected: true });
   vocalTrackOf(s).clips = [fakeVocalClip(LEFT_CLIP, name, 4 * BAR, 6 * BAR, audio)];
   s.arrange = { ...arrangeOf(LEFT_CLIP), pianoRollClip: null };
-  s.params.selected = { kind: "clip", track: VOCAL_TRACK_ID, clip: LEFT_CLIP, missing: null, tuneUsable: false };
+  s.params.selected = { kind: "clip", track: VOCAL_TRACK_ID, clip: LEFT_CLIP, missing: null, tuneUsable: true };
   s.transport.position = 4 * BAR;
   s.song.undoCount = 14;
 }
@@ -3451,6 +3452,26 @@ SCENES.stretchRendering = {
 // Only the pitch: recorded in this song, a semitone down and 30 cents up, the voice not kept (「−1 ・ 30」, no "×").
 SCENES.stretchPitch = {
   setup: (s) => stretchSong(s, "歌 テイク 1", fakeAudioClip(TAKE_1, fakeStretch(steadyTempo(FAKE_SONG_BPM), FAKE_SONG_BPM, { semitones: -1, cents: 30, keepFormant: false }))),
+  bands: ["params"],
+  meters: QUIET,
+};
+// Round 12, M7 「音程を寄せる」: tuned by 60 % toward A minor, the scale the clip took, while the song is in C major
+// now (「いまのスケールにする」 can be pressed).
+SCENES.stretchTune = {
+  setup(s) {
+    const audio = fakeAudioClip(TAKE_1, fakeStretch(steadyTempo(FAKE_SONG_BPM), FAKE_SONG_BPM));
+    audio.stretch.tune = { root: 9, mode: "minor", strength: 60 };
+    stretchSong(s, "歌 テイク 1", audio);
+  },
+  bands: ["params"],
+  meters: QUIET,
+};
+// The same clip where the rows cannot be used (`tuneUsable` false): both shown disabled, at strength 0 with the song's scale.
+SCENES.stretchTuneUnusable = {
+  setup(s) {
+    stretchSong(s, "歌 テイク 1", fakeAudioClip(TAKE_1, fakeStretch(steadyTempo(FAKE_SONG_BPM), FAKE_SONG_BPM)));
+    s.params.selected = { kind: "clip", track: VOCAL_TRACK_ID, clip: LEFT_CLIP, missing: null, tuneUsable: false };
+  },
   bands: ["params"],
   meters: QUIET,
 };
@@ -3487,7 +3508,7 @@ SCENES.stretchRamp = {
       fakeVocalClip(RIGHT_CLIP, "歌 テイク 2", 5 * BAR, 9 * BAR, fakeAudioClip(HARMONY, fakeStretch(steadyTempo(FAKE_SONG_BPM), 108))),
     ];
     s.arrange = { ...arrangeOf(RIGHT_CLIP), pianoRollClip: null };
-    s.params.selected = { kind: "clip", track: VOCAL_TRACK_ID, clip: RIGHT_CLIP, missing: null, tuneUsable: false };
+    s.params.selected = { kind: "clip", track: VOCAL_TRACK_ID, clip: RIGHT_CLIP, missing: null, tuneUsable: true };
   },
   bands: ["params"],
   meters: QUIET,
@@ -3960,9 +3981,18 @@ export function reduceAudio(state: AppState, command: Command): Change[] | null 
         if (!Number.isNaN(change.bpm)) setSourceBpm(clip, Math.min(SOURCE_BPM_MAX, Math.max(SOURCE_BPM_MIN, Math.round(change.bpm * 100) / 100)));
       } else if (change.kind === "semitones") {
         if (!Number.isNaN(change.semitones)) stretch.semitones = whole(change.semitones, CLIP_SEMITONES_MAX);
-      } else if (change.kind === "tuneStrength" || change.kind === "tuneScale") {
-        // round12 stub: M7
-        return [];
+      } else if (change.kind === "tuneStrength") {
+        // As Rust: the nearest whole number inside 0..=100; leaving 0 the clip takes the song's scale, at 0 it keeps none.
+        if (Number.isNaN(change.percent)) return [];
+        const strength = Math.min(TUNE_STRENGTH_MAX, Math.max(0, Math.round(change.percent)));
+        const { root, mode } = stretch.tune ?? state.pianoRoll.scale;
+        const tune = strength === 0 ? null : { root, mode, strength };
+        if (JSON.stringify(tune) === JSON.stringify(stretch.tune)) return [];
+        stretch.tune = tune;
+      } else if (change.kind === "tuneScale") {
+        const { root, mode } = state.pianoRoll.scale;
+        if (!stretch.tune || (stretch.tune.root === root && stretch.tune.mode === mode)) return [];
+        stretch.tune = { root, mode, strength: stretch.tune.strength };
       } else if (!Number.isNaN(change.cents)) stretch.cents = whole(change.cents, CLIP_CENTS_MAX);
       return stepped(song);
     }

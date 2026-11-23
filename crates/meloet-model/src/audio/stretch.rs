@@ -6,9 +6,10 @@
 use std::sync::Arc;
 
 use super::clips::with_shape;
-use super::{AudioShape, AudioTake, SourceTempo};
+use super::{AudioShape, AudioTake, SourceTempo, TUNE_STRENGTH_MAX, Tune};
 use crate::edit::{Edit, EditError, Ids, clip_index, with_track};
 use crate::history::StepKind;
+use crate::roll::ScaleMode;
 use crate::song::{Clip, ClipId, ClipTake, ClipTakes, Doc, TakeId, Track};
 use crate::tempo_map::TempoMap;
 use crate::time::{Meter, TICKS_PER_QUARTER, Tempo};
@@ -65,6 +66,60 @@ pub fn set_clip_keep_formant(doc: &Doc, clip: ClipId, on: bool) -> Result<Edit, 
             ..*shape
         },
         StepKind::SetClipPitch { clip },
+    )
+}
+
+/// 「音程を寄せる」, the strength in percent, put into 0..=100. At 0 the clip is not tuned and
+/// keeps no scale. Leaving 0 it takes `root` and `mode` (the song's scale at that moment);
+/// between two strengths above 0 it keeps the scale it has.
+pub fn set_clip_tune_strength(
+    doc: &Doc,
+    clip: ClipId,
+    percent: i32,
+    root: u8,
+    mode: ScaleMode,
+) -> Result<Edit, EditError> {
+    if root > 11 {
+        return Err(EditError::Unchanged);
+    }
+    let strength = percent.clamp(0, i32::from(TUNE_STRENGTH_MAX)) as u8;
+    with_shape(
+        doc,
+        clip,
+        |shape, _| AudioShape {
+            tune: (strength > 0).then_some(match shape.tune {
+                Some(tune) => Tune { strength, ..tune },
+                None => Tune {
+                    root,
+                    mode,
+                    strength,
+                },
+            }),
+            ..*shape
+        },
+        StepKind::SetClipTune { clip },
+    )
+}
+
+/// 「いまのスケールにする」: a tuned clip takes `root` and `mode`. `Unchanged` for a clip that
+/// is not tuned (strength 0) and for the scale it has.
+pub fn set_clip_tune_scale(
+    doc: &Doc,
+    clip: ClipId,
+    root: u8,
+    mode: ScaleMode,
+) -> Result<Edit, EditError> {
+    if root > 11 {
+        return Err(EditError::Unchanged);
+    }
+    with_shape(
+        doc,
+        clip,
+        |shape, _| AudioShape {
+            tune: shape.tune.map(|tune| Tune { root, mode, ..tune }),
+            ..*shape
+        },
+        StepKind::SetClipTune { clip },
     )
 }
 

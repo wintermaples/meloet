@@ -5,19 +5,32 @@
      The group 「のび縮み ・ 音の高さ」 (spec 3 "Stretch", "Pitch"; mock F7-Stretch): on/off is a 12×12 square mark (the same as the
      parameter row) that sends SetClipStretch. The source tempo is typed after pressing twice; when it is 「—」, 「さがす」
      (FindSourceTempo). Pitch has semitones and cents apart, dragged up and down (one step on release) or typed after pressing
-     twice. While the sound is being made, a progress bar above the panel (`rendering` of audioWork).
+     twice. 「音程を寄せる」 (round 12, M7): the strength in percent, dragged or typed like the pitch, and under it the scale
+     the clip is brought toward (its own, or at strength 0 the song's) with 「いまのスケールにする」. Both rows are shown
+     disabled when `tuneUsable` is false.
+     While the sound is being made, a progress bar above the panel (`rendering` of audioWork).
      When the audio file is not found, the notice of missing things (「さがす…」「曲から外す」) instead of the groups. -->
 <script lang="ts">
   import { tick, untrack } from "svelte";
-  import { CLIP_CENTS_MAX, CLIP_SEMITONES_MAX, type ClipField, type ClipView, type SelectedClip, type StretchChange, type ValueField as ValueFieldName } from "../../bridge";
+  import {
+    CLIP_CENTS_MAX,
+    CLIP_SEMITONES_MAX,
+    TUNE_STRENGTH_MAX,
+    type ClipField,
+    type ClipView,
+    type SelectedClip,
+    type StretchChange,
+    type ValueField as ValueFieldName,
+  } from "../../bridge";
   import { current, send } from "../../state/app.svelte";
   import { shownWork } from "../../state/audioWork.svelte";
   import { askWhole } from "../automation/coverIf";
   import { clipEdit, renameCommand, startClipRename, stopClipRename } from "../clipName.svelte";
+  import { tip } from "../../lib/tip.svelte";
   import { STATUS_JOIN, t } from "../../text/ja";
   import { mapOf } from "../../time/bars";
   import Button from "../Button.svelte";
-  import { dbNumber, tempoText, textParts } from "../format";
+  import { dbNumber, scaleName, tempoText, textParts } from "../format";
   import { parseDb } from "../mixer/scale";
   import { stripName } from "../mixer/stripName";
   import { signed } from "../pianoroll/geom";
@@ -82,7 +95,7 @@
   const toggle = (group: string) => (folded = folded.includes(group) ? folded.filter((g) => g !== group) : [...folded, group]);
 
   /** The field being typed (fade in and fade out are separate fields; so are semitones and cents). */
-  type TypedField = ClipField | "sourceBpm" | "semitones" | "cents";
+  type TypedField = ClipField | "sourceBpm" | "semitones" | "cents" | "tune";
   let typing = $state<TypedField | null>(null);
 
   function texts(c: ClipView): Record<ClipField, string> {
@@ -136,6 +149,24 @@
     status: t("msg.pitchDragging", { semitones: signed(semitones), cents: signed(cents) }),
     reading: pitchReading(semitones, cents),
   });
+
+  // ---- 「音程を寄せる」 (round 12, M7) ----
+  const tuneStrength = $derived(stretch?.tune?.strength ?? 0);
+  /** The scale the clip keeps; at strength 0 it keeps none, and the song's is where it would go. */
+  const tuneScale = $derived(stretch?.tune ?? app.pianoRoll.scale);
+  const tuneOff = $derived(busy || !sel.tuneUsable);
+  const sameScale = $derived(tuneScale.root === app.pianoRoll.scale.root && tuneScale.mode === app.pianoRoll.scale.mode);
+  const percentText = (v: number) => t("param.value.percent", { value: v });
+  const tuneDragging = (v: number) => ({ status: t("msg.tuneDragging", { percent: v }), reading: percentText(v) });
+  function setTune(percent: number): void {
+    if (!tuneOff && percent !== tuneStrength) setStretch({ kind: "tuneStrength", percent });
+  }
+  function submitTune(text: string): void {
+    typing = null;
+    // 「60」 and 「60 %」. What cannot be read does nothing; Rust quietly brings values out of range inside.
+    const v = parseWhole(text.replace(/[%％]\s*$/, ""));
+    if (v !== null) setTune(Math.min(TUNE_STRENGTH_MAX, Math.max(0, v)));
+  }
 
   function submitStretch(field: "sourceBpm" | "semitones" | "cents", text: string): void {
     typing = null;
@@ -271,7 +302,7 @@
       <button class="m-plain group m-focus-in" onclick={() => toggle("stretch")} data-group="stretch">
         <span class={folded.includes("stretch") ? "m-lbl" : "m-hi"}>{folded.includes("stretch") ? "▸" : "▾"}</span>
         <span class="m-hi group-name">{t("clipParams.groupStretch")}</span>
-        <span class="m-num m-lbl">4</span>
+        <span class="m-num m-lbl">5</span>
       </button>
       {#if stretch && !folded.includes("stretch")}
         {@render switchRow("follow", t("clipParams.follow"), stretch.follow)}
@@ -333,6 +364,34 @@
           {/if}
         </div>
         {@render switchRow("keepFormant", t("clipParams.keepFormant"), stretch.keepFormant)}
+        <div class="row" class:unusable={!sel.tuneUsable} data-test="clip-tune">
+          <span class="m-lbl label" use:tip={t("clipParams.tuneTip")}>{t("clipParams.tune")}</span>
+          {#if typing === "tune"}
+            <ValueField initial={String(tuneStrength)} label={t("clipParams.tune")} onsubmit={submitTune} oncancel={() => (typing = null)} />
+          {:else}
+            <span class="m-num m-hi value"
+              ><StretchNumber
+                value={tuneStrength}
+                min={0}
+                max={TUNE_STRENGTH_MAX}
+                text={percentText}
+                label={t("clipParams.tune")}
+                test="clip-value-tune"
+                disabled={tuneOff}
+                step="line.mark"
+                reading={tuneDragging}
+                commit={setTune}
+                ontype={() => !tuneOff && startTyping("tune")}
+              /></span
+            >
+          {/if}
+        </div>
+        <div class="row" class:unusable={!sel.tuneUsable} data-test="clip-tune-scale">
+          <span class="m-lbl label" data-test="clip-tune-scale-name">{scaleName(tuneScale.root, tuneScale.mode)}</span>
+          <Button test="clip-tune-to-scale" disabled={tuneOff || tuneStrength === 0 || sameScale} onclick={() => setStretch({ kind: "tuneScale" })}
+            >{t("clipParams.tuneToScale")}</Button
+          >
+        </div>
       {/if}
     </div>
   {/if}
@@ -445,6 +504,14 @@
   .value {
     flex-shrink: 0;
     text-align: right;
+  }
+  /* Disabled (spec 2): text gray.7, cannot be pressed. */
+  .row.unusable .label,
+  .row.unusable .value {
+    color: var(--color-gray-7);
+  }
+  .row.unusable .value :global(.drag) {
+    cursor: default;
   }
   /* The 12×12 square mark (the same form as params/ParamRow.svelte). */
   .switch {

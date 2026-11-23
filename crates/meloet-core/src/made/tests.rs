@@ -159,6 +159,114 @@ fn the_pitch_alone_is_made_at_the_files_speed() {
 }
 
 #[test]
+fn a_tuned_clip_is_made_and_strength_nothing_is_the_old_way() {
+    use meloet_model::{ScaleMode, set_clip_gain, set_clip_tune_scale, set_clip_tune_strength};
+    let (doc, track) = ramped();
+    let (doc, clip) = record(&doc, track, BAR, BAR);
+    // Recorded to the song's own map and not pitched: the file plays as it is.
+    assert!(plan_of(&doc, clip, RATE).is_none());
+    let tuned = |percent, root, mode| {
+        set_clip_tune_strength(&doc, clip, percent, root, mode)
+            .unwrap()
+            .doc
+    };
+    let c_major = tuned(60, 0, ScaleMode::Major);
+    let made = plan_of(&c_major, clip, RATE).unwrap();
+    let mut notes = [false; 12];
+    for n in [0, 2, 4, 5, 7, 9, 11] {
+        notes[n] = true;
+    }
+    assert_eq!(
+        made.tune,
+        Some(TunePlan {
+            scale: notes,
+            strength: 60
+        })
+    );
+    // At the file's speed, and the voice keeps its character while its pitch moves.
+    assert!(matches!(made.place, Place::Straight { .. }));
+    assert_eq!((made.semitones, made.keep_formant), (0.0, true));
+    let tuning = made.tuning().unwrap();
+    assert_eq!((tuning.strength, tuning.transpose), (0.6, 0.0));
+    assert_eq!(tuning.scale, notes);
+
+    // The strength and the notes are in the key; the name of the scale is not.
+    assert_eq!(plan_of(&c_major, clip, RATE).unwrap().key, made.key);
+    let stronger = plan_of(&tuned(61, 0, ScaleMode::Major), clip, RATE).unwrap();
+    assert_ne!(stronger.key, made.key);
+    let d_major = plan_of(&tuned(60, 2, ScaleMode::Major), clip, RATE).unwrap();
+    assert_ne!(d_major.key, made.key);
+    assert!(d_major.tune.unwrap().scale[1] && !d_major.tune.unwrap().scale[0]);
+    let a_minor = plan_of(&tuned(60, 9, ScaleMode::Minor), clip, RATE).unwrap();
+    assert_eq!(a_minor.key, made.key);
+    // B major goes round the octave.
+    let b_major = plan_of(&tuned(60, 11, ScaleMode::Major), clip, RATE).unwrap();
+    assert_eq!(
+        b_major.tune.unwrap().scale,
+        [
+            false, true, false, true, true, false, true, false, true, false, true, true
+        ]
+    );
+    let off = set_clip_keep_formant(&c_major, clip, false).unwrap().doc;
+    let plain = plan_of(&off, clip, RATE).unwrap();
+    assert!(!plain.keep_formant);
+    assert_ne!(plain.key, made.key);
+
+    // What does not change the audio does not make it again: the volume, the song's scale
+    // (it is not in the clip), a change of the song somewhere else.
+    let louder = set_clip_gain(
+        &c_major,
+        clip,
+        meloet_model::ClipGain::from_db(-6.0).unwrap(),
+    )
+    .unwrap()
+    .doc;
+    assert_eq!(plan_of(&louder, clip, RATE).unwrap().key, made.key);
+    let later = timeline::set_tempo_at(&c_major, 6 * BAR, tempo(6_000))
+        .unwrap()
+        .doc;
+    assert_eq!(plan_of(&later, clip, RATE).unwrap().key, made.key);
+    let rescaled = set_clip_tune_scale(&c_major, clip, 9, ScaleMode::Minor)
+        .unwrap()
+        .doc;
+    assert_eq!(plan_of(&rescaled, clip, RATE).unwrap().key, made.key);
+
+    // With the pitch: one run, the tuning told what the transpose is.
+    let up = set_clip_semitones(&c_major, clip, 2).unwrap().doc;
+    let up = set_clip_cents(&up, clip, -30).unwrap().doc;
+    let both = plan_of(&up, clip, RATE).unwrap();
+    assert!((both.tuning().unwrap().transpose - 1.7).abs() < 1e-6);
+    assert_ne!(both.key, made.key);
+    // Strength 0: the plan and the key of the clip that was never tuned.
+    let untuned = set_clip_tune_strength(&up, clip, 0, 0, ScaleMode::Major)
+        .unwrap()
+        .doc;
+    let never = set_clip_semitones(&doc, clip, 2).unwrap().doc;
+    let never = set_clip_cents(&never, clip, -30).unwrap().doc;
+    let (a, b) = (
+        plan_of(&untuned, clip, RATE).unwrap(),
+        plan_of(&never, clip, RATE).unwrap(),
+    );
+    assert_eq!((a.key, a.tune, a.tuning()), (b.key, None, None));
+    assert_ne!(a.key, both.key);
+    let back = set_clip_tune_strength(&c_major, clip, 0, 0, ScaleMode::Major)
+        .unwrap()
+        .doc;
+    assert!(plan_of(&back, clip, RATE).is_none());
+
+    // A clip that follows another tempo: stretched and tuned in one plan.
+    let sung = set_source_tempo(&c_major, clip, tempo(12_000))
+        .unwrap()
+        .0
+        .doc;
+    let follows = plan_of(&sung, clip, RATE).unwrap();
+    assert!(matches!(follows.place, Place::Follow { .. }));
+    assert!(follows.tune.is_some());
+    let sung_untuned = set_source_tempo(&doc, clip, tempo(12_000)).unwrap().0.doc;
+    assert_ne!(follows.key, plan_of(&sung_untuned, clip, RATE).unwrap().key);
+}
+
+#[test]
 fn the_key_is_what_the_audio_is_made_from_and_nothing_else() {
     let (doc, track) = ramped();
     let (doc, clip) = record(&doc, track, 0, BAR);

@@ -131,6 +131,7 @@ fn plan(
         None => Place::Straight { file_frame: 0 },
     };
     MadePlan {
+        tune: None,
         key: [key; 32],
         clip: u32::from(key),
         audio: 100 + u32::from(key),
@@ -143,6 +144,87 @@ fn plan(
         file_end: i64::MAX,
         semitones,
         keep_formant: semitones != 0.0,
+    }
+}
+
+/// A voice-like tone: ten harmonics falling by 1/n.
+fn voice(frames: usize, hz: f64) -> Vec<f32> {
+    (0..frames)
+        .map(|i| {
+            let t = i as f64 / f64::from(RATE);
+            (1..=10)
+                .map(|h| (TAU * hz * f64::from(h) * t).sin() / f64::from(h))
+                .sum::<f64>() as f32
+                * 0.25
+        })
+        .collect()
+}
+
+/// The strongest frequency of `x` between `lo` and `hi`, to 0.05 Hz.
+fn peak_hz(x: &[f32], lo: f64, hi: f64) -> f64 {
+    let level = |hz: f64| {
+        let (mut re, mut im) = (0.0f64, 0.0f64);
+        for (i, &v) in x.iter().enumerate() {
+            let w = 0.5 - 0.5 * (TAU * i as f64 / x.len() as f64).cos();
+            let a = TAU * hz * i as f64 / f64::from(RATE);
+            re += w * f64::from(v) * a.cos();
+            im += w * f64::from(v) * a.sin();
+        }
+        re * re + im * im
+    };
+    let mut best = (lo, 0.0);
+    let mut hz = lo;
+    while hz <= hi {
+        let l = level(hz);
+        if l > best.1 {
+            best = (hz, l);
+        }
+        hz += 0.05;
+    }
+    best.0
+}
+
+#[test]
+fn a_tuned_clip_is_made_as_long_as_it_is_with_its_voice_on_the_note() {
+    use crate::made::TunePlan;
+    let mut rig = Rig::new("maker-tune");
+    // Two seconds of a voice 30 cents under the A at 220 Hz, with a click before it.
+    let flat = 220.0 * 2f64.powf(-30.0 / 1200.0);
+    let mut file = vec![0.0f32; 24_000];
+    add_click(&mut file, 12_000);
+    file.extend(voice(96_000, flat));
+    let uid = rig.file(1, &file);
+    let song = steady(12_000);
+    let mut scale = [false; 12];
+    for n in [0, 2, 4, 5, 7, 9, 11] {
+        scale[n] = true;
+    }
+    // Five beats at 120: 2.5 s.
+    let tuned = |key: u8, strength: u8| MadePlan {
+        tune: Some(TunePlan { scale, strength }),
+        ..plan(uid, key, &song, None, (0, 5 * 1_920), 0.0)
+    };
+    let (full, half) = (tuned(1, 100), tuned(2, 50));
+    rig.want(&[&full, &half]);
+    let news = rig.until_ready(full.key);
+    // The percent is told while the pitch is looked for and while the clip is made.
+    assert!(news.iter().any(|n| matches!(n, MadeNews::Work(_))));
+    rig.until_ready(half.key);
+    for (plan, want) in [(&full, 220.0), (&half, 220.0 * 2f64.powf(-15.0 / 1200.0))] {
+        let made = rig.made(&plan.key);
+        assert_eq!(made.len() as u64, plan.frames);
+        assert_eq!(made.len(), 120_000);
+        let hz = peak_hz(&made[48_000..96_000], 200.0, 230.0);
+        let off = 1200.0 * (hz / want).log2();
+        println!(
+            "strength {}: {hz:.2} Hz, {off:+.1} cents",
+            plan.tune.unwrap().strength
+        );
+        assert!(off.abs() < 10.0, "{hz} for {want}");
+        // The click is where it was.
+        let click = click_at(&made[..24_000]);
+        let was = click_at(&file[..24_000]);
+        assert!((click - was).abs() < 48.0, "{click} {was}");
     }
 }
 

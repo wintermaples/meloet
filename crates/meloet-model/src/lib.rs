@@ -42,7 +42,8 @@ pub use audio::reverse::{
 };
 pub use audio::stretch::{
     TempoGuess, guess_source_tempo, pick_guess, set_clip_cents, set_clip_follow,
-    set_clip_keep_formant, set_clip_semitones, set_source_tempo, source_tempo_guesses,
+    set_clip_keep_formant, set_clip_semitones, set_clip_tune_scale, set_clip_tune_strength,
+    set_source_tempo, source_tempo_guesses,
 };
 pub use audio::{
     AudioId, AudioShape, AudioSource, AudioTake, ClipGain, CompPiece, SourceTempo,

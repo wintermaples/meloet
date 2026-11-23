@@ -208,6 +208,14 @@ impl Play {
         Some((track.id, id, take.take.source.clone()))
     }
 
+    /// Whether 「音程を寄せる」 can be used on `clip` (`SelectedClip::tune_usable`): a vocal
+    /// clip that plays one take. A clip of 「いいとこ取り」 plays pieces of several, and the
+    /// audio made for a clip (`made::plan`) is made from one.
+    pub fn tune_usable(&self, clip: ClipId) -> bool {
+        (self.doc().clip(clip))
+            .is_some_and(|(_, c)| c.active_audio().is_some() && c.comp.is_empty())
+    }
+
     /// S. Returns the notice to show.
     pub fn split_clips(&mut self, effects: &mut Vec<Effect>) -> Option<StatusMessage> {
         if self.busy() {
@@ -326,8 +334,21 @@ impl Play {
                     None => return,
                 }
             }
-            // round12 stub: M7
-            StretchChange::TuneStrength { .. } | StretchChange::TuneScale => return,
+            // The scale the clip takes is the song's at this moment (the piano roll's).
+            StretchChange::TuneStrength { percent } => match whole(percent) {
+                // Taking the tuning off is always possible.
+                Some(n) if n > 0 && !self.tune_usable(id) => return,
+                Some(n) => {
+                    let scale = self.song.session.roll.scale;
+                    meloet_model::set_clip_tune_strength(doc, id, n, scale.root(), scale.mode)
+                }
+                None => return,
+            },
+            StretchChange::TuneScale if !self.tune_usable(id) => return,
+            StretchChange::TuneScale => {
+                let scale = self.song.session.roll.scale;
+                meloet_model::set_clip_tune_scale(doc, id, scale.root(), scale.mode)
+            }
         };
         if let Ok(e) = edited {
             self.apply(e, effects);

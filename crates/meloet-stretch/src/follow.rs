@@ -39,6 +39,8 @@ pub struct Seek {
 /// One `process` call.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Step {
+    /// Clip frame of the first output frame of the call; negative before the clip.
+    pub out_start: i64,
     /// First file frame to read; may be negative or past the end of the file (silence).
     pub src_start: i64,
     pub src_frames: usize,
@@ -135,6 +137,7 @@ impl<P: Fn(u64) -> f64> Follower<P> {
         let out_frames = (to - self.next) as usize;
         let fed = self.fed_before(to).max(self.fed);
         let step = Step {
+            out_start: self.next,
             src_start: self.fed,
             src_frames: (fed - self.fed) as usize,
             out_frames,

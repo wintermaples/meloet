@@ -2383,6 +2383,10 @@ export const texts = {
   "clipParams.pitchValue": e("{semitones} 半音 {cents} セント", "mock:F7-AudioEdit", { semitones: "+0", cents: "0" }),
   "clipParams.keepFormant": e("声の感じを保つ", "spec:3"),
   "clipParams.findTempo": e("さがす", "spec:3"),
+  // Round 12, M7: the strength row and the scale row under it (the strength is shown with param.value.percent, the scale with scale.name).
+  "clipParams.tune": e("音程を寄せる", "user:2026-11-23"),
+  "clipParams.tuneToScale": e("いまのスケールにする", "user:2026-11-23"),
+  "clipParams.tuneTip": e("ひとりの声や、音が1つずつの楽器に使えます", "user:2026-11-23"),
   // The progress bar row above the panel while the sound is being made (spec 2 "Selected clip", mock F7-Stretch).
   "clipParams.rendering": e("音を作っています", "mock:F7-Stretch"),
   "clipParams.renderingPercent": e("{percent} %", "mock:F7-Stretch", { percent: "34" }),
@@ -2890,6 +2894,8 @@ export const texts = {
   "clip.fadeEdgeOut": e("後", "mock:F7-AudioEdit"),
   // Status line while dragging the pitch (semitones, cents). The live reading has the form of clip.pitchMarkCents (「+2 ・ +30」).
   "msg.pitchDragging": s6("Moving the pitch", "音の高さ {semitones} 半音 {cents} セント（ドラッグ中）", { semitones: "+2", cents: "+30" }),
+  // Status line while dragging the strength of 「音程を寄せる」 (round 12, M7; in the form of msg.pitchDragging).
+  "msg.tuneDragging": e("音程を寄せる {percent} %（ドラッグ中）", "builder:2026-11-23", { percent: "60" }),
   // The unit after the 「手で決める…」 box (spec 3 (94-19) 「「8.0」と「ms」」).
   "settings.latencyUnit": e("ms", "spec:3"),
   // Short, at the end of the status line left while recording during export (spec 3 (94-84)).

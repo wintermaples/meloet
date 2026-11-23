@@ -97,7 +97,7 @@ describe("fake scenes (F7-AudioEdit, F7-AudioDrop, F7-AudioMissing, R11-Audio)",
     expect(right!.audio!.stretch).toEqual({ follow: true, sourceBpm: 96, ratio: 1, semitones: 0, cents: 0, keepFormant: true, tune: null });
     expect([left!.noteCount, right!.noteCount]).toEqual([0, 0]);
     expect(s.arrange).toMatchObject({ selectedClips: [72], selectedClip: 72, pianoRollClip: null, tallTrack: null });
-    const selected: SelectedParams = { kind: "clip", track: VOCAL, clip: 72, missing: null, tuneUsable: false };
+    const selected: SelectedParams = { kind: "clip", track: VOCAL, clip: 72, missing: null, tuneUsable: true };
     expect(s.params.selected).toEqual(selected);
     expect(s.workspace.layout.rightOpen).toContain("params");
     expect(s.transport.position).toBe(6 * BAR);

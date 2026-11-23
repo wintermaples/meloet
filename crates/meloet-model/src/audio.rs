@@ -183,6 +183,7 @@ pub mod clips;
 pub mod fade;
 pub mod follow;
 pub mod record;
+pub mod reverse;
 pub mod stretch;
 
 #[cfg(test)]

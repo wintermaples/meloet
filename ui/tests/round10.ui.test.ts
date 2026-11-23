@@ -145,7 +145,7 @@ describe("rules for join, split here and the target of F2 (clipEdits.ts)", () =>
 });
 
 describe("arrange right click (spec 3)", () => {
-  it("audio clip: no「ピアノロールでひらく」or「つなげる」. Reverse and normalize stay as disabled rows", () => {
+  it("audio clip: no「ピアノロールでひらく」or「つなげる」. Reverse and normalize at the bottom", () => {
     show(Arrange, song([61], 61));
     mouse(lanes(), "contextmenu", 64, 150);
     expect(labels()).toEqual([
@@ -166,7 +166,7 @@ describe("arrange right click (spec 3)", () => {
       "menu.normalize",
     ]);
     const by = (label: string) => rows().find((r) => r.label === label)!;
-    expect([by("menu.splitHere").usable, by("menu.reverse").usable, by("menu.normalize").usable]).toEqual([true, false, false]);
+    expect([by("menu.splitHere").usable, by("menu.reverse").usable, by("menu.normalize").usable]).toEqual([true, true, true]);
     by("menu.splitHere").run();
     expect(app.sent).toEqual([{ type: "splitClipAt", clip: 61, tick: BAR }]);
   });

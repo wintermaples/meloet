@@ -9,7 +9,7 @@ use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use meloet_model::{AudioSource, ImportedAudio, NewAudio};
+use meloet_model::{AudioSource, ImportedAudio, NewAudio, PlayedFrames};
 use sha2::{Digest, Sha256};
 
 use super::decode::{self, Decoder, Unread};
@@ -83,6 +83,18 @@ pub enum AudioNews {
         file: String,
         found: Finding,
     },
+    /// The answer to [`Keeper::measure`]: the loudest sample of each, in the order asked;
+    /// `None` where the file could not be read.
+    Measured {
+        ticket: u64,
+        peaks: Vec<Option<f32>>,
+    },
+    /// The answer to [`Keeper::reverse`]: the file made for each, in the order asked; `None`
+    /// where none was made.
+    Reversed {
+        ticket: u64,
+        files: Vec<Option<NewAudio>>,
+    },
 }
 
 enum Ask {
@@ -99,6 +111,15 @@ enum Ask {
     Find {
         source: Arc<AudioSource>,
         path: PathBuf,
+    },
+    Measure {
+        ticket: u64,
+        played: Vec<PlayedFrames>,
+    },
+    Reverse {
+        ticket: u64,
+        played: Vec<(PlayedFrames, String)>,
+        taken: Vec<String>,
     },
 }
 
@@ -165,6 +186,21 @@ impl Keeper {
     /// 「さがす…」: the file at `path` is taken for the missing `source`.
     pub fn find(&self, source: Arc<AudioSource>, path: PathBuf) {
         let _ = self.tx.send(Ask::Find { source, path });
+    }
+
+    /// 「ノーマライズ」: the loudest sample of the frames each clip plays.
+    pub fn measure(&self, ticket: u64, played: Vec<PlayedFrames>) {
+        let _ = self.tx.send(Ask::Measure { ticket, played });
+    }
+
+    /// 「逆にする」: a file of the frames each clip plays, backwards, named as wanted (see
+    /// `clips::reverse`). `taken`: names of the song's audio table a new file must not get.
+    pub fn reverse(&self, ticket: u64, played: Vec<(PlayedFrames, String)>, taken: Vec<String>) {
+        let _ = self.tx.send(Ask::Reverse {
+            ticket,
+            played,
+            taken,
+        });
     }
 }
 
@@ -275,6 +311,37 @@ impl Work {
                     file: name_of(&path),
                     found,
                 });
+            }
+            Ask::Measure { ticket, played } => {
+                let peaks = (played.iter())
+                    .map(|p| {
+                        (super::clips::peak(&self.store, p))
+                            .inspect_err(|e| eprintln!("meloet: a clip was not measured: {e}"))
+                            .ok()
+                    })
+                    .collect();
+                (self.tell)(AudioNews::Measured { ticket, peaks });
+            }
+            Ask::Reverse {
+                ticket,
+                played,
+                taken,
+            } => {
+                let files = (played.iter())
+                    .map(|(p, wanted)| {
+                        match super::clips::reverse(&self.store, p, wanted, &taken) {
+                            Ok(audio) => {
+                                self.peaks_made.insert(audio.uid);
+                                Some(audio)
+                            }
+                            Err(e) => {
+                                eprintln!("meloet: a clip was not reversed: {e}");
+                                None
+                            }
+                        }
+                    })
+                    .collect();
+                (self.tell)(AudioNews::Reversed { ticket, files });
             }
         }
     }

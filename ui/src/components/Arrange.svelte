@@ -1406,9 +1406,13 @@
       if (!pianoRollOpen) send({ type: "toggleBand", band: "pianoRoll" });
     };
     const cutAt = splitTick(clip, rulerLine(at));
-    // 「逆にする」 and 「ノーマライズ」 for audio clips are seats for a later round (spec 3 "While the sound is being made").
-    const later: MenuEntry[] = clip.audio
-      ? [{ kind: "separator" }, menuRow("menu.reverse", false, () => {}), menuRow("menu.normalize", false, () => {})]
+    // At the bottom of an audio clip's menu (spec 3 "While the sound is being made"); Rust takes the vocal clips among the chosen.
+    const audioRows: MenuEntry[] = clip.audio
+      ? [
+          { kind: "separator" },
+          menuRow("menu.reverse", change, () => send({ type: "reverseClips", clips: chosen() })),
+          menuRow("menu.normalize", change, () => send({ type: "normalizeClips", clips: chosen() })),
+        ]
       : [];
     return [
       ...(keys ? ([menuRow("menu.openInPianoRoll", true, open, t("key.pianoRoll")), { kind: "separator" }] satisfies MenuEntry[]) : []),
@@ -1425,7 +1429,7 @@
       menuRow("menu.nextTake", change && clip.takes > 1, () => send({ type: "stepTake", delta: 1 }), t("key.take")),
       menuRow("menu.prevTake", change && clip.takes > 1, () => send({ type: "stepTake", delta: -1 }), shiftKey(t("key.take"))),
       menuRow("menu.deleteTake", change && clip.takes > 1, () => send({ type: "deleteTake", clip: clip.id })),
-      ...later,
+      ...audioRows,
     ];
   }
 

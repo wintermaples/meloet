@@ -32,6 +32,10 @@ pub use audio::clips::{
 pub use audio::fade::{clip_fade_gain, fade_gain};
 pub use audio::follow::{FileClock, tempo_piece};
 pub use audio::record::{NewAudio, NewAudioTake, VocalRecording, add_vocal_recordings};
+pub use audio::reverse::{
+    ClipsReversed, NORMALIZE_TO_DB, PlayedFrames, Reversed, normalize_clips, normalize_gain,
+    played_frames, reverse_clips,
+};
 pub use audio::stretch::{
     TempoGuess, guess_source_tempo, pick_guess, set_clip_cents, set_clip_follow,
     set_clip_keep_formant, set_clip_semitones, set_source_tempo, source_tempo_guesses,

@@ -2791,6 +2791,7 @@ mod mixsync;
 mod mute_sets;
 mod params;
 mod plugs;
+mod reverse;
 mod seats;
 mod shelf;
 mod sounds;

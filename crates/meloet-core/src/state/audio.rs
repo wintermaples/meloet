@@ -5,7 +5,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use meloet_model::{AudioSource, ImportPlan, TrackId};
+use meloet_model::{AudioSource, ImportPlan, NewAudio, PlayedFrames, TrackId};
 use meloet_protocol::{
     AudioClipState, Command, DropMode, MissingAudioView, ParamsView, SelectedClip, SelectedParams,
     StatusMessage,
@@ -42,6 +42,23 @@ enum Picking {
     Find { audio: u32 },
 }
 
+/// 「ノーマライズ」 (`reverse` false) or 「逆にする」 asked of the audio thread.
+#[derive(Debug)]
+struct ClipWork {
+    ticket: u64,
+    /// `Play::serial` of the song.
+    serial: u32,
+    played: Vec<PlayedFrames>,
+    reverse: bool,
+}
+
+/// What the audio thread answered to a [`ClipWork`], in the order of its clips.
+#[derive(Debug)]
+enum ClipWorkDone {
+    Measured(Vec<Option<f32>>),
+    Reversed(Vec<Option<NewAudio>>),
+}
+
 /// What the audio thread was last asked to watch.
 #[derive(Debug)]
 struct Watched {
@@ -66,6 +83,10 @@ pub(super) struct AudioSide {
     /// A clip was selected after the last insert or instrument: the parameters panel shows
     /// 「選んだクリップ」.
     clip_panel: bool,
+    last_work: u64,
+    clip_work: Vec<ClipWork>,
+    /// Answers that wait for a recording to end.
+    clip_work_done: Vec<(ClipWork, ClipWorkDone)>,
 }
 
 fn sorted_by_name(mut paths: Vec<PathBuf>) -> Vec<PathBuf> {
@@ -224,6 +245,12 @@ impl Model {
                     Finding::Unreadable => Some(StatusMessage::AudioUnreadable { file }),
                 };
             }
+            AudioNews::Measured { ticket, peaks } => {
+                self.clip_work_answered(ticket, ClipWorkDone::Measured(peaks));
+            }
+            AudioNews::Reversed { ticket, files } => {
+                self.clip_work_answered(ticket, ClipWorkDone::Reversed(files));
+            }
             AudioNews::States { serial, .. } => {
                 if serial != self.play.serial() {
                     return;
@@ -294,6 +321,13 @@ impl Model {
                 self.ai_brought(bringing.ticket, put_in);
             }
         }
+        if !self.play.busy() {
+            for (work, done) in std::mem::take(&mut self.audio.clip_work_done) {
+                if work.serial == serial {
+                    self.clip_work_in(work, done, effects);
+                }
+            }
+        }
         let rate = self.open.as_ref().map(|open| open.sample_rate);
         self.play.set_audio_rate(rate);
         let table = self.play.song().doc.audio.clone();
@@ -309,6 +343,10 @@ impl Model {
             self.play.forget_audio_states();
             self.audio.missing_unsaid = Some(serial);
             self.audio.bringing.retain(|b| b.serial == serial);
+            self.audio.clip_work.retain(|w| w.serial == serial);
+            self.audio
+                .clip_work_done
+                .retain(|(w, _)| w.serial == serial);
         }
         if !nothing {
             effects.push(Effect::WatchAudio {
@@ -322,6 +360,75 @@ impl Model {
             table,
             rate,
         });
+    }
+
+    /// 「ノーマライズ」 (`reverse` false) or 「逆にする」 of the vocal clips among `clips`: the
+    /// audio thread is asked to read or write their files, and the step is made when it
+    /// answers. A clip that already waits for an answer is passed over.
+    pub(super) fn ask_clip_work(
+        &mut self,
+        clips: &[u32],
+        reverse: bool,
+        effects: &mut Vec<Effect>,
+    ) {
+        if self.play.busy() {
+            return;
+        }
+        let waiting: Vec<_> = (self.audio.clip_work.iter())
+            .chain(self.audio.clip_work_done.iter().map(|(w, _)| w))
+            .flat_map(|w| w.played.iter().map(|p| p.clip))
+            .collect();
+        let mut played = self.play.played_frames_of(clips);
+        played.retain(|p| !waiting.contains(&p.clip) && (!reverse || !p.sounding().is_empty()));
+        if played.is_empty() {
+            return;
+        }
+        self.audio.last_work += 1;
+        let ticket = self.audio.last_work;
+        if reverse {
+            let names = self.play.backwards_names(&played);
+            let doc = &self.play.song().doc;
+            effects.push(Effect::ReverseAudio {
+                ticket,
+                played: played.iter().cloned().zip(names).collect(),
+                taken: doc.audio.iter().map(|s| s.file.clone()).collect(),
+            });
+        } else {
+            effects.push(Effect::MeasureAudio {
+                ticket,
+                played: played.clone(),
+            });
+        }
+        self.audio.clip_work.push(ClipWork {
+            ticket,
+            serial: self.play.serial(),
+            played,
+            reverse,
+        });
+    }
+
+    fn clip_work_answered(&mut self, ticket: u64, done: ClipWorkDone) {
+        let Some(at) = self.audio.clip_work.iter().position(|w| w.ticket == ticket) else {
+            return;
+        };
+        let work = self.audio.clip_work.remove(at);
+        self.audio.clip_work_done.push((work, done));
+    }
+
+    /// An answer to a [`ClipWork`] goes into the song, as one step.
+    fn clip_work_in(&mut self, work: ClipWork, done: ClipWorkDone, effects: &mut Vec<Effect>) {
+        let notice = match done {
+            ClipWorkDone::Measured(peaks) if !work.reverse => self
+                .play
+                .normalize_measured(work.played.into_iter().zip(peaks), effects),
+            ClipWorkDone::Reversed(files) if work.reverse => self
+                .play
+                .reverse_made(work.played.into_iter().zip(files), effects),
+            _ => None,
+        };
+        if notice.is_some() {
+            self.notice = notice;
+        }
     }
 
     /// 「曲から外す」 for an audio file that is not found.
@@ -387,5 +494,7 @@ impl Model {
     }
 }
 
+#[cfg(test)]
+mod reverse_tests;
 #[cfg(test)]
 mod tests;

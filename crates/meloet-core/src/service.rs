@@ -3116,6 +3116,24 @@ impl Worker {
                             keeper.find(source, path);
                         }
                     }
+                    Effect::MeasureAudio { ticket, played } => match &self.keeper {
+                        Some(keeper) => keeper.measure(ticket, played),
+                        None => inputs.push_back(Input::Audio(AudioNews::Measured {
+                            ticket,
+                            peaks: vec![None; played.len()],
+                        })),
+                    },
+                    Effect::ReverseAudio {
+                        ticket,
+                        played,
+                        taken,
+                    } => match &self.keeper {
+                        Some(keeper) => keeper.reverse(ticket, played, taken),
+                        None => inputs.push_back(Input::Audio(AudioNews::Reversed {
+                            ticket,
+                            files: vec![None; played.len()],
+                        })),
+                    },
                     // Here and now: meloet may end right after.
                     Effect::ClearWorkAudio => self.audio_store.clear_work(),
                     Effect::Export(ask) => inputs.extend(self.export_ask(ask)),

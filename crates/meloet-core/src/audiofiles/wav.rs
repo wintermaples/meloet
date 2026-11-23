@@ -162,6 +162,57 @@ impl WavPcm {
     pub fn bits(&self) -> u8 {
         (self.coding.bytes() * 8) as u8
     }
+
+    /// The bytes of one frame.
+    pub fn frame_bytes(&self) -> usize {
+        self.coding.bytes() * usize::from(self.channels)
+    }
+
+    /// The head of a file of `frames` frames of samples of this file's kind.
+    pub fn head_for(&self, frames: u64) -> [u8; HEAD as usize] {
+        let tag = match self.coding {
+            Coding::F32 | Coding::F64 => TAG_FLOAT,
+            _ => TAG_PCM,
+        };
+        let data = frames.saturating_mul(self.frame_bytes() as u64);
+        let data = u32::try_from(data)
+            .ok()
+            .filter(|&d| d < UNKNOWN - HEAD as u32)
+            .unwrap_or(UNKNOWN);
+        head_of(
+            self.sample_rate,
+            self.channels.into(),
+            tag,
+            self.bits().into(),
+            data,
+        )
+    }
+
+    /// What a byte of silence is in this file's samples.
+    pub fn silent_byte(&self) -> u8 {
+        if self.coding == Coding::U8 { 0x80 } else { 0 }
+    }
+
+    /// The frames from `frame` on as the file has them, as many whole frames as `out` holds
+    /// and the file has. Returns how many frames were read.
+    pub fn read_raw(&mut self, frame: u64, out: &mut [u8]) -> io::Result<usize> {
+        let size = self.frame_bytes();
+        let count = ((out.len() / size) as u64).min(self.frames.saturating_sub(frame)) as usize;
+        if count == 0 {
+            return Ok(0);
+        }
+        self.file
+            .seek(SeekFrom::Start(self.data + frame * size as u64))?;
+        self.file.read_exact(&mut out[..count * size])?;
+        Ok(count)
+    }
+
+    /// Frames as [`WavPcm::read_raw`] gives them, as samples, interleaved.
+    pub fn samples_of(&self, raw: &[u8], out: &mut Vec<f32>) {
+        out.clear();
+        let sample = self.coding.bytes();
+        out.extend(raw.chunks_exact(sample).map(|b| self.coding.sample(b)));
+    }
 }
 
 impl PcmFile for WavPcm {
@@ -216,13 +267,16 @@ pub(crate) fn wav_head(
     format: RecordFormat,
     data: u32,
 ) -> [u8; HEAD as usize] {
-    let bits = u16::from(format.bits());
-    let block = u32::from(bits / 8) * u32::from(channels);
     let tag = if format == RecordFormat::Bits32 {
         TAG_FLOAT
     } else {
         TAG_PCM
     };
+    head_of(sample_rate, channels, tag, format.bits().into(), data)
+}
+
+fn head_of(sample_rate: u32, channels: u16, tag: u16, bits: u16, data: u32) -> [u8; HEAD as usize] {
+    let block = u32::from(bits / 8) * u32::from(channels);
     let mut h = [0u8; HEAD as usize];
     h[0..4].copy_from_slice(b"RIFF");
     h[4..8].copy_from_slice(&data.saturating_add(HEAD as u32 - 8).to_le_bytes());

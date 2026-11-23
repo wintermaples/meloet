@@ -219,6 +219,9 @@ BOARDS = {
     "audioMissing": "F7-AudioMissing",
     "audioLoading": None,
     "audioKinds": "R11-Audio",
+    # 「ノーマライズ」 and 「逆にする」 (round 12, A9).
+    "audioNormalized": None,
+    "menuAudioClip": None,
     # Stretch and pitch.
     "stretch": "F7-Stretch",
     "stretchRendering": "F7-Stretch",
@@ -340,6 +343,13 @@ CONTEXT_CLIP = """
 const lanes = document.querySelector(".lanes");
 const r = lanes.getBoundingClientRect();
 lanes.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2, clientX: r.left + 300, clientY: r.top + 30 }));
+"""
+
+# Right-clicks the name strip of the first audio clip of the scene (its menu ends with 「逆にする」「ノーマライズ」).
+CONTEXT_AUDIO_CLIP = """
+const label = [...document.querySelectorAll(".labels > .clip-label")].find((l) => l.textContent.includes("歌 テイク 1"));
+const r = label.getBoundingClientRect();
+document.querySelector(".lanes").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2, clientX: r.left + 4, clientY: r.top + 4 }));
 """
 
 
@@ -503,6 +513,7 @@ CLICKS = {
     "menuFile": ("saved", '[data-menu="0"]'),
     "menuZoom": ("muted", ('[data-menu="2"]', '[data-test="menubar-list"] [data-row="10"]')),
     "menuClip": ("muted", "js:" + CONTEXT_CLIP),
+    "menuAudioClip": ("audioEdit", "js:" + CONTEXT_AUDIO_CLIP),
     # A clip with every note deleted, scrolled 1 bar sideways (the ruler and the grid show there too).
     "pianoRollNoNotesScrolled": ("pianoRollNoNotes", "js:" + WHEEL_ROLL % 160),
     # F4-ShelfSample: the ▶ of the grand piano pressed.
@@ -622,6 +633,8 @@ ONLY = {
     "menuFile": [(1280, 800, 100), (1280, 800, 150)],
     "menuZoom": [(1280, 800, 100)],
     "menuClip": [(1280, 800, 100)],
+    "menuAudioClip": [(1280, 800, 100)],
+    "audioNormalized": [(1280, 800, 100), (853, 448, 100)],
     "tracks6": [(1280, 800, 100), (1280, 800, 150), (1920, 1080, 100)],
     "shelfNewTrack": [(1280, 800, 100), (1280, 800, 150)],
     "shelfSample": [(1280, 800, 100)],

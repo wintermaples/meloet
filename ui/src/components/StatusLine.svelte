@@ -647,6 +647,12 @@
         };
       case "sourceTempoNotFound":
         return plain("msg.sourceTempoNotFound");
+      case "normalizeLimited":
+        return plain("msg.normalizeLimited", { count: m.count });
+      case "normalizeSilent":
+        return plain("msg.normalizeSilent", { count: m.count });
+      case "reverseFollowOff":
+        return plain("msg.reverseFollowOff", { count: m.count });
       // MB is 1000 × 1000 bytes.
       case "inputLost":
         return plain("msg.inputLost", { input: t(`vocal.inputShort.${m.input}`), device: m.device });

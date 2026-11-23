@@ -68,6 +68,8 @@ BOARDS = {
     "menuFile": "R5-Menus",
     "menuZoom": "R5-Menus",
     "menuClip": "R5-Menus",
+    "menuRecent": None,
+    "menuRecentEmpty": None,
     "recover1": "F-Recover1",
     "recover2": "F-Recover2",
     "recover3": "F-Recover3",
@@ -503,6 +505,9 @@ CLICKS = {
     "menuFile": ("saved", '[data-menu="0"]'),
     "menuZoom": ("muted", ('[data-menu="2"]', '[data-test="menubar-list"] [data-row="10"]')),
     "menuClip": ("muted", "js:" + CONTEXT_CLIP),
+    # A5: 「ファイル ▸ 最近ひらいた曲 ▸」 with songs, and with none.
+    "menuRecent": ("recentSongs", ('[data-menu="0"]', '[data-test="menubar-list"] [data-row="2"]')),
+    "menuRecentEmpty": ("saved", ('[data-menu="0"]', '[data-test="menubar-list"] [data-row="2"]')),
     # A clip with every note deleted, scrolled 1 bar sideways (the ruler and the grid show there too).
     "pianoRollNoNotesScrolled": ("pianoRollNoNotes", "js:" + WHEEL_ROLL % 160),
     # F4-ShelfSample: the ▶ of the grand piano pressed.
@@ -622,6 +627,8 @@ ONLY = {
     "menuFile": [(1280, 800, 100), (1280, 800, 150)],
     "menuZoom": [(1280, 800, 100)],
     "menuClip": [(1280, 800, 100)],
+    "menuRecent": [(1280, 800, 100), (1280, 800, 150)],
+    "menuRecentEmpty": [(1280, 800, 100)],
     "tracks6": [(1280, 800, 100), (1280, 800, 150), (1920, 1080, 100)],
     "shelfNewTrack": [(1280, 800, 100), (1280, 800, 150)],
     "shelfSample": [(1280, 800, 100)],

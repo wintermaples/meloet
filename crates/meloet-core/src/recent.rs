@@ -1,6 +1,6 @@
 //! The song files opened or saved lately, the newest first: `recent-songs.json` in the state
-//! folder (the AI link's `list_songs`; a menu may show them later). Not part of a song, and
-//! no step.
+//! folder (the AI link's `list_songs`, and 「最近ひらいた曲 ▸」 of the File menu). Not part of a
+//! song, and no step.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};

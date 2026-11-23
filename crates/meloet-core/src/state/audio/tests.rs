@@ -160,7 +160,7 @@ fn one_file_let_go_of_over_a_vocal_track_goes_there_as_one_step() {
             track: vocal,
             clip: clip.id,
             missing: None,
-            tune_usable: false,
+            tune_usable: true,
         }))
     );
     let rows = m.history_rows(steps + 1, steps + 1);
@@ -853,6 +853,126 @@ fn the_rows_of_stretching_and_pitch_are_steps_and_the_tempo_is_found() {
     stretch(&mut m, id, Row::Semitones { semitones: 5.0 });
     cmd(&mut m, Command::FindSourceTempo { clip: id });
     assert_eq!(rows(&m), before);
+}
+
+#[test]
+fn tuning_is_a_step_with_the_songs_scale_of_that_moment() {
+    use meloet_protocol::{ScaleMode, StretchChange as Row, TuneView};
+    let (mut m, clip, _) = one_clip(48_000);
+    let id = clip.id;
+    let tune = |m: &Model| clips(m)[0].1.audio.as_ref().unwrap().stretch.tune;
+    let newest = |m: &Model| m.history_rows(undo_count(m), undo_count(m))[0].name.clone();
+    let scale = |m: &mut Model, root, mode| {
+        cmd(
+            m,
+            Command::SetMusicalScale {
+                root,
+                mode,
+                lock: false,
+                highlight: true,
+            },
+        );
+    };
+    assert_eq!(tune(&m), None);
+    assert!(matches!(
+        m.view().params.selected,
+        Some(SelectedParams::Clip(SelectedClip {
+            tune_usable: true,
+            ..
+        }))
+    ));
+    let steps = undo_count(&m);
+    // At strength 0 neither the strength nor the scale is a change.
+    stretch(&mut m, id, Row::TuneStrength { percent: 0.0 });
+    stretch(&mut m, id, Row::TuneScale);
+    assert_eq!((tune(&m), undo_count(&m)), (None, steps));
+
+    // Leaving 0 the clip takes the song's scale; the audio is asked for again.
+    scale(&mut m, 9, ScaleMode::Minor);
+    let effects = stretch(&mut m, id, Row::TuneStrength { percent: 59.6 });
+    let a_minor = TuneView {
+        root: 9,
+        mode: ScaleMode::Minor,
+        strength: 60,
+    };
+    assert_eq!(tune(&m), Some(a_minor));
+    assert_eq!(
+        (undo_count(&m), newest(&m)),
+        (steps + 1, StepName::SetClipTune)
+    );
+    assert!(
+        effects
+            .iter()
+            .any(|e| matches!(e, Effect::Engine(crate::state::EngineOp::Clips { .. })))
+    );
+    // The song's scale changes: the clip keeps its own, also with another strength.
+    scale(&mut m, 2, ScaleMode::Dorian);
+    assert_eq!(tune(&m), Some(a_minor));
+    stretch(&mut m, id, Row::TuneStrength { percent: 250.0 });
+    assert_eq!(
+        tune(&m),
+        Some(TuneView {
+            strength: 100,
+            ..a_minor
+        })
+    );
+    assert_eq!(undo_count(&m), steps + 2);
+    // 「いまのスケールにする」: one step, once.
+    stretch(&mut m, id, Row::TuneScale);
+    let d_dorian = TuneView {
+        root: 2,
+        mode: ScaleMode::Dorian,
+        strength: 100,
+    };
+    assert_eq!(tune(&m), Some(d_dorian));
+    assert_eq!(
+        (undo_count(&m), newest(&m)),
+        (steps + 3, StepName::SetClipTune)
+    );
+    stretch(&mut m, id, Row::TuneScale);
+    // The same value, what is not a number and a clip that is not there: nothing.
+    stretch(&mut m, id, Row::TuneStrength { percent: 100.0 });
+    stretch(&mut m, id, Row::TuneStrength { percent: f64::NAN });
+    stretch(&mut m, id + 1_000, Row::TuneStrength { percent: 30.0 });
+    stretch(&mut m, id + 1_000, Row::TuneScale);
+    assert_eq!(undo_count(&m), steps + 3);
+    // Undo and redo, step by step.
+    cmd(&mut m, Command::Undo);
+    assert_eq!(tune(&m).map(|t| (t.root, t.strength)), Some((9, 100)));
+    cmd(&mut m, Command::Undo);
+    assert_eq!(tune(&m), Some(a_minor));
+    cmd(&mut m, Command::Undo);
+    assert_eq!(tune(&m), None);
+    cmd(&mut m, Command::Redo);
+    cmd(&mut m, Command::Redo);
+    cmd(&mut m, Command::Redo);
+    assert_eq!(tune(&m), Some(d_dorian));
+    // To 0 the scale goes with it.
+    stretch(&mut m, id, Row::TuneStrength { percent: -3.0 });
+    assert_eq!((tune(&m), undo_count(&m)), (None, steps + 4));
+    cmd(&mut m, Command::Undo);
+
+    // With several clips it does nothing.
+    cmd(
+        &mut m,
+        Command::SetClipsStretch {
+            clips: vec![id],
+            change: Row::TuneStrength { percent: 10.0 },
+        },
+    );
+    assert_eq!(tune(&m), Some(d_dorian));
+
+    // While a recording counts in or runs, nothing changes.
+    cmd(&mut m, Command::Record);
+    assert_ne!(
+        m.view().transport.state,
+        meloet_protocol::TransportState::Stopped
+    );
+    stretch(&mut m, id, Row::TuneStrength { percent: 20.0 });
+    stretch(&mut m, id, Row::TuneStrength { percent: 0.0 });
+    scale(&mut m, 0, ScaleMode::Major);
+    stretch(&mut m, id, Row::TuneScale);
+    assert_eq!(tune(&m), Some(d_dorian));
 }
 
 #[test]

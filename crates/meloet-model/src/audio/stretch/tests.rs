@@ -137,6 +137,130 @@ fn the_switches_and_the_pitch_are_steps_and_stay_in_their_ranges() {
 }
 
 #[test]
+fn tuning_takes_the_scale_when_the_strength_leaves_nothing_and_keeps_it_after() {
+    use crate::roll::ScaleMode;
+    let (doc, clip) = doc();
+    let tune = |doc: &Doc| shape(doc, clip).tune;
+    assert_eq!(tune(&doc), None);
+    // At nothing there is nothing to change: not the strength, not the scale.
+    assert_eq!(
+        set_clip_tune_strength(&doc, clip, 0, 9, ScaleMode::Minor).unwrap_err(),
+        EditError::Unchanged
+    );
+    assert_eq!(
+        set_clip_tune_scale(&doc, clip, 9, ScaleMode::Minor).unwrap_err(),
+        EditError::Unchanged
+    );
+
+    let e = set_clip_tune_strength(&doc, clip, 60, 9, ScaleMode::Minor).unwrap();
+    assert_eq!(e.step, StepKind::SetClipTune { clip });
+    let sixty = Tune {
+        root: 9,
+        mode: ScaleMode::Minor,
+        strength: 60,
+    };
+    assert_eq!(tune(&e.doc), Some(sixty));
+    assert!(shape(&e.doc, clip).is_valid());
+    // Nothing else of the shape moves, and the take is the same one.
+    assert_eq!(
+        AudioShape {
+            tune: None,
+            ..shape(&e.doc, clip)
+        },
+        shape(&doc, clip)
+    );
+    assert!(Arc::ptr_eq(&shown(&doc, clip), &shown(&e.doc, clip)));
+    let tuned = e.doc;
+
+    // Another strength keeps the scale the clip took, whatever the song's is now.
+    let e = set_clip_tune_strength(&tuned, clip, 100, 0, ScaleMode::Blues).unwrap();
+    assert_eq!(
+        tune(&e.doc),
+        Some(Tune {
+            strength: 100,
+            ..sixty
+        })
+    );
+    assert_eq!(
+        set_clip_tune_strength(&tuned, clip, 60, 0, ScaleMode::Blues).unwrap_err(),
+        EditError::Unchanged
+    );
+    // Out of the range it stops at the ends.
+    let strength = |n| {
+        tune(
+            &set_clip_tune_strength(&tuned, clip, n, 0, ScaleMode::Major)
+                .unwrap()
+                .doc,
+        )
+        .map(|t| t.strength)
+    };
+    assert_eq!(
+        (strength(101), strength(i32::MAX), strength(1)),
+        (Some(100), Some(100), Some(1))
+    );
+    assert_eq!((strength(0), strength(-5)), (None, None));
+
+    // 「いまのスケールにする」 takes the scale and keeps the strength.
+    let e = set_clip_tune_scale(&tuned, clip, 0, ScaleMode::Blues).unwrap();
+    assert_eq!(e.step, StepKind::SetClipTune { clip });
+    assert_eq!(
+        tune(&e.doc),
+        Some(Tune {
+            root: 0,
+            mode: ScaleMode::Blues,
+            strength: 60
+        })
+    );
+    assert_eq!(
+        set_clip_tune_scale(&tuned, clip, 9, ScaleMode::Minor).unwrap_err(),
+        EditError::Unchanged
+    );
+    // A root that is no note changes nothing.
+    assert_eq!(
+        set_clip_tune_scale(&tuned, clip, 12, ScaleMode::Major).unwrap_err(),
+        EditError::Unchanged
+    );
+    assert_eq!(
+        set_clip_tune_strength(&doc, clip, 50, 12, ScaleMode::Major).unwrap_err(),
+        EditError::Unchanged
+    );
+
+    // Back to nothing and up again: the scale of that moment, not the old one.
+    let off = set_clip_tune_strength(&tuned, clip, 0, 0, ScaleMode::Major)
+        .unwrap()
+        .doc;
+    assert_eq!(shape(&off, clip), shape(&doc, clip));
+    let again = set_clip_tune_strength(&off, clip, 30, 2, ScaleMode::Dorian)
+        .unwrap()
+        .doc;
+    assert_eq!(
+        tune(&again),
+        Some(Tune {
+            root: 2,
+            mode: ScaleMode::Dorian,
+            strength: 30
+        })
+    );
+
+    // One step each, and undo brings the clip back.
+    let mut history = History::new();
+    let mut now = doc.clone();
+    let e = set_clip_tune_strength(&now, clip, 40, 0, ScaleMode::Major).unwrap();
+    history.apply(&mut now, e);
+    assert!(tune(&now).is_some());
+    assert!(history.undo(&mut now).is_some());
+    assert_eq!(tune(&now), None);
+    assert!(history.redo(&mut now).is_some());
+    assert_eq!(tune(&now).map(|t| t.strength), Some(40));
+
+    // Not for a clip of notes, nor for no clip.
+    assert_eq!(
+        set_clip_tune_strength(&doc, ClipId(999), 50, 0, ScaleMode::Major).unwrap_err(),
+        EditError::NoSuchClip(ClipId(999))
+    );
+}
+
+#[test]
 fn the_tempo_of_the_audio_makes_a_new_take_in_the_same_place() {
     let (doc, clip) = doc();
     let old = shown(&doc, clip);

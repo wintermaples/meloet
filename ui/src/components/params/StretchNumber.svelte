@@ -1,4 +1,4 @@
-<!-- A whole-number value in the chosen clip panel (pitch semitones, cents). Changed by dragging up and down (pressing twice
+<!-- A whole-number value in the chosen clip panel (pitch semitones, cents, the strength of 「音程を寄せる」). Changed by dragging up and down (pressing twice
      calls ontype; the typing box belongs to the panel). While dragging, only the text moves first; one intent is sent on
      release (one drag is one step). Esc stops the drag and goes back to the value before.
      With `reading`, while moving it shows the status line text (dragReading) and a reading in place, at the top left of the cursor. -->
@@ -20,8 +20,10 @@
     commit: (v: number) => void;
     ontype: () => void;
     reading?: (v: number) => { status: string; reading: string };
+    /** The token whose length the mouse moves for one whole number. */
+    step?: string;
   }
-  let { value, min, max, text, label, test, disabled, commit, ontype, reading }: Props = $props();
+  let { value, min, max, text, label, test, disabled, commit, ontype, reading, step = "space.2" }: Props = $props();
 
   let dragging = $state(false);
   /** The value being moved, or one sent and waiting for the answer. */
@@ -55,7 +57,7 @@
   }
   function onmove(e: PointerEvent): void {
     if (!dragging) return;
-    held = Math.min(max, Math.max(min, value + dragSteps(fromY - e.clientY, metrics.px("space.2"))));
+    held = Math.min(max, Math.max(min, value + dragSteps(fromY - e.clientY, metrics.px(step))));
     if (!reading) return;
     pointerAt = { x: e.clientX, y: e.clientY };
     dragReading.text = held === value ? null : reading(held).status;

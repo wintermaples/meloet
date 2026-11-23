@@ -8,10 +8,16 @@
 
 mod ffi;
 mod follow;
+mod pitch;
 mod render;
+mod tune;
 
 pub use follow::{Follower, Latency, Seek, Step};
-pub use render::{RENDER_STEP, RenderError, render};
+pub use pitch::{
+    PITCH_MAX_HZ, PITCH_MIN_HZ, PITCH_VERSION, PitchTrack, Yin, note_of_hz, track_pitch,
+};
+pub use render::{RENDER_STEP, RenderError, render, render_bent, render_tuned};
+pub use tune::{TUNE_VERSION, Tune, TuneCurve, tune_curve};
 
 use std::ptr::NonNull;
 
@@ -31,6 +37,20 @@ pub enum Preset {
     Cheaper,
     /// `configure` with these sizes, in frames.
     Blocks { block: usize, interval: usize },
+}
+
+impl Preset {
+    /// For a clip that is tuned ([`render_tuned`]): block 0.12 s, interval 0.02 s. A block
+    /// takes the transpose of its moment, so the pitch can follow a curve only as closely as
+    /// the blocks are near each other; and with six blocks over every moment a move of a few
+    /// cents comes out within a cent or two for a voice (with `presetCheaper` a pure tone
+    /// asked to move 15 cents moved 7).
+    pub fn for_tuning(sample_rate: f32) -> Preset {
+        Preset::Blocks {
+            block: (sample_rate * 0.12).round() as usize,
+            interval: (sample_rate * 0.02).round() as usize,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

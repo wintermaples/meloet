@@ -8,6 +8,7 @@
 //! values does not have every one of them made. A plan that is no longer wanted is given
 //! up, also in the middle. The file gets its name only when it is whole.
 
+use std::cell::RefCell;
 use std::collections::{HashSet, VecDeque};
 use std::fs;
 use std::io;
@@ -18,7 +19,7 @@ use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime};
 
-use meloet_stretch::{RenderError, render};
+use meloet_stretch::{RenderError, render, render_tuned};
 
 use crate::audiofiles::wav::CacheWav;
 use crate::audiofiles::{AudioStore, CACHE_AUDIO, CACHE_MADE, CACHE_PEAKS, hex};
@@ -464,25 +465,44 @@ fn render_plan(
     let read = |start: i64, into: &mut [&mut [f32]]| -> io::Result<()> {
         read_frames(&mut *file, start, end, into, &mut raw)
     };
+    // Called from `write` and, while a tuned clip's pitch is looked for and nothing is
+    // written yet, from `progress`; never from both at once.
+    let wrote = RefCell::new(wrote);
     let mut write = |frames: &[&[f32]]| -> io::Result<()> {
         interleaved.clear();
         for i in 0..frames[0].len() {
             interleaved.extend(frames.iter().map(|c| c[i]));
         }
         out.write(&interleaved)?;
-        wrote();
+        (wrote.borrow_mut())();
         Ok(())
     };
     let p = |j: u64| plan.file_frame_at(j);
-    let made = render(
-        &mut stretcher,
-        plan.frames,
-        p,
-        read,
-        &mut write,
-        progress,
-        cancel,
-    );
+    let made = match plan.tuning() {
+        None => render(
+            &mut stretcher,
+            plan.frames,
+            p,
+            read,
+            &mut write,
+            progress,
+            cancel,
+        ),
+        Some(tune) => render_tuned(
+            &mut stretcher,
+            plan.frames,
+            p,
+            plan.sample_rate,
+            &tune,
+            read,
+            &mut write,
+            |percent| {
+                (wrote.borrow_mut())();
+                progress(percent);
+            },
+            cancel,
+        ),
+    };
     match made {
         Ok(()) => {
             out.finish()?;

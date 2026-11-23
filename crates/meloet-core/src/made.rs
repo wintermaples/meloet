@@ -13,7 +13,9 @@ use std::sync::Arc;
 use meloet_engine::ClipTable;
 use meloet_model::song::Clip;
 use meloet_model::{FileClock, TempoMap, Timeline, tempo_piece};
-use meloet_stretch::{Preset, RENDER_STEP, STRETCH_VERSION, Stretcher};
+use meloet_stretch::{
+    PITCH_VERSION, Preset, RENDER_STEP, STRETCH_VERSION, Stretcher, TUNE_VERSION, Tune,
+};
 use sha2::{Digest, Sha256};
 
 use crate::pcm::FeedClip;
@@ -29,6 +31,19 @@ const PRESET: (Preset, &str) = (Preset::Cheaper, "cheaper");
 /// The fundamental the formant step is told (`Stretcher::set_formant_base`), as a
 /// frequency in Hz; `None`: the part looks for it block by block.
 const FORMANT_BASE_HZ: Option<f32> = None;
+
+/// How the part that stretches is set up for a clip that is tuned (`Preset::for_tuning`),
+/// by its name in the key.
+const TUNE_PRESET: &str = "tune-120-20";
+
+/// 「音程を寄せる」 of a clip: the notes it is brought toward and how far.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TunePlan {
+    /// The notes of the scale the clip keeps: `[0]` is C, `[11]` is B.
+    pub scale: [bool; 12],
+    /// 1..=100 percent.
+    pub strength: u8,
+}
 
 /// Where in the file a clip is at each of its frames.
 #[derive(Debug, Clone)]
@@ -64,6 +79,8 @@ pub struct MadePlan {
     /// Semitones, the cents as their fraction.
     pub semitones: f32,
     pub keep_formant: bool,
+    /// `None`: the pitch is the same all along the clip.
+    pub tune: Option<TunePlan>,
 }
 
 impl MadePlan {
@@ -85,7 +102,11 @@ impl MadePlan {
     /// The part that stretches, set up for this plan with `channels` channels.
     pub fn stretcher(&self, channels: usize) -> Result<Stretcher, meloet_stretch::Error> {
         let rate = self.sample_rate as f32;
-        let mut stretcher = Stretcher::new(channels, rate, PRESET.0)?;
+        let preset = match self.tune {
+            Some(_) => Preset::for_tuning(rate),
+            None => PRESET.0,
+        };
+        let mut stretcher = Stretcher::new(channels, rate, preset)?;
         stretcher.set_transpose_semitones(self.semitones, None);
         if self.keep_formant {
             stretcher.set_formant_factor(1.0, true);
@@ -94,6 +115,16 @@ impl MadePlan {
             }
         }
         Ok(stretcher)
+    }
+
+    /// What `meloet_stretch::render_tuned` is told for a tuned plan: the voice is brought
+    /// to the scale as it sounds after the clip's semitones and cents.
+    pub fn tuning(&self) -> Option<Tune> {
+        self.tune.map(|tune| Tune {
+            scale: tune.scale,
+            strength: f32::from(tune.strength) / 100.0,
+            transpose: self.semitones,
+        })
     }
 }
 
@@ -123,16 +154,26 @@ pub fn plan(
     let shape = clip.takes.shape()?;
     let zero = clip.active_zero();
     let pitched = shape.semitones != 0 || shape.cents != 0;
+    let tune = shape.tune.map(|tune| {
+        let mut scale = [false; 12];
+        for step in tune.mode.steps() {
+            scale[usize::from((tune.root + step) % 12)] = true;
+        }
+        TunePlan {
+            scale,
+            strength: tune.strength,
+        }
+    });
     let take_ticks = u64::try_from(clip.end as i64 - zero).unwrap_or(0);
     // Audio that was played to the song's own tempo is where it belongs already.
     let sync = (take.sync.as_ref())
         .filter(|sync| shape.follow && !sync.is_the_songs(timeline, zero, take_ticks));
     let frames = feed.end.saturating_sub(feed.start);
-    if (!pitched && sync.is_none()) || frames == 0 {
+    if (!pitched && sync.is_none() && tune.is_none()) || frames == 0 {
         return None;
     }
     // The formant step does nothing while the pitch stays.
-    let keep_formant = shape.keep_formant && pitched;
+    let keep_formant = shape.keep_formant && (pitched || tune.is_some());
     let rate = f64::from(sample_rate);
 
     let mut key = Digest32(Sha256::new());
@@ -187,6 +228,16 @@ pub fn plan(
             }
         }
     };
+    // Only a tuned clip has these in its key: the key of every other clip is what it was.
+    // The notes and not the scale's name: two scales of the same notes are the same audio.
+    if let Some(tune) = &tune {
+        key.bytes(b"tune");
+        key.bytes(TUNE_PRESET.as_bytes());
+        key.int(i64::from(PITCH_VERSION));
+        key.int(i64::from(TUNE_VERSION));
+        key.int((0..12).fold(0, |bits, n| bits | (i64::from(tune.scale[n]) << n)));
+        key.int(i64::from(tune.strength));
+    }
     Some(MadePlan {
         key: key.0.finalize().into(),
         clip: clip.id.0,
@@ -200,6 +251,7 @@ pub fn plan(
         file_end: feed.file_end,
         semitones: f32::from(shape.semitones) + f32::from(shape.cents) / 100.0,
         keep_formant,
+        tune,
     })
 }
 

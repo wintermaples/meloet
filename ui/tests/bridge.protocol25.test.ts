@@ -50,7 +50,7 @@ describe("fake scenes (mock F7-Stretch, spec 3 (28-A, Y22))", () => {
     expect(audio.stretch).toEqual({ follow: true, sourceBpm: 76.8, ratio: 1.25, semitones: 2, cents: 0, keepFormant: true, tune: null });
     expect(audio.sourceTempo).toEqual({ tempoBpm: 76.8, headRamp: false, tempoPoints: [] });
     expect(s.audioWork.jobs).toEqual([]);
-    expect(s.params.selected).toEqual({ kind: "clip", track: vocalOf(s).id, clip: CLIP, missing: null, tuneUsable: false });
+    expect(s.params.selected).toEqual({ kind: "clip", track: vocalOf(s).id, clip: CLIP, missing: null, tuneUsable: true });
     expect(s.arrange.selectedClips).toEqual([CLIP]);
   });
 

@@ -249,6 +249,9 @@ BOARDS = {
     "stretch": "F7-Stretch",
     "stretchRendering": "F7-Stretch",
     "stretchPitch": None,
+    # 「音程を寄せる」 (round 12, M7; the spec has no board for it).
+    "stretchTune": None,
+    "stretchTuneUnusable": None,
     "stretchNoTempo": None,
     "stretchRamp": None,
     "recoverVocal": None,

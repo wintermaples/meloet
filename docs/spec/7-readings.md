@@ -395,3 +395,11 @@ In the "Basis" column: "spec 3" is chapter 3 of this spec; "mock Main" is a mock
 | The bottom end of the clip gain line (spec 3, 39-B) | The range stays −60 to +12 dB (93-4). The line does not go below the −60 place of the fader scale; 「−∞」 is only the name of the bottom of the scale. | the developers' decision |
 | Numbers in "the developers' provisional decisions stay" (spec 3) that also got a text in spec 6 or 41-A (94-27, 36, 44, 46, 51, 53, 75) | The behavior stays; the text is the one in spec 6 or 41-A. | the developers' reading |
 | The slim input meter split into left and right (the spec 3 example, and R12-Meters, have no track name and no monitor) | The current form, with the track name, stays (spec 3 says that the developers' form stays). | the developers' reading |
+
+## A-25 Pasting notes (round 10)
+
+| Where | Rule | Basis |
+|---|---|---|
+| Pasted notes that go outside the clip | They are kept, and the clip grows in whole bars, the same as writing outside the clip (spec 3, 82). | the developers' reading (the owner's report: notes could not be pasted into a clip of another track) |
+| Mod V and 「編集 ▸ 貼りつけ」 | Paste what was copied or cut last. If that was notes and the piano roll is open with a clip shown, the notes go into that clip even when the keys point at the arrange. If it was clips, clips are pasted as before. The 「貼りつけ」 of a context menu pastes the kind of the place that was pressed. | the developers' reading |
+| Where Mod V puts notes | At the play line (snapped to the grid) when the play line is inside the shown clip; otherwise at the start of that clip. | the developers' reading |

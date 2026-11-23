@@ -11,7 +11,7 @@
 |---|---|---|---|
 | Play / stop | <kbd>Space</kbd> | <kbd>Space</kbd> | Does not work (goes in as a space) |
 | Record | <kbd>R</kbd> | <kbd>R</kbd> | Does not work |
-| Back to the start | <kbd>Home</kbd> | <kbd>Home</kbd> | Works |
+| Back to the start (with the loop on: to the start of the loop; pressed there again: to the start of the song) | <kbd>Home</kbd> | <kbd>Home</kbd> | Works |
 | Loop on / off | <kbd>L</kbd> | <kbd>L</kbd> | Does not work |
 | Metronome on / off | <kbd>C</kbd> | <kbd>C</kbd> | Does not work |
 | Back to the arrange | <kbd>A</kbd> | <kbd>A</kbd> | Does not work |
@@ -37,7 +37,7 @@
 | Cut / copy / paste | <kbd>Mod</kbd> <kbd>X</kbd> / <kbd>Mod</kbd> <kbd>C</kbd> / <kbd>Mod</kbd> <kbd>V</kbd> | <kbd>Mod</kbd> <kbd>X</kbd> / <kbd>Mod</kbd> <kbd>C</kbd> / <kbd>Mod</kbd> <kbd>V</kbd> | Does not work (used for the text in the box) |
 | Duplicate | <kbd>Mod</kbd> <kbd>D</kbd> | <kbd>Mod</kbd> <kbd>D</kbd> | Works |
 | Select all | <kbd>Mod</kbd> <kbd>A</kbd> | <kbd>Mod</kbd> <kbd>A</kbd> | Does not work (used for the text in the box) |
-| Rename the selected track | <kbd>F2</kbd> | <kbd>F2</kbd> | Works |
+| Rename the selected track (with a clip chosen: the clip; round 10) | <kbd>F2</kbd> | <kbd>F2</kbd> | Works |
 | Remove the chosen insert | <kbd>Delete</kbd> | <kbd>Delete</kbd> | Does not work (mixer) |
 | Add a marker | <kbd>K</kbd> | <kbd>K</kbd> | Does not work (one letter; at the play line) |
 | To the next marker / to the previous marker | <kbd>Alt</kbd> <kbd>→</kbd> / <kbd>Alt</kbd> <kbd>←</kbd> | <kbd>Option</kbd> <kbd>→</kbd> / <kbd>Option</kbd> <kbd>←</kbd> | Works |
@@ -65,6 +65,7 @@
 | Quantize | <kbd>Q</kbd> | <kbd>Q</kbd> | Does not work |
 | Chosen clip: next take / previous take | <kbd>T</kbd> / <kbd>Shift</kbd> <kbd>T</kbd> | <kbd>T</kbd> / <kbd>Shift</kbd> <kbd>T</kbd> | Does not work |
 | Tools: select / draw / erase | <kbd>1</kbd> / <kbd>2</kbd> / <kbd>3</kbd> | <kbd>1</kbd> / <kbd>2</kbd> / <kbd>3</kbd> | Does not work |
+| Join the chosen keyboard clips of one track (round 10) | <kbd>Mod</kbd> <kbd>J</kbd> | <kbd>Mod</kbd> <kbd>J</kbd> | Works |
 | Split (the chosen clip; if there is none, the clip of the selected track that the play line crosses. Keyboard clips too) | <kbd>S</kbd> | <kbd>S</kbd> | Does not work |
 | Mute / solo the selected track | <kbd>Shift</kbd> <kbd>M</kbd> / <kbd>Shift</kbd> <kbd>S</kbd> | <kbd>Shift</kbd> <kbd>M</kbd> / <kbd>Shift</kbd> <kbd>S</kbd> | Does not work |
 | Move notes by a semitone / an octave | <kbd>↑</kbd> <kbd>↓</kbd> / <kbd>Shift</kbd> <kbd>↑</kbd> <kbd>↓</kbd> | <kbd>↑</kbd> <kbd>↓</kbd> / <kbd>Shift</kbd> <kbd>↑</kbd> <kbd>↓</kbd> | Does not work (used for the text in the box) |

@@ -1,6 +1,6 @@
 // The fake's side of round 12 M5 「フェードアウトをつける」, as Rust (`meloet_model::automation::add_fade_out`): on the
-// master's volume lane a straight line from what the master's volume is `bars` bars before the song's end to the
-// bottom at the end. Pure: the fake keeps the points and the lane's view (fake.ts).
+// master's volume lane a straight line down to the bottom at the last clip's end, over the length of the `bars` bars
+// before the bar that end is in. Pure: the fake keeps the points and the lane's view (fake.ts).
 
 import { meterScale } from "../design/tokens";
 import { TempoMap } from "../time/tempoMap";
@@ -32,6 +32,16 @@ function lineAt(points: readonly [number, number][], tick: number): number | nul
   return points[points.length - 1]![1];
 }
 
+/**
+ * The head of the fade-out that is there when a new one from `start` starts on it (Rust `old_fade`): the last line of
+ * `points` when it goes down to the bottom and `start` is on it, after its head.
+ */
+function oldFade(points: readonly [number, number][], start: number): readonly [number, number] | null {
+  const head = points[points.length - 2];
+  const foot = points[points.length - 1];
+  return head && foot && foot[1] === 0 && head[0] < start && start <= foot[0] ? head : null;
+}
+
 export interface FakeFade {
   start: number;
   end: number;
@@ -50,14 +60,15 @@ export function fakeFadeOut(
 ): FakeFade | "noClips" | null {
   if (!Number.isInteger(bars) || bars < 1 || bars > FADE_OUT_BARS_MAX) return null;
   const map = new TempoMap(timeline);
-  const last = Math.max(0, ...song.tracks.flatMap((t) => t.clips.map((c) => c.end)));
-  if (last === 0) return "noClips";
-  const at = map.meterAt(last);
-  const endBar = at.barTick === last ? at.bar : at.bar + 1;
-  const end = map.tickOfBar(endBar);
-  const start = map.tickOfBar(Math.max(0, endBar - bars));
+  const end = Math.max(0, ...song.tracks.flatMap((t) => t.clips.map((c) => c.end)));
+  if (end === 0) return "noClips";
+  const bar = map.meterAt(end).bar;
+  const start = bar < bars ? 0 : end - (map.tickOfBar(bar) - map.tickOfBar(bar - bars));
   const moves = lane !== null && !lane.resting && lane.points.length > 0;
-  const from = (moves ? lineAt(lane.points, start) : null) ?? fakeFaderPlace(song.master.gainDb);
-  const kept = (lane?.points ?? []).filter(([tick]) => tick < start);
-  return { start, end, points: [...kept.map((p): [number, number] => [p[0], p[1]]), [start, from], [end, 0]] };
+  const kept = (lane?.points ?? []).filter(([tick]) => tick < start).map((p): [number, number] => [p[0], p[1]]);
+  const head = moves ? oldFade(lane.points, start) : null;
+  // The old fade's head is the last point kept; it goes when the line comes to it flat (nothing heard changes).
+  if (head && (kept.length < 2 || kept[kept.length - 2]![1] === head[1])) kept.pop();
+  const from = head?.[1] ?? (moves ? lineAt(lane.points, start) : null) ?? fakeFaderPlace(song.master.gainDb);
+  return { start, end, points: [...kept, [start, from], [end, 0]] };
 }

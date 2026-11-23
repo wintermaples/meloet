@@ -771,31 +771,49 @@ fn resting_step(
 }
 
 /// 「フェードアウトをつける」 (round 12, M5): the master's volume goes in a straight line
-/// from what it is `bars` bars before the song's end ([`crate::sections::song_end`]; the
-/// song's head when the song is shorter) to the bottom at the end. What it is there: the
-/// lane's value when the lane moves the fader, else where the hand put the fader. Points
-/// from that start on go, a lane that rests moves again, and a master without a lane gets
-/// one. `NoTakes` in a song with no clip, `Unchanged` for no bars or a fade that is there.
+/// down to the bottom at the end of the last clip ([`crate::sections::last_clip_end`],
+/// where the export's 「曲ぜんぶ」 ends), over the length of the `bars` bars before the bar
+/// that end is in (from the song's head when the song is shorter). Points before the
+/// start stay, points from the start on go, a lane that rests moves again, and a master
+/// without a lane gets one. The start's value: where the hand put the fader, or on a lane
+/// that moves the fader the lane's value there, or after the head of a fade-out that is
+/// there ([`old_fade`]) the value at that head, the one from before that fade, so that a
+/// shorter fade is shorter. `NoTakes` in a song with no clip, `Unchanged` for no bars or a
+/// fade that is there.
 pub fn add_fade_out(doc: &Doc, bars: u32) -> Result<Edit, EditError> {
     const HOME: LaneHome = LaneHome::Master;
     let map = TempoMap::new(&doc.timeline);
-    let end = crate::sections::song_end(doc, &map);
+    let end = crate::sections::last_clip_end(doc);
     if end == 0 {
         return Err(EditError::NoTakes);
     }
-    let start = map.tick_of_bar(map.meter_at(end).bar.saturating_sub(u64::from(bars)));
     if end > MAX_TICK {
         return Err(EditError::OffTheSong);
     }
+    let bar = map.meter_at(end).bar;
+    let start = match bar.checked_sub(u64::from(bars)) {
+        Some(head) => end - (map.tick_of_bar(bar) - map.tick_of_bar(head)),
+        None => 0,
+    };
     let range = TickRange::new(start, end).ok_or(EditError::Unchanged)?;
     let old = doc.lane_of(HOME, AutoTarget::Volume);
-    let from = (old.filter(|l| l.moves()))
-        .and_then(|l| l.value_at(start))
-        .unwrap_or(doc.master.gain.position());
     let mut points: Vec<AutoPoint> = (old.iter())
         .flat_map(|l| l.points.iter().copied())
         .take_while(|p| p.tick < start)
         .collect();
+    let moving = old.filter(|l| l.moves());
+    let from = match moving.and_then(|l| old_fade(l, start)) {
+        // The head is the last point before the start. It goes when the line comes to it
+        // flat: then it changes nothing heard.
+        Some(head) => {
+            let before = points.len().checked_sub(2).map(|i| points[i].value);
+            if before.is_none_or(|v| v == head.value) {
+                points.pop();
+            }
+            head.value
+        }
+        None => (moving.and_then(|l| l.value_at(start))).unwrap_or(doc.master.gain.position()),
+    };
     points.push(AutoPoint {
         tick: start,
         value: from,
@@ -819,6 +837,15 @@ pub fn add_fade_out(doc: &Doc, bars: u32) -> Result<Edit, EditError> {
         doc,
         step: StepKind::AddFadeOut { range },
     })
+}
+
+/// The head of the fade-out that is there, when a new one from `start` starts on it: the
+/// lane's last line when it goes down to the bottom and `start` is on it, after its head.
+fn old_fade(lane: &Lane, start: u64) -> Option<AutoPoint> {
+    let n = lane.points.len();
+    let head = *lane.points.get(n.checked_sub(2)?)?;
+    let foot = lane.points.get(n - 1)?;
+    (foot.value == 0.0 && head.tick < start && start <= foot.tick).then_some(head)
 }
 
 #[cfg(test)]

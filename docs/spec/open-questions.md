@@ -71,13 +71,6 @@ The readings behind these are in [chapter 7](7-readings.md), A-29; how each is b
 - Question 3: on the mixer strip 「アルペジオ」 sits at the right end of the heading only while on (the track name is cut to about one character on a 108 px strip). The other way is an empty row on every strip, which moves everything below down by about 32 px. Which?
 - From: architecture 25-26; chapter 7 A-29 (E2).
 
-### B-98-16 M5: where the fade ends, and fades again
-
-- Question 1: the fade ends at the song's end, the last clip's end up to the next bar head; the export's 「曲ぜんぶ」 ends at the last clip's end. When the last clip ends inside a bar, the file ends before the fade does (at the level the line has there). Should the fade end at the last clip's end, or the export at the bar?
-- Question 2: a fade-out added again with fewer bars changes nothing heard (it starts from the old fade's line). Should a new fade start from the fader (or the value before the old fade) so it can shorten?
-- Decided: question 3 (the folded master row and the mark stay as they are; chapter 7 A-29, M5; user:2026-11-24).
-- From: architecture 25-32; chapter 7 A-29 (M5).
-
 ### B-98-22 P3: out-of-range values said nowhere
 
 - Question: a number outside 10–300 in 「割合」 or 1–32 in 「ばらつき」 is put at the nearest end without a word, and an unreadable one only turns the box red. Should the status line say it, as for the other boxes? (The shapes `ValueField::Percent` and `Amount` exist since protocol 32; the screen does not use them yet.)

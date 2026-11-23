@@ -1767,7 +1767,7 @@
         {#if shownLoop}
           <div class="loop-mark" style:left="{loopX(shownLoop.from)}px" style:width="{loopX(shownLoop.to) - loopX(shownLoop.from)}px"></div>
         {/if}
-        <FadeBox tracks={song.tracks} {view} {map} shut={busy || layout.arrangeOverview} />
+        <FadeBox tracks={song.tracks} {view} shut={busy || layout.arrangeOverview} />
       </div>
       <MarkerRow {view} {map} {timeline} {busy} />
       <!-- The tempo band lines and points are drawn on the same arrangeLanes sheet as the clips (no extra slot). The slot box holds the band and the clip area. -->

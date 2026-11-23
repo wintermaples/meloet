@@ -46,14 +46,20 @@ pub enum Section {
     Empty,
 }
 
-/// The song's end for a section: the end of the last clip, up to the head of a bar; 0
-/// without clips.
-pub fn song_end(doc: &Doc, map: &TempoMap) -> u64 {
+/// Where the last clip ends; 0 without clips. The export's 「曲ぜんぶ」 and the fade-out
+/// both end here.
+pub fn last_clip_end(doc: &Doc) -> u64 {
     (doc.tracks.iter())
         .filter_map(|t| t.clips.last())
         .map(|c| c.end)
         .max()
-        .map_or(0, |end| map.bar_at_or_after(end))
+        .unwrap_or(0)
+}
+
+/// The song's end for a section: the end of the last clip, up to the head of a bar; 0
+/// without clips.
+pub fn song_end(doc: &Doc, map: &TempoMap) -> u64 {
+    map.bar_at_or_after(last_clip_end(doc))
 }
 
 /// The section that starts at `from`, where a marker is. `end`: [`song_end`].

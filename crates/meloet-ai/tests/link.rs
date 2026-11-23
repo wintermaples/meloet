@@ -8,13 +8,15 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use meloet_ai::{AiLink, CoreLink, Meloet, Options};
-use meloet_core::ai::{AiAnswer, AiAsk, AiBusy, AiLevels, AiMeasure, AiRefusal, AiSong};
+use meloet_core::ai::{
+    AiAnswer, AiAsk, AiBusy, AiLevels, AiMeasure, AiRefusal, AiRender, AiRendered, AiSong,
+};
 use meloet_core::{Core, CoreOptions};
 use meloet_protocol::AiPort;
 use serde_json::{Value, json};
 
 fn scratch(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("k10ai-link-{}-{name}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("k10ai2-link-{}-{name}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     dir
@@ -26,9 +28,21 @@ fn my_uid() -> u32 {
 }
 
 fn options(runtime: &Path) -> Options {
+    let temp = runtime.join("tmp");
+    std::fs::create_dir_all(&temp).unwrap();
     Options {
         runtime_dir: Some(runtime.to_path_buf()),
         expect_uid: my_uid(),
+        temp_dir: temp,
+    }
+}
+
+/// A core with no devices, whose export works in a folder of its own: tests run at once in
+/// one process, and the AI link's jobs of each core count from the same number.
+fn offline(runtime: &Path) -> CoreOptions {
+    CoreOptions {
+        state_dir: Some(runtime.join("state")),
+        ..CoreOptions::offline()
     }
 }
 
@@ -108,13 +122,27 @@ impl Client {
         self.call_seeing(tool, args, &mut Vec::new())
     }
 
+    fn call_once(&mut self, tool: &str) -> Value {
+        let params = json!({ "name": tool, "arguments": {} });
+        self.request("tools/call", params, &mut Vec::new())["result"].clone()
+    }
+
+    /// Waits and calls again when the calls came too fast.
     fn call_seeing(&mut self, tool: &str, args: Value, seen: &mut Vec<Value>) -> Value {
-        let answer = self.request(
-            "tools/call",
-            json!({ "name": tool, "arguments": args }),
-            seen,
-        );
-        answer["result"].clone()
+        loop {
+            let answer = self.request(
+                "tools/call",
+                json!({ "name": tool, "arguments": args }),
+                seen,
+            );
+            let result = answer["result"].clone();
+            let text = result["content"][0]["text"].as_str().unwrap_or("");
+            if result["isError"] == true && text.starts_with("too many calls") {
+                std::thread::sleep(Duration::from_millis(200));
+                continue;
+            }
+            return result;
+        }
     }
 }
 
@@ -132,7 +160,7 @@ fn running(name: &str) -> Running {
     let runtime = scratch(name);
     let options = options(&runtime);
     let socket = options.socket_path().unwrap();
-    let core = Arc::new(Core::start(CoreOptions::offline()));
+    let core = Arc::new(Core::start(offline(&runtime)));
     let link = AiLink::start(Arc::new(CoreLink(Arc::downgrade(&core))), options).unwrap();
     core.set_ai_switch(Box::new(move |on| link.switch(on)));
     core.send(meloet_protocol::Command::SetAiLink { on: true });
@@ -213,7 +241,7 @@ fn another_uid_is_refused_before_any_word() {
     let mut options = options(&runtime);
     options.expect_uid = my_uid().wrapping_add(1);
     let socket = options.socket_path().unwrap();
-    let core = Arc::new(Core::start(CoreOptions::offline()));
+    let core = Arc::new(Core::start(offline(&runtime)));
     let link = AiLink::start(Arc::new(CoreLink(Arc::downgrade(&core))), options).unwrap();
     link.switch(true);
     wait_for("the socket", || socket.exists());
@@ -369,6 +397,11 @@ impl Meloet for Recording {
             song: meloet_model::Song::new_default(),
             undo_count: 0,
             busy: Some(AiBusy::Recording),
+            library: Default::default(),
+            file: None,
+            unsaved: false,
+            sample_rate: 48_000,
+            outcomes: Vec::new(),
         })
     }
 
@@ -382,6 +415,15 @@ impl Meloet for Recording {
         _: &mut dyn FnMut(u8),
         _: &dyn Fn() -> bool,
     ) -> Result<AiLevels, AiRefusal> {
+        Err(AiRefusal::Busy(AiBusy::Recording))
+    }
+
+    fn render(
+        &self,
+        _: AiRender,
+        _: &mut dyn FnMut(u8),
+        _: &dyn Fn() -> bool,
+    ) -> Result<AiRendered, AiRefusal> {
         Err(AiRefusal::Busy(AiBusy::Recording))
     }
 
@@ -434,7 +476,7 @@ fn too_many_calls_are_turned_away() {
     wait_for("the socket", || socket.exists());
     let mut c = Client::start(&socket);
     let refused = (0..60)
-        .map(|_| c.call("list_sounds", json!({})))
+        .map(|_| c.call_once("list_sounds"))
         .filter(|a| a["isError"] == true)
         .count();
     assert!(refused > 0, "some of 60 calls in a row are refused");
@@ -552,4 +594,702 @@ fn the_bridge_reaches_the_tools_with_either_handshake() {
         assert!(p.child.wait().unwrap().success());
     }
     wait_for("Waiting", || port_of(&r.core) == AiPort::Waiting);
+}
+
+/// The structured answer of a call that must work.
+fn ok(c: &mut Client, tool: &str, args: Value) -> Value {
+    let answer = c.call(tool, args);
+    assert_eq!(answer["isError"], false, "{tool}: {answer}");
+    answer["structuredContent"].clone()
+}
+
+/// The text of a call that must fail.
+fn refused(c: &mut Client, tool: &str, args: Value) -> String {
+    let answer = c.call(tool, args);
+    assert_eq!(answer["isError"], true, "{tool} must fail: {answer}");
+    answer["content"][0]["text"].as_str().unwrap().to_owned()
+}
+
+fn steps(r: &Running) -> u32 {
+    r.core.ai_song().unwrap().undo_count
+}
+
+/// Undoing every step since `before` brings the song back.
+fn undo_all(c: &mut Client, r: &Running, before: &AiSong) {
+    let now = steps(r);
+    for _ in before.undo_count..now {
+        ok(c, "undo", json!({}));
+    }
+    let back = r.core.ai_song().unwrap();
+    assert_eq!(back.undo_count, before.undo_count);
+    assert_eq!(back.song.doc.tracks, before.song.doc.tracks);
+    assert_eq!(back.song.doc.returns, before.song.doc.returns);
+    assert_eq!(back.song.doc.master, before.song.doc.master);
+    assert_eq!(back.song.doc.timeline, before.song.doc.timeline);
+    assert_eq!(back.song.doc.markers, before.song.doc.markers);
+    assert_eq!(back.song.doc.loop_range, before.song.doc.loop_range);
+}
+
+/// Calls that each must be exactly one step.
+fn one_step_each(c: &mut Client, r: &Running, calls: &[(&str, Value)]) {
+    for (tool, args) in calls {
+        let before = steps(r);
+        ok(c, tool, args.clone());
+        assert_eq!(steps(r), before + 1, "{tool} {args} is one step");
+    }
+}
+
+#[test]
+fn the_mixer_and_its_effects_are_steps() {
+    let r = running("mixer");
+    let mut c = Client::start(&r.socket);
+    let before = r.core.ai_song().unwrap();
+    one_step_each(
+        &mut c,
+        &r,
+        &[
+            ("add_track", json!({ "sound": "sine" })),
+            ("set_volume", json!({ "track": 2, "db": -6.5 })),
+            ("set_volume", json!({ "bus": "master", "db": -100 })),
+            ("set_pan", json!({ "track": 2, "pan": -30 })),
+            ("set_send", json!({ "track": 2, "send": "b", "db": -12 })),
+            ("set_mute", json!({ "track": 2, "on": true })),
+            ("set_mute", json!({ "bus": "return_a", "on": true })),
+            (
+                "insert_effect",
+                json!({ "track": 2, "slot": 1, "effect": "reverb" }),
+            ),
+            (
+                "set_param",
+                json!({ "track": 2, "slot": 1, "param": "decay", "value": 3.5 }),
+            ),
+            (
+                "set_param",
+                json!({ "track": 2, "slot": 1, "param": 1, "value": 20 }),
+            ),
+            (
+                "bypass_effect",
+                json!({ "track": 2, "slot": 1, "on": true }),
+            ),
+            ("move_effect", json!({ "track": 2, "slot": 1, "to": 3 })),
+            (
+                "replace_effect",
+                json!({ "track": 2, "slot": 3, "effect": "compressor" }),
+            ),
+            (
+                "insert_effect",
+                json!({ "bus": "master", "slot": 2, "effect": "eq4" }),
+            ),
+            ("remove_effect", json!({ "bus": "master", "slot": 2 })),
+            (
+                "set_instrument",
+                json!({ "track": 2, "sound": "synthBass" }),
+            ),
+        ],
+    );
+    let mixer = ok(&mut c, "get_mixer", json!({}));
+    let t = &mixer["tracks"][1];
+    assert_eq!(t["volume_db"], -6.5, "{mixer}");
+    assert_eq!(t["pan"], -30);
+    assert_eq!(t["send_b_db"], -12.0);
+    assert_eq!(t["muted"], true);
+    assert_eq!(t["instrument"], "synthBass");
+    assert_eq!(t["inserts"][0]["slot"], 3, "{t}");
+    assert_eq!(t["inserts"][0]["effect"], "compressor");
+    assert_eq!(mixer["master"]["volume_db"], Value::Null);
+    assert_eq!(mixer["returns"][0]["muted"], true);
+
+    // Solo is no step, and the same state again is refused.
+    let at = steps(&r);
+    ok(&mut c, "set_solo", json!({ "track": 2, "on": true }));
+    assert_eq!(steps(&r), at);
+    assert_eq!(r.core.ai_song().unwrap().song.session.soloed.len(), 1);
+    refused(&mut c, "set_solo", json!({ "track": 2, "on": true }));
+    ok(&mut c, "set_solo", json!({ "track": 2, "on": false }));
+    for (tool, args) in [
+        ("set_mute", json!({ "track": 2, "on": true })),
+        ("set_mute", json!({ "bus": "master", "on": true })),
+        (
+            "insert_effect",
+            json!({ "track": 2, "slot": 3, "effect": "delay" }),
+        ),
+        ("remove_effect", json!({ "track": 2, "slot": 4 })),
+        (
+            "insert_effect",
+            json!({ "track": 2, "slot": 4, "effect": "vst3:none" }),
+        ),
+        (
+            "set_param",
+            json!({ "track": 2, "slot": 3, "param": "nope", "value": 1 }),
+        ),
+        ("set_param", json!({ "track": 2, "param": 1, "value": 0.5 })),
+        ("set_volume", json!({ "track": 9, "db": 0 })),
+        ("set_volume", json!({ "db": 0 })),
+        ("set_instrument", json!({ "track": 2, "sound": "kazoo" })),
+        (
+            "add_track",
+            json!({ "sf2": { "file": "none.sf2", "bank": 0, "program": 0 } }),
+        ),
+        ("get_plugin_params", json!({ "track": 2 })),
+    ] {
+        refused(&mut c, tool, args);
+    }
+    assert_eq!(steps(&r), at);
+
+    let effects = ok(&mut c, "list_effects", json!({}));
+    assert_eq!(effects["builtin"].as_array().unwrap().len(), 6);
+    assert_eq!(effects["builtin"][2]["params"][0]["name"], "decay");
+    let instruments = ok(&mut c, "list_instruments", json!({}));
+    assert!(instruments["builtin"].as_array().unwrap().len() > 20);
+    undo_all(&mut c, &r, &before);
+}
+
+#[test]
+fn notes_are_moved_and_quantized_as_steps() {
+    let r = running("notes");
+    let mut c = Client::start(&r.socket);
+    let before = r.core.ai_song().unwrap();
+    let wrote = ok(
+        &mut c,
+        "write_notes",
+        json!({ "track": 1, "notes": [
+            { "start": 100, "length": 900, "key": 60, "velocity": 80 },
+            { "start": 2000, "length": 900, "key": 64, "velocity": 80 },
+        ] }),
+    );
+    let clip = wrote["clip"].as_u64().unwrap();
+    let take = |c: &mut Client| ok(c, "get_notes", json!({ "clip": clip }))["take"].clone();
+    let calls: Vec<(&str, Value)> = vec![
+        (
+            "move_notes",
+            json!({ "notes": [0], "ticks": 1920, "keys": 2 }),
+        ),
+        (
+            "resize_notes",
+            json!({ "notes": [1], "edge": "end", "ticks": 960 }),
+        ),
+        ("set_note_length", json!({ "notes": [0, 1], "length": 480 })),
+        ("set_velocity", json!({ "notes": [0, 1], "value": 110 })),
+        ("set_velocity", json!({ "notes": [0], "delta": -20 })),
+        (
+            "quantize_notes",
+            json!({ "notes": [0, 1], "grid": 8, "strength": 100 }),
+        ),
+        ("unquantize_notes", json!({ "notes": [0, 1] })),
+        (
+            "move_notes",
+            json!({ "notes": [0], "ticks": 0, "keys": 12, "copy": true }),
+        ),
+    ];
+    for (tool, mut args) in calls {
+        args["take"] = take(&mut c);
+        let at = steps(&r);
+        ok(&mut c, tool, args.clone());
+        assert_eq!(steps(&r), at + 1, "{tool} {args}");
+    }
+    let notes = ok(&mut c, "get_notes", json!({ "clip": clip }));
+    assert_eq!(notes["total"], 3, "{notes}");
+    // An old take does nothing.
+    let old = wrote["take"].clone();
+    refused(
+        &mut c,
+        "move_notes",
+        json!({ "take": old, "notes": [0], "ticks": 10 }),
+    );
+    let now = take(&mut c);
+    refused(&mut c, "set_velocity", json!({ "take": now, "notes": [0] }));
+    refused(
+        &mut c,
+        "quantize_notes",
+        json!({ "take": now, "notes": [0], "grid": 3 }),
+    );
+    undo_all(&mut c, &r, &before);
+}
+
+#[test]
+fn automation_and_time_are_steps() {
+    let r = running("time");
+    let mut c = Client::start(&r.socket);
+    let before = r.core.ai_song().unwrap();
+    one_step_each(
+        &mut c,
+        &r,
+        &[
+            ("add_lane", json!({ "track": 1, "target": "volume" })),
+            (
+                "write_automation",
+                json!({ "track": 1, "target": "volume", "points": [
+                    { "at": "1.1.0", "value": 0.8 }, { "at": "2.1.0", "value": 0.4 },
+                    { "tick": 15360, "value": 1.0 },
+                ] }),
+            ),
+            (
+                "move_automation",
+                json!({ "track": 1, "target": "volume", "points": [1], "ticks": 960, "value": 0.1 }),
+            ),
+            (
+                "delete_automation",
+                json!({ "track": 1, "target": "volume", "points": [2] }),
+            ),
+            ("set_meter", json!({ "bar": 3, "num": 7, "den": 8 })),
+            ("set_meter", json!({ "bar": 3, "num": 6, "den": 8 })),
+            ("set_meter", json!({ "bar": 1, "num": 3, "den": 4 })),
+            ("delete_meter_change", json!({ "bar": 3 })),
+            ("set_tempo", json!({ "bpm": 140, "at": "5.1.0" })),
+            ("set_tempo_ramp", json!({ "on": true })),
+            ("add_marker", json!({ "name": "A", "at": "2.1.0" })),
+            ("set_loop", json!({ "from_bar": 2, "to_bar": 4 })),
+        ],
+    );
+    let auto = ok(&mut c, "get_automation", json!({ "track": 1 }));
+    let points = &auto["lanes"][0]["points"];
+    assert_eq!(points.as_array().unwrap().len(), 2, "{auto}");
+    assert_eq!(points[0]["means"]["db"], 0.0, "{auto}");
+    let overview = ok(&mut c, "song_overview", json!({}));
+    let marker = overview["markers"][0]["id"].clone();
+    let tempo_at = overview["tempo"][1]["at"].clone();
+    assert_eq!(overview["meters"][0]["meter"], "3/4", "{overview}");
+    assert_eq!(overview["loop"]["end"]["at"], "5.1.0", "{overview}");
+    one_step_each(
+        &mut c,
+        &r,
+        &[
+            ("move_marker", json!({ "marker": marker, "at": "3.1.0" })),
+            ("rename_marker", json!({ "marker": marker, "name": "サビ" })),
+            ("delete_marker", json!({ "marker": marker })),
+            ("delete_tempo_change", json!({ "at": tempo_at })),
+            ("delete_lane", json!({ "track": 1, "target": "volume" })),
+        ],
+    );
+    // The loop's switch is no step.
+    let at = steps(&r);
+    ok(&mut c, "set_loop_on", json!({ "on": false }));
+    assert_eq!(steps(&r), at);
+    for (tool, args) in [
+        ("set_loop_on", json!({ "on": false })),
+        (
+            "write_automation",
+            json!({ "track": 1, "target": "pan", "points": [{ "tick": 0, "value": 0.5 }] }),
+        ),
+        (
+            "add_lane",
+            json!({ "track": 1, "target": "insert", "slot": 4, "param": 0 }),
+        ),
+        ("delete_meter_change", json!({ "bar": 7 })),
+        ("set_meter", json!({ "bar": 2, "num": 7, "den": 3 })),
+    ] {
+        refused(&mut c, tool, args);
+    }
+    assert_eq!(steps(&r), at);
+    undo_all(&mut c, &r, &before);
+}
+
+#[test]
+fn tracks_and_clips_are_steps() {
+    let r = running("clips");
+    let mut c = Client::start(&r.socket);
+    let before = r.core.ai_song().unwrap();
+    let wrote = ok(
+        &mut c,
+        "write_notes",
+        json!({ "track": 1, "notes": [note("1.1.0", 60), note("3.1.0", 62)] }),
+    );
+    let clip = wrote["clip"].as_u64().unwrap();
+    one_step_each(
+        &mut c,
+        &r,
+        &[
+            ("add_track", json!({ "sound": "sine" })),
+            ("rename_track", json!({ "track": 2, "name": "ベース" })),
+            ("move_track", json!({ "track": 2, "to": 1 })),
+            ("add_vocal_track", json!({})),
+            ("split_clip", json!({ "clip": clip, "at": "2.1.0" })),
+        ],
+    );
+    let overview = ok(&mut c, "song_overview", json!({}));
+    assert_eq!(overview["tracks"][0]["name"], "ベース", "{overview}");
+    assert_eq!(overview["tracks"][2]["kind"], "vocal");
+    let clips: Vec<u64> = (overview["clips"].as_array().unwrap().iter())
+        .map(|c| c["id"].as_u64().unwrap())
+        .collect();
+    assert_eq!(clips.len(), 2, "{overview}");
+    one_step_each(&mut c, &r, &[("join_clips", json!({ "clips": clips }))]);
+    let joined = ok(&mut c, "song_overview", json!({}))["clips"][0]["id"].clone();
+    one_step_each(
+        &mut c,
+        &r,
+        &[
+            ("duplicate_clips", json!({ "clips": [joined] })),
+            (
+                "move_clips",
+                json!({ "clips": [joined], "ticks": 0, "tracks": -1 }),
+            ),
+            (
+                "set_clip",
+                json!({ "clip": joined, "field": "length", "value": 7680 }),
+            ),
+            ("delete_clips", json!({ "clips": [joined] })),
+            ("delete_track", json!({ "track": 3 })),
+        ],
+    );
+    for (tool, args) in [
+        ("switch_take", json!({ "clip": clip, "take": 2 })),
+        ("join_clips", json!({ "clips": [1] })),
+        ("delete_track", json!({ "track": 9 })),
+        ("set_clip_stretch", json!({ "clip": 1 })),
+        ("import_audio", json!({ "path": "relative.wav" })),
+        ("import_audio", json!({ "path": "/tmp/../etc/passwd" })),
+        ("import_audio", json!({ "path": "/no/such/file.wav" })),
+    ] {
+        refused(&mut c, tool, args);
+    }
+    undo_all(&mut c, &r, &before);
+}
+
+/// Channels, rate, bits and the samples of a 16-bit WAV file.
+fn wav(path: &Path) -> (u16, u32, u16, Vec<i16>) {
+    let bytes = std::fs::read(path).unwrap();
+    assert_eq!(&bytes[0..4], b"RIFF");
+    assert_eq!(&bytes[8..12], b"WAVE");
+    let (mut at, mut format) = (12, None);
+    loop {
+        let id = &bytes[at..at + 4];
+        let size = u32::from_le_bytes(bytes[at + 4..at + 8].try_into().unwrap()) as usize;
+        let body = &bytes[at + 8..(at + 8 + size).min(bytes.len())];
+        if id == b"fmt " {
+            let channels = u16::from_le_bytes(body[2..4].try_into().unwrap());
+            let rate = u32::from_le_bytes(body[4..8].try_into().unwrap());
+            let bits = u16::from_le_bytes(body[14..16].try_into().unwrap());
+            format = Some((channels, rate, bits));
+        }
+        if id == b"data" {
+            let (channels, rate, bits) = format.expect("fmt before data");
+            let samples = (body.as_chunks::<2>().0.iter())
+                .map(|b| i16::from_le_bytes(*b))
+                .collect();
+            return (channels, rate, bits, samples);
+        }
+        at += 8 + size + size % 2;
+    }
+}
+
+#[test]
+fn a_note_is_rendered_into_the_private_folder() {
+    let r = running("render");
+    let mut c = Client::start(&r.socket);
+    ok(&mut c, "add_track", json!({ "sound": "sine" }));
+    let steps_before = steps(&r);
+    let answer = c.request(
+        "tools/call",
+        json!({
+            "name": "render_note",
+            "arguments": { "track": 2, "key": 69, "velocity": 100, "seconds": 0.5 },
+            "_meta": { "progressToken": "n1" },
+        }),
+        &mut Vec::new(),
+    );
+    let result = &answer["result"];
+    assert_eq!(result["isError"], false, "{answer}");
+    let file = PathBuf::from(result["structuredContent"]["files"][0].as_str().unwrap());
+    let runtime = r.socket.parent().unwrap().parent().unwrap();
+    let private = runtime.join("tmp").join(format!("meloet-ai-{}", my_uid()));
+    assert_eq!(file.parent(), Some(private.as_path()), "{file:?}");
+    use std::os::unix::fs::PermissionsExt;
+    let mode = std::fs::metadata(&private).unwrap().permissions().mode();
+    assert_eq!(mode & 0o777, 0o700);
+    let name = file.file_name().unwrap().to_string_lossy().into_owned();
+    assert!(name.contains("note-track2-A4"), "{name}");
+    let (channels, rate, bits, samples) = wav(&file);
+    assert_eq!((channels, bits), (2, 16));
+    let said = result["structuredContent"]["sample_rate"].as_u64().unwrap();
+    assert_eq!(u64::from(rate), said);
+    let seconds = samples.len() as f64 / 2.0 / f64::from(rate);
+    assert!((0.5..11.0).contains(&seconds), "{seconds} s");
+    let loudest = samples.iter().map(|s| s.unsigned_abs()).max().unwrap();
+    assert!(loudest > 1000, "the note sounds: {loudest}");
+    assert_eq!(steps(&r), steps_before, "rendering is no step");
+
+    let rendered = ok(
+        &mut c,
+        "render_audio",
+        json!({ "from_bar": 1, "to_bar": 1, "per_track": true }),
+    );
+    assert_eq!(rendered["files"].as_array().unwrap().len(), 2, "{rendered}");
+    let clip = ok(
+        &mut c,
+        "write_notes",
+        json!({ "track": 2, "notes": [note("1.1.0", 69)] }),
+    )["clip"]
+        .clone();
+    let audio = ok(&mut c, "get_clip_audio", json!({ "clip": clip }));
+    let (_, _, _, samples) = wav(Path::new(audio["files"][0].as_str().unwrap()));
+    assert!(samples.iter().any(|s| s.unsigned_abs() > 1000));
+    refused(&mut c, "render_note", json!({ "track": 9, "key": 60 }));
+    refused(
+        &mut c,
+        "render_note",
+        json!({ "track": 2, "key": 60, "seconds": 60 }),
+    );
+    refused(&mut c, "get_clip_audio", json!({ "clip": 999 }));
+
+    // Turning the link off takes the files away.
+    r.core
+        .send(meloet_protocol::Command::SetAiLink { on: false });
+    wait_for("the files gone", || !file.exists());
+    assert!(std::fs::read_dir(&private).unwrap().next().is_none());
+}
+
+#[test]
+fn without_a_private_folder_rendering_cannot_be_used() {
+    let runtime = scratch("noscratch");
+    let options = options(&runtime);
+    let blocked = options.temp_dir.join(format!("meloet-ai-{}", my_uid()));
+    std::fs::write(blocked, b"x").unwrap();
+    let socket = options.socket_path().unwrap();
+    let core = Arc::new(Core::start(offline(&runtime)));
+    let link = AiLink::start(Arc::new(CoreLink(Arc::downgrade(&core))), options).unwrap();
+    link.switch(true);
+    wait_for("the socket", || socket.exists());
+    let mut c = Client::start(&socket);
+    let text = refused(&mut c, "render_note", json!({ "track": 1, "key": 60 }));
+    assert!(text.contains("cannot be used"), "{text}");
+    let text = refused(
+        &mut c,
+        "render_audio",
+        json!({ "from_bar": 1, "to_bar": 1 }),
+    );
+    assert!(text.contains("cannot be used"), "{text}");
+    drop(c);
+    drop(link);
+}
+
+#[test]
+fn opening_and_new_songs_keep_unsaved_changes() {
+    let r = running("files");
+    let mut c = Client::start(&r.socket);
+    let dir = scratch("files-songs");
+    let text = refused(&mut c, "save_song", json!({}));
+    assert!(text.contains("save_song_as"), "{text}");
+    refused(
+        &mut c,
+        "save_song_as",
+        json!({ "folder": "songs", "name": "a" }),
+    );
+    refused(
+        &mut c,
+        "save_song_as",
+        json!({ "folder": dir.join("none"), "name": "a" }),
+    );
+    refused(
+        &mut c,
+        "save_song_as",
+        json!({ "folder": dir, "name": "a/b" }),
+    );
+
+    ok(
+        &mut c,
+        "write_notes",
+        json!({ "track": 1, "notes": [note("1.1.0", 60)] }),
+    );
+    let unsaved = "保存していない変更があります。先に save_song するか、人に聞いてください。";
+    assert_eq!(refused(&mut c, "new_song", json!({})), unsaved);
+    let saved = ok(
+        &mut c,
+        "save_song_as",
+        json!({ "folder": dir, "name": "最初の曲" }),
+    );
+    let file = PathBuf::from(saved["file"].as_str().unwrap());
+    assert_eq!(file, dir.join("最初の曲").join("最初の曲.meloet"));
+    assert!(file.is_file());
+    assert!(!r.core.ai_song().unwrap().unsaved);
+
+    ok(
+        &mut c,
+        "write_notes",
+        json!({ "track": 1, "notes": [note("2.1.0", 62)] }),
+    );
+    assert_eq!(
+        refused(&mut c, "open_song", json!({ "path": file })),
+        unsaved
+    );
+    refused(&mut c, "open_song", json!({ "path": dir }));
+    let again = ok(&mut c, "save_song", json!({}));
+    assert_eq!(again["file"], file.display().to_string());
+
+    ok(&mut c, "new_song", json!({}));
+    let fresh = r.core.ai_song().unwrap();
+    assert!(fresh.file.is_none());
+    assert!(fresh.song.doc.tracks.iter().all(|t| t.clips.is_empty()));
+    let opened = ok(&mut c, "open_song", json!({ "path": file }));
+    assert_eq!(opened["file"], file.display().to_string());
+    let song = r.core.ai_song().unwrap();
+    let notes = song.song.doc.tracks[0].clips[0]
+        .active_take()
+        .take
+        .notes
+        .len();
+    assert_eq!(notes, 2);
+}
+
+#[test]
+fn the_export_writes_over_a_file_only_when_asked() {
+    let r = running("export");
+    let mut c = Client::start(&r.socket);
+    let dir = scratch("export-out");
+    refused(&mut c, "export_song", json!({ "folder": dir }));
+    ok(&mut c, "add_track", json!({ "sound": "sine" }));
+    ok(
+        &mut c,
+        "write_notes",
+        json!({ "track": 2, "notes": [note("1.1.0", 69)] }),
+    );
+    let steps_before = steps(&r);
+    let args = json!({ "folder": dir, "name": "mix", "tail": false });
+    let first = ok(&mut c, "export_song", args.clone());
+    let file = dir.join("mix.wav");
+    assert_eq!(first["files"][0], file.display().to_string(), "{first}");
+    let bytes = std::fs::read(&file).unwrap();
+    assert_eq!(u16::from_le_bytes([bytes[34], bytes[35]]), 24, "24 bits");
+    let text = refused(&mut c, "export_song", args.clone());
+    assert!(text.contains("overwrite"), "{text}");
+    let mut over = args.clone();
+    over["overwrite"] = json!(true);
+    ok(&mut c, "export_song", over);
+    let mut mp3 = args.clone();
+    mp3["format"] = json!("mp3");
+    refused(&mut c, "export_song", mp3);
+    let flac = ok(
+        &mut c,
+        "export_song",
+        json!({ "folder": dir, "format": "flac", "bits": 16, "range": "tracks" }),
+    );
+    assert_eq!(flac["files"].as_array().unwrap().len(), 2, "{flac}");
+    assert_eq!(steps(&r), steps_before, "exporting is no step");
+}
+
+#[test]
+fn every_tool_says_what_it_is() {
+    let r = running("list");
+    let mut c = Client::start(&r.socket);
+    let list = c.request("tools/list", json!({}), &mut Vec::new());
+    let tools = list["result"]["tools"].as_array().unwrap();
+    assert!(tools.len() >= 60, "{} tools", tools.len());
+    let named = |n: &str| {
+        (tools.iter())
+            .find(|t| t["name"] == n)
+            .unwrap_or_else(|| panic!("{n}"))
+    };
+    for t in tools {
+        assert_eq!(t["annotations"]["openWorldHint"], false, "{t}");
+        let words = t["description"]
+            .as_str()
+            .unwrap()
+            .split_whitespace()
+            .count();
+        assert!(words <= 60, "{} has {words} words", t["name"]);
+    }
+    for n in [
+        "delete_track",
+        "delete_clips",
+        "remove_effect",
+        "delete_lane",
+        "delete_automation",
+        "delete_marker",
+        "replace_effect",
+    ] {
+        assert_eq!(named(n)["annotations"]["destructiveHint"], true, "{n}");
+    }
+    for n in [
+        "set_volume",
+        "insert_effect",
+        "save_song",
+        "export_song",
+        "move_notes",
+    ] {
+        assert_eq!(named(n)["annotations"]["destructiveHint"], false, "{n}");
+    }
+    for n in [
+        "get_mixer",
+        "list_effects",
+        "list_instruments",
+        "get_automation",
+        "render_note",
+        "render_audio",
+        "get_clip_audio",
+        "get_plugin_params",
+    ] {
+        assert_eq!(named(n)["annotations"]["readOnlyHint"], true, "{n}");
+    }
+}
+
+/// A 16-bit stereo WAV of a 440 Hz sine.
+fn sine_wav(path: &Path, seconds: f64) {
+    let rate = 48_000u32;
+    let frames = (f64::from(rate) * seconds) as u32;
+    let mut bytes = Vec::new();
+    let data = frames * 4;
+    bytes.extend_from_slice(b"RIFF");
+    bytes.extend_from_slice(&(36 + data).to_le_bytes());
+    bytes.extend_from_slice(b"WAVEfmt ");
+    bytes.extend_from_slice(&16u32.to_le_bytes());
+    bytes.extend_from_slice(&1u16.to_le_bytes());
+    bytes.extend_from_slice(&2u16.to_le_bytes());
+    bytes.extend_from_slice(&rate.to_le_bytes());
+    bytes.extend_from_slice(&(rate * 4).to_le_bytes());
+    bytes.extend_from_slice(&4u16.to_le_bytes());
+    bytes.extend_from_slice(&16u16.to_le_bytes());
+    bytes.extend_from_slice(b"data");
+    bytes.extend_from_slice(&data.to_le_bytes());
+    for i in 0..frames {
+        let t = f64::from(i) / f64::from(rate);
+        let s = ((t * 440.0 * std::f64::consts::TAU).sin() * 12_000.0) as i16;
+        bytes.extend_from_slice(&s.to_le_bytes());
+        bytes.extend_from_slice(&s.to_le_bytes());
+    }
+    std::fs::write(path, bytes).unwrap();
+}
+
+#[test]
+fn an_audio_file_comes_in_and_its_clip_is_changed() {
+    let r = running("audio");
+    let mut c = Client::start(&r.socket);
+    let before = r.core.ai_song().unwrap();
+    let dir = scratch("audio-in");
+    let file = dir.join("voice.wav");
+    sine_wav(&file, 1.0);
+    let at = steps(&r);
+    let brought = ok(
+        &mut c,
+        "import_audio",
+        json!({ "path": file, "at": "2.1.0" }),
+    );
+    assert_eq!(steps(&r), at + 1, "{brought}");
+    let overview = ok(&mut c, "song_overview", json!({}));
+    let clip = (overview["clips"].as_array().unwrap().iter())
+        .find(|c| c["kind"] == "audio")
+        .unwrap_or_else(|| panic!("{overview}"));
+    assert_eq!(clip["start"]["at"], "2.1.0");
+    let id = clip["id"].clone();
+    one_step_each(
+        &mut c,
+        &r,
+        &[
+            (
+                "set_clip",
+                json!({ "clip": id, "field": "gain_db", "value": -6 }),
+            ),
+            (
+                "set_clip",
+                json!({ "clip": id, "field": "fade_in", "value": 480 }),
+            ),
+            ("set_clip_stretch", json!({ "clip": id, "semitones": 2 })),
+        ],
+    );
+    let audio = ok(&mut c, "get_clip_audio", json!({ "clip": id }));
+    let (_, _, _, samples) = wav(Path::new(audio["files"][0].as_str().unwrap()));
+    assert!(samples.iter().any(|s| s.unsigned_abs() > 1000), "{audio}");
+    let broken = dir.join("broken.wav");
+    std::fs::write(&broken, b"not audio").unwrap();
+    refused(&mut c, "import_audio", json!({ "path": broken }));
+    undo_all(&mut c, &r, &before);
 }

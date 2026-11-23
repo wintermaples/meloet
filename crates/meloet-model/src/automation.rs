@@ -593,6 +593,37 @@ pub fn write_press(
     ))
 }
 
+/// Points put into the lane of `target` as they are, in one step (the AI link writes them).
+/// One at the tick of a point there takes its place; ticks past [`MAX_TICK`] are
+/// `MAX_TICK`. `Unchanged` for a value that is not a number.
+pub fn put_points(
+    doc: &Doc,
+    track: TrackId,
+    target: AutoTarget,
+    put: &[AutoPoint],
+) -> Result<(Edit, LaneId), EditError> {
+    let (ti, li) = find_target(doc, track, target)?;
+    let mut points = doc.tracks[ti].automation[li].points.to_vec();
+    for p in put {
+        let point = AutoPoint {
+            tick: p.tick.min(MAX_TICK),
+            value: clamp_value(p.value).ok_or(EditError::Unchanged)?,
+        };
+        match points.binary_search_by_key(&point.tick, |p| p.tick) {
+            Ok(at) => points[at] = point,
+            Err(at) => points.insert(at, point),
+        }
+    }
+    let (new, id) = with_points(doc, ti, li, points)?;
+    Ok((
+        Edit {
+            doc: new,
+            step: StepKind::WriteAutomation { track, target },
+        },
+        id,
+    ))
+}
+
 /// Puts the lane of `target` to rest, or back to moving its target. Returns whether it
 /// changed; nothing for a track or lane that is not there.
 pub fn set_resting(doc: &mut Doc, track: TrackId, target: AutoTarget, resting: bool) -> bool {

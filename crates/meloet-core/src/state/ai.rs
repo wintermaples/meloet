@@ -1,15 +1,27 @@
 //! The switch 「AI とつなぐ」 (spec 3 「AI link」, A-27), what the screen shows of the socket,
 //! and the AI link's asks (`crate::ai`).
 
+use std::collections::VecDeque;
 use std::sync::Arc;
 
-use meloet_model::{Doc, TrackId};
-use meloet_protocol::{AiLinkView, AiPort};
+use meloet_model::notes::{self, WriteAt};
+use meloet_model::{
+    Channel, Doc, Gain, InstrumentRef, Kept, Note, Sf2Ref, TICKS_PER_QUARTER, TickRange, Timeline,
+    Track, TrackId,
+};
+use meloet_protocol::{AiLinkView, AiPort, SoundRef};
 
 use super::{Effect, Model};
-use crate::ai::{AiAnswer, AiAsk, AiBusy, AiDone, AiMeasure, AiRefusal, AiSong};
-use crate::export::ExportJob;
+use crate::ai::{
+    AiAnswer, AiAsk, AiBusy, AiDone, AiEffect, AiInstrument, AiMeasure, AiOutcome, AiRefusal,
+    AiRender, AiRenderWhat, AiSong, screen_allowed, screen_no_step,
+};
+use crate::export::{ExportJob, ExportTarget};
+use crate::play::ai::{AiPoints, AiPut, AiWrote};
 use meloet_protocol::ExportTail;
+
+/// Outcomes of asks with a ticket that are kept for the AI link to read.
+const OUTCOMES: usize = 16;
 
 #[derive(Debug, Default)]
 pub(super) struct AiSide {
@@ -19,6 +31,28 @@ pub(super) struct AiSide {
     port: AiPort,
     /// The answer to the last [`super::Input::Ai`], until the core thread takes it.
     answer: Option<AiAnswer>,
+    last_ticket: u64,
+    outcomes: VecDeque<(u64, AiOutcome)>,
+    /// Files being brought in for the AI link: the audio side's ticket and the AI's.
+    imports: Vec<(u64, u64)>,
+}
+
+impl AiSide {
+    fn ticket(&mut self) -> u64 {
+        self.last_ticket += 1;
+        let ticket = self.last_ticket;
+        if self.outcomes.len() >= OUTCOMES {
+            self.outcomes.pop_front();
+        }
+        self.outcomes.push_back((ticket, AiOutcome::Pending));
+        ticket
+    }
+
+    fn ended(&mut self, ticket: u64, outcome: AiOutcome) {
+        if let Some((_, o)) = self.outcomes.iter_mut().find(|(t, _)| *t == ticket) {
+            *o = outcome;
+        }
+    }
 }
 
 impl AiSide {
@@ -73,6 +107,11 @@ impl Model {
             song: self.play.song().clone(),
             undo_count: self.play.undo_count(),
             busy: self.ai_busy(),
+            library: self.library_view(),
+            file: self.files.path.clone(),
+            unsaved: self.play.has_unsaved_changes(),
+            sample_rate: self.export_scene().sample_rate,
+            outcomes: self.ai.outcomes.iter().cloned().collect(),
         }
     }
 
@@ -82,11 +121,66 @@ impl Model {
     }
 
     pub(super) fn ai_ask(&mut self, ask: AiAsk, effects: &mut Vec<Effect>) {
-        let answer = match self.ai_write(ask, effects) {
-            Ok(done) => AiAnswer::Done(Box::new(done)),
-            Err(refused) => AiAnswer::Refused(refused),
+        let answer = match ask {
+            AiAsk::PluginParams { place } => match self.play.ai_params(place, effects) {
+                Ok(params) => AiAnswer::Params(params),
+                Err(refused) => AiAnswer::Refused(refused),
+            },
+            ask => match self.ai_write(ask, effects) {
+                Ok(done) => AiAnswer::Done(Box::new(done)),
+                Err(refused) => AiAnswer::Refused(refused),
+            },
         };
         self.ai.answer = Some(answer);
+    }
+
+    /// A save, an open or a file brought in for the AI link ended.
+    pub(super) fn ai_ended(&mut self, ticket: u64, outcome: AiOutcome) {
+        self.ai.ended(ticket, outcome);
+    }
+
+    /// Files the audio side brought in under `bringing` went into the song, or did not.
+    pub(super) fn ai_brought(&mut self, bringing: u64, put_in: bool) {
+        let Some(at) = self.ai.imports.iter().position(|(b, _)| *b == bringing) else {
+            return;
+        };
+        let (_, ticket) = self.ai.imports.remove(at);
+        let outcome = match (put_in, &self.notice) {
+            (true, _) => AiOutcome::Done(None),
+            (false, Some(notice)) => AiOutcome::Failed(format!("{notice:?}")),
+            (false, None) => AiOutcome::Failed("the file did not go into the song".into()),
+        };
+        self.ai.ended(ticket, outcome);
+    }
+
+    fn ai_instrument(&self, instrument: AiInstrument) -> Result<InstrumentRef, AiRefusal> {
+        match instrument {
+            AiInstrument::Builtin(b) => Ok(InstrumentRef::Builtin(b)),
+            AiInstrument::Plugin(key) => {
+                let sound = SoundRef::Plugin { key };
+                let (made, _) = self
+                    .catalog
+                    .instrument(&sound)
+                    .ok_or(AiRefusal::NoSuchSound)?;
+                Ok(made)
+            }
+            AiInstrument::Sf2 {
+                file,
+                bank,
+                program,
+            } => {
+                let (info, preset) = (self.catalog.sf2_preset(&file, bank, program))
+                    .ok_or(AiRefusal::NoSuchSound)?;
+                Ok(InstrumentRef::Sf2(Arc::new(Sf2Ref {
+                    file: info.file.as_str().into(),
+                    sha256: info.sha256.as_str().into(),
+                    bank: preset.bank,
+                    program: preset.program,
+                    name: preset.name.as_str().into(),
+                    kept: Kept::NONE,
+                })))
+            }
+        }
     }
 
     fn ai_write(&mut self, ask: AiAsk, effects: &mut Vec<Effect>) -> Result<AiDone, AiRefusal> {
@@ -94,15 +188,21 @@ impl Model {
             return Err(AiRefusal::Busy(busy));
         }
         let before = self.play.undo_count();
-        let play = &mut self.play;
+        let mut ticket = None;
+        let mut no_step = false;
         let wrote = match ask {
-            AiAsk::WriteNotes { at, notes } => play.ai_write_notes(at, &notes, effects)?,
-            AiAsk::DeleteNotes { take, notes } => play.ai_delete_notes(take, &notes, effects)?,
-            AiAsk::CreateClip { track, tick } => play.ai_create_clip(track, tick, effects)?,
-            AiAsk::RenameClip { clip, name } => play.ai_rename_clip(clip, &name, effects)?,
-            AiAsk::SetTempo { tick, bpm } => play.ai_set_tempo(tick, bpm, effects)?,
-            AiAsk::AddMarker { tick, name } => play.ai_add_marker(tick, &name, effects)?,
-            AiAsk::AddTrack { instrument } => play.ai_add_track(instrument, effects)?,
+            AiAsk::WriteNotes { at, notes } => self.play.ai_write_notes(at, &notes, effects)?,
+            AiAsk::DeleteNotes { take, notes } => {
+                self.play.ai_delete_notes(take, &notes, effects)?
+            }
+            AiAsk::CreateClip { track, tick } => self.play.ai_create_clip(track, tick, effects)?,
+            AiAsk::RenameClip { clip, name } => self.play.ai_rename_clip(clip, &name, effects)?,
+            AiAsk::SetTempo { tick, bpm } => self.play.ai_set_tempo(tick, bpm, effects)?,
+            AiAsk::AddMarker { tick, name } => self.play.ai_add_marker(tick, &name, effects)?,
+            AiAsk::AddTrack { instrument } => {
+                let instrument = self.ai_instrument(instrument)?;
+                self.play.ai_add_track(instrument, effects)?
+            }
             AiAsk::Undo => {
                 let row = self.play.history_rows(before, before).pop();
                 if row.is_none() {
@@ -115,11 +215,151 @@ impl Model {
                     clip: None,
                     take: None,
                     track: None,
+                    ticket: None,
+                    pending: false,
                 });
+            }
+            AiAsk::Screen(command) => {
+                if !screen_allowed(&command) {
+                    return Err(AiRefusal::Unchanged);
+                }
+                no_step = screen_no_step(&command);
+                self.command(command, effects);
+                if !no_step && self.play.undo_count() == before {
+                    return Err(match &self.notice {
+                        Some(notice) => AiRefusal::Said(format!("{notice:?}")),
+                        None => AiRefusal::Unchanged,
+                    });
+                }
+                AiWrote::default()
+            }
+            AiAsk::EditNotes { take, notes, edit } => {
+                self.play.ai_edit_notes(take, &notes, &edit, effects)?
+            }
+            AiAsk::DeleteClips { clips } => self.play.ai_delete_clips(&clips, effects)?,
+            AiAsk::SwitchTake { clip, index } => self.play.ai_switch_take(clip, index, effects)?,
+            AiAsk::SetInstrument { track, instrument } => {
+                let instrument = self.ai_instrument(instrument)?;
+                (self.play).ai_set_instrument(TrackId(track), instrument, effects)?
+            }
+            AiAsk::PutEffect {
+                strip,
+                slot,
+                effect,
+                replace,
+            } => {
+                let put = match effect {
+                    AiEffect::Builtin(kind) => AiPut::Builtin(kind),
+                    AiEffect::Plugin(key) => {
+                        let found = (self.catalog.plugin(&key))
+                            .filter(|f| !f.instrument)
+                            .ok_or(AiRefusal::NoSuchEffect)?;
+                        AiPut::Plugin(found.plugin)
+                    }
+                };
+                self.play
+                    .ai_put_effect(strip, slot, put, replace, effects)?
+            }
+            AiAsk::WriteAutomation {
+                track,
+                target,
+                points,
+            } => {
+                let change = AiPoints::Put(points);
+                self.play
+                    .ai_points(TrackId(track), target, change, effects)?
+            }
+            AiAsk::MoveAutomation {
+                track,
+                target,
+                points,
+                ticks,
+                value,
+            } => {
+                let change = AiPoints::Move {
+                    picked: points,
+                    ticks,
+                    value,
+                };
+                self.play
+                    .ai_points(TrackId(track), target, change, effects)?
+            }
+            AiAsk::DeleteAutomation {
+                track,
+                target,
+                points,
+            } => {
+                let change = AiPoints::Delete(points);
+                self.play
+                    .ai_points(TrackId(track), target, change, effects)?
+            }
+            AiAsk::SetPluginParam {
+                place,
+                param,
+                value,
+            } => {
+                (self.play).ai_set_plugin_param(place, param, value, effects)?;
+                return Ok(AiDone {
+                    step: None,
+                    undo_count: before,
+                    clip: None,
+                    take: None,
+                    track: None,
+                    ticket: None,
+                    pending: true,
+                });
+            }
+            AiAsk::PluginParams { .. } => return Err(AiRefusal::Unchanged),
+            AiAsk::Save | AiAsk::SaveAs { .. } | AiAsk::Open { .. } | AiAsk::NewSong => {
+                if !self.song_free() {
+                    return Err(AiRefusal::FilesBusy);
+                }
+                let opens = matches!(ask, AiAsk::Open { .. } | AiAsk::NewSong);
+                if opens && self.play.has_unsaved_changes() {
+                    return Err(AiRefusal::Unsaved);
+                }
+                if matches!(ask, AiAsk::Save) && self.song_path().is_none() {
+                    return Err(AiRefusal::NeverSaved);
+                }
+                no_step = true;
+                match ask {
+                    AiAsk::Save => {
+                        let t = self.ai.ticket();
+                        self.ai_save(t, None, effects);
+                        ticket = Some(t);
+                    }
+                    AiAsk::SaveAs { folder, name } => {
+                        let t = self.ai.ticket();
+                        self.ai_save(t, Some((folder, name)), effects);
+                        ticket = Some(t);
+                    }
+                    AiAsk::Open { path } => {
+                        let t = self.ai.ticket();
+                        self.ai_open(t, path, effects);
+                        ticket = Some(t);
+                    }
+                    _ => self.ai_new_song(effects),
+                }
+                AiWrote::default()
+            }
+            AiAsk::ImportAudio { path, track, tick } => {
+                if let Some(track) = track {
+                    let t = (self.play.song().doc.track(TrackId(track)))
+                        .ok_or(AiRefusal::NoSuchTrack(track))?;
+                    if !t.kind.is_vocal() {
+                        return Err(AiRefusal::NotKeys);
+                    }
+                }
+                no_step = true;
+                let bringing = self.ai_import(path, track, tick, effects);
+                let t = self.ai.ticket();
+                self.ai.imports.push((bringing, t));
+                ticket = Some(t);
+                AiWrote::default()
             }
         };
         let undo_count = self.play.undo_count();
-        if undo_count == before {
+        if undo_count == before && !no_step {
             return Err(AiRefusal::Unchanged);
         }
         let doc = &self.play.song().doc;
@@ -131,31 +371,35 @@ impl Model {
             .and_then(|id| doc.tracks.iter().position(|t| t.id == id))
             .map(|i| i as u32 + 1);
         Ok(AiDone {
-            step: self.play.history_rows(undo_count, undo_count).pop(),
+            step: (undo_count != before)
+                .then(|| self.play.history_rows(undo_count, undo_count).pop())
+                .flatten(),
             undo_count,
             clip: wrote.clip.map(|c| c.0),
             take,
             track,
+            ticket,
+            pending: false,
         })
     }
 
-    /// A job of the export that renders `ask` for its levels, with this id. Not while the
-    /// song may not change, nor while the export's dialog or run is up (one second engine
-    /// at a time).
-    /// The tracks rendered alone come after the mix, as numbered and named in the song.
-    pub fn ai_measure_job(
-        &self,
-        ask: &AiMeasure,
-        id: u64,
-    ) -> Result<(ExportJob, Vec<(u32, String)>), AiRefusal> {
+    /// Not while the song may not change, nor while the export's dialog or run is up (one
+    /// second engine at a time).
+    fn ai_render_free(&self) -> Result<(), AiRefusal> {
         if let Some(busy) = self.ai_busy() {
             return Err(AiRefusal::Busy(busy));
         }
         if self.export.dialog_open() {
             return Err(AiRefusal::Busy(AiBusy::Exporting));
         }
+        Ok(())
+    }
+
+    /// The song with only the tracks of these numbers (from 1; `None`: all), and their
+    /// numbers and names.
+    fn ai_tracks(&self, numbers: Option<&[u32]>) -> Result<(Doc, Vec<(u32, String)>), AiRefusal> {
         let doc = &self.play.song().doc;
-        let tracks: Vec<TrackId> = match &ask.tracks {
+        let tracks: Vec<TrackId> = match numbers {
             None => doc.tracks.iter().map(|t| t.id).collect(),
             Some(numbers) => {
                 let mut ids = Vec::new();
@@ -180,6 +424,18 @@ impl Model {
                 .collect(),
             ..doc.clone()
         };
+        Ok((doc, named))
+    }
+
+    /// A job of the export that renders `ask` for its levels, with this id.
+    /// The tracks rendered alone come after the mix, as numbered and named in the song.
+    pub fn ai_measure_job(
+        &self,
+        ask: &AiMeasure,
+        id: u64,
+    ) -> Result<(ExportJob, Vec<(u32, String)>), AiRefusal> {
+        self.ai_render_free()?;
+        let (doc, named) = self.ai_tracks(ask.tracks.as_deref())?;
         let scene = self.export_scene();
         let job = ExportJob {
             id,
@@ -194,12 +450,179 @@ impl Model {
         };
         Ok((job, named))
     }
+
+    /// A job of the export that renders `ask` into files, with this id, and where they go.
+    pub fn ai_render_job(
+        &self,
+        ask: &AiRender,
+        id: u64,
+    ) -> Result<(ExportJob, ExportTarget), AiRefusal> {
+        self.ai_render_free()?;
+        let song = &self.play.song().doc;
+        let (doc, span, per_track, tail) = match ask.what {
+            AiRenderWhat::Song {
+                span,
+                ref tracks,
+                per_track,
+                tail,
+            } => {
+                let (doc, _) = self.ai_tracks(tracks.as_deref())?;
+                let tail = if tail {
+                    ExportTail::UntilSilent
+                } else {
+                    ExportTail::Off
+                };
+                (doc, span, per_track, tail)
+            }
+            AiRenderWhat::Note {
+                track,
+                key,
+                velocity,
+                seconds,
+                effects,
+            } => {
+                let (doc, span) = note_doc(song, track, key, velocity, seconds, effects)?;
+                (doc, span, false, ExportTail::UntilSilent)
+            }
+            AiRenderWhat::Clip { clip, effects } => {
+                let (doc, span) = clip_doc(song, clip, effects)?;
+                let tail = if effects {
+                    ExportTail::UntilSilent
+                } else {
+                    ExportTail::Off
+                };
+                (doc, span, false, tail)
+            }
+        };
+        if doc.tracks.is_empty() {
+            return Err(AiRefusal::NothingToRender);
+        }
+        let files: Vec<std::path::PathBuf> = if per_track {
+            let mut taken = Vec::new();
+            for t in &doc.tracks {
+                let name = crate::export::job::free_name(&t.name, ask.format.extension(), &taken);
+                taken.push(name);
+            }
+            taken.iter().map(|n| ask.to.join(n)).collect()
+        } else {
+            vec![ask.to.clone()]
+        };
+        if !ask.overwrite
+            && let Some(there) = files.iter().find(|f| f.symlink_metadata().is_ok())
+        {
+            return Err(AiRefusal::Exists(there.clone()));
+        }
+        let scene = self.export_scene();
+        let job = ExportJob {
+            id,
+            doc: Arc::new(doc),
+            span,
+            per_track,
+            tail,
+            realtime: false,
+            skip: scene.stopped_plugins.iter().map(|p| p.slot).collect(),
+            sample_rate: scene.sample_rate,
+            measure: false,
+        };
+        let target = ExportTarget {
+            path: ask.to.clone(),
+            format: ask.format,
+            sample_rate: ask.sample_rate.unwrap_or(scene.sample_rate),
+            bits: ask.bits,
+        };
+        Ok((job, target))
+    }
+}
+
+/// `track` (number from 1) as it is, but only for one note from the start: no clips, no
+/// lanes, not muted; without `effects` with no inserts, a fader at 0 dB, no sends and a
+/// master with nothing on it. The tempo and meter are the song's at its start.
+fn note_doc(
+    song: &Doc,
+    track: u32,
+    key: u8,
+    velocity: u8,
+    seconds: f64,
+    effects: bool,
+) -> Result<(Doc, TickRange), AiRefusal> {
+    let t = (track.checked_sub(1))
+        .and_then(|i| song.tracks.get(i as usize))
+        .ok_or(AiRefusal::NoSuchTrack(track))?;
+    if t.kind.is_vocal() {
+        return Err(AiRefusal::NotKeys);
+    }
+    let tempo = song.timeline.tempo;
+    let quarters = seconds * tempo.bpm() / 60.0;
+    let length = (quarters * TICKS_PER_QUARTER as f64).round().max(1.0) as u64;
+    let mut alone = Track {
+        clips: Vec::new(),
+        automation: Vec::new(),
+        muted: false,
+        ..Track::clone(t)
+    };
+    if !effects {
+        alone.channel = Channel::default();
+        alone.sends = [Gain::SILENT; 2];
+    }
+    let id = alone.id;
+    let base = Doc {
+        timeline: Arc::new(Timeline::new(tempo, song.timeline.meter)),
+        markers: Arc::new(Vec::new()),
+        loop_range: None,
+        tracks: vec![Arc::new(alone)],
+        master: if effects {
+            song.master.clone()
+        } else {
+            Arc::new(Channel::default())
+        },
+        ..song.clone()
+    };
+    let note = Note {
+        start: 0,
+        length,
+        key,
+        velocity,
+        from: None,
+    };
+    let written =
+        notes::write_notes(&base, WriteAt::Track(id), &[note]).map_err(|_| AiRefusal::BadNote)?;
+    let span = TickRange::new(0, length).ok_or(AiRefusal::BadNote)?;
+    Ok((written.edit.doc, span))
+}
+
+/// The clip alone on its track, from its start to its end; without `effects` as
+/// [`note_doc`] has the strip.
+fn clip_doc(song: &Doc, clip: u32, effects: bool) -> Result<(Doc, TickRange), AiRefusal> {
+    let (t, c) = (song.clip(meloet_model::ClipId(clip))).ok_or(AiRefusal::NoSuchClip(clip))?;
+    let span = TickRange::new(c.start, c.end).ok_or(AiRefusal::NothingToRender)?;
+    let mut alone = Track {
+        clips: vec![c.clone()],
+        muted: false,
+        ..Track::clone(t)
+    };
+    if !effects {
+        alone.channel = Channel::default();
+        alone.sends = [Gain::SILENT; 2];
+        alone.automation = Vec::new();
+    }
+    let doc = Doc {
+        markers: Arc::new(Vec::new()),
+        loop_range: None,
+        tracks: vec![Arc::new(alone)],
+        master: if effects {
+            song.master.clone()
+        } else {
+            Arc::new(Channel::default())
+        },
+        ..song.clone()
+    };
+    Ok((doc, span))
 }
 
 #[cfg(test)]
 mod tests {
     use meloet_model::Note;
-    use meloet_protocol::{AiLinkView, AiPort, Command};
+    use meloet_protocol::{AiLinkView, AiPort, Command, StripRef};
 
     use crate::ai::{AiAnswer, AiAsk, AiBusy, AiPlace, AiRefusal};
     use crate::settings::Settings;
@@ -374,5 +797,63 @@ mod tests {
         );
         assert_eq!(answer, AiAnswer::Refused(AiRefusal::Busy(busy.unwrap())));
         assert_eq!(m.ai_song().undo_count, 0);
+    }
+
+    #[test]
+    fn only_some_screen_intents_are_taken() {
+        let m = &mut Model::new(Settings::default());
+        let track = m.ai_song().song.doc.tracks[0].id.0;
+        for command in [
+            Command::SaveSong,
+            Command::DeleteSelected,
+            Command::SetGain {
+                strip: StripRef::Track { id: track },
+                db: Some(-3.0),
+                commit: false,
+            },
+        ] {
+            let answer = ask(m, AiAsk::Screen(command));
+            assert_eq!(answer, AiAnswer::Refused(AiRefusal::Unchanged));
+        }
+        let gain = Command::SetGain {
+            strip: StripRef::Track { id: track },
+            db: Some(-3.0),
+            commit: true,
+        };
+        let AiAnswer::Done(done) = ask(m, AiAsk::Screen(gain.clone())) else {
+            panic!("set")
+        };
+        assert_eq!(done.undo_count, 1);
+        // The same value again is no step, and says why.
+        assert!(matches!(
+            ask(m, AiAsk::Screen(gain)),
+            AiAnswer::Refused(AiRefusal::Unchanged | AiRefusal::Said(_))
+        ));
+    }
+
+    #[test]
+    fn a_song_with_unsaved_changes_is_not_let_go() {
+        let m = &mut Model::new(Settings::default());
+        ask(
+            m,
+            AiAsk::WriteNotes {
+                at: AiPlace::Track(1),
+                notes: vec![note(0, 60)],
+            },
+        );
+        assert!(m.ai_song().unsaved);
+        assert_eq!(
+            ask(m, AiAsk::NewSong),
+            AiAnswer::Refused(AiRefusal::Unsaved)
+        );
+        let open = AiAsk::Open {
+            path: "/nowhere/a.meloet".into(),
+        };
+        assert_eq!(ask(m, open), AiAnswer::Refused(AiRefusal::Unsaved));
+        assert_eq!(
+            ask(m, AiAsk::Save),
+            AiAnswer::Refused(AiRefusal::NeverSaved)
+        );
+        assert_eq!(m.ai_song().undo_count, 1);
     }
 }

@@ -1,11 +1,33 @@
 //! The MCP tools. Each call checks its input here, then goes to the core on a thread of the
-//! blocking pool, so the runtime's one thread never waits on the core.
+//! blocking pool, so the runtime's one thread never waits on the core. The tools of each
+//! group are in a module of their own; this one has the song, the notes and what they share.
 
+macro_rules! check {
+    ($e:expr) => {
+        match $e {
+            Ok(v) => v,
+            Err(result) => return Ok(result),
+        }
+    };
+}
+
+mod arrange;
+mod automation;
+mod files;
+mod mixer;
+mod notes;
+mod render;
+mod timing;
+
+use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
-use meloet_core::ai::{AiAnswer, AiAsk, AiBusy, AiDone, AiMeasure, AiPlace, AiRefusal, AiSong};
-use meloet_model::{BuiltinInstrument, InstrumentRef, Note, TempoMap, TickRange};
+use meloet_core::ai::{
+    AiAnswer, AiAsk, AiBusy, AiDone, AiInstrument, AiMeasure, AiOutcome, AiPlace, AiRefusal, AiSong,
+};
+use meloet_model::{BuiltinInstrument, Note, TempoMap, TickRange, Track};
+use meloet_protocol::Command;
 use rmcp::model::{
     CallToolResult, ContentBlock, Implementation, ProgressNotificationParam, RequestMetaObject,
     ServerCapabilities, ServerConfig,
@@ -19,6 +41,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
+use crate::scratch::Scratch;
 use crate::song::{self, parse_at};
 use crate::{MAX_BAR, Meloet};
 
@@ -34,14 +57,35 @@ pub const MAX_MEASURE_S: f64 = 600.0;
 const BURST: f64 = 30.0;
 const PER_SECOND: f64 = 10.0;
 
+/// The answer to open_song and new_song while the song has unsaved changes (the lead's
+/// words, 2026-11-23).
+const UNSAVED: &str = "保存していない変更があります。先に save_song するか、人に聞いてください。";
+
+/// Longest path a tool takes.
+const MAX_PATH: usize = 4096;
+/// How long a save, an open, a file brought in or a plugin's step is waited for.
+const WAIT_FOR: Duration = Duration::from_secs(30);
+
 const INSTRUCTIONS: &str = "meloet is a DAW for people who have just bought a MIDI keyboard. \
 These tools read and change the song open in meloet right now. Positions are \"bar.beat.tick\" \
 (bar and beat from 1, the tick from 0; 1920 ticks are a quarter note) or plain ticks from the \
-song's start. Keys are MIDI numbers (60 is C4, middle C). Every write is one step the person \
-can see in meloet's undo history and take back; `undo` takes back the last step, whoever made it. \
-Nothing can be written while meloet records, counts in or exports. Ask before changing the song \
-when the person did not ask for it. You cannot hear audio: measure_mix gives numbers \
-(peak, RMS, places over 0 dB) of a range rendered as the export would.";
+song's start. Keys are MIDI numbers (60 is C4). Tracks are numbered from 1 as song_overview \
+lists them; insert slots from 1 to 4.\n\
+Groups: song and notes (song_overview, get_notes, write_notes, delete_notes, move_notes, \
+resize_notes, set_note_length, set_velocity, quantize_notes, unquantize_notes); time \
+(set_tempo, set_meter, markers, loop); tracks and clips (add_track, delete_track, clips, takes, \
+import_audio, clip gain, fades, pitch and stretch); sounds (list_sounds, list_instruments, \
+set_instrument); mixer (get_mixer, list_effects, volume, pan, sends, mute, solo, effects and \
+their parameters, plugin parameters); automation (get_automation, lanes and points); files \
+(save_song, save_song_as, open_song, new_song, export_song); listening (measure_mix, \
+render_audio, render_note, get_clip_audio).\n\
+Every change of the song is one step the person can see in meloet's undo history and take \
+back; `undo` takes back the last step, whoever made it. Nothing can be changed while meloet \
+records, counts in or exports. Ask before changing the song when the person did not ask for \
+it, and before open_song or new_song when the song has unsaved changes. You cannot hear \
+audio: measure_mix gives numbers; render_audio, render_note and get_clip_audio write WAV \
+files into a private temporary folder and give their paths for a program of yours to read. \
+Those files are deleted after an hour.";
 
 /// Calls allowed over time (a token bucket).
 #[derive(Debug)]
@@ -70,6 +114,7 @@ impl Bucket {
 pub struct Tools {
     meloet: Arc<dyn Meloet>,
     bucket: Arc<Mutex<Bucket>>,
+    scratch: Arc<Scratch>,
     tool_router: ToolRouter<Tools>,
 }
 
@@ -174,9 +219,17 @@ pub struct AddMarkerArgs {
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 pub struct AddTrackArgs {
-    /// A sound's name from list_sounds, like "grandPiano".
+    /// A built-in sound's name from list_sounds, like "grandPiano".
+    #[serde(default)]
     #[schemars(length(min = 1, max = 64))]
-    pub sound: String,
+    pub sound: Option<String>,
+    /// An instrument plugin's key from list_instruments.
+    #[serde(default)]
+    #[schemars(length(min = 1, max = 1024))]
+    pub plugin: Option<String>,
+    /// A preset of an added SF2 file, from list_instruments.
+    #[serde(default)]
+    pub sf2: Option<song::Sf2Arg>,
 }
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
@@ -244,6 +297,36 @@ pub fn refusal_text(r: &AiRefusal) -> String {
         AiRefusal::NothingToUndo => "there is no step to undo".into(),
         AiRefusal::Measuring => "another measurement is running; try again after it".into(),
         AiRefusal::ExportFailed(why) => format!("the rendering failed ({why})"),
+        AiRefusal::Said(said) => format!("meloet did nothing ({said})"),
+        AiRefusal::NoSuchSound => {
+            "there is no such sound; call list_instruments to see them".into()
+        }
+        AiRefusal::NoSuchEffect => "there is no such effect; call list_effects to see them".into(),
+        AiRefusal::NoSuchPlugin => "there is no plugin there; call get_mixer".into(),
+        AiRefusal::PluginNotLoaded => {
+            "the plugin is not loaded yet, or it stopped; try again in a moment".into()
+        }
+        AiRefusal::HasLane => {
+            "that parameter has an automation lane; write the lane (or delete it) instead".into()
+        }
+        AiRefusal::NoSuchLane => {
+            "the track has no lane for that; add it with add_lane first".into()
+        }
+        AiRefusal::NoSuchPoint => "there is no such point; call get_automation again".into(),
+        AiRefusal::SlotTaken => "that insert slot holds an effect already".into(),
+        AiRefusal::SlotEmpty => "that insert slot is empty".into(),
+        AiRefusal::Unsaved => UNSAVED.into(),
+        AiRefusal::NeverSaved => {
+            "the song was never saved; call save_song_as with a folder and a name".into()
+        }
+        AiRefusal::FilesBusy => {
+            "a save or an open is going on, or meloet asks the person something; try later".into()
+        }
+        AiRefusal::Exists(path) => format!(
+            "{} is there already; give `overwrite: true` to write over it",
+            path.display()
+        ),
+        AiRefusal::NothingToRender => "there is nothing to render".into(),
     }
 }
 
@@ -272,6 +355,19 @@ fn done_value(d: &AiDone) -> Value {
     })
 }
 
+/// A place given as "bar.beat.tick" or as ticks, one of them.
+fn at_or_tick(map: &TempoMap, at: Option<&str>, tick: Option<u64>) -> Result<u64, CallToolResult> {
+    let tick = match (at, tick) {
+        (Some(at), None) => place(map, at)?,
+        (None, Some(tick)) => tick,
+        _ => return Err(failed("give `at` or `tick`, one of them")),
+    };
+    if tick > crate::MAX_TICK {
+        return Err(failed(format!("that is past bar {MAX_BAR}")));
+    }
+    Ok(tick)
+}
+
 fn db(level: f32) -> Option<f64> {
     (level > 0.0).then(|| (f64::from(level).log10() * 2000.0).round() / 100.0)
 }
@@ -291,14 +387,22 @@ fn shown_db(v: &Value) -> String {
 }
 
 impl Tools {
-    pub fn new(meloet: Arc<dyn Meloet>) -> Tools {
+    pub fn new(meloet: Arc<dyn Meloet>, scratch: Arc<Scratch>) -> Tools {
         Tools {
             meloet,
             bucket: Arc::new(Mutex::new(Bucket {
                 tokens: BURST,
                 at: Instant::now(),
             })),
-            tool_router: Self::tool_router(),
+            scratch,
+            tool_router: Self::tool_router()
+                + Self::mixer_router()
+                + Self::notes_router()
+                + Self::automation_router()
+                + Self::timing_router()
+                + Self::arrange_router()
+                + Self::files_router()
+                + Self::render_router(),
         }
     }
 
@@ -321,27 +425,148 @@ impl Tools {
         }
     }
 
+    async fn answer(&self, ask: AiAsk) -> Result<AiAnswer, CallToolResult> {
+        let meloet = self.meloet.clone();
+        tokio::task::spawn_blocking(move || meloet.ask(ask))
+            .await
+            .map_err(|_| closing())
+    }
+
+    async fn ask(&self, ask: AiAsk) -> Result<AiDone, CallToolResult> {
+        let what = ask.name();
+        match self.answer(ask).await? {
+            AiAnswer::Done(d) => Ok(*d),
+            AiAnswer::Refused(AiRefusal::Unsaved) => Err(failed(UNSAVED)),
+            AiAnswer::Refused(r) => Err(failed(format!("Could not {what}: {}.", refusal_text(&r)))),
+            AiAnswer::Params(_) => Err(closing()),
+        }
+    }
+
     async fn write(&self, ask: AiAsk) -> CallToolResult {
         let what = ask.name();
-        let meloet = self.meloet.clone();
-        match tokio::task::spawn_blocking(move || meloet.ask(ask)).await {
-            Ok(AiAnswer::Done(d)) => {
+        match self.ask(ask).await {
+            Ok(d) => {
                 let value = done_value(&d);
                 done(format!("Done: {what}.\n{value}"), value)
             }
-            Ok(AiAnswer::Refused(r)) => failed(format!("Could not {what}: {}.", refusal_text(&r))),
-            Err(_) => closing(),
+            Err(result) => result,
         }
+    }
+
+    /// One of the screen's intents, as one step.
+    async fn screen(&self, command: Command) -> CallToolResult {
+        self.write(AiAsk::Screen(command)).await
+    }
+
+    /// An ask answered with a ticket, and then how it ended.
+    async fn ticketed(&self, ask: AiAsk) -> Result<(AiDone, Option<PathBuf>), CallToolResult> {
+        let what = ask.name();
+        let d = self.ask(ask).await?;
+        let Some(ticket) = d.ticket else {
+            return Ok((d, None));
+        };
+        let until = Instant::now() + WAIT_FOR;
+        loop {
+            let read = self.read().await?;
+            let outcome = (read.outcomes.iter()).find(|(t, _)| *t == ticket);
+            match outcome.map(|(_, o)| o) {
+                Some(AiOutcome::Pending) if Instant::now() < until => {}
+                Some(AiOutcome::Pending) => {
+                    return Err(failed(format!(
+                        "Could not {what}: meloet did not finish in {} s; call song_overview later",
+                        WAIT_FOR.as_secs()
+                    )));
+                }
+                Some(AiOutcome::Done(path)) => {
+                    let mut d = d;
+                    d.undo_count = read.undo_count;
+                    return Ok((d, path.clone()));
+                }
+                Some(AiOutcome::Failed(why)) => {
+                    return Err(failed(format!("Could not {what}: {why}.")));
+                }
+                None => return Err(closing()),
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    }
+
+    /// An ask whose step comes later (a plugin's parameter): waits for it.
+    async fn pending_step(&self, ask: AiAsk) -> CallToolResult {
+        let what = ask.name();
+        let d = match self.ask(ask).await {
+            Ok(d) => d,
+            Err(result) => return result,
+        };
+        let until = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < until {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            let read = match self.read().await {
+                Ok(read) => read,
+                Err(result) => return result,
+            };
+            if read.undo_count > d.undo_count {
+                let value = json!({ "undo_steps": read.undo_count });
+                return done(format!("Done: {what}.\n{value}"), value);
+            }
+        }
+        failed(format!(
+            "Could not {what} as a step: the plugin was told, but no step came within 5 s. The \
+             value may be the one it had, the plugin may not answer, or it may not keep that \
+             value in its state (then the song does not hold it, and undo and saving miss it)."
+        ))
     }
 }
 
-macro_rules! check {
-    ($e:expr) => {
-        match $e {
-            Ok(v) => v,
-            Err(result) => return Ok(result),
+/// The track of number `number` (from 1) in what was read.
+fn track_of(read: &AiSong, number: u32) -> Result<&Arc<Track>, CallToolResult> {
+    (number.checked_sub(1))
+        .and_then(|i| read.song.doc.tracks.get(i as usize))
+        .ok_or_else(|| failed(refusal_text(&AiRefusal::NoSuchTrack(number))))
+}
+
+/// A path a tool may take: absolute, with no `..`, and not too long.
+fn path_ok(text: &str) -> Result<PathBuf, CallToolResult> {
+    let path = Path::new(text);
+    if text.len() > MAX_PATH || text.contains('\0') {
+        return Err(failed("that path is too long or holds a NUL"));
+    }
+    if !path.is_absolute() || path.components().any(|c| c == Component::ParentDir) {
+        return Err(failed(
+            "give an absolute path (from /) with no \"..\" in it",
+        ));
+    }
+    Ok(path.to_path_buf())
+}
+
+/// A sound as list_sounds and list_instruments name it.
+fn instrument_of(
+    sound: Option<&str>,
+    plugin: Option<&str>,
+    sf2: Option<&song::Sf2Arg>,
+) -> Result<AiInstrument, CallToolResult> {
+    match (sound, plugin, sf2) {
+        (Some(sound), None, None) => BuiltinInstrument::from_name(sound.trim())
+            .map(AiInstrument::Builtin)
+            .ok_or_else(|| failed(format!("there is no sound \"{sound}\"; call list_sounds"))),
+        (None, Some(key), None) if !key.is_empty() && key.len() <= 1024 => {
+            Ok(AiInstrument::Plugin(key.to_owned()))
         }
-    };
+        (None, None, Some(s)) => {
+            let (Ok(bank), Ok(program)) = (u16::try_from(s.bank), u8::try_from(s.program)) else {
+                return Err(failed("the SF2 bank is 0 to 128 and the program 0 to 127"));
+            };
+            if bank > 128 || program > 127 || s.file.is_empty() || s.file.len() > 255 {
+                return Err(failed("the SF2 bank is 0 to 128 and the program 0 to 127"));
+            }
+            Ok(AiInstrument::Sf2 {
+                file: s.file.clone(),
+                bank,
+                program,
+            })
+        }
+        _ => Err(failed("give one of `sound`, `plugin` or `sf2`")),
+    }
 }
 
 #[tool_router]
@@ -403,10 +628,9 @@ impl Tools {
         Ok(done(value.to_string(), value))
     }
 
-    /// Writes notes, as one undo step. Into a track (the clip at the earliest start, or a new
-    /// clip from the head of that bar, 4 bars or up to the next clip) or into a keys clip,
-    /// which grows by whole bars when notes go past it. Nothing is written when a clip would
-    /// overlap another. With the scale locked, keys outside it are written too.
+    /// Writes notes, as one undo step: into a track (the clip at the earliest start, or a new
+    /// 4-bar clip) or into a keys clip, which grows by bars when notes go past it. Nothing is
+    /// written when a clip would overlap another.
     #[tool(annotations(
         title = "Write notes",
         read_only_hint = false,
@@ -592,8 +816,8 @@ impl Tools {
         Ok(self.write(AiAsk::AddMarker { tick, name }).await)
     }
 
-    /// Adds a keys track with a sound from list_sounds below the last track, as one undo
-    /// step.
+    /// Adds a keys track below the last one with a built-in sound, an instrument plugin or
+    /// an SF2 preset (see list_instruments). One undo step.
     #[tool(annotations(
         title = "Add track",
         read_only_hint = false,
@@ -606,17 +830,12 @@ impl Tools {
         Parameters(args): Parameters<AddTrackArgs>,
     ) -> Result<CallToolResult, McpError> {
         check!(self.allowed());
-        let Some(sound) = BuiltinInstrument::from_name(args.sound.trim()) else {
-            return Ok(failed(format!(
-                "there is no sound \"{}\"; call list_sounds",
-                args.sound
-            )));
-        };
-        Ok(self
-            .write(AiAsk::AddTrack {
-                instrument: InstrumentRef::Builtin(sound),
-            })
-            .await)
+        let instrument = check!(instrument_of(
+            args.sound.as_deref(),
+            args.plugin.as_deref(),
+            args.sf2.as_ref()
+        ));
+        Ok(self.write(AiAsk::AddTrack { instrument }).await)
     }
 
     /// Takes back the last step of meloet's undo history (whoever made it), as the person's

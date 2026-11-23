@@ -36,7 +36,9 @@ use meloet_protocol::{
 use meloet_sound::phrases::{self, PhrasePlayer};
 use meloet_sound::sampler::{LoadError, SampleBank};
 
-use crate::ai::{AiAnswer, AiAsk, AiLevels, AiMeasure, AiRefusal, AiSong, AiSwitch};
+use crate::ai::{
+    AiAnswer, AiAsk, AiLevels, AiMeasure, AiRefusal, AiRender, AiRendered, AiSong, AiSwitch,
+};
 use crate::audiofiles::keeper::AudioNews;
 use crate::audiofiles::{AudioStore, Settling};
 use crate::export::{ExportAsk, ExportNews};
@@ -324,7 +326,13 @@ enum Msg {
         news: Sender<ExportNews>,
         reply: Sender<Result<AiJob, AiRefusal>>,
     },
-    /// The AI link gives a measurement up.
+    /// The AI link renders into files: the job's id or why not, then its news on `news`.
+    AiRender {
+        ask: AiRender,
+        news: Sender<ExportNews>,
+        reply: Sender<Result<AiJob, AiRefusal>>,
+    },
+    /// The AI link gives a measurement or a rendering up.
     AiDrop(u64),
     AiSwitch(AiSwitch),
     Stop,
@@ -939,6 +947,57 @@ impl Core {
                         sample_rate: job.sample_rate,
                         master,
                         tracks: tracks.map(|((n, name), p)| (n, name, p)).collect(),
+                    });
+                }
+                Ok(ExportNews::Failed { reason, .. }) => {
+                    return Err(AiRefusal::ExportFailed(format!("{reason:?}")));
+                }
+                Ok(_) | Err(RecvTimeoutError::Timeout) => {}
+                Err(RecvTimeoutError::Disconnected) => return Err(AiRefusal::Closing),
+            }
+        }
+    }
+
+    /// Renders `ask` into files through the export's engine, on the caller's thread. As
+    /// [`Core::ai_measure`] for `progress` and `cancelled`.
+    pub fn ai_render(
+        &self,
+        ask: AiRender,
+        progress: &mut dyn FnMut(u8),
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<AiRendered, AiRefusal> {
+        let (news_tx, news) = mpsc::channel();
+        let (reply, answer) = mpsc::channel();
+        let msg = Msg::AiRender {
+            ask,
+            news: news_tx,
+            reply,
+        };
+        self.tx.send(msg).map_err(|_| AiRefusal::Closing)?;
+        let job = answer.recv().map_err(|_| AiRefusal::Closing)??;
+        let (mut peak_db, mut seconds) = (None, 0);
+        loop {
+            if cancelled() {
+                let _ = self.tx.send(Msg::AiDrop(job.id));
+                return Err(AiRefusal::Unchanged);
+            }
+            match news.recv_timeout(Duration::from_millis(100)) {
+                Ok(ExportNews::Counted {
+                    percent,
+                    peak_db: peak,
+                    length_s,
+                    ..
+                }) => {
+                    progress(percent);
+                    peak_db = peak;
+                    seconds = length_s;
+                }
+                Ok(ExportNews::Finished { files, .. }) => {
+                    return Ok(AiRendered {
+                        files,
+                        sample_rate: job.sample_rate,
+                        seconds: f64::from(seconds),
+                        peak_db,
                     });
                 }
                 Ok(ExportNews::Failed { reason, .. }) => {
@@ -2556,6 +2615,9 @@ impl Worker {
                 Ok(Msg::AiMeasure { ask, news, reply }) => {
                     let _ = reply.send(self.ai_measure(&ask, news));
                 }
+                Ok(Msg::AiRender { ask, news, reply }) => {
+                    let _ = reply.send(self.ai_render(&ask, news));
+                }
                 Ok(Msg::AiDrop(job)) => {
                     self.export_ask(ExportAsk::Drop { job });
                 }
@@ -2623,6 +2685,27 @@ impl Worker {
             id,
             sample_rate,
             tracks,
+        })
+    }
+
+    fn ai_render(&mut self, ask: &AiRender, news: Sender<ExportNews>) -> Result<AiJob, AiRefusal> {
+        if self.ai_jobs() > 0 {
+            return Err(AiRefusal::Measuring);
+        }
+        self.ai_jobs += 1;
+        let id = export::AI_JOBS + self.ai_jobs;
+        let (job, target) = self.model.ai_render_job(ask, id)?;
+        let sample_rate = target.sample_rate;
+        if let Some(input) = self.export_render(Box::new(job), Some(news)) {
+            self.handle(input);
+        }
+        if let Some(input) = self.export_ask(ExportAsk::Finish { job: id, target }) {
+            self.handle(input);
+        }
+        Ok(AiJob {
+            id,
+            sample_rate,
+            tracks: Vec::new(),
         })
     }
 

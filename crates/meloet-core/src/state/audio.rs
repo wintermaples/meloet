@@ -170,6 +170,24 @@ impl Model {
         self.bring(pending.paths, Target { track, tick, mode }, effects);
     }
 
+    /// The AI link brings one file in, as 「音のファイルを入れる…」 does once it is picked.
+    /// Returns the ticket of the bringing.
+    pub(super) fn ai_import(
+        &mut self,
+        path: PathBuf,
+        track: Option<u32>,
+        tick: u64,
+        effects: &mut Vec<Effect>,
+    ) -> u64 {
+        let target = Target {
+            track,
+            tick,
+            mode: DropMode::InRow,
+        };
+        self.bring(vec![path], target, effects);
+        self.audio.last_ticket
+    }
+
     fn bring(&mut self, paths: Vec<PathBuf>, target: Target, effects: &mut Vec<Effect>) {
         self.audio.last_ticket += 1;
         let ticket = self.audio.last_ticket;
@@ -268,9 +286,12 @@ impl Model {
         if !self.play.busy() && !self.audio.brought.is_empty() {
             for (bringing, files) in std::mem::take(&mut self.audio.brought) {
                 // Files for a song that is gone stay out.
+                let before = self.play.undo_count();
                 if bringing.serial == serial {
                     self.put_in(&bringing, files, effects);
                 }
+                let put_in = self.play.undo_count() != before;
+                self.ai_brought(bringing.ticket, put_in);
             }
         }
         let rate = self.open.as_ref().map(|open| open.sample_rate);

@@ -8,6 +8,7 @@ use meloet_model::Song;
 use meloet_protocol::{SongAnswer, SongDialogKind, SongDialogView, SongFile};
 
 use super::{Effect, Input, Model, SaveTo};
+use crate::ai::AiOutcome;
 
 /// What comes once the song is saved, or let go.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -52,6 +53,9 @@ pub(super) struct Files {
     /// The name typed in the save window, for the save that goes on from there (also after
     /// "保存できない" and a folder picked).
     save_as: Option<String>,
+    /// The save or the read going on was asked for by the AI link, with this ticket: it
+    /// hears how it ended, and no dialog is put up for it.
+    ai: Option<u64>,
 }
 
 impl Files {
@@ -128,6 +132,42 @@ impl Model {
         }
     }
 
+    /// The AI link saves: over the song's file, or (`to`) as a new song folder of that name
+    /// in that folder. The caller has checked `song_free`.
+    pub(super) fn ai_save(
+        &mut self,
+        ticket: u64,
+        to: Option<(PathBuf, String)>,
+        effects: &mut Vec<Effect>,
+    ) {
+        self.files.ai = Some(ticket);
+        let folder = to.map(|(folder, name)| {
+            self.files.save_as = Some(name);
+            folder
+        });
+        if folder.is_none() {
+            self.files.save_as = None;
+        }
+        self.save(Then::Stay, folder, effects);
+    }
+
+    /// The AI link opens a song file. The caller has checked that nothing unsaved is lost.
+    pub(super) fn ai_open(&mut self, ticket: u64, path: PathBuf, effects: &mut Vec<Effect>) {
+        self.files.ai = Some(ticket);
+        self.files.save_as = None;
+        self.files.waiting = Some(Waiting::Read);
+        effects.push(Effect::ReadSong {
+            path,
+            previous: false,
+        });
+    }
+
+    /// The AI link starts a new song. The caller has checked that nothing unsaved is lost.
+    pub(super) fn ai_new_song(&mut self, effects: &mut Vec<Effect>) {
+        self.files.save_as = None;
+        self.then(Then::NewSong, effects);
+    }
+
     /// Esc. Returns whether a song dialog was there to put away.
     pub(super) fn cancel_song_dialog(&mut self) -> bool {
         self.files.dialog.take().is_some()
@@ -195,6 +235,9 @@ impl Model {
                 }
             }
             (Input::SongSaved { path, name }, Some(Waiting::Save(then))) => {
+                if let Some(ticket) = self.files.ai.take() {
+                    self.ai_ended(ticket, AiOutcome::Done(Some(path.clone())));
+                }
                 self.files.waiting = None;
                 self.files.save_as = None;
                 self.files.path = Some(path);
@@ -207,7 +250,13 @@ impl Model {
             (Input::SongNotSaved, Some(Waiting::Save(then))) => {
                 self.files.waiting = None;
                 self.play.not_saved();
-                self.put_up(SongDialogKind::CannotSave, then, None);
+                match self.files.ai.take() {
+                    Some(ticket) => {
+                        let why = "the song could not be written there".to_owned();
+                        self.ai_ended(ticket, AiOutcome::Failed(why));
+                    }
+                    None => self.put_up(SongDialogKind::CannotSave, then, None),
+                }
             }
             (
                 Input::SongRead {
@@ -217,6 +266,9 @@ impl Model {
                 },
                 _,
             ) if reading => {
+                if let Some(ticket) = self.files.ai.take() {
+                    self.ai_ended(ticket, AiOutcome::Done(Some(path.clone())));
+                }
                 self.files.waiting = None;
                 self.files.path = Some(path);
                 self.take_song(*song, from_previous, effects);
@@ -224,6 +276,14 @@ impl Model {
             }
             (Input::SongUnreadable { path, previous }, _) if reading => {
                 self.files.waiting = None;
+                if let Some(ticket) = self.files.ai.take() {
+                    let why = match previous {
+                        true => "the file does not read; its .prev copy might",
+                        false => "the file does not read",
+                    };
+                    self.ai_ended(ticket, AiOutcome::Failed(why.to_owned()));
+                    return;
+                }
                 self.put_up(SongDialogKind::Broken, Then::Stay, Some(path));
                 if let Some(d) = &mut self.files.dialog {
                     d.previous = previous;

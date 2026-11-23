@@ -122,6 +122,7 @@ scripts/check-all.sh --release   # plus: no development hooks left in the shippe
 tools/measure/build-dev.sh [--keep-ui]  # before measuring: build release with the development hooks (feature dev-hooks + MELOET_DEV_HOOKS=1). With only `cargo build --release -p meloet-app`, MELOET_* does not work
 cargo test --features dev-hooks  # Rust tests (check-all uses this form. They pass without the feature too, but the devhooks tests do not run)
 MELOET_DOCKER_SG=1 scripts/build-deb.sh  # build the deb we ship in an Ubuntu 24.04 container (target/deb/. Needs the docker group)
+scripts/bump-version.sh X.Y.Z    # raise the app version everywhere and check nothing still says the old one (the skill .claude/skills/bump-version has the whole release steps)
 python3 -I tools/design/render_mocks.py target/mock-png   # mocks to PNG
 python3 -I tools/design/shoot_ui.py <output> <scene>        # fake scenes side by side with mocks
 python3 -I tools/design/shoot_app.py <state>                # take pictures of the real app (docs/screenshots/)

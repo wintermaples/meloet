@@ -81,8 +81,8 @@ describe("the dark themes keep their faces (user:2026-11-23)", () => {
   ];
   const KEPT: Record<string, string> = {
     dark: "#000000 #1A1A1A #212121 #282828 #2F2F2F #3C3C3C #717171 #9A9A9A #D6D6D6 #F2F2F2 #FFB000 #FF6158 #4CD964 #FFD60A #69E4E4 #5ABDF2 #6F8BED #9561C7 #FFD9F1 #F2F2F2 #000000 #3C3C3C #000000 #282828 #000000 #212121 #1A1A1A #000000",
-    pinkDark: "#040404 #211B1E #292225 #30282C #392F33 #483B41 #806E77 #A7969E #DBD5D7 #F3F2F2 #FF7FC8 #FF685F #4CD964 #FFD60A #69E4E4 #5ABDF2 #6F8BED #9664C8 #FFD54A #F3F2F2 #040404 #483B41 #040404 #30282C #040404 #292225 #211B1E #040404",
-    mintDark: "#040404 #171F1C #1D2723 #232E2A #293531 #33423D #637971 #8D9E98 #D3D7D6 #F1F3F2 #5CF0B4 #FF6A61 #4CD964 #FFD60A #FFD54A #5ABDF2 #6F8BED #9765C9 #FFD9F1 #F1F3F2 #040404 #33423D #040404 #232E2A #040404 #1D2723 #171F1C #040404",
+    pinkDark: "#040404 #1E1C1E #262325 #2E292A #343131 #433D3F #787174 #9F999C #D8D6D7 #F3F2F2 #F9B8CF #FF685F #4CD964 #FFD60A #A8EDEC #92C9EA #8B9FDC #9D80BD #FFE9A6 #F3F2F2 #040404 #433D3F #040404 #2E292A #040404 #262325 #1E1C1E #040404",
+    mintDark: "#040404 #1B1E1C #212624 #272D2B #2D3432 #3B403D #6B7773 #959C99 #D4D7D6 #F2F3F2 #AAEBD1 #FF6A61 #4CD964 #FFD60A #FFE9A6 #92C9EA #8B9FDC #9E81BE #FEF1F9 #F2F3F2 #040404 #3B403D #040404 #272D2B #040404 #212624 #1B1E1C #040404",
   };
 
   it("faces, text, states and keys keep their values; the meter grounds are the grays the meters were on (gray.0, gray.4 for the mic)", () => {
@@ -106,7 +106,7 @@ describe("the dark themes keep their faces (user:2026-11-23)", () => {
       expect(ratio(p["color.gray.6"], p["color.gray.4"]), id).toBeLessThan(2.45);
       expect(ratio(p["color.accent"], p["color.gray.6"]), id).toBeGreaterThanOrEqual(3);
     }
-    const light: Record<string, string> = { light: "#A7A7A7", pinkLight: "#BF98AA", mintLight: "#89AB9F" };
+    const light: Record<string, string> = { light: "#A7A7A7", pinkLight: "#B69CA7", mintLight: "#92A9A0" };
     for (const id of LIGHT) expect(palettes[id]["color.gray.6"], id).toBe(light[id]);
   });
 

@@ -331,6 +331,10 @@ BOARDS = {
     # Round 12 E7: the bars of the master's sound left of 「マスター」, and with them off (the mock is in the same file).
     "spectrum": None,
     "spectrumOff": None,
+    # Round 12 M3: 「仕上げのメーター」 right of the master strip; with 「モノで聞く」 on; stopped with nothing heard (the mock is in the same file).
+    "finishMeters": None,
+    "finishMetersMono": None,
+    "finishMetersSilent": None,
     # Round 12 M6: the parameters of the gate, the de-esser and the saturation (no mock).
     "paramsGate": None,
     "paramsDeEsser": None,
@@ -932,6 +936,9 @@ ONLY = {
     "scanRetryStopped": [(1280, 800, 100)],
     "pluginStopped": [(1280, 800, 100)],
     "mixer16": [(1920, 1080, 100)],
+    "finishMeters": [(1280, 800, 100), (1280, 800, 150), (1920, 1080, 100)],
+    "finishMetersMono": [(1280, 800, 100)],
+    "finishMetersSilent": [(1280, 800, 100)],
     "settingsAdv": [(1280, 800, 100)],
     "settingsMoved": [(1280, 800, 100)],
     "scanStoppedMoved": [(1280, 800, 100)],

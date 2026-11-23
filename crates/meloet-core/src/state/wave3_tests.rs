@@ -25,7 +25,6 @@ fn the_commands_of_round_12_waves_3_and_4_are_taken_and_change_nothing_yet() {
     assert_eq!(before.workspace.language, Language::Ja);
     assert_eq!(before.audio_work.bounce, None);
     let commands = [
-        Command::SetMonoListen { on: true },
         Command::DuplicateSection { marker: 99 },
         Command::DeleteSection { marker: 99 },
         Command::InsertSpace {

@@ -530,7 +530,6 @@ impl Core {
             Sf2Store::open(options.sf2_dir.clone(), Box::new(done))
         };
         let wishes = (settings.sound.buffer, settings.sound.sample_rate);
-        let spectrum = settings.spectrum;
         let mut model = Model::new(settings).with_sounds(library.installed());
         let mut fetcher = None;
         if let Some(pack) = pack {
@@ -662,7 +661,7 @@ impl Core {
             },
         });
 
-        let audio = Audio::new(
+        let mut audio = Audio::new(
             parts.engine,
             parts.handle,
             options.audio,
@@ -673,7 +672,7 @@ impl Core {
         )
         .with_store(audio_store.clone())
         .with_maker(maker);
-        audio.analysis.set_spectrum(spectrum);
+        audio.analysis.want(model.analysis_wants());
         let readings = audio.analysis.readings().clone();
         let core = {
             let worker = Worker {
@@ -3077,6 +3076,9 @@ impl Worker {
                     Effect::LatencyListen(on) => self.latency_listen(on),
                     Effect::LatencyClick => self.latency_click(),
                     Effect::TestTone => self.audio.command(EngineCommand::TestTone),
+                    Effect::MonoListen(on) => {
+                        self.audio.command(EngineCommand::SetMonoListen { on });
+                    }
                     Effect::AllNotesOff => {
                         self.shared.held.release_all();
                         self.typed.forget();
@@ -3100,7 +3102,6 @@ impl Worker {
                     Effect::SaveSettings(settings) => {
                         self.audio.wish_frames = settings.sound.buffer;
                         self.audio.wish_rate = settings.sound.sample_rate;
-                        self.audio.analysis.set_spectrum(settings.spectrum);
                         if let Some(dir) = &self.config_dir
                             && let Err(e) = settings::save(dir, &settings)
                         {
@@ -3408,6 +3409,7 @@ impl Worker {
         drop(told);
         self.sync_mics();
         self.follow_typed();
+        self.audio.analysis.want(self.model.analysis_wants());
         self.hub.publish(self.model.view())
     }
 

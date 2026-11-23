@@ -2705,6 +2705,18 @@ export const texts = {
   "msg.tooLoudLimiter": e("音が大きすぎます。リミッターがずっと {db} dB おさえています", "user:2026-11-23", { db: "6" }),
   "msg.tooLoudOver": e("音が大きすぎます。マスターが {db} dB 越えています", "user:2026-11-23", { db: "2.1" }),
   "button.lowerAllTracks": e("全部のトラックを {db} dB 下げる", "user:2026-11-23", { db: "6" }),
+  // 「仕上げのメーター」 right of the master strip (round 12, M3). {lufs} and {peak} are numbers like 「−13.2」 (「−∞」 for silence);
+  // the units and 「低い音 ← → 高い音」 are those of the spec's picture.
+  "mixer.finish": e("仕上げのメーター", "user:2026-11-23"),
+  "mixer.finishNow": e("いまの大きさ", "user:2026-11-23"),
+  "mixer.finishWhole": e("曲ぜんたい", "user:2026-11-23"),
+  "mixer.finishTruePeak": e("トゥルーピーク", "user:2026-11-23"),
+  "mixer.finishLufs": e("{lufs} LUFS", "user:2026-11-23", { lufs: "−13.2" }),
+  "mixer.finishDbtp": e("{peak} dBTP", "user:2026-11-23", { peak: "−1.4" }),
+  "mixer.finishBands": e("低い音 ← → 高い音", "user:2026-11-23"),
+  "mixer.finishTarget": e("公開の目安は {lufs} LUFS、{peak} dBTP", "user:2026-11-23", { lufs: "−14", peak: "−1" }),
+  "mixer.monoListen": e("モノで聞く", "user:2026-11-23"),
+  "msg.monoListening": e("モノで聞いています", "user:2026-11-23"),
 
   // [Menus, keys]
   // Key names written at the right of menu rows (the table in spec 4). Mod becomes key.ctrl or key.cmd.

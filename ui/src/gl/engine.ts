@@ -15,6 +15,7 @@ import {
   paintArrangeGrid,
   paintGridLines,
   paintKeyboard,
+  paintLoudness,
   paintMeter,
   paintOverview,
   paintRects,
@@ -133,6 +134,8 @@ export class Engine {
   private velocity = 0;
   /** The telemetry's last bands (E7). */
   private readonly spectrum = new Uint8Array(SPECTRUM_BANDS);
+  /** The telemetry's last short-term loudness (M3). */
+  private lufsShort: number | null = null;
   private scale: Scale = 100;
   private theme: ThemeId = colorTheme();
   private trackNumbers: readonly number[] = [];
@@ -329,6 +332,10 @@ export class Engine {
       changed = true;
     }
     if (changed) this.touch("spectrum");
+    if (t.lufsShort !== this.lufsShort) {
+      this.lufsShort = t.lufsShort;
+      this.touch("loudness");
+    }
   }
 
   onEvent(e: Event): void {
@@ -686,7 +693,10 @@ export class Engine {
         break;
       }
       case "spectrum":
-        paintSpectrum(out, box, this.spectrum);
+        paintSpectrum(out, box, this.spectrum, slot.color);
+        break;
+      case "loudness":
+        paintLoudness(out, box, this.lufsShort);
         break;
       case "arrangeGrid":
         paintArrangeGrid(out, box, slot.firstBarX * dpr, slot.barPx * dpr, slot.beats ?? 1);

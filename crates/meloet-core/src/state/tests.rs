@@ -8,7 +8,7 @@ use meloet_protocol::{
 use super::*;
 
 const HP: &str = "card:analog-output-headphones";
-const HP_NODE: &str = "alsa_output.card.analog-stereo";
+pub(super) const HP_NODE: &str = "alsa_output.card.analog-stereo";
 const USB: &str = "usb:analog-output";
 const USB_NODE: &str = "alsa_output.usb.analog-stereo";
 const HDMI: &str = "gpu:hdmi-output-0";
@@ -108,7 +108,9 @@ fn opened(model: &mut Model, node: &str, sample_rate: u32) {
         sample_rate,
     });
     assert!(
-        effects.iter().all(|e| matches!(e, Effect::Engine(_))),
+        effects
+            .iter()
+            .all(|e| matches!(e, Effect::Engine(_) | Effect::MonoListen(_))),
         "{effects:?}"
     );
 }

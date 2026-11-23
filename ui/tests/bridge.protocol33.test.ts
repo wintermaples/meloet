@@ -74,7 +74,6 @@ describe("fake intents", () => {
     const track = before.song.tracks[0]!.id;
     const commands: Command[] = [
       { type: "setSoundKnob", track, instrument: "grandPiano", knob: "brightness", value: 80, commit: true },
-      { type: "setMonoListen", on: true },
       { type: "duplicateSection", marker: 99 },
       { type: "deleteSection", marker: 99 },
       { type: "insertSpace", marker: 99, bars: 4 },

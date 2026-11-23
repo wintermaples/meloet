@@ -5,9 +5,16 @@
 //! The ring is made with the engine; the audio thread writes into it only while the reader has
 //! been taken ([`crate::EngineHandle::take_analysis`]) and not dropped, so an engine nobody
 //! analyses (an export) copies nothing. A piece that does not fit is dropped whole.
+//!
+//! With the frames the reader learns whether the song is heard playing (playing or recording,
+//! not counting in) and how many times it started to ([`AnalysisReader::playing`]), as of the
+//! last piece written. The reader applies it to all it takes at one wake, so a start or a stop
+//! is placed within about one wake (10 ms) and one piece.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering::Relaxed};
+use std::sync::atomic::{
+    AtomicBool, AtomicU32, AtomicU64, Ordering::Acquire, Ordering::Relaxed, Ordering::Release,
+};
 
 use rtrb::{Consumer, Producer, RingBuffer};
 
@@ -20,12 +27,17 @@ struct Shared {
     /// Frames the audio thread could not put into the ring.
     dropped: AtomicU64,
     sample_rate: AtomicU32,
+    /// The pieces written last were heard playing.
+    playing: AtomicBool,
+    /// Times the song started to be heard playing.
+    plays: AtomicU32,
 }
 
 /// The audio thread's end.
 pub(crate) struct AnalysisTap {
     ring: Producer<[f32; 2]>,
     shared: Arc<Shared>,
+    playing: bool,
 }
 
 /// The analysis thread's end: left and right frames, in order, with gaps where the ring was
@@ -41,11 +53,14 @@ pub(crate) fn analysis_ring(sample_rate: u32) -> (AnalysisTap, AnalysisReader) {
         reading: AtomicBool::new(false),
         dropped: AtomicU64::new(0),
         sample_rate: AtomicU32::new(sample_rate),
+        playing: AtomicBool::new(false),
+        plays: AtomicU32::new(0),
     });
     (
         AnalysisTap {
             ring: tx,
             shared: shared.clone(),
+            playing: false,
         },
         AnalysisReader { ring: rx, shared },
     )
@@ -57,8 +72,16 @@ impl AnalysisTap {
         self.shared.sample_rate.store(sample_rate, Relaxed);
     }
 
-    /// On the audio thread. A frame that is not a number goes in as silence, as it comes out.
-    pub fn write(&mut self, left: &[f32], right: &[f32]) {
+    /// On the audio thread, once a piece. `playing`: the song is heard playing at its end. A
+    /// frame that is not a number goes in as silence, as it comes out.
+    pub fn write(&mut self, left: &[f32], right: &[f32], playing: bool) {
+        if playing != self.playing {
+            self.playing = playing;
+            if playing {
+                self.shared.plays.fetch_add(1, Release);
+            }
+            self.shared.playing.store(playing, Release);
+        }
         if !self.shared.reading.load(Relaxed) {
             return;
         }
@@ -105,6 +128,14 @@ impl AnalysisReader {
     /// and what is read now do not join.
     pub fn dropped(&self) -> u64 {
         self.shared.dropped.load(Relaxed)
+    }
+
+    /// Whether the song is heard playing, and how many times it started to, as of the last
+    /// piece written. Read before [`AnalysisReader::read`]: the frames it hands over are those
+    /// pieces, and perhaps a few written since.
+    pub fn playing(&self) -> (bool, u32) {
+        let plays = self.shared.plays.load(Acquire);
+        (self.shared.playing.load(Acquire), plays)
     }
 
     /// The rate of the engine's stream. It changes only while no stream runs; a few frames

@@ -471,6 +471,8 @@
       // R2: and that the keys do not sound while the input method is on.
       case "typedKeysOn":
         return { parts: joined(textParts("msg.typedKeysOn", {}), textParts("msg.typedKeysIme", {})), strong: [], button: null };
+      case "monoListening":
+        return plain("msg.monoListening");
       case "instrumentReplaced":
         return withLanes(
           plain("msg.instrumentReplaced", {

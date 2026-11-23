@@ -22,7 +22,7 @@ import { fakeLoudnessOf } from "./fakeLoudness";
 import { reduceA7 } from "./fakeA7";
 import { reduceA9 } from "./fakeA9";
 import { fakeUserPreset, presetOf, reducePresets } from "./fakePresets";
-import { FAKE_ARP_OFF, fakeKnobs, fakeSetSoundKnob, fakeSpectrum, reduceArp, reduceSpectrum } from "./fakeWave3";
+import { FAKE_ARP_OFF, fakeKnobs, fakeSetSoundKnob, fakeSpectrum, reduceArp, reduceMonoListen, reduceSpectrum } from "./fakeWave3";
 import { fakeFadeOut } from "./fakeFade";
 import {
   CLIP_CENTS_MAX,
@@ -4009,6 +4009,29 @@ const spectrumScene = (on: boolean): SceneDef => ({
 });
 SCENES.spectrum = spectrumScene(true);
 SCENES.spectrumOff = spectrumScene(false);
+// ---- round 12 M3: 「仕上げのメーター」 right of the master strip while the band plays (the numbers of the spec's picture); with
+// 「モノで聞く」 on; and stopped with nothing heard yet (「−∞」).
+const finishScene = (how: "playing" | "mono" | "silent"): SceneDef => ({
+  setup(s) {
+    mixerSong(s, { strip: RETURN_A, slot: 0 }, "reverb", null);
+    s.params.selected = null;
+    s.transport.state = how === "silent" ? "stopped" : "playing";
+    s.workspace.monoListen = how === "mono";
+  },
+  bands: ["mixer"],
+  after: (s) => {
+    if (how === "mono") s.status.message = { id: "monoListening" };
+  },
+  meters:
+    how === "silent"
+      ? QUIET
+      : how === "mono"
+        ? { ...MIXER_METERS, master: [dbfs(-3.2), dbfs(-3.2)], lufsShort: -14.6, lufsIntegrated: -15.8, truePeakDb: -1.4, position: playingAt("9.2.000") }
+        : { ...MIXER_METERS, lufsShort: -13.2, lufsIntegrated: -15.8, truePeakDb: -1.4, position: playingAt("9.2.000") },
+});
+SCENES.finishMeters = finishScene("playing");
+SCENES.finishMetersMono = finishScene("mono");
+SCENES.finishMetersSilent = finishScene("silent");
 
 // F8-MultiClip: the two clips of 「6 歌」 and one of 「7 歌 2」 selected; their volumes differ.
 SCENES.multiClip = {
@@ -5784,6 +5807,7 @@ export function createFakeTransport(initial?: AppState): Transport {
         reducePack(state, command) ??
         reduceUpdates(state, command) ??
         reduceSpectrum(state, command) ??
+        reduceMonoListen(state, command) ??
         reduceClips27(state, command) ??
         reduceA9(state, command, FAKE_AUDIO) ??
         reduceA7(state, command, FAKE_AUDIO, (from, to) => {

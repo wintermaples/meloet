@@ -700,6 +700,9 @@ pub enum Effect {
     Pack(PackAsk),
     /// Open (`true`) or close the AI link's socket. Its thread answers with [`Input::AiPort`].
     AiLink(bool),
+    /// 「モノで聞く」 (round 12 M3), for the engine that plays only (never an export's): only
+    /// while a stream is open; [`Input::AudioOpened`] says it again.
+    MonoListen(bool),
 }
 
 pub struct Model {
@@ -825,6 +828,8 @@ pub struct Model {
     updates: updates::UpdatesSide,
     /// 「音の動きを見せる」 (round 12, E7): a meloet setting.
     spectrum: bool,
+    /// 「モノで聞く」 (round 12, M3): only for listening; not kept anywhere, off at the start.
+    mono_listen: bool,
     /// 「ことば / Language」 (round 12, D4) as the settings have it.
     language: Option<meloet_protocol::Language>,
 }
@@ -954,6 +959,7 @@ impl Model {
             check_updates: settings.check_updates,
             updates: updates::UpdatesSide::default(),
             spectrum: settings.spectrum,
+            mono_listen: false,
             language: settings.language,
         }
     }
@@ -982,6 +988,16 @@ impl Model {
     /// Whether [`Input::SoundHeard`] would change anything now.
     pub fn wants_sound(&self) -> bool {
         self.hint_armed && !self.hint_dismissed
+    }
+
+    /// What the analysis thread works: the bands while 「音の動きを見せる」 is on or the mixer
+    /// is open (its 「仕上げのメーター」 has them too), the loudness while the mixer is open.
+    pub fn analysis_wants(&self) -> crate::analysis::Wants {
+        let mixer = self.mixer_is_open();
+        crate::analysis::Wants {
+            spectrum: self.spectrum || mixer,
+            loudness: mixer,
+        }
     }
 
     /// Whether [`Input::KeyWhileLoading`] would change anything now: a key played now is
@@ -1046,6 +1062,7 @@ impl Model {
                         sample_rate,
                     });
                     self.play.stream_opened(&mut effects);
+                    effects.push(Effect::MonoListen(self.mono_listen));
                     self.play.set_plug_rate(sample_rate, &mut effects);
                 }
             }
@@ -2463,8 +2480,14 @@ impl Model {
                 effects.push(Effect::SaveSettings(self.settings()));
             }
 
-            // round12 stub: M3
-            Command::SetMonoListen { .. } => {}
+            Command::SetMonoListen { on } if on == self.mono_listen => {}
+            Command::SetMonoListen { on } => {
+                self.mono_listen = on;
+                effects.push(Effect::MonoListen(on));
+                if on {
+                    self.notice = Some(StatusMessage::MonoListening);
+                }
+            }
 
             Command::DuplicateSection { marker } => {
                 self.say(|p| p.duplicate_section(marker, effects));
@@ -2992,8 +3015,7 @@ impl Model {
                 latency_dialog: self.latency_dialog_view(),
                 note_glow: self.note_glow,
                 spectrum: self.spectrum,
-                // round12 stub: M3
-                mono_listen: false,
+                mono_listen: self.mono_listen,
                 // round12 stub: D4 (the screen is Japanese until the English table is there)
                 language: meloet_protocol::Language::Ja,
             },
@@ -3222,6 +3244,9 @@ impl Model {
         {
             return Some(m);
         }
+        if self.mono_listen {
+            return Some(StatusMessage::MonoListening);
+        }
         self.play.summary()
     }
 }
@@ -3431,6 +3456,8 @@ pub(crate) mod added_tests;
 mod audio_tests;
 #[cfg(test)]
 mod click_tests;
+#[cfg(test)]
+mod mono_tests;
 #[cfg(test)]
 mod pack_tests;
 #[cfg(test)]

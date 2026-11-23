@@ -165,6 +165,7 @@ fn rich_song(name: &str, notes_per_take: u64) -> Song {
             },
             soloed: BTreeSet::new(),
             folded_lanes: Vec::new(),
+            master_lane_folded: false,
         },
     }
 }

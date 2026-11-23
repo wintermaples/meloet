@@ -2,8 +2,7 @@
 //! built it changes nothing, as an intent with an old id.
 
 use meloet_protocol::{
-    Arp, ArpRate, ArpShape, AutoTarget, CompPiece, InstrumentKind, LaneHome, Language, SoundKnob,
-    StretchChange, TickSpan,
+    Arp, ArpRate, ArpShape, CompPiece, InstrumentKind, Language, SoundKnob, StretchChange, TickSpan,
 };
 
 use super::*;
@@ -35,8 +34,6 @@ fn the_commands_of_round_12_waves_3_and_4_are_taken_and_change_nothing_yet() {
         octaves: 2,
         hold: true,
     };
-    let master = LaneHome::Master;
-    let volume = AutoTarget::Volume;
     let commands = [
         Command::SetArp { track, arp },
         Command::SetSoundKnob {
@@ -56,29 +53,6 @@ fn the_commands_of_round_12_waves_3_and_4_are_taken_and_change_nothing_yet() {
         Command::BounceToAudio { clips: vec![99] },
         Command::BounceTrack { track },
         Command::CancelBounce,
-        Command::AddLane {
-            home: master,
-            target: volume,
-        },
-        Command::FoldLane {
-            home: master,
-            target: volume,
-            folded: true,
-        },
-        Command::SetLaneWrite {
-            home: master,
-            target: volume,
-            on: true,
-        },
-        Command::RestoreLane {
-            home: master,
-            target: volume,
-        },
-        Command::DeleteLane {
-            home: master,
-            target: volume,
-        },
-        Command::AddFadeOut { bars: 4 },
         Command::SetComp {
             clip: 99,
             span: TickSpan {

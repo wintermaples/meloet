@@ -6,7 +6,8 @@
 //! `mixer_speed`; with lanes, every track has four: volume, pan, a parameter of its
 //! instrument (as a plugin's would be: the engine works out the points, the computed
 //! instrument passes them over) and the compressor's threshold. Each lane bends every
-//! sixteenth note, over the four bars the song goes round.
+//! sixteenth note, over the four bars the song goes round. The last row adds the lane of the
+//! master's fader (round 12, M5).
 
 mod support;
 
@@ -53,8 +54,12 @@ fn lanes(track: usize) -> Vec<AutoLane> {
     ]
 }
 
-fn time_blocks(automated: bool) -> (f64, f64, f64, usize) {
+fn time_blocks(automated: bool, master: bool) -> (f64, f64, f64, usize) {
     let mut song = Song::new(&[EffectKind::Compressor], true);
+    if master {
+        let fader = lanes(TRACKS).swap_remove(0);
+        assert!(song.parts.handle.set_master_automation(vec![fader]).is_ok());
+    }
     if automated {
         for track in 0..TRACKS {
             assert!(
@@ -89,13 +94,15 @@ fn time_per_block() {
         "{:40} {:>8} {:>6} {:>8} {:>6} {:>8} {:>6} {:>7}",
         "", "mean us", "%", "p99 us", "%", "max us", "%", "> 1 ms"
     );
-    for (name, automated) in [
-        ("no lanes", false),
-        ("4 lanes on every track", true),
-        ("no lanes", false),
-        ("4 lanes on every track", true),
+    for (name, automated, master) in [
+        ("no lanes", false, false),
+        ("4 lanes on every track", true, false),
+        ("no lanes", false, false),
+        ("4 lanes on every track", true, false),
+        ("the master's lane alone", false, true),
+        ("4 lanes on every track, the master's", true, true),
     ] {
-        let (mean, p99, max, slow) = time_blocks(automated);
+        let (mean, p99, max, slow) = time_blocks(automated, master);
         let pct = |us: f64| us / block_us * 100.0;
         println!(
             "{name:40} {mean:>8.1} {:>6.2} {p99:>8.1} {:>6.2} {max:>8.1} {:>6.2} {slow:>7}",

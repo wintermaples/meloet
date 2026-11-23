@@ -206,6 +206,10 @@ impl Rig {
         assert!(self.parts.handle.set_automation(track, lanes).is_ok());
     }
 
+    fn master_lanes(&mut self, lanes: Vec<AutoLane>) {
+        assert!(self.parts.handle.set_master_automation(lanes).is_ok());
+    }
+
     fn sequence(&mut self, track: usize, events: &[(u64, InstrumentEvent)]) {
         let events = (events.iter())
             .map(|&(tick, event)| SequenceEvent { tick, event })
@@ -283,16 +287,24 @@ fn the_line_between_points() {
 
 /// The fader's line and the gain of what comes out, frame by frame: right at the end of
 /// every step of 32 frames from the start of a stretch, a straight line in gain between.
-/// Stretches here start at every device block and every beat (24 000 frames).
+/// Stretches here start at every device block and every beat (24 000 frames). The master's
+/// fader does the same with its lane.
 #[test]
 fn the_fader_follows_its_line_frame_by_frame() {
     let points = [(0, 0.8), (1000, 0.4), (2000, 0.95), (3000, 0.1)];
     let frames = 3200 * PER_TICK;
     let want = |f: usize| 0.25 * gain_at(&points, f as f64 / PER_TICK as f64);
-    for block in [64, 256, 1000] {
+    for (block, master) in [64, 256, 1000]
+        .into_iter()
+        .flat_map(|b| [(b, false), (b, true)])
+    {
         let mut rig = Rig::new();
         rig.instrument(0, Box::new(Dc(0.25)));
-        rig.lanes(0, vec![lane(AutoTarget::Volume, false, &points)]);
+        if master {
+            rig.master_lanes(vec![lane(AutoTarget::Volume, false, &points)]);
+        } else {
+            rig.lanes(0, vec![lane(AutoTarget::Volume, false, &points)]);
+        }
         rig.send(EngineCommand::Play { from: 0 });
         let (out, _) = rig.run_in(frames, block);
         let mut starts: Vec<usize> = (0..frames).step_by(block).collect();
@@ -314,9 +326,9 @@ fn the_fader_follows_its_line_frame_by_frame() {
                 before = target;
             }
         }
-        assert!(worst < 2e-5, "block {block}: {worst}");
+        assert!(worst < 2e-5, "block {block}, master {master}: {worst}");
         // Off the curve by no more than what a step of 32 frames cuts across at a bend.
-        assert!(far < 0.007, "block {block}: {far}");
+        assert!(far < 0.007, "block {block}, master {master}: {far}");
     }
 }
 
@@ -399,6 +411,115 @@ fn a_lane_plays_while_stopped_where_the_song_is() {
     });
     let out = rig.run(RATE / 10);
     assert!((out[RATE / 10 - 1] - want).abs() < 1e-4);
+}
+
+/// The master's lane: a jump is a slope of 20 ms, it plays while stopped where the song is,
+/// a hand on the fader holds it, and without it the fader goes back to the hand's value in
+/// 20 ms.
+#[test]
+fn the_masters_lane_jumps_holds_and_lets_go_as_a_tracks_does() {
+    let points = [(0, 0.8), (2399, 0.8), (2400, 0.0)];
+    let mut rig = Rig::new();
+    rig.instrument(0, Box::new(Dc(0.25)));
+    rig.master_lanes(vec![lane(AutoTarget::Volume, false, &points)]);
+    rig.send(EngineCommand::Play { from: 0 });
+    let out = rig.run(2500 * PER_TICK);
+    let begins = 2399 * PER_TICK;
+    let first_down = out.iter().position(|x| *x < 0.25 - 1e-6).unwrap();
+    let silent = out.iter().position(|x| *x == 0.0).unwrap();
+    assert!(
+        first_down + MIX_STEP >= begins && first_down <= begins + MIX_STEP,
+        "{first_down}"
+    );
+    let slope = (0.8 * RAMP as f32) as usize;
+    assert!(
+        silent.abs_diff(first_down + slope) <= MIX_STEP,
+        "{first_down} {silent}"
+    );
+    assert!(out[first_down..silent].windows(2).all(|w| w[1] <= w[0]));
+    assert!(out[silent..].iter().all(|x| *x == 0.0));
+
+    // Stopped, at a place on a slope.
+    let points = [(0, 0.8), (1000, 0.4)];
+    let mut rig = Rig::new();
+    rig.instrument(0, Box::new(Dc(0.25)));
+    rig.master_lanes(vec![lane(AutoTarget::Volume, false, &points)]);
+    rig.send(EngineCommand::Locate { tick: 500 });
+    let out = rig.run(RATE / 10);
+    let want = 0.25 * gain_at(&points, 500.0);
+    assert!((out[RATE / 10 - 1] - want).abs() < 1e-4);
+    // Held: the hand's value (0 dB here), and a set that comes meanwhile stays held.
+    rig.send(EngineCommand::HoldMasterLane { on: true });
+    let out = rig.run(RATE / 10);
+    assert!((out[RATE / 10 - 1] - 0.25).abs() < 1e-6);
+    rig.master_lanes(vec![lane(AutoTarget::Volume, false, &[(0, 0.2)])]);
+    let out = rig.run(RATE / 10);
+    assert!((out[RATE / 10 - 1] - 0.25).abs() < 1e-6);
+    rig.master_lanes(vec![lane(AutoTarget::Volume, false, &points)]);
+    rig.send(EngineCommand::HoldMasterLane { on: false });
+    let out = rig.run(RATE / 10);
+    assert!((out[RATE / 10 - 1] - want).abs() < 1e-4);
+    // The lane goes away: back to the hand's value, no faster than the whole way in 20 ms.
+    rig.master_lanes(Vec::new());
+    let out = rig.run(RATE / 10);
+    assert!((out[RATE / 10 - 1] - 0.25).abs() < 1e-6);
+    let back = out.iter().position(|x| (*x - 0.25).abs() < 1e-6).unwrap();
+    assert!(back > MIX_STEP && back <= RAMP + BLOCK, "{back}");
+    assert!(out[..back].windows(2).all(|w| w[1] >= w[0]));
+}
+
+/// The master's lane goes round the loop with the song: the fader is where the line is at
+/// the place that sounds, on every pass.
+#[test]
+fn the_masters_lane_goes_round_the_loop() {
+    let points = [(0, 0.9), (480, 0.9), (960, 0.3)];
+    let mut rig = Rig::new();
+    rig.instrument(0, Box::new(Dc(0.25)));
+    rig.master_lanes(vec![lane(AutoTarget::Volume, false, &points)]);
+    rig.send(EngineCommand::SetLoop {
+        start: 0,
+        end: 960,
+        on: true,
+    });
+    rig.send(EngineCommand::Play { from: 0 });
+    let pass = 960 * PER_TICK;
+    let out = rig.run(3 * pass);
+    for lap in 1..3 {
+        // Half a beat into the pass the jump back up is over; the slope down is followed.
+        for tick in [300usize, 480, 700, 900] {
+            let f = lap * pass + tick * PER_TICK;
+            let want = 0.25 * gain_at(&points, tick as f64);
+            assert!((out[f] - want).abs() / want < 0.01, "lap {lap} tick {tick}");
+        }
+    }
+}
+
+/// A master that never had a lane, and one whose lane was taken away long ago, give the
+/// same samples: without a lane the master's fader is the hand's alone.
+#[test]
+fn a_master_without_a_lane_sounds_as_one_that_never_had_one() {
+    let run = |with: bool| {
+        let mut rig = Rig::new();
+        rig.instrument(0, Box::new(Dc(0.25)));
+        rig.send(EngineCommand::SetStrip {
+            strip: MixStrip::Master,
+            gain: 0.5,
+            pan: 0.25,
+        });
+        if with {
+            rig.master_lanes(vec![lane(AutoTarget::Volume, false, &[(0, 0.5)])]);
+            rig.run(RATE / 5);
+            rig.master_lanes(Vec::new());
+            rig.send(EngineCommand::HoldMasterLane { on: true });
+            rig.send(EngineCommand::HoldMasterLane { on: false });
+        } else {
+            rig.run(RATE / 5);
+        }
+        rig.run(RATE / 5);
+        rig.send(EngineCommand::Play { from: 0 });
+        rig.run_in(RATE / 5, 1000)
+    };
+    assert_eq!(run(true), run(false));
 }
 
 /// An effect that comes with meloet gets `set_param` at the head of every 64 frames: a step
@@ -734,8 +855,19 @@ fn automation_allocates_nothing_on_the_audio_thread() {
         on: true,
     });
     rig.send(EngineCommand::Play { from: 0 });
+    let master = |seed: u64| vec![set(seed).swap_remove(0)];
+    rig.master_lanes(master(3));
     for round in 0..60u64 {
         let track = (round % 8) as usize;
+        match round % 7 {
+            5 => rig.master_lanes(if round % 2 == 0 {
+                master(round)
+            } else {
+                Vec::new()
+            }),
+            6 => rig.send(EngineCommand::HoldMasterLane { on: round % 4 < 2 }),
+            _ => {}
+        }
         match round % 5 {
             0 => rig.lanes(track, set(round)),
             1 => rig.send(EngineCommand::HoldLane {

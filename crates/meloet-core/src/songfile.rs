@@ -1054,7 +1054,8 @@ struct SessionFile {
     scale: Option<ScaleFile>,
     #[serde(default, deserialize_with = "or_default")]
     quantize: Option<QuantizeFile>,
-    /// The folded lanes. One that is not understood, or names no lane, is skipped.
+    /// The folded lanes: `{"track", "target"}`, and `{"master": true, "target"}` for the
+    /// master's. One that is not understood, or names no lane, is skipped.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     folded_lanes: Vec<serde_json::Value>,
 }
@@ -1337,6 +1338,7 @@ pub fn encode(song: &Song) -> Vec<u8> {
                     };
                     Some(serde_json::to_value(file).expect("a lane always serializes"))
                 })
+                .chain(s.master_lane_folded.then(wave3::master_fold_file))
                 .collect(),
         },
     };
@@ -1868,6 +1870,7 @@ fn to_song(file: SongFile) -> Option<Song> {
         loop_on: s.loop_on,
         roll,
         soloed: BTreeSet::new(),
+        master_lane_folded: (s.folded_lanes.iter()).any(|v| wave3::is_master_fold(v, &doc)),
         folded_lanes: (s.folded_lanes.into_iter())
             .filter_map(|v| {
                 let file: LaneRefFile = serde_json::from_value(v).ok()?;

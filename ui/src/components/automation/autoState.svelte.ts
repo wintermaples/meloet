@@ -4,10 +4,10 @@
 // AutoClock writes the position: when stopped, when the state changes; when moving, every frame of the WebGL manager.
 // It is written only when the value changes, so only the places that read it (mixer, lane headings, params panel) move.
 
-import { clockOffsetUs, lanePoints, peekLanePoints, type AppState, type AutoTarget, type LanePoints, type TrackView } from "../../bridge";
+import { clockOffsetUs, lanePoints, peekLanePoints, type AppState, type AutoTarget, type LanePoints } from "../../bridge";
 import { current } from "../../state/app.svelte";
 import { shownTick } from "../time";
-import { laneMoves, targetKey, valueAt } from "./laneValue";
+import { laneMoves, masterOwner, targetKey, valueAt, type LaneOwner } from "./laneValue";
 
 let version = $state(0);
 const RETRY_MS = 100;
@@ -139,6 +139,10 @@ export function refreshPositions(state: AppState, tick: number, inFrame = false)
   seenTracks.clear();
   const held = state.automation.held;
   for (const track of state.song.tracks) refreshTrack(track, held, tick, inFrame && gates.has(track.id));
+  if (state.song.master.lanes.length > 0) {
+    const master = masterOwner(state.song.master);
+    refreshTrack(master, held, tick, inFrame && gates.has(master.id));
+  }
   for (const track of latest.keys()) {
     if (seenTracks.has(track)) continue;
     latest.delete(track);
@@ -151,7 +155,7 @@ export function refreshPositions(state: AppState, tick: number, inFrame = false)
   if (any) wrote += 1;
 }
 
-function refreshTrack(track: TrackView, held: AppState["automation"]["held"], tick: number, wait: boolean): void {
+function refreshTrack(track: LaneOwner, held: AppState["automation"]["held"], tick: number, wait: boolean): void {
   let map = latest.get(track.id);
   let changed = false;
   seenKeys.clear();
@@ -304,7 +308,7 @@ export function watchLive(track: number, told: () => void): () => void {
 export const wroteVersion = () => wrote;
 
 /** Whether any lane exists (whether to put out values per frame). */
-export const anyLane = (state: AppState) => state.song.tracks.some((t) => t.lanes.length > 0);
+export const anyLane = (state: AppState) => state.song.master.lanes.length > 0 || state.song.tracks.some((t) => t.lanes.length > 0);
 
 // ---- The play line position ----
 

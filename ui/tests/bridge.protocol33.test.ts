@@ -72,8 +72,6 @@ describe("fake intents", () => {
     const { now, send } = await opened();
     const before = await now();
     const track = before.song.tracks[0]!.id;
-    const master = { kind: "master" as const };
-    const volume = { kind: "volume" as const };
     const commands: Command[] = [
       { type: "setArp", track, arp: { on: true, shape: "upDown", rate: "eighth", triplet: true, octaves: 2, hold: true } },
       { type: "setSoundKnob", track, instrument: "grandPiano", knob: "brightness", value: 80, commit: true },
@@ -84,12 +82,6 @@ describe("fake intents", () => {
       { type: "bounceToAudio", clips: [99] },
       { type: "bounceTrack", track },
       { type: "cancelBounce" },
-      { type: "addLane", home: master, target: volume },
-      { type: "foldLane", home: master, target: volume, folded: true },
-      { type: "setLaneWrite", home: master, target: volume, on: true },
-      { type: "restoreLane", home: master, target: volume },
-      { type: "deleteLane", home: master, target: volume },
-      { type: "addFadeOut", bars: 4 },
       { type: "setComp", clip: 99, span: { start: 0, end: 1920 }, pieces: [{ from: 0, take: 98 }] },
       { type: "clearComp", clip: 99 },
       { type: "setClipStretch", clip: 99, change: { kind: "tuneStrength", percent: 50 } },

@@ -2146,6 +2146,15 @@ impl Audio {
                 target,
                 on,
             },
+            EngineOp::MasterAutomation { lanes } => {
+                if self.running().is_some()
+                    && (self.handle.set_master_automation(auto_lanes(lanes))).is_err()
+                {
+                    eprintln!("meloet: the engine did not take the lane of the master");
+                }
+                return;
+            }
+            EngineOp::HoldMasterLane { on } => EngineCommand::HoldMasterLane { on },
             EngineOp::Sequence { track, events } => {
                 if self.running().is_some() {
                     let sequence = Sequence::new(events.into_iter().map(sequence_event).collect());

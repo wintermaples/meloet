@@ -25,6 +25,9 @@
   import { arrangeRows, showsAddRow } from "./automation/autoGeom";
   import LaneAddRow from "./automation/LaneAddRow.svelte";
   import LaneHead from "./automation/LaneHead.svelte";
+  import { laneMenu } from "./automation/laneMenu";
+  import { masterHome, masterOwner } from "./automation/laneValue";
+  import { laneNameText } from "./history/stepText";
   import { laneAddOpenFor, openLaneAdd } from "./automation/laneAdd.svelte";
   import { windowOf } from "./params/selected";
   import WindowMark from "./WindowMark.svelte";
@@ -102,16 +105,23 @@
   let press: { id: number; from: number; y0: number; pointer: number; el: HTMLElement } | null = null;
   let drag = $state<{ id: number; from: number; dy: number } | null>(null);
   const trackH = $derived(metrics.px("size.track"));
+  /** The master standing in as the owner of its lane (round 12 M5); null while it has none. */
+  const master = $derived(song.master.lanes.length > 0 ? masterOwner(song.master) : null);
   /** Track rows and the automation bands under them (the same order as the time side; automation/autoGeom.ts). */
   const rows = $derived(
-    arrangeRows(song.tracks, current.state!.automation.folded, {
-      trackH,
-      laneH: metrics.px("size.lane"),
-      rowH: metrics.px("size.row"),
-      tall: { track: current.state!.arrange.tallTrack, h: metrics.px("part.track.vocal") },
-    }),
+    arrangeRows(
+      song.tracks,
+      current.state!.automation.folded,
+      {
+        trackH,
+        laneH: metrics.px("size.lane"),
+        rowH: metrics.px("size.row"),
+        tall: { track: current.state!.arrange.tallTrack, h: metrics.px("part.track.vocal") },
+      },
+      master,
+    ),
   );
-  const bounds = $derived([...rows.tops, rows.height]);
+  const bounds = $derived([...rows.tops, rows.tracksHeight]);
   const dropAt = (d: { from: number; dy: number }) => moveSlotAt(d.from, bounds, rows.tops[d.from]! + rows.heights[d.from]! / 2 + d.dy);
   const slot = $derived(drag ? dropAt(drag) : null);
 
@@ -364,6 +374,30 @@
     {/each}
     {#if showsAddRow(track)}<LaneAddRow {track} />{/if}
   {/each}
+  {#if master && rows.master}
+    {@const lane = master.lanes[0]!}
+    {#if rows.master.folded}
+      <div
+        class="master-folded"
+        role="presentation"
+        data-test="master-row-folded"
+        oncontextmenu={(e) => {
+          e.preventDefault();
+          laneMenu(e, master, lane, busy);
+        }}
+      >
+        <button
+          class="m-plain title"
+          aria-expanded="false"
+          data-test="master-lane-unfold"
+          onclick={() => send({ type: "foldLane", home: masterHome, target: lane.target, folded: false })}
+          ><span class="m-hi">▸</span><span class="m-hi">{t("mixer.master")}</span><span class="m-lbl">{laneNameText(lane.name)}</span></button
+        >
+      </div>
+    {:else}
+      <LaneHead track={master} {lane} />
+    {/if}
+  {/if}
   {#if slot && drag && slot.to !== drag.from}
     <div class="insert" style:top="{bounds[slot.slot]}px" data-test="track-insert"></div>
   {/if}
@@ -399,6 +433,22 @@
     outline-offset: calc(-1 * var(--line-hair));
   }
   /* Where it goes: a horizontal accent line.mark, over the border between heads. */
+  /* The master's row with its lane folded (round 12 M5): the height of a 「＋ 帯を足す ▾」 row, the same as on the time side. */
+  .master-folded {
+    height: var(--size-row);
+    display: flex;
+    align-items: center;
+    padding: 0 var(--space-2) 0 var(--space-6);
+    background: var(--color-gray-2);
+    border-bottom: var(--line-hair) solid var(--color-line-thin);
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .master-folded .title {
+    display: flex;
+    gap: var(--space-1);
+    min-width: 0;
+  }
   .insert {
     position: absolute;
     left: 0;

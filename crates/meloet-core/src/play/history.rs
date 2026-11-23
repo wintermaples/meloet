@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 
 use meloet_model::{
-    AutoTarget as ModelTarget, Bus, ClipId, ControlValue, Doc, InstrumentRef, NoteField,
+    AutoTarget as ModelTarget, Bus, ClipId, ControlValue, Doc, InstrumentRef, LaneHome, NoteField,
     PluginPlace, StepKind, StepRow, StripId, TempoMap, TickRange, TrackId,
 };
 use meloet_protocol::{
@@ -141,7 +141,10 @@ impl Around<'_> {
         }
     }
 
-    fn lane_name(doc: &Doc, track: TrackId, target: ModelTarget) -> Option<LaneName> {
+    fn lane_name(doc: &Doc, home: LaneHome, target: ModelTarget) -> Option<LaneName> {
+        let LaneHome::Track(track) = home else {
+            return (target == ModelTarget::Volume).then_some(LaneName::Volume);
+        };
         let t = doc.track(track)?;
         Some(match target {
             ModelTarget::Volume => LaneName::Volume,
@@ -172,9 +175,9 @@ impl Around<'_> {
         })
     }
 
-    fn lane(&self, track: TrackId, target: ModelTarget, points: Option<usize>) -> StepWhat {
-        let name = Self::lane_name(self.after, track, target)
-            .or_else(|| Self::lane_name(self.before, track, target));
+    fn lane(&self, home: LaneHome, target: ModelTarget, points: Option<usize>) -> StepWhat {
+        let name = Self::lane_name(self.after, home, target)
+            .or_else(|| Self::lane_name(self.before, home, target));
         match name {
             Some(target) => StepWhat::Lane {
                 target,
@@ -361,6 +364,10 @@ pub(crate) fn step_text(row: &StepRow) -> (StepName, StepWhat, Option<StepPlace>
         Some(StepPlace::Track {
             track: a.track(track),
         })
+    };
+    let on_home = |home: LaneHome| match home {
+        LaneHome::Track(track) => on_track(track),
+        LaneHome::Master => Some(StepPlace::Master),
     };
     match row.kind {
         // Round 12, wave 2.
@@ -1041,53 +1048,51 @@ pub(crate) fn step_text(row: &StepRow) -> (StepName, StepWhat, Option<StepPlace>
             named(a.before.mute_sets.get(index).map(|s| s.name.clone())),
             mixer,
         ),
-        StepKind::AddLane { track, target } => (
-            StepName::AddLane,
-            a.lane(track, target, None),
-            on_track(track),
-        ),
-        StepKind::DeleteLane { track, target } => (
+        StepKind::AddLane { home, target } => {
+            (StepName::AddLane, a.lane(home, target, None), on_home(home))
+        }
+        StepKind::DeleteLane { home, target } => (
             StepName::DeleteLane,
-            a.lane(track, target, None),
-            on_track(track),
+            a.lane(home, target, None),
+            on_home(home),
         ),
-        StepKind::AddAutoPoint { track, target } => (
+        StepKind::AddAutoPoint { home, target } => (
             StepName::AddAutoPoint,
-            a.lane(track, target, None),
-            on_track(track),
+            a.lane(home, target, None),
+            on_home(home),
         ),
         StepKind::MoveAutoPoints {
-            track,
+            home,
             target,
             count: n,
         } => (
             StepName::MoveAutoPoints,
-            a.lane(track, target, Some(n)),
-            on_track(track),
+            a.lane(home, target, Some(n)),
+            on_home(home),
         ),
         StepKind::DeleteAutoPoints {
-            track,
+            home,
             target,
             count: n,
         } => (
             StepName::DeleteAutoPoints,
-            a.lane(track, target, Some(n)),
-            on_track(track),
+            a.lane(home, target, Some(n)),
+            on_home(home),
         ),
-        StepKind::WriteAutomation { track, target } => (
+        StepKind::WriteAutomation { home, target } => (
             StepName::WriteAutomation,
-            a.lane(track, target, None),
-            on_track(track),
+            a.lane(home, target, None),
+            on_home(home),
         ),
-        StepKind::RestLane { track, target } => (
+        StepKind::RestLane { home, target } => (
             StepName::RestLane,
-            a.lane(track, target, None),
-            on_track(track),
+            a.lane(home, target, None),
+            on_home(home),
         ),
-        StepKind::RestoreLane { track, target } => (
+        StepKind::RestoreLane { home, target } => (
             StepName::RestoreLane,
-            a.lane(track, target, None),
-            on_track(track),
+            a.lane(home, target, None),
+            on_home(home),
         ),
         StepKind::Recovered => (StepName::Recovered, StepWhat::None, None),
         StepKind::DiscardRecovered => (StepName::DiscardRecovered, StepWhat::None, None),
@@ -1159,16 +1164,16 @@ pub(crate) fn step_text(row: &StepRow) -> (StepName, StepWhat, Option<StepPlace>
 }
 
 /// The lane a step is of.
-fn lane_of(kind: &StepKind) -> Option<(TrackId, ModelTarget)> {
+fn lane_of(kind: &StepKind) -> Option<(LaneHome, ModelTarget)> {
     match *kind {
-        StepKind::AddLane { track, target }
-        | StepKind::DeleteLane { track, target }
-        | StepKind::AddAutoPoint { track, target }
-        | StepKind::MoveAutoPoints { track, target, .. }
-        | StepKind::DeleteAutoPoints { track, target, .. }
-        | StepKind::WriteAutomation { track, target }
-        | StepKind::RestLane { track, target }
-        | StepKind::RestoreLane { track, target } => Some((track, target)),
+        StepKind::AddLane { home, target }
+        | StepKind::DeleteLane { home, target }
+        | StepKind::AddAutoPoint { home, target }
+        | StepKind::MoveAutoPoints { home, target, .. }
+        | StepKind::DeleteAutoPoints { home, target, .. }
+        | StepKind::WriteAutomation { home, target }
+        | StepKind::RestLane { home, target }
+        | StepKind::RestoreLane { home, target } => Some((home, target)),
         _ => None,
     }
 }
@@ -1223,7 +1228,7 @@ impl Play {
         // The plugin's name for the parameter is in neither `Doc`.
         if let StepWhat::Lane { target, .. } = &mut what
             && let LaneName::Plugin { param, .. } = target
-            && let Some((track, target)) = lane_of(&row.kind)
+            && let Some((LaneHome::Track(track), target)) = lane_of(&row.kind)
         {
             *param = lane_plugin(row.after, track, target)
                 .or_else(|| lane_plugin(row.before, track, target))

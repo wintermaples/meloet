@@ -2105,6 +2105,11 @@ export const texts = {
   "arrange.repeatMark": e("⟳", "user:2026-11-23"),
   "arrange.readRepeat": e("{count} 回くり返します", "user:2026-11-23", { count: "3" }),
   "arrange.repeatCount": e("くり返す回数", "builder:2026-11-23"),
+  // Round 12 M5: the fade-out at the song's end on the master's volume lane (「編集」 and its box of bars on the ruler).
+  "menu.fadeOut": e("曲の終わりにフェードアウトをつける…", "user:2026-11-23"),
+  "arrange.readFadeOut": e("曲の終わりの {count} 小節をフェードアウトにします", "builder:2026-11-24", { count: "4" }),
+  "arrange.fadeOutBars": e("フェードアウトの小節の数", "builder:2026-11-24"),
+  "msg.fadeOutNoClips": e("クリップがないので、フェードアウトをつけられませんでした。", "builder:2026-11-24"),
   // Velocity lock (B-66) and changing velocities together (B-67).
   "input.velocityFixed": e("固定", "user:2026-11-18"),
   "inspector.matchVelocity": e("そろえる", "user:2026-11-18"),

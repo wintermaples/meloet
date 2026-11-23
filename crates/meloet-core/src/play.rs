@@ -272,6 +272,14 @@ pub enum EngineOp {
         target: AutoTarget,
         on: bool,
     },
+    /// As `Automation`, the lane of the master's fader (none: it plays nothing).
+    MasterAutomation {
+        lanes: Vec<SeatLane>,
+    },
+    /// As `HoldLane`, the master's fader.
+    HoldMasterLane {
+        on: bool,
+    },
     /// For the engine at any time, as `Instrument`: the track on the seat is a vocal track
     /// and sounds the input (`None`: it is not one any more).
     Voice {

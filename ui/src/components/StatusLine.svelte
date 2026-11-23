@@ -298,8 +298,17 @@
         return plain("msg.automationRested", { track: track(m.track), target: laneNameText(m.target) });
       case "automationRestored":
         return plain("msg.automationRestored", { track: track(m.track), target: laneNameText(m.target) });
+      // Round 12 M5: the master's lane, in the sentences of a track's with 「マスター」 for the track.
+      case "masterAutomationWriting":
+        return plain("msg.automationWriting", { track: t("mixer.master"), target: t("lane.volume") });
+      case "masterAutomationRested":
+        return plain("msg.automationRested", { track: t("mixer.master"), target: t("lane.volume") });
+      case "masterAutomationRestored":
+        return plain("msg.automationRestored", { track: t("mixer.master"), target: t("lane.volume") });
+      case "fadeOutNoClips":
+        return plain("msg.fadeOutNoClips");
       case "automationMoving": {
-        const names = m.tracks.map(track);
+        const names = [...m.tracks.map(track), ...(m.master ? [t("mixer.master")] : [])];
         const tracks = names.length < 2 ? (names[0] ?? "") : t("status.shelfGroupsLast", { first: names.slice(0, -1).join(LIST_COMMA), last: names.at(-1)! });
         return plain("msg.automationMoving", { tracks });
       }

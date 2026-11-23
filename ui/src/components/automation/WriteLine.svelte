@@ -5,7 +5,7 @@
      The picture is redrawn only when the right edge of the border moves by a screen pixel, or when the hand's value changes.
      On release, the core's step (a new laneId) comes, and when its points arrive, the collected values are dropped. When cancelled (it ends with the same laneId), they are dropped at once. -->
 <script lang="ts">
-  import type { LaneView, TrackView } from "../../bridge";
+  import type { LaneView } from "../../bridge";
   import { everyGlFrame, glSlot, type GlRect } from "../../gl/slot";
   import { current } from "../../state/app.svelte";
   import { tickToX, type View } from "../arrangeGeom";
@@ -13,10 +13,10 @@
   import * as A from "./autoGeom";
   import { playTick, pointsOf } from "./autoState.svelte";
   import { handAt } from "./handValue";
-  import { isOnTrack, sameTarget } from "./laneValue";
+  import { isOnTrack, sameTarget, type LaneOwner } from "./laneValue";
 
   interface Props {
-    track: TrackView;
+    track: LaneOwner;
     lane: LaneView;
     top: number;
     view: View;

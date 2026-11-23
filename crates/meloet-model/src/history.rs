@@ -9,7 +9,7 @@
 use crate::TrackId;
 use crate::arrange::ClipEdge;
 use crate::audio::AudioId;
-use crate::automation::AutoTarget;
+use crate::automation::{AutoTarget, LaneHome};
 use crate::edit::Edit;
 use crate::effects::EffectKind;
 use crate::knobs::SoundKnob;
@@ -321,44 +321,44 @@ pub enum StepKind {
     },
     /// A lane made from the track's header or from a row of the parameters panel.
     AddLane {
-        track: TrackId,
+        home: LaneHome,
         target: AutoTarget,
     },
     /// 「帯を消す」: the lane goes with its points.
     DeleteLane {
-        track: TrackId,
+        home: LaneHome,
         target: AutoTarget,
     },
     /// A point put on the lane by hand.
     AddAutoPoint {
-        track: TrackId,
+        home: LaneHome,
         target: AutoTarget,
     },
     /// One drag of points.
     MoveAutoPoints {
-        track: TrackId,
+        home: LaneHome,
         target: AutoTarget,
         count: usize,
     },
     DeleteAutoPoints {
-        track: TrackId,
+        home: LaneHome,
         target: AutoTarget,
         count: usize,
     },
     /// 「● 書く」: what was written from one press to its release (spec 3, 16-B).
     WriteAutomation {
-        track: TrackId,
+        home: LaneHome,
         target: AutoTarget,
     },
     /// The lane rests without a value being set with it (spec 3, 17-A): the parameter was
     /// moved in the plugin's own window.
     RestLane {
-        track: TrackId,
+        home: LaneHome,
         target: AutoTarget,
     },
     /// 「もどす」.
     RestoreLane {
-        track: TrackId,
+        home: LaneHome,
         target: AutoTarget,
     },
     /// From the song as last saved to the song brought back from the recovery file, at the

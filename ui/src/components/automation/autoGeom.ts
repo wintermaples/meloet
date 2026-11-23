@@ -9,7 +9,7 @@ import { nearestBeatTick } from "../../time/bars";
 import type { TempoMap } from "../../time/tempoMap";
 import { tickToX, xToTick, type View } from "../arrangeGeom";
 import { tickText } from "../time";
-import { hasLaneRef } from "./laneValue";
+import { hasLaneRef, type LaneOwner } from "./laneValue";
 
 // ---- Track rows and the order of lanes ----
 
@@ -25,7 +25,8 @@ export interface RowDims {
 }
 
 export interface OpenLane {
-  track: TrackView;
+  /** The track, or the master standing in as one (`masterOwner`). */
+  track: LaneOwner;
   lane: LaneView;
   top: number;
 }
@@ -44,6 +45,10 @@ export interface ArrangeRows {
   heights: number[];
   lanes: OpenLane[];
   rows: AddRow[];
+  /** The row 「マスター」 at the foot, while the master has a lane (round 12 M5): its lane open (size.lane), or folded (size.row). */
+  master: { top: number; height: number; folded: boolean } | null;
+  /** The height of the tracks' rows, without the master's. */
+  tracksHeight: number;
   height: number;
 }
 
@@ -54,8 +59,8 @@ export interface ArrangeRows {
 export const showsAddRow = (track: TrackView) => track.lanes.length > 0;
 
 /** Lanes in the order they were added. Folded lanes are not shown (they are opened again from the 「＋ 帯を足す ▾」 list). */
-export function arrangeRows(tracks: readonly TrackView[], folded: readonly LaneRef[], d: RowDims): ArrangeRows {
-  const out: ArrangeRows = { tops: [], bottoms: [], heights: [], lanes: [], rows: [], height: 0 };
+export function arrangeRows(tracks: readonly TrackView[], folded: readonly LaneRef[], d: RowDims, master: LaneOwner | null = null): ArrangeRows {
+  const out: ArrangeRows = { tops: [], bottoms: [], heights: [], lanes: [], rows: [], master: null, tracksHeight: 0, height: 0 };
   let y = 0;
   for (const track of tracks) {
     const h = d.tall && d.tall.track === track.id ? d.tall.h : d.trackH;
@@ -72,6 +77,14 @@ export function arrangeRows(tracks: readonly TrackView[], folded: readonly LaneR
       y += d.rowH;
     }
     out.bottoms.push(y);
+  }
+  out.tracksHeight = y;
+  const lane = master?.lanes[0];
+  if (master && lane) {
+    const shut = hasLaneRef(folded, master.id, lane.target);
+    out.master = { top: y, height: shut ? d.rowH : d.laneH, folded: shut };
+    if (!shut) out.lanes.push({ track: master, lane, top: y });
+    y += out.master.height;
   }
   out.height = y;
   return out;

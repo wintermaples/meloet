@@ -14,6 +14,7 @@ fn every_step_kind() -> Vec<StepKind> {
     use StepKind::*;
     let (track, clip, marker) = (TrackId(1), ClipId(9), MarkerId(9));
     let strip = StripId::Track(track);
+    let home = meloet_model::LaneHome::Track(track);
     let place = PluginPlace::Instrument(track);
     let target = ModelTarget::Insert {
         insert: InsertId(9),
@@ -187,22 +188,22 @@ fn every_step_kind() -> Vec<StepKind> {
         RecallMuteSet { index: 0 },
         DeleteMuteSet { index: 0 },
         RemoveInstrument { track },
-        AddLane { track, target },
-        DeleteLane { track, target },
-        AddAutoPoint { track, target },
+        AddLane { home, target },
+        DeleteLane { home, target },
+        AddAutoPoint { home, target },
         MoveAutoPoints {
-            track,
+            home,
             target,
             count,
         },
         DeleteAutoPoints {
-            track,
+            home,
             target,
             count,
         },
-        WriteAutomation { track, target },
-        RestLane { track, target },
-        RestoreLane { track, target },
+        WriteAutomation { home, target },
+        RestLane { home, target },
+        RestoreLane { home, target },
         Recovered,
         DiscardRecovered,
         SetVocalInput { track },

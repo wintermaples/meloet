@@ -10,6 +10,8 @@
   import { t } from "../../text/ja";
   import { metrics } from "../metrics.svelte";
   import ValueField from "../params/ValueField.svelte";
+  import AutoMark from "../params/AutoMark.svelte";
+  import { MASTER_HOME } from "../automation/laneValue";
   import { onDragCancel } from "../pianoroll/view.svelte";
   import { moveSlot } from "../tracks.svelte";
   import WindowMark from "../WindowMark.svelte";
@@ -73,7 +75,8 @@
   //   They are about as tall as the meters, so the canvas does not grow. The frame that draws that canvas shows this strip's place.
   // - The pan row (.pan-box) and the two send rows (.sends-box) do not go under the canvas (if they did, the area redrawn in one frame would go over
   //   the 25 % rule). Only the rect of the row that moved is asked for (askIf). When both move, one is shown at a time (autoState).
-  const trackId = $derived(strip.kind === "track" ? strip.id : null);
+  // The master's fader stands under the number `MASTER_HOME` where positions are kept by track (autoState).
+  const trackId = $derived(strip.kind === "track" ? strip.id : strip.kind === "master" ? MASTER_HOME : null);
   const sendsMove = $derived(auto?.sends[0] === "moving" || auto?.sends[1] === "moving");
   const panMoves = $derived(auto?.pan === "moving");
   const movingTrack = $derived(moving || panMoves || sendsMove ? trackId : null);
@@ -218,6 +221,7 @@
         <span class="m-num m-hi db live"><span class="in" role="presentation" data-test="mixer-gain" ondblclick={fader.startTyping}>{faderText(gainShown)}</span></span>
       {/if}
       <span class="m-lbl" use:term={"dB"}>{t("mixer.db")}</span>
+      {#if auto?.mark}<span class="mark" data-test="mixer-master-automation"><AutoMark {...auto.mark} /></span>{/if}
     </div>
   </div>
   {#if auto?.row}
@@ -391,6 +395,13 @@
     display: flex;
     justify-content: space-between;
     align-items: baseline;
+  }
+  /* The master's mark that writes its volume as automation: at the right end of the value's row, without making the row taller. */
+  .mark {
+    align-self: center;
+    display: flex;
+    margin: calc((var(--text-m-line-height) - var(--part-param-automation)) / 2) 0;
+    margin-left: var(--space-1);
   }
   .db {
     flex: 1;

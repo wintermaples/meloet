@@ -17,7 +17,9 @@ use std::sync::Arc;
 use meloet_model::automation::{self as auto, AutoPoint, AutoTarget as ModelTarget, LaneId};
 use meloet_model::edit::{Edit, EditError};
 use meloet_model::effects::{EffectKind as ModelEffect, ParamShape};
-use meloet_model::{Bus, Gain, InstrumentRef, Pan, PluginPlace, StepKind, StripId, TrackId};
+use meloet_model::{
+    Bus, Gain, InstrumentRef, LaneHome as Home, Pan, PluginPlace, StepKind, StripId, TrackId,
+};
 use meloet_protocol::{
     AutoSelection, AutoTarget, AutomationView, LaneHome, LaneName, LanePoint, LanePoints, LaneRef,
     LaneView, SendBus, StatusMessage, TransportState, WritingLane,
@@ -58,8 +60,8 @@ impl LaneNames {
     }
 }
 
-/// A lane as core names it: its track and what it moves.
-pub(super) type LaneKey = (TrackId, ModelTarget);
+/// A lane as core names it: where it lives (a track, or the master) and what it moves.
+pub(super) type LaneKey = (Home, ModelTarget);
 
 /// What one hand writes: the values it sounded, in each pass of the loop.
 #[derive(Debug, Clone, Default)]
@@ -186,9 +188,19 @@ pub(super) fn protocol_target(target: ModelTarget) -> AutoTarget {
     }
 }
 
-fn lane_ref((track, target): LaneKey) -> LaneRef {
+pub(super) fn model_home(home: LaneHome) -> Home {
+    match home {
+        LaneHome::Track { track } => Home::Track(TrackId(track)),
+        LaneHome::Master => Home::Master,
+    }
+}
+
+fn lane_ref((home, target): LaneKey) -> LaneRef {
     LaneRef {
-        home: LaneHome::Track { track: track.0 },
+        home: match home {
+            Home::Track(track) => LaneHome::Track { track: track.0 },
+            Home::Master => LaneHome::Master,
+        },
         target: protocol_target(target),
     }
 }
@@ -196,8 +208,8 @@ fn lane_ref((track, target): LaneKey) -> LaneRef {
 impl Play {
     // ---- what the commands and the hands name ----
 
-    pub(super) fn lane_at(&self, (track, target): LaneKey) -> Option<&auto::Lane> {
-        self.doc().track(track)?.lane(target).map(|l| &**l)
+    pub(super) fn lane_at(&self, (home, target): LaneKey) -> Option<&auto::Lane> {
+        self.doc().lane_of(home, target).map(|l| &**l)
     }
 
     fn can_write(&self) -> bool {
@@ -220,7 +232,10 @@ impl Play {
     /// The place of the knob where the hand put the value: what a lane with no points, or
     /// at rest, leaves sounding. For a plugin, what the parameters panel shows of it, or the
     /// middle when it shows another.
-    pub(super) fn hand_place(&self, (track, target): LaneKey) -> f32 {
+    pub(super) fn hand_place(&self, (home, target): LaneKey) -> f32 {
+        let Home::Track(track) = home else {
+            return self.doc().master.gain.position();
+        };
         let Some(t) = self.doc().track(track) else {
             return 0.0;
         };
@@ -269,10 +284,12 @@ impl Play {
     /// The lane a parameter of a plugin of the song would have.
     pub(super) fn plugin_lane(&self, place: PluginPlace, param: u32) -> Option<LaneKey> {
         match place {
-            PluginPlace::Instrument(track) => Some((track, ModelTarget::Instrument { param })),
+            PluginPlace::Instrument(track) => {
+                Some((track.into(), ModelTarget::Instrument { param }))
+            }
             PluginPlace::Insert(StripId::Track(track), slot) => {
                 let insert = self.doc().insert(StripId::Track(track), slot)?.id;
-                Some((track, ModelTarget::Insert { insert, param }))
+                Some((track.into(), ModelTarget::Insert { insert, param }))
             }
             PluginPlace::Insert(..) => None,
         }
@@ -297,31 +314,35 @@ impl Play {
             return None;
         };
         let insert = self.doc().insert(strip, slot)?.id;
-        let key = (track, ModelTarget::Insert { insert, param });
+        let key = (track.into(), ModelTarget::Insert { insert, param });
         Some((key, kind.param(param)?.position(value)))
     }
 
-    /// Lanes of the fader, pan and sends of a track.
+    /// Lanes of the fader, pan and sends of a track, and of the master's fader.
     pub(super) fn gain_lane(strip: StripId, gain: Gain) -> Option<(LaneKey, f32)> {
         match strip {
-            StripId::Track(t) => Some(((t, ModelTarget::Volume), gain.position())),
-            _ => None,
+            StripId::Track(t) => Some(((t.into(), ModelTarget::Volume), gain.position())),
+            StripId::Master => Some(((Home::Master, ModelTarget::Volume), gain.position())),
+            StripId::Return(_) => None,
         }
     }
 
     pub(super) fn pan_lane(strip: StripId, pan: Pan) -> Option<(LaneKey, f32)> {
         match strip {
-            StripId::Track(t) => Some(((t, ModelTarget::Pan), pan.position())),
+            StripId::Track(t) => Some(((t.into(), ModelTarget::Pan), pan.position())),
             _ => None,
         }
     }
 
     pub(super) fn send_lane(track: TrackId, bus: Bus, gain: Gain) -> Option<(LaneKey, f32)> {
-        Some(((track, ModelTarget::Send(bus)), gain.position()))
+        Some(((track.into(), ModelTarget::Send(bus)), gain.position()))
     }
 
     /// What a lane moves, as its header and the status line name it.
-    pub(super) fn lane_name(&self, (track, target): LaneKey) -> Option<LaneName> {
+    pub(super) fn lane_name(&self, (home, target): LaneKey) -> Option<LaneName> {
+        let Home::Track(track) = home else {
+            return (target == ModelTarget::Volume).then_some(LaneName::Volume);
+        };
         let t = self.doc().track(track)?;
         Some(match target {
             ModelTarget::Volume => LaneName::Volume,
@@ -446,7 +467,11 @@ impl Play {
     }
 
     fn rested_notice(&mut self, key: LaneKey) {
-        if let (Some(track), Some(target)) = (self.track_ref(key.0), self.lane_name(key)) {
+        let Home::Track(track) = key.0 else {
+            self.auto.notice = Some(StatusMessage::MasterAutomationRested);
+            return;
+        };
+        if let (Some(track), Some(target)) = (self.track_ref(track), self.lane_name(key)) {
             self.auto.notice = Some(StatusMessage::AutomationRested { track, target });
         }
     }
@@ -458,27 +483,41 @@ impl Play {
 
     // ---- commands ----
 
-    /// `AddLane`. A lane the track has already is unfolded, which is no step.
-    pub fn add_lane(&mut self, track: u32, target: AutoTarget, effects: &mut Vec<Effect>) {
-        let (track, target) = (TrackId(track), model_target(target));
-        let Some(t) = self.doc().track(track) else {
-            return;
-        };
-        if t.lane(target).is_some() {
-            self.song
-                .session
-                .folded_lanes
-                .retain(|k| *k != (track, target));
+    /// `AddLane`. A lane the track, or the master, has already is unfolded, which is no
+    /// step.
+    pub fn add_lane(&mut self, home: LaneHome, target: AutoTarget, effects: &mut Vec<Effect>) {
+        let (home, target) = (model_home(home), model_target(target));
+        if self.doc().lanes(home).is_none() {
             return;
         }
-        let step = self.steps_of(track, target);
-        if let Ok((e, _)) = auto::add_lane(self.doc(), track, target, step) {
+        if self.doc().lane_of(home, target).is_some() {
+            self.set_folded((home, target), false);
+            return;
+        }
+        let step = self.steps_of(home, target);
+        if let Ok((e, _)) = auto::add_lane(self.doc(), home, target, step) {
             self.apply(e, effects);
         }
     }
 
+    fn set_folded(&mut self, (home, target): LaneKey, folded: bool) {
+        let session = &mut self.song.session;
+        match home {
+            Home::Track(track) => {
+                session.folded_lanes.retain(|k| *k != (track, target));
+                if folded {
+                    session.folded_lanes.push((track, target));
+                }
+            }
+            Home::Master => session.master_lane_folded = folded,
+        }
+    }
+
     /// Whether the value of `target` comes in steps (a stepped value, a switch, the mute).
-    fn steps_of(&self, track: TrackId, target: ModelTarget) -> bool {
+    fn steps_of(&self, home: Home, target: ModelTarget) -> bool {
+        let Home::Track(track) = home else {
+            return false;
+        };
         match target {
             ModelTarget::Volume | ModelTarget::Pan | ModelTarget::Send(_) => false,
             ModelTarget::Mute => true,
@@ -504,8 +543,8 @@ impl Play {
     /// `DeleteLane`. A lane that moved its target leaves it at the value of the line at the
     /// play line, so that the sound does not jump (docs/history/design-notes.ja.md B-92). A plugin keeps what
     /// the lane last gave it.
-    pub fn delete_lane(&mut self, track: u32, target: AutoTarget, effects: &mut Vec<Effect>) {
-        let key = (TrackId(track), model_target(target));
+    pub fn delete_lane(&mut self, home: LaneHome, target: AutoTarget, effects: &mut Vec<Effect>) {
+        let key = (model_home(home), model_target(target));
         let Ok(mut e) = auto::delete_lane(self.doc(), key.0, key.1) else {
             return;
         };
@@ -520,13 +559,9 @@ impl Play {
     }
 
     /// `FoldLane`. Not a step.
-    pub fn fold_lane(&mut self, track: u32, target: AutoTarget, folded: bool) {
-        let key = (TrackId(track), model_target(target));
-        let session = &mut self.song.session;
-        session.folded_lanes.retain(|k| *k != key);
-        if folded && self.lane_at(key).is_some() {
-            self.song.session.folded_lanes.push(key);
-        }
+    pub fn fold_lane(&mut self, home: LaneHome, target: AutoTarget, folded: bool) {
+        let key = (model_home(home), model_target(target));
+        self.set_folded(key, folded && self.lane_at(key).is_some());
     }
 
     /// `AddAutoPoint`: on the grid of the piano roll, counted from the head of the meter's
@@ -538,10 +573,10 @@ impl Play {
         value: Option<f32>,
         effects: &mut Vec<Effect>,
     ) {
-        let Some((t, l)) = self.doc().lane(LaneId(lane)) else {
+        let Some((home, l)) = self.doc().lane(LaneId(lane)) else {
             return;
         };
-        let flat = self.hand_place((t.id, l.target));
+        let flat = self.hand_place((home, l.target));
         let tick = self.on_grid(tick);
         if let Ok((e, id, at)) = auto::add_point(self.doc(), LaneId(lane), tick, value, flat) {
             self.apply_points(e, id, vec![at as u32], effects);
@@ -626,8 +661,8 @@ impl Play {
     }
 
     /// `SetLaneWrite`. Nothing for a lane at rest, or one that is not there.
-    pub fn set_lane_write(&mut self, track: u32, target: AutoTarget, on: bool) {
-        let key = (TrackId(track), model_target(target));
+    pub fn set_lane_write(&mut self, home: LaneHome, target: AutoTarget, on: bool) {
+        let key = (model_home(home), model_target(target));
         self.auto.armed.retain(|k| *k != key);
         if on && self.lane_at(key).is_some_and(|l| !l.resting) {
             self.auto.armed.push(key);
@@ -637,15 +672,18 @@ impl Play {
     /// `RestoreLane` 「もどす」. Returns what the status line says.
     pub fn restore_lane(
         &mut self,
-        track: u32,
+        home: LaneHome,
         target: AutoTarget,
         effects: &mut Vec<Effect>,
     ) -> Option<StatusMessage> {
-        let key = (TrackId(track), model_target(target));
+        let key = (model_home(home), model_target(target));
         let e = auto::restore_lane(self.doc(), key.0, key.1).ok()?;
         self.apply(e, effects);
+        let Home::Track(track) = key.0 else {
+            return Some(StatusMessage::MasterAutomationRestored);
+        };
         Some(StatusMessage::AutomationRestored {
-            track: self.track_ref(key.0)?,
+            track: self.track_ref(track)?,
             target: self.lane_name(key)?,
         })
     }
@@ -771,9 +809,9 @@ impl Play {
                 let rested: Vec<&LaneKey> = (rests.iter())
                     .filter(|&&(track, target)| auto::set_resting(&mut doc, track, target, true))
                     .collect();
-                rested.first().map(|&&(track, target)| Edit {
+                rested.first().map(|&&(home, target)| Edit {
                     doc,
-                    step: StepKind::RestLane { track, target },
+                    step: StepKind::RestLane { home, target },
                 })
             }
         };
@@ -845,7 +883,7 @@ impl Play {
     /// The mute of a track was pressed. Returns whether a lane took it (the mute itself
     /// stays as it is).
     pub(super) fn mute_pressed(&mut self, track: TrackId, effects: &mut Vec<Effect>) -> bool {
-        let key = (track, ModelTarget::Mute);
+        let key = (track.into(), ModelTarget::Mute);
         let Some(lane) = self.lane_at(key).filter(|l| !l.resting) else {
             return false;
         };
@@ -996,15 +1034,14 @@ impl Play {
     /// The song changed: what names a lane that is gone, or at rest, lets go of it.
     pub(super) fn drop_gone_lanes(&mut self, effects: &mut Vec<Effect>) {
         let doc = &self.song.doc;
-        let there = |(track, target): LaneKey| doc.track(track).and_then(|t| t.lane(target));
+        let there = |(home, target): LaneKey| doc.lane_of(home, target);
         let moving = |key: LaneKey| there(key).is_some_and(|l| !l.resting);
         self.auto.armed.retain(|&k| moving(k));
         let selected = self.auto.selected.take();
         self.auto.selected = selected.filter(|s| doc.lane(s.lane).is_some());
-        self.song
-            .session
-            .folded_lanes
-            .retain(|&k| there(k).is_some());
+        let session = &mut self.song.session;
+        (session.folded_lanes).retain(|&(track, target)| there((track.into(), target)).is_some());
+        session.master_lane_folded &= there((Home::Master, ModelTarget::Volume)).is_some();
         self.auto
             .rest_with_state
             .retain(|&(_, _, k)| there(k).is_some());
@@ -1071,7 +1108,7 @@ impl Play {
             .filter_map(|l| {
                 Some(LaneView {
                     target: protocol_target(l.target),
-                    name: self.lane_name((track, l.target))?,
+                    name: self.lane_name((track.into(), l.target))?,
                     lane_id: l.id.0,
                     points: u32::try_from(l.points.len()).unwrap_or(u32::MAX),
                     step: l.step,
@@ -1099,13 +1136,14 @@ impl Play {
                 })
             })
             .collect();
+        let session = &self.song.session;
+        let master_folded =
+            (session.master_lane_folded).then_some((Home::Master, ModelTarget::Volume));
         AutomationView {
-            folded: self
-                .song
-                .session
-                .folded_lanes
-                .iter()
-                .map(|&k| lane_ref(k))
+            folded: (session.folded_lanes.iter())
+                .map(|&(track, target)| (track.into(), target))
+                .chain(master_folded)
+                .map(lane_ref)
                 .collect(),
             armed: a.armed.iter().map(|&k| lane_ref(k)).collect(),
             writing,
@@ -1143,29 +1181,49 @@ impl Play {
             return None;
         }
         let &key = self.auto.armed.first()?;
+        let Home::Track(track) = key.0 else {
+            return Some(StatusMessage::MasterAutomationWriting);
+        };
         Some(StatusMessage::AutomationWriting {
-            track: self.track_ref(key.0)?,
+            track: self.track_ref(track)?,
             target: self.lane_name(key)?,
         })
     }
 
     /// Said once as the mixer opens (mock F6-MixerAuto, docs/history/design-notes.ja.md A-19 #4): the tracks
-    /// whose fader a lane moves.
+    /// whose fader a lane moves, and whether the master's is.
     pub fn automation_moving(&self) -> Option<StatusMessage> {
         let tracks: Vec<_> = (self.doc().tracks.iter())
             .filter(|t| t.lane(ModelTarget::Volume).is_some_and(|l| l.moves()))
             .filter_map(|t| self.track_ref(t.id))
             .collect();
-        // round12 stub: M5 (the master's lane)
-        (!tracks.is_empty()).then_some(StatusMessage::AutomationMoving {
-            tracks,
-            master: false,
-        })
+        let master = (self.lane_at((Home::Master, ModelTarget::Volume))).is_some_and(|l| l.moves());
+        (!tracks.is_empty() || master).then_some(StatusMessage::AutomationMoving { tracks, master })
+    }
+
+    /// `AddFadeOut` 「曲の終わりにフェードアウトをつける…」: one step. Returns what the status
+    /// line says when there is nothing to fade.
+    pub fn add_fade_out(&mut self, bars: u32, effects: &mut Vec<Effect>) -> Option<StatusMessage> {
+        if self.busy() || !(1..=meloet_protocol::FADE_OUT_BARS_MAX).contains(&bars) {
+            return None;
+        }
+        match auto::add_fade_out(self.doc(), bars) {
+            Ok(e) => {
+                self.apply(e, effects);
+                None
+            }
+            Err(EditError::NoTakes) => Some(StatusMessage::FadeOutNoClips),
+            Err(_) => None,
+        }
     }
 }
 
 /// Leaves what a deleted lane moved at `place`, for the targets the song holds a value of.
-fn settle(e: &mut Edit, (track, target): LaneKey, place: f32) {
+fn settle(e: &mut Edit, (home, target): LaneKey, place: f32) {
+    let Home::Track(track) = home else {
+        Arc::make_mut(&mut e.doc.master).gain = Gain::from_position(place);
+        return;
+    };
     let Some(slot) = e.doc.tracks.iter_mut().find(|t| t.id == track) else {
         return;
     };

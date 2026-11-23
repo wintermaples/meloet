@@ -323,7 +323,7 @@ fn lanes_and_points_are_steps_and_the_selection_comes_back_with_undo() {
     assert_eq!(
         last_step(m),
         StepKind::MoveAutoPoints {
-            track: TrackId(1),
+            home: TrackId(1).into(),
             target: meloet_model::AutoTarget::Volume,
             count: 1
         }
@@ -518,7 +518,7 @@ fn writing_puts_what_was_heard_where_it_was_heard_and_is_one_step() {
     assert_eq!(
         last_step(m),
         StepKind::WriteAutomation {
-            track: TrackId(1),
+            home: TrackId(1).into(),
             target: meloet_model::AutoTarget::Volume
         }
     );
@@ -710,6 +710,8 @@ fn a_song_keeps_its_lanes_and_folds_through_the_file() {
     );
 }
 
+mod master;
+
 mod random {
     use std::path::PathBuf;
 
@@ -879,15 +881,15 @@ mod random {
         let (t, v) = (TrackId(1), T::Volume);
         for kind in [
             K::WriteAutomation {
-                track: t,
+                home: t.into(),
                 target: v,
             },
             K::RestoreLane {
-                track: t,
+                home: t.into(),
                 target: v,
             },
             K::MoveAutoPoints {
-                track: t,
+                home: t.into(),
                 target: v,
                 count: 1,
             },
@@ -1107,7 +1109,7 @@ mod plugins {
         assert_eq!(
             last,
             Some(StepKind::WriteAutomation {
-                track: TrackId(track),
+                home: TrackId(track).into(),
                 target: Target::Instrument { param: LEVEL }
             })
         );

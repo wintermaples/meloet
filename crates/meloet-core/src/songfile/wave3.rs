@@ -177,6 +177,16 @@ pub(super) fn tune_of(file: Option<&TuneFile>) -> Option<Tune> {
     tune.is_valid().then_some(tune)
 }
 
+/// The master's folded lane in the session's list of folded lanes.
+pub(super) fn master_fold_file() -> serde_json::Value {
+    serde_json::json!({"master": true, "target": {"kind": "volume"}})
+}
+
+/// Whether `folded` of the session's list is the master's lane, which `doc` has.
+pub(super) fn is_master_fold(folded: &serde_json::Value, doc: &meloet_model::Doc) -> bool {
+    *folded == master_fold_file() && !doc.master_lanes.is_empty()
+}
+
 pub(super) fn master_lanes_file(lanes: &[Arc<Lane>]) -> Vec<serde_json::Value> {
     (lanes.iter())
         .filter(|l| l.target == AutoTarget::Volume)

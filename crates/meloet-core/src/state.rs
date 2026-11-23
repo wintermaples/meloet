@@ -1999,42 +1999,15 @@ impl Model {
             Command::DeleteSelected => self.play.delete_selected(effects),
             Command::StepTake { delta } => self.notice = self.play.step_take(delta, effects),
             Command::DeleteTake { clip } => self.play.delete_take(clip, effects),
-            Command::AddLane {
-                home: meloet_protocol::LaneHome::Track { track },
-                target,
-            } => self.play.add_lane(track, target, effects),
-            Command::DeleteLane {
-                home: meloet_protocol::LaneHome::Track { track },
-                target,
-            } => {
-                self.play.delete_lane(track, target, effects);
+            Command::AddLane { home, target } => self.play.add_lane(home, target, effects),
+            Command::DeleteLane { home, target } => {
+                self.play.delete_lane(home, target, effects);
             }
             Command::FoldLane {
-                home: meloet_protocol::LaneHome::Track { track },
+                home,
                 target,
                 folded,
-            } => self.play.fold_lane(track, target, folded),
-            // round12 stub: M5
-            Command::AddLane {
-                home: meloet_protocol::LaneHome::Master,
-                ..
-            }
-            | Command::DeleteLane {
-                home: meloet_protocol::LaneHome::Master,
-                ..
-            }
-            | Command::FoldLane {
-                home: meloet_protocol::LaneHome::Master,
-                ..
-            }
-            | Command::SetLaneWrite {
-                home: meloet_protocol::LaneHome::Master,
-                ..
-            }
-            | Command::RestoreLane {
-                home: meloet_protocol::LaneHome::Master,
-                ..
-            } => {}
+            } => self.play.fold_lane(home, target, folded),
             Command::AddAutoPoint { lane, tick, value } => {
                 self.play.add_auto_point(lane, tick, value, effects);
             }
@@ -2052,18 +2025,11 @@ impl Model {
             Command::SelectAutoPoints { lane, points } => {
                 self.play.select_auto_points(lane, points);
             }
-            Command::SetLaneWrite {
-                home: meloet_protocol::LaneHome::Track { track },
-                target,
-                on,
-            } => {
-                self.play.set_lane_write(track, target, on);
+            Command::SetLaneWrite { home, target, on } => {
+                self.play.set_lane_write(home, target, on);
             }
-            Command::RestoreLane {
-                home: meloet_protocol::LaneHome::Track { track },
-                target,
-            } => {
-                self.say(|p| p.restore_lane(track, target, effects));
+            Command::RestoreLane { home, target } => {
+                self.say(|p| p.restore_lane(home, target, effects));
             }
             Command::HistoryJump { index, step } => {
                 self.notice = self.play.history_jump(index, step, effects);
@@ -2474,8 +2440,9 @@ impl Model {
             Command::BounceToAudio { .. } | Command::BounceTrack { .. } => {}
             Command::CancelBounce => {}
 
-            // round12 stub: M5
-            Command::AddFadeOut { .. } => {}
+            Command::AddFadeOut { bars } => {
+                self.say(|p| p.add_fade_out(bars, effects));
+            }
 
             // round12 stub: A8
             Command::SetComp { .. } | Command::ClearComp { .. } => {}

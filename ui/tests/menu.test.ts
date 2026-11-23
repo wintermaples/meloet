@@ -84,6 +84,7 @@ describe("menu contents (B-59)", () => {
       "ぜんぶ選ぶ Ctrl A",
       "クリップを切る S",
       "クリップをつなげる Ctrl J",
+      "曲の終わりにフェードアウトをつける…",
     ]);
     expect(keyed(2)).toEqual([
       "アレンジへ A",
@@ -137,7 +138,8 @@ describe("menu contents (B-59)", () => {
     expect(row(view, "アレンジへ").checked).toBeUndefined();
     expect(row(view, "ピアノロール").checked).toBe(s.workspace.layout.lower.some((l) => l.band === "pianoRoll"));
     expect(row(view, "ミキサー").checked).toBe(false);
-    for (const i of [0, 1, 2]) expect(menus[i]!.entries.filter((e) => e.kind === "separator")).toHaveLength(2);
+    // 「編集」 has a third one, before the fade-out of round 12 M5.
+    for (const i of [0, 1, 2]) expect(menus[i]!.entries.filter((e) => e.kind === "separator")).toHaveLength(i === 1 ? 3 : 2);
   });
 
   it("「書き出し…」 is openExport, same as Mod Shift E. Adding a keyboard track opens the shelf with 「新しいトラック」. Adding a vocal track adds it at once (23-A)", () => {
@@ -210,7 +212,7 @@ describe("menu contents (B-59)", () => {
     const s = withClip((s) => (s.arrange.clipboardClips = 1));
     const menus = topMenus(s, depsOf(s, []), "other");
     // Joining clips needs 2 or more keyboard clips chosen on the same track.
-    expect(Object.values(usableOf(menus[1]!.entries))).toEqual([true, false, true, true, true, true, true, true, true, true, false]);
+    expect(Object.values(usableOf(menus[1]!.entries))).toEqual([true, false, true, true, true, true, true, true, true, true, false, true]);
     expect(usableOf(menus[3]!.entries)).toMatchObject({ 再生: true, 停止: false, 録音: true });
   });
 

@@ -2,7 +2,7 @@
      えらんでいる行は、selected と同じ値の行か、checked の行。することの一覧（曲の名前の一覧）は、印をからのまま出す。
      ひらいたら、えらんでいる行（なければ使える最初の行）にフォーカスを置く。↑ ↓ でえらび、Enter で決める。Esc と外を押したときは、ひらいた側がとじる。 -->
 <script lang="ts" generics="V">
-  import { onMount } from "svelte";
+  import { onMount, type Snippet } from "svelte";
 
   interface Row {
     value: V;
@@ -24,11 +24,13 @@
     /** 見出しがないときの名前（読み上げ用）。 */
     label?: string;
     rows: readonly (Row | Heading)[];
+    /** Put at the right end of the heading row. */
+    note?: Snippet;
     selected?: V;
     onpick: (value: V) => void;
     test: string;
   }
-  let { heading, label, rows, selected, onpick, test }: Props = $props();
+  let { heading, label, rows, note, selected, onpick, test }: Props = $props();
   const isHeading = (r: Row | Heading): r is Heading => "heading" in r;
   /** undefined なら、えらぶ行ではない（することの行）。 */
   const checkedOf = (r: Row): boolean | undefined => r.checked ?? (selected !== undefined ? r.value === selected : undefined);
@@ -88,7 +90,9 @@
   {onkeydown}
   data-test={test}
 >
-  {#if heading !== null}<div class="head"><span class="m-lbl">{heading}</span></div>{/if}
+  {#if heading !== null}<div class="head">
+      <span class="m-lbl">{heading}</span>{#if note}<span class="m-spacer"></span><span class="m-lbl">{@render note()}</span>{/if}
+    </div>{/if}
   {#each rows as row, i (i)}
     {#if isHeading(row)}
       <div class="head" role="presentation"><span class="m-lbl">{row.heading}</span></div>

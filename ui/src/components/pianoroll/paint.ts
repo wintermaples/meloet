@@ -391,7 +391,8 @@ export interface LivePicture {
   /** 面の箱を動かしている縦の量（CSS px）と、ノートの場所の高さ。ノートは、その下の帯にはみ出さない。 */
   ty: number;
   areaH: number;
-  notes: readonly { start: number; end: number; key: number; face: ColorName }[];
+  /** outline: only a line.hair frame in `face` where the note would be (the chord shadow). */
+  notes: readonly { start: number; end: number; key: number; face: ColorName; outline?: boolean }[];
 }
 
 export function paintLive(out: Batch, box: Box, p: LivePicture, dpr: number): void {
@@ -410,7 +411,11 @@ export function paintLive(out: Batch, box: Box, p: LivePicture, dpr: number): vo
     const y = Math.round(oy + top * dpr);
     if (g.drum) {
       const q = drumSquare(g, sizes, x0, y, dpr);
-      out.rect(q.x0, q.y0, q.x1, q.y1, rgb(n.face));
+      if (n.outline) frame(out, q.x0, q.y0, q.x1, q.y1, n.face);
+      else out.rect(q.x0, q.y0, q.x1, q.y1, rgb(n.face));
+    } else if (n.outline) {
+      const a = Math.round(x0) + HAIR;
+      frame(out, a, y, Math.max(a + 2 * HAIR, Math.round(x1) - HAIR), y + noteH, n.face);
     } else {
       paintNote(out, x0, x1, y, noteH, edge, n.face);
     }

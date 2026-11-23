@@ -221,7 +221,7 @@ export const floorTick = (tick: number, step: number) => Math.floor(tick / step)
 /** グリッドの一覧（ヤチヨさんの決め 2026-11-15）。0 は 1 小節。 */
 export const GRID_DIVISIONS = [0, 2, 4, 8, 16, 32] as const;
 
-const SCALE_STEPS = { major: [0, 2, 4, 5, 7, 9, 11], minor: [0, 2, 3, 5, 7, 8, 10] } as const;
+export const SCALE_STEPS = { major: [0, 2, 4, 5, 7, 9, 11], minor: [0, 2, 3, 5, 7, 8, 10] } as const;
 export const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"] as const;
 
 export function inScale(key: number, s: Pick<MusicalScale, "root" | "mode">): boolean {

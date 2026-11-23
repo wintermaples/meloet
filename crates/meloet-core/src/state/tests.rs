@@ -1410,7 +1410,7 @@ fn a_higher_scale_that_folds_a_band_says_the_scale_did_it() {
 
     // The fold is told even when the window also grew.
     let mut m = playing();
-    viewport(&mut m, 900.0, 700.0);
+    viewport(&mut m, 900.0, 724.0);
     toggle(&mut m, Band::PianoRoll);
     toggle(&mut m, Band::History);
     cmd(&mut m, Command::SetScale { percent: 125 });

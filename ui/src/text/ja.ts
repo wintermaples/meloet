@@ -1805,6 +1805,38 @@ export const texts = {
   "pr.toolErase": e("消す", "mock:A-PianoRoll"),
   "pr.grid": e("グリッド", "mock:A-PianoRoll"),
   "pr.scaleLock": e("スケール固定", "mock:A-PianoRoll"),
+  // Chord help: the words of docs/design/proposals/P10-ChordStamp and P10-ChordTable (option A), as the mocks have them.
+  "pr.chordShapes": e("和音の形", "user:2026-11-23"),
+  "pr.chordRootC": e("根音が C のとき", "user:2026-11-23"),
+  "pr.chordSingle": e("1 音（ふだん）", "user:2026-11-23"),
+  "pr.chordMajor": e("メジャー", "user:2026-11-23"),
+  "pr.chordMinor": e("マイナー", "user:2026-11-23"),
+  "pr.chordSeventh": e("7", "user:2026-11-23"),
+  "pr.chordMajorSeventh": e("M7", "user:2026-11-23"),
+  "pr.chordMinorSeventh": e("m7", "user:2026-11-23"),
+  "pr.chordSus4": e("sus4", "user:2026-11-23"),
+  "pr.chordDim": e("dim", "user:2026-11-23"),
+  "pr.chordAug": e("aug", "user:2026-11-23"),
+  "pr.chordOnCSingle": e("C", "user:2026-11-23"),
+  "pr.chordOnCMajor": e("C E G", "user:2026-11-23"),
+  "pr.chordOnCMinor": e("C E♭ G", "user:2026-11-23"),
+  "pr.chordOnCSeventh": e("C E G B♭", "user:2026-11-23"),
+  "pr.chordOnCMajorSeventh": e("C E G B", "user:2026-11-23"),
+  "pr.chordOnCMinorSeventh": e("C E♭ G B♭", "user:2026-11-23"),
+  "pr.chordOnCSus4": e("C F G", "user:2026-11-23"),
+  "pr.chordOnCDim": e("C E♭ G♭", "user:2026-11-23"),
+  "pr.chordOnCAug": e("C E G♯", "user:2026-11-23"),
+  "pr.chordStatus": e("書く ・ {shape} ・ 根音 {root}（{notes}）", "user:2026-11-23", {
+    shape: "メジャー",
+    root: "C4",
+    notes: "C4 E4 G4",
+  }),
+  "pr.keyChords": e("調の和音", "user:2026-11-23"),
+  "pr.keyChordsOff": e("スケール固定をオンにすると、その調の和音がここにならびます。", "spec:3"),
+  "pr.keyChordStatus": e("書く ・ {chord}（{notes}）", "user:2026-11-23", { chord: "Dm", notes: "D4 F4 A4" }),
+  "pr.keyChordMinor": e("{root}m", "user:2026-11-23", { root: "D" }),
+  "pr.keyChordDim": e("{root}dim", "user:2026-11-23", { root: "B" }),
+  "pr.keyChordAug": e("{root}aug", "user:2026-11-23", { root: "C" }),
   "pr.noteList": e("ノートの一覧", "mock:A-PianoRoll"),
   "pr.selectedNotes": e("選んだノート", "mock:A-PianoRoll"),
   "pr.ccList": e("CC の一覧", "mock:A-PianoRoll"),
@@ -2648,6 +2680,7 @@ const st = (term: string, description: string): Term => ({
   description,
   source: "spec:5",
 });
+const ut = (term: string, description: string): Term => ({ term, description, source: "user:2026-11-23" });
 
 /** 仕様書 5 章「用語の説明」。形は「用語 — 説明」。 */
 export const terms: readonly Term[] = [
@@ -2864,6 +2897,10 @@ export const terms: readonly Term[] = [
     "1 秒を何こまに分けて音を記録するか。48000 Hz がふつう。",
   ),
   st("書き出し", "曲を 1 つの音のファイルにすること。"),
+  // Chord help: the term wording of the mocks P10-ChordStamp and P10-ChordTable, not yet in spec 5.
+  ut("和音のスタンプ", "書く道具で、押した音を根音にして、えらんだ形の和音をまとめて書く。"),
+  ut("根音", "和音のいちばん元になる音。C メジャーなら C。"),
+  ut("調の和音", "スケール固定でえらんだ調の音だけでできる和音。C メジャーなら C ・ Dm ・ Em ・ F ・ G ・ Am ・ Bdim。"),
 ];
 
 /** 用語と用語の説明をつなぐ記号（仕様書 5 章「用語 — 説明」）。 */

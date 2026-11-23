@@ -94,19 +94,20 @@ describe("ベロシティの帯をたたむ（仕様書 3 章の帯の表「ベ�
   });
 
   // 仕様書 1 章の例は 18 行 ・ 24 行。上のメニューの行（150 % で 36）が入って 2 行ずつへった（docs/history/design-notes.ja.md B-59）。
-  it("窓 1280×800 で 150 % のとき、ノートは 16 行。たたむと 22 行（たたんだ 72 はノートの場所へ）", () => {
+  // The chord row under the tool row (36 at 150 %) takes 2 more rows (round 10).
+  it("窓 1280×800 で 150 % のとき、ノートは 14 行。たたむと 20 行（たたんだ 72 はノートの場所へ）", () => {
     const scale: Scale = 150;
     const scene = fakeScene("pianoRoll150")!;
     const band = scene.state.workspace.layout.lower.find((l) => l.band === "pianoRoll")!.height;
     const px = tokensAt(scale, 1);
     const n = (name: string) => px[name] as number;
-    // 帯の高さから、道具の列、目盛、ベロシティの帯、CC の札の行を引いた残りがノートの場所（Roll.svelte と PianoRoll.svelte の縦の並び）。
-    const around = n("size.toolbar") + n("mock.pianoroll.ruler") + n("size.row");
+    // 帯の高さから、道具の列、調の和音の列、目盛、ベロシティの帯、CC の札の行を引いた残りがノートの場所（Roll.svelte と PianoRoll.svelte の縦の並び）。
+    const around = n("size.toolbar") + n("size.row") + n("mock.pianoroll.ruler") + n("size.row");
     const rows = (velocity: boolean) => Math.floor((Math.round((band * scale) / 100) - around - (velocity ? n("size.lane.vel") : 0)) / n("size.note"));
     expect(scene.state.workspace.viewportWidth).toBe(1280);
     expect(scene.state.workspace.viewportHeight).toBe(800);
-    expect(rows(true)).toBe(16);
-    expect(rows(false)).toBe(22);
+    expect(rows(true)).toBe(14);
+    expect(rows(false)).toBe(20);
   });
 });
 

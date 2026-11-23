@@ -16,6 +16,8 @@
   import { rollShowsDrums } from "./drums";
   import * as G from "./geom";
   import ScaleMenu from "./ScaleMenu.svelte";
+  import { chooseChord, chordPick } from "./chordPick.svelte";
+  import { CHORD_SHAPES, pickName, shapeName, shapeOnC, type ChordShape } from "./chords";
   import { shown } from "./shown.svelte";
   import { prView, zoomBy, type Tool } from "./view.svelte";
 
@@ -89,7 +91,7 @@
     return () => observer.disconnect();
   });
   $effect(() => {
-    void [info, takeTag, gridName, scaleText, metrics.scale];
+    void [info, takeTag, gridName, scaleText, drawChord, metrics.scale];
     untrack(measure);
   });
 
@@ -121,13 +123,22 @@
   const toggleLock = () => send({ type: "setMusicalScale", root: pr.scale.root, mode: pr.scale.mode, lock: !pr.scale.lock } satisfies Command);
   const zoom = (steps: number) => zoomBy(steps, metrics.scale);
 
+  // The chord of the draw tool: its name on the draw button, and the list 「和音の形」 (not on drums).
+  const drawChord = $derived(drums ? null : pickName(chordPick.pick));
+  const chordRows = $derived(CHORD_SHAPES.map((shape) => ({ value: shape, label: shapeName(shape), key: shapeOnC(shape) })));
+  function pickShape(shape: ChordShape): void {
+    chooseChord({ kind: "shape", shape });
+    closeMenu();
+  }
+
   // グリッドの一覧と音階の一覧（仕様書 2 章「一覧」。押した物のすぐ下か上にひらく。Esc か外を押すと、とじる）。
-  type Menu = "grid" | "scale";
+  type Menu = "grid" | "scale" | "chord";
   let menu = $state<Menu | null>(null);
   const menuOpen = $derived(menu === "grid");
   let gridButton = $state<HTMLButtonElement>();
   let scaleButton = $state<HTMLButtonElement>();
-  const menuButton = $derived(menu === "scale" ? scaleButton : gridButton);
+  let chordButton = $state<HTMLButtonElement>();
+  const menuButton = $derived(menu === "scale" ? scaleButton : menu === "chord" ? chordButton : gridButton);
   let popup = $state<HTMLElement>();
   let anchor = $state<{ left: number; top: number | null; bottom: number | null; maxHeight: number | null }>({
     left: 0,
@@ -168,7 +179,8 @@
   const toggleMenu = (which: Menu) => (menu = menu === which ? null : which);
   // ドラムに切りかわったら、音階の一覧はとじる（▾ が「使えない」になる）。
   $effect(() => {
-    if (drums && untrack(() => menu) === "scale") menu = null;
+    const open = untrack(() => menu);
+    if (drums && (open === "scale" || open === "chord")) menu = null;
   });
   $effect(() => {
     if (!menu) return;
@@ -232,8 +244,29 @@
   <div class="tools">
     {#each TOOLS as tool (tool.tool)}
       <button class="m-btn" class:on={prView.tool === tool.tool} aria-pressed={prView.tool === tool.tool} onclick={() => (prView.tool = tool.tool)} data-test="pr-tool-{tool.tool}"
-        >{t(tool.key)}{#if parts.keys}<span class="m-num m-lbl key" data-test="pr-tool-key">{t(tool.hotkey)}</span>{/if}</button
+        >{t(tool.key)}{#if tool.tool === "draw" && drawChord}<span class="m-num chord" data-test="pr-tool-chord">{drawChord}</span>{/if}{#if parts.keys}<span
+            class="m-num m-lbl key"
+            data-test="pr-tool-key">{t(tool.hotkey)}</span
+          >{/if}</button
       >
+      {#if tool.tool === "draw"}
+        {#if drums}
+          <button class="m-btn chord-stub" aria-disabled="true" aria-label={t("pr.chordShapes")} data-test="pr-chord-menu">▾</button>
+        {:else}
+          <button
+            class="m-btn chord-stub"
+            class:on={drawChord !== null}
+            class:open={menu === "chord"}
+            aria-haspopup="menu"
+            aria-expanded={menu === "chord"}
+            aria-label={t("pr.chordShapes")}
+            bind:this={chordButton}
+            use:term={"和音のスタンプ"}
+            onclick={() => toggleMenu("chord")}
+            data-test="pr-chord-menu">▾</button
+          >
+        {/if}
+      {/if}
     {/each}
   </div>
   <div class="zoom">
@@ -293,6 +326,16 @@
   >
     {#if menu === "scale"}
       <ScaleMenu scale={pr.scale} onpick={pickScale} />
+    {:else if menu === "chord"}
+      <ChoiceMenu
+        heading={t("pr.chordShapes")}
+        rows={chordRows}
+        selected={chordPick.pick.kind === "shape" ? chordPick.pick.shape : undefined}
+        onpick={pickShape}
+        test="pr-chord-shapes"
+      >
+        {#snippet note()}{@render termed(t("pr.chordRootC"), "根音")}{/snippet}
+      </ChoiceMenu>
     {:else}
       <ChoiceMenu heading={t("pr.grid")} rows={gridRows} selected={pr.grid.division} onpick={setGrid} test="pr-grid-menu" />
     {/if}
@@ -409,6 +452,12 @@
   /* キーは、オンでも gray.8 のまま（再生まわりと同じ）。 */
   .m-btn .key {
     color: var(--color-gray-8);
+  }
+  /* The ▾ of the draw tool: the same form as the ▾ of the scale lock, right after 「書く」 with one line between. */
+  .chord-stub {
+    width: calc(var(--part-metronomemenu-width) - var(--line-hair));
+    padding: 0;
+    border-left: 0;
   }
   /* 音階の ▾（B-65）: メトロノームの ▾ と同じ形。幅 20 で、スケール固定のボタンの右にすきまなく。間の線は 1 本。 */
   .scale-stub {

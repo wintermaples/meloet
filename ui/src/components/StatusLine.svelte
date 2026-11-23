@@ -48,6 +48,7 @@
   import { shown as shownNotes } from "./pianoroll/shown.svelte";
   import { sameKeys, soundingKeys } from "./pianoroll/sounding";
   import { dragReading } from "./pianoroll/view.svelte";
+  import { chordHover } from "./pianoroll/chordPick.svelte";
   import { shelfStatus, shelfUi } from "./tracks.svelte";
   import { statusFit, type StatusRightShown } from "./statusFit";
   import { mapOf } from "../time/bars";
@@ -848,6 +849,8 @@
   const message = $derived.by((): Shown | null => {
     // ドラッグしている間の読み値（仕様書 2 章「その場の読み値」: 同じ値を状態行にも出す）。
     if (dragReading.text !== null) return { parts: [{ text: dragReading.text, hole: "reading" }], strong: [], button: null };
+    // The chord the draw tool would write where the cursor is (mock P10-ChordStamp).
+    if (chordHover.text !== null) return { parts: [{ text: chordHover.text, hole: null }], strong: [], button: null };
     // 「meloet について」は画面だけが持つダイアログなので、core の知らせの代わりにここで言う（仕様書 3 章 85）。
     if (about.open) return { parts: textParts("status.dialogOpen", { dialog: t("about.title") }), strong: [], button: null };
     // 曲のダイアログは、ダイアログの名前で（仕様書 3 章 89-6。曲の名前は出さない）。

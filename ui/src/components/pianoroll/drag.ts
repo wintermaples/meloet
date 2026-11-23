@@ -6,6 +6,7 @@ import type { Command, MusicalScale } from "../../bridge";
 import type { Meter } from "../time";
 import type { Snapper } from "./geom";
 import { chordOf } from "./audition";
+import { isChord, rootOf, SINGLE, stampKeys, type ChordPick } from "./chords";
 import {
   clampVelocity,
   drawLength,
@@ -56,7 +57,8 @@ export type Drag =
   | { kind: "move"; press: Press; notes: number[]; grab: number; copy: boolean; ticks: number; keys: number; selectOnClick: boolean }
   /** edge: 動かすはし。start は始まりを動かし、ticks が + なら短くなる。 */
   | { kind: "resize"; press: Press; notes: number[]; grab: number; edge: "start" | "end"; ticks: number }
-  | { kind: "draw"; press: Press; start: number; key: number; length: number; velocity: number }
+  /** key: the pressed row, or the chord's root. keys: every key written (only `key` for one note). */
+  | { kind: "draw"; press: Press; start: number; key: number; keys: number[]; length: number; velocity: number }
   | { kind: "box"; press: Press; x: number; y: number; add: boolean; hits: number[] }
   | { kind: "erase"; press: Press; x: number; y: number; hits: Set<number> }
   | { kind: "velocity"; press: Press; notes: number[]; grab: number; delta: number };
@@ -91,12 +93,24 @@ export interface RollInput {
   ticksToMs(ticks: number): number;
   /** 画面が鳴らす音（audition.ts の Auditioner）。 */
   audition: { play(keys: readonly number[], velocity: number, ms?: number | null): void; stop(): void };
+  /** The chord of the draw tool (one note when missing, and on drums). */
+  chord?(): ChordPick;
+}
+
+/** Where the draw tool with a chord would write: drawn as accent outlines before pressing. */
+export interface Shadow {
+  start: number;
+  length: number;
+  keys: number[];
+  /** The row under the cursor. */
+  key: number;
 }
 
 export class RollDrag {
   drag: Drag | null = null;
   /** 消す道具を乗せている所のノート（-1 はなし） */
   eraseHover = -1;
+  shadow: Shadow | null = null;
 
   constructor(private readonly input: RollInput) {}
 
@@ -109,19 +123,48 @@ export class RollDrag {
   }
 
   /** 何も押していないときのカーソルと、消す道具で乗せているノート。変わったら true。 */
-  hover(x: number, y: number, mods: Mods): { cursor: CursorKind; changed: boolean } {
+  hover(x: number, y: number, mods: Mods): { cursor: CursorKind; changed: boolean; shadowChanged: boolean } {
     const i = this.input;
     const hit = hitNote(i.shown(), i.geom(), x, y, i.edgePx(), true);
     const erase = i.tool() === "erase" && hit && !hit.edge ? hit.note : -1;
     const changed = erase !== this.eraseHover;
     this.eraseHover = erase;
+    const pick = this.chord();
+    const key = yToKey(i.geom(), y);
+    let shadow: Shadow | null = null;
+    if (!hit && i.tool() === "draw" && isChord(pick) && key >= 0) {
+      const start = drawStart(xToTick(i.geom(), x), mods.shift ? null : i.step(), i.grid?.());
+      shadow = { start, length: i.step(), keys: stampKeys(pick, key), key };
+    }
+    const shadowChanged = this.setShadow(shadow);
     let cursor: CursorKind;
     if (hit?.edge) cursor = "ew-resize";
     else if (i.tool() === "erase") cursor = "eraser";
     else if (hit) cursor = mods.alt ? "copy" : "move";
-    else if (i.tool() === "draw") cursor = drawable(yToKey(i.geom(), y), i.scale()) ? "pencil" : "not-allowed";
+    // A chord is written also where the scale lock refuses one note (the owner's decision).
+    else if (i.tool() === "draw") cursor = (isChord(pick) ? key >= 0 : drawable(key, i.scale())) ? "pencil" : "not-allowed";
     else cursor = "default";
-    return { cursor, changed };
+    return { cursor, changed, shadowChanged };
+  }
+
+  /** True when it changed. */
+  setShadow(shadow: Shadow | null): boolean {
+    const was = this.shadow;
+    const same =
+      was === shadow ||
+      (was !== null &&
+        shadow !== null &&
+        was.start === shadow.start &&
+        was.length === shadow.length &&
+        was.key === shadow.key &&
+        was.keys.length === shadow.keys.length &&
+        was.keys.every((k, j) => k === shadow.keys[j]));
+    if (!same) this.shadow = shadow;
+    return !same;
+  }
+
+  private chord(): ChordPick {
+    return this.input.chord?.() ?? SINGLE;
   }
 
   /** ドラッグしている間のカーソル。 */
@@ -153,6 +196,7 @@ export class RollDrag {
     const hit = hitNote(n, g, x, y, i.edgePx(), true);
     const selected = this.selectedSet();
     this.eraseHover = -1;
+    this.shadow = null;
 
     if (hit && n && hit.edge) {
       if (!selected.has(hit.note)) i.send({ type: "selectNotes", take: n.take.id, notes: [hit.note], mode: "replace" });
@@ -190,13 +234,21 @@ export class RollDrag {
       const step = i.step();
       const start = drawStart(xToTick(g, x), mods.shift ? null : step, i.grid?.());
       const velocity = i.drawVelocity();
+      const pick = this.chord();
+      if (isChord(pick)) {
+        const keys = stampKeys(pick, key);
+        if (keys.length === 0) return;
+        i.audition.play(keys, velocity);
+        this.drag = { kind: "draw", press, start, key: rootOf(pick, key), keys, length: step, velocity };
+        return;
+      }
       if (!writable(key, i.scale())) {
         // 書かない。Rust が状態行で言う（仕様書 6 章「音階の外に書こうとした」）。
         i.send({ type: "addNote", take: this.takeId(), start, length: step, key, velocity });
         return;
       }
       i.audition.play([key], velocity);
-      this.drag = { kind: "draw", press, start, key, length: step, velocity };
+      this.drag = { kind: "draw", press, start, key, keys: [key], length: step, velocity };
       return;
     }
     this.drag = { kind: "box", press, x, y, add: mods.shift, hits: [] };
@@ -408,6 +460,7 @@ export function finish(d: Drag, take: number | null): Command | null {
     case "resize":
       return take !== null && d.ticks !== 0 ? { type: "resizeNotes", take, notes: d.notes, edge: d.edge, ticks: d.ticks } : null;
     case "draw":
+      if (d.keys.length > 1) return { type: "addNotes", take, start: d.start, length: d.length, keys: d.keys, velocity: d.velocity };
       return { type: "addNote", take, start: d.start, length: d.length, key: d.key, velocity: d.velocity };
     case "box":
       if (!d.press.moved || (d.hits.length === 0 && !d.add)) return d.add ? null : { type: "clearNoteSelection" };

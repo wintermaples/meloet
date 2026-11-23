@@ -477,6 +477,7 @@ pub(super) fn sample_state() -> AppState {
         audio_work: AudioWorkView::default(),
         export: ExportView::default(),
         sounds: SoundsView::default(),
+        ai_link: AiLinkView::default(),
         status: StatusView {
             message: Some(StatusMessage::SearchingKeyboard),
         },
@@ -3069,6 +3070,7 @@ fn change_section_names_match_state_keys() {
         Change::AudioWork(state.audio_work.clone()),
         Change::Export(state.export.clone()),
         Change::Sounds(state.sounds.clone()),
+        Change::AiLink(state.ai_link),
         Change::Status(state.status.clone()),
     ];
     assert_eq!(all.len(), v.as_object().unwrap().len());

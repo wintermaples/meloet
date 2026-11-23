@@ -489,3 +489,93 @@ fn the_chord_stamp_with_no_clip_shown_makes_one() {
     cmd(m, Command::Undo);
     assert!(clips_of(m, 0).is_empty());
 }
+
+fn open_roll(m: &mut Model, track: u32) {
+    cmd(m, Command::OpenPianoRoll { track });
+}
+
+#[test]
+fn open_in_the_piano_roll_shows_the_clip_under_the_play_line_or_none() {
+    let m = &mut ready();
+    three_tracks(m);
+    create(m, 1, 0);
+    let a = clips_of(m, 0)[0].id;
+    cmd(
+        m,
+        Command::ToggleBand {
+            band: Band::PianoRoll,
+        },
+    );
+    assert!(!open_bands(m).contains(&Band::PianoRoll));
+    cmd(m, Command::Locate { tick: 2 * BAR });
+    cmd(
+        m,
+        Command::SelectTrack {
+            track: 2,
+            from_arm: false,
+        },
+    );
+    let n = steps(m);
+
+    open_roll(m, 1);
+    assert!(open_bands(m).contains(&Band::PianoRoll));
+    let v = m.view();
+    assert_eq!(v.arrange.selected_clips, [a]);
+    assert_eq!(v.arrange.piano_roll_clip, Some(a));
+    assert_eq!(v.piano_roll.take, Some(clips_of(m, 0)[0].take_id));
+    assert_eq!(m.play().song().session.play_target, Some(TrackId(1)));
+
+    // No clip there: the clip of the other track is no longer shown, and the band stays open.
+    open_roll(m, 2);
+    assert!(open_bands(m).contains(&Band::PianoRoll));
+    let v = m.view();
+    assert!(v.arrange.selected_clips.is_empty());
+    assert_eq!(v.arrange.selected_clip, None);
+    assert_eq!(v.arrange.piano_roll_clip, None);
+    assert_eq!(v.piano_roll.take, None);
+    assert_eq!(m.play().song().session.play_target, Some(TrackId(2)));
+
+    // The end of a clip is not in it.
+    cmd(m, Command::Locate { tick: 4 * BAR });
+    open_roll(m, 1);
+    assert_eq!(m.view().arrange.piano_roll_clip, None);
+    assert_eq!(m.play().song().session.play_target, Some(TrackId(1)));
+    assert_eq!(steps(m), n, "not a step");
+}
+
+#[test]
+fn open_in_the_piano_roll_does_nothing_on_a_vocal_track_or_no_track() {
+    let m = &mut ready();
+    three_tracks(m);
+    cmd(m, Command::SelectClip { clip: None });
+    let before = m.view();
+    assert!(!open_bands(m).contains(&Band::PianoRoll));
+    open_roll(m, 3);
+    open_roll(m, 9);
+    let after = m.view();
+    assert!(!open_bands(m).contains(&Band::PianoRoll));
+    assert_eq!(after.arrange, before.arrange);
+    assert_eq!(after.song.keys_target, before.song.keys_target);
+}
+
+#[test]
+fn open_in_the_piano_roll_while_recording_keeps_the_track() {
+    let m = &mut ready();
+    three_tracks(m);
+    create(m, 2, 0);
+    let b = clips_of(m, 1)[0].id;
+    cmd(
+        m,
+        Command::SelectTrack {
+            track: 1,
+            from_arm: false,
+        },
+    );
+    cmd(m, Command::SetCountIn { bars: 0 });
+    cmd(m, Command::Locate { tick: 0 });
+    cmd(m, Command::Record);
+    started(m);
+    open_roll(m, 2);
+    assert_eq!(m.play().song().session.play_target, Some(TrackId(1)));
+    assert_eq!(m.view().arrange.piano_roll_clip, Some(b));
+}

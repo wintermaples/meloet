@@ -2,7 +2,7 @@
 // 形と、偽物の意図と、履歴の行。core の中身と画面の部品は 2 回目。
 import { describe, expect, it } from "vitest";
 import type { AppState, Command, HistoryRow } from "../src/bridge";
-import { PROTOCOL_VERSION, STEP_NAME_KINDS } from "../src/bridge";
+import { STEP_NAME_KINDS } from "../src/bridge";
 import { createFakeTransport, fakeScene, fakeState } from "../src/bridge/fake";
 import { decodeTake } from "../src/bridge/take";
 import { stepNames } from "../src/text/ja";
@@ -31,8 +31,7 @@ async function opened() {
 }
 
 describe("約束 28 の形", () => {
-  it("版は 28。新しい曲では「重ねる」は切れている", () => {
-    expect(PROTOCOL_VERSION).toBe(28);
+  it("新しい曲では「重ねる」は切れている", () => {
     expect(fakeState().transport.overdub).toBe(false);
   });
 

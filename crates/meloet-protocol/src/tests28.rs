@@ -20,11 +20,6 @@ where
 }
 
 #[test]
-fn the_version() {
-    assert_eq!(PROTOCOL_VERSION, 28);
-}
-
-#[test]
 fn the_clip_commands() {
     let cases = vec![
         (

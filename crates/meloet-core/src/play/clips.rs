@@ -57,4 +57,36 @@ impl Play {
         self.fix_selection();
         true
     }
+
+    /// 「ピアノロールでひらく」 of a keys track's header: the track is selected, and the piano
+    /// roll shows its clip under the play line, or no clip. Returns whether it was a keys
+    /// track (the piano roll band is then to open).
+    pub fn open_piano_roll(&mut self, track: u32) -> bool {
+        let id = TrackId(track);
+        let Some(t) = self.doc().track(id).filter(|t| !t.kind.is_vocal()) else {
+            return false;
+        };
+        let at = self.play_line();
+        let clip = (t.clips.iter())
+            .find(|c| c.start <= at && at < c.end)
+            .map(|c| c.id);
+        if !self.busy() && self.song.session.play_target != Some(id) {
+            let before = self.song.session.play_target.replace(id);
+            self.selected_track_changed(before);
+        }
+        match clip {
+            Some(c) => {
+                self.clips_sel = vec![c];
+                self.click(c);
+            }
+            None if self.busy() => {}
+            None => {
+                self.clips_sel.clear();
+                self.selected = None;
+                self.piano_roll = None;
+                self.fix_selection();
+            }
+        }
+        true
+    }
 }

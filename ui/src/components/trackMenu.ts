@@ -2,7 +2,7 @@
 // 録音中とカウントイン中は、core が受けないので「使えない」。
 
 import { VOCAL_INPUTS, type AppState, type Command, type TrackView, type VocalInput } from "../bridge";
-import { pianoRollOpen, songBusy } from "../keys/attach";
+import { songBusy } from "../keys/attach";
 import { t } from "../text/ja";
 import type { MenuEntry, MenuRow } from "./menu/contextMenu.svelte";
 import { startRename } from "./tracks.svelte";
@@ -57,17 +57,9 @@ export function trackContextMenu(
   selected: boolean,
   send: (c: Command) => void,
   shiftKey: (letter: string) => string,
-  playTick = state.transport.position,
 ): MenuEntry[] {
   const rows = trackRows(state, track, send);
-  // Keyboard tracks (round 10): show the clip at the play line; with no clip there, only open the band (the track is
-  // already selected when the menu opens). The hint 「ここにはクリップがありません。」 then needs core to stop showing
-  // the clip of another track (arrange.pianoRollClip).
-  const open = (): void => {
-    const clip = track.clips.find((c) => c.start <= playTick && playTick < c.end);
-    if (clip) send({ type: "selectClip", clip: clip.id });
-    if (!pianoRollOpen(state)) send({ type: "toggleBand", band: "pianoRoll" });
-  };
+  const open = (): void => send({ type: "openPianoRoll", track: track.id });
   // ミュートは録音中 ・ カウントイン中も受ける（A-14）。
   return [
     ...(track.kind.kind === "keys"

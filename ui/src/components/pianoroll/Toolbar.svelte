@@ -1,6 +1,7 @@
 <!-- The piano roll toolbar (the top row of the band in mock A-PianoRoll, F-PRPlay, F-PRRec).
      「▾ ピアノロール」 (pressing folds it; B-74), the clip text, the take switch tag, the tools (select, draw, erase, with keys at the right end), horizontal − ＋ (the same shape as R3-Arrange),
      grid (a list), triplet, scale lock and the scale ▾ (B-65), and 「色」 (「色をつける」, round 12 P1). On a drum track, scale lock, ▾ and 「色」 are 「使えない」 (spec 3, spec 6). If there is not enough width, the tool keys and then the clip text are hidden (F-PR150, B-73).
+     Right of the clip text, 「ほかのトラックも見る ▾」 (round 12 P2; 「使えない」 on a drum track); its label is hidden first, leaving the ▾.
      When keys go to the piano roll, an accent line on the top edge (B-72). -->
 <script lang="ts">
   import { onMount, untrack } from "svelte";
@@ -10,16 +11,17 @@
   import { current, send } from "../../state/app.svelte";
   import { t, type TextKey } from "../../text/ja";
   import ChoiceMenu from "../ChoiceMenu.svelte";
-  import { toolbarParts, type ToolbarParts } from "../fit";
+  import { toolbarWithGhost, type ToolbarParts } from "../fit";
   import { gridText, scaleName, termParts, textParts } from "../format";
   import { metrics } from "../metrics.svelte";
   import { rollShowsDrums } from "./drums";
   import * as G from "./geom";
+  import { ghostCandidates, ghostHidden, shownTrackId, toggleGhostTrack } from "./ghosts";
   import ScaleMenu from "./ScaleMenu.svelte";
   import { chooseChord, chordPick } from "./chordPick.svelte";
   import { CHORD_SHAPES, pickName, shapeName, shapeOnC, type ChordShape } from "./chords";
   import { shown } from "./shown.svelte";
-  import { prView, zoomBy, type Tool } from "./view.svelte";
+  import { ghostView, prView, zoomBy, type Tool } from "./view.svelte";
 
   const app = $derived(current.state!);
   const pr = $derived(app.pianoRoll);
@@ -68,8 +70,9 @@
   // The key width is measured with a hidden copy (ruler).
   let row = $state<HTMLElement>();
   let ruler = $state<HTMLElement>();
+  let ghostRuler = $state<HTMLElement>();
   let infoNode = $state<HTMLElement>();
-  let parts = $state<ToolbarParts>({ keys: true, info: true });
+  let parts = $state<ToolbarParts & { ghost: boolean }>({ keys: true, info: true, ghost: true });
   const infoFits = $derived(parts.info);
 
   function measure(): void {
@@ -77,12 +80,13 @@
     const style = getComputedStyle(row);
     const gap = parseFloat(style.columnGap) || 0;
     const pad = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
-    const children = [...row.children].filter((el) => el !== ruler && !el.classList.contains("focus-mark")) as HTMLElement[];
+    const children = [...row.children].filter((el) => !el.classList.contains("ruler") && !el.classList.contains("focus-mark")) as HTMLElement[];
     const fixed = children.filter((el) => el !== infoNode);
     const widths = fixed.reduce((sum, el) => sum + (el.classList.contains("m-spacer") ? 0 : el.offsetWidth), 0);
     const keys = [...ruler.children].reduce((sum, el) => sum + (el as HTMLElement).offsetWidth + metrics.px("space.1"), 0);
-    const base = pad + widths + gap * Math.max(0, fixed.length - 1) - (parts.keys ? keys : 0);
-    parts = toolbarParts(row.clientWidth, { base, keys, info: infoNode ? infoNode.scrollWidth + gap : 0 });
+    const ghost = ghostRuler ? ghostRuler.offsetWidth + gap : 0;
+    const base = pad + widths + gap * Math.max(0, fixed.length - 1) - (parts.keys ? keys : 0) - (parts.ghost ? ghost : 0);
+    parts = toolbarWithGhost(row.clientWidth, { base, keys, info: infoNode ? infoNode.scrollWidth + gap : 0 }, ghost);
   }
   onMount(() => {
     const observer = new ResizeObserver(() => measure());
@@ -133,14 +137,39 @@
     closeMenu();
   }
 
+  // 「ほかのトラックも見る」 (round 12 P2; drawn by Roll through ghosts.ts) and its ▾: the tracks to show, chosen one by one (the list stays open).
+  // When the label does not fit, only the ▾ stays and the switch is the first row of its list.
+  const GHOST_SWITCH = -1;
+  const ghostChoices = $derived(ghostCandidates(app.song.tracks, shownTrackId(clip, track, app.song.keysTarget)));
+  const ghostRows = $derived.by(() => {
+    const off = ghostHidden(ghostView, app.song.serial);
+    const rows = ghostChoices.map((x) => ({
+      value: x.id,
+      label: t("track.label", { number: x.number, name: x.name }),
+      checked: !off.includes(x.id),
+    }));
+    return parts.ghost ? rows : [{ value: GHOST_SWITCH, label: t("pr.ghost"), checked: ghostView.on }, ...rows];
+  });
+  const ghostMenuUsable = $derived(!drums && (!parts.ghost || ghostChoices.length > 0));
+  const toggleGhosts = () => (ghostView.on = !ghostView.on);
+  function pickGhost(id: number): void {
+    if (id === GHOST_SWITCH) {
+      toggleGhosts();
+      return;
+    }
+    ghostView.hidden = toggleGhostTrack(ghostHidden(ghostView, app.song.serial), id);
+    ghostView.serial = app.song.serial;
+  }
+
   // The grid list and the scale list (spec 2 "List"; opens just below or above what was pressed; Esc or pressing outside closes it).
-  type Menu = "grid" | "scale" | "chord";
+  type Menu = "grid" | "scale" | "chord" | "ghost";
   let menu = $state<Menu | null>(null);
   const menuOpen = $derived(menu === "grid");
   let gridButton = $state<HTMLButtonElement>();
   let scaleButton = $state<HTMLButtonElement>();
   let chordButton = $state<HTMLButtonElement>();
-  const menuButton = $derived(menu === "scale" ? scaleButton : menu === "chord" ? chordButton : gridButton);
+  let ghostButton = $state<HTMLButtonElement>();
+  const menuButton = $derived(menu === "scale" ? scaleButton : menu === "chord" ? chordButton : menu === "ghost" ? ghostButton : gridButton);
   let popup = $state<HTMLElement>();
   let anchor = $state<{ left: number; top: number | null; bottom: number | null; maxHeight: number | null }>({
     left: 0,
@@ -179,10 +208,11 @@
     if (hadFocus) button?.focus();
   }
   const toggleMenu = (which: Menu) => (menu = menu === which ? null : which);
-  // When it switches to drums, the scale list closes (▾ becomes 「使えない」).
+  // When it switches to drums, the scale list closes (▾ becomes 「使えない」). So does the list of tracks when it has nothing to offer.
   $effect(() => {
     const open = untrack(() => menu);
     if (drums && (open === "scale" || open === "chord")) menu = null;
+    if (!ghostMenuUsable && open === "ghost") menu = null;
   });
   $effect(() => {
     if (!menu) return;
@@ -243,6 +273,26 @@
     </div>
   {/if}
   <span class="m-spacer"></span>
+  {#if parts.ghost}
+    {#if drums}
+      <button class="m-btn" aria-disabled="true" use:tip={t("pr.ghostDrums")} data-test="pr-ghost">{t("pr.ghost")}</button>
+    {:else}
+      <button class="m-btn" class:on={ghostView.on} aria-pressed={ghostView.on} onclick={toggleGhosts} data-test="pr-ghost">{t("pr.ghost")}</button>
+    {/if}
+  {/if}
+  <button
+    class="m-btn ghost-menu"
+    class:stub={parts.ghost}
+    class:on={ghostView.on && !drums}
+    class:open={menu === "ghost"}
+    aria-disabled={ghostMenuUsable ? undefined : "true"}
+    aria-haspopup="menu"
+    aria-expanded={menu === "ghost"}
+    aria-label={t("pr.ghostTracks")}
+    bind:this={ghostButton}
+    onclick={() => ghostMenuUsable && toggleMenu("ghost")}
+    data-test="pr-ghost-menu">▾</button
+  >
   <div class="tools">
     {#each TOOLS as tool (tool.tool)}
       <button class="m-btn" class:on={prView.tool === tool.tool} aria-pressed={prView.tool === tool.tool} onclick={() => (prView.tool = tool.tool)} data-test="pr-tool-{tool.tool}"
@@ -323,6 +373,7 @@
   <div class="ruler" aria-hidden="true" bind:this={ruler}>
     {#each TOOLS as tool (tool.tool)}<span class="m-num">{t(tool.hotkey)}</span>{/each}
   </div>
+  <div class="ruler" aria-hidden="true"><span class="m-btn" bind:this={ghostRuler}>{t("pr.ghost")}</span></div>
 </div>
 
 {#if menu}
@@ -337,6 +388,8 @@
   >
     {#if menu === "scale"}
       <ScaleMenu scale={pr.scale} onpick={pickScale} />
+    {:else if menu === "ghost"}
+      <ChoiceMenu heading={t("pr.ghostTracks")} rows={ghostRows} onpick={pickGhost} test="pr-ghost-tracks" />
     {:else if menu === "chord"}
       <ChoiceMenu
         heading={t("pr.chordShapes")}
@@ -474,6 +527,16 @@
   .scale-stub {
     width: calc(var(--part-metronomemenu-width) - var(--line-hair));
     padding: 0;
+    border-left: 0;
+    margin-left: calc(-1 * var(--space-3));
+  }
+  /* The ▾ of 「ほかのトラックも見る」: the same form as the scale ▾ while the label is there; a ▾ of its own when the label does not fit. */
+  .ghost-menu {
+    width: var(--part-metronomemenu-width);
+    padding: 0;
+  }
+  .ghost-menu.stub {
+    width: calc(var(--part-metronomemenu-width) - var(--line-hair));
     border-left: 0;
     margin-left: calc(-1 * var(--space-3));
   }

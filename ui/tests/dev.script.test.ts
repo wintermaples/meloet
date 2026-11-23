@@ -114,6 +114,23 @@ describe("the helper that moves by itself", () => {
     expect(s.reports.at(-1)!.done).toBe(true);
   });
 
+  it("pr-ghosts: turns 「ほかのトラックも見る」 on before the parts after it (round 12 P2: scrolling and zooming measured with it on)", async () => {
+    const shown: boolean[] = [];
+    const s = setup({ ghosts: (on) => shown.push(on) });
+    expect(parseUiScript("pr-ghosts,pr-scroll:2")).toEqual([
+      { kind: "ghosts", count: 100 },
+      { kind: "scroll", count: 2 },
+    ]);
+    await new UiScript("pr-ghosts,pr-scroll:2", parseUiScript("pr-ghosts,pr-scroll:2")!, s.target, fakeClock(), s.report).run();
+    expect(shown).toEqual([true]);
+    expect(s.events.filter((e) => e.type === "wheel")).toHaveLength(2);
+    expect(s.reports.at(-1)!.done).toBe(true);
+    // A piano roll that cannot show other tracks says so.
+    const t = setup();
+    await new UiScript("pr-ghosts", parseUiScript("pr-ghosts")!, t.target, fakeClock(), t.report).run();
+    expect(t.reports.at(-1)!.error).toContain("cannot show other tracks");
+  });
+
   it("drag: press → move 4 times → release. Repeats there and back, and waits until the new take is seen", async () => {
     const s = setup();
     await new UiScript("pr-drag:2", [{ kind: "drag", count: 2 }], s.target, fakeClock(), s.report).run();

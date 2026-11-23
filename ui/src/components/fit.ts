@@ -73,6 +73,20 @@ export function toolbarParts(available: number, widths: { base: number } & Recor
   return foldParts(TOOLBAR_ORDER, available, widths, {});
 }
 
+/**
+ * The tool row with the label 「ほかのトラックも見る」 (round 12 P2): it hides first, so it never pushes out what the row showed before
+ * (its ▾ stays, and the switch moves into the ▾'s list); then the keys and the clip text as before. ghost is the width the label adds
+ * (with the gap before it).
+ */
+export function toolbarWithGhost(
+  available: number,
+  widths: { base: number } & Record<ToolbarPart, number>,
+  ghost: number,
+): ToolbarParts & { ghost: boolean } {
+  const all = TOOLBAR_ORDER.reduce((sum, k) => sum + widths[k], widths.base);
+  return { ...toolbarParts(available, widths), ghost: all + ghost <= available };
+}
+
 /** The advance of one IBM Plex Mono character (with the font size as 1). */
 const MONO_ADVANCE = 0.6;
 

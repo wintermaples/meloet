@@ -219,3 +219,11 @@ export const velocityLane = $state({ open: true });
 export const inspectorFolds = $state({ sameLength: false, velocityAll: false });
 /** folded is the key of the folded kind headings (`ccGroupKey`). */
 export const ccList = $state({ open: false, folded: [] as string[] });
+
+// ---- 「ほかのトラックも見る」 (round 12 P2; ghosts.ts). Kept until the app closes, not saved ----
+
+/**
+ * on: the notes of other tracks are drawn. hidden: the tracks taken off in its list (every track the list offers is shown at first).
+ * Track ids are per song, so hidden counts only while the song's serial is `serial` (`ghostHidden` in ghosts.ts).
+ */
+export const ghostView = $state({ on: false, hidden: [] as number[], serial: 0 });

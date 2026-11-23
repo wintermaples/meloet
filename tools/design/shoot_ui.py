@@ -58,6 +58,9 @@ BOARDS = {
     "notesNotWritten": None,
     "scaleHighlight": None,
     "scaleHighlightLocked": None,
+    "pianoRollGhost": None,
+    "pianoRollGhostMenu": None,
+    "pianoRollGhostFolded": None,
     "mixer": "F4-Mixer",
     "history": "F-History",
     "shelf": "F-ShelfArrange",
@@ -599,6 +602,11 @@ CLICKS = {
     "meterFlagMenu": ("tempo", "js:" + CONTEXT_FLAG),
     "vocalInputMenu": ("vocalTrack", '[data-test="track-input"]'),
     "metronomeWindow": ("metronome", '[data-test="transport-metronome-stub"]'),
+    # P2 (round 12): 「ほかのトラックも見る」 on, then its list of tracks (the label shows at 1920x1080 100 %). Folded: where the label does not fit
+    # (1280x800), only the ▾ is left and the switch is the first row of its list.
+    "pianoRollGhost": ("pianoRollGhost", '[data-test="pr-ghost"]'),
+    "pianoRollGhostMenu": ("pianoRollGhost", ('[data-test="pr-ghost"]', '[data-test="pr-ghost-menu"]')),
+    "pianoRollGhostFolded": ("pianoRollGhost", ('[data-test="pr-ghost-menu"]', '[data-test="pr-ghost-tracks"] [data-row="0"]')),
 }
 SIZES = [(1280, 800), (1920, 1080)]
 SCALES = [100, 150]
@@ -651,6 +659,9 @@ ONLY = {
     "notesNotWritten": [(1280, 800, 100)],
     "scaleHighlight": [(1280, 800, 100), (1280, 800, 150)],
     "scaleHighlightLocked": [(1280, 800, 100)],
+    "pianoRollGhost": [(1920, 1080, 100)],
+    "pianoRollGhostMenu": [(1920, 1080, 100)],
+    "pianoRollGhostFolded": [(1280, 800, 100), (1280, 800, 150)],
     "noteListTyping": [(1280, 800, 100)],
     "noteListBroken": [(1280, 800, 100)],
     "ccLanes": [(1280, 800, 100), (1920, 1080, 100), (1920, 1080, 150)],

@@ -6,7 +6,7 @@ import { metrics } from "../components/metrics.svelte";
 import * as G from "../components/pianoroll/geom";
 import { shown } from "../components/pianoroll/shown.svelte";
 import { shownFor } from "../components/pianoroll/shownNotes";
-import { dragReading, prView, pxPerTick, rowHeight } from "../components/pianoroll/view.svelte";
+import { dragReading, ghostView, prView, pxPerTick, rowHeight } from "../components/pianoroll/view.svelte";
 import { historyUi } from "../components/history/historyUi.svelte";
 import { current, send } from "../state/app.svelte";
 import { HistoryScript, type HistoryTarget } from "./historyScript";
@@ -73,6 +73,9 @@ function pianoRoll(): Target {
     scrollTick: () => prView.scrollTick,
     zoom: () => prView.quarterPx,
     rowPx: () => prView.rowPx,
+    ghosts: (on) => {
+      ghostView.on = on;
+    },
     shownTake: () => shown.take?.id ?? null,
     reading: () => dragReading.text,
   };

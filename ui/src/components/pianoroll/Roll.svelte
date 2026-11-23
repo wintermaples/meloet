@@ -1,5 +1,6 @@
 <!-- The middle of the piano roll (mock A-PianoRoll): the ruler, the keyboard column, the note area, the velocity lane.
      The note area and the velocity lane are one WebGL canvas (pianoRoll), drawn only when the notes or the visible range change.
+     With 「ほかのトラックも見る」 on, the notes of other tracks are drawn on that canvas too, under the shown clip's notes (ghosts.ts).
      The keyboard column is one small canvas (pianoRollKeys), lit by held keys and sounding notes.
      Notes being dragged, and notes growing while recording, are one small canvas around only them (pianoRollLive). If they only move, they are moved with transform.
      The pianoRollLive box goes from the top left of the note area to the bottom edge of the CC lanes (CC lane drags go on the same canvas).
@@ -13,7 +14,7 @@
 <script lang="ts">
   import { labelsBesideMarkers } from "./rulerMarks";
   import { onDestroy, onMount, untrack } from "svelte";
-  import { clockOffsetUs, liveNotes, type Command, type LiveNote, type LiveNotesBook } from "../../bridge";
+  import { clockOffsetUs, liveNotes, peekTakeNotes, takeNotes, type Command, type LiveNote, type LiveNotesBook, type TakeNotes } from "../../bridge";
   import type { ColorName } from "../../design/tokens";
   import { everyGlFrame, glRegion, glSlot, type GlSlot } from "../../gl/slot";
   import { platformOf } from "../../keys/keys";
@@ -36,6 +37,7 @@
   import { SINGLE, stampStatus } from "./chords";
   import { drumKeysOf, drumName, drumTerm, rollShowsDrums } from "./drums";
   import * as G from "./geom";
+  import { ghostClips, ghostHidden, ghostShown, ghostTracks, ghostWindow, ghostWindowIndex, shownTrackId } from "./ghosts";
   import { noteMarks, paintLive, paintRoll, paintRollKeys, paintVelocityLane, type LivePicture, type RollPicture, type RollSizes } from "./paint";
   import { rollMenu, type RollMenuActions } from "./rollMenu";
   import { shown } from "./shown.svelte";
@@ -48,6 +50,7 @@
     DRUM_ROW_MIN,
     drumRowPx,
     drumView,
+    ghostView,
     onDragCancel,
     prPanels,
     prView,
@@ -132,6 +135,48 @@
   const origin = $derived(originFor(shown.origin, n));
   const selectedRanges = $derived(n && !liveMode && pr.take === n.take.id ? pr.selectedNotes : []);
   const selFlags = $derived(n ? G.selectionFlags(G.noteCount(n), selectedRanges) : null);
+
+  // ---- Notes of other tracks (「ほかのトラックも見る」, round 12 P2; ghosts.ts). Only the clips in a window three widths wide; their takes are fetched once ----
+
+  const ghostTrack = $derived(shownTrackId(shown.clip, shown.track, song.keysTarget));
+  const ghostAt = $derived(ghostWindowIndex(prView.scrollTick, ppt, areaW));
+  let ghostVersion = $state(0);
+  const ghostAsked = new Set<number>();
+  function ghostTake(id: number): TakeNotes | undefined {
+    const had = peekTakeNotes(id);
+    if (had || ghostAsked.has(id)) return had;
+    ghostAsked.add(id);
+    try {
+      takeNotes(id).then(
+        () => {
+          ghostAsked.delete(id);
+          ghostVersion += 1;
+        },
+        () => ghostAsked.delete(id),
+      );
+    } catch {
+      // Before connecting. Asked again with the next state.
+      ghostAsked.delete(id);
+    }
+    return undefined;
+  }
+  let ghostMade = new Map<number, G.Shown>();
+  let ghostList: readonly G.Shown[] = [];
+  /** The same list while nothing in it changed, so the note area is not drawn again. */
+  const ghosts = $derived.by((): readonly G.Shown[] | null => {
+    void ghostVersion;
+    if (!ghostView.on || drums || !(areaW > 0)) return null;
+    const w = ghostWindow(ghostAt, ppt, areaW);
+    const made = new Map<number, G.Shown>();
+    for (const clip of ghostClips(ghostTracks(song.tracks, ghostTrack, ghostHidden(ghostView, song.serial)), w.from, w.to)) {
+      const take = ghostTake(clip.takeId);
+      if (take) made.set(clip.id, ghostShown(take, clip, ghostMade.get(clip.id)));
+    }
+    ghostMade = made;
+    const list = [...made.values()];
+    if (list.length !== ghostList.length || list.some((s, i) => s !== ghostList[i])) ghostList = list;
+    return ghostList;
+  });
 
   // ---- Notes being recorded ----
 
@@ -566,6 +611,7 @@
       live,
       drag: d,
       eraseHover,
+      ghosts: ghosts && { notes: ghosts, playTick: untrack(() => shownTick(transport, current.telemetry, null)) },
     };
     rollMarks = noteMarks(G.noteCount(notes), d, eraseHover);
     untrack(() => {

@@ -528,14 +528,18 @@ fn master_lane(doc: &Doc) -> &Lane {
 
 /// A new song with a clip on track 1 over `[start, end)`.
 fn song_with_clip(start: u64, end: u64) -> Doc {
+    with_clip(&Doc::new_default(), start, end)
+}
+
+/// `doc` with one more clip on track 1 over `[start, end)`.
+fn with_clip(doc: &Doc, start: u64, end: u64) -> Doc {
     let take = crate::NewTake {
         origin: start,
         length: end - start,
         notes: Vec::new(),
         controls: Vec::new(),
     };
-    let doc = Doc::new_default();
-    edit::add_recording(&doc, T1, vec![take], 0).unwrap().0.doc
+    edit::add_recording(doc, T1, vec![take], 0).unwrap().0.doc
 }
 
 #[test]
@@ -940,8 +944,8 @@ fn a_fade_out_again_over_points_drawn_by_hand() {
         ticks_values(master_lane(&now)),
         ticks_values(master_lane(&doc))
     );
-    // A line drawn down to the bottom that ends before the new start is no fade to start
-    // on: nothing before the start is touched, and the fade starts where the line is.
+    // A line drawn by hand down to the bottom long before the end is the fade that is
+    // there, as one the menu made: the new fade takes its place, from the value before it.
     let bare = song_with_clip(0, 8 * BAR);
     let bare = add_lane(&bare, M, AutoTarget::Volume, false).unwrap().0.doc;
     let down = [p(0, 0.9), p(2 * BAR, 0.0)];
@@ -952,9 +956,9 @@ fn a_fade_out_again_over_points_drawn_by_hand() {
     let e = add_fade_out(&doc, 2).unwrap();
     assert_eq!(
         ticks_values(master_lane(&e.doc)),
-        [(0, 0.9), (2 * BAR, 0.0), (6 * BAR, 0.0), (8 * BAR, 0.0)]
+        [(6 * BAR, 0.9), (8 * BAR, 0.0)]
     );
-    // A last point that is not at the bottom is no fade either.
+    // A last point that is not at the bottom is no fade.
     let up = [p(4 * BAR, 0.25), p(8 * BAR, 0.75)];
     let doc = put_points(&bare, M, AutoTarget::Volume, &up).unwrap().0.doc;
     let e = add_fade_out(&doc, 2).unwrap();
@@ -977,6 +981,186 @@ fn a_fade_out_again_after_the_songs_end_moved_back() {
     assert_eq!(
         ticks_values(master_lane(&e.doc)),
         [(7 * BAR, fader), (8 * BAR, 0.0)]
+    );
+}
+
+/// Clips were added after a fade-out: the old fade lies in the middle of the song, wholly
+/// before the new start, and the new one takes its place.
+#[test]
+fn a_fade_out_again_after_the_song_grew_takes_the_place_of_the_old_one() {
+    let doc = song_with_clip(0, 8 * BAR);
+    let fader = doc.master.gain.position();
+    let first = add_fade_out(&doc, 4).unwrap().doc;
+    let grown = with_clip(&first, 12 * BAR, 16 * BAR);
+    assert_eq!(
+        ticks_values(master_lane(&grown)),
+        [(4 * BAR, fader), (8 * BAR, 0.0)]
+    );
+    let e = add_fade_out(&grown, 2).unwrap();
+    assert_eq!(
+        e.step,
+        StepKind::AddFadeOut {
+            range: TickRange::new(14 * BAR, 16 * BAR).unwrap()
+        }
+    );
+    let l = master_lane(&e.doc);
+    assert_eq!(ticks_values(l), [(14 * BAR, fader), (16 * BAR, 0.0)]);
+    for tick in [0, 4 * BAR, 6 * BAR, 8 * BAR, 12 * BAR, 14 * BAR] {
+        assert_eq!(l.value_at(tick), Some(fader), "as before the old fade");
+    }
+    assert_eq!(l.value_at(15 * BAR), Some(fader / 2.0));
+    assert_eq!(l.value_at(16 * BAR), Some(0.0));
+    e.doc.check_lanes().unwrap();
+    // The same again is nothing.
+    assert_eq!(
+        add_fade_out(&e.doc, 2).map(|_| ()),
+        Err(EditError::Unchanged)
+    );
+    // One step: undo gives the very lane back, redo the new fade.
+    let mut history = History::new();
+    let mut now = grown.clone();
+    history.apply(&mut now, e);
+    history.undo(&mut now).unwrap();
+    assert_eq!(held(&now), held(&grown));
+    assert!(Arc::ptr_eq(&now.master_lanes[0], &grown.master_lanes[0]));
+    history.redo(&mut now).unwrap();
+    assert_eq!(
+        ticks_values(master_lane(&now)),
+        [(14 * BAR, fader), (16 * BAR, 0.0)]
+    );
+    assert!(history.redo(&mut now).is_none());
+
+    // The lane comes into the old fade's head from another value: the head stays, and its
+    // value is held over the old fade's place up to the new start.
+    let rising = add_lane(&doc, M, AutoTarget::Volume, false).unwrap().0.doc;
+    let put = [p(0, 0.5), p(8 * BAR, 1.0)];
+    let rising = put_points(&rising, M, AutoTarget::Volume, &put)
+        .unwrap()
+        .0
+        .doc;
+    let first = add_fade_out(&rising, 4).unwrap().doc;
+    let grown = with_clip(&first, 8 * BAR, 16 * BAR);
+    let e = add_fade_out(&grown, 4).unwrap();
+    let l = master_lane(&e.doc);
+    assert_eq!(
+        ticks_values(l),
+        [(0, 0.5), (4 * BAR, 0.75), (12 * BAR, 0.75), (16 * BAR, 0.0)]
+    );
+    assert_eq!(
+        l.value_at(2 * BAR),
+        Some(0.625),
+        "before the head: untouched"
+    );
+    assert_eq!(l.value_at(6 * BAR), Some(0.75));
+    assert_eq!(l.value_at(8 * BAR), Some(0.75));
+}
+
+/// Where the old fade's end lies decides nothing: before the new start, on it, between it
+/// and the new end. Only the head being before the new start does.
+#[test]
+fn a_fade_out_again_wherever_the_old_one_ends() {
+    let doc = song_with_clip(0, 8 * BAR);
+    let fader = doc.master.gain.position();
+    let first = add_fade_out(&doc, 4).unwrap().doc;
+    // The song is one bar longer: the old end (bar 9) is inside a new fade of two bars.
+    let grown = with_clip(&first, 8 * BAR, 9 * BAR);
+    let e = add_fade_out(&grown, 2).unwrap();
+    assert_eq!(
+        ticks_values(master_lane(&e.doc)),
+        [(7 * BAR, fader), (9 * BAR, 0.0)]
+    );
+    // The old end on the new start.
+    let e = add_fade_out(&grown, 1).unwrap();
+    assert_eq!(
+        ticks_values(master_lane(&e.doc)),
+        [(8 * BAR, fader), (9 * BAR, 0.0)]
+    );
+    // The whole old fade from the new start on: both points go as any point there, and
+    // the start takes the lane's value, the one before the old head.
+    let e = add_fade_out(&grown, 6).unwrap();
+    assert_eq!(
+        ticks_values(master_lane(&e.doc)),
+        [(3 * BAR, fader), (9 * BAR, 0.0)]
+    );
+    // The old head on the new start: the same fade but for its end.
+    let e = add_fade_out(&grown, 5).unwrap();
+    assert_eq!(
+        ticks_values(master_lane(&e.doc)),
+        [(4 * BAR, fader), (9 * BAR, 0.0)]
+    );
+}
+
+/// Only the lane's last line is a fade that is there.
+#[test]
+fn a_line_to_the_bottom_with_points_after_it_is_no_fade() {
+    let doc = song_with_clip(0, 16 * BAR);
+    let doc = add_lane(&doc, M, AutoTarget::Volume, false).unwrap().0.doc;
+    let with = |points: &[AutoPoint]| {
+        put_points(&doc, M, AutoTarget::Volume, points)
+            .unwrap()
+            .0
+            .doc
+    };
+    // Down to the bottom and up again: all of it stays, the fade starts where the lane is.
+    let dip = with(&[p(2 * BAR, 0.8), p(4 * BAR, 0.0), p(6 * BAR, 0.6)]);
+    let e = add_fade_out(&dip, 2).unwrap();
+    assert_eq!(
+        ticks_values(master_lane(&e.doc)),
+        [
+            (2 * BAR, 0.8),
+            (4 * BAR, 0.0),
+            (6 * BAR, 0.6),
+            (14 * BAR, 0.6),
+            (16 * BAR, 0.0)
+        ]
+    );
+    // Down, up, and down again: the last line is the fade, the dip before it stays.
+    let twice = with(&[
+        p(2 * BAR, 0.8),
+        p(4 * BAR, 0.0),
+        p(6 * BAR, 0.6),
+        p(8 * BAR, 0.0),
+    ]);
+    let e = add_fade_out(&twice, 2).unwrap();
+    assert_eq!(
+        ticks_values(master_lane(&e.doc)),
+        [
+            (2 * BAR, 0.8),
+            (4 * BAR, 0.0),
+            (6 * BAR, 0.6),
+            (14 * BAR, 0.6),
+            (16 * BAR, 0.0)
+        ]
+    );
+    // Down and then held at the bottom: the last line lies at the bottom, so there is no
+    // value before it to come back to; the line down before it is not the last and stays.
+    let held_down = with(&[p(2 * BAR, 0.8), p(4 * BAR, 0.0), p(6 * BAR, 0.0)]);
+    let e = add_fade_out(&held_down, 2).unwrap();
+    assert_eq!(
+        ticks_values(master_lane(&e.doc)),
+        [
+            (2 * BAR, 0.8),
+            (4 * BAR, 0.0),
+            (14 * BAR, 0.0),
+            (16 * BAR, 0.0)
+        ]
+    );
+}
+
+#[test]
+fn a_fade_out_on_a_resting_lane_takes_the_old_fades_end_and_starts_from_the_fader() {
+    let doc = song_with_clip(0, 8 * BAR);
+    let fader = doc.master.gain.position();
+    let doc = add_lane(&doc, M, AutoTarget::Volume, false).unwrap().0.doc;
+    let put = [p(BAR, 0.3), p(2 * BAR, 0.9), p(4 * BAR, 0.0)];
+    let doc = put_points(&doc, M, AutoTarget::Volume, &put).unwrap().0.doc;
+    let doc = rest_lane(&doc, M, AutoTarget::Volume).unwrap().doc;
+    let e = add_fade_out(&doc, 2).unwrap();
+    let l = master_lane(&e.doc);
+    assert!(!l.resting);
+    assert_eq!(
+        ticks_values(l),
+        [(BAR, 0.3), (2 * BAR, 0.9), (6 * BAR, fader), (8 * BAR, 0.0)]
     );
 }
 

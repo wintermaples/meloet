@@ -778,8 +778,9 @@ fn resting_step(
 /// without a lane gets one. The start's value: where the hand put the fader, or on a lane
 /// that moves the fader the lane's value there, or after the head of a fade-out that is
 /// there ([`old_fade`]) the value at that head, the one from before that fade, so that a
-/// shorter fade is shorter. `NoTakes` in a song with no clip, `Unchanged` for no bars or a
-/// fade that is there.
+/// shorter fade is shorter. That fade's end goes too when it lies before the start (the
+/// song grew after it): the new fade takes its place. `NoTakes` in a song with no clip,
+/// `Unchanged` for no bars or a fade that is there.
 pub fn add_fade_out(doc: &Doc, bars: u32) -> Result<Edit, EditError> {
     const HOME: LaneHome = LaneHome::Master;
     let map = TempoMap::new(&doc.timeline);
@@ -801,11 +802,16 @@ pub fn add_fade_out(doc: &Doc, bars: u32) -> Result<Edit, EditError> {
         .flat_map(|l| l.points.iter().copied())
         .take_while(|p| p.tick < start)
         .collect();
+    let fade = old.and_then(|l| old_fade(l, start).map(|head| (l, head)));
+    if let Some((l, _)) = fade {
+        // Up to the head: the end of a fade that ends before the start goes with it.
+        points.truncate(l.points.len() - 1);
+    }
     let moving = old.filter(|l| l.moves());
-    let from = match moving.and_then(|l| old_fade(l, start)) {
+    let from = match fade.filter(|_| moving.is_some()) {
         // The head is the last point before the start. It goes when the line comes to it
         // flat: then it changes nothing heard.
-        Some(head) => {
+        Some((_, head)) => {
             let before = points.len().checked_sub(2).map(|i| points[i].value);
             if before.is_none_or(|v| v == head.value) {
                 points.pop();
@@ -839,13 +845,14 @@ pub fn add_fade_out(doc: &Doc, bars: u32) -> Result<Edit, EditError> {
     })
 }
 
-/// The head of the fade-out that is there, when a new one from `start` starts on it: the
-/// lane's last line when it goes down to the bottom and `start` is on it, after its head.
+/// The head of the fade-out that is there, when a new one from `start` takes its place: the
+/// lane's last line when it goes down to the bottom and its head is before `start`,
+/// wherever it ends and whoever drew it.
 fn old_fade(lane: &Lane, start: u64) -> Option<AutoPoint> {
     let n = lane.points.len();
     let head = *lane.points.get(n.checked_sub(2)?)?;
     let foot = lane.points.get(n - 1)?;
-    (foot.value == 0.0 && head.tick < start && start <= foot.tick).then_some(head)
+    (foot.value == 0.0 && head.tick < start).then_some(head)
 }
 
 #[cfg(test)]

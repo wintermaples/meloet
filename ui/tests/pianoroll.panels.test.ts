@@ -171,7 +171,7 @@ describe("selected notes (right panel of mock A-PianoRoll)", () => {
     expect(text(lock)).toBe("オン");
   });
 
-  it("pressing the scale opens a list: major and minor under the heading「種類」, C to B under「主音」. Choosing sends setMusicalScale", async () => {
+  it("pressing the scale opens a list: the 9 kinds under the heading「種類」, C to B under「主音」. Choosing sends setMusicalScale", async () => {
     await scene("pianoRoll");
     show(NoteInspector);
     const button = q('[data-test="inspector-scale"]')!;
@@ -179,7 +179,9 @@ describe("selected notes (right panel of mock A-PianoRoll)", () => {
     button.click();
     flushSync();
     const menu = document.querySelector<HTMLElement>('[data-test="scale-menu"]')!;
-    expect(text(menu)).toBe("種類 メジャー マイナー 主音 C C# D D# E F F# G G# A A# B");
+    expect(text(menu)).toBe(
+      "種類 メジャー マイナー ハーモニックマイナー メロディックマイナー メジャーペンタトニック マイナーペンタトニック ブルース ドリアン ミクソリディアン 主音 C C# D D# E F F# G G# A A# B",
+    );
     const checked = [...menu.querySelectorAll('[aria-checked="true"]')].map(text);
     expect(checked).toEqual(["メジャー", "C"]);
     const a = [...menu.querySelectorAll<HTMLButtonElement>("button")].find((b) => text(b) === "A")!;

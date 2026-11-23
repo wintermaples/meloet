@@ -1,6 +1,6 @@
 <!-- The piano roll toolbar (the top row of the band in mock A-PianoRoll, F-PRPlay, F-PRRec).
      「▾ ピアノロール」 (pressing folds it; B-74), the clip text, the take switch tag, the tools (select, draw, erase, with keys at the right end), horizontal − ＋ (the same shape as R3-Arrange),
-     grid (a list), triplet, scale lock and the scale ▾ (B-65). On a drum track, scale lock and ▾ are 「使えない」 (spec 3, spec 6). If there is not enough width, the tool keys and then the clip text are hidden (F-PR150, B-73).
+     grid (a list), triplet, scale lock and the scale ▾ (B-65), and 「色」 (「色をつける」, round 12 P1). On a drum track, scale lock, ▾ and 「色」 are 「使えない」 (spec 3, spec 6). If there is not enough width, the tool keys and then the clip text are hidden (F-PR150, B-73).
      When keys go to the piano roll, an accent line on the top edge (B-72). -->
 <script lang="ts">
   import { onMount, untrack } from "svelte";
@@ -121,6 +121,8 @@
   }
   const toggleTriplet = () => send({ type: "setGrid", division: pr.grid.division, triplet: !pr.grid.triplet });
   const toggleLock = () => send({ type: "setMusicalScale", root: pr.scale.root, mode: pr.scale.mode, lock: !pr.scale.lock, highlight: pr.scale.highlight } satisfies Command);
+  const toggleHighlight = () =>
+    send({ type: "setMusicalScale", root: pr.scale.root, mode: pr.scale.mode, lock: pr.scale.lock, highlight: !pr.scale.highlight } satisfies Command);
   const zoom = (steps: number) => zoomBy(steps, metrics.scale);
 
   // The chord of the draw tool: its name on the draw button, and the list 「和音の形」 (not on drums).
@@ -293,6 +295,7 @@
       {t("pr.scaleLock")} <span class="m-num">{scaleText}</span>
     </button>
     <button class="m-btn scale-stub" aria-disabled="true" aria-label={t("inspector.musicalScale")} data-test="pr-scale-menu">▾</button>
+    <button class="m-btn" aria-disabled="true" use:tip={t("msg.drumsNoScaleLock")} data-test="pr-scale-highlight">{t("pr.scaleHighlight")}</button>
   {:else}
     <button class="m-btn" class:on={pr.scale.lock} aria-pressed={pr.scale.lock} use:term={"スケール固定"} onclick={toggleLock} data-test="pr-scale-lock">
       {t("pr.scaleLock")} <span class="m-num">{scaleText}</span>
@@ -307,6 +310,14 @@
       bind:this={scaleButton}
       onclick={() => toggleMenu("scale")}
       data-test="pr-scale-menu">▾</button
+    >
+    <button
+      class="m-btn"
+      class:on={pr.scale.highlight}
+      aria-pressed={pr.scale.highlight}
+      aria-label={t("inspector.highlight")}
+      onclick={toggleHighlight}
+      data-test="pr-scale-highlight">{t("pr.scaleHighlight")}</button
     >
   {/if}
   <div class="ruler" aria-hidden="true" bind:this={ruler}>

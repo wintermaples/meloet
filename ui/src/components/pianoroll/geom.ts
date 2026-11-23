@@ -221,7 +221,7 @@ export const floorTick = (tick: number, step: number) => Math.floor(tick / step)
 /** The list of grids (the owner's decision). 0 is one bar. */
 export const GRID_DIVISIONS = [0, 2, 4, 8, 16, 32] as const;
 
-/** The same table as `ScaleMode::steps` in crates/meloet-model/src/roll.rs. */
+/** The same table as `ScaleMode::steps` in crates/meloet-model/src/roll.rs (held to scaleSteps.table.json by ui/tests). */
 export const SCALE_STEPS = {
   major: [0, 2, 4, 5, 7, 9, 11],
   minor: [0, 2, 3, 5, 7, 8, 10],
@@ -247,9 +247,9 @@ export function noteName(key: number): string {
   return `${NOTE_NAMES[((key % 12) + 12) % 12]}${Math.floor(key / 12) - 1}`;
 }
 
-/** Row background: white keys row.white, black keys row.black, rows that cannot be written (outside the scale with scale lock) row.out. */
+/** Row background: white keys row.white, black keys row.black, rows outside the scale row.out while the scale is locked or 「色をつける」 is on. */
 export function rowColor(key: number, s: MusicalScale): ColorName {
-  if (!writable(key, s)) return "color.row.out";
+  if ((s.lock || s.highlight) && !inScale(key, s)) return "color.row.out";
   return isBlack(key) ? "color.row.black" : "color.row.white";
 }
 

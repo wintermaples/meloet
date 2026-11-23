@@ -1194,6 +1194,103 @@ fn the_locked_scale_keeps_the_write_tool_on_its_keys() {
 }
 
 #[test]
+fn the_locked_scale_keeps_the_write_tool_on_its_keys_for_every_kind() {
+    let m = &mut ready();
+    record_once(m, &[(60, 0.0, 100.0)], 1000.0);
+    for mode in ScaleMode::ALL {
+        for root in [0u8, 5, 9] {
+            for highlight in [true, false] {
+                let set = |m: &mut crate::state::Model, lock| {
+                    let (steps, file) = (m.view().song.undo_count, m.view().song.file);
+                    cmd(
+                        m,
+                        Command::SetMusicalScale {
+                            root,
+                            mode,
+                            lock,
+                            highlight,
+                        },
+                    );
+                    let v = m.view();
+                    assert_eq!(
+                        (v.song.undo_count, v.song.file),
+                        (steps, file),
+                        "the scale is no step and no change"
+                    );
+                };
+                set(m, true);
+                let model = roll::MusicalScale::new(root, model_scale_mode(mode), true).unwrap();
+                for key in 60u8..72 {
+                    let before = m.view().song.undo_count;
+                    cmd(
+                        m,
+                        Command::AddNote {
+                            take: Some(clip_view(m).take_id),
+                            start: 200,
+                            length: 100,
+                            key,
+                            velocity: 100,
+                        },
+                    );
+                    let inside = model.contains(key);
+                    let step = (key + 12 - root) % 12;
+                    assert_eq!(inside, model.mode.steps().contains(&step));
+                    assert_eq!(
+                        m.view().song.undo_count,
+                        before + u32::from(inside),
+                        "{mode:?} root {root} key {key}"
+                    );
+                }
+                // Not locked: the keys outside are written too, whatever `highlight` is.
+                set(m, false);
+                let outside = (60u8..72).find(|&k| !model.contains(k)).unwrap();
+                let before = m.view().song.undo_count;
+                cmd(
+                    m,
+                    Command::AddNote {
+                        take: Some(clip_view(m).take_id),
+                        start: 300,
+                        length: 100,
+                        key: outside,
+                        velocity: 100,
+                    },
+                );
+                assert_eq!(m.view().song.undo_count, before + 1);
+            }
+        }
+    }
+}
+
+/// Writes `ui/src/components/pianoroll/scaleSteps.table.json`, the steps of every kind of scale
+/// by its protocol name; `ui/tests/pianoroll.geom.test.ts` holds `SCALE_STEPS` to it. A table
+/// that is not the committed one shows up in `git status`.
+#[test]
+fn write_the_scale_steps_for_the_screen() {
+    let rows: Vec<String> = roll::ScaleMode::ALL
+        .iter()
+        .map(|&mode| {
+            format!(
+                "  {}: {}",
+                serde_json::to_string(&scale_mode(mode)).unwrap(),
+                serde_json::to_string(mode.steps()).unwrap()
+            )
+        })
+        .collect();
+    let table = format!("{{\n{}\n}}\n", rows.join(",\n"));
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../ui/src/components/pianoroll/scaleSteps.table.json");
+    if std::fs::read_to_string(&path).ok().as_deref() != Some(table.as_str()) {
+        std::fs::write(&path, &table).unwrap();
+    }
+    let names: Vec<ScaleMode> = roll::ScaleMode::ALL.map(scale_mode).to_vec();
+    assert_eq!(
+        names,
+        ScaleMode::ALL,
+        "the same order as the protocol's list"
+    );
+}
+
+#[test]
 fn writing_with_no_clip_makes_one_in_one_step() {
     let m = &mut ready();
     // Two tracks would be nicer; the keys play track 1 in a new song.

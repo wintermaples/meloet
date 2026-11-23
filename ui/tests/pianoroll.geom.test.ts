@@ -25,12 +25,21 @@ describe("grid and scales", () => {
     expect(G.writable(61, { ...cMajor, lock: false })).toBe(true);
   });
 
-  it("row background: white keys row.white, black keys row.black, rows not allowed row.out", () => {
-    const off = { root: 0, mode: "major" as const, lock: false, highlight: true };
+  it("row background: white keys row.white, black keys row.black, rows outside a locked or highlighted scale row.out", () => {
+    const off = { root: 0, mode: "major" as const, lock: false, highlight: false };
     expect(G.rowColor(60, off)).toBe("color.row.white");
     expect(G.rowColor(61, off)).toBe("color.row.black");
     expect(G.rowColor(61, { ...off, lock: true })).toBe("color.row.out");
+    expect(G.rowColor(61, { ...off, highlight: true })).toBe("color.row.out");
+    expect(G.rowColor(60, { ...off, highlight: true })).toBe("color.row.white");
     expect(G.rowColor(66, { root: 7, mode: "major", lock: true, highlight: true })).toBe("color.row.black");
+    // A white key outside D blues (E) and a black key inside it (G#).
+    const dBlues = { root: 2, mode: "blues" as const, lock: false, highlight: true };
+    expect(G.rowColor(64, dBlues)).toBe("color.row.out");
+    expect(G.rowColor(68, dBlues)).toBe("color.row.black");
+    expect(G.rowColor(64, { ...dBlues, highlight: false })).toBe("color.row.white");
+    expect(G.writable(64, dBlues)).toBe(true);
+    expect(G.writable(64, { ...dBlues, lock: true })).toBe(false);
   });
 
   it("the note face is gray.8, 9, 10 by velocity", () => {

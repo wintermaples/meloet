@@ -1,12 +1,12 @@
 // Content of the menu bar (docs/history/design-notes.ja.md B-59). Does not know the DOM. Rows with a key go the same way as the key (runKeyAction in keys/attach.ts).
 
-import type { AppState, Band, Command } from "../../bridge";
+import { SCALE_MODES, type AppState, type Band, type Command } from "../../bridge";
 import { THEME_IDS } from "../../design/themes";
 import { SCALES } from "../../design/tokens";
 import { keyActionUsable, pianoRollOpen, runKeyAction, songBusy, type KeyDeps } from "../../keys/attach";
 import type { KeyAction, Platform } from "../../keys/keys";
 import { t, type TextKey } from "../../text/ja";
-import { gridText, pitchClassName } from "../format";
+import { gridText, pitchClassName, scaleModeName } from "../format";
 import { GRID_DIVISIONS, indexesOf } from "../pianoroll/geom";
 import { shown } from "../pianoroll/shown.svelte";
 import { shownFor } from "../pianoroll/shownNotes";
@@ -217,9 +217,9 @@ export function topMenus(state: AppState, deps: KeyDeps, platform: Platform): To
         choice(t("inspector.off"), !scaleOf.lock, prOpen, send({ type: "setMusicalScale", root: scaleOf.root, mode: scaleOf.mode, lock: false, highlight: scaleOf.highlight })),
         { kind: "heading", label: t("scale.kind") },
         // Choosing a scale turns it on (B-65, the same as the ▾ in the tool row).
-        ...(["major", "minor"] as const).map((mode) =>
+        ...SCALE_MODES.map((mode) =>
           choice(
-            t(mode === "major" ? "scale.major" : "scale.minor"),
+            scaleModeName(mode),
             scaleOf.mode === mode,
             prOpen,
             send({ type: "setMusicalScale", root: scaleOf.root, mode, lock: true, highlight: scaleOf.highlight }),

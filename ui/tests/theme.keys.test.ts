@@ -208,7 +208,8 @@ describe("the hatch on rows that cannot be written", () => {
       const rowIn = (b: Batch, key: number) => b.rects().find((r) => r[0] === 0 && r[1] === (72 - key) * 12 && r[2] === 696 && r[3] === (72 - key) * 12 + 11)!;
       expect(colorOf(rowIn(out, 72)), id).toBe(f32(p["color.row.white"]));
       expect(colorOf(rowIn(out, 61)), id).toBe(f32(p["color.row.out"]));
-      expect(colorOf(rowIn(draw(picture({ scale: { ...LOCK, lock: false } })), 61)), id).toBe(f32(p["color.row.black"]));
+      expect(colorOf(rowIn(draw(picture({ scale: { ...LOCK, lock: false, highlight: false } })), 61)), id).toBe(f32(p["color.row.black"]));
+      expect(colorOf(rowIn(draw(picture({ scale: { ...LOCK, lock: false } })), 61)), id).toBe(f32(p["color.row.out"]));
 
       const keys = new Batch();
       keys.clip(0, 0, 55, 492);

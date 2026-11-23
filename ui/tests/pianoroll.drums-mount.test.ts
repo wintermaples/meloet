@@ -147,8 +147,10 @@ describe("scale lock in the toolbar", () => {
     expect(text(lock)).toBe("スケール固定 —");
     expect(lock.getAttribute("aria-disabled")).toBe("true");
     expect(q("[data-test=pr-scale-menu]")!.getAttribute("aria-disabled")).toBe("true");
+    expect(q("[data-test=pr-scale-highlight]")!.getAttribute("aria-disabled")).toBe("true");
     lock.click();
     q("[data-test=pr-scale-menu]")!.click();
+    q("[data-test=pr-scale-highlight]")!.click();
     flushSync();
     expect(app.sent).toEqual([]);
   });
@@ -181,6 +183,8 @@ describe("right panel (selected notes)", () => {
     expect(text(q("[data-test=inspector-scale]"))).toBe("—");
     expect(text(q("[data-test=inspector-lock]"))).toBe("使えない");
     expect(q("[data-test=inspector-lock]")!.tagName).toBe("SPAN");
+    expect(text(q("[data-test=inspector-highlight]"))).toBe("使えない");
+    expect(q("[data-test=inspector-highlight]")!.tagName).toBe("SPAN");
   });
 });
 

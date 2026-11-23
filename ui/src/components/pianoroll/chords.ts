@@ -2,7 +2,7 @@
 // No DOM. The draw tool has one choice: a chord shape (the pressed row is the root) or a chord of the key (the root is
 // the nearest row with that note name). The last one chosen wins.
 
-import type { MusicalScale } from "../../bridge";
+import type { MusicalScale, ScaleMode } from "../../bridge";
 import { t, type TextKey } from "../../text/ja";
 import { pitchClassName } from "../format";
 import { KEY_MAX, KEY_MIN, noteName, SCALE_STEPS } from "./geom";
@@ -104,8 +104,11 @@ export function chordsOfSteps(tonic: number, steps: readonly number[]): { root: 
   return out;
 }
 
+/** The 7-note scale whose chords a scale of 5 or 6 notes lists. */
+const PARENT_MODE: Partial<Record<ScaleMode, ScaleMode>> = { majorPentatonic: "major", minorPentatonic: "minor", blues: "minor" };
+
 export function keyChords(scale: Pick<MusicalScale, "root" | "mode">): { root: number; triad: Triad }[] {
-  return chordsOfSteps(scale.root, SCALE_STEPS[scale.mode]);
+  return chordsOfSteps(scale.root, SCALE_STEPS[PARENT_MODE[scale.mode] ?? scale.mode]);
 }
 
 const TRIAD_NAME: Readonly<Record<Triad, TextKey | null>> = { major: null, minor: "pr.keyChordMinor", dim: "pr.keyChordDim", aug: "pr.keyChordAug" };

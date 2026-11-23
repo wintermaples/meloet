@@ -1,12 +1,12 @@
 <!-- The scale list (spec 2 "List": width 220, background gray.3, border gray.8, rows 24 high with a choice mark and a name, heading rows 「hd」).
-     The content is the owner's decision: under the heading 「種類」, 「メジャー」 and 「マイナー」; under the heading 「主音」, C to B.
+     The content is the owner's decision: under the heading 「種類」, the 9 kinds (round 12, P1); under the heading 「主音」, C to B.
      On open, focus goes to the row of the chosen kind. ↑ ↓ choose, Enter decides. On Esc or pressing outside, the side that opened it closes it. -->
 <script lang="ts">
   import { onMount } from "svelte";
-  import type { MusicalScale, ScaleMode } from "../../bridge";
+  import { SCALE_MODES, type MusicalScale, type ScaleMode } from "../../bridge";
   import ScrollArea from "../../lib/ScrollArea.svelte";
   import { t } from "../../text/ja";
-  import { pitchClassName } from "../format";
+  import { pitchClassName, scaleModeName } from "../format";
 
   interface Props {
     scale: MusicalScale;
@@ -21,10 +21,7 @@
     root: number;
     mode: ScaleMode;
   }
-  const modes = $derived<Row[]>([
-    { label: t("scale.major"), selected: scale.mode === "major", root: scale.root, mode: "major" },
-    { label: t("scale.minor"), selected: scale.mode === "minor", root: scale.root, mode: "minor" },
-  ]);
+  const modes = $derived<Row[]>(SCALE_MODES.map((mode) => ({ label: scaleModeName(mode), selected: scale.mode === mode, root: scale.root, mode })));
   const roots = $derived<Row[]>(
     Array.from({ length: 12 }, (_, root) => ({ label: pitchClassName(root), selected: root === scale.root, root, mode: scale.mode })),
   );

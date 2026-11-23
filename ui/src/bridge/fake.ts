@@ -1689,6 +1689,24 @@ function shelfSong(s: AppState, shelf: Partial<ShelfView>): void {
 }
 
 // R7-Arrange6: the ● of 「2 ベース」 was pressed, so it is the selected track now.
+// Round 12 P1: A-PianoRoll in D blues, 「色をつける」 on with scale lock off (rows outside in row.out, no hatching), and the same locked.
+SCENES.scaleHighlight = {
+  setup(s) {
+    pianoRollSong(s);
+    s.pianoRoll.scale = { root: 2, mode: "blues", lock: false, highlight: true };
+  },
+  bands: ["pianoRoll"],
+  meters: QUIET,
+};
+SCENES.scaleHighlightLocked = {
+  setup(s) {
+    pianoRollSong(s);
+    s.pianoRoll.scale = { root: 2, mode: "blues", lock: true, highlight: true };
+  },
+  bands: ["pianoRoll"],
+  meters: QUIET,
+};
+
 SCENES.tracks6 = {
   setup(s) {
     bandSong(s);

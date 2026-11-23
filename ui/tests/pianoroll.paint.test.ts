@@ -58,10 +58,13 @@ describe("notes", () => {
     expect(colorOf(faceAt(64, 83))).toBe(is("color.gray.10"));
   });
 
-  it("rows not allowed (outside the scale lock scale) row.out, black key rows row.black, white key rows row.white", () => {
+  it("rows outside a locked or highlighted scale row.out, black key rows row.black, white key rows row.white", () => {
     const rowAt = (key: number, p: RollPicture) =>
       draw(p).find((r) => r[0] === 0 && r[1] === (72 - key) * 12 && r[2] === 696 && r[3] === (72 - key) * 12 + 11)!;
-    expect(colorOf(rowAt(61, picture()))).toBe(is("color.row.black"));
+    const plain = { root: 0, mode: "major", lock: false, highlight: false } as const;
+    expect(colorOf(rowAt(61, picture({ scale: plain })))).toBe(is("color.row.black"));
+    expect(colorOf(rowAt(60, picture({ scale: plain })))).toBe(is("color.row.white"));
+    expect(colorOf(rowAt(61, picture()))).toBe(is("color.row.out"));
     expect(colorOf(rowAt(60, picture()))).toBe(is("color.row.white"));
     expect(colorOf(rowAt(61, picture({ scale: { root: 0, mode: "major", lock: true, highlight: true } })))).toBe(is("color.row.out"));
   });

@@ -112,9 +112,24 @@ export function pitchClassName(keyOrRoot: number): string {
   return PITCH_CLASSES[((keyOrRoot % 12) + 12) % 12]!;
 }
 
+const SCALE_MODE_TEXT: Readonly<Record<ScaleMode, TextKey>> = {
+  major: "scale.major",
+  minor: "scale.minor",
+  harmonicMinor: "scale.harmonicMinor",
+  melodicMinor: "scale.melodicMinor",
+  majorPentatonic: "scale.majorPentatonic",
+  minorPentatonic: "scale.minorPentatonic",
+  blues: "scale.blues",
+  dorian: "scale.dorian",
+  mixolydian: "scale.mixolydian",
+};
+
+/** The name of a kind of scale (「メジャー」「ブルース」). */
+export const scaleModeName = (mode: ScaleMode) => t(SCALE_MODE_TEXT[mode]);
+
 /** The scale name (「C メジャー」「A マイナー」; the owner's decision). */
 export function scaleName(root: number, mode: ScaleMode): string {
-  return t("scale.name", { root: pitchClassName(root), mode: t(mode === "major" ? "scale.major" : "scale.minor") });
+  return t("scale.name", { root: pitchClassName(root), mode: scaleModeName(mode) });
 }
 
 /** The grid name (「1 小節」「1/16」; for triplets 「1/8 三連符」). division 0 is 1 bar. */

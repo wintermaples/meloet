@@ -16,6 +16,8 @@ import { keyList, openKeyList } from "../keylist/keyList.svelte";
 import { trackRows } from "../trackMenu";
 import { openShelf } from "../tracks.svelte";
 import { openFadeBox } from "../arrange/fadeBox.svelte";
+import { arpTarget, arpToggle } from "../arpTarget";
+import { muteSetEntries } from "../mixer/muteSets.svelte";
 import { listEntries } from "./contextMenu.svelte";
 
 export interface ListRow {
@@ -208,6 +210,16 @@ export function topMenus(state: AppState, deps: KeyDeps, platform: Platform): To
       ),
     }),
     act("menu.typedKeys", { kind: "typedKeys" }, k.mod(t("key.playByKeys")), { checked: state.keyboards.typedKeys }),
+    // E2: the same as 「アルペジオ」 of the input meter, which has no room in small windows.
+    plain(
+      "menu.arp",
+      arpToggle(state) !== null,
+      () => {
+        const command = arpToggle(state);
+        if (command) deps.send(command);
+      },
+      { checked: arpTarget(state)?.arp.on ?? false },
+    ),
   ];
 
   const pr = state.pianoRoll;
@@ -276,6 +288,8 @@ export function topMenus(state: AppState, deps: KeyDeps, platform: Platform): To
       : plain("menu.arm", target !== null && !busy, () => target && deps.send({ type: "selectTrack", track: target.id, fromArm: true }), {
           checked: target !== null,
         }),
+    // B-97-3: the list of 「ミュートのセット ▾」 at the head of the mixer band, which has no room in small windows.
+    plain("menu.muteSets", true, undefined, { sub: listEntries(muteSetEntries(state, deps.send, null)) }),
     { kind: "separator" },
     act("menu.nextTake", { kind: "stepTake", delta: 1 }, t("key.take"), { usable: canStepTake }),
     act("menu.prevTake", { kind: "stepTake", delta: -1 }, k.shift(t("key.take")), { usable: canStepTake }),

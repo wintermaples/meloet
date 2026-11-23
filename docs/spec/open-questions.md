@@ -4,14 +4,6 @@ This is the list of things for the owner to decide. Each item says what is asked
 
 The numbers are the B numbers of [`docs/history/design-notes.ja.md`](../history/design-notes.ja.md) (B-95 = round 8, B-94 = round 7). Code comments point to them, so keep them. Questions that already have an answer are not listed; their record is in that file (part C).
 
-## B-97: round 11 (the AI link)
-
-### B-97-3 Where on the screen a mute set is chosen
-
-- Question: mute sets can only be used by the AI now. Should the screen have them, and where? Should saving, renaming and deleting be possible from the screen too?
-- Answered (the owner, 2026-11-24): in the menu at the head of the mixer band, with saving, recalling, renaming and deleting. The shapes are in (protocol 34: `SongView::mute_sets`, `Command::SaveMuteSet` / `RecallMuteSet` / `DeleteMuteSet` / `RenameMuteSet`, architecture 25-37); the screen part is being built. Remove this item when it is in.
-- From: architecture 24-16 F.
-
 ## B-98: round 12 (the owner's request of 2026-11-23)
 
 The readings behind these are in [chapter 7](7-readings.md), A-29; how each is built is architecture chapter 25. The owner answered every item on 2026-11-24 (the listening questions after hearing the files); what was decided is in the spec body. Below are only the parts not decided yet or not yet built.
@@ -21,11 +13,3 @@ The readings behind these are in [chapter 7](7-readings.md), A-29; how each is b
 - Question: the AppImage holds about 170 Ubuntu libraries under the LGPL and libfuse in its runtime; publishing it needs a source offer for them from the same place. It also holds `libwebkit2gtk-4.1.so.0` with bytes changed by linuxdeploy-plugin-gtk (`/usr` → `././`), a change to an LGPL library that has to be stated. How should these be done, and should the AppImage be published at all?
 - Now: built as a trial only (`target/appimage/`, `scripts/build-appimage.sh`); not published; the READMEs say nothing about it.
 - From: architecture 23-5, 25-35; `docs/development/appimage.md`.
-
-### B-98-6 E2: arpeggio — stop, small windows, the mixer strip
-
-- Decided: question 1 (stop does not end a held chord; spec 3, E2; user:2026-11-24).
-- Question 2: at 1280 × 800 at 125 % (150 % is gone, user:2026-11-24; seen in the fake scenes arpOn, arpSettings and loop) the button 「アルペジオ ▾」 does not fit in the input meter, and there is no menu row or key, so the arpeggio cannot be turned on there. Add a way?
-- Question 3: on the mixer strip 「アルペジオ」 sits at the right end of the heading only while on (the track name is cut to about one character on a 108 px strip). The other way is an empty row on every strip, which moves everything below down by about 32 px. Which?
-- From: architecture 25-26; chapter 7 A-29 (E2).
-

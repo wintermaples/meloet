@@ -18,6 +18,7 @@
   import LatencyDialog from "./components/LatencyDialog.svelte";
   import LowerBand from "./components/LowerBand.svelte";
   import ContextMenu from "./components/menu/ContextMenu.svelte";
+  import MuteSetBox from "./components/mixer/MuteSetBox.svelte";
   import MenuBar from "./components/menu/MenuBar.svelte";
   import { metrics, watchDevicePixelRatio } from "./components/metrics.svelte";
   import OutputChooser from "./components/OutputChooser.svelte";
@@ -133,6 +134,7 @@
   <pre class="failure">{current.failure}</pre>
 {/if}
 <ContextMenu />
+<MuteSetBox />
 <Tip />
 <Surface />
 

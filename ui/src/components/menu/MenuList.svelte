@@ -1,8 +1,10 @@
 <!-- List (spec 2 "List"). Width 220, bg gray.3, border gray.8. Rows are 24 high with a choice mark, a name and a key (▸ for rows with children).
      Used by the menu bar and the context menu. A ▸ child list opens to the right of the row (to the left if it does not fit).
-     ↑ ↓ move between rows, Enter acts, → opens the child list (onright if there is none), ← calls onleft. On Esc or a press outside, the opener closes it. -->
+     ↑ ↓ move between rows, Enter acts, → opens the child list (onright if there is none), ← calls onleft. On Esc or a press outside, the opener closes it.
+     A list taller than the window scrolls (ScrollArea); the child list sits outside the scrolling box, and scrolling closes it. -->
 <script lang="ts">
   import { onMount } from "svelte";
+  import ScrollArea from "../../lib/ScrollArea.svelte";
   import MenuList from "./MenuList.svelte";
   import type { ListEntry, ListRow } from "./menus";
 
@@ -23,6 +25,9 @@
   let list = $state<HTMLElement>();
   const rowEls: (HTMLButtonElement | undefined)[] = $state([]);
   let subOpen = $state<number | null>(null);
+  /** The top of the open row from the top of the list (CSS px). */
+  let subTop = $state(0);
+  let rowsBox = $state<HTMLDivElement>();
   let subFocus = $state<"first" | "list">("list");
 
   const usableRows = () => rowEls.filter((b): b is HTMLButtonElement => !!b && !b.disabled);
@@ -55,8 +60,22 @@
 
   function openSub(i: number, byKeys: boolean): void {
     subFocus = byKeys ? "first" : "list";
+    const row = rowEls[i]?.getBoundingClientRect();
+    const top = list?.getBoundingClientRect().top;
+    subTop = row && top !== undefined ? row.top - top : 0;
     subOpen = i;
   }
+
+  $effect(() => {
+    const box = rowsBox;
+    if (!box) return;
+    const onScroll = () => {
+      if (subOpen !== null) subOpen = null;
+    };
+    box.addEventListener("scroll", onScroll);
+    return () => box.removeEventListener("scroll", onScroll);
+  });
+  const subEntries = $derived(subOpen === null ? undefined : (entries[subOpen] as ListRow | undefined)?.sub);
   function closeSub(): void {
     const i = subOpen;
     subOpen = null;
@@ -107,53 +126,57 @@
   {onkeydown}
   data-test={test}
 >
-  {#each entries as entry, i (i)}
-    {#if entry.kind === "separator"}
-      <div class="separator" role="separator"></div>
-    {:else if entry.kind === "heading"}
-      <div class="head" role="presentation"><span class="m-lbl">{entry.label}</span></div>
-    {:else}
-      <div class="item">
-        <button
-          class="m-plain row m-focus-in"
-          class:unusable={!entry.usable}
-          class:expanded={subOpen === i}
-          role={entry.checked === undefined ? "menuitem" : "menuitemcheckbox"}
-          aria-checked={entry.checked}
-          aria-haspopup={entry.sub ? "menu" : undefined}
-          aria-expanded={entry.sub ? subOpen === i : undefined}
-          disabled={!entry.usable}
-          data-row={i}
-          bind:this={rowEls[i]}
-          onclick={() => pick(i, false)}
-          onpointerenter={() => {
-            if (entry.sub && entry.usable) openSub(i, false);
-            else if (subOpen !== null) subOpen = null;
-          }}
-        >
-          <span class="choice" class:selected={entry.checked === true} class:none={entry.checked === undefined}><span class="dot"></span></span>
-          {#if entry.swatch !== undefined}<span class="swatch" style:background="var(--color-track-{entry.swatch})"></span>{/if}
-          <span class="label">{entry.label}</span>
-          {#if entry.detail}<span class="m-lbl" data-test="menu-detail">{entry.detail}</span>{/if}
-          {#if entry.hint}<span class="m-lbl hint" data-test="menu-hint">{entry.hint}</span>{/if}
-          <span class="m-spacer"></span>
-          {#if entry.sub}<span class="m-lbl key">▸</span>{:else if entry.key}<span class="m-num m-lbl key">{entry.key}</span>{/if}
-        </button>
-        {#if entry.sub && subOpen === i}
-          <div class="sub">
-            <MenuList entries={entry.sub} {onrun} onleft={closeSub} {onright} focus={subFocus} nested test={test ? `${test}-sub` : undefined} />
-          </div>
-        {/if}
-      </div>
-    {/if}
-  {/each}
+  <ScrollArea bind:viewport={rowsBox}>
+    {#each entries as entry, i (i)}
+      {#if entry.kind === "separator"}
+        <div class="separator" role="separator"></div>
+      {:else if entry.kind === "heading"}
+        <div class="head" role="presentation"><span class="m-lbl">{entry.label}</span></div>
+      {:else}
+        <div class="item">
+          <button
+            class="m-plain row m-focus-in"
+            class:unusable={!entry.usable}
+            class:expanded={subOpen === i}
+            role={entry.checked === undefined ? "menuitem" : "menuitemcheckbox"}
+            aria-checked={entry.checked}
+            aria-haspopup={entry.sub ? "menu" : undefined}
+            aria-expanded={entry.sub ? subOpen === i : undefined}
+            disabled={!entry.usable}
+            data-row={i}
+            bind:this={rowEls[i]}
+            onclick={() => pick(i, false)}
+            onpointerenter={() => {
+              if (entry.sub && entry.usable) openSub(i, false);
+              else if (subOpen !== null) subOpen = null;
+            }}
+          >
+            <span class="choice" class:selected={entry.checked === true} class:none={entry.checked === undefined}><span class="dot"></span></span>
+            {#if entry.swatch !== undefined}<span class="swatch" style:background="var(--color-track-{entry.swatch})"></span>{/if}
+            <span class="label">{entry.label}</span>
+            {#if entry.detail}<span class="m-lbl" data-test="menu-detail">{entry.detail}</span>{/if}
+            {#if entry.hint}<span class="m-lbl hint" data-test="menu-hint">{entry.hint}</span>{/if}
+            <span class="m-spacer"></span>
+            {#if entry.sub}<span class="m-lbl key">▸</span>{:else if entry.key}<span class="m-num m-lbl key">{entry.key}</span>{/if}
+          </button>
+        </div>
+      {/if}
+    {/each}
+  </ScrollArea>
+  {#if subEntries}
+    <div class="sub" style:top="calc({subTop}px - 2 * var(--line-hair) - var(--space-1))">
+      <MenuList entries={subEntries} {onrun} onleft={closeSub} {onright} focus={subFocus} nested test={test ? `${test}-sub` : undefined} />
+    </div>
+  {/if}
 </div>
 
 <style>
   /* Width 220. Only when a row does not fit its name and key (「名前をつけて保存… Ctrl Shift S」), widen to fit. */
   .menu {
+    position: relative;
     width: max-content;
     min-width: var(--part-list-width);
+    max-height: 100vh;
     display: flex;
     flex-direction: column;
     background: var(--color-gray-3);
@@ -264,7 +287,6 @@
   .sub {
     position: absolute;
     left: calc(100% + var(--space-1));
-    top: calc(-1 * (var(--line-hair) + var(--space-1)));
     z-index: 1;
   }
 </style>

@@ -1,4 +1,4 @@
-<!-- One mixer strip (mock F4-Mixer). From the top: the heading (number or A / B, and the name), the instrument / return / output slot, 4 inserts, sends, pan,
+<!-- One mixer strip (mock F4-Mixer). From the top: the heading (number or A / B, and the name), the arpeggio's row (E2; empty unless on), the instrument / return / output slot, 4 inserts, sends, pan,
      the scale marks, fader and meter, the fader value, M / S / ●. The meter is a slot in the mixerMeters region (the MixerStrips box).
      Insert reorder (spec 3 (86-2)): hold a filled slot and move it up or down. An accent line where it goes in; release sends one MoveInsert; Esc cancels. Only inside the same strip. -->
 <script lang="ts">
@@ -64,7 +64,7 @@
     solo: Toggle;
     arm: Toggle;
     auto?: StripAuto | null;
-    /** Tracks only (E2): the keyboards' arpeggio. Shown in the heading only while on; a press turns it off. */
+    /** Tracks only (E2): the keyboards' arpeggio. Shown in its row only while on; a press turns it off. */
     arp?: Toggle | null;
     /** The newest value while a lane moves the volume (only for the fader value text; changes every frame). undefined when not moving. */
     live?: { gainDb?: number | null };
@@ -163,6 +163,8 @@
   <div class="head" style:border-top-color={color}>
     <span class="m-num m-lbl">{mark}</span>
     <span class="m-name name">{name}</span>
+  </div>
+  <div class="arp-row" data-test="mixer-arp-row">
     {#if arp?.on}
       <button
         class="arp"
@@ -307,11 +309,17 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  /* 「アルペジオ」 while on (the place of MIDI effects is above 「音源」, spec 3): at the heading's right end, so nothing below moves.
-     The look of M / S on; while counting in or recording it cannot be pressed. */
-  .arp {
+  /* The place of MIDI effects, above 「音源」 (spec 3). Every strip has the row, so the rows below stay level from strip to strip.
+     「アルペジオ」 while on has the look of M / S on; while counting in or recording it cannot be pressed. */
+  .arp-row {
+    height: var(--size-row);
     flex-shrink: 0;
-    margin-left: auto;
+    display: flex;
+    align-items: center;
+  }
+  .arp {
+    flex: 1;
+    min-width: 0;
     height: var(--part-toggle-size);
     padding: 0 var(--space-1);
     border: var(--line-hair) solid var(--color-accent);
@@ -319,6 +327,9 @@
     background: var(--color-gray-1);
     color: var(--color-accent);
     font: inherit;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     cursor: default;
   }
   .arp.live {

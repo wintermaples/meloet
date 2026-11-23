@@ -113,6 +113,7 @@ describe("menu contents (B-59)", () => {
       "メトロノーム C",
       "カウントイン ▸",
       "キーで弾く Ctrl K",
+      "アルペジオ",
     ]);
     expect(keyed(4)).toEqual(["道具 ▸", "クオンタイズ Q", "もとの位置へ戻す", "グリッド ▸", "三連符", "スケール固定 ▸"]);
     // The spec 3 order. Delete take (B-82) is after the previous take.
@@ -120,6 +121,7 @@ describe("menu contents (B-59)", () => {
       "ミュート Shift M",
       "ソロ Shift S",
       "録音待機",
+      "ミュートのセット ▸",
       "次のテイク T",
       "前のテイク Shift T",
       "テイクを消す",
@@ -505,7 +507,7 @@ describe("menu bar (mount)", () => {
 
   const names = () => [...document.querySelectorAll<HTMLButtonElement>('[data-test="menubar"] button')];
   const list = () => document.querySelector<HTMLElement>('[data-test="menubar-list"]');
-  const listRows = () => [...list()!.querySelectorAll<HTMLButtonElement>(":scope > .item > button")];
+  const listRows = () => [...list()!.querySelectorAll<HTMLButtonElement>(":scope > .area .item > button")];
   const keydown = (key: string) => {
     const ev = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
     (document.activeElement ?? document.body).dispatchEvent(ev);

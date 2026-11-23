@@ -435,7 +435,7 @@ describe("「重ねる」（モック P10-Overdub の A）", () => {
     ready((s) => {
       s.transport.state = "recording";
       s.transport.overdub = overdub;
-      s.transport.recording = { id: 1, track: 1, from: 0, take: 2, clip: clipId, lap: loop ? 1 : 0 };
+      s.transport.recording = { id: 1, track: 1, from: 0, take: 2, clip: clipId, lap: loop ? 1 : 0, overdub };
       s.status.message = loop
         ? { id: "loopRecording", track: { number: 1, name: "ピアノ" }, fromBar: 1, toBar: 4, lap: 2 }
         : { id: "recording", track: { number: 1, name: "ピアノ" }, take: 2 };

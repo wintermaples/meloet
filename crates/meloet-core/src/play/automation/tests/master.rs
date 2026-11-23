@@ -467,12 +467,10 @@ fn a_fade_out_is_one_step_at_the_songs_end() {
     // The same again is no step.
     cmd(m, Command::AddFadeOut { bars: 2 });
     assert_eq!(steps(m).len(), before + 1);
-    cmd(m, Command::AddFadeOut { bars: 1 });
-    // A shorter one starts on the line of the fade that is there, which stays as it sounds.
-    assert_eq!(
-        points(m),
-        [(2 * BAR, fader), (3 * BAR, fader / 2.0), (4 * BAR, 0.0)]
-    );
+    let effects = cmd(m, Command::AddFadeOut { bars: 1 });
+    // A shorter one starts from the fader's value, not on the line of the fade that is there.
+    assert_eq!(points(m), [(3 * BAR, fader), (4 * BAR, 0.0)]);
+    assert_eq!(sent(&effects), [vec![(3 * BAR, fader), (4 * BAR, 0.0)]]);
     cmd(
         m,
         Command::AddFadeOut {
@@ -486,14 +484,106 @@ fn a_fade_out_is_one_step_at_the_songs_end() {
         cmd(m, Command::AddFadeOut { bars });
         assert_eq!(steps(m).len(), before + 3);
     }
-    // Undo, three times, takes the lane away again.
+    // Undo, three times, takes the lane away again; each brings back the lane as it was.
+    let effects = cmd(m, Command::Undo);
+    assert_eq!(sent(&effects), [vec![(3 * BAR, fader), (4 * BAR, 0.0)]]);
+    assert_eq!(points(m), [(3 * BAR, fader), (4 * BAR, 0.0)]);
     cmd(m, Command::Undo);
-    cmd(m, Command::Undo);
+    assert_eq!(points(m), [(2 * BAR, fader), (4 * BAR, 0.0)]);
     let effects = cmd(m, Command::Undo);
     assert_eq!(sent(&effects), [vec![]]);
     assert!(m.view().song.master.lanes.is_empty());
     let effects = cmd(m, Command::Redo);
     assert_eq!(sent(&effects), [vec![(2 * BAR, fader), (4 * BAR, 0.0)]]);
+    cmd(m, Command::Redo);
+    assert_eq!(points(m), [(3 * BAR, fader), (4 * BAR, 0.0)]);
+    cmd(m, Command::Redo);
+    assert_eq!(points(m), [(0, fader), (4 * BAR, 0.0)]);
+}
+
+/// The fade ends where the export's 「曲ぜんぶ」 ends: at the last clip's end, also when
+/// that is inside a bar.
+#[test]
+fn a_fade_out_ends_where_the_whole_song_is_exported_to() {
+    let exported = |m: &mut Model| {
+        cmd(m, Command::OpenExport);
+        let span = m.view().export.dialog.expect("the dialog").span;
+        cmd(m, Command::CloseExport);
+        span.end
+    };
+    let m = &mut with_clip();
+    cmd(m, Command::AddFadeOut { bars: 2 });
+    assert_eq!(points(m).last(), Some(&(4 * BAR, 0.0)));
+    assert_eq!(exported(m), 4 * BAR);
+
+    let m = &mut with_clip();
+    let clip = m.view().song.tracks[0].clips[0].id;
+    cmd(
+        m,
+        Command::TrimClip {
+            clip,
+            edge: meloet_protocol::ClipEdge::End,
+            ticks: -((3 * Q) as i64),
+        },
+    );
+    let end = m.view().song.tracks[0].clips[0].end;
+    assert_eq!(end, 3 * BAR + Q, "inside bar 4");
+    let fader = meloet_model::Gain::UNITY.position();
+    cmd(m, Command::AddFadeOut { bars: 2 });
+    assert_eq!(points(m), [(BAR + Q, fader), (end, 0.0)]);
+    assert_eq!(exported(m), end);
+    // Longer than the song: from its head.
+    cmd(m, Command::AddFadeOut { bars: 4 });
+    assert_eq!(points(m), [(0, fader), (end, 0.0)]);
+}
+
+#[test]
+fn a_fade_out_again_over_points_drawn_by_hand_is_one_step() {
+    let m = &mut with_clip();
+    let fader = meloet_model::Gain::UNITY.position();
+    cmd(m, Command::AddFadeOut { bars: 2 });
+    for (tick, value) in [(BAR, 0.5), (2 * BAR + 2 * Q, 0.7)] {
+        let lane = lane(m).lane_id;
+        cmd(
+            m,
+            Command::AddAutoPoint {
+                lane,
+                tick,
+                value: Some(value),
+            },
+        );
+    }
+    let half = 2 * BAR + 2 * Q;
+    let drawn = [(BAR, 0.5), (2 * BAR, fader), (half, 0.7), (4 * BAR, 0.0)];
+    assert_eq!(points(m), drawn);
+    let before = steps(m).len();
+    // A longer one: the point before its start stays, the ones from it on go.
+    let effects = cmd(m, Command::AddFadeOut { bars: 3 });
+    assert_eq!(points(m), [(BAR, 0.5), (4 * BAR, 0.0)]);
+    assert_eq!(sent(&effects), [vec![(BAR, 0.5), (4 * BAR, 0.0)]]);
+    assert_eq!(steps(m).len(), before + 1);
+    cmd(m, Command::Undo);
+    assert_eq!(points(m), drawn);
+    cmd(m, Command::Redo);
+    assert_eq!(points(m), [(BAR, 0.5), (4 * BAR, 0.0)]);
+    cmd(m, Command::Undo);
+    // A shorter one, on the lane's last line: from the drawn point's value; the points
+    // before the start stay.
+    let shorter = [
+        (BAR, 0.5),
+        (2 * BAR, fader),
+        (half, 0.7),
+        (3 * BAR, 0.7),
+        (4 * BAR, 0.0),
+    ];
+    let effects = cmd(m, Command::AddFadeOut { bars: 1 });
+    assert_eq!(points(m), shorter);
+    assert_eq!(sent(&effects), [shorter.to_vec()]);
+    assert_eq!(steps(m).len(), before + 1);
+    cmd(m, Command::Undo);
+    assert_eq!(points(m), drawn);
+    cmd(m, Command::Redo);
+    assert_eq!(points(m), shorter);
 }
 
 #[test]
@@ -540,10 +630,10 @@ fn a_fade_out_starts_where_the_master_sounds_and_wakes_a_lane_at_rest() {
     cmd(m, Command::Undo);
     assert!(lane(m).resting);
     assert_eq!(points(m), [(3 * BAR, 0.6), (4 * BAR, 0.0)]);
-    // A lane that moves: the fade starts on its line.
+    // A lane that moves, with the fade on it: from the value before that fade.
     cmd(m, Command::Redo);
     cmd(m, Command::AddFadeOut { bars: 1 });
-    assert_eq!(points(m), [(2 * BAR, 0.8), (3 * BAR, 0.4), (4 * BAR, 0.0)]);
+    assert_eq!(points(m), [(3 * BAR, 0.8), (4 * BAR, 0.0)]);
 }
 
 #[test]

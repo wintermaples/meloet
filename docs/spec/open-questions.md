@@ -298,8 +298,6 @@ The readings behind these are in [chapter 7](7-readings.md), A-29; how each is b
 
 ### B-98-16 M5: where the fade ends, and fades again
 
-- Question 1: the fade ends at the song's end, the last clip's end up to the next bar head; the export's 「曲ぜんぶ」 ends at the last clip's end. When the last clip ends inside a bar, the file ends before the fade does (at the level the line has there). Should the fade end at the last clip's end, or the export at the bar?
-- Question 2: a fade-out added again with fewer bars changes nothing heard (it starts from the old fade's line). Should a new fade start from the fader (or the value before the old fade) so it can shorten?
 - Question 3: folded, the master's row stays as a low row 「▸ マスター 音量」; the master's automation mark sits at the right end of its value row (there was no disabled mark before). Right?
 - From: architecture 25-32; chapter 7 A-29 (M5).
 

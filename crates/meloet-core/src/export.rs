@@ -193,10 +193,9 @@ pub struct Scene<'a> {
 impl Scene<'_> {
     /// 「曲ぜんぶ」: from the start to where the last clip ends.
     fn song_span(&self) -> TickSpan {
-        let clips = self.doc.tracks.iter().flat_map(|t| t.clips.iter());
         TickSpan {
             start: 0,
-            end: clips.map(|c| c.end).max().unwrap_or(0),
+            end: meloet_model::sections::last_clip_end(self.doc),
         }
     }
 

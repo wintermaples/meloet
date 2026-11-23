@@ -6,7 +6,6 @@
   import { FADE_OUT_BARS_DEFAULT, FADE_OUT_BARS_MAX, type TrackView } from "../../bridge";
   import { send } from "../../state/app.svelte";
   import { t } from "../../text";
-  import type { TempoMap } from "../../time/tempoMap";
   import { tickToX, type View } from "../arrangeGeom";
   import { dragReading } from "../pianoroll/view.svelte";
   import { readBars } from "../valueClamp";
@@ -15,14 +14,13 @@
   interface Props {
     tracks: readonly TrackView[];
     view: View;
-    map: TempoMap;
     /** Counting in or recording, or the arrange folded into the overview: the box closes. */
     shut: boolean;
   }
-  let { tracks, view, map, shut }: Props = $props();
+  let { tracks, view, shut }: Props = $props();
 
   let width = $state(0);
-  const x = $derived(Math.min(Math.max(tickToX(view, songEndTick(tracks, map)) - width, 0), Math.max(0, view.width - width)));
+  const x = $derived(Math.min(Math.max(tickToX(view, songEndTick(tracks)) - width, 0), Math.max(0, view.width - width)));
   let draft = $state("");
   let field = $state<HTMLInputElement>();
   let was = false;

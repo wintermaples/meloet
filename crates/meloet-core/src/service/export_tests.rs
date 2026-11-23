@@ -402,6 +402,72 @@ fn a_fade_out_is_exported_as_it_plays_and_ends_in_silence() {
     assert_eq!(first_difference(&run.pass(0), &whole), None);
 }
 
+/// The last clip ends inside a bar: 「曲ぜんぶ」 ends there, and so does the fade-out, so the
+/// file's last frames are at the fade's end, silent, and are what plays.
+#[test]
+fn a_fade_out_reaches_its_end_at_the_last_frame_of_the_whole_song() {
+    let place = Place::new("export-fade-end");
+    let (doc, parts) = song();
+    let note = |start: u64| meloet_model::Note {
+        start,
+        length: 3 * BAR / 4 - start,
+        key: 60 + (start / 480) as u8,
+        velocity: 110,
+        from: None,
+    };
+    let take = meloet_model::NewTake {
+        origin: 6 * BAR,
+        length: 3 * BAR / 4,
+        notes: vec![note(0), note(480), note(960)],
+        controls: Vec::new(),
+    };
+    let plain = (edit::add_recording(&doc, parts.lead, vec![take], 0).unwrap())
+        .0
+        .doc;
+    let end = meloet_model::sections::last_clip_end(&plain);
+    assert_eq!(end, 6 * BAR + 3 * BAR / 4, "inside bar 7");
+    let faded = meloet_model::automation::add_fade_out(&plain, 2).unwrap();
+    assert_eq!(
+        faded.step,
+        meloet_model::StepKind::AddFadeOut {
+            range: meloet_model::TickRange::new(end - 2 * BAR, end).unwrap()
+        }
+    );
+    let doc = faded.doc;
+    place.files_of(&doc);
+    let span = (0, end);
+    let frames = frames_of(&doc, span.0, span.1);
+    let pass = |id: u64, doc: &Doc| {
+        let run = place.start(place.setup(place.job(id, doc, span, ExportTail::Off)));
+        run.rendered();
+        run.pass(0)
+    };
+    let written = pass(1, &doc);
+    assert_eq!(written.len(), 2 * frames);
+    let whole = pass(2, &plain);
+    let last = |samples: &[f32]| {
+        let tail = &samples[samples.len() - 2 * BLOCK / 4..];
+        tail.iter().fold(0.0f32, |m, s| m.max(s.abs()))
+    };
+    assert!(last(&written) < 1e-3, "{}", last(&written));
+    assert!(last(&whole) > 1e-2, "the song sounds to its end");
+    // Half a bar before the end the fade is not over yet.
+    let near = frames_of(&doc, 0, end - BAR / 2);
+    let near = &written[2 * near..2 * (near + BLOCK)];
+    assert!(near.iter().any(|s| s.abs() > 1e-4), "silent before the end");
+
+    let mut playing = Playing::new(&place);
+    playing.open(&doc, 2);
+    playing.play(span.0, frames);
+    playing.quiet();
+    let heard = playing.play(span.0, frames);
+    assert_eq!(
+        first_difference(&written, &heard),
+        None,
+        "the first frame that differs, exported and played"
+    );
+}
+
 /// A song with one vocal clip over bars 2 and 3 with three takes, each of a file of its
 /// own: the first two hold the same sine, the third another one, a quarter of a turn ahead.
 /// The master has no limiter.

@@ -31,7 +31,6 @@ import MixerStrips from "../src/components/mixer/MixerStrips.svelte";
 import { dragReading } from "../src/components/pianoroll/view.svelte";
 import type { KeyDeps } from "../src/keys/attach";
 import { t } from "../src/text";
-import { TempoMap } from "../src/time/tempoMap";
 import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 import * as app from "./fake-app.svelte";
 
@@ -373,13 +372,11 @@ describe("「編集 ▸ 曲の終わりにフェードアウトをつける…�
     expect(field()).toBeNull();
     expect(fadeBox.open).toBe(false);
   });
-  it("the song's end on the screen is the latest clip end, up to the head of a bar", () => {
-    const s = fakeState();
-    const map = new TempoMap(s.timeline);
+  it("the song's end on the screen is the latest clip end, where 「曲ぜんぶ」 ends", () => {
     const tracks = (end: number) => [{ clips: [{ end: BAR }] }, { clips: [{ end }] }];
-    expect(songEndTick([], map)).toBe(0);
-    expect(songEndTick(tracks(4 * BAR), map)).toBe(4 * BAR);
-    expect(songEndTick(tracks(4 * BAR + 1), map)).toBe(5 * BAR);
+    expect(songEndTick([])).toBe(0);
+    expect(songEndTick(tracks(4 * BAR))).toBe(4 * BAR);
+    expect(songEndTick(tracks(4 * BAR + 1))).toBe(4 * BAR + 1);
   });
 });
 
@@ -388,8 +385,13 @@ describe("the fake's fade-out (Rust's rule)", () => {
     ({ tracks: ends.map((end) => ({ clips: [{ end }] })), master: { gainDb } }) as unknown as AppState["song"];
   const timeline = fakeState().timeline;
 
-  it("ends at the song's end and starts bars before it, from the fader", () => {
-    expect(fakeFadeOut(song([BAR, 6 * BAR + TPQ]), timeline, null, 4)).toEqual({ start: 3 * BAR, end: 7 * BAR, points: [[3 * BAR, 0.8], [7 * BAR, 0]] });
+  it("ends at the last clip's end and starts bars before it, from the fader", () => {
+    expect(fakeFadeOut(song([BAR, 7 * BAR]), timeline, null, 4)).toEqual({ start: 3 * BAR, end: 7 * BAR, points: [[3 * BAR, 0.8], [7 * BAR, 0]] });
+    // The last clip ends inside a bar: the fade ends there and is as long as the bars before that bar.
+    const inside = 6 * BAR + TPQ;
+    expect(fakeFadeOut(song([BAR, inside]), timeline, null, 4)).toEqual({ start: inside - 4 * BAR, end: inside, points: [[inside - 4 * BAR, 0.8], [inside, 0]] });
+    expect(fakeFadeOut(song([2 * BAR + TPQ]), timeline, null, 2)).toMatchObject({ start: TPQ });
+    expect(fakeFadeOut(song([2 * BAR + TPQ]), timeline, null, 3)).toMatchObject({ start: 0, end: 2 * BAR + TPQ });
     expect(fakeFadeOut(song([2 * BAR], -6), timeline, null, 16)).toEqual({ start: 0, end: 2 * BAR, points: [[0, fakeFaderPlace(-6)], [2 * BAR, 0]] });
     expect(fakeFaderPlace(-6)).toBeCloseTo(0.6);
     expect([fakeFaderPlace(null), fakeFaderPlace(0), fakeFaderPlace(6)]).toEqual([0, 0.8, 1]);
@@ -409,6 +411,29 @@ describe("the fake's fade-out (Rust's rule)", () => {
     expect(fakeFadeOut(song([8 * BAR]), timeline, { points, resting: true }, 4)!).toMatchObject({ points: [[0, 0.4], [2 * BAR, 0.4], [4 * BAR, 0.8], [8 * BAR, 0]] });
     expect(fakeFadeOut(song([8 * BAR], -6), timeline, { points: [], resting: false }, 2)!).toMatchObject({ points: [[6 * BAR, fakeFaderPlace(-6)], [8 * BAR, 0]] });
   });
+  it("again: shorter or longer from the value before the fade that is there; the line before the start stays", () => {
+    const again = (points: [number, number][], bars: number) => {
+      const fade = fakeFadeOut(song([8 * BAR]), timeline, { points, resting: false }, bars);
+      return fade === null || fade === "noClips" ? null : fade.points;
+    };
+    const first: [number, number][] = [[4 * BAR, 0.8], [8 * BAR, 0]];
+    expect(again(first, 2)).toEqual([[6 * BAR, 0.8], [8 * BAR, 0]]);
+    expect(again(first, 6)).toEqual([[2 * BAR, 0.8], [8 * BAR, 0]]);
+    expect(again(first, 4)).toEqual(first);
+    // A lane that rises into the fade: its head stays, the value is held up to the new start.
+    const risen: [number, number][] = [[0, 0.5], [4 * BAR, 0.75], [8 * BAR, 0]];
+    expect(again(risen, 2)).toEqual([[0, 0.5], [4 * BAR, 0.75], [6 * BAR, 0.75], [8 * BAR, 0]]);
+    expect(again(again(risen, 2)!, 1)).toEqual([[0, 0.5], [4 * BAR, 0.75], [7 * BAR, 0.75], [8 * BAR, 0]]);
+    expect(again(risen, 6)).toEqual([[0, 0.5], [2 * BAR, 0.625], [8 * BAR, 0]]);
+    // Points drawn by hand: those before the start stay, those from it on go.
+    const drawn: [number, number][] = [[BAR, 0.25], [2 * BAR, 0.5], [4 * BAR, 0.75], [6 * BAR, 0.25], [8 * BAR, 0]];
+    expect(again(drawn, 3)).toEqual([[BAR, 0.25], [2 * BAR, 0.5], [4 * BAR, 0.75], [5 * BAR, 0.5], [8 * BAR, 0]]);
+    expect(again(drawn, 1)).toEqual([[BAR, 0.25], [2 * BAR, 0.5], [4 * BAR, 0.75], [6 * BAR, 0.25], [7 * BAR, 0.25], [8 * BAR, 0]]);
+    // A line down to the bottom that ends before the new start is no fade to start on.
+    expect(again([[0, 0.9], [2 * BAR, 0]], 2)).toEqual([[0, 0.9], [2 * BAR, 0], [6 * BAR, 0], [8 * BAR, 0]]);
+    // A fade whose end lies after the song's end now (made when the end was the bar's head).
+    expect(again([[6 * BAR, 0.8], [9 * BAR, 0]], 1)).toEqual([[7 * BAR, 0.8], [8 * BAR, 0]]);
+  });
   it("through the fake: a lane is made, replaced under a new id, woken; the same fade again is nothing", async () => {
     const s = scene("muted");
     const transport = createFakeTransport(s as FakeState);
@@ -417,7 +442,7 @@ describe("the fake's fade-out (Rust's rule)", () => {
       const lane = decodeLane(await transport.lane(laneOfMaster(await now()).laneId));
       return Array.from(lane.ticks).map((tick, i) => [tick, lane.values[i]]);
     };
-    const end = songEndTick(s.song.tracks, new TempoMap(s.timeline));
+    const end = songEndTick(s.song.tracks);
     const undo = s.song.undoCount;
     expect(s.song.master.lanes).toEqual([]);
     await transport.send({ type: "addFadeOut", bars: 4 });

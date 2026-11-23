@@ -41,7 +41,7 @@ Reply in Japanese, in plain words (the owner reads Japanese).
 You cannot start helpers yourself, but you can ask Fable (a stronger model) through the Claude Code command line, read-only:
 
 ```bash
-claude -p --model claude-fable-5-2 --effort medium \
+claude -p --model fable --effort medium \
   --tools "Read,Grep,Glob" --allowedTools "Read,Grep,Glob" \
   "<your question>"
 ```

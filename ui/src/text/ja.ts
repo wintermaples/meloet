@@ -2710,6 +2710,16 @@ export const texts = {
   "export.checkOverHint": e("マスターのフェーダーを下げるか、リミッターの上限を見てください。", "spec:3"),
   "export.solo": e("いま {track} をソロにしています。書き出しには入れません（曲ぜんぶを書き出します）。", "spec:3", { track: "2 ベース" }),
   "export.soloMore": e("{track} ほか {count} 本", "spec:3", { track: "2 ベース", count: "1" }),
+  // 「音の大きさ」 of the export and its lines in the check (round 12 F1). {lufs}, {peak} and {db} are numbers like 「−18.6」.
+  "export.loudness": e("音の大きさ", "user:2026-11-23"),
+  "export.loudnessAsIs": e("そのまま", "user:2026-11-23"),
+  "export.loudnessMatch": e("公開先に合わせる", "user:2026-11-23"),
+  "export.loudnessTarget": e("{lufs} LUFS ・ {peak} dBTP", "user:2026-11-23", { lufs: "−14", peak: "−1" }),
+  "export.checkLoudness": e("曲ぜんたいの大きさ {lufs} LUFS ・ トゥルーピーク {peak} dBTP", "user:2026-11-23", { lufs: "−18.6", peak: "−3.2" }),
+  "export.checkLoudnessSoFar": e("ここまでの大きさ {lufs} LUFS ・ トゥルーピーク {peak} dBTP", "builder:2026-11-23", { lufs: "−18.6", peak: "−3.2" }),
+  "export.loudnessLouder": e("合わせると {db} dB 大きくなります", "user:2026-11-23", { db: "4.6" }),
+  "export.loudnessQuieter": e("合わせると {db} dB 小さくなります", "builder:2026-11-23", { db: "2.4" }),
+  "export.loudnessLimited": e("−1 dBTP を越えないよう、{lufs} LUFS になります", "user:2026-11-23", { lufs: "−15.2" }),
   // The rest of the status line while the export dialog is open (after 「「書き出し」のダイアログをひらいています ・ 」).
   "status.exportChecking": e("たしかめています {percent} %", "mock:F8-ExportCheck", { percent: "38" }),
   "status.exportOver": e("0 dB をこえる所があります", "mock:F8-ExportClip"),

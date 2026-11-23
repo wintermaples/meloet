@@ -103,7 +103,7 @@ describe("fake scenes (mock F7-Export, F7-Exporting, R11-Fit)", () => {
       format: "wav",
       formats: ["wav", "flac"],
       place: "~/音楽/はじめての曲.wav",
-      check: { state: "done", peakDb: -0.6, clips: false, over: 0, lufs: null, truePeakDb: null },
+      check: { state: "done", peakDb: -0.6, clips: false, over: 0, lufs: -12.5, truePeakDb: -0.5 },
       solo: null,
       stoppedPlugins: [],
       advancedOpen: false,
@@ -116,8 +116,8 @@ describe("fake scenes (mock F7-Export, F7-Exporting, R11-Fit)", () => {
       realtimeForced: false,
       canExport: true,
       loudness: "asIs",
-      canMatch: false,
-      loudnessResult: null,
+      canMatch: true,
+      loudnessResult: { gainDb: -1.5, limited: false, lufs: -14 },
     });
     expect(s.status.message).toEqual({ id: "exportDialogOpen" });
     expect([s.song.name, s.song.file, s.song.undoCount]).toEqual(["はじめての曲", "saved", 14]);

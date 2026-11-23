@@ -19,6 +19,7 @@ pub(crate) mod fixture;
 pub(crate) mod job;
 #[cfg(test)]
 mod kit_tests;
+pub(crate) mod loudness;
 pub(crate) mod render;
 pub mod sink;
 pub(crate) mod told;
@@ -103,6 +104,9 @@ pub struct ExportTarget {
     pub format: ExportFormat,
     pub sample_rate: u32,
     pub bits: RecordFormat,
+    /// F1: with `Match` the job brings the file to the loudness of [`loudness::match_gain`],
+    /// when the loudness it measured can be matched.
+    pub loudness: ExportLoudness,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -122,6 +126,11 @@ pub enum ExportNews {
         length_s: u32,
         /// How long the rest takes, when there is something to guess from.
         remaining_s: Option<u32>,
+        /// F1, of a job that renders one file and does not measure: the integrated loudness
+        /// of the range so far, and the true peak of the file so far, the tail counted. `None`
+        /// for the others, and for silence.
+        lufs: Option<f32>,
+        true_peak_db: Option<f32>,
         done: bool,
     },
     /// A plugin of the job says it cannot run faster than it plays: the job goes on at that
@@ -215,6 +224,8 @@ struct Job {
     over: u32,
     length_s: u32,
     remaining_s: Option<u32>,
+    lufs: Option<f32>,
+    true_peak_db: Option<f32>,
     counted: bool,
     done: bool,
     must_be_realtime: bool,
@@ -246,6 +257,8 @@ pub struct Exporting {
     tail: ExportTail,
     realtime: bool,
     advanced_open: bool,
+    /// As chosen; while 「公開先に合わせる」 cannot be, the export is as with `AsIs`.
+    loudness: ExportLoudness,
     /// Chosen with 「えらぶ…」: the folder, and the file's name without its ending.
     folder: Option<PathBuf>,
     name: Option<String>,
@@ -271,6 +284,7 @@ impl Exporting {
             tail: ExportTail::UntilSilent,
             realtime: false,
             advanced_open: false,
+            loudness: ExportLoudness::AsIs,
             folder: None,
             name: None,
             dialog: None,
@@ -391,8 +405,12 @@ impl Exporting {
             }
             ExportChange::Tail { tail } => self.tail = tail,
             ExportChange::Realtime { on } => self.realtime = on,
-            // round12 stub: F1
-            ExportChange::Loudness { .. } => {}
+            ExportChange::Loudness { loudness } => {
+                let job = self.dialog.as_ref().and_then(|d| d.job.as_ref());
+                if loudness == ExportLoudness::AsIs || self.can_match(job) {
+                    self.loudness = loudness;
+                }
+            }
         }
     }
 
@@ -400,11 +418,13 @@ impl Exporting {
         if !self.can_export(scene) {
             return;
         }
+        let job = self.dialog.as_ref().and_then(|d| d.job.as_ref());
         let target = ExportTarget {
             path: self.place(scene),
             format: self.format,
             sample_rate: self.sample_rate(scene),
             bits: self.bits,
+            loudness: self.loudness_of(job),
         };
         let Some(job) = self.dialog.take().and_then(|d| d.job) else {
             return;
@@ -460,6 +480,8 @@ impl Exporting {
             over: 0,
             length_s: 0,
             remaining_s: None,
+            lufs: None,
+            true_peak_db: None,
             counted: false,
             done: false,
             must_be_realtime: false,
@@ -491,6 +513,8 @@ impl Exporting {
                 over,
                 length_s,
                 remaining_s,
+                lufs,
+                true_peak_db,
                 done,
             } => {
                 if let Some(job) = self.job_mut(job) {
@@ -499,6 +523,8 @@ impl Exporting {
                     job.over = over;
                     job.length_s = length_s;
                     job.remaining_s = remaining_s;
+                    job.lufs = lufs.filter(|l| l.is_finite());
+                    job.true_peak_db = true_peak_db.filter(|db| db.is_finite());
                     job.counted = true;
                     job.done = done;
                 }
@@ -516,6 +542,16 @@ impl Exporting {
                     return;
                 }
                 let name = |p: &Path| p.file_name().map(|n| n.to_string_lossy().into_owned());
+                let (lufs, true_peak_db) = match target.loudness {
+                    _ if going.asked.per_track || files.len() != 1 => (None, None),
+                    ExportLoudness::Match => {
+                        match loudness::match_gain(going.lufs, going.true_peak_db) {
+                            Some(m) => (Some(m.lufs), going.true_peak_db.map(|p| p + m.gain_db)),
+                            None => (going.lufs, going.true_peak_db),
+                        }
+                    }
+                    ExportLoudness::AsIs => (going.lufs, going.true_peak_db),
+                };
                 let view = ExportRunView::Done {
                     file: files.first().and_then(|p| name(p)).unwrap_or_default(),
                     files: files.len() as u32,
@@ -525,8 +561,8 @@ impl Exporting {
                     bits: target.bits,
                     // round12 stub: E9
                     wave: Vec::new(),
-                    lufs: None,
-                    true_peak_db: None,
+                    lufs,
+                    true_peak_db,
                 };
                 let shown = files.into_iter().next();
                 self.run = Some(Run::Ended(view, shown));
@@ -617,29 +653,48 @@ impl Exporting {
             return ExportCheck::Waiting;
         };
         let over = job.over;
-        // 32 bits are floats: a sample over 0 dB is written as it is.
-        let clips = over > 0 && self.bits != RecordFormat::Bits32;
+        // 32 bits are floats: a sample over 0 dB is written as it is. Matched, the true peak
+        // stays under 0 dB.
+        let matched = self.loudness_of(Some(job)) == ExportLoudness::Match;
+        let clips = over > 0 && self.bits != RecordFormat::Bits32 && !matched;
         match &job.failed {
             Some(reason) => ExportCheck::Failed {
                 reason: reason.clone(),
             },
             None if !job.counted => ExportCheck::Waiting,
-            // round12 stub: F1 (lufs, true_peak_db)
             None if job.done => ExportCheck::Done {
                 peak_db: job.peak_db,
                 clips,
                 over,
-                lufs: None,
-                true_peak_db: None,
+                lufs: job.lufs,
+                true_peak_db: job.true_peak_db,
             },
             None => ExportCheck::Counting {
                 percent: job.percent.min(99),
                 peak_db: job.peak_db,
                 clips,
                 over,
-                lufs: None,
-                true_peak_db: None,
+                lufs: job.lufs,
+                true_peak_db: job.true_peak_db,
             },
+        }
+    }
+
+    /// 「公開先に合わせる」 can be chosen: not for 「トラックごと」, nor for a range whose
+    /// loudness is known to be unmeasurable. Until the job is done that is not known.
+    fn can_match(&self, job: Option<&Job>) -> bool {
+        self.range != ExportRange::Tracks
+            && job.is_some_and(|j| {
+                j.failed.is_none()
+                    && (!j.done || loudness::match_gain(j.lufs, j.true_peak_db).is_some())
+            })
+    }
+
+    /// What 「音の大きさ」 is for the export now.
+    fn loudness_of(&self, job: Option<&Job>) -> ExportLoudness {
+        match self.can_match(job) {
+            true => self.loudness,
+            false => ExportLoudness::AsIs,
         }
     }
 
@@ -681,10 +736,10 @@ impl Exporting {
                 realtime: self.realtime || forced,
                 realtime_forced: forced,
                 can_export: self.can_export(scene),
-                // round12 stub: F1
-                loudness: ExportLoudness::AsIs,
-                can_match: false,
-                loudness_result: None,
+                loudness: self.loudness_of(job),
+                can_match: self.can_match(job),
+                loudness_result: (job.filter(|j| j.done && self.can_match(Some(j))))
+                    .and_then(|j| loudness::match_gain(j.lufs, j.true_peak_db)),
             }
         });
         let run = self.run.as_ref().map(|run| match run {

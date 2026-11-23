@@ -1,6 +1,6 @@
 // Text of the export dialog and the progress in the status line (spec 3 34-B, spec 6; mock F7-Export, F7-Exporting, F-Export; docs/history/design-notes.ja.md B-94-69 to 75).
 // Pure functions that do not know the DOM.
-import { EXPORT_TAIL_MAX_S, RECORD_FORMATS, type ExportCheck, type ExportDialogView, type ExportFailure, type ExportRunView, type ExportSolo, type RecordFormat } from "../../bridge";
+import { EXPORT_MATCH_LUFS, EXPORT_MATCH_TRUE_PEAK_DB, EXPORT_TAIL_MAX_S, RECORD_FORMATS, type ExportCheck, type ExportDialogView, type ExportFailure, type ExportLoudnessResult, type ExportRunView, type ExportSolo, type RecordFormat } from "../../bridge";
 import { t, type TextKey } from "../../text/ja";
 import { dbNumber, SILENT_DB, textParts, type TextPart } from "../format";
 import { barBeatTick, positionText, type Bars } from "../time";
@@ -72,23 +72,53 @@ const overLines = (over: number, peakDb: number | null): CheckLine[] => [
   textLine("export.checkOverHint", {}, "hint"),
 ];
 
+/** A loudness or a gain as a number with 1 decimal place (「−18.6」). No loudness gives `none`. */
+const lufsNumber = (lufs: number | null, none: string): string => (lufs === null ? none : dbNumber(lufs));
+
+/** The right of the 「音の大きさ」 row: 「−14 LUFS ・ −1 dBTP」. */
+export const loudnessTarget = (): string =>
+  t("export.loudnessTarget", { lufs: String(EXPORT_MATCH_LUFS).replace("-", "−"), peak: String(EXPORT_MATCH_TRUE_PEAK_DB).replace("-", "−") });
+
+/** The line under the check when 「公開先に合わせる」 is chosen: louder or quieter by how much, or where the −1 dBTP limit stops it. */
+function resultLine(r: ExportLoudnessResult): CheckLine {
+  if (r.limited) return textLine("export.loudnessLimited", { lufs: dbNumber(r.lufs) });
+  return r.gainDb < 0 ? textLine("export.loudnessQuieter", { db: dbNumber(-r.gainDb) }) : textLine("export.loudnessLouder", { db: dbNumber(r.gainDb) });
+}
+
 /**
- * The peak line of 「書き出す前のたしかめ」 (spec 3 41-A, spec 6 "Before export"). The clipping sentence only when the current format would clip (`clips`).
+ * The loudness lines of the check (round 12 F1). Only when something was measured: not for 「トラックごと」 (both numbers null) nor for silence.
+ * While counting, the loudness not known yet is 「—」.
+ */
+function loudnessLines(check: ExportCheck, d: LoudnessShown | null): CheckLine[] {
+  if ((check.state !== "counting" && check.state !== "done") || (check.lufs === null && check.truePeakDb === null)) return [];
+  const peak = peakNumber(check.truePeakDb);
+  if (check.state === "counting") return [textLine("export.checkLoudnessSoFar", { lufs: lufsNumber(check.lufs, t("meter.playTargetNone")), peak })];
+  const result = d?.loudness === "match" && d.loudnessResult ? [resultLine(d.loudnessResult)] : [];
+  return [textLine("export.checkLoudness", { lufs: lufsNumber(check.lufs, t("common.dbSilentBare")), peak }), ...result];
+}
+
+/** What of the dialog the loudness lines need. */
+export type LoudnessShown = Pick<ExportDialogView, "loudness" | "loudnessResult">;
+
+/**
+ * The lines of 「書き出す前のたしかめ」 (spec 3 41-A, spec 6 "Before export"): the peak, then the loudness (round 12 F1).
+ * The clipping sentence only when the current format would clip (`clips`).
  * The count of places over is `over` (how it is counted: docs/history/design-notes.ja.md B-95-2).
  */
-export function checkLines(check: ExportCheck): CheckLine[] {
+export function checkLines(check: ExportCheck, d: LoudnessShown | null = null): CheckLine[] {
   switch (check.state) {
     case "waiting":
       return [textLine("export.checkPreparing", {})];
     case "counting": {
       const peak = textLine("export.checkPeakSoFar", { peak: t("export.peakDb", { peak: peakNumber(check.peakDb) }) }, check.clips ? "over" : "plain");
-      return [{ kind: "counting", percent: check.percent }, peak, ...(check.clips ? overLines(check.over, check.peakDb) : [])];
+      return [{ kind: "counting", percent: check.percent }, peak, ...(check.clips ? overLines(check.over, check.peakDb) : []), ...loudnessLines(check, d)];
     }
     case "done":
-      if (!check.clips) return [textLine("msg.exportPeak", { peak: peakNumber(check.peakDb) })];
+      if (!check.clips) return [textLine("msg.exportPeak", { peak: peakNumber(check.peakDb) }), ...loudnessLines(check, d)];
       return [
         { kind: "text", parts: [{ text: t("export.peak"), hole: null }, { text: t("export.peakDb", { peak: peakNumber(check.peakDb) }), hole: "peak" }], tone: "over" },
         ...overLines(check.over, check.peakDb),
+        ...loudnessLines(check, d),
       ];
     case "failed":
       return [

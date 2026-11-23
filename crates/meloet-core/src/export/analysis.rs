@@ -487,6 +487,11 @@ impl Listener {
         }
     }
 
+    /// The integrated loudness of what was heard so far.
+    pub fn lufs_now(&self) -> Option<f32> {
+        integrated(&self.whole.sums, self.whole.frames)
+    }
+
     pub fn finish(mut self) -> Heard {
         if let Some(sections) = &mut self.sections {
             sections.reach(self.frame);

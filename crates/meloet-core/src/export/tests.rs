@@ -3,8 +3,9 @@
 use std::path::PathBuf;
 
 use meloet_protocol::{
-    Command, ExportChange, ExportCheck, ExportFailure, ExportFormat, ExportRange, ExportRunView,
-    ExportSolo, ExportTail, ExportView, RecordFormat, StatusMessage, TickSpan, TrackRef,
+    Command, ExportChange, ExportCheck, ExportFailure, ExportFormat, ExportLoudness, ExportRange,
+    ExportRunView, ExportSolo, ExportTail, ExportView, RecordFormat, StatusMessage, TickSpan,
+    TrackRef,
 };
 
 use super::{ExportAsk, ExportDirs, ExportJob, ExportNews, ExportTarget};
@@ -71,6 +72,8 @@ fn counted(job: u64, percent: u8, peak_db: Option<f32>, done: bool) -> ExportNew
         over: u32::from(peak_db.is_some_and(|db| db > 0.0)),
         length_s: 10,
         remaining_s: (!done).then_some(4),
+        lufs: None,
+        true_peak_db: None,
         done,
     }
 }
@@ -365,6 +368,7 @@ fn an_export_runs_in_the_status_line_and_ends() {
                 format: ExportFormat::Wav,
                 sample_rate: 48_000,
                 bits: RecordFormat::Bits24,
+                loudness: ExportLoudness::AsIs,
             },
         }]
     );
@@ -611,4 +615,209 @@ fn the_check_names_the_soloed_tracks_and_the_job_stays() {
         },
     );
     assert_eq!(solo(&m), None);
+}
+
+/// The last word of a job, with its loudness and true peak.
+fn measured(
+    job: u64,
+    peak_db: Option<f32>,
+    lufs: Option<f32>,
+    true_peak_db: Option<f32>,
+) -> ExportNews {
+    ExportNews::Counted {
+        job,
+        percent: 100,
+        peak_db,
+        over: u32::from(peak_db.is_some_and(|db| db > 0.0)),
+        length_s: 10,
+        remaining_s: None,
+        lufs,
+        true_peak_db,
+        done: true,
+    }
+}
+
+fn loudness(m: &mut Model, loudness: ExportLoudness) -> Vec<ExportAsk> {
+    set(m, ExportChange::Loudness { loudness })
+}
+
+fn near(a: Option<f32>, b: f32) -> bool {
+    a.is_some_and(|a| (a - b).abs() < 1e-3)
+}
+
+#[test]
+fn matching_is_chosen_while_the_check_counts_and_the_dialog_says_what_it_does() {
+    let mut m = song();
+    let job = the_job(&cmd(&mut m, Command::OpenExport)).id;
+    let dialog = export(&m).dialog.unwrap();
+    assert_eq!(dialog.loudness, ExportLoudness::AsIs);
+    // Until the job is done it is not known that the song cannot be matched.
+    assert!(dialog.can_match);
+    assert_eq!(dialog.loudness_result, None);
+    // The gain belongs to the last step: no new job.
+    assert!(loudness(&mut m, ExportLoudness::Match).is_empty());
+    assert_eq!(export(&m).dialog.unwrap().loudness, ExportLoudness::Match);
+
+    let so_far = ExportNews::Counted {
+        job,
+        percent: 40,
+        peak_db: Some(-9.0),
+        over: 0,
+        length_s: 10,
+        remaining_s: Some(4),
+        lufs: Some(-20.0),
+        true_peak_db: Some(-8.5),
+        done: false,
+    };
+    news(&mut m, so_far);
+    let dialog = export(&m).dialog.unwrap();
+    assert_eq!(
+        dialog.check,
+        ExportCheck::Counting {
+            percent: 40,
+            peak_db: Some(-9.0),
+            clips: false,
+            over: 0,
+            lufs: Some(-20.0),
+            true_peak_db: Some(-8.5),
+        }
+    );
+    assert_eq!(dialog.loudness_result, None);
+
+    news(&mut m, measured(job, Some(-6.5), Some(-18.6), Some(-6.0)));
+    let dialog = export(&m).dialog.unwrap();
+    assert!(matches!(
+        dialog.check,
+        ExportCheck::Done {
+            lufs: Some(-18.6),
+            true_peak_db: Some(-6.0),
+            ..
+        }
+    ));
+    let result = dialog.loudness_result.unwrap();
+    assert!(
+        near(Some(result.gain_db), 4.6) && !result.limited,
+        "{result:?}"
+    );
+    assert!(near(Some(result.lufs), -14.0));
+
+    let asked = cmd(&mut m, Command::StartExport);
+    let [ExportAsk::Finish { target, .. }] = &asked[..] else {
+        panic!("{asked:?}");
+    };
+    assert_eq!(target.loudness, ExportLoudness::Match);
+    let path = target.path.clone();
+    news(
+        &mut m,
+        ExportNews::Finished {
+            job,
+            files: vec![path],
+        },
+    );
+    // The file as written: the loudness and the true peak after the gain.
+    match export(&m).run {
+        Some(ExportRunView::Done {
+            lufs, true_peak_db, ..
+        }) => assert!(near(lufs, -14.0) && near(true_peak_db, -1.4)),
+        other => panic!("{other:?}"),
+    }
+
+    // The choice is there again the next time.
+    cmd(&mut m, Command::OpenExport);
+    assert_eq!(export(&m).dialog.unwrap().loudness, ExportLoudness::Match);
+}
+
+#[test]
+fn a_song_near_silence_and_one_file_for_each_track_are_not_matched() {
+    let mut m = song();
+    let job = the_job(&cmd(&mut m, Command::OpenExport)).id;
+    loudness(&mut m, ExportLoudness::Match);
+    news(&mut m, measured(job, Some(-80.0), None, Some(-79.0)));
+    let dialog = export(&m).dialog.unwrap();
+    assert!(!dialog.can_match);
+    assert_eq!(dialog.loudness, ExportLoudness::AsIs);
+    assert_eq!(dialog.loudness_result, None);
+    // It cannot be chosen; 「そのまま」 can.
+    loudness(&mut m, ExportLoudness::AsIs);
+    loudness(&mut m, ExportLoudness::Match);
+    assert_eq!(export(&m).dialog.unwrap().loudness, ExportLoudness::AsIs);
+    let asked = cmd(&mut m, Command::StartExport);
+    let [ExportAsk::Finish { target, .. }] = &asked[..] else {
+        panic!("{asked:?}");
+    };
+    assert_eq!(target.loudness, ExportLoudness::AsIs);
+
+    // 「トラックごと」 is for mixing later: never matched, whatever was chosen before.
+    let mut m = song();
+    cmd(&mut m, Command::OpenExport);
+    loudness(&mut m, ExportLoudness::Match);
+    let asked = set(
+        &mut m,
+        ExportChange::Range {
+            range: ExportRange::Tracks,
+        },
+    );
+    let [ExportAsk::Drop { .. }, ExportAsk::Render(job)] = &asked[..] else {
+        panic!("{asked:?}");
+    };
+    let job = job.id;
+    news(&mut m, measured(job, Some(-6.0), None, None));
+    let dialog = export(&m).dialog.unwrap();
+    assert!(!dialog.can_match);
+    assert_eq!(dialog.loudness, ExportLoudness::AsIs);
+    assert_eq!(dialog.loudness_result, None);
+    let asked = cmd(&mut m, Command::StartExport);
+    let [ExportAsk::Finish { target, .. }] = &asked[..] else {
+        panic!("{asked:?}");
+    };
+    assert_eq!(target.loudness, ExportLoudness::AsIs);
+    news(
+        &mut m,
+        ExportNews::Finished {
+            job,
+            files: vec![PathBuf::from("/home/me/音楽/1.wav")],
+        },
+    );
+    assert!(matches!(
+        export(&m).run,
+        Some(ExportRunView::Done {
+            lufs: None,
+            true_peak_db: None,
+            ..
+        })
+    ));
+
+    // Back to the whole song: what was chosen is there again.
+    cmd(&mut m, Command::OpenExport);
+    set(
+        &mut m,
+        ExportChange::Range {
+            range: ExportRange::Song,
+        },
+    );
+    let dialog = export(&m).dialog.unwrap();
+    assert!(dialog.can_match);
+    assert_eq!(dialog.loudness, ExportLoudness::Match);
+}
+
+#[test]
+fn a_matched_file_does_not_clip_and_its_gain_can_be_down() {
+    let mut m = song();
+    let job = the_job(&cmd(&mut m, Command::OpenExport)).id;
+    news(&mut m, measured(job, Some(0.5), Some(-9.0), Some(0.8)));
+    let clips = |m: &Model| match export(m).dialog.unwrap().check {
+        ExportCheck::Done { clips, over, .. } => (clips, over),
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(clips(&m), (true, 1));
+    loudness(&mut m, ExportLoudness::Match);
+    // The true peak ends at −1 dBTP or lower: nothing goes over 0 dB in the file.
+    assert_eq!(clips(&m), (false, 1));
+    let result = export(&m).dialog.unwrap().loudness_result.unwrap();
+    assert!(
+        near(Some(result.gain_db), -5.0) && !result.limited,
+        "{result:?}"
+    );
+    loudness(&mut m, ExportLoudness::AsIs);
+    assert_eq!(clips(&m), (true, 1));
 }

@@ -18,7 +18,7 @@ use crate::ai::{
 };
 use crate::export::{ExportJob, ExportTarget, Measuring};
 use crate::play::ai::{AiMark, AiPoints, AiPut, AiWrote};
-use meloet_protocol::ExportTail;
+use meloet_protocol::{ExportLoudness, ExportTail};
 
 /// Outcomes of asks with a ticket that are kept for the AI link to read.
 const OUTCOMES: usize = 16;
@@ -920,6 +920,7 @@ impl Model {
             format: ask.format,
             sample_rate: ask.sample_rate.unwrap_or(scene.sample_rate),
             bits: ask.bits,
+            loudness: ExportLoudness::AsIs,
         };
         Ok((job, target))
     }

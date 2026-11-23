@@ -1,9 +1,9 @@
-<!-- Export (spec 3 34-B, 41-A, 42-C; spec 2 "Dialog"; spec 6 "Before export"; mock F7-Export, F-Export, F8-ExportCheck, F8-ExportClip, R11-Fit).
-     Range, format, where to save, the check before export (while counting, 「書き出す」 can be pressed once a number has come; soloed tracks are told here), 「くわしく」.
+<!-- Export (spec 3 34-B, 41-A, 42-C; spec 2 "Dialog"; spec 6 "Before export"; mock F7-Export, F-Export, F8-ExportCheck, F8-ExportClip, R11-Fit; round 12 F1).
+     Range, format, loudness, where to save, the check before export (while counting, 「書き出す」 can be pressed once a number has come; soloed tracks are told here), 「くわしく」.
      The content is a copy of Rust's export.dialog; the screen only sends intents.
      When it does not fit the window, the heading and the bottom buttons stay and the inside scrolls (R11-Fit). -->
 <script lang="ts">
-  import type { ExportChange, ExportDialogView, ExportFormat, ExportRange, ExportTail } from "../../bridge";
+  import type { ExportChange, ExportDialogView, ExportFormat, ExportLoudness, ExportRange, ExportTail } from "../../bridge";
   import { movableDialog } from "../../lib/dialogMove";
   import ScrollArea from "../../lib/ScrollArea.svelte";
   import { current, send } from "../../state/app.svelte";
@@ -14,10 +14,14 @@
   import { openContextMenu, type MenuEntry } from "../menu/contextMenu.svelte";
   import { stripName } from "../mixer/stripName";
   import { cutHead } from "./cutHead";
-  import { bitsOf, checkLines, clips, detailsSummary, rangeLabel, soloText, spanText, tailText } from "./exportText";
+  import { bitsOf, checkLines, clips, detailsSummary, loudnessTarget, rangeLabel, soloText, spanText, tailText } from "./exportText";
 
   const RANGES: ExportRange[] = ["song", "loop", "tracks"];
   const FORMAT_NAMES: Record<ExportFormat, TextKey> = { wav: "export.formatWav", flac: "export.formatFlac" };
+  const LOUDNESS_NAMES: [ExportLoudness, TextKey][] = [
+    ["asIs", "export.loudnessAsIs"],
+    ["match", "export.loudnessMatch"],
+  ];
   const TAILS: ExportTail[] = ["untilSilent", "off"];
 
   const app = $derived(current.state);
@@ -116,6 +120,24 @@
           </div>
         </section>
 
+        <!-- 「音の大きさ」 (round 12 F1): 「公開先に合わせる」 cannot be chosen for 「トラックごと」 nor for a song near silence. -->
+        <section data-test="export-loudness">
+          <span class="label">{t("export.loudness")}</span>
+          <div class="line">
+            <div class="choices">
+              {#each LOUDNESS_NAMES as [l, name] (l)}
+                <Button
+                  test="export-loudness-{l}"
+                  on={dialog.loudness === l}
+                  disabled={l === "match" && !dialog.canMatch}
+                  onclick={() => set({ kind: "loudness", loudness: l })}>{t(name)}</Button
+                >
+              {/each}
+            </div>
+            <span class="mono" data-test="export-loudness-target">{loudnessTarget()}</span>
+          </div>
+        </section>
+
         <section>
           <span class="label">{t("export.place")}</span>
           <div class="line">
@@ -128,7 +150,7 @@
 
         <section data-test="export-check">
           <span class="label">{t("export.check")}</span>
-          {#each checkLines(dialog.check) as line, i (i)}
+          {#each checkLines(dialog.check, dialog) as line, i (i)}
             {#if line.kind === "counting"}
               <!-- 「たしかめています ・ 160 の棒 ・ 38 %」 (mock F8-ExportCheck). The % text is in a box outside the flow, with its width set by the text 「100 %」. -->
               <span class="counting" data-test="export-check-line">

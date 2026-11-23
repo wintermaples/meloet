@@ -15,6 +15,7 @@ import { advancePack, fakeClipsPanel, fakeSolo, fakeSounds, packAsking, packFail
 import { reduceRound10 } from "./fakeRound10";
 import { reduceUpdates } from "./fakeUpdates";
 import { CLICK_VOLUME_MAX_DB, CLICK_VOLUME_MIN_DB } from "./types";
+import { fakeLoudnessOf } from "./fakeLoudness";
 import {
   CLIP_CENTS_MAX,
   CLIP_SEMITONES_MAX,
@@ -3335,10 +3336,13 @@ SCENES.stretchRamp = {
 // The states of the mocks F7-Export, F7-Exporting and of the export of R11-Fit. The numbers of a check or of a run
 // move only when a scene sets them.
 
-/** The dialog of F7-Export for the song of the band: the check is done, nothing clips, no plugin has stopped. */
+/**
+ * The dialog of F7-Export for the song of the band: the check is done, nothing clips, no plugin has stopped.
+ * 「音の大きさ」 (round 12 F1) follows the check and the range as Rust has it; `over` gives only the choice.
+ */
 function fakeExportDialog(song: SongView, over: Partial<ExportDialogView> = {}): ExportDialogView {
   const end = Math.max(0, ...song.tracks.flatMap((t) => t.clips.map((c) => c.end)));
-  return {
+  const d: ExportDialogView = {
     range: "song",
     loopRange: song.loopRange,
     tracks: song.tracks.length,
@@ -3346,7 +3350,7 @@ function fakeExportDialog(song: SongView, over: Partial<ExportDialogView> = {}):
     format: "wav",
     formats: EXPORT_FORMATS.map((f) => f.format),
     place: `~/音楽/${song.name}.wav`,
-    check: { state: "done", peakDb: -0.6, clips: false, over: 0, lufs: null, truePeakDb: null },
+    check: { state: "done", peakDb: -0.6, clips: false, over: 0, lufs: -12.5, truePeakDb: -0.5 },
     solo: fakeSolo({ song }),
     stoppedPlugins: [],
     advancedOpen: false,
@@ -3363,6 +3367,7 @@ function fakeExportDialog(song: SongView, over: Partial<ExportDialogView> = {}):
     loudnessResult: null,
     ...over,
   };
+  return { ...d, ...fakeLoudnessOf(d.check, d.range, d.loudness) };
 }
 
 const exportDialogScene = (over: Partial<ExportDialogView> = {}, screen?: SceneDef["screen"]): SceneDef => ({
@@ -3401,6 +3406,16 @@ SCENES.exportAdvanced = exportDialogScene({
 SCENES.exportCheckFailed = exportDialogScene({ check: { state: "failed", reason: { kind: "plugin", name: "Surge XT" } }, canExport: false });
 // R11-Fit: in the smallest window the dialog scrolls inside, its heading and its buttons stay.
 SCENES.exportFit = exportDialogScene({}, { width: 853, height: 448 });
+// Round 12 F1 「音の大きさ」: 「公開先に合わせる」 makes a quiet song 4.6 dB louder.
+SCENES.exportLoudness = exportDialogScene({ check: { state: "done", peakDb: -6.8, clips: false, over: 0, lufs: -18.6, truePeakDb: -6.0 }, loudness: "match" });
+// The true peak stops it: 「−1 dBTP を越えないよう、−15.2 LUFS になります」.
+SCENES.exportLoudnessLimited = exportDialogScene({ check: { state: "done", peakDb: -3.4, clips: false, over: 0, lufs: -17.4, truePeakDb: -3.2 }, loudness: "match" });
+// A song that goes over 0 dB, matched: 4.4 dB quieter, and nothing clips in the file.
+SCENES.exportLoudnessQuieter = exportDialogScene({ check: { state: "done", peakDb: 0.5, clips: false, over: 2, lufs: -9.6, truePeakDb: 0.8 }, loudness: "match" });
+// Still counting: the loudness so far; what matching does is said once the check is done.
+SCENES.exportLoudnessCounting = exportDialogScene({ check: { state: "counting", percent: 38, peakDb: -3.5, clips: false, over: 0, lufs: -19.0, truePeakDb: -3.1 }, loudness: "match" });
+// A song near silence: 「公開先に合わせる」 cannot be chosen.
+SCENES.exportLoudnessSilent = exportDialogScene({ check: { state: "done", peakDb: null, clips: false, over: 0, lufs: null, truePeakDb: null } });
 
 /** The song of F7-Exporting: the band, "5 Surge XT" and 「6 歌」 with one clip; saved, the keys on 「1 ピアノ」. */
 function exportingSong(s: AppState, run: ExportRunView): void {
@@ -3591,6 +3606,11 @@ export function reduceExport(state: AppState, command: Command): Change[] | null
         if ((c.range === "loop" && !d.loopRange) || (c.range === "tracks" && d.tracks === 0)) return [];
         d.range = c.range;
         d.span = c.range === "loop" ? d.loopRange! : fakeExportDialog(state.song).span;
+        // Round 12 F1: one file for each track has no loudness, and is not matched.
+        const base = fakeExportDialog(state.song).check;
+        const measured = c.range !== "tracks" && base.state === "done" ? base : { lufs: null, truePeakDb: null };
+        if (d.check.state === "done" || d.check.state === "counting") d.check = { ...d.check, lufs: measured.lufs, truePeakDb: measured.truePeakDb };
+        Object.assign(d, fakeLoudnessOf(d.check, d.range, d.loudness));
       } else if (c.kind === "format") {
         d.format = c.format;
         d.bitsChoices = [...EXPORT_FORMATS.find((f) => f.format === c.format)!.bits];
@@ -3601,8 +3621,9 @@ export function reduceExport(state: AppState, command: Command): Change[] | null
       else if (c.kind === "tail") d.tail = c.tail;
       else if (c.kind === "realtime") {
         if (!d.realtimeForced) d.realtime = c.on;
+      } else if (c.kind === "loudness") {
+        if (c.loudness === "asIs" || d.canMatch) d.loudness = c.loudness;
       }
-      // round12 stub: F1 (`loudness` changes nothing yet)
       const folder = d.place.slice(0, d.place.lastIndexOf("/") + 1);
       d.place = d.range === "tracks" ? folder : `${folder}${state.song.name}.${d.format}`;
       break;

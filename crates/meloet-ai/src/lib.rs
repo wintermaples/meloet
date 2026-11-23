@@ -11,6 +11,7 @@ mod song;
 #[allow(dead_code)]
 mod surge;
 mod tools;
+mod trackref;
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};

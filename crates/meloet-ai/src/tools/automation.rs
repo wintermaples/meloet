@@ -13,6 +13,7 @@ use serde_json::{Value, json};
 use super::mixer::{insert_id, slot_of};
 use super::{MAX_NOTES, Tools, at_or_tick, done, failed, track_of};
 use crate::song;
+use crate::trackref::{TrackRef, id_text};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -31,8 +32,7 @@ pub enum TargetKind {
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 pub struct LaneArgs {
-    #[schemars(range(min = 1, max = 64))]
-    pub track: u32,
+    pub track: TrackRef,
     /// What the lane moves.
     pub target: TargetKind,
     /// For "insert": the slot, 1 to 4.
@@ -59,8 +59,7 @@ pub struct PointArgs {
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 pub struct WriteArgs {
-    #[schemars(range(min = 1, max = 64))]
-    pub track: u32,
+    pub track: TrackRef,
     pub target: TargetKind,
     #[serde(default)]
     #[schemars(range(min = 1, max = 4))]
@@ -74,8 +73,7 @@ pub struct WriteArgs {
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 pub struct MovePointsArgs {
-    #[schemars(range(min = 1, max = 64))]
-    pub track: u32,
+    pub track: TrackRef,
     pub target: TargetKind,
     #[serde(default)]
     #[schemars(range(min = 1, max = 4))]
@@ -96,8 +94,7 @@ pub struct MovePointsArgs {
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 pub struct DeletePointsArgs {
-    #[schemars(range(min = 1, max = 64))]
-    pub track: u32,
+    pub track: TrackRef,
     pub target: TargetKind,
     #[serde(default)]
     #[schemars(range(min = 1, max = 4))]
@@ -110,14 +107,13 @@ pub struct DeletePointsArgs {
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 pub struct TrackArgs {
-    #[schemars(range(min = 1, max = 64))]
-    pub track: u32,
+    pub track: TrackRef,
 }
 
 /// The track's id and the target, as the song and as the screen name it.
 fn target_of(
     read: &AiSong,
-    track: u32,
+    track: TrackRef,
     kind: TargetKind,
     slot: Option<u32>,
     param: Option<u32>,
@@ -214,7 +210,7 @@ impl Tools {
     ) -> Result<CallToolResult, McpError> {
         check!(self.allowed());
         let read = check!(self.read().await);
-        let track = check!(track_of(&read, a.track));
+        let (number, track) = check!(a.track.find(&read).map_err(failed));
         let map = TempoMap::new(&read.song.doc.timeline);
         let lanes: Vec<Value> = (track.automation.iter())
             .map(|lane| {
@@ -232,7 +228,7 @@ impl Tools {
                 v
             })
             .collect();
-        let value = json!({ "track": a.track, "lanes": lanes });
+        let value = json!({ "track": number, "track_id": id_text(track.id), "lanes": lanes });
         Ok(done(value.to_string(), value))
     }
 

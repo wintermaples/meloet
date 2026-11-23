@@ -22,6 +22,7 @@ use super::{
 };
 use crate::MAX_BAR;
 use crate::song::at;
+use crate::trackref::{TrackRef, id_of};
 
 /// Tracks whose every pair `analyze_bands` compares, at most.
 const MAX_COMPARE: usize = 8;
@@ -55,16 +56,16 @@ pub struct AnalyzeArgs {
     /// The last bar, analysed to its end.
     #[schemars(range(min = 1, max = 9999))]
     pub to_bar: u32,
-    /// Track numbers (from 1) to analyse, each alone; the mix then holds only these. Leave
-    /// out for every track.
+    /// Tracks (numbers from 1 or ids like "id:7") to analyse, each alone; the mix then holds
+    /// only these. Leave out for every track.
     #[serde(default)]
     #[schemars(length(min = 1, max = 64))]
-    pub tracks: Option<Vec<u32>>,
-    /// Track numbers to analyse each alone while the mix stays every track, mutes as in the
-    /// song. Not together with `tracks`.
+    pub tracks: Option<Vec<TrackRef>>,
+    /// Tracks (numbers or ids) to analyse each alone while the mix stays every track, mutes
+    /// as in the song. Not together with `tracks`.
     #[serde(default)]
     #[schemars(length(min = 1, max = 64))]
-    pub alone: Option<Vec<u32>>,
+    pub alone: Option<Vec<TrackRef>>,
     /// Analyse each track alone as if it were not muted; the mix keeps the song's mutes.
     #[serde(default)]
     pub ignore_mute: bool,
@@ -75,7 +76,7 @@ pub struct AnalyzeArgs {
     /// Default: those tracks when they are 2 to 8.
     #[serde(default)]
     #[schemars(length(min = 2, max = 8))]
-    pub compare: Option<Vec<u32>>,
+    pub compare: Option<Vec<TrackRef>>,
     /// Also give levels for each section between the song's markers.
     #[serde(default)]
     pub sections: bool,
@@ -112,8 +113,8 @@ pub(super) fn measure_ask(
     read: &AiSong,
     from_bar: u32,
     to_bar: u32,
-    tracks: Option<&[u32]>,
-    alone: Option<&[u32]>,
+    tracks: Option<&[TrackRef]>,
+    alone: Option<&[TrackRef]>,
     ignore_mute: bool,
 ) -> Result<AiMeasure, CallToolResult> {
     if from_bar == 0 || to_bar < from_bar || u64::from(to_bar) > MAX_BAR {
@@ -144,11 +145,18 @@ pub(super) fn measure_ask(
     let span = TickRange::new(start, end).ok_or_else(|| failed("the range is empty"))?;
     Ok(AiMeasure {
         span,
-        tracks: tracks.map(<[u32]>::to_vec),
-        alone: alone.map(<[u32]>::to_vec),
+        tracks: tracks.map(|t| numbers(read, t)).transpose()?,
+        alone: alone.map(|t| numbers(read, t)).transpose()?,
         ignore_mute,
         analysis: None,
     })
+}
+
+/// The numbers (from 1) of the tracks `tracks` names in what was read.
+pub(super) fn numbers(read: &AiSong, tracks: &[TrackRef]) -> Result<Vec<u32>, CallToolResult> {
+    (tracks.iter())
+        .map(|t| t.number(read).map_err(failed))
+        .collect()
 }
 
 /// How the mix of `ask` is made, in words.
@@ -322,7 +330,7 @@ impl Tools {
         let alone = alone_of(&read, &ask);
         let compare = match &a.compare {
             Some(compare) => {
-                let mut compare = compare.clone();
+                let mut compare = check!(numbers(&read, compare));
                 compare.sort_unstable();
                 compare.dedup();
                 if !(2..=MAX_COMPARE).contains(&compare.len()) {
@@ -385,6 +393,7 @@ impl Tools {
             .map(|(i, (n, name, l))| {
                 let mut v = pass_value(i + 1, l);
                 v["number"] = json!(n);
+                v["id"] = json!(id_of(&read, *n));
                 v["name"] = json!(name);
                 v["muted"] = json!(levels.muted.contains(n));
                 v
@@ -406,7 +415,15 @@ impl Tools {
                     .filter(|(_, s)| power_db(s.power).is_some_and(|d| d >= TOP_BAND_DBFS))
                     .max_by(|x, y| x.1.power.total_cmp(&y.1.power))
                     .map(|(b, _)| b.name);
-                json!({ "a": number(o.a), "b": number(o.b), "top_band": top, "bands": bands })
+                let id = |n: Option<u32>| n.and_then(|n| id_of(&read, n));
+                json!({
+                    "a": number(o.a),
+                    "a_id": id(number(o.a)),
+                    "b": number(o.b),
+                    "b_id": id(number(o.b)),
+                    "top_band": top,
+                    "bands": bands,
+                })
             })
             .collect();
         let overlap = (!pairs.is_empty()).then(|| {
@@ -425,6 +442,7 @@ impl Tools {
                     .map(|((n, ..), l)| {
                         let mut v = loudness_value(l);
                         v["number"] = json!(n);
+                        v["id"] = json!(id_of(&read, *n));
                         v
                     })
                     .collect();

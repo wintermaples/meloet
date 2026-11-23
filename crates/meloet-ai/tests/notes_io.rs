@@ -77,7 +77,7 @@ fn a_note_not_written_comes_back_with_the_reason() {
     let clip = id(&wrote);
     assert_eq!(
         wrote["created_clip"],
-        json!({ "id": clip, "track": 1,
+        json!({ "id": clip, "track": 1, "track_id": "id:1",
                 "start": { "at": "1.1.0", "tick": 0 },
                 "end": { "at": "5.1.0", "tick": 4 * BAR } })
     );
@@ -414,7 +414,7 @@ fn a_midi_file_of_400_notes_comes_in_with_one_call() {
     // 399 sixteenths and 400 ticks from bar 3: the clip ends with the bar that holds them.
     assert_eq!(
         came["created_clip"],
-        json!({ "id": clip, "track": 1,
+        json!({ "id": clip, "track": 1, "track_id": "id:1",
                 "start": { "at": "3.1.0", "tick": 2 * BAR },
                 "end": { "at": "28.1.0", "tick": 27 * BAR } })
     );
@@ -770,7 +770,7 @@ fn what_is_written_out_comes_back_the_same() {
     let first = &before.song.doc.tracks[0].name;
     assert_eq!(
         out["tracks"],
-        json!([{ "number": 1, "name": first, "notes": 125, "channel": 1 }])
+        json!([{ "number": 1, "id": "id:1", "name": first, "notes": 125, "channel": 1 }])
     );
     let file = out["file"].as_str().unwrap().to_owned();
     assert!(
@@ -813,10 +813,11 @@ fn what_is_written_out_comes_back_the_same() {
         .collect();
     assert_eq!(part["notes"], in_range.len(), "{part}");
     assert_eq!(part["file"], path);
-    let third = &before.song.doc.tracks[2].name;
+    let third = &before.song.doc.tracks[2];
     assert_eq!(
         part["tracks"][1],
-        json!({ "number": 3, "name": third, "notes": 0, "channel": 1 })
+        json!({ "number": 3, "id": format!("id:{}", third.id.0), "name": third.name,
+                "notes": 0, "channel": 1 })
     );
     let said = refused(&mut c, "export_midi", args.clone());
     assert!(said.contains("overwrite"), "{said}");

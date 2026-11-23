@@ -17,9 +17,10 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::notes::notes_line;
-use super::{Tools, at_or_tick, closing, done, failed, path_ok, refusal_text, track_of};
+use super::{Tools, at_or_tick, closing, done, failed, path_ok, refusal_text};
 use crate::smf::{self, OutFile, OutNote, OutTrack, Smf, SmfNote, SmfTrack};
 use crate::song::{self, Place};
+use crate::trackref::{TrackRef, id_text};
 
 /// The largest MIDI file read.
 const MAX_FILE: u64 = 8 << 20;
@@ -38,11 +39,10 @@ pub struct ImportMidiArgs {
     /// in one call.
     #[schemars(length(min = 1, max = 4096))]
     pub path: String,
-    /// The keys track's number (from 1) the notes go into: the clip that holds the first
+    /// The keys track (number from 1, or id) the notes go into: the clip that holds the first
     /// note, or a new clip as long as the notes need. Not needed with `list_only`.
     #[serde(default)]
-    #[schemars(range(min = 1, max = 64))]
-    pub track: Option<u32>,
+    pub track: Option<TrackRef>,
     /// Where the file's start goes, as "bar.beat.tick" (default: the song's start). Give
     /// this or `tick`.
     #[serde(default)]
@@ -82,10 +82,10 @@ pub struct ExportMidiArgs {
     /// Where the range ends (default: where the last clip ends).
     #[serde(default)]
     pub to: Option<Place>,
-    /// Keys track numbers (from 1) of the range to write. Default: every keys track.
+    /// Keys tracks (numbers from 1, or ids) of the range to write. Default: every keys track.
     #[serde(default)]
     #[schemars(length(min = 1, max = 64))]
-    pub tracks: Option<Vec<u32>>,
+    pub tracks: Option<Vec<TrackRef>>,
     /// The file to write (.mid), an absolute path in a folder that is there. Leave out to
     /// get a file in the private temporary folder (deleted after an hour).
     #[serde(default)]
@@ -349,9 +349,9 @@ fn export_of(read: &AiSong, a: &ExportMidiArgs, division: u16) -> Result<Export,
                 ));
             }
             match &a.tracks {
-                Some(numbers) => {
-                    for &n in numbers {
-                        let track = track_of(read, n)?;
+                Some(asked) => {
+                    for &t in asked {
+                        let (n, track) = t.find(read).map_err(failed)?;
                         if track.kind.is_vocal() {
                             return Err(failed(format!(
                                 "track {n} is a vocal track: it holds audio, not notes"
@@ -403,6 +403,7 @@ fn export_of(read: &AiSong, a: &ExportMidiArgs, division: u16) -> Result<Export,
         count += notes.len();
         listed.push(json!({
             "number": i + 1,
+            "id": id_text(track.id),
             "name": track.name,
             "notes": notes.len(),
             "channel": channel + 1,
@@ -516,6 +517,7 @@ impl Tools {
             )));
         }
         let read = check!(self.read().await);
+        let track = check!(track.number(&read).map_err(failed));
         let map = TempoMap::new(&read.song.doc.timeline);
         let origin = match (&a.at, a.tick) {
             (None, None) => 0,
@@ -538,7 +540,7 @@ impl Tools {
             at: AiPlace::Track(track),
             notes,
         };
-        let (d, mut value) = check!(self.put(ask, &map).await);
+        let (d, mut value) = check!(self.put(ask, &map, &read).await);
         // The tracks were told by `list_only`; the answer of an import stays small.
         listing["tracks"] = Value::Null;
         value["file"] = listing;

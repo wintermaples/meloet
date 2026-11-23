@@ -140,6 +140,7 @@ pub fn busy_name(busy: AiBusy) -> &'static str {
 fn track_value(number: usize, track: &Track, soloed: bool) -> Value {
     json!({
         "number": number + 1,
+        "id": crate::trackref::id_text(track.id),
         "name": track.name,
         "kind": if track.kind.is_vocal() { "vocal" } else { "keys" },
         "sound": if track.kind.is_vocal() { None } else { Some(sound_name(&track.instrument)) },
@@ -184,6 +185,7 @@ pub fn overview(read: &AiSong) -> Value {
             clips.push(json!({
                 "id": clip.id.0,
                 "track": i + 1,
+                "track_id": crate::trackref::id_text(track.id),
                 "name": clip.name,
                 "kind": if clip.is_keys() { "keys" } else { "audio" },
                 "start": place(&map, clip.start),
@@ -258,6 +260,7 @@ pub fn notes(read: &AiSong, clip: u32, first: usize, max: usize) -> Result<Value
     Ok(json!({
         "clip": clip.id.0,
         "track": track + 1,
+        "track_id": crate::trackref::id_text(doc.tracks[track].id),
         "take": shown.take.id.0,
         "start": place(&map, clip.start),
         "end": place(&map, clip.end),

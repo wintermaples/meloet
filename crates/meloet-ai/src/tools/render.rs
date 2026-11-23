@@ -15,8 +15,10 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
-use super::{MAX_MEASURE_S, Tools, closing, done, failed, refusal_text, track_of};
+use super::analyze::numbers;
+use super::{MAX_MEASURE_S, Tools, closing, done, failed, refusal_text};
 use crate::MAX_BAR;
+use crate::trackref::TrackRef;
 
 /// A note `render_note` plays at most, in seconds.
 const MAX_NOTE_S: f64 = 30.0;
@@ -29,10 +31,11 @@ pub struct RenderArgs {
     /// The last bar, rendered to its end.
     #[schemars(range(min = 1, max = 9999))]
     pub to_bar: u32,
-    /// Track numbers to render; the mix then holds only these. Leave out for every track.
+    /// Tracks (numbers from 1 or ids like "id:7") to render; the mix then holds only these.
+    /// Leave out for every track.
     #[serde(default)]
     #[schemars(length(min = 1, max = 64))]
-    pub tracks: Option<Vec<u32>>,
+    pub tracks: Option<Vec<TrackRef>>,
     /// A file for each track (played alone with its sends and the master) in place of one
     /// mix.
     #[serde(default)]
@@ -45,8 +48,7 @@ pub struct RenderArgs {
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 pub struct NoteArgs {
     /// The keys track whose instrument plays it.
-    #[schemars(range(min = 1, max = 64))]
-    pub track: u32,
+    pub track: TrackRef,
     /// MIDI key, 0 to 127 (60 is C4).
     #[schemars(range(min = 0, max = 127))]
     pub key: u32,
@@ -228,7 +230,10 @@ impl Tools {
         };
         let what = AiRenderWhat::Song {
             span,
-            tracks: a.tracks.clone(),
+            tracks: match &a.tracks {
+                Some(tracks) => Some(check!(numbers(&read, tracks))),
+                None => None,
+            },
             per_track: a.per_track,
             tail: a.tail,
         };
@@ -261,9 +266,9 @@ impl Tools {
             return Ok(failed(format!("hold it 0.05 to {MAX_NOTE_S} s")));
         }
         let read = check!(self.read().await);
-        check!(track_of(&read, a.track));
+        let track = check!(a.track.number(&read).map_err(failed));
         let what = AiRenderWhat::Note {
-            track: a.track,
+            track,
             key,
             velocity,
             seconds,
@@ -271,7 +276,7 @@ impl Tools {
         };
         let name = format!(
             "note-track{}-{}-v{velocity}",
-            a.track,
+            track,
             crate::song::key_name(key)
         );
         self.render_scratch(what, &name, false, &meta, &peer, &ct)

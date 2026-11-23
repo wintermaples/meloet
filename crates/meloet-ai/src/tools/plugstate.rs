@@ -24,6 +24,7 @@ use sha2::{Digest, Sha256};
 
 use super::mixer::{BusArg, slot_of, strip_of};
 use super::{Tools, closing, done, done_value, failed, path_ok, refusal_text};
+use crate::trackref::TrackRef;
 use readable::readable;
 
 /// The largest state read or put in, in bytes: samplers keep their sounds in their state.
@@ -36,8 +37,7 @@ const STATE_WAIT: Duration = Duration::from_secs(10);
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 pub struct GetStateArgs {
     #[serde(default)]
-    #[schemars(range(min = 1, max = 64))]
-    pub track: Option<u32>,
+    pub track: Option<TrackRef>,
     #[serde(default)]
     pub bus: Option<BusArg>,
     /// The insert slot, 1 to 4. Leave out for the track's instrument plugin.
@@ -53,8 +53,7 @@ pub struct GetStateArgs {
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 pub struct SetStateArgs {
     #[serde(default)]
-    #[schemars(range(min = 1, max = 64))]
-    pub track: Option<u32>,
+    pub track: Option<TrackRef>,
     #[serde(default)]
     pub bus: Option<BusArg>,
     /// The insert slot, 1 to 4. Leave out for the track's instrument plugin.
@@ -85,7 +84,7 @@ pub(super) struct PluginStateGot {
 /// of a track. The tools that name a plugin take these three arguments.
 pub(super) fn plugin_place(
     read: &AiSong,
-    track: Option<u32>,
+    track: Option<TrackRef>,
     bus: Option<BusArg>,
     slot: Option<u32>,
 ) -> Result<PluginPlace, CallToolResult> {

@@ -12,28 +12,26 @@ use serde::Deserialize;
 use serde_json::json;
 
 use super::{Tools, at_or_tick, done, done_value, failed, name_ok, path_ok, track_of};
+use crate::trackref::TrackRef;
 
 /// Clips one call takes.
 const MAX_CLIPS: usize = 256;
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 pub struct TrackArgs {
-    #[schemars(range(min = 1, max = 64))]
-    pub track: u32,
+    pub track: TrackRef,
 }
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 pub struct RenameTrackArgs {
-    #[schemars(range(min = 1, max = 64))]
-    pub track: u32,
+    pub track: TrackRef,
     #[schemars(length(min = 1, max = 64))]
     pub name: String,
 }
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 pub struct MoveTrackArgs {
-    #[schemars(range(min = 1, max = 64))]
-    pub track: u32,
+    pub track: TrackRef,
     /// Its number afterwards (from 1).
     #[schemars(range(min = 1, max = 64))]
     pub to: u32,
@@ -84,10 +82,9 @@ pub struct ImportArgs {
     /// The audio file (WAV, FLAC, MP3, OGG …), an absolute path.
     #[schemars(length(min = 2, max = 4096))]
     pub path: String,
-    /// A vocal track's number; leave out for a new vocal track.
+    /// A vocal track (number or id); leave out for a new vocal track.
     #[serde(default)]
-    #[schemars(range(min = 1, max = 64))]
-    pub track: Option<u32>,
+    pub track: Option<TrackRef>,
     /// Where the clip starts, as "bar.beat.tick". Give this or `tick`.
     #[serde(default)]
     pub at: Option<String>,
@@ -202,7 +199,7 @@ impl Tools {
         check!(self.allowed());
         let read = check!(self.read().await);
         let track = check!(track_of(&read, a.track)).id.0;
-        check!(track_of(&read, a.to));
+        check!(track_of(&read, TrackRef::Number(a.to)));
         Ok(self
             .screen(Command::MoveTrack {
                 track,

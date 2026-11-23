@@ -35,11 +35,15 @@ fn target(
 }
 
 fn finished(run: &Run) -> Vec<PathBuf> {
+    finished_with_wave(run).0
+}
+
+fn finished_with_wave(run: &Run) -> (Vec<PathBuf>, Vec<u8>) {
     let seen = run.until("finished", |n| {
         matches!(n, ExportNews::Finished { .. } | ExportNews::Failed { .. })
     });
     match seen.into_iter().last() {
-        Some(ExportNews::Finished { files, .. }) => files,
+        Some(ExportNews::Finished { files, wave, .. }) => (files, wave),
         other => panic!("the job did not finish: {other:?}"),
     }
 }
@@ -899,9 +903,24 @@ fn a_job_measures_its_file_and_matches_it_and_one_for_each_track_does_not() {
         RATE,
         RecordFormat::Bits24,
     ));
-    assert_eq!(finished(&run), std::slice::from_ref(&path));
+    let (files, wave) = finished_with_wave(&run);
+    assert_eq!(files, std::slice::from_ref(&path));
     let file = read_wav(&path);
     assert_eq!(file.len(), floats.len());
+    // E9: the waveform is of the file as written, the gain on.
+    let bars = meloet_protocol::EXPORT_WAVE_BARS;
+    assert_eq!(wave.len(), bars);
+    let frames = file.len() / 2;
+    let mut largest = vec![0.0f32; bars];
+    for (i, frame) in file.chunks(2).enumerate() {
+        let bar = i * bars / frames;
+        largest[bar] = largest[bar].max(frame[0].abs()).max(frame[1].abs());
+    }
+    for (said, l) in wave.iter().zip(&largest) {
+        let read = (l.min(1.0) * 255.0).round();
+        assert!((f32::from(*said) - read).abs() <= 1.0, "{wave:?}");
+    }
+    assert!(wave.iter().any(|b| *b > 100), "{wave:?}");
     let m = loudness::match_gain(Some(lufs), Some(peak)).unwrap();
     let (lufs_after, peak_after) = remeasured(&file, RATE);
     let at_target = (lufs_after + 14.0).abs() <= 0.2;
@@ -925,6 +944,7 @@ fn a_job_measures_its_file_and_matches_it_and_one_for_each_track_does_not() {
         RATE,
         RecordFormat::Bits32,
     ));
-    let files = finished(&run);
+    let (files, wave) = finished_with_wave(&run);
     assert!(read_wav(&files[0]) == first);
+    assert!(wave.is_empty());
 }

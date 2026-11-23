@@ -2720,6 +2720,14 @@ export const texts = {
   "export.loudnessLouder": e("合わせると {db} dB 大きくなります", "user:2026-11-23", { db: "4.6" }),
   "export.loudnessQuieter": e("合わせると {db} dB 小さくなります", "builder:2026-11-23", { db: "2.4" }),
   "export.loudnessLimited": e("−1 dBTP を越えないよう、{lufs} LUFS になります", "user:2026-11-23", { lufs: "−15.2" }),
+  // The dialog 「書き出しました」 when an export ends (round 12 E9). 「フォルダをひらく」 and 「閉じる」 are button.openFolder and button.close.
+  "exported.title": e("書き出しました", "user:2026-11-23"),
+  "exported.files": e("{count} つのファイル", "user:2026-11-23", { count: "5" }),
+  "exported.length": e("{minutes} 分 {seconds} 秒", "user:2026-11-23", { minutes: "3", seconds: "12" }),
+  "exported.lengthSeconds": e("{seconds} 秒", "builder:2026-11-23", { seconds: "45" }),
+  "exported.details": e("{length} ・ {rate} Hz ・ {bits} ビット", "user:2026-11-23", { length: "3 分 12 秒", rate: "48000", bits: "24" }),
+  "exported.loudness": e("大きさ {lufs} LUFS ・ トゥルーピーク {peak} dBTP", "user:2026-11-23", { lufs: "−14.0", peak: "−1.0" }),
+  "exported.play": e("PC のプレーヤーで聞く", "user:2026-11-23"),
   // The rest of the status line while the export dialog is open (after 「「書き出し」のダイアログをひらいています ・ 」).
   "status.exportChecking": e("たしかめています {percent} %", "mock:F8-ExportCheck", { percent: "38" }),
   "status.exportOver": e("0 dB をこえる所があります", "mock:F8-ExportClip"),

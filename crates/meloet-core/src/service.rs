@@ -3023,6 +3023,9 @@ impl Worker {
                     Effect::OpenUrl(url) => {
                         self.ask_shell(ShellRequest::OpenUrl { url });
                     }
+                    Effect::OpenFile(path) => {
+                        self.ask_shell(ShellRequest::OpenFile { path });
+                    }
                     Effect::CheckUpdates => {
                         if let Some(options) = &self.updates {
                             let tx = self.links.tx.clone();

@@ -21,6 +21,7 @@ use super::loudness::{self, TruePeak};
 use super::render::{ExportEngine, Plugs};
 use super::sink::{self, SinkSpec};
 use super::told::{KnownPlugins, Told};
+use super::wave::WaveBars;
 use super::{ExportJob, ExportNews, ExportTarget};
 use crate::ai::PassLevels;
 use crate::audiofiles::resample::Resample;
@@ -238,6 +239,7 @@ fn go(
     // so a job given up on the way leaves nothing where the person looks.
     let mut ready = Vec::new();
     let mut taken = Vec::new();
+    let mut wave = Vec::new();
     for (i, file) in rendered.iter().enumerate() {
         let to = match &file.name {
             Some(name) => {
@@ -248,7 +250,10 @@ fn go(
             None => target.path.clone(),
         };
         let out = setup.work.join(format!("out-{i}"));
-        convert(&file.path, &out, job.sample_rate, &target, gain, stop)?;
+        let bars = convert(&file.path, &out, job.sample_rate, &target, gain, stop)?;
+        if !job.per_track && rendered.len() == 1 {
+            wave = bars;
+        }
         ready.push((out, to));
     }
     for (out, to) in ready {
@@ -264,6 +269,7 @@ fn go(
     tell(ExportNews::Finished {
         job: job.id,
         files: std::mem::take(moved),
+        wave,
     });
     Ok(())
 }
@@ -900,6 +906,7 @@ fn load_plugins(engine: &ExportEngine, told: &Told, setup: &Setup) -> Result<Exp
 
 /// Brings a rendered file into the form of `target`, as the file `to` of the work place.
 /// `gain` (dB) is on every sample before anything else; without it the samples are as read.
+/// Returns the waveform of what is written (E9), before the sample rate is changed.
 fn convert(
     from: &Path,
     to: &Path,
@@ -907,9 +914,10 @@ fn convert(
     target: &ExportTarget,
     gain: Option<f32>,
     stop: &AtomicBool,
-) -> Result<(), Ended> {
+) -> Result<Vec<u8>, Ended> {
     let factor = gain.map(loudness::factor);
     let mut wav = WavPcm::open(from)?;
+    let mut wave = WaveBars::new(wav.frames());
     let spec = SinkSpec {
         format: target.format,
         sample_rate: target.sample_rate,
@@ -936,6 +944,7 @@ fn convert(
             if let Some(factor) = factor {
                 buf[..got * 2].iter_mut().for_each(|s| *s *= factor);
             }
+            wave.feed(&buf[..got * 2]);
             match &mut resample {
                 Some(r) => r.push(&buf[..got * 2], &mut |block| out.write(block))?,
                 None => out.write(&buf[..got * 2])?,
@@ -949,7 +958,7 @@ fn convert(
     match work() {
         Ok(()) => {
             out.finish()?;
-            Ok(())
+            Ok(wave.finish())
         }
         Err(e) => {
             out.abandon();

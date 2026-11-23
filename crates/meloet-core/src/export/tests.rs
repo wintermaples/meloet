@@ -3,9 +3,9 @@
 use std::path::PathBuf;
 
 use meloet_protocol::{
-    Command, ExportChange, ExportCheck, ExportFailure, ExportFormat, ExportLoudness, ExportRange,
-    ExportRunView, ExportSolo, ExportTail, ExportView, RecordFormat, StatusMessage, TickSpan,
-    TrackRef,
+    Command, EXPORT_WAVE_BARS, ExportChange, ExportCheck, ExportFailure, ExportFormat,
+    ExportLoudness, ExportRange, ExportRunView, ExportSolo, ExportTail, ExportView, RecordFormat,
+    StatusMessage, TickSpan, TrackRef,
 };
 
 use super::{ExportAsk, ExportDirs, ExportJob, ExportNews, ExportTarget};
@@ -401,6 +401,7 @@ fn an_export_runs_in_the_status_line_and_ends() {
         ExportNews::Finished {
             job,
             files: vec![path.clone()],
+            wave: vec![7; EXPORT_WAVE_BARS],
         },
     );
     let done = ExportView {
@@ -412,21 +413,46 @@ fn an_export_runs_in_the_status_line_and_ends() {
             length_s: 10,
             sample_rate: 48_000,
             bits: RecordFormat::Bits24,
-            wave: Vec::new(),
+            wave: vec![7; EXPORT_WAVE_BARS],
             lufs: None,
             true_peak_db: None,
         }),
     };
     assert_eq!(export(&m), done);
 
-    // 「フォルダをひらく」 shows the file and leaves the line.
+    // 「フォルダをひらく」 shows the file and leaves the line and the dialog 「書き出しました」.
     let effects = m.handle(Input::Command(Command::ShowExported));
-    assert_eq!(effects, [Effect::ShowFile(path)]);
+    assert_eq!(effects, [Effect::ShowFile(path.clone())]);
+    assert_eq!(export(&m), done);
+    // 「PC のプレーヤーで聞く」 opens the file and leaves them too.
+    let effects = m.handle(Input::Command(Command::PlayExported));
+    assert_eq!(effects, [Effect::OpenFile(path.clone())]);
     assert_eq!(export(&m), done);
     // The next thing the person does puts the line away.
     m.handle(Input::Command(Command::ToggleMetronome));
     assert_eq!(export(&m), ExportView::default());
     assert!(m.handle(Input::Command(Command::ShowExported)).is_empty());
+    assert!(m.handle(Input::Command(Command::PlayExported)).is_empty());
+}
+
+#[test]
+fn the_dialog_of_a_finished_export_closes_with_close_export() {
+    let mut m = song();
+    let job = the_job(&cmd(&mut m, Command::OpenExport)).id;
+    news(&mut m, counted(job, 100, Some(-6.0), true));
+    cmd(&mut m, Command::StartExport);
+    news(
+        &mut m,
+        ExportNews::Finished {
+            job,
+            files: vec![PathBuf::from("/home/me/音楽/a.wav")],
+            wave: vec![0; EXPORT_WAVE_BARS],
+        },
+    );
+    assert!(matches!(export(&m).run, Some(ExportRunView::Done { .. })));
+    // 「閉じる」 and Esc: the export dialog is not open, so nothing else happens.
+    assert!(cmd(&mut m, Command::CloseExport).is_empty());
+    assert_eq!(export(&m), ExportView::default());
 }
 
 #[test]
@@ -480,6 +506,7 @@ fn an_export_is_cancelled_or_fails() {
         ExportNews::Finished {
             job,
             files: vec![PathBuf::from("/home/me/音楽/a.wav")],
+            wave: vec![0; EXPORT_WAVE_BARS],
         },
     );
     assert_eq!(export(&m).run, Some(ExportRunView::Cancelled));
@@ -712,6 +739,7 @@ fn matching_is_chosen_while_the_check_counts_and_the_dialog_says_what_it_does() 
         ExportNews::Finished {
             job,
             files: vec![path],
+            wave: vec![255; EXPORT_WAVE_BARS],
         },
     );
     // The file as written: the loudness and the true peak after the gain.
@@ -776,6 +804,7 @@ fn a_song_near_silence_and_one_file_for_each_track_are_not_matched() {
         ExportNews::Finished {
             job,
             files: vec![PathBuf::from("/home/me/音楽/1.wav")],
+            wave: Vec::new(),
         },
     );
     assert!(matches!(
@@ -786,6 +815,10 @@ fn a_song_near_silence_and_one_file_for_each_track_are_not_matched() {
             ..
         })
     ));
+    // The files of 「トラックごと」 are not played: the button is off.
+    assert!(cmd(&mut m, Command::PlayExported).is_empty());
+    assert!(m.handle(Input::Command(Command::PlayExported)).is_empty());
+    assert!(export(&m).run.is_some());
 
     // Back to the whole song: what was chosen is there again.
     cmd(&mut m, Command::OpenExport);

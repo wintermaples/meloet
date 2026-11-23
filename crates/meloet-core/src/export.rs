@@ -23,6 +23,7 @@ pub(crate) mod loudness;
 pub(crate) mod render;
 pub mod sink;
 pub(crate) mod told;
+pub(crate) mod wave;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -142,6 +143,9 @@ pub enum ExportNews {
     Finished {
         job: u64,
         files: Vec<PathBuf>,
+        /// E9: the waveform of the one file, as [`ExportRunView::Done::wave`]; empty for
+        /// 「トラックごと」.
+        wave: Vec<u8>,
     },
     Failed {
         job: u64,
@@ -302,7 +306,9 @@ impl Exporting {
     }
 
     /// Before a command is done: a run that has ended is shown until the person does the
-    /// next thing. `Command::ShowExported` is about that run and leaves it.
+    /// next thing, and with it the dialog 「書き出しました」 (E9), which the screen closes
+    /// with `Command::CloseExport`. `Command::ShowExported` and `Command::PlayExported` are
+    /// about that run and leave it.
     pub fn saw_command(&mut self, command: &Command) {
         let stays = matches!(
             command,
@@ -310,6 +316,7 @@ impl Exporting {
                 | Command::Audition { .. }
                 | Command::AuditionOff
                 | Command::ShowExported
+                | Command::PlayExported
         );
         if !stays && matches!(self.run, Some(Run::Ended(..))) {
             self.run = None;
@@ -359,6 +366,17 @@ impl Exporting {
     pub fn exported(&self) -> Option<&Path> {
         match &self.run {
             Some(Run::Ended(ExportRunView::Done { .. }, shown)) => shown.as_deref(),
+            _ => None,
+        }
+    }
+
+    /// What 「PC のプレーヤーで聞く」 opens: the one file of a run that is done, not those
+    /// of 「トラックごと」 (they have no waveform).
+    pub fn played(&self) -> Option<&Path> {
+        match &self.run {
+            Some(Run::Ended(ExportRunView::Done { wave, .. }, shown)) if !wave.is_empty() => {
+                shown.as_deref()
+            }
             _ => None,
         }
     }
@@ -534,7 +552,7 @@ impl Exporting {
                     job.must_be_realtime = true;
                 }
             }
-            ExportNews::Finished { job, files } => {
+            ExportNews::Finished { job, files, wave } => {
                 let Some(Run::Going { job: going, target }) = &self.run else {
                     return;
                 };
@@ -559,8 +577,7 @@ impl Exporting {
                     length_s: going.length_s,
                     sample_rate: target.sample_rate,
                     bits: target.bits,
-                    // round12 stub: E9
-                    wave: Vec::new(),
+                    wave,
                     lufs,
                     true_peak_db,
                 };

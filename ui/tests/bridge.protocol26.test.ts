@@ -3,7 +3,7 @@ import { flushSync, mount, unmount } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Command, ExportChange, ExportCheck, ExportRunView, ExportView, StatusMessage } from "../src/bridge";
 import { EXPORT_FORMATS, EXPORT_TAIL_MAX_S, PROTOCOL_VERSION } from "../src/bridge";
-import { fakeScene, fakeState, reduceExport, type FakeState } from "../src/bridge/fake";
+import { fakeExportWave, fakeScene, fakeState, reduceExport, type FakeState } from "../src/bridge/fake";
 import App from "../src/App.svelte";
 import { t } from "../src/text/ja";
 import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
@@ -167,9 +167,9 @@ describe("fake scenes (mock F7-Export, F7-Exporting, R11-Fit)", () => {
       lengthS: 182,
       sampleRate: 48000,
       bits: "bits24",
-      wave: [],
-      lufs: null,
-      truePeakDb: null,
+      wave: fakeExportWave(),
+      lufs: -14.0,
+      truePeakDb: -1.0,
     });
     expect(scene("exportCancelled").export.run).toEqual({ state: "cancelled" });
     expect(scene("exportFailed").export.run).toEqual({ state: "failed", reason: { kind: "cannotWrite" } });

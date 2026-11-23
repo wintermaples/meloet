@@ -1,6 +1,8 @@
 import type { Event, Telemetry } from "../bridge";
+import type { ThemeId } from "../design/themes";
 import { SCALES, type Scale } from "../design/tokens";
 import { Batch } from "./batch";
+import { colorTheme, setColorTheme } from "./color";
 import { REGIONS, SHOWN_WITH, fault, regionHz, type RegionName } from "./budget";
 import { OVERVIEW } from "./dims";
 import { HeldKeys } from "./keyboard";
@@ -128,6 +130,7 @@ export class Engine {
   private readonly levels = new Levels();
   private velocity = 0;
   private scale: Scale = 100;
+  private theme: ThemeId = colorTheme();
   private trackNumbers: readonly number[] = [];
   private next = new Batch();
   private frameId = 0;
@@ -286,6 +289,18 @@ export class Engine {
   setScale(scale: number): void {
     this.scale = (SCALES as readonly number[]).includes(scale) ? (scale as Scale) : 100;
     this.touch(null);
+  }
+
+  /** The colors to paint with. A new theme draws every region once again, with the contexts it has. */
+  setTheme(id: ThemeId): void {
+    if (id === this.theme) return;
+    this.theme = id;
+    setColorTheme(id);
+    for (const r of this.regions.values()) {
+      r.dirty = r.urgent = r.mustDraw = true;
+      for (const tile of r.tiles) tile.mustDraw = true;
+    }
+    this.invalidate();
   }
 
   /** Track numbers in the order of the song, which is the order of the telemetry's track levels. */

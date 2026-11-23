@@ -111,7 +111,7 @@
   const platform = platformOf(navigator);
   const modsOf = (e: MouseEvent): Mods => ({ shift: e.shiftKey, alt: e.altKey, mod: platform === "mac" ? e.metaKey : e.ctrlKey });
   let cursor = $state<CursorKind>("default");
-  const cursorStyle = $derived(cursorCss(cursor, scale));
+  const cursorStyle = $derived(cursorCss(cursor, scale, metrics.theme));
 
   function at(e: MouseEvent, tag: LaneTag): { x: number; y: number } {
     const r = bodies[tag]!.getBoundingClientRect();

@@ -3,6 +3,7 @@
   // every box marked with glSlot (see slot.ts), wherever in the page that box is.
   import { onMount } from "svelte";
   import { clockOffsetUs, measureEnabled, measureReport, uiScript } from "../bridge";
+  import { metrics } from "../components/metrics.svelte";
   import { current, onEvent, onTelemetry } from "../state/app.svelte";
   import { Engine } from "./engine";
   import { KeyToScreen } from "./measure";
@@ -61,6 +62,7 @@
     const state = current.state;
     if (!engine || !state) return;
     engine.setScale(state.workspace.scale);
+    engine.setTheme(metrics.theme);
     engine.setTracks(state.song.tracks.map((t) => t.number));
   });
 </script>

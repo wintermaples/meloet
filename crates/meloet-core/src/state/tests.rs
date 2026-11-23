@@ -1106,6 +1106,43 @@ fn viewport_is_css_px_and_the_rules_work_at_100_percent() {
 }
 
 #[test]
+fn a_theme_is_a_setting_and_not_a_step() {
+    let mut m = fresh();
+    assert_eq!(m.view().workspace.theme, Theme::Dark);
+    assert!(
+        cmd(&mut m, Command::SetTheme { theme: Theme::Dark }).is_empty(),
+        "the same theme"
+    );
+    let before = m.view();
+    let effects = cmd(
+        &mut m,
+        Command::SetTheme {
+            theme: Theme::MintDark,
+        },
+    );
+    assert_eq!(
+        effects,
+        [Effect::SaveSettings(Settings {
+            theme: Theme::MintDark,
+            ..Settings::default()
+        })]
+    );
+    let after = m.view();
+    assert_eq!(after.workspace.theme, Theme::MintDark);
+    assert_eq!(
+        AppState::changes_from(&before, &after),
+        [meloet_protocol::Change::Workspace(after.workspace.clone())]
+    );
+    assert_eq!(after.song.undo_count, 0);
+
+    let m = Model::new(Settings {
+        theme: Theme::Light,
+        ..Settings::default()
+    });
+    assert_eq!(m.view().workspace.theme, Theme::Light);
+}
+
+#[test]
 fn arrange_lower_than_one_track_row_is_drawn_as_the_overview() {
     let mut m = fresh();
     // History 248 + 40 with the slim meter (24 + 48 + 24 + 24 = 120).

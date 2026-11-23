@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Shoot the screen (fake scenes) and put each shot next to its mock board in one PNG.
 
-usage: python3 -I tools/design/shoot_ui.py OUT_DIR [SCENE ...]
+usage: python3 -I tools/design/shoot_ui.py OUT_DIR [--theme=ID] [SCENE ...]
 
 Runs `npm run build` in ui/, serves ui/dist with `vite preview`, and shoots each scene with
 headless google-chrome at 1280x800 and 1920x1080, scale 100 and 150. Next to each shot it puts
@@ -15,7 +15,12 @@ from PIL import Image, ImageDraw
 
 root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 ui = os.path.join(root, "ui")
-out = os.path.abspath(sys.argv[1])
+# --theme=<id> (one of THEME_IDS in ui/src/design/themes.ts) shoots the scenes in that theme; the files end in -<id>.
+args = [a for a in sys.argv[1:] if not a.startswith("--theme=")]
+theme = next((a.split("=", 1)[1] for a in sys.argv[1:] if a.startswith("--theme=")), "")
+theme_query = f"&theme={theme}" if theme else ""
+theme_stem = f"-{theme}" if theme else ""
+out = os.path.abspath(args[0])
 shots = os.path.join(out, "shots")
 mocks = os.path.join(out, "mock")
 
@@ -693,7 +698,7 @@ ONLY = {
     "packSettings": [(1280, 800, 100), (1280, 800, 150)],
     "exporting": [(1280, 800, 100), (1280, 800, 150)],
 }
-scenes = sys.argv[2:] or list(BOARDS)
+scenes = args[1:] or list(BOARDS)
 
 # Drives headless Chrome over the DevTools protocol (Node's own WebSocket): open, click, shoot.
 CLICK_SHOT = r"""
@@ -799,13 +804,13 @@ try:
 
     for scene in scenes:
         for w, h, scale in ONLY.get(scene) or [(w, h, s) for w, h in SIZES for s in SCALES]:
-            stem = f"{scene}-{w}x{h}-{scale}"
+            stem = f"{scene}-{w}x{h}-{scale}{theme_stem}"
             shot = os.path.join(shots, stem + ".png")
             if scene in CLICKS:
                 base, selector = CLICKS[scene]
                 selectors = json.dumps([selector] if isinstance(selector, str) else list(selector))
                 done = subprocess.run(["node", "--input-type=module", "-e", CLICK_SHOT, str(free_port()),
-                                       f"http://127.0.0.1:{port}/?scene={base}&scale={scale}", selectors, shot, str(w), str(h)],
+                                       f"http://127.0.0.1:{port}/?scene={base}&scale={scale}{theme_query}", selectors, shot, str(w), str(h)],
                                       env=env, capture_output=True, text=True, timeout=180)
                 if done.returncode != 0:
                     sys.exit(f"{stem}: {done.stderr.strip() or done.returncode}")
@@ -813,7 +818,7 @@ try:
                 run(["google-chrome", "--headless=new", "--disable-gpu", "--hide-scrollbars",
                      "--force-device-scale-factor=1", "--virtual-time-budget=3000",
                      f"--window-size={w},{h}", f"--screenshot={shot}",
-                     f"http://127.0.0.1:{port}/?scene={scene}&scale={scale}"],
+                     f"http://127.0.0.1:{port}/?scene={scene}&scale={scale}{theme_query}"],
                     capture_output=True, timeout=60)
             left = Image.open(shot).convert("RGB")
             board = BOARDS.get(scene)

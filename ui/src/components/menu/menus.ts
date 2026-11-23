@@ -1,6 +1,7 @@
 // Content of the menu bar (docs/history/design-notes.ja.md B-59). Does not know the DOM. Rows with a key go the same way as the key (runKeyAction in keys/attach.ts).
 
 import type { AppState, Band, Command } from "../../bridge";
+import { THEME_IDS } from "../../design/themes";
 import { SCALES } from "../../design/tokens";
 import { keyActionUsable, pianoRollOpen, runKeyAction, songBusy, type KeyDeps } from "../../keys/attach";
 import type { KeyAction, Platform } from "../../keys/keys";
@@ -153,6 +154,9 @@ export function topMenus(state: AppState, deps: KeyDeps, platform: Platform): To
         const row = choice(t("status.scale", { scale: s }), s === scale, fits, send({ type: "setScale", percent: s }), k.modAlt(String(i + 1)));
         return fits ? row : { ...row, hint: t("msg.scaleDoesNotFit") };
       }),
+    }),
+    plain("menu.theme", true, undefined, {
+      sub: THEME_IDS.map((id) => choice(t(`theme.${id}`), id === state.workspace.theme, true, send({ type: "setTheme", theme: id }))),
     }),
   ];
 

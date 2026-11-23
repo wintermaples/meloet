@@ -32,7 +32,7 @@ use meloet_protocol::{
     LowerBandView, MeterSize, MissingRef, MissingView, OutputsView, ParamTable, ParamValues,
     PluginRole, PluginWindowKind, QuantizeSettings, RecordFormat, RecoveryCause, ScanView,
     SettingsDialogView, ShelfMode, ShelfView, SongFile, SongView, SoundRef, StandIn, StatusMessage,
-    StatusView, TrackKindView, TrackView, Unusable, VelocityFixed, WorkspaceView,
+    StatusView, Theme, TrackKindView, TrackView, Unusable, VelocityFixed, WorkspaceView,
 };
 
 use crate::added;
@@ -604,6 +604,7 @@ pub struct Model {
     /// The empty arrange hint was put away.
     empty_dismissed: bool,
     scale: u16,
+    theme: Theme,
     viewport: (f32, f32),
     /// `None` until the shell tells.
     screen: Option<(f32, f32)>,
@@ -755,6 +756,7 @@ impl Model {
             new_song_unsaid: true,
             empty_dismissed: false,
             scale,
+            theme: settings.theme,
             viewport: START_VIEWPORT,
             screen: None,
             bands: Bands::new(window(START_VIEWPORT, scale)),
@@ -1405,6 +1407,11 @@ impl Model {
                     }
                     effects.push(Effect::SaveSettings(self.settings()));
                 }
+            }
+            Command::SetTheme { theme } if theme == self.theme => {}
+            Command::SetTheme { theme } => {
+                self.theme = theme;
+                effects.push(Effect::SaveSettings(self.settings()));
             }
             Command::ToggleBand { band } => self.toggle_band(band),
             Command::GoArrange => self.bands.go_arrange(),
@@ -2446,6 +2453,7 @@ impl Model {
             output: self.chosen.clone(),
             output_name: self.chosen_name.clone(),
             scale: self.scale,
+            theme: self.theme,
             metronome: self.play.metronome(),
             count_in_bars: self.play.count_in_bars(),
             velocity_fixed: self.velocity_fixed.on,
@@ -2612,6 +2620,7 @@ impl Model {
             piano_roll: self.play.piano_roll_view(),
             workspace: WorkspaceView {
                 scale: self.scale,
+                theme: self.theme,
                 viewport_width: self.viewport.0,
                 viewport_height: self.viewport.1,
                 unfit_scales: SCALES

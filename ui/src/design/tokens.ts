@@ -371,11 +371,14 @@ export function partAt(name: PartName, scale: Scale): number {
   return Math.round((part[name].value * scale) / 100);
 }
 
-/** Name → value at that scale. Numbers are CSS px, colors are hex, weights are numbers. */
-export function tokensAt(scale: Scale, devicePixelRatio: number): Record<string, number | string> {
+/** A value for every color name (the colors of a theme, design/themes.ts). */
+export type ColorValues = Readonly<Record<ColorName, string>>;
+
+/** Name → value at that scale. Numbers are CSS px, colors are hex (from `palette`), weights are numbers. */
+export function tokensAt(scale: Scale, devicePixelRatio: number, palette: ColorValues = colors): Record<string, number | string> {
   const i = scaleIndex(scale);
   const out: Record<string, number | string> = {};
-  for (const [k, v] of Object.entries(colors)) out[k] = v;
+  for (const k of Object.keys(colors) as ColorName[]) out[k] = palette[k];
   for (const [k, v] of Object.entries(text) as [TextName, TextToken][]) {
     out[`${k}.size`] = v.size[i];
     out[`${k}.line-height`] = v.lineHeight[i];
@@ -396,9 +399,9 @@ export function tokensAt(scale: Scale, devicePixelRatio: number): Record<string,
 const unitless = (name: string) => name.includes(".weight");
 
 /** CSS variable pairs such as `--color-gray-4: #222222`. */
-export function cssVariables(scale: Scale, devicePixelRatio: number): Record<string, string> {
+export function cssVariables(scale: Scale, devicePixelRatio: number, palette: ColorValues = colors): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const [k, v] of Object.entries(tokensAt(scale, devicePixelRatio))) {
+  for (const [k, v] of Object.entries(tokensAt(scale, devicePixelRatio, palette))) {
     out[`--${k.replaceAll(".", "-")}`] = typeof v === "string" ? v : unitless(k) ? String(v) : `${v}px`;
   }
   out["--font-sans"] = fontFamily.sans;
@@ -406,11 +409,12 @@ export function cssVariables(scale: Scale, devicePixelRatio: number): Record<str
   return out;
 }
 
-/** Writes the CSS variables on :root (or the given element). Call again when the scale or devicePixelRatio changes. */
+/** Writes the CSS variables on :root (or the given element). Call again when the scale, devicePixelRatio or theme changes. */
 export function writeCssVariables(
   scale: Scale,
   devicePixelRatio: number = window.devicePixelRatio || 1,
+  palette: ColorValues = colors,
   root: HTMLElement = document.documentElement,
 ): void {
-  for (const [k, v] of Object.entries(cssVariables(scale, devicePixelRatio))) root.style.setProperty(k, v);
+  for (const [k, v] of Object.entries(cssVariables(scale, devicePixelRatio, palette))) root.style.setProperty(k, v);
 }

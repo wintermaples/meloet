@@ -6,6 +6,7 @@
   import { current } from "../../state/app.svelte";
   import { STATUS_JOIN, t, texts, type TextKey } from "../../text/ja";
   import Button from "../Button.svelte";
+  import { metrics } from "../metrics.svelte";
   import { about, closeAbout, showFirstStage, showLicenses, toggleGroup, togglePart, toggleSection } from "./about.svelte";
   import {
     allParts,
@@ -74,7 +75,7 @@
 {#if about.open}
   <div class="place">
     <div class="lead"></div>
-    <div class="dialog" role="dialog" aria-label={t("about.title")} data-test="about-dialog" use:movableDialog>
+    <div class="dialog" role="dialog" aria-label={t("about.title")} data-test="about-dialog" style:color-scheme={metrics.colorScheme} use:movableDialog>
       <div class="head" data-dialog-head>
         {#if about.stage === 1}
           <span class="title">{t("about.title")}</span>
@@ -211,7 +212,6 @@
     line-height: var(--text-s-line-height);
     font-weight: var(--text-s-weight-400);
     white-space: nowrap;
-    color-scheme: dark;
   }
   .head {
     flex-shrink: 0;

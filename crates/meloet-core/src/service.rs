@@ -526,6 +526,7 @@ impl Core {
             Sf2Store::open(options.sf2_dir.clone(), Box::new(done))
         };
         let wishes = (settings.sound.buffer, settings.sound.sample_rate);
+        let spectrum = settings.spectrum;
         let mut model = Model::new(settings).with_sounds(library.installed());
         let mut fetcher = None;
         if let Some(pack) = pack {
@@ -667,6 +668,7 @@ impl Core {
         )
         .with_store(audio_store.clone())
         .with_maker(maker);
+        audio.analysis.set_spectrum(spectrum);
         let readings = audio.analysis.readings().clone();
         let core = {
             let worker = Worker {
@@ -3064,6 +3066,7 @@ impl Worker {
                     Effect::SaveSettings(settings) => {
                         self.audio.wish_frames = settings.sound.buffer;
                         self.audio.wish_rate = settings.sound.sample_rate;
+                        self.audio.analysis.set_spectrum(settings.spectrum);
                         if let Some(dir) = &self.config_dir
                             && let Err(e) = settings::save(dir, &settings)
                         {

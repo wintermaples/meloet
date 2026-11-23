@@ -47,7 +47,7 @@ fn the_thread_takes_what_the_engine_writes_and_ends_with_its_owner() {
         }
     }
     assert_eq!(readings.frames(), written);
-    // E7 and M3 fill these; until then they say none.
+    // The bands are off until told; M3 fills the rest, until then they say none.
     assert_eq!(readings.spectrum(), [0; SPECTRUM_BANDS]);
     assert_eq!(
         (
@@ -94,4 +94,126 @@ fn an_engine_whose_reader_is_not_taken_writes_nothing() {
     let mut side = Side::new(Arc::default());
     side.set_reader(parts.handle.take_analysis().expect("the reader"));
     assert_eq!(side.pump(), 0, "nothing from before");
+}
+
+/// A sine at `hz`, both sides, full scale.
+struct Sine {
+    hz: f32,
+    rate: f32,
+    at: f32,
+}
+
+impl Instrument for Sine {
+    fn prepare(&mut self, sample_rate: f32, _max_frames: usize) {
+        self.rate = sample_rate;
+    }
+    fn event(&mut self, _ev: InstrumentEvent) {}
+    fn render(&mut self, left: &mut [f32], right: &mut [f32]) {
+        for (l, r) in left.iter_mut().zip(right) {
+            *l = (std::f32::consts::TAU * self.at).sin();
+            *r = *l;
+            self.at = (self.at + self.hz / self.rate).fract();
+        }
+    }
+    fn reset(&mut self) {}
+}
+
+fn sine_engine(hz: f32) -> EngineParts {
+    let mut parts = Engine::new(EngineConfig::default());
+    let sine = Sine {
+        hz,
+        rate: 48_000.0,
+        at: 0.0,
+    };
+    assert!(parts.handle.swap_instrument(0, Box::new(sine)).is_ok());
+    parts
+}
+
+/// 1 kHz is in band 12 (800 Hz to 1027 Hz).
+const KHZ_BAND: usize = 12;
+
+#[test]
+fn the_bands_are_worked_only_while_the_spectrum_is_on() {
+    let mut parts = sine_engine(1000.0);
+    let mut side = Side::new(Arc::default());
+    side.set_reader(parts.handle.take_analysis().expect("the reader"));
+    blocks(&mut parts, 40);
+    assert_eq!(side.pump(), 40 * 256);
+    assert_eq!(side.spectrum.ffts(), 0, "off: no FFT");
+    assert_eq!(side.readings.spectrum(), [0; SPECTRUM_BANDS]);
+
+    side.set_spectrum(true);
+    blocks(&mut parts, 40);
+    side.pump();
+    let ffts = side.spectrum.ffts();
+    assert_eq!(ffts, 10, "one every 1024 frames");
+    let bars = side.readings.spectrum();
+    assert!(bars[KHZ_BAND] >= 245, "{bars:?}");
+    assert_eq!(bars.iter().max(), Some(&bars[KHZ_BAND]));
+
+    side.set_spectrum(false);
+    assert_eq!(
+        side.readings.spectrum(),
+        [0; SPECTRUM_BANDS],
+        "off reads 0 at once"
+    );
+    blocks(&mut parts, 40);
+    side.pump();
+    assert_eq!(side.spectrum.ffts(), ffts);
+}
+
+#[test]
+fn when_no_frames_come_the_bars_fall_to_nothing() {
+    let mut parts = sine_engine(1000.0);
+    let mut side = Side::new(Arc::default());
+    side.set_reader(parts.handle.take_analysis().expect("the reader"));
+    side.set_spectrum(true);
+    blocks(&mut parts, 40);
+    side.pump();
+    let start = side.readings.spectrum()[KHZ_BAND];
+    // A few wakes with nothing (a large block on its way) change nothing.
+    for _ in 0..STALLED_WAKES {
+        side.pump();
+    }
+    assert_eq!(side.readings.spectrum()[KHZ_BAND], start);
+    // Then the stream is taken as stopped: 30 dB a second by the time.
+    for _ in 0..100 {
+        side.pump();
+    }
+    let fallen = side.readings.spectrum()[KHZ_BAND];
+    assert!(
+        (f64::from(start) - 30.0 * 255.0 / 72.0 - f64::from(fallen)).abs() <= 1.0,
+        "{start} → {fallen}"
+    );
+    for _ in 0..300 {
+        side.pump();
+    }
+    assert_eq!(side.readings.spectrum(), [0; SPECTRUM_BANDS]);
+}
+
+#[test]
+fn a_new_reader_or_lost_frames_start_the_bands_from_silence() {
+    let mut parts = sine_engine(1000.0);
+    let mut side = Side::new(Arc::default());
+    side.set_spectrum(true);
+    side.set_reader(parts.handle.take_analysis().expect("the reader"));
+    blocks(&mut parts, 40);
+    side.pump();
+    assert!(side.readings.spectrum()[KHZ_BAND] > 0);
+
+    // The ring overflows: what it holds came before the gap and is let go of; the bands start
+    // again with what comes after.
+    let ffts = side.spectrum.ffts();
+    blocks(&mut parts, 100);
+    assert_eq!(side.pump(), meloet_engine::ANALYSIS_RING_FRAMES);
+    assert_eq!(side.readings.spectrum(), [0; SPECTRUM_BANDS]);
+    assert_eq!(side.spectrum.ffts(), ffts);
+    blocks(&mut parts, 40);
+    side.pump();
+    assert!(side.readings.spectrum()[KHZ_BAND] >= 245);
+
+    let (engine, _) = parts.handle.rebuild();
+    parts.engine = engine;
+    side.set_reader(parts.handle.take_analysis().expect("the new reader"));
+    assert_eq!(side.readings.spectrum(), [0; SPECTRUM_BANDS]);
 }

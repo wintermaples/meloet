@@ -2,7 +2,7 @@
 
 import type { Batch } from "./batch";
 import { rgb, type Rgb } from "./color";
-import { ARRANGE_GRID, CLIP_MARK, KEY_FORMS, KEYBOARD, METER, METER_HOT_FROM, MIC_METER, OVERVIEW, VELOCITY, type KeyForm } from "./dims";
+import { ARRANGE_GRID, CLIP_MARK, KEY_FORMS, KEYBOARD, METER, METER_HOT_FROM, MIC_METER, OVERVIEW, SPECTRUM, VELOCITY, type KeyForm } from "./dims";
 import { keyboardLayout } from "./keyboard";
 import { lengthToDb, micDbToLength } from "./level";
 import type { GlRect, GlWave, GridLine } from "./slot";
@@ -124,6 +124,22 @@ export function paintMeter(
   if (mic && mic.peak > 0 && !vertical) {
     const at = x0 + Math.min(Math.round(length * Math.min(mic.peak, 1)), length - HAIR);
     out.rect(at, y0, at + HAIR, y1, rgb(MIC_METER.peak));
+  }
+}
+
+/**
+ * Standing bars on the ground, one per band (0..255 is the box's height), sharing the box's width; the last device pixel of
+ * each band's share is left as ground, so the bars stay apart.
+ */
+export function paintSpectrum(out: Batch, box: Box, bands: Uint8Array): void {
+  const { x0, y0, x1, y1 } = box;
+  out.rect(x0, y0, x1, y1, rgb(SPECTRUM.ground));
+  const n = bands.length;
+  for (let i = 0; i < n; i++) {
+    const top = y1 - Math.round(((y1 - y0) * bands[i]!) / 255);
+    const left = x0 + Math.round(((x1 - x0) * i) / n);
+    const right = x0 + Math.round(((x1 - x0) * (i + 1)) / n) - HAIR;
+    if (top < y1 && right > left) out.rect(left, top, right, y1, rgb(SPECTRUM.bars[Math.min(Math.floor(i / SPECTRUM.perColor), SPECTRUM.bars.length - 1)]!));
   }
 }
 

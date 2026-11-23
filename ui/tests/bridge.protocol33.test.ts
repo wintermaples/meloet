@@ -77,7 +77,6 @@ describe("fake intents", () => {
     const commands: Command[] = [
       { type: "setArp", track, arp: { on: true, shape: "upDown", rate: "eighth", triplet: true, octaves: 2, hold: true } },
       { type: "setSoundKnob", track, instrument: "grandPiano", knob: "brightness", value: 80, commit: true },
-      { type: "setSpectrum", on: false },
       { type: "setMonoListen", on: true },
       { type: "duplicateSection", marker: 99 },
       { type: "deleteSection", marker: 99 },

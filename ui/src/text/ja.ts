@@ -2063,6 +2063,7 @@ export const texts = {
   "menu.zoomRowsOut": e("縦に縮小", "user:2026-11-18"),
   "menu.scale": e("拡大率", "user:2026-11-18"),
   "menu.theme": e("テーマ", "user:2026-11-23"),
+  "menu.spectrum": e("音の動きを見せる", "user:2026-11-23"),
   "theme.dark": e("ダーク", "user:2026-11-23"),
   "theme.light": e("ライト", "user:2026-11-23"),
   "theme.pinkDark": e("ピンク ・ ダーク", "user:2026-11-23"),

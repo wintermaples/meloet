@@ -1,7 +1,7 @@
 <!-- The transport band (the top band of mock Main, F-Empty, F-Connect3, F-Connect4, F-ArrangeRec; the ▾ from F-Menus, F-PR150). -->
 <script lang="ts">
   import { onMount, untrack } from "svelte";
-  import { clockOffsetUs, type Command } from "../bridge";
+  import { clockOffsetUs, SPECTRUM_BANDS, type Command } from "../bridge";
   import { platformOf } from "../keys/keys";
   import { glRegion, glSlot, type GlSlot } from "../gl/slot";
   import { menuOpened } from "../lib/menu";
@@ -10,7 +10,7 @@
   import { t } from "../text/ja";
   import ChoiceMenu from "./ChoiceMenu.svelte";
   import MetronomeWindow from "./MetronomeWindow.svelte";
-  import { transportWithKeep, type TransportParts } from "./fit";
+  import { transportWithSpectrum, type TransportParts } from "./fit";
   import { PeakHold, peakNumberText, peakText, tempoText } from "./format";
   import { metrics } from "./metrics.svelte";
   import NumberField from "./NumberField.svelte";
@@ -47,9 +47,10 @@
 
   // Fitting across: measure the shown parts and the hideable parts in a hidden copy (ruler), and hide in the order of spec 1.
   const COVER: GlSlot = { kind: "cover" };
+  const SPECTRUM: GlSlot = { kind: "spectrum" };
   let row = $state<HTMLElement>();
   let ruler = $state<HTMLElement>();
-  let parts = $state<TransportParts & { overdub: boolean; keepPlayed: boolean }>({
+  let parts = $state<TransportParts & { overdub: boolean; keepPlayed: boolean; spectrum: boolean }>({
     keys: true,
     songName: true,
     load: true,
@@ -57,7 +58,11 @@
     positionLabels: true,
     overdub: true,
     keepPlayed: true,
+    spectrum: false,
   });
+  // The bars of the master's sound (round 12 E7): 「表示 ▸ 音の動きを見せる」, and only in room nothing else needs.
+  const spectrumOn = $derived(current.state!.workspace.spectrum);
+  const spectrumShown = $derived(spectrumOn && parts.spectrum);
 
   // The keys at the right end of buttons (spec 4, mock F-WideArrange). Not on stop and count-in.
   const KEYS = [t("key.toStart"), t("key.playStop"), t("key.record"), t("key.loop"), t("key.metronome")] as const;
@@ -86,9 +91,18 @@
     const widths = fixed.reduce((sum, el) => sum + (el.classList.contains("m-spacer") ? 0 : el.offsetWidth), 0);
     const overdub = w("overdub") + metrics.px("space.1");
     const keep = w("keepPlayed") + metrics.px("space.1");
+    // The bars are inside the master's box, space.1 before the master's column (so they fit at 1280 × 800, 100 %).
+    const spectrum = w("spectrum") + metrics.px("space.1");
     const base =
-      pad + widths + gap * Math.max(0, fixed.length - 1) - shownLabels - shownKeys - (parts.overdub ? overdub : 0) - (parts.keepPlayed ? keep : 0);
-    parts = transportWithKeep(
+      pad +
+      widths +
+      gap * Math.max(0, fixed.length - 1) -
+      shownLabels -
+      shownKeys -
+      (parts.overdub ? overdub : 0) -
+      (parts.keepPlayed ? keep : 0) -
+      (spectrumShown ? spectrum : 0);
+    parts = transportWithSpectrum(
       row.clientWidth,
       {
         base,
@@ -101,6 +115,7 @@
       { songName: w("songStub") + gap },
       overdub,
       keep,
+      spectrumOn ? spectrum : null,
     );
   }
 
@@ -147,7 +162,7 @@
 
   $effect(() => {
     // Measure again when the content changes (so it follows the rules even where there is no ResizeObserver).
-    void [counting, clicksPerBar, song.name, fileText, tempoShown, meterShown, transport.countInBars, metrics.scale];
+    void [counting, clicksPerBar, song.name, fileText, tempoShown, meterShown, transport.countInBars, metrics.scale, spectrumOn];
     untrack(measure);
   });
 
@@ -497,17 +512,22 @@
   {/if}
 
   <div class="master" class:narrow={!parts.positionLabels} use:glSlot={COVER}>
-    <div class="master-head">
-      <span class="m-lbl" use:term={"マスター"}>{t("transport.master")}</span>
-      {#if parts.positionLabels}
-        <span class="m-num master-db" data-test="transport-master-db" use:term={"dB"}>{peakText(masterPeak)}</span>
-      {:else}
-        <span class="m-num master-db" data-test="transport-master-db" use:tip={t("transport.masterTip", { value: peakText(masterPeak) })}
-          >{peakNumberText(masterPeak)}</span
-        >
-      {/if}
+    {#if spectrumShown}
+      <div class="spectrum" style:--bands={SPECTRUM_BANDS} aria-hidden="true" data-test="transport-spectrum" use:glSlot={SPECTRUM}></div>
+    {/if}
+    <div class="master-col">
+      <div class="master-head">
+        <span class="m-lbl" use:term={"マスター"}>{t("transport.master")}</span>
+        {#if parts.positionLabels}
+          <span class="m-num master-db" data-test="transport-master-db" use:term={"dB"}>{peakText(masterPeak)}</span>
+        {:else}
+          <span class="m-num master-db" data-test="transport-master-db" use:tip={t("transport.masterTip", { value: peakText(masterPeak) })}
+            >{peakNumberText(masterPeak)}</span
+          >
+        {/if}
+      </div>
+      <div class="meter" use:glSlot={{ kind: "meter", source: "master", gap: metrics.px("space.1") }}></div>
     </div>
-    <div class="meter" use:glSlot={{ kind: "meter", source: "master", gap: metrics.px("space.1") }}></div>
   </div>
 
   <div class="ruler" aria-hidden="true" bind:this={ruler}>
@@ -518,6 +538,7 @@
     <span class="m-btn counting" data-part="countInCounting">{@render countingIn()}</span>
     <span class="m-btn" data-part="overdub">{t("transport.overdub")}</span>
     <span class="m-btn" data-part="keepPlayed">{t("transport.keepPlayed")}</span>
+    <span class="spectrum" style:--bands={SPECTRUM_BANDS} data-part="spectrum"></span>
     <span class="m-lbl" data-part="label-0">{t("transport.position")}</span>
     <span class="m-readout" data-part="readout-0">{position}</span>
     <span class="m-lbl" data-part="label-1">{t("transport.time")}</span>
@@ -678,14 +699,23 @@
   }
 
   .master {
-    width: var(--mock-transport-master);
     flex-shrink: 0;
+    display: flex;
+    gap: var(--space-1);
+  }
+  .master-col {
+    width: var(--mock-transport-master);
     display: flex;
     flex-direction: column;
     gap: var(--space-1);
   }
-  .master.narrow {
+  .master.narrow .master-col {
     width: var(--mock-transport-master-narrow);
+  }
+  /* E7: 24 bars of part.meter.horizontal (96 at 100 %), as tall as the master's box. */
+  .spectrum {
+    width: calc(var(--part-meter-horizontal) * var(--bands));
+    flex-shrink: 0;
   }
   .master-head {
     display: flex;

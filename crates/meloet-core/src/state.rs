@@ -2451,8 +2451,11 @@ impl Model {
             // round12 stub: E3
             Command::SetSoundKnob { .. } => {}
 
-            // round12 stub: E7
-            Command::SetSpectrum { .. } => {}
+            Command::SetSpectrum { on } if on == self.spectrum => {}
+            Command::SetSpectrum { on } => {
+                self.spectrum = on;
+                effects.push(Effect::SaveSettings(self.settings()));
+            }
 
             // round12 stub: M3
             Command::SetMonoListen { .. } => {}

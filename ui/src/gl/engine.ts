@@ -1,4 +1,5 @@
 import type { Event, Telemetry } from "../bridge";
+import { SPECTRUM_BANDS } from "../bridge/telemetry";
 import type { ThemeId } from "../design/themes";
 import { SCALES, type Scale } from "../design/tokens";
 import { Batch } from "./batch";
@@ -17,6 +18,7 @@ import {
   paintMeter,
   paintOverview,
   paintRects,
+  paintSpectrum,
   paintVelocity,
   type Box,
 } from "./paint";
@@ -129,6 +131,8 @@ export class Engine {
   private readonly held = new HeldKeys();
   private readonly levels = new Levels();
   private velocity = 0;
+  /** The telemetry's last bands (E7). */
+  private readonly spectrum = new Uint8Array(SPECTRUM_BANDS);
   private scale: Scale = 100;
   private theme: ThemeId = colorTheme();
   private trackNumbers: readonly number[] = [];
@@ -317,6 +321,14 @@ export class Engine {
     }
     this.levels.onTelemetry(t, performance.now());
     this.touch("meter");
+    let changed = false;
+    for (let i = 0; i < SPECTRUM_BANDS; i++) {
+      const band = t.spectrum[i] ?? 0;
+      if (band === this.spectrum[i]) continue;
+      this.spectrum[i] = band;
+      changed = true;
+    }
+    if (changed) this.touch("spectrum");
   }
 
   onEvent(e: Event): void {
@@ -673,6 +685,9 @@ export class Engine {
         );
         break;
       }
+      case "spectrum":
+        paintSpectrum(out, box, this.spectrum);
+        break;
       case "arrangeGrid":
         paintArrangeGrid(out, box, slot.firstBarX * dpr, slot.barPx * dpr, slot.beats ?? 1);
         break;

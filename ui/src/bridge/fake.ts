@@ -19,7 +19,7 @@ import { CLICK_VOLUME_MAX_DB, CLICK_VOLUME_MIN_DB, REPEAT_COUNT_MAX } from "./ty
 import { fakeLoudnessOf } from "./fakeLoudness";
 import { reduceA9 } from "./fakeA9";
 import { fakeUserPreset, presetOf, reducePresets } from "./fakePresets";
-import { FAKE_ARP_OFF } from "./fakeWave3";
+import { FAKE_ARP_OFF, fakeSpectrum, reduceSpectrum } from "./fakeWave3";
 import {
   CLIP_CENTS_MAX,
   TUNE_STRENGTH_MAX,
@@ -2352,7 +2352,8 @@ export function fakeScene(name: string, scale?: number, viewport = { width: 1280
   state.song = settleSong(state.song);
   state.shelf = settleShelf(state.shelf);
   state.history = historyOf(state.song);
-  return { state, bands, meters: def.meters, scrollToEnd: def.scrollToEnd, live: def.live ?? NO_LIVE, history: def.history ?? [], events: def.events ?? [] };
+  const meters = { ...def.meters, spectrum: def.meters.spectrum ?? fakeSpectrum(def.meters.master) };
+  return { state, bands, meters, scrollToEnd: def.scrollToEnd, live: def.live ?? NO_LIVE, history: def.history ?? [], events: def.events ?? [] };
 }
 
 /** The section `history` of the fake: the counts of the song; a row's `step` is its `index`. */
@@ -3797,6 +3798,18 @@ const tooLoudScene = (limiter: boolean): SceneDef => ({
 });
 SCENES.tooLoudLimiter = tooLoudScene(true);
 SCENES.tooLoudOver = tooLoudScene(false);
+// ---- round 12 E7: the bars of the master's sound left of 「マスター」 while the band plays (the mock of the spec), and with
+// 「表示 ▸ 音の動きを見せる」 off. The bars are the scene's master as a song would sound (`fakeSpectrum`).
+const spectrumScene = (on: boolean): SceneDef => ({
+  setup(s) {
+    bandSong(s);
+    s.transport.state = "playing";
+    s.workspace.spectrum = on;
+  },
+  meters: { ...QUIET, loadPermille: 140, master: [dbfs(-6.2), dbfs(-7)], position: playingAt("9.1.000") },
+});
+SCENES.spectrum = spectrumScene(true);
+SCENES.spectrumOff = spectrumScene(false);
 
 // F8-MultiClip: the two clips of 「6 歌」 and one of 「7 歌 2」 selected; their volumes differ.
 SCENES.multiClip = {
@@ -5554,6 +5567,7 @@ export function createFakeTransport(initial?: AppState): Transport {
         round10?.changes ??
         reducePack(state, command) ??
         reduceUpdates(state, command) ??
+        reduceSpectrum(state, command) ??
         reduceClips27(state, command) ??
         reduceA9(state, command, FAKE_AUDIO) ??
         reduceExport(state, command) ??

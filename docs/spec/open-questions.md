@@ -394,7 +394,7 @@ The readings behind these are in [chapter 7](7-readings.md), A-29; how each is b
 ### B-98-33 E1: the redraw rule with 10 000 notes, and the measuring tool
 
 - Question (for the lead and the owner): `tools/measure/webkit-damage.sh` stops the page at every changed rectangle, so the page runs at 15 to 25 paints a second and the arrange play line moves 2 px or more between paints; cut in three by the track meters it becomes 7 rectangles and the frame reaches 11. A feature that changes something every frame is measured worse than it is. Should the tool stop only at paints? And should the play line be kept from being cut by the track meter canvas (it can reach 11 in the real app too, when zoomed in or when frames drop)?
-- Now: E1 stays on by default; the numbers are in `docs/measurements/2026-11-24-round12.md` ("E1 after the fix").
+- Now: E1 stays on by default. On a quiet PC after the fix, with a tool that stops only at paints, on and off are the same (1 whole-window paint of about 410 / 460, the first after gdb attaches) and busyMs p95 differs by 0 to 1 ms; with the tool as it is, on gives 8 to 16 of about 110 and off 1 to 5 of about 124. The numbers are in `docs/measurements/2026-11-24-round12.md` ("E1 after the fix", "E1 on a quiet PC, after the fix").
 - From: the E1 fix (2026-11-24).
 
 ### B-98-34 Measured at the edge in round 12: P2, M3, the export's speed
@@ -402,3 +402,10 @@ The readings behind these are in [chapter 7](7-readings.md), A-29; how each is b
 - Question: (1) P2 「ほかのトラックも見せる」: scrolling costs +2.3 ms at p95 (pass mark 2 ms; zoom +2.0). (2) M3: with the mixer open and every strip sounding, whole-window paints went from 1 of 90 to 8 of 91, 7 of them with the rectangle of M3's numbers. (3) The export takes 0.7 to 1.0 s longer (16 vocal tracks 2.97 → 3.7 s), read as F1's loudness check. Accept, or fix in a later round?
 - Now: left as measured.
 - From: `docs/measurements/2026-11-24-round12.md`.
+
+### B-98-35 D4: seen in the real app
+
+- Question 1: the file window's own GTK words (cancel, open, home …) follow the PC's language, not meloet's setting; with a Japanese PC and English chosen, the title is "Open" and the buttons are 「キャンセル」「開く」. Leave it?
+- Question 2: at 1280×800 the mixer's instrument button reads "Instrument · …" in English and shows nothing of the sound's name (Japanese shows 「音源 ・ サイ…」). Shorten the English word?
+- Now: as described. Pictures: `target/r12fin-d4/`.
+- From: `docs/measurements/2026-11-24-round12.md` ("D4 in the real app").

@@ -1,8 +1,9 @@
-<!-- 横の棒（仕様書 2 章「スクロールの棒」を横にした物、3 章「横の拡大 ・ 縮小」）。トラックの行やノートの場所のいちばん下に重ねて描く。
-     場所はとらない。入りきるとき（visible >= total）は出さない。数は CSS px（棒の長さは visible と同じと見る）。
-     高さ 8（上の gray.5 の線 line.hair をふくむ）、地 gray.3、つまみ gray.6、乗ると gray.8、動かしていると gray.9、角 0。
-     つまみのいちばん短い長さは棒の太さと同じ 8（縦の棒と同じ。docs/history/design-notes.ja.md A-3）、つまみの外を押すと 1 画面ぶん。
-     つまみのドラッグ中の Esc は、動かす前の所へ戻す（仕様書 4 章）。 -->
+<!-- The horizontal bar (spec 2 "Scroll bar" laid on its side; spec 3 "Horizontal zoom in and out"). Drawn over the very bottom
+     of the track rows or the note area; it takes no space. Not shown when everything fits (visible >= total). Numbers are
+     CSS px (the bar is as long as visible). Height 8 (with the gray.5 line.hair on top), background gray.3, handle gray.6,
+     gray.8 on hover, gray.9 while moving, corner 0. The shortest handle is as long as the bar is thick, 8 (the same as the
+     vertical bar; docs/history/design-notes.ja.md A-3). Pressing outside the handle moves one screen.
+     Esc while dragging the handle goes back to where it was (spec 4). -->
 <script lang="ts">
   import { onMount } from "svelte";
   import { metrics } from "../components/metrics.svelte";
@@ -10,13 +11,13 @@
   import { dragTo, pageTo, thumbOf, type ScrollBox } from "./scrollbar";
 
   interface Props {
-    /** 中身ぜんぶの幅。 */
+    /** Width of all the content. */
     total: number;
-    /** 見えている幅。 */
+    /** Width in view. */
     visible: number;
-    /** 見えている所の左はし（0 〜 total − visible）。 */
+    /** Left end of the part in view (0 to total − visible). */
     offset: number;
-    /** 人が動かした。新しい offset。 */
+    /** The user moved it; the new offset. */
     onscroll: (offset: number) => void;
   }
   let { total, visible, offset, onscroll }: Props = $props();
@@ -59,14 +60,14 @@
   );
 
   function onBarDown(e: PointerEvent): void {
-    // 下の物（クリップをえらぶ、ノートの場所）に押したことを渡さない。
+    // Do not pass the press to what is below (choosing clips, the note area).
     e.stopPropagation();
     if (e.button !== 0 || !bar) return;
     e.preventDefault();
     onscroll(pageTo(box, e.clientX - bar.getBoundingClientRect().left, minLength));
   }
 
-  /** 棒の上でのホイールは、縦の回しかたでも横に動かす。 */
+  /** The wheel over the bar moves sideways, even when turned vertically. */
   function onWheel(e: WheelEvent): void {
     const d = e.deltaX !== 0 ? e.deltaX : e.deltaY;
     if (d === 0) return;
@@ -78,7 +79,7 @@
 </script>
 
 {#if thumb}
-  <!-- マウスだけの部品。キーボードとホイールは、中身の場所がそのまま受ける。 -->
+  <!-- A mouse-only part. The content area takes the keyboard and the wheel itself. -->
   <div
     class="hbar"
     role="presentation"

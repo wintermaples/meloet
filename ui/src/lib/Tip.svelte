@@ -1,4 +1,4 @@
-<!-- 用語の説明の置き場。App に 1 つだけ置く。 -->
+<!-- Where the term tip is shown. Only one, in App. -->
 <script lang="ts">
   import { TERM_SEPARATOR } from "../text/ja";
   import { tipView, watchCutText } from "./tip.svelte";
@@ -12,7 +12,7 @@
 
   const view = $derived(tipView.value);
   const left = $derived(view ? Math.max(0, Math.min(view.left, innerWidth - width)) : 0);
-  // 下に入りきらなければ、上に出す。
+  // If it does not fit below, show it above.
   const above = $derived(view !== null && view.bottom + height > innerHeight && view.top - height >= 0);
 </script>
 
@@ -34,7 +34,7 @@
 {/if}
 
 <style>
-  /* すきまの space.2 は、モック F-Connect4・F-ParamFew の見本の位置から。 */
+  /* The space.2 gap comes from where the samples sit in mocks F-Connect4 and F-ParamFew. */
   .tip {
     position: fixed;
     z-index: 1000;

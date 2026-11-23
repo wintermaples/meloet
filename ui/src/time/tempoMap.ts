@@ -1,28 +1,28 @@
-// 曲のテンポと拍子の地図（docs/architecture.md 21-1）。crates/meloet-model/src/tempo_map.rs と同じ式で、
-// 同じ答えを出す（tempoMap.table.json と相対 1e-9 まで合う。ui/tests/tempoMap.test.ts）。DOM も Tauri も知らない。
+// The map of the song's tempo and time signatures (architecture 21-1). Uses the same formulas as crates/meloet-model/src/tempo_map.rs
+// and gives the same answers (matching tempoMap.table.json to a relative 1e-9; ui/tests/tempoMap.test.ts). Knows neither the DOM nor Tauri.
 //
-// テンポは、拍子によらず「1 分間の 4 分音符の数」（22-2）。だんだんはティックに対してまっすぐ。
-// 0 より前は、曲の頭のテンポと拍子がそのまま前へ続く。
+// Tempo is always quarter notes per minute, whatever the time signature (22-2). A ramp is linear in ticks.
+// Before 0, the tempo and time signature of the song start go on backwards.
 //
-// 作ったあとは変えない。どの関数も、呼ぶたびに配列を作らない（60 Hz で使う）。いくつも値を返す関数は、
-// 呼ぶ側の入れ物（out）に書く。
+// Not changed once made. No function makes an array on each call (they are used at 60 Hz). Functions that return several values
+// write into the caller's holder (out).
 
 import type { TimelineView } from "../bridge/generated/TimelineView";
 import { TICKS_PER_QUARTER } from "./ticks";
 
-/** 地図を作るのに要る所（`timeline` の区画をそのまま渡せる）。 */
+/** What is needed to make a map (the `timeline` section can be passed as it is). */
 export type TimelineShape = Pick<TimelineView, "tempoBpm" | "meterNum" | "meterDen" | "headRamp" | "tempoPoints" | "meterChanges">;
 
 export interface MeterAt {
   num: number;
   den: number;
-  /** 小節の番号。0 から。 */
+  /** The bar number, from 0. */
   bar: number;
-  /** その小節の頭のティック。 */
+  /** The start tick of that bar. */
   barTick: number;
 }
 
-/** 表示の形: 小節と拍は 1 から、ティックはその拍の中のティックそのまま。 */
+/** The shown form: bar and beat from 1, the tick as the tick within its beat. */
 export interface BarBeatTick {
   bar: number;
   beat: number;
@@ -30,15 +30,15 @@ export interface BarBeatTick {
 }
 
 export interface Beat {
-  /** 拍の頭。曲の頭より前は負。 */
+  /** The beat start. Negative before the song start. */
   tick: number;
-  /** 小節の 1 拍目。 */
+  /** The first beat of a bar. */
   downbeat: boolean;
 }
 
-/** `ln(1 + x) / x`。0 で段なく 1 になる。 */
+/** `ln(1 + x) / x`. Goes smoothly to 1 at 0. */
 const ln1pOver = (x: number) => (x === 0 ? 1 : Math.log1p(x) / x);
-/** `(exp(y) − 1) / y`。0 で段なく 1 になる。 */
+/** `(exp(y) − 1) / y`. Goes smoothly to 1 at 0. */
 const expm1Over = (y: number) => (y === 0 ? 1 : Math.expm1(y) / y);
 
 const Q = TICKS_PER_QUARTER;
@@ -50,18 +50,18 @@ function ticksOf(seconds: number, a: number, s: number): number {
   return a * Q * minutes * expm1Over(s * Q * minutes);
 }
 
-/** メトロノームが鳴る間のティック: 6/8 ・ 9/8 ・ 12/8 は付点 4 分、そのほかは 1 拍（crates/meloet-model の `Meter::ticks_per_click`）。 */
+/** Ticks between metronome clicks: a dotted quarter in 6/8, 9/8 and 12/8, one beat otherwise (`Meter::ticks_per_click` in crates/meloet-model). */
 export function ticksPerClick(num: number, den: number): number {
   const perBeat = (Q * 4) / den;
   return den === 8 && (num === 6 || num === 9 || num === 12) ? 3 * perBeat : perBeat;
 }
 
-/** 1 小節でメトロノームが鳴る数（6/8 は 2、5/8 は 5、4/4 は 4）。 */
+/** Metronome clicks in one bar (2 in 6/8, 5 in 5/8, 4 in 4/4). */
 export function clicksPerBar(num: number, den: number): number {
   return (num * ((Q * 4) / den)) / ticksPerClick(num, den);
 }
 
-/** `xs[i] <= x` である最後の i（なければ 0）。xs は小さい順で、空でない。 */
+/** The last i with `xs[i] <= x` (0 if none). xs is sorted from small and not empty. */
 function lastAtOrBefore(xs: Float64Array, x: number): number {
   let lo = 0;
   let hi = xs.length;
@@ -74,14 +74,14 @@ function lastAtOrBefore(xs: Float64Array, x: number): number {
 }
 
 export class TempoMap {
-  // かけら（1 つの拍子と 1 本のテンポの線が続く所）。u は tick0 からのティック。
+  // Pieces (where one time signature and one tempo line go on). u is ticks from tick0.
   private readonly pTick0: Float64Array;
   private readonly pSec0: Float64Array;
-  /** tick0 でのテンポ。 */
+  /** The tempo at tick0. */
   private readonly pA: Float64Array;
-  /** 1 ティックあたりのテンポの増え。だんだんでなければ 0。 */
+  /** The tempo rise per tick. 0 when it is not a ramp. */
   private readonly pS: Float64Array;
-  // 拍子が同じ小節の続き。
+  // Runs of bars with the same time signature.
   private readonly rTick0: Float64Array;
   private readonly rBar0: Float64Array;
   private readonly rNum: Float64Array;
@@ -90,8 +90,8 @@ export class TempoMap {
   private readonly rPerBar: Float64Array;
 
   /**
-   * 形のくずれた入力でも、Rust と同じ 1 つの地図になる: 順にならべ、同じ所に 2 つあれば後ろの物を残し、
-   * ティック 0 の点と小節 0 の旗は入れない（曲の頭は別に持っている）。
+   * Even badly formed input makes the same single map as Rust: sort, keep the later one when two are at the same place,
+   * and leave out the point at tick 0 and the flag at bar 0 (the song start is held apart).
    */
   constructor(timeline: TimelineShape) {
     const changes = timeline.meterChanges
@@ -152,33 +152,33 @@ export class TempoMap {
     }
   }
 
-  /** 地図がいくつのかけらに分かれているか（測るため）。 */
+  /** How many pieces the map is split into (for measuring). */
   get pieceCount(): number {
     return this.pTick0.length;
   }
 
-  /** 曲の頭から tick までの秒。頭より前は負。 */
+  /** Seconds from the song start to tick. Negative before the start. */
   secondsAt(tick: number): number {
     if (tick < 0) return secondsOf(tick, this.pA[0]!, 0);
     const i = lastAtOrBefore(this.pTick0, tick);
     return this.pSec0[i]! + secondsOf(tick - this.pTick0[i]!, this.pA[i]!, this.pS[i]!);
   }
 
-  /** 曲の頭から seconds 秒の所のティック（小数）。 */
+  /** The tick (fractional) at seconds from the song start. */
   tickAt(seconds: number): number {
     if (seconds < 0) return ticksOf(seconds, this.pA[0]!, 0);
     const i = lastAtOrBefore(this.pSec0, seconds);
     return this.pTick0[i]! + ticksOf(seconds - this.pSec0[i]!, this.pA[i]!, this.pS[i]!);
   }
 
-  /** 運びに出すテンポ: 1 分間の 4 分音符の数。 */
+  /** The tempo shown in the transport: quarter notes per minute. */
   tempoAt(tick: number): number {
     if (tick < 0) return this.pA[0]!;
     const i = lastAtOrBefore(this.pTick0, tick);
     return this.pA[i]! + this.pS[i]! * (tick - this.pTick0[i]!);
   }
 
-  /** その所の拍子と、その小節。小数のティックは切りすて、0 より前は 0 として読む。 */
+  /** The time signature and the bar there. A fractional tick is cut down; before 0 is read as 0. */
   meterAt(tick: number, out: MeterAt = { num: 0, den: 0, bar: 0, barTick: 0 }): MeterAt {
     const t = Math.max(0, Math.floor(tick));
     const r = lastAtOrBefore(this.rTick0, t);
@@ -191,13 +191,13 @@ export class TempoMap {
     return out;
   }
 
-  /** 小節 bar（0 から）の頭のティック。 */
+  /** The start tick of bar (from 0). */
   tickOfBar(bar: number): number {
     const r = lastAtOrBefore(this.rBar0, bar);
     return (bar - this.rBar0[r]!) * this.rPerBar[r]! + this.rTick0[r]!;
   }
 
-  /** 表示の「小節 . 拍 . ティック」。小数のティックは切りすて、0 より前は 0 として読む。 */
+  /** The shown 「小節 . 拍 . ティック」. A fractional tick is cut down; before 0 is read as 0. */
   barBeatTick(tick: number, out: BarBeatTick = { bar: 0, beat: 0, tick: 0 }): BarBeatTick {
     const t = Math.max(0, Math.floor(tick));
     const r = lastAtOrBefore(this.rTick0, t);
@@ -211,28 +211,28 @@ export class TempoMap {
     return out;
   }
 
-  /** tick か、その後ろの、最初の拍の頭。曲の頭より前は、頭の拍子の拍がそのまま前へ続く。 */
+  /** The first beat start at or after tick. Before the song start, the beats of the first time signature go on backwards. */
   nextBeat(tick: number, out: Beat = { tick: 0, downbeat: false }): Beat {
     const r = lastAtOrBefore(this.rTick0, tick);
     return this.nextStep(tick, r, this.rPerBeat[r]!, out);
   }
 
-  /** tick か、その後ろの、メトロノームが最初に鳴る所（`ticksPerClick`）。downbeat は強い音。0 より前は `nextBeat` と同じ。 */
+  /** The first metronome click at or after tick (`ticksPerClick`). downbeat is the strong click. Before 0, the same as `nextBeat`. */
   nextClick(tick: number, out: Beat = { tick: 0, downbeat: false }): Beat {
     const r = lastAtOrBefore(this.rTick0, tick);
     return this.nextStep(tick, r, ticksPerClick(this.rNum[r]!, this.rDen[r]!), out);
   }
 
-  /** その所の拍子で、1 小節にメトロノームが鳴る数。小数のティックは切りすて、0 より前は 0 として読む。 */
+  /** Metronome clicks per bar in the time signature there. A fractional tick is cut down; before 0 is read as 0. */
   clicksPerBarAt(tick: number): number {
     const r = lastAtOrBefore(this.rTick0, Math.max(0, Math.floor(tick)));
     return clicksPerBar(this.rNum[r]!, this.rDen[r]!);
   }
 
-  /** step は区間 r の 1 小節を整数個に分ける。 */
+  /** step divides one bar of section r into a whole number of parts. */
   private nextStep(tick: number, r: number, step: number, out: Beat): Beat {
     const steps = this.rPerBar[r]! / step;
-    // 区間は小節の整数個なので、終わりをこえて見つけた段は、次の区間の最初の段。
+    // A section is a whole number of bars, so a step found past its end is the first step of the next section.
     const n = Math.ceil((tick - this.rTick0[r]!) / step);
     out.tick = this.rTick0[r]! + n * step;
     out.downbeat = ((n % steps) + steps) % steps === 0;

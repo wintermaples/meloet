@@ -1,5 +1,5 @@
-// キーの決まり（keys.ts）を画面につなぐ。Esc の順番と、「音が出ました」の案内を消す所もここ。
-// 上のメニューの行も、キーのある行はここの runKeyAction を通す（ピアノロールとアレンジのどちらに向けるかの決めを 1 か所に）。
+// Connects the key rules (keys.ts) to the screen. The Esc order and clearing the 「音が出ました」 hint are here too.
+// Menu bar rows that have a key also go through runKeyAction here (so the choice between the piano roll and the arrange is made in one place).
 import type { AppState, Command } from "../bridge";
 import { aboutBack } from "../components/about/about.svelte";
 import { closeContextMenu } from "../components/menu/contextMenu.svelte";
@@ -54,16 +54,16 @@ export interface KeyDeps {
   send(command: Command): void;
   doc?: Document;
   nav?: { platform?: string; userAgent?: string };
-  /** ピアノロールが見せているテイク（テスト用。ふだんは shown.svelte.ts から）。 */
+  /** The take the piano roll shows (for tests; normally from shown.svelte.ts). */
   pianoRoll?: () => Shown | null;
-  /** いまの再生の位置（テスト用。ふだんは計器から）。 */
+  /** The current play position (for tests; normally from the telemetry). */
   playTick?: () => number;
 }
 
 export const pianoRollOpen = (state: AppState) =>
   state.workspace.layout.lower.some((l) => l.band === "pianoRoll");
 
-/** ピアノロールに向けないときは、アレンジのえらんだクリップへ向ける意図。 */
+/** Intents that go to the chosen clip in the arrange when they do not go to the piano roll. */
 const ARRANGE_TOO = new Set<KeyAction["kind"]>([
   "deleteSelected",
   "duplicate",
@@ -74,8 +74,8 @@ const ARRANGE_TOO = new Set<KeyAction["kind"]>([
 ]);
 
 /**
- * ピアノロールに向けるキーの意図。ピアノロールがひらいていて、最後に押したのがピアノロールのとき（toPianoRoll なら、最後に押した所によらず）。
- * undefined はピアノロールの意図ではない（アレンジかほかへ）。
+ * The intent of a key for the piano roll: when the piano roll is open and was pressed last (with toPianoRoll, whatever was pressed last).
+ * undefined means it is not a piano roll intent (it goes to the arrange or elsewhere).
  */
 function pianoRollKey(
   action: KeyAction,
@@ -89,7 +89,7 @@ function pianoRollKey(
       key = { kind: "nudge", steps: action.steps, keys: action.keys };
       break;
     case "deleteSelected": {
-      // 点とノートの両方を選んでいるときは、最後に押したほう。
+      // When both points and notes are selected, whichever was pressed last.
       const pr = state.pianoRoll;
       const points = pr.selectedControls.length > 0;
       key =
@@ -138,14 +138,14 @@ const MODIFIERS = new Set([
   "OS",
 ]);
 
-/** 録音中とカウントイン中は、曲を新しくしたり、ひらいたり、保存したり、曲を変えたりできない（Rust も受けない）。 */
+/** While recording or counting in, a song cannot be made new, opened, saved or changed (Rust does not accept it either). */
 export function songBusy(state: AppState): boolean {
   return (
     state.transport.state === "recording" || state.transport.state === "countIn"
   );
 }
 
-/** 音の出口がまだのあいだ、Space と R は何もしない（ヤチヨさんの決め 2026-11-15）。止めるほうの Space は効く。 */
+/** While there is no output yet, Space and R do nothing (the owner's decision). Space to stop still works. */
 function command(action: KeyAction, state: AppState): Command | null {
   const transport = state.transport;
   const busy = songBusy(state);
@@ -182,7 +182,7 @@ function command(action: KeyAction, state: AppState): Command | null {
       return { type: "toggleMetronome" };
     case "stepTake":
       return { type: "stepTake", delta: action.delta };
-    // どのクリップを切るかは Rust が決める（えらんだクリップで再生の線がかかる物、なければ選んだトラックの線の下の 1 つ。仕様書 4 章）。
+    // Rust decides which clip to cut (a chosen clip under the play line, else the one under the line on the selected track; spec 4).
     case "splitClips":
       return busy ? null : { type: "splitClips" };
     case "joinClips": {
@@ -191,7 +191,7 @@ function command(action: KeyAction, state: AppState): Command | null {
     }
     case "deleteSelected":
       return { type: "deleteSelected" };
-    // アレンジにキーが向いているとき（B-71）。Mod D はえらんだクリップのすぐうしろに複製。
+    // When keys go to the arrange (B-71). Mod D duplicates right after the chosen clips.
     case "duplicate":
       return clips.length === 0 || busy
         ? null
@@ -204,12 +204,12 @@ function command(action: KeyAction, state: AppState): Command | null {
       return clips.length === 0 ? null : { type: "copyClips", clips };
     case "cut":
       return clips.length === 0 || busy ? null : { type: "cutClips", clips };
-    // 貼りつけは、選んだトラックの再生の位置（Rust が小節の頭に寄せる）。
+    // Paste goes at the play position on the selected track (Rust moves it to the start of the bar).
     case "paste":
       return state.arrange.clipboardClips === 0 || busy
         ? null
         : { type: "pasteClips", to: null };
-    // 録音中とカウントイン中は、曲の名前の一覧と同じく使えない。
+    // Disabled while recording or counting in, like the song name list.
     case "newSong":
       return busy ? null : { type: "newSong" };
     case "openSong":
@@ -218,7 +218,7 @@ function command(action: KeyAction, state: AppState): Command | null {
       return busy ? null : { type: "saveSong" };
     case "saveSongAs":
       return busy ? null : { type: "saveSongAs" };
-    // カウントイン中 ・ 録音中 ・ 書き出している間はひらかない（B-94-74）。
+    // Does not open during count-in, recording or export (B-94-74).
     case "export":
       return busy || state.export.dialog !== null || state.export.run?.state === "running" ? null : { type: "openExport" };
     case "quit":
@@ -227,7 +227,7 @@ function command(action: KeyAction, state: AppState): Command | null {
       return { type: "undo" };
     case "redo":
       return { type: "redo" };
-    // ミュートは曲を変える手、ソロは聞くときだけの切りかえ（B-70）。ミュートは録音中も受ける（A-14）。
+    // Mute is an undo step that changes the song; solo is a toggle only for listening (B-70). Mute is accepted while recording too (A-14).
     case "trackMute":
       return track === null ? null : { type: "toggleMute", track };
     case "trackSolo":
@@ -240,7 +240,7 @@ function command(action: KeyAction, state: AppState): Command | null {
       return shelfSampleCommand(state);
     case "shelfFavorite":
       return shelfFavoriteCommand(state);
-    // えらんでいるインサートがあり、ミキサーかパラメータの欄が見えているとき（仕様書 4 章「効かない（一文字 ・ ミキサー）」）。
+    // When an insert is chosen and the mixer or the params panel is shown (spec 4: "Does not work (one letter; mixer)").
     case "historyConfirm":
       return historyJumpCommand(state);
     case "bypass": {
@@ -253,7 +253,7 @@ function command(action: KeyAction, state: AppState): Command | null {
   }
 }
 
-/** 意図から送るコマンド。null は何もしない（使えない）。toPianoRoll: メニューの「ノート」から（ピアノロールがひらいていれば、そこへ）。 */
+/** The command to send for an intent. null does nothing (disabled). toPianoRoll: from the 「ノート」 menu (to the piano roll when it is open). */
 export function keyCommand(
   action: KeyAction,
   state: AppState,
@@ -264,7 +264,7 @@ export function keyCommand(
   return forPianoRoll !== undefined ? forPianoRoll : command(action, state);
 }
 
-/** 画面の中だけで行う意図（横の拡大、道具、F10、名前の入力の枠）か。 */
+/** Whether the intent is handled only in the screen (zoom across, tools, F10, the name input box). */
 function screenOnly(action: KeyAction): boolean {
   return (
     action.kind === "zoom" ||
@@ -276,7 +276,7 @@ function screenOnly(action: KeyAction): boolean {
   );
 }
 
-/** F2 で名前を変えるトラック（選んだトラック）。録音中とカウントイン中は変えられない。 */
+/** The track F2 renames (the selected track). Not while recording or counting in. */
 function renameTrackTarget(state: AppState): number | null {
   const track = state.song.playTarget;
   return track === null ||
@@ -295,7 +295,7 @@ function renameTarget(state: AppState): { kind: "clip" | "track"; id: number } |
   return track === null ? null : { kind: "track", id: track };
 }
 
-/** いま行えるか（メニューの行の「使えない」）。 */
+/** Whether it can be done now (for the disabled state of menu rows). */
 export function keyActionUsable(
   action: KeyAction,
   deps: KeyDeps,
@@ -309,7 +309,7 @@ export function keyActionUsable(
   return keyCommand(action, state, deps, toPianoRoll) !== null;
 }
 
-/** 意図を行う。何かしたら true。キーとメニューの行の両方がここを通る。 */
+/** Carries out an intent. true when something was done. Both keys and menu rows go through here. */
 export function runKeyAction(
   action: KeyAction,
   deps: KeyDeps,
@@ -319,7 +319,7 @@ export function runKeyAction(
   if (!state) return false;
   switch (action.kind) {
     case "zoom":
-      // 横の拡大は画面だけが持つ見た目なので、Rust には送らない。
+      // Zoom across is a view only the screen holds, so it is not sent to Rust.
       zoomHorizontal(action.delta, state);
       return true;
     case "tool":
@@ -347,7 +347,7 @@ export function runKeyAction(
 
 const SHELF_KEYS = new Set<KeyAction["kind"]>(["shelfStep", "shelfConfirm"]);
 
-/** Mod つきは、使えないときもブラウザの動き（Ctrl S の保存など）に渡さない。 */
+/** Mod keys are not passed on to the browser (Ctrl S to save, and so on) even when disabled. */
 const WITH_MOD = new Set<KeyAction["kind"]>([
   "newSong",
   "openSong",
@@ -367,8 +367,8 @@ const WITH_MOD = new Set<KeyAction["kind"]>([
 ]);
 
 /**
- * Esc の「棚」の番で、ためし弾きをしていれば、とじる前にためし弾きをやめる（仕様書 3 章: Esc でやめて元のトラックの音に戻る。
- * 次の Esc で棚をとじる）。ダイアログがあれば、ダイアログが先。
+ * At the shelf's turn of Esc, if an audition is on, stop it before closing (spec 3: Esc stops it and goes back to the track's sound;
+ * the next Esc closes the shelf). A dialog comes first if there is one.
  */
 function auditionToCancel(state: AppState): boolean {
   const ws = state.workspace;
@@ -382,7 +382,7 @@ function auditionToCancel(state: AppState): boolean {
   );
 }
 
-/** 取り消しの履歴の帯にフォーカスがあり、ダイアログがないとき、↑ ↓ Home Enter Esc は帯のもの（仕様書 4 章）。 */
+/** When the undo history band has focus and there is no dialog, ↑ ↓ Home Enter Esc belong to the band (spec 4). */
 function historyKeys(state: AppState, doc: Document): boolean {
   const ws = state.workspace;
   return (
@@ -395,7 +395,7 @@ function historyKeys(state: AppState, doc: Document): boolean {
   );
 }
 
-/** Esc の 3 つめの番（用語の説明やメニュー）。上のメニュー、右クリックの一覧、状態行などの一覧のどれかをとじたら true。 */
+/** The third turn of Esc (term tips and menus). true when it closed the menu bar menu, a context menu, or a list such as the status line's. */
 function closeMenus(): boolean {
   if (tipVisible()) {
     hideTip();
@@ -409,13 +409,13 @@ function closeMenus(): boolean {
   return false;
 }
 
-/** keydown をひとつ受ける。テストのために外に出してある。 */
+/** Takes one keydown. Exported for tests. */
 export function handleKeydown(ev: KeyboardEvent, deps: KeyDeps): void {
   const doc = deps.doc ?? document;
   const state = deps.state();
   if (!state || ev.isComposing || MODIFIERS.has(ev.key)) return;
 
-  // 鍵盤以外の操作で「音が出ました」の案内を消す（ヤチヨさんの決め）。
+  // Any action other than the keyboard clears the 「音が出ました」 hint (the owner's decision).
   if (state.workspace.hint === "soundCameOut")
     deps.send({ type: "dismissHint" });
 
@@ -428,7 +428,7 @@ export function handleKeydown(ev: KeyboardEvent, deps: KeyDeps): void {
         ? "history"
         : "main";
 
-  // テンポ ・ 拍子の変更とマーカーのキー（K、Alt ← →、マーカーをえらんでいるときの F2、えらんだ物の Delete）。Esc はここを通さない。
+  // Keys for tempo and time signature changes and markers (K, Alt ← →, F2 with a marker chosen, Delete of the chosen ones). Esc does not go through here.
   if (context === "main" && ev.key !== "Escape") {
     const lane = laneDeleteCommand(
       keyInputOf(ev),
@@ -472,7 +472,7 @@ export function handleKeydown(ev: KeyboardEvent, deps: KeyDeps): void {
       !ev.ctrlKey &&
       !ev.metaKey;
     if (plainEnter && state.plugins.stoppedOpen) {
-      // 右はしの明るいボタン「閉じる」（3 章の保存まわりのダイアログと同じ決まり）。
+      // The bright button on the right, 「閉じる」 (the same rule as the save dialogs of spec 3).
       ev.preventDefault();
       deps.send({ type: "closeScanStopped" });
     } else if (plainEnter && state.workspace.songDialog) {
@@ -484,7 +484,7 @@ export function handleKeydown(ev: KeyboardEvent, deps: KeyDeps): void {
         answer: songDialogEnter(d),
       });
     } else if (plainEnter && state.export.dialog) {
-      // 右はしの明るいボタン「書き出す」（押せないときは何もしない）。
+      // The bright button on the right, 「書き出す」 (does nothing when it cannot be pressed).
       ev.preventDefault();
       if (state.export.dialog.canExport) deps.send({ type: "startExport" });
     } else if (plainEnter && state.workspace.settings) {
@@ -496,9 +496,9 @@ export function handleKeydown(ev: KeyboardEvent, deps: KeyDeps): void {
 
   if (action.kind === "back") {
     ev.preventDefault();
-    // 仕様書 4 章: ドラッグ中の Esc は、動かす前に戻すだけ。そのあと 3 章: 文字を打っている枠 → 用語の説明やメニュー → ダイアログ → …
+    // Spec 4: Esc during a drag only goes back to before the move. Then spec 3: the box being typed in → term tips and menus → dialog → …
     if (cancelDrag()) return;
-    // ファイルを持ってきている間の Esc は、持ってきた物を落とさないことにする（仕様書 6 章「やめるには、窓の外で離すか Esc」）。
+    // Esc while dragging in a file means the file is not dropped (spec 6: 「やめるには、窓の外で離すか Esc」).
     if (state.workspace.fileDrop) {
       deps.send({ type: "cancelFileDrop" });
       return;
@@ -522,19 +522,19 @@ export function handleKeydown(ev: KeyboardEvent, deps: KeyDeps): void {
     return;
   }
 
-  // ブラウザの拡大（Ctrl ＋）や保存（Ctrl S）などに渡さない。
+  // Not passed on to the browser's zoom (Ctrl +), save (Ctrl S) and so on.
   if (WITH_MOD.has(action.kind) || action.kind === "menuBar")
     ev.preventDefault();
-  // Space は、使えないときも、フォーカスのあるボタンを押さない（再生 ・ 停止か、棚のサンプルだけ）。
+  // Space never presses the focused button, even when disabled (it is only play / stop, or the shelf sample).
   if (action.kind === "playStop" || action.kind === "shelfSample")
     ev.preventDefault();
-  // 打っている最中の Home は枠の中のカーソルも動かし、Shift M ・ Shift S は文字も入る。
-  // 棚の ↑ ↓ ・ Enter は、さがす枠の中でも棚のもの（カーソルを動かさない）。
+  // While typing, Home also moves the cursor in the box, and Shift M, Shift S also type the letter.
+  // ↑ ↓ and Enter in the shelf belong to the shelf even in the search box (they do not move the cursor).
   if (runKeyAction(action, deps) && (!typing || SHELF_KEYS.has(action.kind)))
     ev.preventDefault();
 }
 
-/** Space の keyup。ボタンは keyup で押される（WebKit と Firefox）ので、文字を打っていなければ、ここでも止める。 */
+/** The keyup of Space. Buttons are pressed on keyup (WebKit and Firefox), so it is stopped here too when not typing. */
 export function handleKeyup(ev: KeyboardEvent, doc: Document = document): void {
   const space = ev.key === " " || ev.code === "Space";
   if (
@@ -548,14 +548,14 @@ export function handleKeyup(ev: KeyboardEvent, doc: Document = document): void {
     ev.preventDefault();
 }
 
-/** Mod ＋ ・ Mod −: 最後に押したのがピアノロールで、ひらいていればピアノロール、そうでなければアレンジ。 */
+/** Mod + and Mod −: the piano roll when it is open and was pressed last; otherwise the arrange. */
 export function zoomHorizontal(delta: 1 | -1, state: AppState): void {
   if (prView.focus === "pianoRoll" && pianoRollOpen(state))
     zoomBy(delta, state.workspace.scale);
   else zoomArrangeBy(delta);
 }
 
-/** マウスのボタンを押したら、案内を消す。棚を押せば棚にキーを向け、画面のほかの所を押せば外す（上にひらく一覧は .app の外）。 */
+/** A mouse button press clears the hint. Pressing the shelf sends keys to the shelf; pressing elsewhere stops that (lists that open on top are outside .app). */
 export function handlePointerdown(
   deps: KeyDeps,
   target?: EventTarget | null,
@@ -567,7 +567,7 @@ export function handlePointerdown(
   else if (el?.closest(".app")) shelfUi.keys = false;
 }
 
-/** document にキーとマウスをつなぐ。はずす関数を返す。 */
+/** Connects keys and the mouse to document. Returns a function that disconnects them. */
 export function attachKeys(deps: KeyDeps): () => void {
   const doc = deps.doc ?? document;
   const onKey = (ev: KeyboardEvent) => handleKeydown(ev, deps);

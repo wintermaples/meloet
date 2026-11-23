@@ -1,6 +1,7 @@
-<!-- 画面の並び（仕様書 3 章）: 上から、メニューの行（docs/history/design-notes.ja.md B-59）、再生まわり、入力計、アレンジ、ひらいた下の帯、帯札の行、状態行。
-     右はしに、ひらいた欄と縦の見出し。重なりの順は、画面の部品（WebGL の面は、それぞれの箱の中）< 案内・出口えらび（20）
-     < ダイアログ（30）< 一覧（上のメニュー、右クリック。40）< 用語の説明。 -->
+<!-- The order of the screen (spec 3), from the top: menu bar (docs/history/design-notes.ja.md B-59), transport, input meter,
+     arrange, the open lower bands, band tab row, status line. On the right, the open panels and their vertical headings.
+     Stacking order: the parts of the screen (WebGL surfaces inside their own boxes) < hints and the output chooser (20)
+     < dialogs (30) < lists (menu bar, context menu; 40) < term tips. -->
 <script lang="ts">
   import { onMount } from "svelte";
   import AboutDialog from "./components/about/AboutDialog.svelte";
@@ -86,7 +87,7 @@
     </div>
   {/if}
   {#if state.workspace.latencyDialog}
-    <!-- 遅れを測るダイアログは、音の設定の上に（モック F7-Latency では音の設定は見えない）。 -->
+    <!-- The latency dialog goes over the sound settings (in mock F7-Latency the sound settings are not seen). -->
     <div class="dialog">
       <LatencyDialog />
     </div>

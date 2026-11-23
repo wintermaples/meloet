@@ -17,7 +17,7 @@ export const NO_FROM = 0xffffffff;
 export interface TakeNotes {
   id: number;
   length: number;
-  /** The recorded take a quantized take was made from (draw its notes as "そろえる前の位置"); 0 for none. */
+  /** The recorded take a quantized take was made from (draw its notes as 「そろえる前の位置」); 0 for none. */
   origin: number;
   /** In order of start. */
   starts: Uint32Array;

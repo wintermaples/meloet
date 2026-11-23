@@ -9,7 +9,7 @@ export const CLIP_HOLD_MS = plain["meter.clip-hold"].value * 1000;
 export const CLIP_MARK = part["part.meter.clip"].value;
 
 /**
- * Spec 2, 「メーターとフェーダーの目盛」: [dB, length 0..1 from the quiet end], loudest first, straight
+ * Spec 2, "Scale marks of meters and faders": [dB, length 0..1 from the quiet end], loudest first, straight
  * lines between. Below the last point the length is 0 (−∞).
  */
 export const DB_SCALE: readonly (readonly [number, number])[] = meterScale.map(
@@ -28,8 +28,8 @@ const SLIM_W = mock["mock.input-meter.key-slim-w"].value;
 
 /**
  * Key sizes of the three forms of the input meter keyboard. `narrow` is the full meter with too
- * little width (spec 1: 細い鍵（幅 8）; black keys from F-MeterLongName, the 150 % full example).
- * Slim black keys: spec 3 (幅 5、高さ 7).
+ * little width (spec 1: thin keys (width 8); black keys from F-MeterLongName, the 150 % full example).
+ * Slim black keys: spec 3 (width 5, height 7).
  */
 export const KEY_FORMS = {
   full: {
@@ -56,7 +56,7 @@ export const KEYBOARD = {
   dim: { frame: "color.gray.5", blackFrame: "color.gray.6" },
 } as const satisfies Record<string, ColorName | { frame: ColorName; blackFrame: ColorName }>;
 
-/** F-Connect2, the bar beside "ベロシティ 87". `max` is the top MIDI velocity. */
+/** F-Connect2, the bar beside 「ベロシティ 87」. `max` is the top MIDI velocity. */
 export const VELOCITY = { ground: "color.gray.4", fill: "color.accent", max: 127 } as const;
 
 export const METER = {
@@ -66,7 +66,7 @@ export const METER = {
   clip: "color.rec",
 } as const satisfies Record<string, ColorName>;
 
-/** Spec 3, 「マイクの計の目盛」(38-B) and 「マイクの計の地と線」: the dB in the middle, the ground, the white line of the 1 s peak. */
+/** Spec 3, "Scale marks of the mic meter" (38-B) and "Background and line of the mic meter": the dB in the middle, the ground, the white line of the 1 s peak. */
 export const MIC_MID_DB = -12;
 export const MIC_METER = { ground: "color.gray.4", peak: "color.gray.10" } as const satisfies Record<string, ColorName>;
 
@@ -75,7 +75,7 @@ export const MIC_METER = { ground: "color.gray.4", peak: "color.gray.10" } as co
 export const ARRANGE_GRID = { line: "color.gray.4", bar: "color.gray.6", beat: "color.gray.4" } as const;
 
 /**
- * The wave of a vocal clip (spec 2 「歌のクリップ」, spec 3 「波形」, F7-AudioEdit): bars of gray.8, the line of
+ * The wave of a vocal clip (spec 2 "Audio clip", spec 3 (93-3, 93-4), F7-AudioEdit): bars of gray.8, the line of
  * silence gray.5 in a tall row, the lines of the fades gray.10. A clip whose file is not found: ground gray.2,
  * top line gray.7, no wave.
  */

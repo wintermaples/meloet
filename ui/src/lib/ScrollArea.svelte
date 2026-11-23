@@ -1,6 +1,6 @@
-<!-- 縦にスクロールする場所と、スクロールの棒（仕様書 2 章「スクロールの棒」）。ブラウザや OS の棒は出さない。
-     つまみのドラッグ中の Esc は、動かす前の所へ戻す（仕様書 4 章）。
-     ほかの属性（data-test、data-gl-scroll など）は、スクロールする箱に渡す。 -->
+<!-- A vertically scrolling area and its scroll bar (spec 2 "Scroll bar"). The browser's and the OS's bars are not shown.
+     Esc while dragging the handle goes back to where it was (spec 4).
+     Other attributes (data-test, data-gl-scroll, ...) go to the scrolling box. -->
 <script lang="ts">
   import { onMount, type Snippet } from "svelte";
   import type { HTMLAttributes } from "svelte/elements";
@@ -20,7 +20,7 @@
   let dragging = $state(false);
   let drag: { y: number; top: number } | null = null;
 
-  /** つまみのいちばん短い長さ。仕様書にないので、棒の幅と同じにする。 */
+  /** The shortest handle. Not in the spec, so the same as the bar width. */
   const minLength = () => metrics.px("part.scrollbar.width");
 
   function box(): ScrollBox | null {
@@ -78,7 +78,7 @@
     viewport.scrollTop = pageTo(b, e.clientY - bar.getBoundingClientRect().top, minLength());
   }
 
-  /** 棒の上でのホイールも、中身を動かす。 */
+  /** The wheel over the bar also moves the content. */
   function onBarWheel(e: WheelEvent): void {
     if (!viewport) return;
     e.preventDefault();
@@ -92,7 +92,7 @@
   <div class="view" bind:this={viewport} onscroll={update} {...rest}>
     <div class="inner" bind:this={inner}>{@render children()}</div>
   </div>
-  <!-- マウスだけの部品。キーボードとホイールは、中身の箱がそのまま受ける。 -->
+  <!-- A mouse-only part. The content box takes the keyboard and the wheel itself. -->
   <div role="presentation" aria-hidden="true" class="bar" class:hidden={thumb === null} bind:this={bar} onpointerdown={onBarDown} onwheel={onBarWheel} data-test="scrollbar">
     {#if thumb}
       <div

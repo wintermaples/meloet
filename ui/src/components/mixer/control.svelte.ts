@@ -1,7 +1,7 @@
-// フェーダー ・ パン ・ センドのつまみに共通のドラッグ。画面だけが先に動き（shown）、もとの値（from）は gray.7 の枠で描く。
-// 押した所へは飛ばず、押した所からの動きだけで値を変える。Esc はキーの順のいちばん前でやめる（onDragCancel）。
-// キー（仕様書 3 章 86-7）: Tab でフォーカスをあて、矢印で動かすたびに commit: false、キーを離して 1 秒たつか、フォーカスが外れたら
-// commit: true を 1 つ（1 手）。Home ではじめの値、Enter で打ちこむ枠（typing）。
+// The drag shared by fader, pan and send handles. Only the screen moves first (shown); the start value (from) is drawn with a gray.7 frame.
+// It does not jump to the pressed point; only movement from the pressed point changes the value. Esc cancels first in the key order (onDragCancel).
+// Keys (spec 3 (86-7)): focus with Tab; each arrow press sends commit: false; 1 second after the key is released, or when focus leaves,
+// one commit: true (one step). Home for the start value, Enter for the typing box (typing).
 
 import { onMount } from "svelte";
 import type { Command, StripRef } from "../../bridge";
@@ -11,17 +11,17 @@ import { KeySteps, MixPreview } from "./mixDrag";
 import { dbToFrac, fracToDb, parseDb } from "./scale";
 
 export interface MixControlOptions<V> {
-  /** 曲の値（Rust の状態）。 */
+  /** The song value (Rust state). */
   value: () => V;
-  /** つかんだときの値 start から、dx ・ dy（CSS px）動かしたときの値。box はつかんだときの部品の箱。 */
+  /** The value after moving dx / dy (CSS px) from the value start at grab time. box is the part's box at grab time. */
   read: (start: V, dx: number, dy: number, box: DOMRect) => V;
   make: (value: V, commit: boolean) => Command;
   same?: (a: V, b: V) => boolean;
-  /** 矢印キー 1 回ぶん動かした値。そのキーでは動かないなら undefined。 */
+  /** The value after one arrow key press. undefined if that key does not move it. */
   step?: (value: V, key: string, shift: boolean) => V | undefined;
-  /** Home の値（はじめの値）。 */
+  /** The Home value (the start value). */
   home?: () => V;
-  /** 打ちこんだ文字の値。読めなければ undefined。 */
+  /** The value of typed text. undefined if it cannot be read. */
   parse?: (text: string) => V | undefined;
 }
 
@@ -31,7 +31,7 @@ export function mixControl<V>(opts: MixControlOptions<V>) {
   const same = opts.same ?? ((a: V, b: V) => a === b);
   let press: { x: number; y: number; pointer: number; box: DOMRect; el: HTMLElement; preview: MixPreview<V> } | null = null;
   let live = $state<{ from: V; now: V } | null>(null);
-  /** キーで動かして、まだ曲の値になっていない値。曲の値が変わったら消す。 */
+  /** A value moved by keys that is not the song value yet. Cleared when the song value changes. */
   let keyed = $state<{ value: V } | null>(null);
   let typing = $state(false);
   const keys = new KeySteps<V>(opts.make, send);
@@ -99,7 +99,7 @@ export function mixControl<V>(opts: MixControlOptions<V>) {
     if (e.key === "Home" && !e.shiftKey) next = opts.home?.();
     else next = opts.step?.(now, e.key, e.shiftKey);
     if (next === undefined) return;
-    // 先頭へ戻る（Home）や、ほかの帯の矢印に渡さない。
+    // Do not pass it on to Home (go to start) or to arrows of other bands.
     e.preventDefault();
     e.stopPropagation();
     if (same(next, now)) return;
@@ -128,15 +128,15 @@ export function mixControl<V>(opts: MixControlOptions<V>) {
   }
 
   return {
-    /** 動かしている間だけ { from, now }。 */
+    /** { from, now } only while moving. */
     get drag() {
       return live;
     },
-    /** いま見せる値。 */
+    /** The value to show now. */
     get shown(): V {
       return live ? live.now : keyed ? keyed.value : opts.value();
     },
-    /** 値を打ちこむ枠をひらいているか。 */
+    /** Whether the typing box is open. */
     get typing() {
       return typing;
     },
@@ -150,7 +150,7 @@ export function mixControl<V>(opts: MixControlOptions<V>) {
     cancel,
     keydown,
     keyup,
-    /** フォーカスが外れた: キーで動かした分を、いま 1 手にする。 */
+    /** Focus left: make the key moves one step now. */
     blur: () => keys.flush(),
     submit,
   };
@@ -161,7 +161,7 @@ export function gainCommand(strip: StripRef, db: number | null, commit: boolean)
   return { type: "setGain", strip, db, commit };
 }
 
-/** フェーダー: 上下に動かす。部品の高さぶんで目盛のいちばん下から上まで。いちばん下は −∞。 */
+/** Fader: moves up and down. The part height covers the scale from bottom to top. The bottom is −∞. */
 export function faderControl(strip: () => StripRef, db: () => number | null): MixControl<number | null> {
   return mixControl<number | null>({
     value: db,
@@ -173,7 +173,7 @@ export function faderControl(strip: () => StripRef, db: () => number | null): Mi
   });
 }
 
-/** フェーダー ・ センドの ↑ ↓: 1 dB、Shift で 0.1 dB。−∞ から上げると −60、−60 より下げると −∞、上は +6 まで。 */
+/** Fader / send ↑ ↓: 1 dB, 0.1 dB with Shift. Raising from −∞ gives −60, lowering below −60 gives −∞, up to +6. */
 export function stepDb(db: number | null, dir: 1 | -1, fine: boolean): number | null {
   const by = fine ? 0.1 : 1;
   if (db === null) return dir > 0 ? FLOOR : null;

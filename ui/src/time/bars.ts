@@ -1,27 +1,27 @@
-// 小節と拍の線を、テンポの地図（tempoMap.ts）から読む。拍子で小節の長さが変わっても、目盛 ・ グリッド ・ 吸いつきが同じ線を使う。
-// DOM も Tauri も知らない。60 Hz では使わない（スクロールや曲が変わったときだけ）。
+// Reads the bar and beat lines from the tempo map (tempoMap.ts). Even when time signatures change the bar length, the ruler, grid and snapping use the same lines.
+// Knows neither the DOM nor Tauri. Not used at 60 Hz (only when scrolling or when the song changes).
 
 import { TempoMap, type TimelineShape } from "./tempoMap";
 import { TICKS_PER_QUARTER } from "./ticks";
 
 const WHOLE = 4 * TICKS_PER_QUARTER;
 
-/** 拍子だけ（曲の頭の拍子、テンポの変更なし）。 */
+/** A time signature only (the one at the song start, no tempo changes). */
 export interface MeterShape {
   num: number;
   den: number;
 }
 
-/** 小節の長さを知る物: テンポの地図か、拍子が 1 つだけの曲の拍子。 */
+/** What knows the bar lengths: a tempo map, or the time signature of a song with only one. */
 export type Bars = TempoMap | MeterShape;
 
 export const perBeatOf = (m: MeterShape) => WHOLE / m.den;
 export const perBarOf = (m: MeterShape) => (m.num * WHOLE) / m.den;
 
 const maps = new WeakMap<object, TempoMap>();
-/** 地図ごとの、拍子の区間の頭のティック（曲の頭の 0 から、順に）。 */
+/** Per map, the start ticks of the time signature sections (in order, from 0 at the song start). */
 const sections = new WeakMap<TempoMap, number[]>();
-/** `timeline` の区画の地図。同じ区画（差分で入れかわるまで同じ物）には同じ地図を返す。 */
+/** The map of the `timeline` section. The same section (the same object until a diff replaces it) gets the same map. */
 export function mapOf(timeline: TimelineShape): TempoMap {
   let map = maps.get(timeline);
   if (!map) {
@@ -35,9 +35,9 @@ export function mapOf(timeline: TimelineShape): TempoMap {
 }
 
 /**
- * ノートのグリッド（core のクオンタイズと同じ考え）: 拍子の区間の頭から step ずつ数え、次の拍子の旗をこえる段は、その旗の小節の頭。
- * floor なら押した所のグリッドの頭（書く道具）、そうでなければいちばん近い段（まん中なら後ろ）。0 より前は 0。
- * bar（グリッドが 1 小節）なら、その所の小節の頭。
+ * The note grid (the same idea as quantize in core): count by step from the start of the time signature section; a step past the next time signature flag is the start of that flag's bar.
+ * With floor, the start of the grid cell that was pressed (the draw tool); otherwise the nearest step (the later one at the middle). Before 0 is 0.
+ * With bar (a grid of one bar), the start of the bar there.
  */
 export function gridTick(map: TempoMap, tick: number, step: number, floor = false, bar = false): number {
   const t = Math.max(0, tick);
@@ -54,7 +54,7 @@ export function gridTick(map: TempoMap, tick: number, step: number, floor = fals
 }
 
 const plain = new Map<string, TempoMap>();
-/** 拍子が 1 つだけの地図（テンポは小節の線に関わらないので 120）。 */
+/** A map with only one time signature (the tempo is 120, as it does not change the bar lines). */
 function meterMap(m: MeterShape): TempoMap {
   const key = `${m.num}/${m.den}`;
   let map = plain.get(key);
@@ -67,14 +67,14 @@ function meterMap(m: MeterShape): TempoMap {
 
 export const barsMap = (b: Bars): TempoMap => (b instanceof TempoMap ? b : meterMap(b));
 
-/** tick の所の拍子（拍子 1 つならそれ）。長さ（拍 . ティック）を、その所の拍で数えるため。 */
+/** The time signature at tick (the only one, if there is one). Used to count a length (beat . tick) in the beats there. */
 export function meterAtOf(b: Bars, tick: number): MeterShape {
   if (!(b instanceof TempoMap)) return b;
   const m = b.meterAt(tick);
   return { num: m.num, den: m.den };
 }
 
-/** いちばん近い小節の頭（まん中なら後ろ）。0 より前は 0。 */
+/** The nearest bar start (the later one at the middle). Before 0 is 0. */
 export function nearestBarTick(map: TempoMap, tick: number): number {
   if (!(tick > 0)) return 0;
   const m = map.meterAt(tick);
@@ -82,22 +82,22 @@ export function nearestBarTick(map: TempoMap, tick: number): number {
   return tick - m.barTick < next - tick ? m.barTick : next;
 }
 
-/** いちばん近い小節の線の番号（1 から。「5–9」の 5 と 9）。 */
+/** The number of the nearest bar line (from 1; the 5 and 9 of 「5–9」). */
 export function nearestBarLine(map: TempoMap, tick: number): number {
   return map.meterAt(nearestBarTick(map, tick)).bar + 1;
 }
 
-/** 小節の線の番号（1 から）の所のティック。 */
+/** The tick at a bar line number (from 1). */
 export const barLineTick = (map: TempoMap, line: number) => map.tickOfBar(Math.max(0, line - 1));
 
-/** いちばん近い拍の頭（まん中なら後ろ）。0 より前は 0。core の吸いつきと同じ決まり。 */
+/** The nearest beat start (the later one at the middle). Before 0 is 0. The same rule as snapping in core. */
 export function nearestBeatTick(map: TempoMap, tick: number): number {
   return snapToStep(map, tick, 0);
 }
 
 /**
- * step ティックのグリッドに吸いつく。グリッドは小節の頭から数えなおす（半端な小節でも、次の小節の頭が線になる）。
- * step が 0 なら拍、小節より長ければ小節の頭。0 より前は 0。まん中なら後ろ。
+ * Snaps to a grid of step ticks. The grid counts again from each bar start (even after a short bar, the next bar start is a line).
+ * A step of 0 means beats; longer than a bar means bar starts. Before 0 is 0. The later one at the middle.
  */
 export function snapToStep(map: TempoMap, tick: number, step: number): number {
   if (!(tick > 0)) return 0;
@@ -110,7 +110,7 @@ export function snapToStep(map: TempoMap, tick: number, step: number): number {
   return end - tick <= Math.abs(at - tick) ? end : at;
 }
 
-/** gridTick と同じグリッドの線を、ティック [from, to) で順に渡す（拍子の区間の頭から数えなおす）。kind は eachLine と同じ。 */
+/** Gives the lines of the same grid as gridTick in ticks [from, to), in order (counting again from each time signature section start). kind is as in eachLine. */
 export function eachGridTick(map: TempoMap, from: number, to: number, step: number, each: (tick: number, kind: LineKind) => void): void {
   const heads = sections.get(map) ?? [0];
   let t = gridTick(map, from, step, true);
@@ -126,35 +126,35 @@ export function eachGridTick(map: TempoMap, from: number, to: number, step: numb
 
 const nextHead = (heads: readonly number[], t: number) => heads.find((h) => h > t) ?? Infinity;
 
-/** 小節を 1 とした位置（4 小節目のまん中は 3.5）。目盛の「+1.25」のため。 */
+/** The position in bars (the middle of bar 4 is 3.5). For the 「+1.25」 on the ruler. */
 export function barFloat(map: TempoMap, tick: number): number {
   const m = map.meterAt(Math.max(0, tick));
   return m.bar + (Math.max(0, tick) - m.barTick) / perBarOf(m);
 }
 
-/** 小節 bar（1 から）の頭のティックと、その小節の拍子。 */
+/** The start tick of bar (from 1) and the time signature of that bar. */
 export function barAt(map: TempoMap, bar: number): { head: number; num: number; den: number } {
   const head = map.tickOfBar(Math.max(0, bar - 1));
   const m = map.meterAt(head);
   return { head, num: m.num, den: m.den };
 }
 
-/** 「小節 . 拍 . ティック」（どれも範囲の中。ティックはその拍の中のティック）を曲の中のティックに。 */
+/** 「小節 . 拍 . ティック」 (each in range; the tick is within its beat) to a tick in the song. */
 export function tickOfPosition(map: TempoMap, bar: number, beat: number, tick: number): number {
   const b = barAt(map, bar);
   const perBeat = perBeatOf(b);
   return b.head + (beat - 1) * perBeat + Math.min(tick, perBeat - 1);
 }
 
-/** 打ちこむ「ティック」の範囲の文（「0〜1919」、6/8 は「0〜0959」）。 */
+/** The range text for typing a 「ティック」 (「0〜1919」, or 「0〜0959」 in 6/8). */
 export const tickRangeText = (perBeat: number) => `0〜${String(perBeat - 1).padStart(4, "0")}`;
 
-/** 線の種類: 0 小節の頭、1 拍の頭、2 それより細かい線。 */
+/** Line kinds: 0 bar start, 1 beat start, 2 finer lines. */
 export type LineKind = 0 | 1 | 2;
 
 /**
- * ティック [from, to) の線を順に渡す。stepFor は、その小節の 1 拍と 1 小節のティックから、線のきざみを決める。
- * きざみが 1 小節以上なら、小節の番号（0 から）がきざみの小節の数で割りきれる小節の頭だけ。
+ * Gives the lines in ticks [from, to), in order. stepFor picks the line step from the ticks of one beat and one bar of that bar.
+ * When the step is one bar or more, only the starts of bars whose number (from 0) divides evenly by the step's bar count.
  */
 export function eachLine(
   map: TempoMap,

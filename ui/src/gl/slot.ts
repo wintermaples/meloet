@@ -84,7 +84,7 @@ export type GlSlot =
   /**
    * Paints nothing: the region's canvas covers this box too. For HTML that changes in the same frames
    * as the canvas (the numbers beside a meter): WebKit then repaints one rectangle instead of many
-   * small ones that cut each other (docs/architecture.md, chapter 7, "CPU で描く WebKit").
+   * small ones that cut each other (docs/architecture.md, chapter 7, "WebKit that paints on the CPU").
    * `stamp`: the canvas is shown in the frame this changes, its picture changed or not (the HTML in the box changed).
    */
   | { kind: "cover"; stamp?: number }
@@ -92,7 +92,7 @@ export type GlSlot =
   | { kind: "velocity" }
   /**
    * Two level bars with `gap` CSS px between them: horizontal, left above right; `vertical` (mixer strips),
-   * standing, left beside right. `mic`: the mic meter of the input meter (spec 3, 38-B: −60〜−12 the left half, −12〜0 the
+   * standing, left beside right. `mic`: the mic meter of the input meter (spec 3, 38-B: −60 to −12 the left half, −12 to 0 the
    * right half, ground gray.4) with a white line at `peakDb`, the peak of the last second (the same number as the dB beside it).
    */
   | { kind: "meter"; source: MeterSource; gap: number; vertical?: boolean; mic?: { peakDb: number } }
@@ -111,7 +111,7 @@ export type GlSlot =
    * `alignY`: while this slot is there, the canvas of its region and the canvas of that region have the same top and
    * bottom on the screen (the two together). For a slot drawn every frame beside another region that is: where WebKit
    * paints the page on the CPU, rectangles that start and end at different heights cut each other and the play line
-   * into many (docs/architecture.md, chapter 7, "CPU で描く WebKit").
+   * into many (docs/architecture.md, chapter 7, "WebKit that paints on the CPU").
    * `shiftX`: the rectangles and waves are drawn this many CSS px to the left (a picture made once, then scrolled).
    */
   | { kind: "rects"; rects: readonly GlRect[]; waves?: readonly GlWave[]; alignY?: RegionName; shiftX?: number }

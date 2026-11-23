@@ -1,8 +1,8 @@
-// 画面の文面はすべてここに置く。
-// 出どころ: spec:<章>（docs/spec/<章>-*.md）、mock:<ボード>（docs/design/mock/<ボード>.dc.html）、user:<日付>（ヤチヨさんの決め）、
-// draft:<日付>（仕様書にもモックにもない文の、作る側の案。ヤチヨさんに確かめて user: か mock: にする）。
-// builder:<日付>（仕様書にない所を、作る側が仮に決めた文。docs/history/design-notes.ja.md の B に戻してある）。
-// {name} はうめこむ値の穴。example は出どころに書いてある例の値で、テストがこれを入れて出どころと照らし合わせる。
+// All screen text lives here.
+// Sources: spec:<chapter> (docs/spec/<chapter>-*.md), mock:<board> (docs/design/mock/<board>.dc.html), user:<date> (the owner's decision),
+// draft:<date> (the developers' proposal for text that is in neither the spec nor the mocks; check with the owner, then make it user: or mock:).
+// builder:<date> (text the developers decided for now where the spec has none; sent back to the design in B of docs/history/design-notes.ja.md).
+// {name} is a hole for a value. example holds the example values written in the source; the tests fill them in and compare with the source.
 
 import type { StepName } from "../bridge/generated/StepName";
 
@@ -13,9 +13,9 @@ export interface Entry {
   readonly text: string;
   readonly source: Source;
   readonly example?: Readonly<Record<string, string>>;
-  /** spec:6 の表の「場面」。 */
+  /** The 「場面」 (scene) column of the spec 6 table. */
   readonly scene?: string;
-  /** 文面のセルとの合わせかた。whole: セルの文そのまま。quoted: セルの「」の中。part: セルの文の一部。 */
+  /** How it matches the wording cell. whole: the cell text as is. quoted: inside 「」 in the cell. part: a part of the cell text. */
   readonly fit?: "whole" | "quoted" | "part";
 }
 
@@ -32,7 +32,7 @@ const s6 = (
 ): Entry => ({ text, source: "spec:6", scene, example, fit });
 
 export const texts = {
-  // 仕様書 6 章 「エラーと案内の文面」
+  // spec 6 "Error and hint wording"
   "msg.keyboardMissing": s6(
     "Keyboard missing",
     "鍵盤を USB でつなぐと、ここに出ます。つながなくても、マウスで音を書けます。",
@@ -80,7 +80,7 @@ export const texts = {
     },
   ),
   "msg.soundCameOut": s6("Sound came out", "音が出ました。", undefined, "quoted"),
-  // 2 文目は、録音ボタンが使えるときだけ出す。
+  // The second sentence is shown only when the record button can be used.
   "msg.soundCameOutRecord": s6(
     "Sound came out",
     "赤い丸の録音ボタンを押すと、カウントインのあとに録りはじめます。",
@@ -91,7 +91,7 @@ export const texts = {
     "Unusable output: the PC switches to it",
     "さすと、PC がこちらに切りかえます",
   ),
-  // ささっている入口を、ほかの入口もささっているので PC がえらんでいないとき（オーナーさんの決めの文が 6 章に入った）。
+  // When the plugged-in input is not chosen by the PC because other inputs are plugged in too (the owner's wording, now in spec 6).
   "msg.inputPluggedNotChosen": s6(
     "Input plugged in but not used",
     "ささっています ・ PC の設定でほかの入口をえらんでいます（設定 ▸ サウンド ▸ 入力 で変えられます）",
@@ -129,7 +129,7 @@ export const texts = {
     "カウントイン中 ・ あと {beats} 拍で録音が始まります。止めるには Space",
     { beats: "2" },
   ),
-  // 状態行の左の札「● カウントイン中」（status.countingIn）のうしろに出す部分。札と合わせて上の文になる。
+  // The part shown after the status line tag 「● カウントイン中」 (status.countingIn). With the tag it makes the text above.
   "msg.countingInRest": s6(
     "Counting in",
     "あと {beats} 拍で録音が始まります。止めるには Space",
@@ -210,7 +210,7 @@ export const texts = {
     "プラグインの窓が {count} つひらいています",
     { count: "2" },
   ),
-  // 窓が 1 つのとき（2 つ以上は msg.windowsOpen）。
+  // For one window (two or more: msg.windowsOpen).
   "msg.windowOpen": s6("Plugin window opened", "{name} の窓がひらいています", { name: "Surge XT" }, "part"),
   "msg.windowFailed": s6(
     "Plugin window cannot be shown",
@@ -246,7 +246,7 @@ export const texts = {
     "サンプルを再生中 ・ {name}。行をえらぶと、鍵盤でためし弾きできます。",
     { name: "（名前）" },
   ),
-  // 状態行で、ためし弾きの音色の名前のうしろに出す（新しいトラックのとき）。
+  // On the status line, after the name of the auditioned sound (for a new track).
   "status.auditionNewTrack": e(
     "{instrument} ・ まだトラックには入っていません ・ 入れるには {key}",
     "mock:F4-ShelfAudition",
@@ -259,7 +259,7 @@ export const texts = {
     "Auditioning to replace",
     "鍵盤を弾くと、この音色で鳴ります。再生すると、録ってあるノートもこの音色で鳴ります。まだ入れかえていません。",
   ),
-  // 仕様書 6 章の表の「出る場所」の列にある文。
+  // Text from the 「出る場所」 (where shown) column of the spec 6 table.
   "status.auditionReplace": e(
     "{instrument} ・ {track} の音源は、まだ{current}です ・ 入れかえるには {key}",
     "spec:6",
@@ -334,21 +334,21 @@ export const texts = {
     "Song file is broken",
     "このファイルは読めませんでした。自動で残してある 1 つ前の状態からなら開けます。",
   ),
-  // 1 つ前の状態がないときは、上の文の 1 文目だけ。
+  // When there is no earlier state, only the first sentence of the text above.
   "msg.songBrokenFirst": s6(
     "Song file is broken",
     "このファイルは読めませんでした。",
     undefined,
     "part",
   ),
-  // なおすためのファイル（仕様書 3 章）。PC が終わるときに書いた物は仕様書の文、ふだん書いた物はヤチヨさんの文。
+  // Recovery file (spec 3). Spec text for a file written when the PC shuts down; the owner's text for one written at other times.
   "msg.recoveredPcEnding": s6(
     "Restored from the recovery file",
     "PC が終わる前の演奏を戻しました。まだ保存していません。",
     undefined,
     "quoted",
   ),
-  // 2 文目は「…です。」と「テイク N つ。」に分けて持つ。テイクが 0 のときはうしろを出さない（棟梁の決め 2026-11-15、デザインに戻す）。
+  // The second sentence is kept as two parts, 「…です。」 and 「テイク N つ。」. With 0 takes the second part is not shown (a builder decision, sent back to the design).
   "msg.recoveredPcEndingDetail": s6(
     "Restored from the recovery file",
     "{month} 月 {day} 日 {time} に PC が終わったときの「{song}」です。",
@@ -375,7 +375,7 @@ export const texts = {
       song: "新しい曲",
     },
   ),
-  // 仕様書 6 章の表の「出る場所」の列にある文。
+  // Text from the 「出る場所」 (where shown) column of the spec 6 table.
   "status.recovered": e(
     "なおすためのファイルから戻しました ・ まだ保存していません",
     "spec:6",
@@ -403,7 +403,7 @@ export const texts = {
     undefined,
     "quoted",
   ),
-  // 状態行。保存したことのない曲のときは、うしろを「新しい曲をひらいています」にする（モック F-Recover3 の形に、仕様書の言葉を入れた）。
+  // Status line. For a song never saved, the end is 「新しい曲をひらいています」 (the form of mock F-Recover3 with the spec words).
   "status.recoveryUnreadable": e(
     "なおすためのファイルが読めませんでした ・ {opened}",
     "mock:F-Recover3",
@@ -471,14 +471,14 @@ export const texts = {
     "拡大率を {scale} % にしたので、{band}をたたみました。帯札を押すと、またひらきます。",
     { scale: "150", band: "ミキサー" },
   ),
-  // 数字の欄に、数字として読めない物を打った。欄は value.* か note.*。
+  // Something that cannot be read as a number was typed in a number field. The field is value.* or note.*.
   "msg.valueRejected": s6(
     "Not readable as a number",
     "{field}は数字で打ちます。もとの {kept} のままです。",
     { field: "ベロシティ", kept: "77" },
     "part",
   ),
-  // 音の欄（音名で打つ）に読めない物を打った。
+  // Something that cannot be read was typed in the pitch field (typed as a note name).
   "msg.keyRejected": s6(
     "Not readable in the note field",
     "{field}は {range} です。もとの {kept} のままです。",
@@ -488,14 +488,14 @@ export const texts = {
     "Way back to the arrange",
     "Esc ・ ひとつ戻る。何度か押すとアレンジへ",
   ),
-  // 範囲の外の値は近いはしにして決める。欄と範囲は value.*。
+  // A value out of range is set to the nearest end. The fields and ranges are value.*.
   "msg.valueClamped": s6(
     "Typed a value out of range",
     "{field}は {range} なので、{value} にしました。",
     { field: "ベロシティ", range: "1〜127", value: "127" },
     "quoted",
   ),
-  // ベロシティをまとめて変える、長さをそろえる。
+  // Change velocities together, align lengths.
   "msg.velocityMatched": s6(
     "Set together",
     "{count} ノートのベロシティを {value} にそろえました。",
@@ -508,14 +508,14 @@ export const texts = {
     { count: "3", value: "0.240" },
     "part",
   ),
-  // 位置の小節を丸めたとき。小節だけ「1 から」のあとに空白がない。拍とティックは msg.valueClamped。
+  // When the bar of the position was clamped. Only for the bar there is no space after 「1 から」. Beats and ticks use msg.valueClamped.
   "msg.valueClampedBar": s6(
     "Position rounded",
     "小節は 1 からなので、{value} にしました。",
     { value: "1. 1. 000" },
     "quoted",
   ),
-  // ほかのクリップと重なって置けなかった。
+  // Could not be placed because it overlaps another clip.
   "msg.clipsNotMoved": s6(
     "Clips overlap",
     "ほかのクリップと重なるので、動かしませんでした。",
@@ -534,7 +534,7 @@ export const texts = {
     undefined,
     "quoted",
   ),
-  // ピアノロールでクリップの外に書こうとして、クリップをのばせなかった（B-82）。
+  // In the piano roll, writing outside the clip could not grow the clip (B-82).
   "msg.notesNotWritten": s6(
     "Cannot write outside the clip",
     "ほかのクリップと重なるので、書けませんでした。",
@@ -556,12 +556,12 @@ export const texts = {
     "テイク {take} を消しました。テイク {active} / {total} にしました。取り消せます（{undoKey}）",
     { take: "2", active: "1", total: "2", undoKey: "Mod Z" },
   ),
-  // 曲のダイアログ（仕様書 3 章 89-6）。見出しは曲の名前のまま、状態行だけ名前で言う。
+  // Song dialogs (spec 3 (89-6)). The heading is the song name as is; only the status line says the name.
   "status.songDialogOpen": s6("Song dialog is open", "「{dialog}」のダイアログをひらいています", { dialog: "保存していない変更" }),
   "songDialog.unsaved": e("保存していない変更", "spec:3"),
   "songDialog.cannotSave": e("保存できませんでした", "spec:3"),
   "songDialog.broken": e("ひらけない曲", "spec:3"),
-  // 「音の設定をひらいています」は status.settingsOpen。
+  // 「音の設定をひらいています」 is status.settingsOpen.
   "status.dialogOpen": s6(
     "Dialog is open",
     "{dialog} をひらいています",
@@ -578,7 +578,7 @@ export const texts = {
     "音の素材が見つかりません。いまはサイン波だけ使えます。meloet を入れなおすと、もとに戻ります。",
   ),
 
-  // [第 5 回 ・ SF2]（仕様書 6 章）
+  // [SF2] (spec 6)
   "sf2.dropHere": s6(
     "Dragging in an SF2",
     "ここに落とすと、棚に SF2 を足します。ファイルは meloet の中にうつします。",
@@ -591,17 +591,17 @@ export const texts = {
     undefined,
     "quoted",
   ),
-  // 6 章「SF2 を持ってきている」の出る場所の列。
+  // The 「出る場所」 column of spec 6 「SF2 を持ってきている」.
   "sf2.dragging": e("SF2 のファイルを持ってきています", "spec:6"),
   "sf2.notSf2": s6(
     "Dragging in a file that is not SF2",
     "SF2 のファイルではないので、足せません。",
   ),
   "sf2.notSf2Dragging": s6("Dragging in a non-SF2 file", "SF2 ではないファイルを持ってきています（足せません）"),
-  // 窓のまん中の箱の、ファイルの名前の所。SF2 が 1 つもないときは前だけ（docs/history/design-notes.ja.md A-19）。
+  // The file name part of the box in the middle of the window. With no SF2, only the first part (docs/history/design-notes.ja.md A-19).
   "sf2.manyFiles": s6("Dragging in many files", "{files} つのファイル ・ SF2 は {sf2} つ", { files: "3", sf2: "2" }),
   "sf2.manyFilesNoSf2": s6("Dragging in many files", "{files} つのファイル", { files: "3" }, "part"),
-  // 「SF2 をいくつも足した」の 2 文。足した SF2 が 1 つなら、sf2.added のうしろに 2 文目だけ（docs/history/design-notes.ja.md A-19）。
+  // The two sentences of 「SF2 をいくつも足した」. When one SF2 was added, only the second sentence after sf2.added (docs/history/design-notes.ja.md A-19).
   "sf2.addedMany": s6(
     "Many SF2 files added",
     "SF2 を {count} つ足しました（{file} ほか {others} つ）。",
@@ -625,14 +625,14 @@ export const texts = {
     { file: "FluidR3_GM.sf2", count: "2" },
   ),
 
-  // [第 5 回 ・ あとから入れたもの]（仕様書 2 章・3 章 83 ・ 85 ・ Y12 ・ Y14、モック F5-*）
+  // [Added later] (spec 2, spec 3 (83, 85, Y12, Y14), mock F5-*)
   "shelf.builtin": e("最初から入っているもの", "mock:F5-SF2Shelf"),
   "shelf.added": e("あとから入れたもの", "mock:F5-SF2Shelf"),
   "shelf.sectionCount": e("{name} ・ {count}", "mock:F5-SF2Shelf", {
     name: "あとから入れたもの",
     count: "1",
   }),
-  // さがしているときの見出しの数（「合う数 / 全部」）。
+  // The count in the heading while searching (「合う数 / 全部」).
   "shelf.matchCount": e("{shown} / {total}", "mock:F5-ShelfSearch", {
     shown: "4",
     total: "506",
@@ -648,7 +648,7 @@ export const texts = {
   "shelf.sampleLoading": e("読みこみ中…", "spec:3"),
   "shelf.windowHint": e("音色は窓でえらべます", "mock:F5-PluginAudition"),
   "shelf.mixStart": e("ミックスは、はじめ 30 %。", "mock:F5-ShelfFx"),
-  // SF2 の音色の名前（状態行。モック F5-SF2Shelf「Clean Guitar ・ FluidR3_GM.sf2」）。
+  // The name of an SF2 sound (status line; mock F5-SF2Shelf 「Clean Guitar ・ FluidR3_GM.sf2」).
   "sound.sf2Name": e("{name} ・ {file}", "mock:F5-SF2Shelf", {
     name: "Clean Guitar",
     file: "FluidR3_GM.sf2",
@@ -661,7 +661,7 @@ export const texts = {
   "track.standInUnreadableTip": e("{name} を読みこめなかったので、サイン波で鳴らしています。", "spec:3", { name: "Surge XT" }),
   "mixer.stoppedMark": e("止", "spec:3"),
   "shelf.missingRow": e("見つかりません", "mock:A-Mixer"),
-  // 棚の下の、止まったプラグインの箱（モック A-Mixer: 見出しと、6 章「プラグインが止まった」の文の残り）。
+  // The box of stopped plugins under the shelf (mock A-Mixer: the heading and the rest of the spec 6 text 「プラグインが止まった」).
   "plugin.stoppedHead": e("{name} が止まりました ・ {track}", "mock:A-Mixer", { name: "Brick EQ", track: "3 ドラム" }),
   "plugin.stoppedBody": s6(
     "Plugin stopped",
@@ -674,13 +674,13 @@ export const texts = {
     query: "Dragonfly",
     count: "4",
   }),
-  // 同じ名前のノートをまとめる（「スネア ×2」）。
+  // Notes with the same name are grouped (「スネア ×2」).
   "note.keyCount": e("{name} ×{count}", "spec:3", { name: "スネア", count: "2" }),
-  // ドラムでノートを上下に動かすときの読み値（ふつうのピアノロールは pr.readMove）。
+  // The reading while moving notes up or down in drums (the normal piano roll uses pr.readMove).
   "pr.readMoveRows": e("{ticks} ・ {rows}", "spec:3", { ticks: "+0.120", rows: "上へ 1 行" }),
   "pr.rowsUp": e("上へ {count} 行", "spec:3", { count: "1" }),
   "pr.rowsDown": e("下へ {count} 行", "spec:3", { count: "2" }),
-  // SF2 の仲間の見出し。キーの後ろは約束の GmFamily。
+  // Headings of SF2 families. The part after the key prefix is GmFamily of the protocol.
   "gmFamily.piano": e("ピアノ", "spec:3"),
   "gmFamily.mallet": e("マレット", "spec:3"),
   "gmFamily.organ": e("オルガン", "spec:3"),
@@ -698,7 +698,7 @@ export const texts = {
   "gmFamily.percussive": e("打楽器", "spec:3"),
   "gmFamily.soundEffects": e("効果音", "spec:3"),
   "gmFamily.drumKit": e("ドラムのキット", "spec:3"),
-  // プラグインの種類の見出し（14-A）。キーの後ろは約束の PluginInstrumentCategory ・ PluginEffectCategory。
+  // Headings of plugin kinds (14-A). The part after the key prefix is PluginInstrumentCategory and PluginEffectCategory of the protocol.
   "pluginKind.instrument.synth": e("シンセ", "spec:3"),
   "pluginKind.instrument.sampler": e("サンプラー", "spec:3"),
   "pluginKind.instrument.drum": e("ドラム", "spec:3"),
@@ -715,7 +715,7 @@ export const texts = {
   "pluginKind.effect.spatial": e("空間", "spec:3"),
   "pluginKind.effect.analysis": e("分析", "spec:3"),
   "pluginKind.effect.other": e("そのほか", "spec:3"),
-  // SF2 のドラムのキットの行の名前（鍵の番号、GM の決まり）。表にない鍵は音名。
+  // Row names of an SF2 drum kit (by key number, the GM rule). Keys not in the table use the note name.
   "gmDrum.35": e("キック 2", "spec:3"),
   "gmDrum.36": e("キック", "spec:3"),
   "gmDrum.37": e("サイドスティック", "spec:3"),
@@ -764,7 +764,7 @@ export const texts = {
   "gmDrum.80": e("トライアングル（ミュート）", "spec:3"),
   "gmDrum.81": e("トライアングル", "spec:3"),
 
-  // [第 5 回 ・ インサート]（仕様書 6 章）
+  // [Inserts] (spec 6)
   "shelf.insertInto": s6(
     "Putting into an insert",
     "{strip} のインサート {slot} に入れます。",
@@ -780,7 +780,7 @@ export const texts = {
     "{strip} のインサート {slot} の {effect} を外しました。取り消せます（{undoKey}）",
     { strip: "2 ベース", slot: "1", effect: "コンプレッサー", undoKey: "Mod Z" },
   ),
-  // 外す ・ 入れかえる ・ 音源を入れかえるのといっしょに帯が消えたとき、状態行の文の終わりの「。」の前に足す（仕様書 3 章 92-19）。
+  // When bands disappear together with remove, replace, or replacing the instrument, added before the final 「。」 of the status line text (spec 3 (92-19)).
   "msg.lanesAlsoGone": s6("Bands went away too", "（そのパラメータの帯 {count} 本も消えました）", { count: "2" }, "part"),
   "msg.insertsReordered": s6(
     "Inserts reordered",
@@ -797,7 +797,7 @@ export const texts = {
     "{strip} のインサート {slot} を {effect} に入れかえました。取り消せます（{undoKey}）",
     { strip: "2 ベース", slot: "1", effect: "EQ 4 バンド", undoKey: "Mod Z" },
   ),
-  // {target} は「{ストリップ} の {エフェクト} 」（うしろに空白）。仕様書のもどしたときの例は「…をもどしました。」。
+  // {target} is 「{ストリップ} の {エフェクト} 」 (with a space after). The spec example for undoing a bypass is 「…をもどしました。」.
   "msg.effectBypassed": s6(
     "Effect bypassed or brought back",
     "{target}をとばしました。",
@@ -832,8 +832,8 @@ export const texts = {
     "quoted",
   ),
 
-  // [第 5 回 区切り3 ・ 窓とパラメータ] モックにだけある文。
-  // 6 章の窓の文の「（名前）」は、居場所とプラグインの名前（うしろに空白。docs/history/design-notes.ja.md A-17）。
+  // [Windows and parameters] Text found only in the mocks.
+  // 「（名前）」 in the spec 6 window text is the place and the plugin name (with a space after; docs/history/design-notes.ja.md A-17).
   "status.windowPlace": e("{strip} ・ {name}", "mock:F-ParamMany", {
     strip: "1 ピアノ",
     name: "Surge XT",
@@ -872,16 +872,16 @@ export const texts = {
   }),
   "button.raiseWindow": e("窓を前に出す", "mock:F-ParamMany"),
   "windows.button": e("窓 {count}", "spec:6", { count: "2" }),
-  // 状態行の「（ストリップ）の（エフェクト）」。うしろに空白（msg.effectBypassed の {target}）。
+  // 「（ストリップ）の（エフェクト）」 on the status line, with a space after ({target} of msg.effectBypassed).
   "status.insertTarget": e("{strip} の {effect} ", "spec:6", { strip: "2 ベース", effect: "コンプレッサー" }),
   "windows.shelfAudition": e("棚 ・ ためし弾き", "user:2026-11-19"),
   "params.foldedHint": e("40 個をこえる子は、グループをたたんで始めます", "mock:F-ParamMany"),
   "params.searchHint": e("さがす枠を空にすると、グループの一覧に戻ります", "mock:F-ParamSearch"),
   "params.more": e("… ほか {count}", "spec:3", { count: "6" }),
   "params.groupOther": e("そのほか", "mock:F-ParamMany"),
-  // 鍵盤のつまみを受けるだけのパラメータ（仕様書 3 章 91-3）。さがしているときだけ、このグループに出す。
+  // Parameters that only receive the keyboard's knobs (spec 3 (91-3)). Shown in this group only while searching.
   "params.keyboardKnobs": e("鍵盤のつまみを受ける所", "spec:3"),
-  // 一覧の下。first と last は、最初と最後の名前（last は first と同じ頭を外した所。「MIDI CC 0|0」〜「15|129」）。
+  // Under the list. first and last are the first and last names (last without the start it shares with first; 「MIDI CC 0|0」〜「15|129」).
   "params.keyboardKnobsHidden": e(
     "ほかに、鍵盤のつまみを受けるだけの {count} 個（{first} 〜 {last}）は出していません。さがすと出ます。",
     "spec:3",
@@ -893,7 +893,7 @@ export const texts = {
   "params.bypass": e("とばす", "spec:3"),
   "params.bypassing": e("とばしている", "spec:3"),
   "key.bypass": e("B", "spec:4"),
-  // インサートの枠に乗ったとき、名前のうしろにそえる（仕様書 2 章「インサートの枠のオンの印」）。
+  // Added after the name on hover over an insert slot (spec 2 "On mark of an insert slot").
   "mixer.bypassedTip": e("（とばしている）", "spec:2"),
   "insert.replace": e("入れかえる…", "spec:3"),
   "insert.moveUp": e("上へ動かす", "spec:3"),
@@ -902,7 +902,7 @@ export const texts = {
   "shelf.titleReplaceEffect": e("{strip} のインサート {slot} を入れかえる", "mock:R9-Inserts", { strip: "2 ベース", slot: "1" }),
   "shelf.currentEffect": e("いまのエフェクト", "spec:3"),
 
-  // [第 5 回 ・ プラグイン]（仕様書 6 章）
+  // [Plugins] (spec 6)
   "plugin.newFound": s6(
     "New plugins found",
     "新しいプラグインが {count} 個見つかりました。棚の「あとから入れたもの」に入れました。",
@@ -958,14 +958,14 @@ export const texts = {
     "{track} の音源を外しました。サイン波で鳴らします。取り消せます（{undoKey}）",
     { track: "5 Surge XT", undoKey: "Mod Z" },
   ),
-  // 止まった物が 0 のときは、6 章の文の前半だけ（docs/history/design-notes.ja.md A-16）。
+  // With 0 stopped plugins, only the first half of the spec 6 text (docs/history/design-notes.ja.md A-16).
   "msg.scanDoneNone": s6(
     "Scan finished",
     "スキャンが終わりました ・ {added} 個を棚に入れました。",
     { added: "667" },
     "part",
   ),
-  // ダイアログ「スキャンで止まったプラグイン」と「プラグインの場所」（仕様書 2 章・3 章 Y13、モック F5-ScanStopped・R9-Scan）。
+  // Dialogs 「スキャンで止まったプラグイン」 and 「プラグインの場所」 (spec 2, spec 3 (Y13), mock F5-ScanStopped, R9-Scan).
   "plugin.stoppedTitle": e("スキャンで止まったプラグイン", "spec:3"),
   "plugin.reason.crashed": e("読みこむと止まりました", "spec:3"),
   "plugin.reason.timedOut": e("30 秒たっても終わりませんでした", "spec:3"),
@@ -977,7 +977,7 @@ export const texts = {
   "plugin.usualPlace": e("ふつうの場所", "spec:2"),
   "button.addPlace": e("場所を足す…", "mock:R9-Scan"),
 
-  // 数字の欄の名前と範囲（仕様書 6 章「範囲の外の値を打った」、3 章のテンポと拍子の枠）。
+  // Names and ranges of number fields (spec 6 「範囲の外の値を打った」, the tempo and time signature boxes in spec 3).
   "value.tempo": e("テンポ", "spec:6"),
   "value.tempoRange": s6(
     "Typed a value out of range",
@@ -987,7 +987,7 @@ export const texts = {
   ),
   "value.meterNum": e("拍子の上", "spec:6"),
   "value.meterNumRange": s6("Typed a value out of range", "1〜12", undefined, "part"),
-  // 6 章の文は「下は」。欄の名前だけで読めるように「拍子の下」にした（棟梁の決め 2026-11-15）。
+  // The spec 6 text says 「下は」. It is 「拍子の下」 so that the field name reads on its own (a builder decision).
   "value.meterDen": e("拍子の下", "user:2026-11-18"),
   "value.meterDenRange": s6(
     "Typed a value out of range",
@@ -1002,12 +1002,12 @@ export const texts = {
     undefined,
     "part",
   ),
-  // 位置の小節・拍・ティック（デザインに戻した事 68）。拍とティックの範囲は拍子で変わるので、知らせについてくる。
+  // Bar, beat and tick of the position (design-notes item 68, docs/history/design-notes.ja.md). The beat and tick ranges change with the time signature, so they come with the message.
   "value.bar": e("小節", "user:2026-11-18"),
   "value.beat": e("拍", "user:2026-11-18"),
   "value.tick": e("ティック", "user:2026-11-18"),
 
-  // 仕様書 6 章のボタン（「（…）」の中は説明なので入れない）
+  // Buttons of spec 6 (text inside 「（…）」 is an explanation, so it is left out)
   "button.playHere": e("ここから鳴らす", "spec:6"),
   "button.openAudioSettings": e("音の設定をひらく", "spec:6"),
   "button.details": e("くわしく", "spec:6"),
@@ -1018,7 +1018,7 @@ export const texts = {
   "button.clearSearch": e("さがす枠を空にする", "spec:6"),
   "button.switchFormat": e("入れかえる", "spec:6"),
   "button.cancel": e("やめる", "spec:6"),
-  // 仕様書 6 章は「トラック（次の番号）を作る」。番号を入れた形はモックから。
+  // spec 6 says 「トラック（次の番号）を作る」. The form with the number is from the mock.
   "button.makeTrack": e("トラック {number} を作る", "mock:F4-ShelfAudition", {
     number: "5",
   }),
@@ -1044,7 +1044,7 @@ export const texts = {
   "button.addSf2": e("SF2 を足す…", "spec:6"),
   "button.pluginFolders": e("プラグインの場所…", "spec:6"),
 
-  // キーの札（帯札やボタンの右はしに小さく書くキーの名前。仕様書 4 章の表）
+  // Key tags (the key name written small at the right end of a band tab or button; the table in spec 4)
   "key.enter": e("Enter", "spec:4"),
   "key.esc": e("Esc", "spec:4"),
   "key.arrange": e("A", "spec:4"),
@@ -1062,18 +1062,18 @@ export const texts = {
   "key.toolSelect": e("1", "spec:4"),
   "key.toolDraw": e("2", "spec:4"),
   "key.toolErase": e("3", "spec:4"),
-  // 曲の名前の一覧のキー（Mod の読みかえは拡大率の一覧と同じ）。
+  // Keys of the song name list (Mod is read the same way as in the scale list).
   "key.newSong": e("N", "spec:4"),
   "key.openSong": e("O", "spec:4"),
   "key.saveSong": e("S", "spec:4"),
   "key.undo": e("Z", "spec:4"),
-  // 拡大率のキーの書きかた（docs/history/design-notes.ja.md A-2: Linux と Windows では「Ctrl Alt 1」、Mac では「Cmd Option 1」）
+  // How scale keys are written (docs/history/design-notes.ja.md A-2: 「Ctrl Alt 1」 on Linux and Windows, 「Cmd Option 1」 on Mac)
   "key.ctrl": e("Ctrl", "spec:4"),
   "key.cmd": e("Cmd", "spec:4"),
   "key.alt": e("Alt", "spec:4"),
   "key.option": e("Option", "spec:4"),
 
-  // 再生まわり
+  // Transport
   "transport.songNew": e("新しい曲", "mock:F-Connect1"),
   "transport.songNewUndo": e(
     "新しい曲 ・ 取り消し {undo} / {total}",
@@ -1090,11 +1090,11 @@ export const texts = {
     "mock:F-History",
     { undo: "12", total: "14" },
   ),
-  // 左上の曲の名前を押すとひらく一覧の行。
+  // Rows of the list that opens when the song name at the top left is pressed.
   "song.new": s6("Song name list", "新しい曲", undefined, "quoted"),
   "song.open": s6("Song name list", "ひらく…", undefined, "quoted"),
   "song.save": s6("Song name list", "保存", undefined, "quoted"),
-  // 曲の名前が引っこんだ所の ▾（仕様書 2 章「曲の ▾」）。aria-label はモックの形。
+  // The ▾ where the song name was hidden (spec 2 "Song ▾"). The aria-label is in the mock's form.
   "transport.songMenu": e("曲（{name}）", "mock:F-Menus", {
     name: "はじめての曲",
   }),
@@ -1120,14 +1120,14 @@ export const texts = {
     { bars: "1" },
     "quoted",
   ),
-  // カウントインが「なし」のときのボタンの値と、一覧の行。
+  // The button value and the list row when the count-in is 「なし」.
   "transport.countInNone": s6(
     "Number of count-in bars",
     "なし",
     undefined,
     "quoted",
   ),
-  // カウントインが引っこんだときの、メトロノームの ▾（仕様書 2 章「メトロノームの ▾」）。
+  // The metronome ▾ when the count-in is hidden (spec 2 "Metronome ▾").
   "transport.metronomeMenu": e("メトロノームとカウントイン", "mock:F-Menus"),
   "transport.cpu": e("処理の負荷", "mock:Main"),
   "transport.cpuValue": e("{percent} %", "mock:Main", { percent: "9" }),
@@ -1140,7 +1140,7 @@ export const texts = {
     value: "−6.2 dB",
   }),
 
-  // 入力計
+  // Input meter
   "meter.input": e("入力", "mock:Main"),
   "meter.noKeyboard": e("鍵盤なし", "mock:F-Connect1"),
   "meter.held": e("いま押している音", "mock:Main"),
@@ -1158,25 +1158,25 @@ export const texts = {
     "mock:F-Connect3",
     { track: "1 ピアノ", instrument: "グランドピアノ" },
   ),
-  // カウントイン中と録音中。「● テイク {take}」は rec。
+  // During count-in and recording. 「● テイク {take}」 is rec.
   "meter.playTargetRecording": e("{track} ● テイク {take}", "mock:F-Connect4", {
     track: "1 ピアノ",
     take: "1",
   }),
 
-  // ためし弾きの間の「弾くと鳴る先」。
+  // The 「弾くと鳴る先」 (play target) during audition.
   "meter.auditionTarget": e(
     "ためし弾き ・ {instrument}",
     "mock:F4-ShelfAudition",
     { instrument: "シンセベース" },
   ),
 
-  // トラックと音源
+  // Tracks and instruments
   "track.label": e("{number} {name}", "mock:F-Connect3", {
     number: "1",
     name: "ピアノ",
   }),
-  // 最初から入っている音色（仕様書 3 章 84）。キーの後ろは約束の InstrumentKind。棚の並び。
+  // Built-in sounds (spec 3 (84)). The part after the key prefix is InstrumentKind of the protocol. In shelf order.
   "instrument.grandPiano": e("グランドピアノ", "spec:3"),
   "instrument.electricPiano": e("エレクトリックピアノ", "spec:3"),
   "instrument.organDrawbar": e("ドローバーオルガン", "spec:3"),
@@ -1208,7 +1208,7 @@ export const texts = {
   "instrument.flute": e("フルート", "spec:3"),
   "instrument.synthLead": e("シンセリード", "spec:3"),
   "instrument.sine": e("サイン波", "spec:3"),
-  // ドラムのピアノロールの行の名前（楽器の名前。キーの後ろは DRUM_ROWS の id）。
+  // Row names of the drum piano roll (names of the drum pieces; the part after the key prefix is the DRUM_ROWS id).
   "drum.crash": e("クラッシュ", "spec:3"),
   "drum.ride": e("ライド", "spec:3"),
   "drum.openHiHat": e("オープンハイハット", "spec:3"),
@@ -1221,10 +1221,10 @@ export const texts = {
   "drum.snare": e("スネア", "spec:3"),
   "drum.sideStick": e("サイドスティック", "spec:3"),
   "drum.kick": e("キック", "spec:3"),
-  // ドラムのトラックの右の欄の「スケール」（音階「—」、固定「使えない」）。道具の列の「スケール固定 —」も同じ「—」。
+  // 「スケール」 in the right panel of a drum track (scale 「—」, lock 「使えない」). 「スケール固定 —」 in the toolbar uses the same 「—」.
   "inspector.scaleNone": e("—", "spec:3"),
   "inspector.lockUnusable": e("使えない", "spec:3"),
-  // 棚の見出し。キーの後ろは約束の InstrumentGroup。
+  // Shelf headings. The part after the key prefix is InstrumentGroup of the protocol.
   "instrumentGroup.pianoKeys": e("ピアノ ・ 鍵盤", "spec:3"),
   "instrumentGroup.guitar": e("ギター", "spec:3"),
   "instrumentGroup.bass": e("ベース", "spec:3"),
@@ -1233,7 +1233,7 @@ export const texts = {
   "instrumentGroup.wind": e("管楽器", "spec:3"),
   "instrumentGroup.synth": e("シンセ", "spec:3"),
 
-  // 棚（音源をえらぶ）
+  // Shelf (choosing an instrument)
   "shelf.titleNewTrack": e(
     "新しいトラックの音源をえらぶ",
     "mock:F4-ShelfSample",
@@ -1270,15 +1270,15 @@ export const texts = {
     count: "6",
   }),
 
-  // 最初から入っているエフェクト（仕様書 3 章 Y8）。キーの後ろは約束の EffectKind。
+  // Built-in effects (spec 3 (Y8)). The part after the key prefix is EffectKind of the protocol.
   "effect.eq4": e("EQ 4 バンド", "spec:3"),
   "effect.compressor": e("コンプレッサー", "spec:3"),
   "effect.reverb": e("リバーブ", "spec:3"),
   "effect.delay": e("ディレイ", "spec:3"),
   "effect.chorus": e("コーラス", "spec:3"),
   "effect.limiter": e("リミッター", "spec:3"),
-  // パラメータの名前。キーは param.<EffectKind>.<EFFECT_PARAMS の id>。リバーブとディレイは仕様書 3 章、
-  // ほかの 4 つは docs/architecture.md 19-3 の表（ヤチヨさんの決め）。
+  // Parameter names. The key is param.<EffectKind>.<EFFECT_PARAMS id>. Reverb and delay are from spec 3,
+  // the other 4 from the table in docs/architecture.md 19-3 (the owner's decision).
   "param.reverb.decay": e("響きの長さ", "spec:3"),
   "param.reverb.size": e("部屋の大きさ", "spec:3"),
   "param.reverb.preDelay": e("プリディレイ", "spec:3"),
@@ -1286,7 +1286,7 @@ export const texts = {
   "param.reverb.lowCut": e("低い音を落とす", "spec:3"),
   "param.reverb.width": e("広がり", "spec:3"),
   "param.reverb.mix": e("ミックス", "spec:3"),
-  // 「間隔」は 1 行。「テンポに合わせる」がオンなら段階（intervalStep）、オフならミリ秒（intervalMs）。
+  // 「間隔」 is one row. With 「テンポに合わせる」 on, it is a step (intervalStep); off, milliseconds (intervalMs).
   "param.delay.intervalStep": e("間隔", "spec:3"),
   "param.delay.intervalMs": e("間隔", "spec:3"),
   "param.delay.sync": e("テンポに合わせる", "spec:3"),
@@ -1295,13 +1295,13 @@ export const texts = {
   "param.delay.lowCut": e("低い音を落とす", "spec:3"),
   "param.delay.pingPong": e("左右にゆれる", "spec:3"),
   "param.delay.mix": e("ミックス", "spec:3"),
-  // 「間隔」の段階。キーの後ろは EFFECT_PARAMS の steps。
+  // Steps of 「間隔」. The part after the key prefix is steps of EFFECT_PARAMS.
   "param.delay.step.quarter": e("1/4", "spec:3"),
   "param.delay.step.eighthDotted": e("1/8 付点", "spec:3"),
   "param.delay.step.eighth": e("1/8", "spec:3"),
   "param.delay.step.eighthTriplet": e("1/8 三連符", "spec:3"),
   "param.delay.step.sixteenth": e("1/16", "spec:3"),
-  // EQ の見出し（EFFECT_PARAMS の group）と、その下の行。
+  // EQ headings (group of EFFECT_PARAMS) and the rows under them.
   "param.eq4.group.low": e("低い音", "user:2026-11-18"),
   "param.eq4.group.lowMid": e("中の低い音", "user:2026-11-18"),
   "param.eq4.group.highMid": e("中の高い音", "user:2026-11-18"),
@@ -1328,7 +1328,7 @@ export const texts = {
   "param.limiter.ceiling": e("上限", "user:2026-11-18"),
   "param.limiter.gain": e("持ち上げ", "user:2026-11-18"),
   "param.limiter.release": e("もどるまで", "user:2026-11-18"),
-  // 値の書きかた（数と単位。仕様書 3 章「パラメータの名前の決まり」の例）。キーの後ろは EFFECT_PARAMS の unit。
+  // How values are written (number and unit; the examples in the spec 3 rule on parameter names). The part after the key prefix is unit of EFFECT_PARAMS.
   "param.value.s": e("{value} s", "spec:3", { value: "2.40" }),
   "param.value.ms": e("{value} ms", "spec:3", { value: "20" }),
   "param.value.db": e("{value} dB", "spec:3", { value: "−6.0" }),
@@ -1339,9 +1339,9 @@ export const texts = {
   "param.on": e("オン", "mock:R6-Delay"),
   "param.off": e("オフ", "mock:R6-Delay"),
 
-  // パラメータの欄（最初から入っているエフェクト）
+  // Params panel (built-in effects)
   "params.builtin": e("最初から入っている", "mock:F4-Mixer"),
-  // 最初から入っている音色と SF2 の音色を左で押したとき（仕様書 3 章 92-1 ・ 19-A）。
+  // When a built-in sound or an SF2 sound is pressed on the left (spec 3 (92-1, 19-A)).
   "params.noSoundParams": e("この音色には、動かせるパラメータがありません。", "spec:3"),
   "params.noSoundParamsHint": e("音量とパンはミキサーで、音色を変えるには入れかえます。", "spec:3"),
   "msg.noSoundParams": s6("No parameters to move", "{name}には、動かせるパラメータがありません", { name: "グランドピアノ" }),
@@ -1367,7 +1367,7 @@ export const texts = {
     { strip: "A リバーブ", param: "響きの長さ" },
   ),
 
-  // ミキサー
+  // Mixer
   "mixer.flow": e(
     "音は上から下へ流れます: 音源 → インサート → センド → パン → フェーダー → マスター",
     "mock:F4-Mixer",
@@ -1396,7 +1396,7 @@ export const texts = {
   "mixer.output": e("出口 ・ {name}", "mock:F4-Mixer", { name: "ヘッドホン" }),
   "mixer.db": e("dB", "mock:F4-Mixer"),
 
-  // アレンジ
+  // Arrange
   "arrange.title": e("アレンジ", "mock:F-Empty"),
   "arrange.grid": e("グリッド", "mock:F-Empty"),
   "arrange.marker": e("マーカー", "mock:F-Empty"),
@@ -1408,11 +1408,11 @@ export const texts = {
   "arrange.muteShort": e("M", "mock:F-Empty"),
   "arrange.soloShort": e("S", "mock:F-Empty"),
   "arrange.armShort": e("●", "mock:F-Empty"),
-  // 見出しの「帯」のボタン（仕様書 2 章）と、その一覧をひらいている間の状態行（モック F8-FirstLane）。
+  // The 「帯」 button in the heading (spec 2) and the status line while its list is open (mock F8-FirstLane).
   "arrange.laneShort": e("帯", "spec:2"),
   "status.laneAddOpen": e("{track} にオートメーションの帯を足します ・ えらぶと、帯がひらきます", "mock:F8-FirstLane", { track: "2 ベース" }),
   "arrange.addTrackKinds": e("音源 ・ 歌", "mock:F-Empty"),
-  // 入れかえのためし弾きの間、トラックの見出しの音源の名前。
+  // The instrument name in the track head while auditioning a replacement.
   "arrange.instrumentAuditioned": e(
     "{instrument}（ためし弾き）",
     "mock:F4-ShelfReplace",
@@ -1454,7 +1454,7 @@ export const texts = {
   "arrange.takePrev": e("前のテイク", "mock:F-Takes"),
   "arrange.takeNext": e("次のテイク", "mock:F-Takes"),
   "arrange.takeKey": e("T", "mock:F-Takes"),
-  // クリップのドラッグの「その場の読み値」（仕様書 2 章）。
+  // The live reading while dragging a clip (spec 2).
   "arrange.readMove": e("{position}（{delta} 小節）", "mock:R3-Arrange", {
     position: "6.1.000",
     delta: "+1",
@@ -1471,7 +1471,7 @@ export const texts = {
     { recordKey: "R", playKey: "Space" },
   ),
 
-  // 出口えらび（流れ 2）と、出口・入口の行
+  // Output chooser (flow 2) and the output and input rows
   "connect.changeLater": e(
     "あとから「音の設定」で変えられます",
     "mock:F-Connect2",
@@ -1525,7 +1525,7 @@ export const texts = {
   ),
   "friendly.keyboard": e("この鍵盤", "mock:F-Settings"),
 
-  // 帯札の行と、縦の見出し
+  // Band tab row and vertical headings
   "band.arrange": e("アレンジ", "mock:Main"),
   "band.trackCount": e("トラック {count}", "mock:Main", { count: "5" }),
   "band.pianoRoll": e("ピアノロール", "mock:Main"),
@@ -1533,7 +1533,7 @@ export const texts = {
   "band.mixer": e("ミキサー", "mock:Main"),
   "band.masterDb": e("マスター {db}", "mock:Main", { db: "0.0 dB" }),
   "band.history": e("取り消しの履歴", "mock:Main"),
-  // 仕様書 3 章の帯の表の「12 / 14」の形を、取り消してあってもなくても使う（モック Main の「14 手」は使わない。ヤチヨさんの決め 2026-11-15）。
+  // The 「12 / 14」 form from the band table in spec 3 is used whether or not steps are undone (not 「14 手」 of mock Main; the owner's decision).
   "band.stepCount": e("{undo} / {total}", "spec:3", {
     undo: "12",
     total: "14",
@@ -1546,7 +1546,7 @@ export const texts = {
   ),
   "band.params": e("パラメータ", "mock:F-ShelfArrange"),
 
-  // 状態行
+  // Status line
   "status.stopped": s6("Status line labels", "■ 停止中", undefined, "quoted"),
   "status.playing": s6("Status line labels", "▶ 再生中", undefined, "quoted"),
   "status.recording": s6("Status line labels", "● 録音中", undefined, "quoted"),
@@ -1557,13 +1557,13 @@ export const texts = {
     "quoted",
   ),
   "status.auditioning": e("♪ ためし弾き中", "mock:F4-ShelfAudition"),
-  // ● から別のトラックを選んだとき。
+  // When another track is chosen with ●.
   "status.armMoved": e(
     "{recordKey} を押すと {track} に録ります",
     "mock:R7-Arrange6",
     { recordKey: "R", track: "2 ベース" },
   ),
-  // 止まっているときの左の文。ある物だけを「 ・ 」でつなぐ。両方あるときは status.loopNoSelection。
+  // The left text when stopped. Only the parts present, joined with 「 ・ 」. With both, status.loopNoSelection.
   "status.loopNoSelection": s6(
     "Left of the status line while stopped",
     "ループ {from}–{to} ・ 選択なし",
@@ -1572,7 +1572,7 @@ export const texts = {
   ),
   "status.loop": e("ループ {from}–{to}", "mock:Main", { from: "5", to: "9" }),
   "status.noSelection": e("選択なし", "mock:Main"),
-  // ミュートしたトラック。2 本以上は名前を「 ・ 」でならべる。
+  // Muted tracks. With two or more, the names are listed with 「 ・ 」.
   "status.muted": s6(
     "Muted",
     "{tracks} はミュート",
@@ -1585,13 +1585,13 @@ export const texts = {
     { tracks: "4 パッド ・ 5 ベース" },
     "quoted",
   ),
-  // 棚をひらいた時と、見出しをひらく ・ たたむ時（仕様書 6 章「棚をひらいている（見出し）」）。groups はひらいている見出し。
-  // 2 つ ・ 3 つ（・ 4 つ）は status.shelfGroupsLast（前は LIST_COMMA でならべる）、5 つ以上は status.shelfGroupsMore。
+  // When the shelf opens and when a heading opens or folds (spec 6 「棚をひらいている（見出し）」). groups are the open headings.
+  // With 2, 3 (or 4) it is status.shelfGroupsLast (the earlier ones joined with LIST_COMMA); with 5 or more, status.shelfGroupsMore.
   "status.shelfOpen": s6("Shelf open (headings)", "音色 {count} ・ {groups} をひらいています", { count: "31", groups: "ピアノ ・ 鍵盤 と ギター" }, "part"),
   "status.shelfCount": s6("Shelf open (headings)", "音色 {count}", { count: "31" }, "part"),
   "status.shelfGroupsLast": s6("Shelf open (headings)", "{first} と {last}", { first: "ピアノ ・ 鍵盤、ギター", last: "ベース" }, "part"),
   "status.shelfGroupsMore": s6("Shelf open (headings)", "{first} ほか {count} つ", { first: "ピアノ ・ 鍵盤", count: "4" }, "part"),
-  // 6 章「棚をひらいている（見出し）」の出る場所の列（エフェクトの一覧）。
+  // The 「出る場所」 column of spec 6 「棚をひらいている（見出し）」 (the effect list).
   "status.shelfEffectsOpen": e("エフェクト {count} ・ {groups} をひらいています", "spec:6", { count: "512", groups: "リバーブ" }),
   "status.output": e("出口: {output}", "mock:Main", { output: "ヘッドホン" }),
   "status.outputNone": e("出口: まだ", "spec:3"),
@@ -1619,7 +1619,7 @@ export const texts = {
     "mock:F-Empty",
     { tempo: "96.00", signature: "4/4", track: "1 ピアノ" },
   ),
-  // 録音待機のトラックがないとき（track が null）は、上の 2 つの文の前の部分だけ。
+  // With no armed track (track is null), only the first parts of the two texts above.
   "status.outputChosenOnly": e(
     "出口を{output}にしました。",
     "mock:F-Connect3",
@@ -1632,7 +1632,7 @@ export const texts = {
   ),
   "status.settingsOpen": e("音の設定をひらいています", "mock:F-Settings"),
 
-  // 音の設定
+  // Sound settings
   "settings.title": e("音の出口と入口", "mock:F-Settings"),
   "settings.close": e("閉じる", "mock:F-Settings"),
   "settings.outputs": e("音の出口", "mock:F-Settings"),
@@ -1658,7 +1658,7 @@ export const texts = {
   "settings.ok": e("これで決まり", "mock:F-Settings"),
   "settings.sampleRate": e("サンプルレート", "mock:F-SettingsAdvFixed"),
 
-  // ピアノロールのまわり（第 3 回）: アレンジの横の拡大、ノートの一覧、選んだノート、状態行
+  // Around the piano roll: horizontal zoom of the arrange, note list, selected notes, status line
   "zoom.out": e("横に縮小", "mock:R3-Arrange"),
   "zoom.in": e("横に拡大", "mock:R3-Arrange"),
   "zoom.outMark": e("−", "mock:R3-Arrange"),
@@ -1714,7 +1714,7 @@ export const texts = {
   "scale.minor": e("マイナー", "user:2026-11-15"),
   "scale.kind": e("種類", "user:2026-11-15"),
   "scale.root": e("主音", "user:2026-11-15"),
-  // 状態行。選んだノートは、数と最初の 4 つの音名（5 つ以上は「…」をそえる）。クオンタイズしたテイクなら、うしろに「 ・ クオンタイズ済み…」。
+  // Status line. Selected notes: the count and the first 4 note names (「…」 added for 5 or more). For a quantized take, 「 ・ クオンタイズ済み…」 after it.
   "status.notesSelected": s6(
     "Notes selected",
     "選択 {count} ノート ・ {keys}",
@@ -1731,7 +1731,7 @@ export const texts = {
     "クオンタイズ済み（もとの位置へ戻せます）",
     "mock:A-PianoRoll",
   ),
-  // ピアノロールをひらいて再生しているとき。テイクは arrange.takeSwitch。鳴っている音がなければ、その部分を出さない。
+  // While playing with the piano roll open. The take is arrange.takeSwitch. With no sounding notes, that part is not shown.
   "status.pianoRollClip": s6(
     "Playing, piano roll",
     "{track} ・ {clip}",
@@ -1744,7 +1744,7 @@ export const texts = {
     { keys: "C3 E3 G3 C4" },
     "part",
   ),
-  // ピアノロールをひらいて録音しているとき。押している鍵がなければ「 ・ 押している音 …」を出さない。
+  // While recording with the piano roll open. With no held keys, 「 ・ 押している音 …」 is not shown.
   "msg.recordingPianoRoll": s6(
     "Recording, piano roll",
     "{track} へ録音 ・ テイク {take}",
@@ -1757,7 +1757,7 @@ export const texts = {
     { keys: "C3 E3 G3 C4" },
     "part",
   ),
-  // クリップがない所でピアノロールをひらいているとき（止まっているときの左）。
+  // When the piano roll is open where there is no clip (the left side when stopped).
   "status.noClip": e("{track} ・ クリップなし", "mock:F-PREmpty", {
     track: "1 ピアノ",
   }),
@@ -1766,7 +1766,7 @@ export const texts = {
     "{key} は {scale}の外の音です（スケール固定 ・ オン）",
     { key: "D#", scale: "C メジャー" },
   ),
-  // ピアノロールの帯（第 3 回）: 道具の列、左右の欄の見出し、ベロシティと CC の札、その場の読み値。
+  // The piano roll band: toolbar, headings of the left and right panels, velocity and CC tags, the live reading.
   "pr.clip": e(
     "{number} {track} ・ {clip} ・ 小節 {bars} ・ ノート {count}",
     "mock:F-PRPlay",
@@ -1794,7 +1794,7 @@ export const texts = {
     number: "1",
     track: "ピアノ",
   }),
-  // クリップがない所の案内（ノートの場所の左上）。{key} は書く道具のキー（key.toolDraw）。
+  // The hint where there is no clip (top left of the note area). {key} is the key of the draw tool (key.toolDraw).
   "pr.emptyTitle": s6(
     "Piano roll where there is no clip",
     "ここにはクリップがありません。",
@@ -1892,9 +1892,9 @@ export const texts = {
     "quoted",
   ),
   "pr.switchOn": s6("Reading of an on/off CC", "踏む", undefined, "part"),
-  // 「そのほかの CC」の一覧の行と、えらんだ番号の帯の名前。
+  // Rows of the 「そのほかの CC」 list, and the band name for the chosen number.
   "pr.ccNumber": e("CC {number}", "user:2026-11-15", { number: "7" }),
-  // 上のメニューの行と右クリックの一覧（ヤチヨさんの決め 2026-11-18。docs/history/design-notes.ja.md B-59 ・ 60）。右クリックの一覧も同じ行の名前を使う。
+  // Menu bar and context menus (the owner's decision; docs/history/design-notes.ja.md B-59, 60). Context menus use the same row names.
   "menu.file": e("ファイル", "user:2026-11-18"),
   "menu.edit": e("編集", "user:2026-11-18"),
   "menu.view": e("表示", "user:2026-11-18"),
@@ -1955,23 +1955,22 @@ export const texts = {
   "menu.addMarkerHere": e("ここにマーカーを足す", "spec:3"),
   "menu.splitClip": e("クリップを切る", "spec:3"),
   "menu.joinClips": e("クリップをつなげる", "spec:3"),
-  // ベロシティ固定（B-66）とベロシティをまとめて変える（B-67）。
+  // Velocity lock (B-66) and changing velocities together (B-67).
   "input.velocityFixed": e("固定", "user:2026-11-18"),
   "inspector.matchVelocity": e("そろえる", "user:2026-11-18"),
 
-  // ---- 区切り1 で画面の係が足す文は、ここから下に（ピアノロールの係はこの段、アレンジと再生まわりの係は次の段）。
-  // [ピアノロール]
-  // ひらいた「CC の一覧」の列の見出し（位置は note.position）。
+  // [Piano roll]
+  // Column headings of the opened 「CC の一覧」 (the position is note.position).
   "ccList.value": e("値", "mock:R5-Lists"),
-  // [アレンジ ・ 再生まわり ・ 入力計]
-  // 再生の位置の欄に読めない物を打った（デザインに戻した事 61）。再生の位置には上のはしがないので、範囲の文の形を使わない。
+  // [Arrange, transport, input meter]
+  // Something unreadable was typed in the play position field (design-notes item 61). The play position has no upper end, so the range text form is not used.
   "msg.playPositionRejected": s6(
     "Not readable as a position",
     "位置は「5」「5.2」「5.2.240」の形で打ちます。もとの {kept} のままです。",
     { kept: "1. 1. 000" },
   ),
 
-  // [第 6 回 ・ テンポと拍子の変更、マーカー]（仕様書 3 章 Y17 ・ Y18、6 章。仮の文は docs/history/design-notes.ja.md B-92）
+  // [Tempo and time signature changes, markers] (spec 3 (Y17, Y18), spec 6. Provisional text: docs/history/design-notes.ja.md B-92)
   "msg.tempoRampSelected": s6(
     "Tempo ramp chosen",
     "{place}の変更をえらんでいます ・ {tempo} から {toPlace}の {toTempo} へ、だんだん{direction}",
@@ -1985,13 +1984,13 @@ export const texts = {
   "timeline.placeHead": e("曲の頭", "builder:2026-11-20"),
   "msg.tempoPointSelected": e("{place}の変更をえらんでいます ・ {tempo}", "builder:2026-11-20", { place: "5 小節目", tempo: "120.00" }),
   "msg.meterChangeSelected": e("{place}の変更をえらんでいます ・ {signature}", "builder:2026-11-20", { place: "9 小節目", signature: "3/4" }),
-  // 曲の頭の点と旗は「変更」と呼ばない（仕様書 3 章 92-2）。
+  // The point and flag at the start of the song are not called a 「変更」 (spec 3 (92-2)).
   "msg.headTempoSelected": s6("Tempo at the song start chosen", "曲の頭のテンポをえらんでいます ・ {tempo}", { tempo: "96.00" }, "part"),
   "msg.headMeterSelected": s6("Tempo at the song start chosen", "曲の頭の拍子をえらんでいます ・ {signature}", { signature: "4/4" }, "quoted"),
   "msg.tempoPointSet": e("{place}のテンポを {tempo} にしました。", "builder:2026-11-20", { place: "5 小節目", tempo: "120.00" }),
   "msg.meterChangeSet": e("{place}の拍子を {signature} にしました。", "builder:2026-11-20", { place: "9 小節目", signature: "3/4" }),
   "marker.newName": e("マーカー {count}", "spec:3", { count: "4" }),
-  // 帯の見出し（ひらいたとき。変更が 0 件なら「ほか」をつけない）、だんだんの線の上の文字、右クリックの行。
+  // Band heading (when open; with 0 changes, no 「ほか」), the text above a ramp line, context menu rows.
   "timeline.tempoSummary": e("テンポ {tempo} ほか {count}", "spec:3", { tempo: "96.00", count: "3" }),
   "timeline.tempoOnly": e("テンポ {tempo}", "spec:3", { tempo: "96.00" }),
   "timeline.meterSummary": e("拍子 {signature} ほか {count}", "spec:3", { signature: "4/4", count: "2" }),
@@ -2000,11 +1999,11 @@ export const texts = {
   "menu.tempoRamp": e("次の点まで、だんだん", "spec:3"),
   "menu.loopFromMarker": e("ここから次のマーカーまでをループに", "spec:3"),
   "menu.renameMarker": e("名前を変える", "spec:3"),
-  // 拍子の旗の右クリック（仕様書 3 章 92-17）。
+  // Context menu of a time signature flag (spec 3 (92-17)).
   "menu.typeMeter": e("拍子を打ちこむ…", "spec:3"),
 
-  // [第 6 回 ・ オートメーション、取り消しの履歴]（仕様書 3 章 Y16 ・ Y19、6 章。仮の文は docs/history/design-notes.ja.md B-92）
-  // 状態行。（何を）がない手は、かっこごと出さない（Bare）。
+  // [Automation, undo history] (spec 3 (Y16, Y19), spec 6. Provisional text: docs/history/design-notes.ja.md B-92)
+  // Status line. For a step with no 「（何を）」, the brackets are left out too (Bare).
   "msg.undone": s6("Undone", "「{name}」を取り消しました（{what}）。やりなおすには {redoKey}", {
     name: "ノートを動かす",
     what: "3 ノート",
@@ -2014,7 +2013,7 @@ export const texts = {
   "msg.redone": s6("Redone", "「{name}」をやりなおしました（{what}）。", { name: "ノートを動かす", what: "3 ノート" }),
   "msg.redoneBare": e("「{name}」をやりなおしました。", "builder:2026-11-20", { name: "ミュート" }),
   "msg.historyJumped": s6("Went back in the history", "{index} 手目「{name}」まで戻しました（{steps} 手）。", { index: "11", name: "マーカーを足す", steps: "5" }),
-  // いまより上の行へとんだとき（仕様書 3 章 Y19「そこまでやりなおす」。文は 6 章にない）。
+  // When jumping to a row above the current one (spec 3 (Y19) 「そこまでやりなおす」; spec 6 has no text for it).
   "msg.historyJumpedForward": e("{index} 手目「{name}」までやりなおしました（{steps} 手）。", "builder:2026-11-20", {
     index: "14",
     name: "クオンタイズ",
@@ -2036,14 +2035,14 @@ export const texts = {
     target: "音量",
   }),
   "msg.automationMoving": e("{tracks} の音量は、オートメーションで動いています", "mock:F6-MixerAuto", { tracks: "1 ピアノ と 4 パッド" }),
-  // 帯が動かす物の名前（帯の見出し「オートメーション ・ （何を）」、状態行、履歴の行）。パンは mixer.pan。
+  // Names of what a band moves (band heading 「オートメーション ・ （何を）」, status line, history rows). Pan is mixer.pan.
   "lane.volume": s6("Writing automation", "音量", undefined, "part"),
   "lane.mute": e("ミュート", "spec:3"),
   "lane.send": e("センド {bus}", "builder:2026-11-20", { bus: "A" }),
   "lane.param": e("{effect}の「{param}」", "builder:2026-11-20", { effect: "コンプレッサー", param: "しきい値" }),
-  // プラグインがパラメータの名前を言ってこないとき。
+  // When the plugin does not give a parameter name.
   "lane.pluginParam": e("{plugin}のパラメータ", "builder:2026-11-20", { plugin: "Surge XT " }),
-  // アレンジの帯の見出し（2 段）と、読み値（仕様書 2 章 ・ 3 章 Y16）。
+  // Arrange band heading (2 lines) and the reading (spec 2, spec 3 (Y16)).
   "lane.title": e("オートメーション ・ {target}", "mock:F6-AutoRec", { target: "音量" }),
   "lane.write": e("● 書く", "spec:2"),
   "lane.writing": e("書いています", "mock:F6-AutoRec"),
@@ -2052,18 +2051,18 @@ export const texts = {
   "lane.restingBare": e("休み", "spec:2"),
   "lane.now": e("いま {value} ・ 点 {count}", "mock:F6-ParamMany", { value: "523.25 Hz", count: "4" }),
   "lane.count": e("点 {count}", "mock:F6-ParamMany", { count: "4" }),
-  // 見出しの下の行と、押すとひらく一覧の最後の行（仕様書 3 章 92-5 ・ 20-A）。
+  // The row under the heading and the last row of the list it opens (spec 3 (92-5, 20-A)).
   "lane.add": e("＋ 帯を足す ▾", "spec:3"),
   "lane.addEffectParams": e("エフェクトのパラメータ…", "spec:3"),
   "lane.delete": e("帯を消す", "spec:3"),
-  // 帯の右上と右下（仕様書 3 章 92-6 ・ 21-B）。
+  // Top right and bottom right of the band (spec 3 (92-6, 21-B)).
   "lane.rangeTop": e("上 {value}", "spec:3", { value: "−3.0 dB" }),
   "lane.rangeBottom": e("下 {value}", "spec:3", { value: "−9.0 dB" }),
   "lane.readAdd": e("{position} ・ {value}", "mock:R10-AutoEdit", { position: "5. 3. 000", value: "−8.4 dB" }),
   "lane.readMove": e("{delta} ・ {from} → {to}", "mock:R10-AutoEdit", { delta: "+0. 1. 000", from: "−2.1", to: "−0.6 dB" }),
-  // ミキサーのフェーダーの値の下（仕様書 2 章「オートメーションで動くつまみ」）。休みは lane.restingBare と lane.restore。
+  // Under the mixer fader value (spec 2 "Handle moved by automation"). Resting is lane.restingBare and lane.restore.
   "mixer.automation": e("オートメーション", "spec:2"),
-  // 履歴の行「「（手の名前）」・ （何を）」と、（何を）の形。手の名前は下の stepNames。
+  // The history row 「「（手の名前）」・ （何を）」 and the forms of 「（何を）」. Step names are in stepNames below.
   "history.row": e("「{name}」・ {what}", "mock:R10-History", { name: "ノートを動かす", what: "3 ノート" }),
   "history.rowBare": e("「{name}」", "builder:2026-11-20", { name: "ミュート" }),
   "history.notes": s6("Undone", "{count} ノート", { count: "3" }, "part"),
@@ -2081,23 +2080,23 @@ export const texts = {
   "history.lanePoints": e("{target} ・ {count} 点", "spec:3", { target: "音量", count: "3" }),
   "history.muteOn": e("{strip} ・ オン", "spec:3", { strip: "4 パッド" }),
   "history.missing": e("トラック {tracks} ・ インサート {inserts}", "builder:2026-11-20", { tracks: "2", inserts: "1" }),
-  // 約束 23 で出せるようになった（何を）（仕様書 3 章 92-3）。1 ノートは音名だけ（「C4」）。
+  // 「（何を）」 that protocol 23 made possible (spec 3 (92-3)). One note is the note name only (「C4」).
   "history.quantized": e("{grid} ・ {count} ノート", "spec:3", { grid: "1/16", count: "12" }),
   "history.velocity": e("{count} ノート ・ {from} → {to}", "spec:3", { count: "3", from: "96", to: "110" }),
   "history.controlPoints": e("{control} ・ {count} 点", "spec:3", { control: "サステイン", count: "4" }),
   "history.color": e("{track} ・ 色 {color}", "spec:3", { track: "4 パッド", color: "3" }),
   "history.soundReplaced": e("{track} ・ {from} → {to}", "spec:3", { track: "1 ピアノ", from: "グランドピアノ", to: "オルガン" }),
-  // 歌のトラックの入口の一覧（仕様書 3 章「歌のトラックの見出し」）。
+  // Input list of a vocal track (spec 3, the vocal track head).
   "vocal.input.mono1": e("入口 1 ・ モノ", "spec:3"),
   "vocal.input.mono2": e("入口 2 ・ モノ", "spec:3"),
   "vocal.input.stereo12": e("入口 1 ・ 2 ・ ステレオ", "spec:3"),
-  // プラグインがパラメータの名前を言ってこなかった手の名前。
+  // Step name when the plugin did not give a parameter name.
   "history.pluginParam": e("{plugin}のパラメータを変える", "builder:2026-11-20", { plugin: "Surge XT " }),
-  // 行の右の「どこで」。ほかは band.arrange ・ band.pianoRoll ・ band.mixer と track.label。
-  // 窓の手の「（何を）」（仕様書 3 章 94-6）。右の欄は history.placePluginWindow のまま（docs/history/design-notes.ja.md B-95-3）。
+  // 「どこで」 on the right of the row. Others are band.arrange, band.pianoRoll, band.mixer and track.label.
+  // 「（何を）」 of a window step (spec 3 (94-6)). The right column stays history.placePluginWindow (docs/history/design-notes.ja.md B-95-3).
   "history.pluginWindowWhat": e("プラグインの窓", "spec:3"),
   "history.placePluginWindow": e("{strip} ・ プラグインの窓", "spec:6", { strip: "5 Surge XT" }),
-  // 帯の見出しの行（仕様書 3 章 Y19 ・ 92-9、6 章）。
+  // Band heading row (spec 3 (Y19, 92-9), spec 6).
   "history.head": e("{total} 手 ・ いまは {current} 手目。上の {redo} 手は取り消してあり、やりなおせます", "mock:F-History", {
     total: "14",
     current: "12",
@@ -2114,14 +2113,14 @@ export const texts = {
   "history.headEmpty": s6("History heading: no steps", "まだ手がありません ・ 何かすると、ここに 1 手ずつならびます"),
   "history.undo": e("取り消す", "mock:F-History"),
   "history.redo": e("やりなおす", "mock:F-History"),
-  // 行の右（仕様書 2 章「履歴の行 ・ 乗った ・ えらんだ」、3 章 Y19）。ボタンの右に key.enter。
+  // The right of the row (spec 2 "History row: hover, chosen", spec 3 (Y19)). key.enter to the right of the button.
   "history.current": e("いまここ", "mock:F-History"),
   "history.redoable": e("やりなおせます", "mock:F-History"),
   "history.jumpHere": e("ここまで戻す", "spec:3"),
-  // 帯のいちばん下の行。見えている行より前の手があるとき。
+  // The bottom row of the band, when there are steps before the visible rows.
   "history.more": e("… {index} 手目より前は、下へスクロール", "mock:F-History", { index: "6" }),
 
-  // [第 7 回 ・ 歌のトラック、音のファイル、遅れ、書き出し]（仕様書 3 章 93 ・ 6 章）。区切り2〜5 で使う。
+  // [Vocal tracks, audio files, latency, export] (spec 3 (93), spec 6).
   "msg.vocalTrackAdded": s6(
     "Vocal track added",
     "{track} を足しました ・ {input} から録ります ・ 歌のトラックの ● は、選んでいなくても自分でつけます",
@@ -2178,9 +2177,9 @@ export const texts = {
     "音のファイルを {count} つ持ってきています ・ 左に落とすと別々のトラック、右に落とすと 1 本にならべる",
     { count: "8" },
   ),
-  // 音のファイルを 1 つだけ持ってきている間（6 章「音のファイルを 1 つ持ってきている」の出る所の列にある状態行の文）。
+  // While one audio file is being dragged in (the status line text in the 「出る所」 column of spec 6 「音のファイルを 1 つ持ってきている」).
   "msg.audioDraggingOne": e("音のファイルを持ってきています ・ 落とすと、枠の所に入れます", "spec:6"),
-  // 「さがす」（「この音のテンポ」）の答え。見つけた文は「…くらいです」に、入れたか同じかの終わりをつなぐ。
+  // The answer of 「さがす」 (「この音のテンポ」). The found text 「…くらいです」 is joined with an ending for put in or the same.
   "msg.sourceTempoFound": s6("Searched for the tempo of this sound", "この音のテンポは {bpm} くらいです", { bpm: "120.00" }, "part"),
   "msg.sourceTempoSet": s6("Searched for the tempo of this sound", "（さがした数を入れました）。", undefined, "part"),
   "msg.sourceTempoSame": s6("Searched for the tempo of this sound", "（いまの数と同じです）。", undefined, "part"),
@@ -2189,7 +2188,7 @@ export const texts = {
     sf2: "1",
     audio: "3",
   }),
-  // 持ってきている間の、分かれた箱（仕様書 2 章、3 章 30-C、モック F7-AudioDrop）と、入る所の枠の名前。
+  // The split box while dragging in (spec 2, spec 3 (30-C), mock F7-AudioDrop) and the names of the drop frames.
   "drop.separate": e("別々のトラックに", "spec:3"),
   "drop.separateSay": e("{files} つのファイルを {tracks} 本の歌のトラックにして、落とした位置から入れます。", "mock:F7-AudioDrop", {
     files: "8",
@@ -2198,9 +2197,9 @@ export const texts = {
   "drop.inRow": e("1 本にならべる", "spec:3"),
   "drop.inRowSay": e("落とした所のトラックに、順にうしろへ。", "mock:F7-AudioDrop"),
   "drop.frameMore": e("{file} ほか {more}", "mock:F7-AudioDrop", { file: "ドラム キック.wav", more: "7" }),
-  // 歌のクリップの中の文（仕様書 3 章「音のファイルが見つからないとき」）。
+  // Text inside an audio clip (spec 3, when the audio file is not found).
   "clip.missing": e("音のファイルが見つかりません", "spec:3"),
-  // 選んだクリップの欄（仕様書 3 章 93-4 ・ Y22、モック F7-AudioEdit ・ F7-AudioMissing）。
+  // The selected clip panel (spec 3 (93-4, Y22), mock F7-AudioEdit, F7-AudioMissing).
   "clipParams.selected": e("選んだクリップ", "spec:3"),
   "clipParams.rate": e("{rate} Hz", "spec:3", { rate: "48000" }),
   "clipParams.rateResampled": e("{rate} Hz（曲に合わせて鳴らします）", "spec:3", { rate: "44100" }),
@@ -2218,14 +2217,14 @@ export const texts = {
   "clipParams.pitchValue": e("{semitones} 半音 {cents} セント", "mock:F7-AudioEdit", { semitones: "+0", cents: "0" }),
   "clipParams.keepFormant": e("声の感じを保つ", "spec:3"),
   "clipParams.findTempo": e("さがす", "spec:3"),
-  // 音を作っている間の、欄の上の進みの棒の行（仕様書 2 章「選んだクリップ」、モック F7-Stretch）。
+  // The progress bar row above the panel while the sound is being made (spec 2 "Selected clip", mock F7-Stretch).
   "clipParams.rendering": e("音を作っています", "mock:F7-Stretch"),
   "clipParams.renderingPercent": e("{percent} %", "mock:F7-Stretch", { percent: "34" }),
-  // 歌のクリップの、名前の右の印と、下の進み（仕様書 2 章「歌のクリップ」）。
+  // The mark right of the audio clip name, and the progress below (spec 2 "Audio clip").
   "clip.ratioMark": e("×{ratio}", "spec:2", { ratio: "1.25" }),
   "clip.pitchMarkCents": e("{semitones} ・ {cents}", "spec:3", { semitones: "−1", cents: "+30" }),
   "clip.rendering": e("音を作っています {percent} %", "spec:2", { percent: "34" }),
-  // 歌のクリップの右クリックの一覧の下の、あとの回の席（仕様書 3 章「音を作っている間」）。
+  // Places for later rounds under the audio clip context menu (spec 3, while the sound is being made).
   "menu.reverse": e("逆にする", "spec:3"),
   "menu.normalize": e("ノーマライズ", "spec:3"),
   "latency.measuring": s6("Measuring the latency", "測っています {done} / {total}", { done: "3", total: "5" }),
@@ -2254,7 +2253,7 @@ export const texts = {
   }),
   "msg.exportCanceled": s6("Export stopped", "書き出しをやめました。途中までのファイルは消しました。"),
 
-  // [第 7 回 区切り5 ・ 書き出し]（仕様書 3 章 34-B、モック F7-Export ・ F7-Exporting ・ F-Export）
+  // [Export] (spec 3 (34-B), mock F7-Export, F7-Exporting, F-Export)
   "export.title": e("書き出し", "mock:F7-Export"),
   "export.range": e("範囲", "mock:F7-Export"),
   "export.rangeSong": e("曲ぜんぶ", "mock:F7-Export"),
@@ -2280,18 +2279,18 @@ export const texts = {
     seconds: "10",
   }),
   "export.start": e("書き出す", "mock:F7-Export"),
-  // 止まっているプラグインがあるとき（仕様書 3 章「F-Export のまま残す」）。
+  // When there are stopped plugins (spec 3, "keep as in F-Export").
   "export.stoppedPlugins": e("止まっているプラグイン", "mock:F-Export"),
   "export.stoppedPlugin": e("{plugin} ・ {strip}", "mock:F-Export", { plugin: "Brick EQ", strip: "3 ドラム" }),
   "export.stoppedSkipped": e("この枠をとばした音で書き出します", "mock:F-Export"),
-  // 状態行の左の進み（仕様書 2 章「書き出しの進み」）。
+  // Progress on the left of the status line (spec 2 "Export progress").
   "export.running": e("書き出しています", "mock:F7-Exporting"),
   "export.runningPercent": e("{percent} %", "mock:F7-Exporting", { percent: "46" }),
   "export.runningRest": e("{file} ・ 残り 約 {left} ・ 弾けます（書き出しの音は聞こえません）", "mock:F7-Exporting", {
     file: "はじめての曲.wav",
     left: "40 秒",
   }),
-  // 仕様書 ・ モックにない所の仮の文（B-94-69〜）。
+  // Provisional text where the spec and mocks have none (B-94-69 and on).
   "export.checkFailedPlugin": e("{plugin} を書き出し用に読みこめませんでした", "builder:2026-11-21", { plugin: "Surge XT" }),
   "export.checkFailedWrite": e("作業の場所に書けませんでした", "builder:2026-11-21"),
   "export.spanSongNoTail": e("曲ぜんぶ ・ {start} 〜 {end}", "builder:2026-11-21", { start: "1. 1. 0000", end: "17. 1. 0000" }),
@@ -2308,7 +2307,7 @@ export const texts = {
   "export.detailsRealtime": e("・ 実時間", "builder:2026-11-21"),
   "export.leftSeconds": e("{seconds} 秒", "builder:2026-11-21", { seconds: "40" }),
   "export.leftMinutes": e("{minutes} 分", "builder:2026-11-21", { minutes: "2" }),
-  // 残りの時間がまだ分からない間（はじめの数ブロック）は、「残り 約 …」を外す（B-94-81）。
+  // While the time left is not known yet (the first few blocks), 「残り 約 …」 is left out (B-94-81).
   "export.runningRestUnknown": e("{file} ・ 弾けます（書き出しの音は聞こえません）", "builder:2026-11-21", { file: "はじめての曲.wav" }),
   "msg.exportFailedPlugin": e("書き出せませんでした。{plugin} が止まりました。途中までのファイルは消しました。", "builder:2026-11-21", {
     plugin: "Surge XT",
@@ -2316,32 +2315,32 @@ export const texts = {
   "msg.exportFailedWrite": e("書き出せませんでした。保存する所に書けません。", "builder:2026-11-21"),
   "msg.exportingRealtimeChosen": e("実時間で書き出しています（{length}）。", "builder:2026-11-21", { length: "3:02" }),
 
-  // [第 7 回 区切り2 ・ 歌のトラックの画面]（仕様書 2 章 ・ 3 章 23-A ・ 24-C ・ 31-C ・ 33-A、モック F7-*）
-  // トラックの一覧の下と、上のメニュー「トラック」。
+  // [Vocal track screens] (spec 2, spec 3 (23-A, 24-C, 31-C, 33-A), mock F7-*)
+  // Under the track list, and 「トラック」 in the menu bar.
   "arrange.addKeysTrack": e("＋ 鍵盤のトラック", "spec:3"),
   "arrange.addVocalTrack": e("＋ 歌のトラック", "spec:3"),
   "menu.addKeysTrack": e("鍵盤のトラックを足す…", "spec:3"),
   "menu.addVocalTrack": e("歌のトラックを足す", "spec:3"),
   "menu.importAudio": e("音のファイルを入れる…", "spec:3"),
-  // 歌のトラックの見出しの 2 段目。入口の名前は vocal.input.*。
+  // The second line of a vocal track head. Input names are vocal.input.*.
   "vocal.inputChoose": e("{input} ▾", "mock:F7-VocalRec", { input: "入口 1 ・ モノ" }),
   "vocal.noInput": e("入口なし ▾", "spec:3"),
   "vocal.monitor": e("モニター", "spec:3"),
-  // 状態行の「6 歌（入口 1）」の入口（入口 2 は 6 章「歌 2 本以上を録っている」）。
+  // The input in 「6 歌（入口 1）」 on the status line (input 2 is spec 6 「歌 2 本以上を録っている」).
   "vocal.inputShort.mono1": e("入口 1", "spec:6"),
   "vocal.inputShort.mono2": e("入口 2", "spec:6"),
   "vocal.inputShort.stereo12": e("入口 1 ・ 2", "spec:5"),
-  // 録っている歌のクリップの名前（モック F7-VocalRec の「歌 テイク 1」）。
+  // The name of an audio clip being recorded (「歌 テイク 1」 of mock F7-VocalRec).
   "arrange.recordingVocalClip": e("{track} テイク {take}", "mock:F7-VocalRec", { track: "歌", take: "1" }),
-  // 入力計の右（マイクの計）。目盛はモックの字。
+  // Right of the input meter (the microphone meter). The scale marks use the mock's text.
   "meter.monitorOn": e("モニター オン", "mock:F7-VocalRec"),
   "meter.monitorOff": e("モニター オフ", "mock:F7-VocalTrack"),
   "meter.micScaleLow": e("−60", "mock:F7-VocalTrack"),
   "meter.micScaleMid": e("−12", "mock:F7-VocalTrack"),
   "meter.micScaleTop": e("0", "mock:F7-VocalTrack"),
-  // 弾くと鳴る先がない（鍵盤のトラックが 1 本もない。B-94-1）。
+  // There is no play target (not a single keyboard track; B-94-1).
   "meter.playTargetNone": e("—", "spec:3"),
-  // 音の設定 ▸ くわしい設定（モック F7-SettingsAdv）。
+  // Sound settings ▸ advanced settings (mock F7-SettingsAdv).
   "settings.advTitle": e("音の設定", "mock:F7-SettingsAdv"),
   "settings.advBack": e("◂ 音の設定", "mock:F7-SettingsAdv"),
   "settings.input": e("入口", "mock:F7-SettingsAdv"),
@@ -2353,13 +2352,13 @@ export const texts = {
   "settings.bits": e("{bits} ビット", "mock:F7-SettingsAdv", { bits: "24" }),
   "settings.latencyAlign": e("遅れの合わせ", "mock:F7-SettingsAdv"),
   "settings.latencyReported": e("PC が言う数 ・ {ms} ms", "mock:F7-SettingsAdv", { ms: "8.0" }),
-  // 測った数を使っているとき（仕様書 3 章 33-A の「測った数」に、PC が言う数の形をならった）。
+  // When a measured number is used (the form of the number the PC gives, following 「測った数」 in spec 3 (33-A)).
   "settings.latencyMeasured": e("測った数 ・ {ms} ms", "builder:2026-11-21", { ms: "12.4" }),
   "settings.inputChoice": e("{channels}（{name}）", "mock:F7-SettingsAdv", { channels: "入口 1 ・ 2", name: "USB マイク" }),
   "button.measureLatency": e("遅れを測る…", "mock:F7-SettingsAdv"),
   "button.manualLatency": e("手で決める…", "mock:F7-SettingsAdv"),
   "button.openPlaces": e("ひらく…", "mock:F7-SettingsAdv"),
-  // 遅れを測る（モック F7-Latency）。
+  // Measuring latency (mock F7-Latency).
   "latency.title": e("遅れを測る", "mock:F7-Latency"),
   "latency.how": e(
     "ヘッドホンをマイクに近づけるか、出口と入口をケーブルでつなぎます。「測る」を押すと、カチッという音を {count} 回鳴らして、もどってくるまでの時間を測ります。",
@@ -2373,7 +2372,7 @@ export const texts = {
   "latency.quietHint": e("音が小さくて測れないときは、ヘッドホンの音量を上げてください。", "mock:F7-Latency"),
   "button.measure": e("測る", "mock:F7-Latency"),
 
-  // [第 8 回 ・ core から出す知らせと音の素材]（仕様書 6 章 第 12 版、モック F8-*）。約束の係（k8p）がこの下に足す。
+  // [Messages from the core, and the sound pack] (spec 6 version 12, mock F8-*)
   "latency.failedUnsteady": s6(
     "Latency cannot be measured: spread",
     "測るたびに数が大きくちがったので、決められませんでした。まわりの音を小さくして、もう一度測ってください。",
@@ -2407,7 +2406,7 @@ export const texts = {
     totalMb: "240",
   }),
   "msg.diskTooSlow": s6("Disk too slow", "音のファイルを読むのが間に合わず、歌が少し切れました（ディスクがいそがしかったため）。"),
-  // 音の素材（仕様書 2 章 ・ 3 章 43-B ・ 44-A ・ 45-A ・ 6 章、モック F8-Pack*）。案内の帯の 2 行は 6 章の文を分けた物。
+  // Sound pack (spec 2, spec 3 (43-B, 44-A, 45-A), spec 6, mock F8-Pack*). The two lines of the hint band split the spec 6 text.
   "pack.fetching": s6("Fetching the sound pack", "音の素材を取りにいっています", undefined, "part"),
   "pack.fetchingBytes": s6("Fetching the sound pack", "{percent} % ・ {done} / {total} MB", { percent: "38", done: "92", total: "240" }, "part"),
   "pack.fetchingLeft": s6("Fetching the sound pack", "のこり 約 {minutes} 分", { minutes: "2" }, "part"),
@@ -2428,7 +2427,7 @@ export const texts = {
   "button.packLater": e("あとで", "spec:3"),
   "pack.ask": e("音の素材（約 {mb} MB）を取りにいきます", "spec:3", { mb: "240" }),
   "pack.askDetail": e("グランドピアノなど {count} の音色 ・ 取っている間も弾けます", "spec:3", { count: "31" }),
-  // 幅 853 の窓で、聞く帯の小さい字が入りきらないとき。
+  // When the small text of the asking band does not fit in a window 853 wide.
   "pack.askDetailShort": e("取っている間も弾けます", "mock:R12-Fit"),
   "pack.soundReady": e("{instrument} が鳴るようになりました ・ のこりの音色を取っています", "spec:3", { instrument: "グランドピアノ" }),
   "pack.askingStatus": e("音の素材がまだありません ・ いまはサイン波で鳴ります", "mock:F8-PackAsk"),
@@ -2452,8 +2451,8 @@ export const texts = {
   "settings.aiLinkNote": e("オンの間だけ、この PC の中に口をひらきます。同じユーザーのアプリだけがつなげます。", "user:2026-11-23"),
   "settings.aiLinkCan": e("できること: 曲を読んで助言する ・ 頼まれたら書く（1 手ずつ取り消せます） ・ 書き出した音を調べる", "user:2026-11-23"),
 
-  // [メニュー ・ キー]
-  // メニューの行の右に書くキーの名前（仕様書 4 章の表）。Mod は key.ctrl か key.cmd に読みかえる。
+  // [Menus, keys]
+  // Key names written at the right of menu rows (the table in spec 4). Mod becomes key.ctrl or key.cmd.
   "key.shift": e("Shift", "spec:4"),
   "key.delete": e("Delete", "spec:4"),
   "key.cut": e("X", "spec:4"),
@@ -2470,11 +2469,11 @@ export const texts = {
   "key.join": e("J", "spec:4"),
   "key.mute": e("M", "spec:4"),
   "key.solo": e("S", "spec:4"),
-  // meloet を終わる Mod Q（4 章の表にはない。docs/history/design-notes.ja.md B-59）。
+  // Mod Q quits meloet (not in the spec 4 table; docs/history/design-notes.ja.md B-59).
   "key.quit": e("Q", "user:2026-11-18"),
 
-  // [第 4 回 区切り1 ・ トラックの見出しと棚の画面]
-  // 上のメニューの「トラック」と「ヘルプ」の行（仕様書 3 章の上のメニューの行）。右クリックの一覧も同じ名前。
+  // [Track heads and shelf screens]
+  // The 「トラック」 and 「ヘルプ」 rows of the menu bar (the menu bar of spec 3). Context menus use the same names.
   "menu.renameTrack": e("名前を変える", "spec:3"),
   "menu.trackColor": e("色", "spec:3"),
   "menu.moveTrackUp": e("上へ動かす", "spec:3"),
@@ -2482,12 +2481,12 @@ export const texts = {
   "menu.deleteTrack": e("トラックを消す", "spec:3"),
   "menu.help": e("ヘルプ", "spec:3"),
   "menu.about": e("meloet について", "spec:3"),
-  // 色の一覧の行（仕様書 2 章「「色 1」〜「色 5」」）。
+  // Rows of the color list (spec 2 「「色 1」〜「色 5」」).
   "menu.colorNumber": e("色 {number}", "spec:2", { number: "1" }),
   "key.renameTrack": e("F2", "spec:4"),
   "key.favorite": e("F", "spec:4"),
 
-  // [第 4 回 区切り2 ・ meloet について]（仕様書 3 章、モック R7-About ・ R7-AboutLicense）
+  // [About meloet] (spec 3, mock R7-About, R7-AboutLicense)
   "about.title": e("meloet について", "mock:R7-About"),
   "about.close": e("閉じる", "mock:R7-About"),
   "about.back": e("もどる", "mock:R7-AboutLicense"),
@@ -2521,8 +2520,8 @@ export const texts = {
   "about.soundLicense": e("ライセンス", "mock:R7-AboutLicense"),
   "about.soundSource": e("出どころ", "spec:3"),
   "about.soundChanges": e("手を加えたこと", "spec:3"),
-  // 手を加えたこと（音の素材ごと）。モックの「音の大きさをそろえ、ファイルの形を変えた」の書きかたで、
-  // tools/sounds/build.py の CHANGES（NOTICE の英語の文）と同じ中身を言う。
+  // What was changed (for each sound pack source). Written like 「音の大きさをそろえ、ファイルの形を変えた」 in the mock,
+  // with the same content as CHANGES in tools/sounds/build.py (the English text of NOTICE).
   "about.changes.salamander-grand-piano": e(
     "16 段の強さから 4 段と、離した音 ・ 共鳴 ・ ペダルの音をえらび、音の前の無音を切り、ファイルの形を変えた",
     "user:2026-11-19",
@@ -2555,15 +2554,15 @@ export const texts = {
     "オルガン 5 つ、ビブラフォン、マリンバ、ギター 4 つ、ベース 2 つ、ピチカート、管楽器 4 つと、ブラシキットの 12 の音をとり出し、左右の組と重なって鳴る層を 1 つのファイルにまとめ、同じ音を使う強さの段を 1 つにし、くり返す所の終わりと音の前の無音を切り、音量の減りを（4 つはフィルタも）ファイルに焼きこみ、ずれていたドラムの左右の高さをそろえ、ほかのフィルタ・ゆれ・響きの送りを外し、ファイルの形を変えた",
     "user:2026-11-19",
   ),
-  // [第 8 回 ・ 画面だけで出す文]（仕様書 3 章 ・ 6 章 第 12 版、モック F8-*）。画面の係（k8ua ・ k8ub）がこの下に足す。
-  // 音の素材を取っている間、流れの案内が出たときの状態行の進み（3 章 44-A の「44-B の形」、モック Opt8-PackShow）。
+  // [Text made by the screen alone] (spec 3, spec 6 version 12, mock F8-*)
+  // Status line progress while the sound pack is fetched and a flow hint is shown (「44-B の形」 of spec 3 (44-A), mock Opt8-PackShow).
   "pack.fetchingPercent": e("{percent} %", "mock:Opt8-PackShow", { percent: "38" }),
-  // 歌のクリップを 2 つ以上えらんだときのパラメータの欄（仕様書 3 章 40-A）と、そのときの状態行（モック F8-MultiClip）。
+  // The params panel when two or more audio clips are chosen (spec 3 (40-A)), and the status line then (mock F8-MultiClip).
   "clips.selected": e("{count} クリップを選んでいます", "spec:3", { count: "3" }),
   "clips.groupAll": e("まとめて変える", "spec:3"),
   "clips.onlyOne": e("位置 ・ 長さ ・ フェード ・ この音のテンポは、1 つだけ選ぶと出ます。", "spec:3"),
   "status.clipsSelected": e("選択 {count} クリップ ・ 欄の「音量」に打つと、{count} つともその音量になります", "mock:F8-MultiClip", { count: "3" }),
-  // 書き出す前のたしかめ（仕様書 3 章 41-A ・ 42-C）。{peak} は「−3.5 dB」の形。
+  // Check before export (spec 3 (41-A, 42-C)). {peak} is in the form 「−3.5 dB」.
   "export.checkPreparing": e("用意をしています", "spec:3"),
   "export.checkChecking": e("たしかめています", "spec:3"),
   "export.checkPeakSoFar": e("ここまでのいちばん大きい所 {peak}", "spec:3", { peak: "−3.5 dB" }),
@@ -2571,26 +2570,26 @@ export const texts = {
   "export.checkOverHint": e("マスターのフェーダーを下げるか、リミッターの上限を見てください。", "spec:3"),
   "export.solo": e("いま {track} をソロにしています。書き出しには入れません（曲ぜんぶを書き出します）。", "spec:3", { track: "2 ベース" }),
   "export.soloMore": e("{track} ほか {count} 本", "spec:3", { track: "2 ベース", count: "1" }),
-  // 書き出しのダイアログをひらいている間の状態行の続き（「「書き出し」のダイアログをひらいています ・ 」のあと）。
+  // The rest of the status line while the export dialog is open (after 「「書き出し」のダイアログをひらいています ・ 」).
   "status.exportChecking": e("たしかめています {percent} %", "mock:F8-ExportCheck", { percent: "38" }),
   "status.exportOver": e("0 dB をこえる所があります", "mock:F8-ExportClip"),
-  // 曲の頭のテンポの点がだんだんの始まりのとき（仕様書 3 章 94-10）。
+  // When the tempo point at the start of the song begins a ramp (spec 3 (94-10)).
   "msg.headTempoRampSelected": s6(
     "Tempo at the song start (start of a ramp) chosen",
     "曲の頭のテンポをえらんでいます ・ {tempo} から {toPlace}の {toTempo} へ、だんだん{direction}",
     { tempo: "96.00", toPlace: "5 小節目", toTempo: "120.00", direction: "速く" },
   ),
-  // 歌 2 本以上を録っている。モニターがオフなら「モニター オン ・ 」を外す（同じ場面の文の続き）。
+  // Recording two or more vocals. With the monitor off, 「モニター オン ・ 」 is left out (the rest of the same scene text).
   "msg.recordingVocals": s6(
     "Recording 2 or more vocal tracks",
     "● 録音中 ・ {vocals}・ モニター オン ・ 止めるには {stopKey}",
     { vocals: "6 歌（入口 1）、7 歌 2（入口 2）", stopKey: "Space" },
     "part",
   ),
-  // 音のファイルを 1 つ持ってきている間の、まん中の箱の名前の下の文。
+  // Text under the name in the middle box while one audio file is being dragged in.
   "drop.audioOneSay": s6("Dragging in one audio file", "ここに落とすと、そのトラックの落とした位置に入れます。", undefined, "part"),
   "drop.audioOneNewTrack": s6("Dragging in one audio file", "新しい歌のトラックに入れます。", undefined, "quoted"),
-  // フェードの取っ手をドラッグしている間（状態行。その場の読み値は {value} だけ）。{edge} は clip.fadeEdgeIn ・ clip.fadeEdgeOut。
+  // While dragging a fade handle (status line; the live reading is only {value}). {edge} is clip.fadeEdgeIn or clip.fadeEdgeOut.
   "msg.fadeDragging": s6(
     "Moving a fade",
     "{clip} の{edge}のフェード {value}（ドラッグ中）・ 離すと決まります ・ やめるには {cancelKey}",
@@ -2598,22 +2597,22 @@ export const texts = {
   ),
   "clip.fadeEdgeIn": e("前", "spec:6"),
   "clip.fadeEdgeOut": e("後", "mock:F7-AudioEdit"),
-  // 音の高さ（半音 ・ セント）をドラッグしている間の状態行。その場の読み値は clip.pitchMarkCents の形（「+2 ・ +30」）。
+  // Status line while dragging the pitch (semitones, cents). The live reading has the form of clip.pitchMarkCents (「+2 ・ +30」).
   "msg.pitchDragging": s6("Moving the pitch", "音の高さ {semitones} 半音 {cents} セント（ドラッグ中）", { semitones: "+2", cents: "+30" }),
-  // 「手で決める…」の枠のうしろの単位（仕様書 3 章 94-19「「8.0」と「ms」」）。
+  // The unit after the 「手で決める…」 box (spec 3 (94-19) 「「8.0」と「ms」」).
   "settings.latencyUnit": e("ms", "spec:3"),
-  // 書き出し中に録音しているとき、状態行の左の終わりに短く（仕様書 3 章 94-84）。
+  // Short, at the end of the status line left while recording during export (spec 3 (94-84)).
   "status.exportShort": s6("Recording while exporting", "書き出し {percent} %", { percent: "46" }, "part"),
 } as const satisfies Record<string, Entry>;
 
 export type TextKey = keyof typeof texts;
 
 /**
- * 取り消しの履歴の「手の名前」（仕様書 3 章 Y19）。約束の手の名前の種類（StepName の kind）ごとに 1 つ。
- * spec:3 は 3 章「手の名前」の一覧の言いかた（「CC の点を書く ・ 動かす ・ 消す」は「CC の点を動かす」のように開く。
- * 一覧の「録音（テイク）」は「録音」。「クリップを … 切る」は S（再生の線で切る。3 章「モックの直し」）で、
- * 切り取り（Mod X）は仮に「クリップを切り取る」（docs/history/design-notes.ja.md B-94-7））。
- * 第 11 版で一覧に入った仮の名前（92-7）も spec:3。一覧にない名前は builder:（docs/history/design-notes.ja.md B-92）。
+ * The 「手の名前」 (step names) of the undo history (spec 3 (Y19)). One for each kind of step name in the protocol (kind of StepName).
+ * spec:3 is how the step name list in spec 3 says it (「CC の点を書く ・ 動かす ・ 消す」 is opened up as 「CC の点を動かす」 and so on.
+ * 「録音（テイク）」 in the list is 「録音」. 「クリップを … 切る」 is S (cut at the play line; spec 3 "a fix to the mock"), and
+ * cut (Mod X) is 「クリップを切り取る」 for now (docs/history/design-notes.ja.md B-94-7)).
+ * Provisional names added to the list in version 11 (92-7) are also spec:3. Names not in the list are builder: (docs/history/design-notes.ja.md B-92).
  */
 export const stepNames: Readonly<Record<StepName["kind"], Entry>> = {
   writeNote: e("ノートを書く", "spec:3"),
@@ -2708,7 +2707,7 @@ const st = (term: string, description: string): Term => ({
 });
 const ut = (term: string, description: string): Term => ({ term, description, source: "user:2026-11-23" });
 
-/** 仕様書 5 章「用語の説明」。形は「用語 — 説明」。 */
+/** spec 5 "Term tips". The form is 「用語 — 説明」. */
 export const terms: readonly Term[] = [
   st(
     "ソロ（書き出し）",
@@ -2936,14 +2935,14 @@ export const terms: readonly Term[] = [
   ut("AI とつなぐ", "AI のアプリ（MCP）が、動いている meloet の曲を読んだり、頼まれて書いたりできるようにする。"),
 ];
 
-/** 用語と用語の説明をつなぐ記号（仕様書 5 章「用語 — 説明」）。 */
+/** The mark that joins a term and its tip (spec 5 「用語 — 説明」). */
 export const TERM_SEPARATOR = " — ";
 
 export function findTerm(term: string): Term | undefined {
   return terms.find((t) => t.term === term);
 }
 
-/** {name} の穴に値を入れる。値のない穴はそのままのこす。 */
+/** Fills the {name} holes with values. Holes with no value are left as they are. */
 export function fill(
   text: string,
   values: Readonly<Record<string, string | number>> = {},
@@ -2960,8 +2959,8 @@ export function t(
   return fill(texts[key].text, values);
 }
 
-/** 状態行の左の文の、部分どうしのつなぎ（仕様書 6 章「止まっているときの状態行の左」の「 ・ 」でつなぐ）。 */
+/** The joint between parts of the status line left text (joined with 「 ・ 」 as in spec 6 「止まっているときの状態行の左」). */
 export const STATUS_JOIN = " ・ ";
 
-/** 3 つ以上の名前をならべるときの、最後の「と」より前のつなぎ（仕様書 6 章「棚をひらいている（見出し）」の「ピアノ ・ 鍵盤、ギター と ベース」）。 */
+/** The joint before the last 「と」 when listing three or more names (spec 6 「棚をひらいている（見出し）」, as in 「ピアノ ・ 鍵盤、ギター と ベース」). */
 export const LIST_COMMA = "、";

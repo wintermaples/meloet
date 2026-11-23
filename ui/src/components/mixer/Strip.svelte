@@ -1,6 +1,6 @@
-<!-- ミキサーの 1 本（モック F4-Mixer）。上から、見出し（番号か A ・ B と名前）、音源 ・ 戻り ・ 出口の枠、インサート 4 つ、センド、パン、
-     目盛とフェーダーとメーター、フェーダーの値、M ・ S ・ ●。メーターは mixerMeters の区画（MixerStrips の箱）の中の slot。
-     インサートの並べかえ（仕様書 3 章 86-2）: 入っている枠を押したまま上下に動かす。入る所に accent の線、離して MoveInsert を 1 つ、Esc でやめる。同じストリップの中だけ。 -->
+<!-- One mixer strip (mock F4-Mixer). From the top: the heading (number or A / B, and the name), the instrument / return / output slot, 4 inserts, sends, pan,
+     the scale marks, fader and meter, the fader value, M / S / ●. The meter is a slot in the mixerMeters region (the MixerStrips box).
+     Insert reorder (spec 3 (86-2)): hold a filled slot and move it up or down. An accent line where it goes in; release sends one MoveInsert; Esc cancels. Only inside the same strip. -->
 <script lang="ts">
   import { onMount } from "svelte";
   import type { InsertView, StripRef } from "../../bridge";
@@ -31,13 +31,13 @@
 
   interface Props {
     strip: StripRef;
-    /** 見出しの左（トラックの番号、戻りの A ・ B。マスターは空）と名前。 */
+    /** The heading's left part (track number, A / B for returns, empty for the master) and the name. */
     mark: string;
     name: string;
-    /** 見出しの上辺の色（CSS の変数）。 */
+    /** The color of the heading's top edge (a CSS variable). */
     color: string;
-    /** dim: 「サイン波で代わり」（gray.8、乗ると tip）。stopped: 止まったプラグインの音源（赤い枠と「止」）。 */
-    /** window: プラグインの窓がひらいている（右はしに窓の印）。context: 右クリック。 */
+    /** dim: 「サイン波で代わり」 (gray.8, tip on hover). stopped: the instrument of a stopped plugin (red border and 「止」). */
+    /** window: the plugin window is open (window mark at the right end). context: right-click. */
     frame: {
       text: string;
       accent?: boolean;
@@ -51,9 +51,9 @@
     };
     slots: readonly (InsertView | null)[];
     selectedSlot: number | null;
-    /** 窓がひらいているインサート（枠の番号）。 */
+    /** The insert whose window is open (slot index). */
     windowSlots?: readonly number[];
-    /** トラックだけ。homes は Home で戻す量（トラックを足したときの量）。 */
+    /** Tracks only. homes is the amount Home goes back to (the amount when the track was added). */
     sends: { track: number; dbs: readonly [number | null, number | null]; homes: readonly [number | null, number | null] } | null;
     pan: number;
     gainDb: number | null;
@@ -62,17 +62,17 @@
     solo: Toggle;
     arm: Toggle;
     auto?: StripAuto | null;
-    /** 帯が音量を動かしているときの、いちばん新しい値（フェーダーの値の字だけ。毎コマ変える）。動かしていなければ undefined。 */
+    /** The newest value while a lane moves the volume (only for the fader value text; changes every frame). undefined when not moving. */
     live?: { gainDb?: number | null };
   }
   let { strip, mark, name, color, frame, slots, selectedSlot, windowSlots = [], sends, pan, gainDb, meter, mute, solo, arm, auto = null, live = {} }: Props =
     $props();
   const moving = $derived(auto?.gain === "moving");
-  // 帯が動かしている物（docs/architecture.md 7 章「レイアウトでためる Region」）。
-  // - フェーダーと値の箱（.gain-box）は、帯がこのストリップの何かを動かしている間、mixerMeters の canvas の下に入れる（coverIf）。
-  //   メーターとほぼ同じ高さなので、canvas は広がらない。その canvas を描くコマに、このストリップの位置を見せる。
-  // - パンの行（.pan-box）とセンドの 2 行（.sends-box）は、canvas の下に入れない（入れると、1 コマに描きなおす広さが 25 % の決まりを
-  //   こえる）。動いた行の四角だけを頼む（askIf）。両方動くときは、1 回に片方ずつ見せる（autoState）。
+  // What lanes move (docs/architecture.md 7 "The Region collected during layout").
+  // - The fader and value box (.gain-box) go under the mixerMeters canvas while a lane moves anything in this strip (coverIf).
+  //   They are about as tall as the meters, so the canvas does not grow. The frame that draws that canvas shows this strip's place.
+  // - The pan row (.pan-box) and the two send rows (.sends-box) do not go under the canvas (if they did, the area redrawn in one frame would go over
+  //   the 25 % rule). Only the rect of the row that moved is asked for (askIf). When both move, one is shown at a time (autoState).
   const trackId = $derived(strip.kind === "track" ? strip.id : null);
   const sendsMove = $derived(auto?.sends[0] === "moving" || auto?.sends[1] === "moving");
   const panMoves = $derived(auto?.pan === "moving");
@@ -84,17 +84,17 @@
     () => gainDb,
   );
   const meterGap = $derived(metrics.px("space.1") / 2);
-  /** 値の箱が見えているか（横に送った外のストリップには、毎コマの字を書かない。coverIf の whenSeen）。 */
+  /** Whether the value box is visible (strips scrolled out of view get no per-frame text; whenSeen of coverIf). */
   let valueSeen = $state(typeof IntersectionObserver === "undefined");
-  /** 値の字: 帯が動かしている間は、つまみ（1 秒 30 回）を待たずに毎コマ（仕様書 3 章「オートメーションで動くつまみ」）。手で動かしている間は手の値。 */
+  /** Value text: while a lane moves it, every frame without waiting for the knob (30 times a second) (spec 2 "Handle moved by automation"). While moved by hand, the hand value. */
   const gainShown = $derived(valueSeen && live.gainDb !== undefined && fader.shown === gainDb ? live.gainDb : fader.shown);
 
-  // ---- インサートの並べかえ ----
+  // ---- Insert reorder ----
 
   let group = $state<HTMLElement>();
   let press: { slot: number; y0: number; pointer: number; el: HTMLElement; pitch: number } | null = null;
   let drag = $state<{ slot: number; dy: number; pitch: number } | null>(null);
-  /** ドラッグのあとの click は、枠を押したことにしない。 */
+  /** A click after a drag does not count as pressing the slot. */
   let dragged = false;
   const target = $derived(drag ? moveSlot(drag.slot, INSERT_SLOTS, (drag.slot + 0.5) * drag.pitch + drag.dy, drag.pitch) : null);
 
@@ -102,7 +102,7 @@
     if (e.button !== 0 || drag) return;
     const boxes = [...(group?.querySelectorAll<HTMLElement>('[data-test="mixer-insert"]') ?? [])].map((el) => el.getBoundingClientRect());
     const pitch = boxes.length > 1 ? boxes[1]!.top - boxes[0]!.top : boxes[0]?.height ?? 1;
-    // つかむのは動きだしてから（その前につかむと、枠を押した click が枠に届かない）。
+    // Grab only once it starts moving (grabbing earlier keeps the slot's click from reaching the slot).
     press = { slot, y0: e.clientY, pointer: e.pointerId, el: e.currentTarget as HTMLElement, pitch };
     dragged = false;
   }
@@ -263,8 +263,8 @@
     padding: 0 var(--space-1) var(--space-2);
     background: var(--color-gray-3);
     border-right: var(--line-hair) solid var(--color-gray-5);
-    /* 横に送った外のストリップは、中を描かない ・ レイアウトしない（64 本の曲で、見えていない 40 本ぶんの箱を、描きなおしのたびにたどらない）。
-       幅は決まっていて、高さはとなりにそろうので、大きさは変わらない。Tab やさがす時は、ブラウザが中を作る。 */
+    /* Strips scrolled out of view are not drawn or laid out (in a 64-track song, the boxes of 40 hidden strips are not walked on every redraw).
+       The width is fixed and the height follows the neighbors, so the size does not change. For Tab and find, the browser builds the inside. */
     content-visibility: auto;
   }
   .strip.return {
@@ -328,7 +328,7 @@
     gap: var(--space-1);
     justify-content: space-between;
   }
-  /* 止まったプラグイン（仕様書 2 章「インサートの枠」と同じ赤い枠と「止」）。 */
+  /* A stopped plugin (the same red border and 「止」 as spec 2 "Insert slot"). */
   button.frame.usable.stopped,
   button.frame.usable.stopped:hover {
     border-color: var(--color-rec);
@@ -350,8 +350,8 @@
   .empty-row {
     height: var(--size-row);
   }
-  /* 帯が動かす物の箱。coverIf ・ askIf が、箱いっぱいの空の箱を中に置く。その箱は、ストリップの幅いっぱいまで左右に出す:
-     となりのストリップの箱とつながって、WebKit のためる四角が 1 つになる（docs/architecture.md 7 章「レイアウトでためる Region」）。 */
+  /* The box of what lanes move. coverIf / askIf put an empty box filling it inside. That box reaches out left and right to the full strip width:
+     joined with the boxes of the next strips, WebKit's collected rects become one (docs/architecture.md 7 "The Region collected during layout"). */
   .sends-box,
   .pan-box,
   .gain-box,
@@ -360,7 +360,7 @@
     --ask-left: calc(-1 * var(--space-1));
     --ask-right: calc(-1 * var(--space-1) - var(--line-hair));
   }
-  /* 中のならびは、もとのまま（.group、ストリップ）。 */
+  /* The inner order stays as it was (.group, strip). */
   .sends-box {
     display: flex;
     flex-direction: column;
@@ -374,7 +374,7 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
-    /* いちばん上（+6 dB）のつまみは、フェーダーの上へ高さの半分だけ出る。 */
+    /* The handle at the very top (+6 dB) sticks out above the fader by half its height. */
     --ask-top: calc(var(--part-fader-knob-h) / -2 - var(--line-hair));
   }
   .level {
@@ -398,8 +398,8 @@
     font-size: var(--text-m-size);
     line-height: var(--text-m-line-height);
   }
-  /* 毎コマ変わるかもしれない字は、流れの外の箱に入れる: 字が変わっても、ストリップの縦のならびはレイアウトしなおされない
-     （docs/architecture.md 7 章「CPU で描く WebKit」）。外の箱は、字と同じ高さとベースラインを幅のない字で保つ。 */
+  /* Text that may change every frame goes in a box out of the flow: when the text changes, the strip's vertical layout is not run again
+     (docs/architecture.md 7 "WebKit that paints on the CPU"). The outer box keeps the text's height and baseline with a zero-width character. */
   .live {
     position: relative;
   }
@@ -412,7 +412,7 @@
     overflow: hidden;
     white-space: nowrap;
   }
-  /* フェーダーの値の下（モック F6-MixerAuto ・ F6-MixerRest: 高さ 20、gray.8 の「オートメーション」、休みは「休み」と「もどす」）。 */
+  /* Below the fader value (mock F6-MixerAuto / F6-MixerRest: height 20, 「オートメーション」 in gray.8; when resting, 「休み」 and 「もどす」). */
   .auto-row {
     height: var(--part-toggle-size);
     flex-shrink: 0;
@@ -428,7 +428,7 @@
     display: flex;
     gap: var(--space-1);
   }
-  /* M ・ S ・ ●（仕様書 2 章「切りかえ」、トラックの見出しと同じ見た目）。使えない物は枠 gray.5 ・ 文字 gray.7。 */
+  /* M / S / ● (spec 2 "Toggle M, S, ●", the same look as the track head). Disabled ones have border gray.5 and text gray.7. */
   .tog {
     flex: 1;
     min-width: 0;

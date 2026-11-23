@@ -368,7 +368,7 @@ export function arrangeOf(clip: number | null): ArrangeView {
 /** Every instrument, in the order of the shelf: the fake has them all, so that the mocks can be drawn. */
 const ALL_INSTRUMENTS: InstrumentKind[] = INSTRUMENT_GROUPS.flatMap((g) => [...g.instruments]);
 
-/** The shelf as it is while closed, and when opened with "＋ トラックを追加" before a row is picked. */
+/** The shelf as it is while closed, and when opened with 「＋ トラックを追加」 before a row is picked. */
 function closedShelf(): ShelfView {
   return {
     mode: { kind: "newTrack" },
@@ -841,7 +841,7 @@ export function encodeTake(t: FakeTake): ArrayBuffer {
 
 const NO_LIVE: LiveNotesSnapshot = { seq: 0, recording: null, notes: [] };
 
-/** 11 月 15 日 22:41 in the PC's own time, as the mocks F-Recover1 and Opt3-Recover show it. */
+/** 「11 月 15 日 22:41」 in the PC's own time, as the mocks F-Recover1 and Opt3-Recover show it. */
 const RECOVERY_WRITTEN = new Date(2026, 10, 15, 22, 41).getTime();
 
 /** Recording from bar 5; the listener is at 7.3.240, with C4 E4 G4 held since 7.3.000. */
@@ -920,7 +920,7 @@ FAKE_TAKES.set(PLAYED_TAKE, {
 });
 /**
  * The CC tags of A-PianoRoll: sustain pressed 5 times, 6 pitch bend points (shaped like R3-Lanes), no modulation;
- * and CC 7 for "そのほかの CC".
+ * and CC 7 for 「そのほかの CC」.
  */
 const MOCK_CONTROLS: NonNullable<FakeTake["controls"]> = [
   ...[
@@ -998,7 +998,7 @@ function pianoRollView(take: number, scaleLock: boolean): PianoRollView {
   };
 }
 
-/** A-PianoRoll: the clip "イントロ" (bars 1–4, one take) in the piano roll, D4 E4 F4 selected, stopped at 3.1.000. */
+/** A-PianoRoll: the clip 「イントロ」 (bars 1–4, one take) in the piano roll, D4 E4 F4 selected, stopped at 3.1.000. */
 function pianoRollSong(s: AppState): void {
   ready(s);
   s.song.undoCount = 14;
@@ -1030,7 +1030,7 @@ function pianoRollWide(s: AppState): void {
   });
 }
 
-/** F-PRPlay and F-PRRec: the clip "Aメロ" (bars 1–4) with 3 takes, the second shown. */
+/** F-PRPlay and F-PRRec: the clip 「Aメロ」 (bars 1–4) with 3 takes, the second shown. */
 function aMelody(s: AppState, takes: number[]): void {
   ready(s);
   s.song.undoCount = 14;
@@ -1075,8 +1075,8 @@ const PIANO_ROLL_PLAYING: FakeMeters = {
 };
 
 /**
- * R3-Arrange: two tracks. The piano has "イントロ" (bars 1–4) and "Aメロ" with its first bar trimmed off (bars 6–8);
- * the bass has "ベース A" (bars 5–8) and a copy of it trimmed to 2.5 bars (bars 14–16.2), selected. The trimmed notes are not drawn.
+ * R3-Arrange: two tracks. The piano has 「イントロ」 (bars 1–4) and 「Aメロ」 with its first bar trimmed off (bars 6–8);
+ * the bass has 「ベース A」 (bars 5–8) and a copy of it trimmed to 2.5 bars (bars 14–16.2), selected. The trimmed notes are not drawn.
  */
 function arrangeTrimmed(s: AppState): void {
   ready(s);
@@ -1287,7 +1287,7 @@ export const SCENES: Record<string, SceneDef> = {
     },
     meters: { ...QUIET, position: { tick: -(3 * TPQ) / 2, ticksPerUs: 0, state: "countIn", countInBeatsLeft: 2, lap: 0 } },
   },
-  // The mock F-Takes: the clip "Aメロ" has 3 takes, shows the second, and is selected; the piano roll shows it.
+  // The mock F-Takes: the clip 「Aメロ」 has 3 takes, shows the second, and is selected; the piano roll shows it.
   takes: {
     setup(s) {
       ready(s);
@@ -1304,7 +1304,7 @@ export const SCENES: Record<string, SceneDef> = {
   arrangeTrimmed: { setup: arrangeTrimmed, meters: QUIET },
   // The same with the piano roll open on the trimmed clip: the notes trimmed off are not shown there either.
   arrangeTrimmedRoll: { setup: arrangeTrimmed, bands: ["pianoRoll"], meters: QUIET },
-  // The mock "拡大率をえらぶ所": a 1200x700 screen, 150 % does not fit, 125 % is on.
+  // The mock 「拡大率をえらぶ所」: a 1200x700 screen, 150 % does not fit, 125 % is on.
   zoom: { setup: ready, scale: 125, screen: { width: 1200, height: 700 }, meters: QUIET },
   // The mixer was open, then the piano roll was opened in a window too low for both.
   bandFolded: {
@@ -1313,7 +1313,7 @@ export const SCENES: Record<string, SceneDef> = {
     after: (s) => (s.status.message = { id: "bandFoldedToOpen", opened: "pianoRoll", folded: "mixer" }),
     meters: QUIET,
   },
-  // The arrange of the mock F-Takes with no band open: the clip "Aメロ" (take 2 of 3) is selected.
+  // The arrange of the mock F-Takes with no band open: the clip 「Aメロ」 (take 2 of 3) is selected.
   takesArrange: {
     setup(s) {
       ready(s);
@@ -1324,7 +1324,7 @@ export const SCENES: Record<string, SceneDef> = {
     },
     meters: QUIET,
   },
-  // Not from a mock: the song dialogs (spec 2 "ダイアログ", spec 6).
+  // Not from a mock: the song dialogs (spec 2 「ダイアログ」, spec 6).
   unsaved: { setup: songDialog("unsaved"), meters: QUIET },
   cannotSave: { setup: songDialog("cannotSave"), meters: QUIET },
   broken: { setup: songDialog("broken", "はじめての曲.meloet", true), meters: QUIET },
@@ -1342,7 +1342,7 @@ export const SCENES: Record<string, SceneDef> = {
     },
     meters: QUIET,
   },
-  // The mock F-Recover2: "戻さない" was pressed; the song is as last saved, and the history band is open.
+  // The mock F-Recover2: 「戻さない」 was pressed; the song is as last saved, and the history band is open.
   recover2: {
     setup(s) {
       changedSong(s);
@@ -1364,7 +1364,7 @@ export const SCENES: Record<string, SceneDef> = {
     },
     meters: QUIET,
   },
-  // The mock R9-Scan: the first start, the shelf open, 37 of 112 bundles looked at ("スキャン中 37 / 112").
+  // The mock R9-Scan: the first start, the shelf open, 37 of 112 bundles looked at (「スキャン中 37 / 112」).
   scanning: {
     setup(s) {
       ready(s);
@@ -1373,7 +1373,7 @@ export const SCENES: Record<string, SceneDef> = {
     bands: ["shelf"],
     meters: QUIET,
   },
-  // R9-Scan's status line when that scan is over: 667 plugins in the shelf, 4 bundles stopped ("止まった 4 個を見る").
+  // R9-Scan's status line when that scan is over: 667 plugins in the shelf, 4 bundles stopped (「止まった 4 個を見る」).
   scanFinished: {
     setup(s) {
       ready(s);
@@ -1384,7 +1384,7 @@ export const SCENES: Record<string, SceneDef> = {
     after: (s) => (s.status.message = { id: "scanFinished", added: 667, stopped: 4 }),
     meters: QUIET,
   },
-  // R9-Scan's status line from the second start on: "新しいプラグインが 3 個見つかりました。…"
+  // R9-Scan's status line from the second start on: 「新しいプラグインが 3 個見つかりました。…」
   pluginsFound: {
     setup(s) {
       ready(s);
@@ -1392,7 +1392,7 @@ export const SCENES: Record<string, SceneDef> = {
     },
     meters: QUIET,
   },
-  // R9-Scan: 音の設定 ▸ くわしい設定 ▸ プラグインの場所, with the two places of the mock added by hand. The mock also
+  // R9-Scan: 「音の設定 ▸ くわしい設定 ▸ プラグインの場所」, with the two places of the mock added by hand. The mock also
   // lists ~/.clap and /usr/lib/clap; CLAP is not read in round 5, so they are not here.
   pluginPlaces: {
     setup(s) {
@@ -1416,7 +1416,7 @@ export const SCENES: Record<string, SceneDef> = {
     },
     meters: QUIET,
   },
-  // The same with "もう一度ためす" pressed on the second row ("ためしています…").
+  // The same with 「もう一度ためす」 pressed on the second row (「ためしています…」).
   scanStoppedRetrying: {
     setup(s) {
       ready(s);
@@ -1488,7 +1488,7 @@ export const SCENES: Record<string, SceneDef> = {
     },
     meters: QUIET,
   },
-  // The song name of the mock Main: saved, 14 steps ("保存済み ・ 取り消し 14").
+  // The song name of the mock Main: saved, 14 steps (「保存済み ・ 取り消し 14」).
   saved: {
     setup(s) {
       changedSong(s);
@@ -1497,7 +1497,7 @@ export const SCENES: Record<string, SceneDef> = {
     },
     meters: QUIET,
   },
-  // 2 of 14 steps taken back: the history band label "12 / 14" and the status line "2 手ぶん取り消してあります…".
+  // 2 of 14 steps taken back: the history band label "12 / 14" and the status line 「2 手ぶん取り消してあります…」.
   undone: {
     setup(s) {
       changedSong(s);
@@ -1519,7 +1519,7 @@ export const SCENES: Record<string, SceneDef> = {
     },
     meters: QUIET,
   },
-  // The mock Main: the loop scene with the other tracks of F-WidePR, "4 パッド" muted ("… ・ 4 パッド はミュート").
+  // The mock Main: the loop scene with the other tracks of F-WidePR, 「4 パッド」 muted (「… ・ 4 パッド はミュート」).
   muted: {
     setup(s) {
       ready(s);
@@ -1544,9 +1544,9 @@ export const SCENES: Record<string, SceneDef> = {
     meters: QUIET,
   },
   // Not from a mock (B-70, B-71): three tracks; the bass is selected (it is where the keys play) and muted, the drums
-  // soloed. "Aメロ" of the piano and "ベース A" are selected together, "ベース A" clicked last. One clip is ready to paste.
+  // soloed. 「Aメロ」 of the piano and 「ベース A」 are selected together, 「ベース A」 clicked last. One clip is ready to paste.
   arrangeSelect: { setup: arrangeSelect, meters: QUIET },
-  // Not from a mock (B-66): ベロシティ固定 is on at 100.
+  // Not from a mock (B-66): 「ベロシティ固定」 is on at 100.
   velocityFixed: {
     setup(s) {
       ready(s);
@@ -1554,7 +1554,7 @@ export const SCENES: Record<string, SceneDef> = {
     },
     meters: { ...QUIET, velocity: 100 },
   },
-  // Not from a mock (B-68, B-67): the piano roll after a velocity out of range was typed, and after "そろえる".
+  // Not from a mock (B-68, B-67): the piano roll after a velocity out of range was typed, and after 「そろえる」.
   valueClamped: {
     setup: pianoRollSong,
     bands: ["pianoRoll"],
@@ -1625,7 +1625,7 @@ function arrangeSelect(s: AppState): void {
   s.status.message = { id: "summary", loopBars: null, nothingSelected: false, notes: null };
 }
 
-// Round 4. The song of the mock R7-Arrange6: six tracks, each with its instrument; "2 ベース" selected. The ids are
+// Round 4. The song of the mock R7-Arrange6: six tracks, each with its instrument; 「2 ベース」 selected. The ids are
 // not the numbers (11 to 16), as after tracks were added and moved: a command must carry the id.
 const BAND_TRACKS: { name: string; instrument: InstrumentKind; gainDb: number; clips: [string, number, number][] }[] = [
   { name: "ピアノ", instrument: "grandPiano", gainDb: -4.8, clips: [["イントロ", 1, 5], ["サビ", 13, 17]] },
@@ -1680,7 +1680,7 @@ function shelfSong(s: AppState, shelf: Partial<ShelfView>): void {
   s.shelf = { ...closedShelf(), ...shelf };
 }
 
-// R7-Arrange6: the ● of "2 ベース" was pressed, so it is the selected track now.
+// R7-Arrange6: the ● of 「2 ベース」 was pressed, so it is the selected track now.
 SCENES.tracks6 = {
   setup(s) {
     bandSong(s);
@@ -1689,12 +1689,12 @@ SCENES.tracks6 = {
   after: (s) => (s.status.message = { id: "armMoved", track: { number: 2, name: "ベース" } }),
   meters: QUIET,
 };
-// F4-ShelfSample without the sample: "＋ トラックを追加" opened the shelf, no row picked yet.
+// F4-ShelfSample without the sample: 「＋ トラックを追加」 opened the shelf, no row picked yet.
 SCENES.shelfNewTrack = { setup: (s) => shelfSong(s, {}), bands: ["shelf"], meters: QUIET };
 // R8-Shelf84: the 31 instruments of the shelf (spec 3, 84). The folded groups are the screen's own
-// (tools/design/shoot_ui.py folds all but "ピアノ ・ 鍵盤" and "ギター" by clicking their headings).
+// (tools/design/shoot_ui.py folds all but 「ピアノ ・ 鍵盤」 and 「ギター」 by clicking their headings).
 SCENES.shelf84 = { setup: (s) => shelfSong(s, {}), bands: ["shelf"], meters: QUIET };
-// F4-ShelfAudition: "シンセベース" is auditioned for a new track (it would be track 5).
+// F4-ShelfAudition: 「シンセベース」 is auditioned for a new track (it would be track 5).
 SCENES.shelfAudition = {
   setup(s) {
     shelfSong(s, { selected: "synthBass" });
@@ -1704,7 +1704,7 @@ SCENES.shelfAudition = {
   after: (s) => (s.status.message = { id: "auditionNewTrack", instrument: "synthBass" }),
   meters: { ...QUIET, keys: [60, 64, 67], velocity: 87, sustain: 127, modulation: 12 },
 };
-// F4-ShelfReplace: "エレクトリックピアノ" is auditioned in place of the instrument of "1 ピアノ".
+// F4-ShelfReplace: 「エレクトリックピアノ」 is auditioned in place of the instrument of 「1 ピアノ」.
 SCENES.shelfReplace = {
   setup(s) {
     shelfSong(s, { mode: { kind: "replace", track: BAND_TRACK_ID + 1 }, selected: "electricPiano", current: "grandPiano" });
@@ -1722,7 +1722,7 @@ SCENES.shelfReplace = {
 };
 
 // F4-Mixer: five tracks, the two returns and the master, playing at 9.2.000. The reverb of return A is the selected
-// insert, and its first row "響きの長さ" is chosen in the parameters panel.
+// insert, and its first row 「響きの長さ」 is chosen in the parameters panel.
 const RETURN_A: StripRef = { kind: "return", bus: "a" };
 const RETURN_B: StripRef = { kind: "return", bus: "b" };
 const MIXER_STRIPS: Pick<TrackView, "gainDb" | "pan" | "sends" | "inserts">[] = [
@@ -1770,7 +1770,7 @@ SCENES.paramsDelay = {
   bands: ["mixer", "params"],
   meters: QUIET,
 };
-// Not from a mock: "空き ＋" of the second slot of "1 ピアノ" opened the shelf, which lists the effects; "コンプレッサー" is chosen.
+// Not from a mock: 「空き ＋」 of the second slot of 「1 ピアノ」 opened the shelf, which lists the effects; 「コンプレッサー」 is chosen.
 SCENES.shelfEffects = {
   setup(s) {
     mixerSong(s, { strip: RETURN_A, slot: 0 }, "reverb", null);
@@ -1789,8 +1789,8 @@ SCENES.recordingMoving = {
   },
 };
 
-// R7-Drum: "3 ドラム" (スタジオキット) with its clip "8ビート" (bars 1–4, 53 notes) in the piano roll. An 8-beat for three
-// bars and a half, a tom fill in the last two beats; the snares of 1.2 and 2.2 selected; キック and スネア held.
+// R7-Drum: 「3 ドラム」 (「スタジオキット」) with its clip 「8ビート」 (bars 1–4, 53 notes) in the piano roll. An 8-beat for three
+// bars and a half, a tom fill in the last two beats; the snares of 1.2 and 2.2 selected; 「キック」 and 「スネア」 held.
 const DRUM_TAKE = 80;
 const DRUM_CLIP = 81;
 const GM = { kick: 36, snare: 38, lowTom: 45, midTom: 47, closedHiHat: 42, crash: 49, highTom: 50 } as const;
@@ -1975,7 +1975,7 @@ function surgeMixer(s: AppState): void {
   for (const t of [piano, bass, drums]) t.gainDb = 0;
 }
 
-// F5-ShelfFx: "空き ＋" of the second slot of "5 Surge XT" opened the shelf on the effects; "Dragonfly Hall Reverb" is chosen.
+// F5-ShelfFx: 「空き ＋」 of the second slot of "5 Surge XT" opened the shelf on the effects; "Dragonfly Hall Reverb" is chosen.
 SCENES.shelfFx = {
   setup(s) {
     surgeMixer(s);
@@ -2016,7 +2016,7 @@ SCENES.pluginLoading = {
   after: (s) => (s.status.message = { id: "pluginLoading", name: "Surge XT" }),
   meters: QUIET,
 };
-// F5-PluginAudition: it is read, and the keys sound with it ("窓をひらく").
+// F5-PluginAudition: it is read, and the keys sound with it (「窓をひらく」).
 SCENES.pluginAudition = {
   setup(s) {
     surgeSong(s);
@@ -2116,7 +2116,7 @@ const SF2_KIT_ROWS = [
   ...[54, 56, 58],
   ...Array.from({ length: 22 }, (_, i) => 60 + i),
 ];
-// Not from a mock (spec 3 「SF2 のドラムのキット」): "3 ドラム" sounds with the standard kit of FluidR3; its rows are the
+// Not from a mock (spec 3 「SF2 のドラムのキット」): 「3 ドラム」 sounds with the standard kit of FluidR3; its rows are the
 // keys the kit has, in the order of the spec.
 SCENES.drumRollSf2 = {
   ...SCENES.drumRoll!,
@@ -2179,7 +2179,7 @@ const pluginSelected = (slot: PluginSlotRef, table: number, more: Partial<Select
 const playingAt = (text: string): FakeMeters["position"] => ({ tick: at(text), ticksPerUs: 0, state: "playing", countInBeatsLeft: 0, lap: 0 });
 
 /**
- * The song of the mocks F-WindowOpen, F-ParamFew and F-ParamNoWindow, playing at 9.2.000: "Brick EQ" on "3 ドラム"
+ * The song of the mocks F-WindowOpen, F-ParamFew and F-ParamNoWindow, playing at 9.2.000: "Brick EQ" on 「3 ドラム」
  * has stopped, "Dragonfly Reverb" sits on return A. The mocks' fifth track is a voice from the microphone,
  * which is not made yet: here it keeps the band's fifth instrument.
  */
@@ -2193,7 +2193,7 @@ function windowSong(s: AppState): void {
   Object.assign(vocal, { name: "ボーカル", inserts: ["eq4", "compressor", null, null], sends: [-9, -18], gainDb: -3.2 });
   Object.assign(s.song.returns[0], { inserts: noInserts(), slots: [pluginSlot("Dragonfly Reverb"), null, null, null] });
   s.song.returns[1].gainDb = -2;
-  // The shelf knows the plugins of the song: the return takes the kind of its plugin as its name ("A リバーブ", user:2026-11-19).
+  // The shelf knows the plugins of the song: the return takes the kind of its plugin as its name (「A リバーブ」, user:2026-11-19).
   const effect = (category: PluginEffectCategory) => ({ role: "effect", category }) as const;
   s.library = {
     ...emptyLibrary(),
@@ -2211,7 +2211,7 @@ const DRAGONFLY_SLOT: PluginSlotRef = { kind: "insert", insert: { strip: RETURN_
 const SURGE_SLOT: PluginSlotRef = { kind: "instrument", track: BAND_TRACK_ID + 1 };
 const SURGE_WINDOW: PluginWindowView = { slot: SURGE_SLOT, name: "Surge XT", width: 1597, height: 995, largerThanScreen: true };
 
-// F-WindowOpen: the windows of Surge XT ("1 ピアノ") and of Dragonfly Reverb (return A) are open. The list above
+// F-WindowOpen: the windows of Surge XT (「1 ピアノ」) and of Dragonfly Reverb (return A) are open. The list above
 // 「窓 2」 is the screen's own (tools/design/shoot_ui.py clicks it open). The mock gives no size for the second window.
 SCENES.windowOpen = {
   setup(s) {
@@ -2223,8 +2223,8 @@ SCENES.windowOpen = {
   bands: ["mixer"],
   meters: WINDOW_METERS,
 };
-// F-ParamFew: Dragonfly Reverb (LV2, 18 parameters, no groups) in the panel; its window is not open. "…の Decay を
-// 動かしています" of the mock's status line is the screen's own, while a row is dragged.
+// F-ParamFew: Dragonfly Reverb (LV2, 18 parameters, no groups) in the panel; its window is not open.
+// 「…の Decay を動かしています」 of the mock's status line is the screen's own, while a row is dragged.
 SCENES.paramFew = {
   setup(s) {
     windowSong(s);
@@ -2233,7 +2233,7 @@ SCENES.paramFew = {
   bands: ["mixer", "params"],
   meters: WINDOW_METERS,
 };
-// F-ParamNoWindow: Mossy Verb on "4 パッド" has a window meloet cannot open yet; a list of steps and switches among its 12 parameters.
+// F-ParamNoWindow: Mossy Verb on 「4 パッド」 has a window meloet cannot open yet; a list of steps and switches among its 12 parameters.
 SCENES.paramNoWindow = {
   setup(s) {
     windowSong(s);
@@ -2244,7 +2244,7 @@ SCENES.paramNoWindow = {
   after: (s) => (s.status.message = { id: "pluginWindowNotYet", loopBars: { from: 5, to: 9 }, name: "Mossy Verb" }),
   meters: WINDOW_METERS,
 };
-// F-ParamMany: Surge XT (VST3, 2855 parameters in six groups) is the sound of "1 ピアノ"; its window is open and
+// F-ParamMany: Surge XT (VST3, 2855 parameters in six groups) is the sound of 「1 ピアノ」; its window is open and
 // larger than the screen. Two of its parameters are written by automation lanes, which are not made yet.
 SCENES.paramMany = {
   setup(s) {
@@ -2266,8 +2266,8 @@ SCENES.paramSearch = {
   ...SCENES.paramMany,
   after: (s) => (s.status.message = { id: "summary", loopBars: null, nothingSelected: true, notes: null }),
 };
-// F5-MixerBypass: MVerb on "4 パッド" is passed by (13-A) and selected; "Brick EQ" on "3 ドラム" has stopped. When the
-// mock's status line ("… をとばしています ・ … は止まっています…") is said is not decided.
+// F5-MixerBypass: MVerb on 「4 パッド」 is passed by (13-A) and selected; "Brick EQ" on 「3 ドラム」 has stopped. When the
+// mock's status line (「… をとばしています ・ … は止まっています…」) is said is not decided.
 SCENES.mixerBypass = {
   setup(s) {
     surgeMixer(s);
@@ -2279,7 +2279,7 @@ SCENES.mixerBypass = {
   bands: ["mixer", "params"],
   meters: { ...WINDOW_METERS, loadPermille: 240 },
 };
-// R9-Inserts: 「入れかえる…」 on the compressor of "2 ベース" opened the shelf on the effects; "EQ 4 バンド" is chosen.
+// R9-Inserts: 「入れかえる…」 on the compressor of 「2 ベース」 opened the shelf on the effects; 「EQ 4 バンド」 is chosen.
 SCENES.insertReplace = {
   setup(s) {
     mixerSong(s, { strip: RETURN_A, slot: 0 }, "reverb", null);
@@ -2289,7 +2289,7 @@ SCENES.insertReplace = {
   bands: ["mixer", "shelf"],
   meters: QUIET,
 };
-// R8-MixerFx: "空き ＋" of the second slot of "2 ベース" opened the shelf on the effects; "リバーブ" is chosen.
+// R8-MixerFx: 「空き ＋」 of the second slot of 「2 ベース」 opened the shelf on the effects; 「リバーブ」 is chosen.
 SCENES.mixerFx = {
   setup(s) {
     mixerSong(s, { strip: RETURN_A, slot: 0 }, "reverb", null);
@@ -2308,7 +2308,7 @@ SCENES.paramsNone = {
   bands: ["mixer", "params"],
   meters: QUIET,
 };
-// R9-Params (86-8): no output is chosen, so the master's output slot says "出口なし ▸" and no meter moves.
+// R9-Params (86-8): no output is chosen, so the master's output slot says 「出口なし ▸」 and no meter moves.
 SCENES.noOutput = {
   setup(s) {
     mixerSong(s, { strip: RETURN_A, slot: 0 }, "reverb", null);
@@ -2320,7 +2320,7 @@ SCENES.noOutput = {
   bands: ["mixer"],
   meters: { velocity: 83, loadPermille: 0 },
 };
-// R9-Params (86-6, 86-10): "40" was typed for the ratio of the compressor of "2 ベース", and put at 20 : 1.
+// R9-Params (86-6, 86-10): "40" was typed for the ratio of the compressor of 「2 ベース」, and put at 20 : 1.
 SCENES.paramClamped = {
   setup(s) {
     mixerSong(s, { strip: trackStrip(2), slot: 0 }, "compressor", 1);
@@ -2357,7 +2357,7 @@ function markerSong(s: AppState): void {
   s.transport.position = 6 * BAR;
 }
 
-// F6-Tempo: the row "テンポ ・ 拍子の変更" is open. 104.00 at bar 5 goes to 120.00 at bar 9 in a ramp, 3/4 from
+// F6-Tempo: the row 「テンポ ・ 拍子の変更」 is open. 104.00 at bar 5 goes to 120.00 at bar 9 in a ramp, 3/4 from
 // bar 9, 96.00 and 4/4 from bar 13; the point of bar 5 is selected and the play line is at bar 7, where the
 // transport reads 112.00 (the screen's tempo map gives it). The clips keep their bars under the changed meters.
 SCENES.tempo = {
@@ -2395,7 +2395,7 @@ SCENES.tempo = {
   meters: QUIET,
 };
 
-// F6-AutoRec, its row "テンポ ・ 拍子の変更": folded, with one change (120.00 from bar 13).
+// F6-AutoRec, its row 「テンポ ・ 拍子の変更」: folded, with one change (120.00 from bar 13).
 SCENES.tempoFolded = {
   setup(s) {
     bandSong(s);
@@ -2405,7 +2405,7 @@ SCENES.tempoFolded = {
   meters: QUIET,
 };
 
-// R10-Markers, "足した直後": K at bar 7. The marker is selected and its name field is open.
+// R10-Markers, 「足した直後」: K at bar 7. The marker is selected and its name field is open.
 SCENES.markerAdded = {
   setup(s) {
     markerSong(s);
@@ -2418,7 +2418,7 @@ SCENES.markerAdded = {
   meters: QUIET,
 };
 
-// R10-Markers, "名前を変えている": the name field of "Aメロ" is open (what is typed in it is the screen's own).
+// R10-Markers, 「名前を変えている」: the name field of 「Aメロ」 is open (what is typed in it is the screen's own).
 SCENES.markerRenaming = {
   setup(s) {
     markerSong(s);
@@ -2428,7 +2428,7 @@ SCENES.markerRenaming = {
   meters: QUIET,
 };
 
-// R10-Markers, "動かしている": "Aメロ" is selected; the drag to 6. 1. 000 is the screen's own, until it is let go.
+// R10-Markers, 「動かしている」: 「Aメロ」 is selected; the drag to 6. 1. 000 is the screen's own, until it is let go.
 SCENES.markerMoving = {
   setup(s) {
     markerSong(s);
@@ -2437,7 +2437,7 @@ SCENES.markerMoving = {
   meters: QUIET,
 };
 
-// R10-Markers, "ピアノロールの目盛": the piano roll of A-PianoRoll with markers in its ruler (names only, not pressable).
+// R10-Markers, 「ピアノロールの目盛」: the piano roll of A-PianoRoll with markers in its ruler (names only, not pressable).
 SCENES.pianoRollMarkers = {
   setup(s) {
     pianoRollSong(s);
@@ -2495,11 +2495,11 @@ const laneView = (target: AutoTarget, name: LaneName, lane: FakeLane, resting = 
 
 // The fader's places are those of spec 2 「メーターとフェーダーの目盛」: 0.80 is 0 dB, 0.72 −2.4, 0.64 −4.8,
 // 0.52 −8.4, 0.45 −10.5, 0.40 −12.
-/** "1 ピアノ" の音量: −4.8 dB at bar 8 (F6-AutoRec, R10-AutoEdit 「いま −4.8 dB」), −2.4 dB at 9.2.000 (F6-MixerAuto). 5 points (F6-ParamMany 「点 5」). */
+/** The volume of 「1 ピアノ」: −4.8 dB at bar 8 (F6-AutoRec, R10-AutoEdit 「いま −4.8 dB」), −2.4 dB at 9.2.000 (F6-MixerAuto). 5 points (F6-ParamMany 「点 5」). */
 const PIANO_VOLUME = fakeLane(501, [["1.1.000", 0.8], ["5.1.000", 0.64], ["8.1.000", 0.64], ["9.2.000", 0.72], ["13.1.000", 0.6]]);
 const PIANO_PAN = fakeLane(502, [["1.1.000", 0.5], ["9.1.000", 0.4]]);
 const PIANO_THRESHOLD = fakeLane(503, [["1.1.000", 0.6], ["9.1.000", 0.45], ["13.1.000", 0.6]]);
-/** "4 パッド" の音量: −10.5 dB at 9.2.000, where the hand of F6-MixerRest takes it to −12. */
+/** The volume of 「4 パッド」: −10.5 dB at 9.2.000, where the hand of F6-MixerRest takes it to −12. */
 const PAD_VOLUME = fakeLane(504, [["1.1.000", 0.4], ["9.1.000", 0.45], ["13.1.000", 0.45]]);
 const SURGE_CUTOFF = fakeLane(505, [["1.1.000", 0.6], ["5.1.000", 0.75], ["9.1.000", 0.5]]);
 const SURGE_PITCH = fakeLane(506, [["1.1.000", 0.5], ["13.1.000", 0.5]]);
@@ -2513,8 +2513,8 @@ const PIANO_REF: TrackRef = { number: 1, name: "ピアノ" };
 const PAD_REF: TrackRef = { number: 4, name: "パッド" };
 
 /**
- * The song of the mocks F6-Auto* and F6-Mixer*: the strips of F5-ShelfFx (EQ and compressor on "1 ピアノ", MVerb on
- * "4 パッド"), playing. "1 ピアノ" has three lanes: the volume, and folded the pan and the compressor's threshold
+ * The song of the mocks F6-Auto* and F6-Mixer*: the strips of F5-ShelfFx (EQ and compressor on 「1 ピアノ」, MVerb on
+ * 「4 パッド」), playing. 「1 ピアノ」 has three lanes: the volume, and folded the pan and the compressor's threshold
  * (the mock's 「▸ パン ▸ プラグインのパラメータ 1」).
  */
 function autoSong(s: AppState, position: string): void {
@@ -2536,7 +2536,7 @@ function autoSong(s: AppState, position: string): void {
 }
 const autoMeters = (position: string): FakeMeters => ({ ...QUIET, loadPermille: 140, master: [dbfs(-6.2), dbfs(-7)], position: playingAt(position) });
 
-// F6-AutoRec: 「● 書く」 of the volume lane of "1 ピアノ" is on, the song plays and the fader is held: what is
+// F6-AutoRec: 「● 書く」 of the volume lane of 「1 ピアノ」 is on, the song plays and the fader is held: what is
 // written since 6.3.000 is in the rec frame, up to the play line at bar 8.
 SCENES.autoRec = {
   setup(s) {
@@ -2548,7 +2548,7 @@ SCENES.autoRec = {
   after: (s) => (s.status.message = { id: "automationWriting", track: PIANO_REF, target: { kind: "volume" } }),
   meters: autoMeters("8.1.000"),
 };
-// F6-AutoRest: the fader of "1 ピアノ" was moved by hand to −12 dB: its lane rests (17-A).
+// F6-AutoRest: the fader of 「1 ピアノ」 was moved by hand to −12 dB: its lane rests (17-A).
 SCENES.autoRest = {
   setup(s) {
     autoSong(s, "8.1.000");
@@ -2560,7 +2560,7 @@ SCENES.autoRest = {
   after: (s) => (s.status.message = { id: "automationRested", track: PIANO_REF, target: { kind: "volume" } }),
   meters: autoMeters("8.1.000"),
 };
-// F6-MixerAuto: the mixer while the lanes move the faders of "1 ピアノ" (−2.4 dB at the play line) and "4 パッド".
+// F6-MixerAuto: the mixer while the lanes move the faders of 「1 ピアノ」 (−2.4 dB at the play line) and 「4 パッド」.
 SCENES.mixerAuto = {
   setup(s) {
     autoSong(s, "9.2.000");
@@ -2571,7 +2571,7 @@ SCENES.mixerAuto = {
   after: (s) => (s.status.message = { id: "automationMoving", tracks: [PIANO_REF, PAD_REF] }),
   meters: autoMeters("9.2.000"),
 };
-// F6-MixerRest: the fader of "4 パッド" was taken to −12 dB by hand; under it 「休み」 and 「もどす」.
+// F6-MixerRest: the fader of 「4 パッド」 was taken to −12 dB by hand; under it 「休み」 and 「もどす」.
 SCENES.mixerRest = {
   setup(s) {
     autoSong(s, "9.2.000");
@@ -2585,7 +2585,7 @@ SCENES.mixerRest = {
   meters: autoMeters("9.2.000"),
 };
 
-/** R10-AutoEdit: the band's song with the volume lane of "1 ピアノ" open, the play line at bar 8. */
+/** R10-AutoEdit: the band's song with the volume lane of 「1 ピアノ」 open, the play line at bar 8. */
 function autoEditSong(s: AppState, lane: FakeLane, selected: IndexRange[]): void {
   bandSong(s);
   s.song.tracks[0]!.lanes = [laneView(VOLUME, { kind: "volume" }, lane)];
@@ -2601,7 +2601,7 @@ SCENES.autoMove = { setup: (s) => autoEditSong(s, EDIT_VOLUME, [{ start: 1, end:
 // R10-AutoEdit, 「囲んでえらんだ」: three points are selected.
 SCENES.autoBox = { setup: (s) => autoEditSong(s, EDIT_VOLUME, [{ start: 1, end: 4 }]), meters: QUIET };
 
-// F6-ParamMany: Surge XT is the sound of "1 ピアノ"; the lanes of its two parameters are folded under the volume
+// F6-ParamMany: Surge XT is the sound of 「1 ピアノ」; the lanes of its two parameters are folded under the volume
 // lane (「▸ プラグインのパラメータ 2」), and the panel lists them first, under 「オートメーションに書いている」.
 SCENES.paramMany6 = {
   ...SCENES.paramMany!,
@@ -2687,11 +2687,11 @@ SCENES.history5000 = {
   history: FIRST_STEPS,
 };
 
-// ---- round 7, step 0-2: the answers to 92 (spec 11th edition, F7-Answers92 ・ R11-Answers92) ----
+// ---- round 7, step 0-2: the answers to 92 (spec 11th edition, F7-Answers92 and R11-Answers92) ----
 
-/** F7-Answers92 ・ Opt7-LaneScale: the volume of "1 ピアノ" moves only between −9.0 and −3.0 dB (5 points, −4.8 dB at bar 5). */
+/** F7-Answers92 and Opt7-LaneScale: the volume of 「1 ピアノ」 moves only between −9.0 and −3.0 dB (5 points, −4.8 dB at bar 5). */
 const ANSWERS_VOLUME = fakeLane(520, [["1.1.000", 0.64], ["5.1.000", 0.64], ["6.1.000", 0.7], ["7.3.000", 0.66], ["9.1.000", 0.5]]);
-// F7-Answers92: the band's song, "1 ピアノ" (グランドピアノ) has its volume lane open; the lane shows the points'
+// F7-Answers92: the band's song, 「1 ピアノ」 (「グランドピアノ」) has its volume lane open; the lane shows the points'
 // range (21-B, 「上 −3.0 dB」「下 −9.0 dB」) and 「＋ 帯を足す ▾」 under it (20-A; tools/design/shoot_ui.py opens the list).
 SCENES.laneScale = {
   setup(s) {
@@ -2705,7 +2705,7 @@ SCENES.laneScale = {
   bands: ["params"],
   meters: QUIET,
 };
-// R11-Answers92, 「履歴の帯の見出し」: no step undone, every step undone, no step at all (6 章).
+// R11-Answers92, 「履歴の帯の見出し」: no step undone, every step undone, no step at all (spec 6).
 const historyHead = (undo: number, redo: number): SceneDef => ({
   setup(s) {
     bandSong(s, BAND_TRACKS.slice(0, 5));
@@ -2884,8 +2884,8 @@ const USB_MIC: EndpointView = {
 const micAt = (db: number, clipped = false): MicMeter => ({ track: VOCAL_TRACK_ID, peak: [dbfs(db), dbfs(db)], clipped, stereo: false });
 
 /**
- * The five keys tracks of the band and "6 歌" below them, with a USB microphone of two channels as the input.
- * The keys stay on "1 ピアノ", the keys track selected last (B-94-1; the mocks say "弾くと鳴る先 6 歌").
+ * The five keys tracks of the band and 「6 歌」 below them, with a USB microphone of two channels as the input.
+ * The keys stay on 「1 ピアノ」, the keys track selected last (B-94-1; the mocks say 「弾くと鳴る先 6 歌」).
  */
 function vocalSong(s: AppState, vocal: { armed: boolean; monitor: boolean; selected: boolean; inputReady?: boolean }): void {
   bandSong(s, BAND_TRACKS.slice(0, 5));
@@ -2912,7 +2912,7 @@ function vocalSong(s: AppState, vocal: { armed: boolean; monitor: boolean; selec
   Object.assign(s.audio, { latency: { reportedMs: 8, measuredMs: null, manualMs: null, used: "reported", usedMs: 8 } });
 }
 
-// F7-VocalTrack: "＋ 歌のトラック" just made "6 歌"; it is selected, so its ● is on. The list under "入口 1 ・ モノ ▾"
+// F7-VocalTrack: 「＋ 歌のトラック」 just made 「6 歌」; it is selected, so its ● is on. The list under 「入口 1 ・ モノ ▾」
 // is the screen's own.
 SCENES.vocalTrack = {
   setup(s) {
@@ -2923,14 +2923,14 @@ SCENES.vocalTrack = {
   meters: { ...QUIET, mics: [micAt(-32)] },
 };
 
-// The same with no input on the PC: "入口なし ▾", and the status line says what to do.
+// The same with no input on the PC: 「入口なし ▾」, and the status line says what to do.
 SCENES.vocalNoInput = {
   setup: (s) => vocalSong(s, { armed: true, monitor: false, selected: true, inputReady: false }),
   after: (s) => (s.status.message = { id: "noInput" }),
   meters: QUIET,
 };
 
-// The first time "モニター" is turned on.
+// The first time 「モニター」 is turned on.
 SCENES.vocalMonitorOn = {
   setup: (s) => vocalSong(s, { armed: true, monitor: true, selected: true }),
   after: (s) => (s.status.message = { id: "monitorFirstOn", latencyMs: 13 }),
@@ -2944,7 +2944,7 @@ SCENES.vocalTooLoud = {
   meters: { ...QUIET, mics: [micAt(0, true)] },
 };
 
-// E with "6 歌" selected.
+// E with 「6 歌」 selected.
 SCENES.vocalNoPianoRoll = {
   setup: (s) => vocalSong(s, { armed: true, monitor: false, selected: true }),
   after: (s) => (s.status.message = { id: "vocalHasNoPianoRoll" }),
@@ -2961,7 +2961,7 @@ function vocalRecording(s: AppState, keys: boolean): void {
 }
 const VOCAL_REC_AT: TransportReading = { tick: 6 * BAR + TPQ, ticksPerUs: 0, state: "recording", countInBeatsLeft: 0, lap: 0 };
 
-// F7-VocalRec: only the voice is recorded ("6 歌" is selected and no keys are played), the monitor is on.
+// F7-VocalRec: only the voice is recorded (「6 歌」 is selected and no keys are played), the monitor is on.
 SCENES.vocalRec = {
   setup(s) {
     vocalSong(s, { armed: true, monitor: true, selected: true });
@@ -2971,7 +2971,7 @@ SCENES.vocalRec = {
   meters: { ...QUIET, loadPermille: 90, mics: [micAt(-12)], position: VOCAL_REC_AT },
 };
 
-// F7-TwoRec: "1 ピアノ" is selected and the ● of "6 歌" is on; R records the keys and the voice at once.
+// F7-TwoRec: 「1 ピアノ」 is selected and the ● of 「6 歌」 is on; R records the keys and the voice at once.
 SCENES.twoRec = {
   setup(s) {
     vocalSong(s, { armed: true, monitor: true, selected: false });
@@ -3024,7 +3024,7 @@ SCENES.latency = {
   meters: QUIET,
 };
 
-// All five came back: "この数を使う" can be pressed.
+// All five came back: 「この数を使う」 can be pressed.
 SCENES.latencyDone = {
   setup(s) {
     settingsAdv7(s);
@@ -3034,7 +3034,7 @@ SCENES.latencyDone = {
   meters: QUIET,
 };
 
-// The clicks were too quiet: "もう一度".
+// The clicks were too quiet: 「もう一度」.
 SCENES.latencyFailed = {
   setup(s) {
     settingsAdv7(s);
@@ -3044,8 +3044,8 @@ SCENES.latencyFailed = {
   meters: QUIET,
 };
 
-// R11-Fit: the input meter in two halves in the smallest window (853 wide): "弾くと鳴る先" and the word
-// "モニター" give way.
+// R11-Fit: the input meter in two halves in the smallest window (853 wide): 「弾くと鳴る先」 and the word
+// 「モニター」 give way.
 SCENES.vocalFit = {
   setup(s) {
     vocalSong(s, { armed: true, monitor: true, selected: true });
@@ -3103,7 +3103,7 @@ const RIGHT_CLIP = 72;
 
 const vocalTrackOf = (s: AppState) => s.song.tracks.find((t) => t.id === VOCAL_TRACK_ID)!;
 
-/** "6 歌" with "歌 テイク 1" cut in two at bar 7 (S): the left half fades out, the right one fades in and is at −3.0 dB. */
+/** 「6 歌」 with 「歌 テイク 1」 cut in two at bar 7 (S): the left half fades out, the right one fades in and is at −3.0 dB. */
 function audioEditSong(s: AppState): void {
   vocalSong(s, { armed: true, monitor: false, selected: true });
   vocalTrackOf(s).clips = [
@@ -3122,7 +3122,7 @@ function audioEditSong(s: AppState): void {
 // F7-AudioEdit: the cut clips, the fades, the volume line, and the panel 「選んだクリップ」. (The mock's status line is
 // the drag of the volume line, which is the screen's own.)
 SCENES.audioEdit = { setup: audioEditSong, bands: ["params"], meters: QUIET };
-// The same after a double click on a clip: the row of "6 歌" is 160 high.
+// The same after a double click on a clip: the row of 「6 歌」 is 160 high.
 SCENES.audioTall = {
   setup(s) {
     audioEditSong(s);
@@ -3144,14 +3144,14 @@ const audioDrop = (name: string, files: number, sf2: number, x: number, y: numbe
   meters: QUIET,
   events: [{ type: "fileDrag", x, y }],
 });
-// One file over "6 歌": the gray.7 frame is on that track, at the beat under the pointer.
+// One file over 「6 歌」: the gray.7 frame is on that track, at the beat under the pointer.
 SCENES.audioDropOne = audioDrop("ドラム.wav", 1, 0, 600, 540);
 // F7-AudioDrop: eight files, the pointer over the left box (「別々のトラックに」) and over a keys track, so the frame is
 // on a new row below the tracks.
 SCENES.audioDrop = audioDrop("ドラム キック.wav", 8, 0, 520, 385);
 // The pointer over the right box (「1 本にならべる」).
 SCENES.audioDropRight = audioDrop("ドラム キック.wav", 8, 0, 760, 385);
-// An SF2 file among them: "SF2 は 1 つ棚へ ・ 音のファイル 3 つはアレンジへ".
+// An SF2 file among them: 「SF2 は 1 つ棚へ ・ 音のファイル 3 つはアレンジへ」.
 SCENES.audioDropMixed = audioDrop("ドラム キック.wav", 4, 1, 520, 385);
 
 // F7-AudioMissing: a song opened on a PC where two of its audio files are not found.
@@ -3176,7 +3176,7 @@ SCENES.audioMissing = {
   meters: QUIET,
 };
 
-// A long mp3 was brought in: the clip is there and silent while the file is read ("読みこんでいます 40 %").
+// A long mp3 was brought in: the clip is there and silent while the file is read (「読みこんでいます 40 %」).
 SCENES.audioLoading = {
   setup(s) {
     vocalSong(s, { armed: false, monitor: false, selected: true });
@@ -3189,7 +3189,7 @@ SCENES.audioLoading = {
 };
 
 // R11-Audio: the kinds of vocal clip side by side: plain, with fades and its volume line, with the marks of the
-// stretching and "音を作っています 34 %", and one whose file is not found.
+// stretching and 「音を作っています 34 %」, and one whose file is not found.
 SCENES.audioKinds = {
   setup(s) {
     vocalSong(s, { armed: false, monitor: false, selected: true });
@@ -3211,7 +3211,7 @@ SCENES.audioKinds = {
 // ---- Protocol 25: following the song's tempo, the tempo of the audio, the pitch (mock F7-Stretch; spec 3, 28-A and
 // Y22). The screen's parts come later; these are the states they will show. ----
 
-/** "6 歌" with one clip over bars 5 and 6, selected, the panel 「選んだクリップ」 open. */
+/** 「6 歌」 with one clip over bars 5 and 6, selected, the panel 「選んだクリップ」 open. */
 function stretchSong(s: AppState, name: string, audio: AudioClipView): void {
   vocalSong(s, { armed: true, monitor: false, selected: true });
   vocalTrackOf(s).clips = [fakeVocalClip(LEFT_CLIP, name, 4 * BAR, 6 * BAR, audio)];
@@ -3225,7 +3225,7 @@ const STRETCHED = () => fakeAudioClip(TAKE_1, { fadeIn: TPQ / 4, ...fakeStretch(
 
 // A stretched clip whose audio is made: the marks "×1.25" and "+2".
 SCENES.stretch = { setup: (s) => stretchSong(s, "歌 テイク 1", STRETCHED()), bands: ["params"], meters: QUIET };
-// F7-Stretch: the same while its audio is being made: "音を作っています 34 %" under the clip, the bar on top of the
+// F7-Stretch: the same while its audio is being made: 「音を作っています 34 %」 under the clip, the bar on top of the
 // panel, and the status line (which the screen makes from `audioWork`).
 SCENES.stretchRendering = {
   setup(s) {
@@ -3235,7 +3235,7 @@ SCENES.stretchRendering = {
   bands: ["params"],
   meters: QUIET,
 };
-// Only the pitch: recorded in this song, a semitone down and 30 cents up, the voice not kept ("−1 ・ 30", no "×").
+// Only the pitch: recorded in this song, a semitone down and 30 cents up, the voice not kept (「−1 ・ 30」, no "×").
 SCENES.stretchPitch = {
   setup: (s) => stretchSong(s, "歌 テイク 1", fakeAudioClip(TAKE_1, fakeStretch(steadyTempo(FAKE_SONG_BPM), FAKE_SONG_BPM, { semitones: -1, cents: 30, keepFormant: false }))),
   bands: ["params"],
@@ -3322,15 +3322,15 @@ const exportDialogScene = (over: Partial<ExportDialogView> = {}, screen?: SceneD
   meters: QUIET,
 });
 
-// F7-Export: "いちばん大きい所 −0.6 dB ・ 音割れなし", "止まっているプラグインはありません".
+// F7-Export: 「いちばん大きい所 −0.6 dB ・ 音割れなし」, 「止まっているプラグインはありません」.
 SCENES.exportDialog = exportDialogScene();
 // The dialog just opened: nothing of the range is written yet.
 SCENES.exportWaiting = exportDialogScene({ check: { state: "waiting" }, canExport: false });
 // The check is on its way: the numbers of what is written so far.
 SCENES.exportCounting = exportDialogScene({ check: { state: "counting", percent: 38, peakDb: -3.5, clips: false, over: 0 } });
-// Spec 6 「書き出しで音が割れる」: the button is "このまま書き出す".
+// Spec 6 「書き出しで音が割れる」: the button is 「このまま書き出す」.
 SCENES.exportClips = exportDialogScene({ check: { state: "done", peakDb: 1.4, clips: true, over: 1 } });
-// Mock F-Export: "Brick EQ ・ 3 ドラム" has stopped and is passed by.
+// Mock F-Export: 「Brick EQ ・ 3 ドラム」 has stopped and is passed by.
 SCENES.exportStopped = exportDialogScene({
   stoppedPlugins: [{ name: "Brick EQ", slot: { kind: "insert", insert: { strip: { kind: "track", id: BAND_TRACK_ID + 3 }, slot: 0 } } }],
 });
@@ -3348,7 +3348,7 @@ SCENES.exportCheckFailed = exportDialogScene({ check: { state: "failed", reason:
 // R11-Fit: in the smallest window the dialog scrolls inside, its heading and its buttons stay.
 SCENES.exportFit = exportDialogScene({}, { width: 853, height: 448 });
 
-/** The song of F7-Exporting: the band, "5 Surge XT" and "6 歌" with one clip; saved, the keys on "1 ピアノ". */
+/** The song of F7-Exporting: the band, "5 Surge XT" and 「6 歌」 with one clip; saved, the keys on 「1 ピアノ」. */
 function exportingSong(s: AppState, run: ExportRunView): void {
   vocalSong(s, { armed: false, monitor: false, selected: false });
   const surge = s.song.tracks[4]!;
@@ -3365,11 +3365,11 @@ const exportingScene = (run: ExportRunView): SceneDef => ({
 });
 const EXPORTED_FILE = "はじめての曲.wav";
 
-// F7-Exporting: "書き出しています 46 % ・ はじめての曲.wav ・ 残り 約 40 秒 ・ 弾けます（書き出しの音は聞こえません）".
+// F7-Exporting: 「書き出しています 46 % ・ はじめての曲.wav ・ 残り 約 40 秒 ・ 弾けます（書き出しの音は聞こえません）」.
 SCENES.exporting = exportingScene({ state: "running", percent: 46, file: EXPORTED_FILE, remainingS: 40, realtime: false, realtimeForced: false, lengthS: 182 });
-// Spec 6 「実時間で書き出している」: "速く書き出せないプラグインがあるので、実時間で書き出します（3:02）。"
+// Spec 6 「実時間で書き出している」: 「速く書き出せないプラグインがあるので、実時間で書き出します（3:02）。」
 SCENES.exportingRealtime = exportingScene({ state: "running", percent: 12, file: EXPORTED_FILE, remainingS: 160, realtime: true, realtimeForced: true, lengthS: 182 });
-// Spec 6 「書き出した」 and 「書き出しが終わった」, with "フォルダをひらく".
+// Spec 6 「書き出した」 and 「書き出しが終わった」, with 「フォルダをひらく」.
 SCENES.exportDone = exportingScene({
   state: "done",
   file: EXPORTED_FILE,
@@ -3398,7 +3398,7 @@ const packScene = (setup: (s: AppState) => void, message: StatusMessage | null, 
   meters: QUIET,
 });
 
-// F8-PackAsk: the first start; the band asks, "1 ピアノ" sounds as the sine wave.
+// F8-PackAsk: the first start; the band asks, 「1 ピアノ」 sounds as the sine wave.
 SCENES.packAsk = packScene(packAsking, { id: "packAsking" });
 // F8-PackGet: the grand piano and the studio kit sound; the electric piano is coming. The shelf shows the rest as 「まだ」.
 SCENES.packGet = packScene(
@@ -3413,7 +3413,7 @@ SCENES.packFailOffline = failedScene({ kind: "offline" });
 SCENES.packFailCutOff = failedScene({ kind: "cutOff" });
 SCENES.packFailDiskFull = failedScene({ kind: "diskFull", neededBytes: 160 * MB, freeBytes: 10 * MB });
 SCENES.packFailCorrupt = failedScene({ kind: "corrupt" });
-// F8-PackSettings: 「音の素材」 in the advanced sound settings, "まだ 12 / 31".
+// F8-PackSettings: 「音の素材」 in the advanced sound settings, 「まだ 12 / 31」.
 SCENES.packSettings = {
   setup(s) {
     settingsAdv7(s);
@@ -3437,7 +3437,7 @@ SCENES.aiLinkOff = aiLinkScene({ on: false, port: "closed" });
 SCENES.aiLinkWaiting = aiLinkScene({ on: true, port: "waiting" });
 SCENES.aiLinkConnected = aiLinkScene({ on: true, port: "connected" });
 
-// F8-MultiClip: the two clips of "6 歌" and one of "7 歌 2" selected; their volumes differ.
+// F8-MultiClip: the two clips of 「6 歌」 and one of 「7 歌 2」 selected; their volumes differ.
 SCENES.multiClip = {
   setup(s) {
     audioEditSong(s);
@@ -3460,7 +3460,7 @@ SCENES.multiClip = {
   meters: QUIET,
 };
 
-/** The dialog of F8-ExportCheck and F8-ExportClip; in F8-ExportCheck "2 ベース" is soloed. */
+/** The dialog of F8-ExportCheck and F8-ExportClip; in F8-ExportCheck 「2 ベース」 is soloed. */
 const checkScene = (check: ExportDialogView["check"], soloed: boolean): SceneDef => ({
   setup(s) {
     bandSong(s, BAND_TRACKS.slice(0, 4));
@@ -3471,9 +3471,9 @@ const checkScene = (check: ExportDialogView["check"], soloed: boolean): SceneDef
   after: (s) => (s.status.message = { id: "exportDialogOpen" }),
   meters: QUIET,
 });
-// F8-ExportCheck: counting, "いま 2 ベース をソロにしています。…"
+// F8-ExportCheck: counting, 「いま 2 ベース をソロにしています。…」
 SCENES.exportCheck = checkScene({ state: "counting", percent: 38, peakDb: -3.5, clips: false, over: 0 }, true);
-// F8-ExportClip: "0 dB をこえる所が 3 か所あります（いちばん大きい所 +1.2 dB）。音が割れます。"
+// F8-ExportClip: 「0 dB をこえる所が 3 か所あります（いちばん大きい所 +1.2 dB）。音が割れます。」
 SCENES.exportClip = checkScene({ state: "done", peakDb: 1.2, clips: true, over: 3 }, false);
 
 /**
@@ -3649,7 +3649,7 @@ export function reduceAudio(state: AppState, command: Command): Change[] | null 
 
 /** What the fake remembers between the commands of round 7. */
 export interface FakeVocalMemo {
-  /** "モニター" was turned on once (the status line says how it sounds only the first time). */
+  /** 「モニター」 was turned on once (the status line says how it sounds only the first time). */
   monitorSaid: boolean;
 }
 
@@ -4180,7 +4180,7 @@ const SHELF_MESSAGES: StatusMessage["id"][] = [
   "pluginLoading",
 ];
 const isShelfMessage = (m: StatusMessage | null) => m !== null && SHELF_MESSAGES.includes(m.id);
-/** The short names of new tracks, by group; the organs are "オルガン" and the mallets "マレット" (spec 3, トラックの名前（84）). */
+/** The short names of new tracks, by group; the organs are 「オルガン」 and the mallets 「マレット」 (spec 3 (84), track names). */
 const GROUP_TRACK_NAMES: Record<string, string> = {
   pianoKeys: "ピアノ",
   guitar: "ギター",
@@ -4859,7 +4859,7 @@ function reduce(state: AppState, bands: FakeBands, rest: StatusMessage | null, s
     case "discardRecovered":
       if (ws.recovery?.kind === "recovered") ws.recovery = null;
       break;
-    // The fake scans nothing: a retry stays "ためしています…", and "場所を足す…" and "もう一度スキャン" do nothing.
+    // The fake scans nothing: a retry stays 「ためしています…」, and 「場所を足す…」 and 「もう一度スキャン」 do nothing.
     case "openScanStopped":
       plugins.stoppedOpen = true;
       break;

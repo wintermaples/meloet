@@ -1,7 +1,8 @@
-<!-- プラグインのパラメータの行（仕様書 2 章「パラメータの行」。モック F-ParamFew ・ F-ParamMany ・ F-ParamNoWindow）。形は ParamRow と同じ。
-     名前と値の文字は、プラグインが言ってきたまま。値は 0..1（ParamRow.value）。値がわからない行は、棒をぬらず、つまみなし、値は「—」（user:2026-11-19）。
-     棒のドラッグ中は画面だけが先に動き、SetPluginParam { commit: false } を 1 コマに 1 つまで、離して commit: true で 1 手。Esc で CancelMixPreview。
-     ドラッグの間は、状態行が「（名前）の（パラメータ）を動かしています」（paramUi.moving）。止まったプラグインの行は「使えない」。 -->
+<!-- A plugin parameter row (spec 2 "Parameter row"; mocks F-ParamFew, F-ParamMany, F-ParamNoWindow). The same form as ParamRow.
+     Name and value text exactly as the plugin gives them. The value is 0..1 (ParamRow.value). A row whose value is unknown:
+     bar not filled, no handle, value 「—」 (user:2026-11-19). While dragging the bar, only the screen moves first, with
+     SetPluginParam { commit: false } at most once a frame; release sends commit: true as one step. Esc sends CancelMixPreview.
+     While dragging, the status line says 「（名前）の（パラメータ）を動かしています」 (paramUi.moving). Rows of a stopped plugin are disabled. -->
 <script lang="ts">
   import { onMount, untrack } from "svelte";
   import type { ParamRow, PluginSlotRef } from "../../bridge";
@@ -19,13 +20,13 @@
     table: number;
     plugin: string;
     row: ParamRow;
-    /** 値が届くたびに変わる数（行の値は ParamTableBook が書きかえるので、読みなおす合図）。 */
+    /** A number that changes each time values come (ParamTableBook rewrites the row values, so this is the sign to read again). */
     tick: number;
     selected: boolean;
     automated: boolean;
     usable: boolean;
     onselect: () => void;
-    /** 右の印を押せるか（戻り ・ マスターのインサートは帯を作らない）。押すと add。 */
+    /** Whether the mark on the right can be pressed (return and master inserts make no band). Pressing it calls add. */
     markUsable: boolean;
     add: () => void;
   }
@@ -36,7 +37,7 @@
 
   let bar = $state<HTMLElement>();
   let drag = $state<{ from: number | null; now: number; pointer: number; preview: MixPreview<number> } | null>(null);
-  /** 送って答えを待っている値。値が届いたら消す。 */
+  /** A value sent and waiting for the answer. Cleared when the value comes. */
   let held = $state<number | null>(null);
   $effect(() => {
     void now;
@@ -101,7 +102,7 @@
     send(make(v, true));
   }
 
-  // 仕様書 4 章「パラメータの中: 値を動かす ・ 細かく動かす」（← → ・ Shift ← →）。押すたびに 1 手。
+  // Spec 4 "In the parameters: move the value / move it finely" (← →, Shift ← →). Each press is one step.
   function onkeydown(ev: KeyboardEvent): void {
     if (ev.key !== "ArrowLeft" && ev.key !== "ArrowRight") return;
     if (ev.ctrlKey || ev.metaKey || ev.altKey || ev.isComposing) return;
@@ -238,7 +239,7 @@
     border-left: var(--line-mark) solid var(--color-accent);
     padding-left: calc(var(--space-2) - var(--line-mark));
   }
-  /* 使えない（プラグインが止まっている。仕様書 2 章: 文字 gray.7）。 */
+  /* Disabled (the plugin has stopped; spec 2: text gray.7). */
   .row.unusable,
   .row.unusable .value {
     color: var(--color-gray-7);

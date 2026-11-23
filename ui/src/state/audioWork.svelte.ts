@@ -1,6 +1,7 @@
-// 「読みこんでいます N %」「音を作っています N %」で見せる進み（約束 24 の audioWork）。クリップの下、選んだクリップの欄、状態行の 3 か所が
-// これを読む。% だけが変わったときは SHOW_EVERY_MS に 1 回まで見せかえ、3 か所は同じコマで変わる。仕事が始まった ・ 終わった時はすぐ。
-// 理由: % が変わるたびに WebKit がページをまるごと描きなおしていた（docs/architecture.md 22-19「区切り4 の直し（画面: 音を作っている %）」）。
+// The progress shown as 「読みこんでいます N %」 and 「音を作っています N %」 (`audioWork` of protocol 24). Three places read it: under the
+// clip, the panel of the chosen clip, and the status line. When only the percent changes, it is shown again at most once every
+// SHOW_EVERY_MS, and the three places change in the same frame. When a job starts or ends, at once.
+// Why: WebKit repainted the whole page each time the percent changed (architecture 22-22, "Step 4 fix (screen: render percent)").
 
 import type { AudioJob, AudioWorkView } from "../bridge";
 import { current } from "./app.svelte";
@@ -9,11 +10,11 @@ export const SHOW_EVERY_MS = 500;
 
 export interface ShownWork {
   readonly jobs: readonly AudioJob[];
-  /** 音を作っている仕事を、クリップの id で。 */
+  /** The rendering jobs, by clip id. */
   readonly rendering: ReadonlyMap<number, AudioJob>;
-  /** 読みこんでいる仕事を、音のファイルの番号で。 */
+  /** The loading jobs, by audio file number. */
   readonly loading: ReadonlyMap<number, AudioJob>;
-  /** いちばん先に始めた、クリップのある「音を作っている」。 */
+  /** The first rendering job that started and has a clip. */
   readonly firstRendering: AudioJob | null;
 }
 
@@ -53,7 +54,7 @@ export class WorkShown {
     this.#now = now;
   }
 
-  /** いま見せる進み。読んだ所は、見せかえたときに読みなおされる。 */
+  /** The progress to show now. Whoever reads it reads it again when it is updated. */
   get current(): ShownWork {
     void this.#tick;
     const work = this.#read();
@@ -67,7 +68,7 @@ export class WorkShown {
     return this.#shown;
   }
 
-  /** テストの間で、前の見せかえの時刻を持ちこさない。 */
+  /** Do not carry the time of the last update from one test to the next. */
   forget(): void {
     if (this.#timer !== null) clearTimeout(this.#timer);
     this.#timer = null;

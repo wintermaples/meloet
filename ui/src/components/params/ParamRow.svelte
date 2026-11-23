@@ -1,9 +1,12 @@
-<!-- パラメータの行（仕様書 2 章「パラメータの行」。モック F4-Mixer ・ R6-Delay）。左から名前（104）、動かす所、値（68、右そろえ）、オートメーションに書く印（20×20）。
-     動かす所は 3 種類: なめらかに動く値 ＝ 横の棒、段階 ＝ ◂ ▸ と 6×6 の四角のならび（6 段からは「3 / 12」）、オン ・ オフ ＝ 12×12 の四角の印。
-     棒のドラッグ中は画面だけが先に動き、音は SetParam { commit: false }（1 コマに 1 回まで）、離したときに commit: true で 1 手。
-     もとの位置は gray.7 の枠。Esc は動かす前に戻して CancelMixPreview（pianoroll/view.svelte.ts の cancelDrag）。
-     行をえらんで Enter か、値を 2 回押すと、値を打ちこむ枠（仕様書 3 章 86-6。ValueField）。Enter で TypeParam。
-     右の印はオートメーションに書く（AutoMark）。帯が動かしているあいだは、値は線の上の値（auto。画面が出す。docs/architecture.md 21-8）。 -->
+<!-- A parameter row (spec 2 "Parameter row"; mocks F4-Mixer, R6-Delay). From the left: name (104), control, value (68, right-aligned),
+     the mark for writing automation (20×20). Three kinds of control: a smooth value = a horizontal bar; steps = ◂ ▸ and a row
+     of 6×6 squares (「3 / 12」 from 6 steps); on/off = a 12×12 square mark.
+     While dragging the bar, only the screen moves first; the sound follows SetParam { commit: false } (at most once a frame),
+     and release sends commit: true as one step. The original position is a gray.7 border. Esc goes back and sends
+     CancelMixPreview (cancelDrag in pianoroll/view.svelte.ts). Choosing the row and pressing Enter, or pressing the value
+     twice, gives the typing box (spec 3 (86-6); ValueField). Enter sends TypeParam.
+     The mark on the right writes automation (AutoMark). While a band moves it, the value is the one on the line (`auto`,
+     given by the screen; architecture 21-8). -->
 <script lang="ts">
   import { onMount, untrack } from "svelte";
   import type { Command } from "../../bridge";
@@ -24,13 +27,13 @@
     effect: EffectKind;
     param: number;
     name: string;
-    /** 曲の値。 */
+    /** The value in the song. */
     value: number;
     selected: boolean;
     onselect: () => void;
-    /** 右の印。 */
+    /** The mark on the right. */
     mark: { on: boolean; usable: boolean; add: () => void };
-    /** 帯が動かしている値（なければ null）。 */
+    /** The value the band moves (null if none). */
     auto?: number | null;
   }
   let { insert, effect: kind, param, name, value, selected, onselect, mark, auto = null }: Props = $props();
@@ -39,7 +42,7 @@
 
   let bar = $state<HTMLElement>();
   let dragging = $state(false);
-  /** 動かしている値か、送って Rust の答えを待っている値。 */
+  /** The value being moved, or one sent and waiting for Rust's answer. */
   let held = $state<number | null>(null);
   const shown = $derived(held ?? auto ?? value);
   let from = $state(0);
@@ -66,7 +69,7 @@
     return r.width <= 0 ? shown : valueAt(spec, (ev.clientX - r.left) / r.width);
   }
 
-  /** 1 コマに 1 回まで、いまの値を聞かせる。 */
+  /** Let the current value be heard, at most once a frame. */
   function preview(): void {
     if (frame) return;
     frame = requestAnimationFrame(() => {
@@ -137,7 +140,7 @@
     set(v, true);
   }
 
-  // 仕様書 4 章「パラメータの中: 値を動かす ・ 細かく動かす」（← → ・ Shift ← →）。押すたびに 1 手。
+  // Spec 4 "In the parameters: move the value / move it finely" (← →, Shift ← →). Each press is one step.
   function onkeydown(ev: KeyboardEvent): void {
     if (ev.key !== "ArrowLeft" && ev.key !== "ArrowRight") return;
     if (ev.ctrlKey || ev.metaKey || ev.altKey || ev.isComposing) return;
@@ -157,9 +160,9 @@
   }
 
   const fraction = $derived(fractionOf(spec, shown));
-  /** 棒とつまみは transform で動かす（幅や left を変えると、行のレイアウトが走る。docs/architecture.md 7 章「CPU で描く WebKit」）。 */
+  /** The bar and the handle move with transform (changing width or left runs the row layout; architecture 7, "WebKit that paints on the CPU"). */
   let barWidth = $state(0);
-  /** はしを、幅や left のときと同じく画面の画素に合わせる。 */
+  /** Align the ends to screen pixels, the same as with width or left. */
   const snapped = $derived(Math.round(fraction * barWidth * metrics.dpr) / metrics.dpr);
   const step = $derived(Math.round(shown));
   const SQUARES_UP_TO = 5;
@@ -249,7 +252,7 @@
 </div>
 
 <style>
-  /* モック F4-Mixer: 行は左右 8、すきま 8、下に gray.4 の線。 */
+  /* Mock F4-Mixer: rows have 8 left and right, gap 8, a gray.4 line below. */
   .row {
     height: var(--part-param-height);
     flex-shrink: 0;
@@ -263,7 +266,7 @@
   .row:hover {
     box-shadow: inset 0 0 0 var(--line-hair) var(--color-gray-8);
   }
-  /* えらんだ ・ 動かしている: 地 gray.4、左に accent の line.mark。 */
+  /* Chosen or moving: background gray.4, an accent line.mark on the left. */
   .row.selected,
   .row.moving {
     background: var(--color-gray-4);
@@ -347,7 +350,7 @@
     border: 0;
     background: var(--color-gray-10);
   }
-  /* 12×12 の四角の印。オンは枠と中の 6×6 が accent（モック R6-Delay）。 */
+  /* The 12×12 square mark. When on, the border and the 6×6 inside are accent (mock R6-Delay). */
   .switch {
     box-sizing: border-box;
     width: var(--part-param-switch);
@@ -372,7 +375,7 @@
     flex-shrink: 0;
     text-align: right;
   }
-  /* 帯が動かす値の字は、流れの外の箱に入れる: 字が変わっても、行はレイアウトしなおされない（mixer/Strip.svelte の .live と同じ）。 */
+  /* The text of a value moved by a band is in a box out of the flow, so a change does not lay out the row again (the same as .live in mixer/Strip.svelte). */
   .live {
     position: relative;
   }

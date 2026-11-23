@@ -1,6 +1,6 @@
-<!-- センドの 1 行（モック F4-Mixer: 「A」、横の棒、「−15.0」）。棒の長さはフェーダーと同じ目盛（左はしが −∞）。
-     押したまま左右に動かすと、画面だけが先に動き、音だけ変える意図を送る。離したら 1 手。もとの量は gray.7 の枠。
-     キー（仕様書 3 章 86-7）: ↑ ↓ で 1 dB、Shift で 0.1 dB、Home でトラックを足したときの量（TrackView.sendDefaults）、Enter で打ちこむ。 -->
+<!-- One send row (mock F4-Mixer: 「A」, a horizontal bar, 「−15.0」). The bar length uses the same scale as the fader (the left end is −∞).
+     Holding and moving left and right moves only the screen first and sends sound-only intents. Release is one step. The start amount is a gray.7 frame.
+     Keys (spec 3 (86-7)): ↑ ↓ by 1 dB, 0.1 dB with Shift, Home for the amount when the track was added (TrackView.sendDefaults), Enter to type. -->
 <script lang="ts">
   import type { SendBus } from "../../bridge";
   import { t } from "../../text/ja";
@@ -10,7 +10,7 @@
   import { stepDb } from "./control.svelte";
   import { dbToFrac, fracToDb, parseDb, sendText } from "./scale";
 
-  /** auto: オートメーションが動かしている（棒の枠が accent）。 */
+  /** auto: automation is moving it (accent bar border). */
   let { track, bus, db, home, auto = false }: { track: number; bus: SendBus; db: number | null; home: number | null; auto?: boolean } = $props();
 
   const c = mixControl<number | null>({
@@ -22,9 +22,9 @@
     parse: parseDb,
   });
   const pct = (v: number | null) => `${dbToFrac(v) * 100}%`;
-  /** 棒は transform でのばす（幅を変えると、行のレイアウトが走る。docs/architecture.md 7 章「CPU で描く WebKit」）。 */
+  /** The bar grows with transform (changing the width would run a row layout; docs/architecture.md 7 "WebKit that paints on the CPU"). */
   let width = $state(0);
-  /** 棒の右のはしを、幅のときと同じく画面の画素に合わせる。 */
+  /** Snap the bar's right edge to screen pixels, as with the width. */
   const scale = (v: number | null) => {
     const f = dbToFrac(v);
     return `scaleX(${width > 0 ? Math.round(f * width * metrics.dpr) / metrics.dpr / width : f})`;
@@ -113,7 +113,7 @@
     width: calc(var(--space-6) + var(--space-4));
     text-align: right;
   }
-  /* 毎コマ変わるかもしれない字は、流れの外の箱に入れる（Strip.svelte の .live と同じ）。 */
+  /* Text that may change every frame goes in a box out of the flow (like .live in Strip.svelte). */
   .live {
     position: relative;
   }

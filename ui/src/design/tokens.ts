@@ -1,4 +1,4 @@
-// 数値。名前は docs/spec/1-tokens.md の「1 List of values」のまま。値は拡大率 100 % のときの px。
+// Values. The names are those of docs/spec/1-tokens.md ("1 List of values"). Values are px at scale 100 %.
 
 export const SCALES = [100, 125, 150] as const;
 export type Scale = (typeof SCALES)[number];
@@ -30,7 +30,7 @@ export const colors = {
 } as const;
 export type ColorName = keyof typeof colors;
 
-/** weights: その大きさで使ってよい太さの組（率によらない）。 */
+/** weights: the weights that may be used at that size (the same at every scale). */
 export interface TextToken {
   size: Triple;
   lineHeight: Triple;
@@ -81,7 +81,7 @@ export const size = {
 } as const satisfies Record<string, Triple>;
 export type SizeName = keyof typeof size;
 
-/** line.hair は率によらず物理 1px。ここでは 100 % の値だけを持ち、CSS px にするときに devicePixelRatio で割る。 */
+/** line.hair is one physical px at every scale. Only the 100 % value is kept here; it is divided by devicePixelRatio when made into CSS px. */
 export const line = {
   "line.hair": 1,
   "line.mark": [2, 2, 3],
@@ -89,7 +89,7 @@ export const line = {
 } as const;
 export type LineName = keyof typeof line;
 
-/** radius.1 は拡大しても 1。radius.round は割合。 */
+/** radius.1 stays 1 at every scale. radius.round is a ratio. */
 export const radius = {
   "radius.0": 0,
   "radius.1": 1,
@@ -103,14 +103,14 @@ export const fontFamily = {
 } as const;
 
 /**
- * 仕様書の表にない、文の中にしかない寸法（100 % の px）。
- * spec: どの章（s1 / s2）の、どの行（表の左はしのセル）の、どの言葉か。テストが仕様書と照らし合わせる。
- * section が "sample" のものは、仕様書 2 章の見本（実物の大きさの部品）の CSS にある値。
+ * Sizes that are not in the spec tables, only in its text (px at 100 %).
+ * spec: which chapter (s1 / s2), which row (the left cell of the table), and which words. A test checks them against the spec.
+ * Those with section "sample" are values in the CSS of the spec 2 samples (parts drawn at real size).
  */
 type PartSection = "s1" | "s2" | "s3" | "sample";
 export interface PartToken {
   value: number;
-  /** row が null なら、表ではなく、その章の文（sample なら見本の CSS）の中にある。 */
+  /** When row is null, the value is in the text of the chapter (for sample, in the sample CSS), not in a table. */
   spec: { section: PartSection; row: string | null; quote: string };
 }
 const p = (value: number, section: PartSection, row: string | null, quote: string): PartToken => ({
@@ -176,7 +176,7 @@ export const part = {
   "part.list.row": p(24, "s2", "List", "Rows are 24 high"),
   "part.songmenu.width": p(28, "s2", "Song ▾", "28×24"),
   "part.metronomemenu.width": p(20, "s2", "Metronome ▾", "20 wide"),
-  // カウントイン中のボタンの拍の四角と、そのすきま。
+  // The beat squares on the button during the count-in, and the space between them.
   "part.countin.beat": p(8, "s3", null, "8×8 squares (space 4)"),
   "part.countin.gap": p(4, "s3", null, "8×8 squares (space 4)"),
   "part.dialog.width": p(560, "s2", "Dialog", "Width 560"),
@@ -197,7 +197,7 @@ export const part = {
   "part.take.switch-height": p(24, "s2", "Take mark and switch", "switch tag (height 24"),
   "part.meter.black-key-slim-w": p(5, "s3", null, "draws black keys (width 5, height 7)"),
   "part.meter.black-key-slim-h": p(7, "s3", null, "draws black keys (width 5, height 7)"),
-  // ピアノロールの帯（第 3 回）
+  // The piano roll band
   "part.reading.height": p(20, "s2", "Reading in place", "Height 20"),
   "part.reading.pad-x": p(6, "s2", "Reading in place", "6 on left and right"),
   "part.reading.offset": p(6, "s2", "Reading in place", "6 away to the upper left of the cursor"),
@@ -205,21 +205,21 @@ export const part = {
   "part.note.resize": p(6, "s3", null, "the right 6px of a note"),
   "part.cc.point": p(6, "s3", null, "Points are 6×6 gray.10"),
   "part.clip.edge": p(6, "s3", null, "The 6px at the left and right ends"),
-  // ドラムのピアノロール（第 4 回）: 鍵の列の幅、叩いた所の四角（幅はグリッドの 1 マス − 2、最小 6。高さは行 − 8）、ノートの一覧の欄。
+  // The drum piano roll: the width of the key column, the hit squares (width one grid cell − 2, at least 6; height row − 8), the note list panel.
   "part.drum.keys": p(132, "s3", null, "The key column is 132 wide"),
   "part.drum.hit-inset": p(2, "s2", "Drum hit square", "one grid cell − 2"),
   "part.drum.hit-min": p(6, "s2", "Drum hit square", "at least 6"),
   "part.drum.hit-gap": p(8, "s2", "Drum hit square", "the row height − 8"),
   "part.drum.list-position": p(68, "s3", null, "「位置」 68"),
   "part.drum.list-velocity": p(40, "s3", null, "Vel 40"),
-  // 書き出し（第 7 回）。状態行の左の進みの棒の長さ。
+  // Export: the length of the progress bar on the left of the status line.
   "part.exporting.bar": p(160, "s2", "Export progress", "a 160 bar"),
-  // 音の素材を取っている間の、入力計の帯の棒（第 8 回）。
+  // The bar in the input meter band while the sound pack is being fetched.
   "part.packband.bar": p(160, "s2", "Hint band (sound pack)", "a 160 bar"),
 } as const satisfies Record<string, PartToken>;
 export type PartName = keyof typeof part;
 
-/** モックにしかない寸法（100 % の px）。board は値を読んだモック（docs/design/mock/<board>.dc.html）。 */
+/** Sizes that only the mocks have (px at 100 %). board is the mock the value was read from (docs/design/mock/<board>.dc.html). */
 export interface MockToken {
   value: number;
   board: string;
@@ -227,8 +227,8 @@ export interface MockToken {
 const m = (value: number, board: string): MockToken => ({ value, board });
 
 export const mock = {
-  // 入力計 ・ 出口えらび ・ 音の設定 ・ 「音が出ました」
-  // 鍵盤の箱の幅は「白鍵の幅 × 白鍵の数 ＋ line.hair（左はしの線）」。
+  // Input meter, output chooser, sound settings, 「音が出ました」
+  // The keyboard box is (white key width × number of white keys + line.hair for the left edge line) wide.
   "mock.input-meter.key-full-w": m(12, "F-Connect3"),
   "mock.input-meter.keys-full-h": m(32, "F-Connect3"),
   "mock.input-meter.key-slim-w": m(8, "F-MeterLongName"),
@@ -251,85 +251,85 @@ export const mock = {
   "mock.transport.name": m(132, "F-Empty"),
   "mock.transport.readout": m(40, "F-Empty"),
   "mock.transport.master": m(132, "F-Empty"),
-  // 位置のラベルを引っこめたときの、位置の枠の高さとマスターの幅。
+  // The height of the position box and the width of the master when the position label is hidden.
   "mock.transport.readout-narrow": m(32, "F-PR150"),
   "mock.transport.master-narrow": m(100, "F-PR150"),
   "mock.arrange.bar": m(64, "F-Empty"),
   "mock.arrange.add-track": m(32, "F-Empty"),
   "mock.arrange.add-keys": m(120, "F7-VocalTrack"),
   "mock.track.number": m(16, "F-Empty"),
-  // クリップは行の中で `top:3px; bottom:3px`。小さなノートは高さ 2。ループの範囲は目盛の上辺に高さ 3 の accent。
+  // A clip sits in its row at `top:3px; bottom:3px`. Small notes are 2 high. The loop range is a 3-high accent on the top edge of the ruler.
   "mock.arrange.clip-inset": m(3, "Main"),
   "mock.arrange.note": m(2, "Main"),
   "mock.arrange.loop": m(3, "Main"),
-  // 歌のクリップの波形: 幅 1 の棒が 3px おき、音のない所でも高さ 2。
+  // The waveform of an audio clip: 1-wide bars every 3px, 2 high even where there is no sound.
   "mock.wave.pitch": m(3, "F7-AudioEdit"),
   "mock.wave.bar": m(1, "F7-AudioEdit"),
   "mock.wave.min": m(2, "F7-AudioEdit"),
   "mock.overview.label": m(104, "A-PianoRoll"),
-  // 見えている範囲の枠（`top:1px; height:37px`。帯の高さは 39）の、上下のあき。
+  // The space above and below the frame of the visible range (`top:1px; height:37px`; the band is 39 high).
   "mock.range-frame.inset": m(1, "A-PianoRoll"),
-  // 拡大率の一覧の、率の欄の幅。
+  // The width of the scale column in the scale list.
   "mock.zoom.rate": m(56, "F-Zoom"),
-  // ノートの一覧の欄（`grid-template-columns:76px 40px 52px 1fr`、欄の左右 `padding:0 6px`）。
+  // The note list panel (`grid-template-columns:76px 40px 52px 1fr`, panel sides `padding:0 6px`).
   "mock.notelist.position": m(76, "A-PianoRoll"),
   "mock.notelist.key": m(40, "A-PianoRoll"),
   "mock.notelist.length": m(52, "A-PianoRoll"),
   "mock.notelist.cell-pad": m(6, "A-PianoRoll"),
-  // 選んだノートの行の左の字下げ（`.rw{padding:0 12px 0 28px}`）、つまみの棒のラベルと値の幅、ぬりの太さ（つまみは part.param.knob-*）。
+  // The left indent of the selected note rows (`.rw{padding:0 12px 0 28px}`), the label and value widths of the knob bars, the fill thickness (knobs are part.param.knob-*).
   "mock.inspector.indent": m(28, "A-PianoRoll"),
   "mock.inspector.slider-label": m(60, "A-PianoRoll"),
   "mock.inspector.slider-value": m(40, "A-PianoRoll"),
   "mock.inspector.slider-fill": m(3, "A-PianoRoll"),
-  // ボタンの列の上下のあき（`padding:6px 12px 6px 28px`）。
+  // The space above and below the button row (`padding:6px 12px 6px 28px`).
   "mock.inspector.buttons-pad-y": m(6, "A-PianoRoll"),
-  // まとめて変える行（長さをそろえる ・ ベロシティをまとめて変える）。仕様書 2 章の数を、モックの書きかたで（高さ 32、字の幅 60、
-  // 入力の枠は幅 72 ・ 高さ 20 ・ 左右 6）。
+  // The rows that change many at once (same length, change velocity together). The spec 2 numbers, written as the mock does (height 32, text width 60,
+  // input box 72 wide, 20 high, 6 on each side).
   "mock.inspector.bulk-row": m(32, "A-PianoRoll"),
   "mock.inspector.bulk-label": m(60, "A-PianoRoll"),
   "mock.inspector.bulk-field": m(72, "A-PianoRoll"),
   "mock.inspector.bulk-field-h": m(20, "A-PianoRoll"),
   "mock.inspector.bulk-field-pad": m(6, "A-PianoRoll"),
-  // ピアノロールの帯（第 3 回）。目盛の高さ、鍵盤の列の音の名前の欄。
+  // The piano roll band: the ruler height, the note name column of the key column.
   "mock.pianoroll.ruler": m(20, "A-PianoRoll"),
   "mock.pianoroll.key-label": m(48, "A-PianoRoll"),
-  // ベロシティの帯の棒（幅 3、上はしの横線 7、127 の高さ 64）と、まん中の線（帯の上から 36）。
+  // The bars of the velocity band (3 wide, a 7-wide line on top, 64 high at 127) and the middle line (36 from the top of the band).
   "mock.pianoroll.vel-bar": m(3, "A-PianoRoll"),
   "mock.pianoroll.vel-cap": m(7, "A-PianoRoll"),
   "mock.pianoroll.vel-full": m(64, "A-PianoRoll"),
   "mock.pianoroll.vel-mid": m(36, "A-PianoRoll"),
-  // 長さをのばしている間の、もとの終わりの gray.7 の線の高さ。
+  // The height of the gray.7 line at the old end while a length is being stretched.
   "mock.pianoroll.end-mark": m(16, "R3-PRMouse"),
-  // CC の帯の、127 と 0（ピッチベンドは両はし）の点の中心の、帯の上下からのあき（`top:6px` の 6×6 の点、高さ 40 の帯で 9 と 31）。
+  // In the CC band, the distance of the point centers at 127 and 0 (both ends for pitch bend) from the band top and bottom (6×6 points at `top:6px`; 9 and 31 in a 40-high band).
   "mock.pianoroll.cc-pad": m(9, "R3-Lanes"),
-  // 鍵盤の列の上の角の、縦の − ＋（`.q` の幅 20 に `height:18px`、間 `gap:2px`）。
+  // The vertical − + in the top corner of the key column (`.q` 20 wide, `height:18px`, `gap:2px` between).
   "mock.pianoroll.row-zoom-h": m(18, "A-PianoRoll"),
   "mock.pianoroll.row-zoom-gap": m(2, "A-PianoRoll"),
-  // クリップがない所の案内の箱の幅（`width:460px`）。
+  // The width of the hint box where there are no clips (`width:460px`).
   "mock.pianoroll.empty-hint": m(460, "F-PREmpty"),
-  // 棚（第 4 回）。さがす枠の行と「すべて ・ お気に入り」の行の高さ（`height:32px`）、星を押せる所（`width:16px;height:16px`）。
+  // The shelf: the height of the search row and the 「すべて ・ お気に入り」 row (`height:32px`), the area of the star you can press (`width:16px;height:16px`).
   "mock.shelf.bar": m(32, "F4-ShelfSample"),
   "mock.shelf.star-hit": m(16, "F4-ShelfSample"),
-  // 第 5 回。SF2 の仲間の見出しの字下げ（`padding-left:28px`）。
+  // The indent of the heading of an SF2's sounds (`padding-left:28px`).
   "mock.shelf.indent": m(28, "F5-SF2Shelf"),
-  // meloet について（第 4 回）。1 段目の字の欄（`width:132px`）、名前の箱の上のあき（`padding:24px 16px 16px`）。
+  // 「meloet について」: the text column of the first page (`width:132px`), the space above the name box (`padding:24px 16px 16px`).
   "mock.about.label": m(132, "R7-About"),
   "mock.about.name-pad-top": m(24, "R7-About"),
-  // 2 段目: さがす枠の行（`height:40px`）、行の字下げ（`padding-left:28px`）、音の素材の字の欄（`width:120px`）と
-  // 欄の上下（`padding:6px 0 8px`、行は `padding:2px …`）、全文の枠の高さ（`height:72px`）。
+  // Second page: the search row (`height:40px`), the row indent (`padding-left:28px`), the text column of the sound pack (`width:120px`) and
+  // the panel top and bottom (`padding:6px 0 8px`, rows `padding:2px …`), the height of the full text box (`height:72px`).
   "mock.about.search": m(40, "R7-AboutLicense"),
   "mock.about.indent": m(28, "R7-AboutLicense"),
   "mock.about.field": m(120, "R7-AboutLicense"),
   "mock.about.fields-pad-top": m(6, "R7-AboutLicense"),
   "mock.about.field-pad-y": m(2, "R7-AboutLicense"),
   "mock.about.text": m(72, "R7-AboutLicense"),
-  // スキャン（第 5 回）。棚の下の帯の進みの棒（`height:2px`）、ダイアログ「スキャンで止まったプラグイン」の幅（`width:640px`。仕様書 3 章 Y13 も 640）。
+  // Scan: the progress bar in the band under the shelf (`height:2px`), the width of the dialog 「スキャンで止まったプラグイン」 (`width:640px`; spec 3 (Y13) is also 640).
   "mock.scan.progress": m(2, "R9-Scan"),
   "mock.scan-stopped.width": m(640, "F5-ScanStopped"),
-  // 取り消しの履歴の行（第 6 回）。番号の欄（`width:24px`、右よせ）と、文の欄（`width:420px`）。
+  // The undo history rows: the number column (`width:24px`, right-aligned) and the text column (`width:420px`).
   "mock.history.number": m(24, "F-History"),
   "mock.history.name": m(420, "F-History"),
-  // 書き出しの進み（第 7 回）。状態行の棒の太さ（`height:4px`）と「やめる」の高さ（`height:20px`）。
+  // Export progress: the bar thickness in the status line (`height:4px`) and the height of 「やめる」 (`height:20px`).
   "mock.exporting.bar": m(4, "F7-Exporting"),
   "mock.exporting.stop": m(20, "F7-Exporting"),
   "mock.packband.bar": m(4, "F8-PackGet"),
@@ -337,19 +337,19 @@ export const mock = {
 export type MockName = keyof typeof mock;
 
 /**
- * px でない数（割合、時間、目盛）。率をかけず、CSS の変数にもしない。
- * spec は part.* と同じ読みかた。
+ * Numbers that are not px (ratios, times, scale marks). Not multiplied by the scale, and not made into CSS variables.
+ * spec is read the same way as for part.*.
  */
 export const plain = {
-  /** メーターの色が ok から hot に変わる所（%）。 */
+  /** Where the meter color changes from ok to hot (%). */
   "meter.hot-from": { value: 70, spec: { section: "s2", row: "Meter", quote: "Up to −3 dB (70 % of the length) is meter.ok" } },
-  /** 音割れの印を出しておく時間（秒）。 */
+  /** How long the clipping mark stays (seconds). */
   "meter.clip-hold": { value: 2, spec: { section: "s2", row: "Meter", quote: "2 seconds" } },
 } as const;
 
 /**
- * 仕様書 2 章「Scale marks of meters and faders」の表: [dB, 長さ（%。いちばん下が 0）]。大きい音から。
- * 点のあいだは直線でつなぎ、いちばん下の点より小さい音は 0 %（−∞）。
+ * The table in spec 2 ("Scale marks of meters and faders"): [dB, length (%; the bottom is 0)]. Loudest first.
+ * Points are joined by straight lines; sound below the lowest point is 0 % (−∞).
  */
 export const meterScale: readonly (readonly [number, number])[] = [
   [6, 100],
@@ -361,17 +361,17 @@ export const meterScale: readonly (readonly [number, number])[] = [
   [-60, 0],
 ];
 
-/** 同じ見出しの文の、落ちる速さ: fallDb を fallSeconds かけて。上がるときはすぐ。 */
+/** From the text under the same spec heading: a meter falls fallDb over fallSeconds, and rises at once. */
 export const meterFall = { fallDb: 20, fallSeconds: 1.7 } as const;
 
 const scaleIndex = (scale: Scale): 0 | 1 | 2 => (scale === 100 ? 0 : scale === 125 ? 1 : 2);
 
-/** 部品の寸法に率をかけ、四捨五入した整数（.5 は切り上げ。切り上げた物は tests/design で一覧にしている）。 */
+/** A part size times the scale, rounded to an integer (.5 rounds up; those that round up are listed in tests/design). */
 export function partAt(name: PartName, scale: Scale): number {
   return Math.round((part[name].value * scale) / 100);
 }
 
-/** 名前 → その率での値。数は CSS px、色は 16 進数、太さは数。 */
+/** Name → value at that scale. Numbers are CSS px, colors are hex, weights are numbers. */
 export function tokensAt(scale: Scale, devicePixelRatio: number): Record<string, number | string> {
   const i = scaleIndex(scale);
   const out: Record<string, number | string> = {};
@@ -388,14 +388,14 @@ export function tokensAt(scale: Scale, devicePixelRatio: number): Record<string,
   out["line.track"] = line["line.track"][i];
   for (const [k, v] of Object.entries(radius)) out[k] = v;
   for (const k of Object.keys(part) as PartName[]) out[k] = partAt(k, scale);
-  // part.* と同じく、率をかけて整数にならなければ四捨五入する。
+  // As for part.*, round when the scaled value is not an integer.
   for (const [k, v] of Object.entries(mock)) out[k] = Math.round((v.value * scale) / 100);
   return out;
 }
 
 const unitless = (name: string) => name.includes(".weight");
 
-/** `--color-gray-4: #222222` のような CSS の変数の組。 */
+/** CSS variable pairs such as `--color-gray-4: #222222`. */
 export function cssVariables(scale: Scale, devicePixelRatio: number): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(tokensAt(scale, devicePixelRatio))) {
@@ -406,7 +406,7 @@ export function cssVariables(scale: Scale, devicePixelRatio: number): Record<str
   return out;
 }
 
-/** :root（または渡した要素）に CSS の変数を書く。率や devicePixelRatio が変わったら呼びなおす。 */
+/** Writes the CSS variables on :root (or the given element). Call again when the scale or devicePixelRatio changes. */
 export function writeCssVariables(
   scale: Scale,
   devicePixelRatio: number = window.devicePixelRatio || 1,

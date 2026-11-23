@@ -1,12 +1,12 @@
-// 音のファイルを窓の上に持ってきている間の、ポインタの場所（約束 24 の fileDrag ・ fileDrop。docs/architecture.md 22-17「ドラッグの約束」）。
-// 道は Rust が持つ。画面が決めるのは落とした所だけ: 場所からトラック ・ ティック ・ 30-C の左右を決め、fileDrop で DropAudio を 1 つ送る。
-// 座標はページの CSS px。入る所の計算はアレンジの部品（DropFrame）が登録する（アレンジがないときは、新しい歌のトラックの 0）。
+// The pointer place while audio files are dragged over the window (fileDrag / fileDrop of protocol 24; docs/architecture.md 22-17).
+// Rust owns the paths. The screen only decides where they are dropped: from the place it finds the track, the tick and the 30-C side, and fileDrop sends one DropAudio.
+// Page CSS px. The arrange part (DropFrame) registers how the target is found (with no arrange, tick 0 of a new vocal track).
 
 import type { DropMode, Event } from "../../bridge";
 import { current, onEvent, send } from "../../state/app.svelte";
 import { dropModeAt } from "./audioClipGeom";
 
-/** 落とす所: 歌のトラック（null は新しい歌のトラック）と、拍に吸いつけたティック。 */
+/** Where to drop: a vocal track (null is a new vocal track) and the tick snapped to a beat. */
 export interface DropPlace {
   track: number | null;
   tick: number;
@@ -17,7 +17,7 @@ export const fileDrag = $state<{ at: { x: number; y: number } | null }>({ at: nu
 type Resolver = (pageX: number, pageY: number, mode: DropMode) => DropPlace;
 let resolver: Resolver | null = null;
 
-/** アレンジの部品が、ページの場所 → 落とす所を登録する。返り値の関数で外す。 */
+/** The arrange part registers page place → drop target. Call the returned function to remove it. */
 export function setDropResolver(next: Resolver): () => void {
   resolver = next;
   return () => {
@@ -25,17 +25,17 @@ export function setDropResolver(next: Resolver): () => void {
   };
 }
 
-/** ページのこの場所に落としたら、どこに入るか（アレンジがなければ null）。 */
+/** Where a drop at this page place goes (null with no arrange). */
 export function dropPlaceAt(pageX: number, pageY: number, mode: DropMode): DropPlace | null {
   return resolver?.(pageX, pageY, mode) ?? null;
 }
 
-/** 音のファイルが 2 つ以上なら窓の左右で 30-C を分ける。1 つなら、落とした所のトラックへ（仕様書 3 章 29-A）。 */
+/** With two or more audio files, the left and right halves of the window split as in 30-C. With one, it goes to the track where it is dropped (spec 3 (29-A)). */
 export function dropModeFor(audio: number, pageX: number, windowWidth: number): DropMode {
   return audio >= 2 ? dropModeAt(pageX, windowWidth) : "inRow";
 }
 
-/** 最後に持ってきていた音のファイルの数（落とした時には、知らせの箱がもう閉じていることがある）。 */
+/** The number of audio files last dragged in (when dropped, the notice box may already be closed). */
 let lastAudio = 1;
 
 export function heardFileEvent(e: Event): void {

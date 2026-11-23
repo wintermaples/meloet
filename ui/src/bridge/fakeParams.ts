@@ -129,7 +129,7 @@ export function fakeParamTable(table: number): ParamTable | null {
 
 export const fakeParamCount = (table: number): number => (GROUPS[table]?.() ?? []).reduce((n, g) => n + g.params.length, 0);
 
-/** The fake plugin's text of a value: the number in its unit for "%", the step's name, オン ・ オフ; else 0..1. */
+/** The fake plugin's text of a value: the number in its unit for "%", the step's name, 「オン」 or 「オフ」; else 0..1. */
 function textOf(row: ParamRow, value: number): string {
   const kind = row.kind;
   if (kind.kind === "toggle") return value >= 0.5 ? "オン" : "オフ";

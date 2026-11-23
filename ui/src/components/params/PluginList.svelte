@@ -1,7 +1,8 @@
-<!-- プラグインのパラメータの一覧（仕様書 3 章「パラメータ」、モック F-ParamFew ・ F-ParamMany ・ F-ParamSearch ・ F-ParamNoWindow）。
-     名前とグループは ParamTableBook が 1 回だけ取り、変わった値は paramValues で届く。行と見出しは高さ 24 で、見えている所だけを作る（2855 行でも）。
-     たたむグループは画面だけが持つ。この部品は 1 つの枠の 1 つの子のあいだ生きていて、新しい表（取り消しのあとなど）が同じグループの並びなら、
-     たたみ方とスクロールを残す。新しい表が届くまでは、前の表を見せておく（一覧が空になると、スクロールがいちばん上に戻る）。 -->
+<!-- The parameter list of a plugin (spec 3, the 「パラメータ」 rule; mocks F-ParamFew, F-ParamMany, F-ParamSearch, F-ParamNoWindow).
+     ParamTableBook fetches the names and groups only once; changed values come in paramValues. Rows and headings are 24 high,
+     and only the part in view is made (even with 2855 rows). Only the screen keeps which groups are folded. This part lives
+     as long as one plugin in one slot; if a new table (after an undo, ...) has the same groups in order, the folding and the
+     scroll stay. Until the new table comes, the old one is shown (an empty list would send the scroll back to the top). -->
 <script lang="ts">
   import { onMount, untrack } from "svelte";
   import { paramTable, type ParamTable, type SelectedPlugin } from "../../bridge";
@@ -30,7 +31,7 @@
   let { sel, plugin, usable }: { sel: SelectedPlugin; plugin: string; usable: boolean } = $props();
 
   let table = $state.raw<ParamTable | null>(null);
-  /** 値が届くたびにふやす（行は、表の中の値を読みなおす）。 */
+  /** Goes up each time values come (the rows read the values in the table again). */
   let tick = $state(0);
   let folded = $state.raw<Set<string>>(new Set());
   let expanded = $state.raw<Set<string>>(new Set());
@@ -53,7 +54,7 @@
     return book.listen(take);
   });
 
-  // 「… ほか N」で広げたのは、さがす文字が変わるとはじめに戻す。
+  // Groups opened with 「… ほか N」 are reset when the search text changes.
   $effect(() => {
     void paramUi.query;
     untrack(() => (expanded = new Set()));
@@ -69,7 +70,7 @@
   const searching = $derived(paramUi.query.trim() !== "");
   const knobs = $derived(table ? hiddenKnobs(table) : null);
 
-  // ---- 見えている所だけを作る（どの行も高さ 24） ----
+  // ---- Make only the part in view (every row is 24 high) ----
 
   let viewport = $state<HTMLDivElement>();
   let scrollTop = $state(0);
@@ -101,7 +102,7 @@
     };
   });
 
-  /** えらんだ行が見えるように（↑ ↓ のとき）。 */
+  /** Keep the chosen row in view (on ↑ ↓). */
   function reveal(id: number): void {
     const at = entries.findIndex((e) => e.kind === "row" && e.row.id === id);
     const v = viewport;
@@ -172,14 +173,14 @@
 
   const automated = $derived(new Set(sel.automated));
 
-  // 帯はトラックの下だけ（戻り ・ マスターのインサートの印は「使えない」。docs/history/design-notes.ja.md A-19 の 7）。
+  // Bands go only under tracks (the marks of return and master inserts are disabled; docs/history/design-notes.ja.md A-19, item 7).
   const markTrack = $derived.by((): number | null => {
     const s = sel.slot;
     if (s.kind === "instrument") return s.track;
     return s.insert.strip.kind === "track" ? s.insert.strip.id : null;
   });
   const busy = $derived(current.state!.transport.state === "recording" || current.state!.transport.state === "countIn");
-  /** 帯があるパラメータ（core の automated が、まだ帯を数えていなくても印を accent に）。 */
+  /** Parameters with a band (the mark is accent even before core's `automated` counts the band). */
   const laneParams = $derived.by(() => {
     const s = sel.slot;
     const track = current.state!.song.tracks.find((tr) => tr.id === markTrack);

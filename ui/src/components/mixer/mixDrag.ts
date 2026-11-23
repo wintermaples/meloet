@@ -1,6 +1,6 @@
-// フェーダー ・ パン ・ センドのドラッグで送る意図（約束の Command のコメント「commit」）。
-// 動かしている間は commit: false（音だけ変わる）を 1 コマに 1 回まで、離したら commit: true を 1 つ（1 手）。
-// Esc（cancelDrag）でやめたら CancelMixPreview。動かさずに離したときは何も送らない。
+// Intents sent by fader, pan and send drags (the "commit" comment on Command in the protocol).
+// While moving, commit: false (only the sound changes) at most once a frame; on release, one commit: true (one step).
+// Cancelled with Esc (cancelDrag): CancelMixPreview. Released without moving: nothing is sent.
 
 import type { Command } from "../../bridge";
 import { forgetHand, noteHand } from "../automation/handValue";
@@ -9,7 +9,7 @@ export class MixPreview<V> {
   private pending: { value: V } | null = null;
   private frame = 0;
   private moved = false;
-  /** 最後に送った「音だけ変える」意図（書いている帯の線のために、手の位置を覚えておく。automation/handValue.ts）。 */
+  /** The last "change only the sound" intent (the hand position is kept for the line of a band being written; automation/handValue.ts). */
   private last: Command | null = null;
 
   constructor(
@@ -17,20 +17,20 @@ export class MixPreview<V> {
     private readonly send: (c: Command) => void,
   ) {}
 
-  /** 動いた。次のコマで、いちばん新しい値だけを送る。 */
+  /** Moved. Next frame, send only the newest value. */
   move(value: V): void {
     this.moved = true;
     this.pending = { value };
     if (this.frame === 0) this.frame = requestAnimationFrame(() => this.flush());
   }
 
-  /** 離した。 */
+  /** Released. */
   commit(value: V): void {
     this.stop();
     if (this.moved) this.send(this.make(value, true));
   }
 
-  /** やめた（Esc、ポインタを取られた）。 */
+  /** Cancelled (Esc, or the pointer was taken). */
   cancel(): void {
     this.stop();
     if (this.moved) this.send({ type: "cancelMixPreview" });
@@ -56,12 +56,12 @@ export class MixPreview<V> {
   }
 }
 
-/** キーを離してから、1 手にまとめるまで（仕様書 3 章 86-7）。 */
+/** From releasing the key to making it one step (spec 3 (86-7)). */
 export const KEY_COMMIT_MS = 1000;
 
 /**
- * フェーダー ・ パン ・ センドのキー（約束の Command のコメント「keys」）。押すたびに commit: false、キーを離して 1 秒たつか、
- * フォーカスが外れたら（flush）、いちばん新しい値を commit: true で 1 つ。そのあいだに押せば、まとめる時を数えなおす。
+ * Fader, pan and send keys (the "keys" comment on Command in the protocol). Each press sends commit: false; 1 second after the key is released,
+ * or when focus leaves (flush), one commit: true with the newest value. A press in between starts the wait again.
  */
 export class KeySteps<V> {
   private last: { value: V } | null = null;

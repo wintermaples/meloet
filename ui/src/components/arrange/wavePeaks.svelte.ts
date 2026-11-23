@@ -1,17 +1,17 @@
-// 波形を描く所が読む、ピークの帳面。橋の `audioPeaks` ・ `moreAudioPeaks` でためた物（音の id、段）に、
-// WebGL の係が見分けるための番号（`WaveSource.id`）をつける。まだない段は頼み、来たら `version` を上げて描きなおさせる。
-// ふえていく物（録っている歌、読みこんでいる途中のファイル）は、使われている間だけ 1 秒に 10 回ほど続きを取りにいく
-// （docs/architecture.md 22-17: 波形は鍵のようにすぐ届かなくてよい）。
+// The peak book that waveform drawing reads. To what the bridge's `audioPeaks` / `moreAudioPeaks` kept (audio id, level) it adds
+// a number for the WebGL side to tell them apart (`WaveSource.id`). Missing levels are asked for; when they come, `version` goes up to redraw.
+// Growing ones (audio being recorded, a file still loading) fetch more about 10 times a second, only while used
+// (docs/architecture.md 22-17: waveforms need not arrive as fast as keys).
 
 import { audioPeaks, moreAudioPeaks, peekAudioPeaks, type LevelPeaks } from "../../bridge";
 import { PEAK_LEVELS } from "../../bridge/types";
 import { newWaveSourceId, type WaveSource } from "../../gl/wave";
 
-/** 続きを取りにいく間（ms）。 */
+/** Interval (ms) for fetching more. */
 export const WAVE_POLL_MS = 100;
-/** これだけ使われなかった物は、続きを取りにいかない（ms）。 */
+/** Ones not used for this long stop fetching more (ms). */
 const IDLE_MS = 500;
-/** まだできていなかったピークを、もう一度頼むまでの間（ms）。頼むたびに倍、ここまで。 */
+/** Wait (ms) before asking again for peaks that were not ready. Doubles each time, up to this. */
 const RETRY_MS = [500, 1000, 2000, 4000, 8000];
 
 interface Entry {
@@ -20,7 +20,7 @@ interface Entry {
   level: number;
   source: WaveSource;
   usedAt: number;
-  /** 曲のクリップが使った（ふえたら描きなおす）。録っているクリップの先は毎コマ読むので、知らせは要らない。 */
+  /** A song clip used it (redraw when it grows). The growing end of a clip being recorded is read every frame, so it needs no notice. */
   loud: boolean;
 }
 
@@ -34,13 +34,13 @@ const bridge: WaveFetch = { get: audioPeaks, more: moreAudioPeaks, peek: peekAud
 const keyOf = (audio: number, level: number) => audio * PEAK_LEVELS.length + level;
 
 export class WaveBook {
-  /** 描く物が変わったかもしれない: 新しい段が来た、曲のクリップのピークがふえた。 */
+  /** What to draw may have changed: a new level came, or a song clip's peaks grew. */
   version = $state(0);
   private readonly entries = new Map<number, Entry>();
   private readonly asking = new Set<number>();
-  /** できていなかった物を、次に頼んでよい時刻。 */
+  /** The time from which a not-ready one may be asked for again. */
   private readonly failed = new Map<number, number>();
-  /** できていなかった回数（待ちを倍にしていく）。 */
+  /** How many times it was not ready (the wait doubles). */
   private readonly tries = new Map<number, number>();
   private timer = 0;
 
@@ -50,8 +50,8 @@ export class WaveBook {
   ) {}
 
   /**
-   * 曲 `serial` の音 `audio` を、段 `level` で描くための物。その段がまだなければ頼んで、いまある段のうち
-   * いちばん近い物を返す（なければ null）。`quiet`: ふえても `version` を上げない（毎コマ読みなおす所）。
+   * What is needed to draw audio `audio` of song `serial` at level `level`. If that level is missing, ask for it and return
+   * the nearest level there is (null if none). `quiet`: do not raise `version` when it grows (for places that read again every frame).
    */
   sourceFor(serial: number, audio: number, level: number, quiet = false): { source: WaveSource; framesPerPeak: number } | null {
     let peaks = this.fetch.peek(audio, level);
@@ -89,7 +89,7 @@ export class WaveBook {
         this.version += 1;
       },
       () => {
-        // まだできていない（読みこみが始まったばかり、録りはじめ）。あとでもう一度。
+        // Not ready yet (loading just started, or recording just started). Try again later.
         this.asking.delete(key);
         const tries = (this.tries.get(key) ?? -1) + 1;
         this.tries.set(key, tries);
@@ -103,7 +103,7 @@ export class WaveBook {
     if (this.timer === 0) this.timer = window.setInterval(() => this.poll(), WAVE_POLL_MS);
   }
 
-  /** いま使われている、ふえていく物の続きを取りにいく。待っていた物の時刻が来たら、描く所にもう一度頼ませる。 */
+  /** Fetch more of the growing ones in use now. When a waiting one's time comes, make the drawing side ask again. */
   poll(): void {
     const now = this.now();
     let busy = false;
@@ -125,22 +125,22 @@ export class WaveBook {
         busy = true;
         continue;
       }
-      // 時刻が来た: 描く所を回す。まだ要るなら、そこがもう一度頼む。
+      // Its time came: run the drawing side. If it is still needed, that side asks again.
       this.failed.delete(key);
       this.version += 1;
     }
     if (!busy) this.stop();
   }
 
-  /** 曲が変わった ・ 帯がなくなった。 */
+  /** The song changed, or the band is gone. */
   stop(): void {
     clearInterval(this.timer);
     this.timer = 0;
   }
 
   /**
-   * 曲が変わったときに: ほかの曲の物（番号は曲ごとに 0 から）と、橋がもう持っていないピーク（`PeakStore` の上限で
-   * 手ばなした物）を手ばなす。ためる量は、橋の上限のまま。
+   * When the song changes: let go of other songs' entries (numbers start at 0 per song) and of peaks the bridge no longer holds
+   * (let go at the `PeakStore` limit). The amount kept stays the bridge's limit.
    */
   trim(serial: number): void {
     for (const [key, e] of this.entries) if (e.serial !== serial || this.fetch.peek(e.audio, e.level) === undefined) this.entries.delete(key);

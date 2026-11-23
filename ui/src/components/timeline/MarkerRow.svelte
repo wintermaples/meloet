@@ -8,7 +8,7 @@
   import { t } from "../../text/ja";
   import { nearestBeatTick } from "../../time/bars";
   import type { TempoMap } from "../../time/tempoMap";
-  import { tickToX, type View } from "../arrangeGeom";
+  import { tickToX, xToTick, type View } from "../arrangeGeom";
   import { openContextMenu } from "../menu/contextMenu.svelte";
   import { metrics } from "../metrics.svelte";
   import { onDragCancel } from "../pianoroll/view.svelte";
@@ -88,6 +88,22 @@
     if (e.button === 0 && timeline.selected?.kind === "marker") send({ type: "selectTimeline", target: null });
   }
 
+  // An empty place of the row (spec 3 Y18, round 10): a marker there, named as K names it. Rust snaps it to the beat.
+  const tickAt = (e: MouseEvent) => Math.max(0, Math.round(xToTick(view, xOf(e))));
+  function addAt(tick: number): void {
+    pickTimeline();
+    send({ type: "addMarker", name: t("marker.newName", { count: timeline.markers.length + 1 }), tick });
+  }
+  function rowDouble(e: MouseEvent): void {
+    if (e.button === 0 && !busy && !drag) addAt(tickAt(e));
+  }
+  function rowMenu(e: MouseEvent): void {
+    e.preventDefault();
+    if (drag || e.target instanceof HTMLInputElement) return;
+    const tick = tickAt(e);
+    openContextMenu(e.clientX, e.clientY, [{ kind: "row", label: "menu.addMarkerHere", usable: !busy, run: () => addAt(tick) }]);
+  }
+
   function menu(e: MouseEvent, m: MarkerView): void {
     e.preventDefault();
     e.stopPropagation();
@@ -151,6 +167,8 @@
   onpointermove={move}
   onpointerup={up}
   onpointercancel={cancel}
+  ondblclick={rowDouble}
+  oncontextmenu={rowMenu}
   data-test="marker-row"
 >
   {#if drag?.moved}
@@ -171,6 +189,7 @@
           bind:this={field}
           bind:value={draft}
           onpointerdown={(e) => e.stopPropagation()}
+          ondblclick={(e) => e.stopPropagation()}
           onkeydown={(e) => fieldKey(e, m.id)}
           onblur={() => fieldBlur(m.id)}
         />

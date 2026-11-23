@@ -80,6 +80,8 @@ describe("メニューの中身（B-59）", () => {
       "複製 Ctrl D",
       "消す Delete",
       "ぜんぶ選ぶ Ctrl A",
+      "クリップを切る S",
+      "クリップをつなげる Ctrl J",
     ]);
     expect(keyed(2)).toEqual([
       "アレンジへ A",
@@ -199,7 +201,8 @@ describe("メニューの中身（B-59）", () => {
   it("止まっているときは使える。取り消す手がなければ「取り消す」は使えない", () => {
     const s = withClip((s) => (s.arrange.clipboardClips = 1));
     const menus = topMenus(s, depsOf(s, []), "other");
-    expect(Object.values(usableOf(menus[1]!.entries))).toEqual([true, false, true, true, true, true, true, true]);
+    // クリップをつなげるは、同じトラックの鍵盤のクリップを 2 つ以上選んだときだけ。
+    expect(Object.values(usableOf(menus[1]!.entries))).toEqual([true, false, true, true, true, true, true, true, true, false]);
     expect(usableOf(menus[3]!.entries)).toMatchObject({ 再生: true, 停止: false, 録音: true });
   });
 

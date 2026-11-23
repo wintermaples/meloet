@@ -337,18 +337,24 @@ describe("右クリックの一覧（B-60）", () => {
     expect(app.sent).toEqual([{ type: "selectClip", clip: 41 }]);
     expect(contextMenu.open?.entries.map((e) => (e.kind === "row" ? e.label : "-"))).toEqual([
       "menu.openInPianoRoll",
+      "-",
       "menu.cut",
       "menu.copy",
       "menu.paste",
       "menu.duplicate",
       "menu.delete",
       "-",
+      "menu.splitHere",
+      "menu.join",
+      "menu.renameClip",
+      "-",
       "menu.nextTake",
       "menu.prevTake",
       "menu.deleteTake",
     ]);
-    expect(rows().map((r) => r.key)).toEqual(["E", "Ctrl X", "Ctrl C", "Ctrl V", "Ctrl D", "Delete", "T", "Shift T", undefined]);
-    expect(rows().map((r) => r.usable)).toEqual([true, true, true, true, true, true, false, false, false]);
+    expect(rows().map((r) => r.key)).toEqual(["E", "Ctrl X", "Ctrl C", "Ctrl V", "Ctrl D", "Delete", undefined, "Ctrl J", "F2", "T", "Shift T", undefined]);
+    // つなげるのは 2 つ以上選んだとき（右クリックで 41 だけを選びなおした）。
+    expect(rows().map((r) => r.usable)).toEqual([true, true, true, true, true, true, true, false, true, false, false, false]);
   });
 
   it("クリップの行は、押したときの選択に向く。選んであるクリップは選びなおさない", () => {
@@ -363,6 +369,9 @@ describe("右クリックの一覧（B-60）", () => {
       { type: "pasteClips", to: null },
       { type: "duplicateClips", clips: [3, 41] },
       { type: "deleteSelected" },
+      // ここで切る: 右クリックした所（4.69 小節）を、目盛に見えている線（小節）に寄せる。切るのは右クリックしたクリップだけ。
+      { type: "splitClipAt", clip: 3, tick: 5 * BAR },
+      { type: "joinClips", clips: [3, 41] },
       { type: "stepTake", delta: 1 },
       { type: "stepTake", delta: -1 },
       { type: "deleteTake", clip: 3 },
@@ -374,19 +383,25 @@ describe("右クリックの一覧（B-60）", () => {
     s.transport.state = "recording";
     show(s);
     ctx(q(".lanes")!, 300, 30);
-    expect(rows().map((r) => r.usable)).toEqual([true, false, true, false, false, false, false, false, false]);
+    expect(rows().map((r) => r.usable)).toEqual([true, false, true, false, false, false, false, false, false, false, false, false]);
   });
 
   it("空いた所: 貼りつけ。押した所をグリッド（1 小節）に寄せ、Shift なら寄せない", () => {
     show(three());
     ctx(q(".lanes")!, 600, 100);
-    expect(rows().map((r) => [r.label, r.key, r.usable])).toEqual([["menu.paste", "Ctrl V", true]]);
+    expect(rows().map((r) => [r.label, r.key, r.usable])).toEqual([
+      ["menu.paste", "Ctrl V", true],
+      ["menu.createClipHere", undefined, true],
+    ]);
     rows()[0]!.run();
     ctx(q(".lanes")!, 600, 100, { shiftKey: true });
     rows()[0]!.run();
+    // ここにクリップを作る: 押した所のティックのまま（小節に寄せるのは Rust）。
+    rows()[1]!.run();
     expect(app.sent).toEqual([
       { type: "pasteClips", to: { track: 2, tick: 9 * BAR } },
       { type: "pasteClips", to: { track: 2, tick: (600 * BAR) / 64 } },
+      { type: "createClip", track: 2, tick: (600 * BAR) / 64 },
     ]);
   });
 
@@ -395,6 +410,7 @@ describe("右クリックの一覧（B-60）", () => {
     ctx(qa("[data-test=track-head]")[0]!, 10, 10);
     expect(app.sent).toEqual([{ type: "selectTrack", track: 1, fromArm: false }]);
     expect(rows().map((r) => [r.label, r.key, r.usable, r.checked])).toEqual([
+      ["menu.openInPianoRoll", "E", true, undefined],
       ["menu.mute", "Shift M", true, false],
       ["menu.solo", "Shift S", true, false],
       ["menu.arm", undefined, true, true],
@@ -404,7 +420,7 @@ describe("右クリックの一覧（B-60）", () => {
       ["menu.moveTrackDown", undefined, true, undefined],
       ["menu.deleteTrack", undefined, true, undefined],
     ]);
-    expect(contextMenu.open!.entries.map((e) => e.kind)).toEqual(["row", "row", "row", "separator", "row", "row", "row", "row", "separator", "row"]);
+    expect(contextMenu.open!.entries.map((e) => e.kind)).toEqual(["row", "separator", "row", "row", "row", "separator", "row", "row", "row", "row", "separator", "row"]);
     const colors = rows().find((r) => r.label === "menu.trackColor")!.sub!.filter((e) => e.kind === "row");
     expect(colors.map((r) => [r.text, r.swatch, r.checked])).toEqual([
       ["色 1", 1, true],
@@ -413,9 +429,9 @@ describe("右クリックの一覧（B-60）", () => {
       ["色 4", 4, false],
       ["色 5", 5, false],
     ]);
-    for (const r of rows().slice(0, 3)) r.run();
+    for (const r of rows().slice(1, 4)) r.run();
     colors[2]!.run();
-    for (const r of rows().slice(5).filter((r) => r.usable)) r.run();
+    for (const r of rows().slice(6).filter((r) => r.usable)) r.run();
     expect(app.sent.slice(1)).toEqual([
       { type: "toggleMute", track: 1 },
       { type: "toggleSolo", track: 1 },

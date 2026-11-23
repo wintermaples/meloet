@@ -32,6 +32,8 @@ import {
 } from "../components/tracks.svelte";
 import { shownTick } from "../components/time";
 import { laneDeleteCommand } from "../components/automation/laneKeys";
+import { joinTarget, renameClipTarget } from "../components/clipEdits";
+import { startClipRename } from "../components/clipName.svelte";
 import { historyFocused, historyHome, historyJumpCommand, historyStep } from "../components/history/historyUi.svelte";
 import { timelineKeyCommand } from "../components/timeline/keys";
 import { pickTimeline } from "../components/timeline/pick";
@@ -183,6 +185,10 @@ function command(action: KeyAction, state: AppState): Command | null {
     // どのクリップを切るかは Rust が決める（えらんだクリップで再生の線がかかる物、なければ選んだトラックの線の下の 1 つ。仕様書 4 章）。
     case "splitClips":
       return busy ? null : { type: "splitClips" };
+    case "joinClips": {
+      const ids = joinTarget(state);
+      return ids === null || busy ? null : { type: "joinClips", clips: ids };
+    }
     case "deleteSelected":
       return { type: "deleteSelected" };
     // アレンジにキーが向いているとき（B-71）。Mod D はえらんだクリップのすぐうしろに複製。
@@ -271,13 +277,22 @@ function screenOnly(action: KeyAction): boolean {
 }
 
 /** F2 で名前を変えるトラック（選んだトラック）。録音中とカウントイン中は変えられない。 */
-function renameTarget(state: AppState): number | null {
+function renameTrackTarget(state: AppState): number | null {
   const track = state.song.playTarget;
   return track === null ||
     songBusy(state) ||
     !state.song.tracks.some((x) => x.id === track)
     ? null
     : track;
+}
+
+/** F2: with a clip chosen, that clip's name; with only a track chosen, the track's name (spec 4, round 10). */
+function renameTarget(state: AppState): { kind: "clip" | "track"; id: number } | null {
+  if (songBusy(state)) return null;
+  const clip = renameClipTarget(state);
+  if (clip !== null) return { kind: "clip", id: clip };
+  const track = renameTrackTarget(state);
+  return track === null ? null : { kind: "track", id: track };
 }
 
 /** いま行えるか（メニューの行の「使えない」）。 */
@@ -315,9 +330,10 @@ export function runKeyAction(
       if (!closeMenuBar()) openMenuBar(0, true);
       return true;
     case "renameTrack": {
-      const track = renameTarget(state);
-      if (track !== null) startRename(track);
-      return track !== null;
+      const target = renameTarget(state);
+      if (target?.kind === "clip") startClipRename(target.id);
+      else if (target?.kind === "track") startRename(target.id);
+      return target !== null;
     }
     case "historyStep":
       return historyStep(state, action.delta);
@@ -347,6 +363,7 @@ const WITH_MOD = new Set<KeyAction["kind"]>([
   "copy",
   "paste",
   "zoom",
+  "joinClips",
 ]);
 
 /**

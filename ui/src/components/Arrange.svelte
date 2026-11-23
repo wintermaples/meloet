@@ -5,7 +5,7 @@
      録音中はドラッグしないので、録っているクリップの先と同じ時に使わない）で描く。動かすだけなら箱を transform で動かす。
      選んであるクリップは何個でも、いっしょに動かす（docs/history/design-notes.ja.md B-71）。右クリックの一覧は B-60。 -->
 <script lang="ts">
-  import { onDestroy, onMount, untrack, type Snippet } from "svelte";
+  import { onDestroy, onMount, tick as nextTick, untrack, type Snippet } from "svelte";
   import {
     clockOffsetUs,
     liveNotes,
@@ -33,6 +33,8 @@
   import VScrollbar from "./mixer/VScrollbar.svelte";
   import { term } from "../lib/tip.svelte";
   import { openContextMenu, type MenuEntry, type MenuRow } from "./menu/contextMenu.svelte";
+  import { joinable, overdubClipName, splitTick } from "./clipEdits";
+  import { clipEdit, renameCommand, startClipRename, stopClipRename } from "./clipName.svelte";
   import { current, send } from "../state/app.svelte";
   import { t } from "../text/ja";
   import * as CD from "./arrangeDrag";
@@ -252,6 +254,8 @@
   onDestroy(() => stopBook?.());
 
   const rec = $derived(transport.state === "recording" ? transport.recording : null);
+  /** 「重ねる」 on and recording into a clip that was there: that clip's name (mock P10-Overdub). */
+  const overdubName = $derived(rec && transport.overdub ? overdubClipName(song.tracks, rec) : null);
   /**
    * 録っている歌のトラック（仕様書 3 章 24-C: 録っている間のクリップは、どれも rec の色。モック F7-VocalRec ・ F7-TwoRec）。
    * 波形は約束 24 なので、いまは中身のない rec のクリップ。鍵盤と同じく、できた小節は大きな面、のびている先（2 小節まで）は recordingClip。
@@ -641,6 +645,7 @@
         if (rec && shown && rec.track === track.id && clip.start < shown.commit + perBar && clip.end > shown.lapFrom) continue;
         // 動かしている・つめているクリップの名前は、動いている絵の側に出す。
         if (dragIds.has(clip.id) && dragFrame) continue;
+        if (naming?.clip.id === clip.id) continue;
         const x = Math.max(box.x0, 0) + dims.hair;
         // 右が見えている幅の 2 つぶんより先にのびるクリップは、そこで切る（送るたびに札の幅を変えない。名前がそれより長いことはない）。
         const w = Math.min(box.x1, 2 * view.width) - Math.max(box.x0, 0) - 2 * dims.hair;
@@ -660,6 +665,61 @@
     });
     return out;
   });
+
+  // ---- The clip name box (mock P10-ClipName (a)): over the name strip, at least as wide as the strip ----
+
+  const naming = $derived.by(() => {
+    const id = clipEdit.renaming;
+    if (id === null || clipEdit.place !== "arrange") return null;
+    for (const [row, track] of song.tracks.entries()) {
+      const clip = track.clips.find((c) => c.id === id);
+      if (!clip) continue;
+      const box = G.clipBox(view, dims, row, clip.start, clip.end);
+      const x = Math.max(box.x0, 0) + dims.hair;
+      return { clip, x, y: box.y0 + dims.mark + dims.hair, w: Math.max(0, box.x1 - x - dims.hair), tag: G.takeMark(clip, box.x1 - box.x0, tagMin) === "tag" };
+    }
+    return null;
+  });
+  let nameDraft = $state("");
+  let nameField = $state<HTMLInputElement>();
+  let nameFor: number | null = null;
+  $effect(() => {
+    const id = clipEdit.place === "arrange" ? clipEdit.renaming : null;
+    if (id === nameFor) return;
+    nameFor = id;
+    if (id === null) return;
+    const clip = song.tracks.flatMap((tr) => tr.clips).find((c) => c.id === id);
+    if (!clip || untrack(() => busy)) {
+      stopClipRename();
+      return;
+    }
+    nameDraft = clip.name;
+    void nextTick().then(() => {
+      nameField?.focus();
+      nameField?.select();
+    });
+  });
+  // Recording starting, or the clip going away, closes the box (core would not take the name).
+  $effect(() => {
+    if (clipEdit.place === "arrange" && clipEdit.renaming !== null && (busy || !song.tracks.some((tr) => tr.clips.some((c) => c.id === clipEdit.renaming)))) stopClipRename();
+  });
+  function nameKey(e: KeyboardEvent, clip: ClipView): void {
+    if (e.isComposing) return;
+    if (e.key === "Enter") {
+      e.preventDefault();
+      e.stopPropagation();
+      stopClipRename();
+      const command = renameCommand(clip.id, clip.name, nameDraft);
+      if (command) send(command);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      stopClipRename();
+    }
+  }
+  function nameBlur(clip: ClipView): void {
+    if (clipEdit.renaming === clip.id && clipEdit.place === "arrange") stopClipRename();
+  }
 
   /** えらんだクリップのテイクが 2 つ以上なら、すぐ上に切りかえの札。 */
   const switcher = $derived.by(() => {
@@ -1166,17 +1226,7 @@
   }
   function rulerUp(e: PointerEvent): void {
     if (!drag) return;
-    // 目盛に見えている線に吸いつく（B-61）: 拍の線が見えていれば拍、ふだんは小節、間引いていれば番号のある小節。
-    const every = barLabelEvery;
-    const step = e.shiftKey
-      ? null
-      : gridBeats
-        ? (at: number) => snapToStep(map, at, 0)
-        : (at: number) => {
-            const m = map.meterAt(Math.max(0, at));
-            const line = Math.round((m.bar + (Math.max(0, at) - m.barTick) / ticksPerBar(m)) / every) * every;
-            return map.tickOfBar(line);
-          };
+    const step = e.shiftKey ? null : rulerLine;
     const command = G.rulerCommand(drag.d, view, drag.downX, e.clientX - drag.left, map, still(), step);
     drag = null;
     if (command.type === "locate") preview = null;
@@ -1185,6 +1235,14 @@
     void send(command).then((rev) => {
       if (rev === before && !drag) preview = null;
     });
+  }
+  /** 目盛に見えている線に吸いつく（B-61）: 拍の線が見えていれば拍、ふだんは小節、間引いていれば番号のある小節。 */
+  function rulerLine(at: number): number {
+    if (gridBeats) return snapToStep(map, at, 0);
+    const every = barLabelEvery;
+    const m = map.meterAt(Math.max(0, at));
+    const line = Math.round((m.bar + (Math.max(0, at) - m.barTick) / ticksPerBar(m)) / every) * every;
+    return map.tickOfBar(line);
   }
   function rulerCancel(): boolean {
     if (!drag) return false;
@@ -1337,22 +1395,28 @@
   const clipboardCount = $derived(current.state!.arrange.clipboardClips);
 
   /** 録音中とカウントイン中は、曲を変える行を使えない。 */
-  function clipMenu(clip: ClipView): MenuEntry[] {
+  function clipMenu(clip: ClipView, at: number, ids: readonly number[]): MenuEntry[] {
     const change = !busy;
+    const keys = clip.audio === null;
     const open = () => {
       if (!pianoRollOpen) send({ type: "toggleBand", band: "pianoRoll" });
     };
+    const cutAt = splitTick(clip, rulerLine(at));
     // 歌のクリップの「逆にする」「ノーマライズ」は、あとの回の席（仕様書 3 章「音を作っている間」）。
     const later: MenuEntry[] = clip.audio
       ? [{ kind: "separator" }, menuRow("menu.reverse", false, () => {}), menuRow("menu.normalize", false, () => {})]
       : [];
     return [
-      menuRow("menu.openInPianoRoll", true, open, t("key.pianoRoll")),
+      ...(keys ? ([menuRow("menu.openInPianoRoll", true, open, t("key.pianoRoll")), { kind: "separator" }] satisfies MenuEntry[]) : []),
       menuRow("menu.cut", change, () => send({ type: "cutClips", clips: chosen() }), modKey(t("key.cut"))),
       menuRow("menu.copy", true, () => send({ type: "copyClips", clips: chosen() }), modKey(t("key.copy"))),
       menuRow("menu.paste", change && clipboardCount > 0, () => send({ type: "pasteClips", to: null }), modKey(t("key.paste"))),
       menuRow("menu.duplicate", change, () => send({ type: "duplicateClips", clips: chosen() }), modKey(t("key.duplicate"))),
       menuRow("menu.delete", change, () => send({ type: "deleteSelected" }), t("key.delete")),
+      { kind: "separator" },
+      menuRow("menu.splitHere", change && cutAt !== null, () => cutAt !== null && send({ type: "splitClipAt", clip: clip.id, tick: cutAt })),
+      ...(keys ? [menuRow("menu.join", change && joinable(song.tracks, ids), () => send({ type: "joinClips", clips: chosen() }), modKey(t("key.join")))] : []),
+      menuRow("menu.renameClip", change, () => startClipRename(clip.id), t("key.renameTrack")),
       { kind: "separator" },
       menuRow("menu.nextTake", change && clip.takes > 1, () => send({ type: "stepTake", delta: 1 }), t("key.take")),
       menuRow("menu.prevTake", change && clip.takes > 1, () => send({ type: "stepTake", delta: -1 }), shiftKey(t("key.take"))),
@@ -1361,35 +1425,58 @@
     ];
   }
 
-  /** 歌のクリップを 2 回押す: そのトラックの行を 160 に（もう一度で戻す。仕様書 3 章、B-94-23）。 */
+  /**
+   * Double press (spec 3, round 10): on a clip's name strip, the name box; on the wave of an audio clip, that track's row
+   * to 160 and back (B-94-23); on an empty place of a keyboard track, a new clip there (Rust snaps it to the bar).
+   * An empty place of a vocal track does nothing.
+   */
   function lanesDouble(e: MouseEvent): void {
     if (e.button !== 0 || clipDrag || boxSel) return;
-    const hit = hitAt(lanePoint(e));
-    if (!hit || hit.clip.audio === null) return;
+    const p = lanePoint(e);
+    const hit = hitAt(p);
+    if (!hit) {
+      const track = song.tracks[G.trackRowAt(dims, p.y)];
+      if (track && track.kind.kind === "keys" && !busy) send({ type: "createClip", track: track.id, tick: Math.max(0, Math.round(G.xToTick(view, p.x))) });
+      return;
+    }
+    const box = G.clipBox(view, dims, hit.row, hit.clip.start, hit.clip.end);
+    if (p.y < box.y0 + dims.mark + dims.nameH) {
+      if (!busy) startClipRename(hit.clip.id);
+      return;
+    }
+    if (hit.clip.audio === null) return;
     const track = song.tracks[hit.row];
     if (track) send({ type: "setTallTrack", track: track.id });
   }
 
   function lanesContext(e: MouseEvent): void {
     e.preventDefault();
-    if (clipDrag || boxSel) return;
+    // The name box is a text box: its menu is the text menu (ContextMenu.svelte).
+    if (clipDrag || boxSel || e.target instanceof HTMLInputElement) return;
     const p = lanePoint(e);
     const hit = hitAt(p);
+    const at = Math.max(0, G.xToTick(view, p.x));
     if (hit) {
       pickClips();
-      if (!selectedSet.has(hit.clip.id)) send({ type: "selectClip", clip: hit.clip.id });
-      openContextMenu(e.clientX, e.clientY, clipMenu(hit.clip));
+      const had = selectedSet.has(hit.clip.id);
+      if (!had) send({ type: "selectClip", clip: hit.clip.id });
+      openContextMenu(e.clientX, e.clientY, clipMenu(hit.clip, at, had ? current.state!.arrange.selectedClips : [hit.clip.id]));
       return;
     }
     // 押した所を、クリップを動かすときと同じグリッド（ふだん 1 小節）に寄せる。Shift なら寄せない。
     const track = song.tracks[G.trackRowAt(dims, p.y)];
-    const at = G.xToTick(view, p.x);
-    const tick = Math.max(0, e.shiftKey ? Math.round(at) : nearestBarTick(map, at));
+    const tick = e.shiftKey ? Math.round(at) : Math.max(0, nearestBarTick(map, at));
     const paste = () => {
       if (track) send({ type: "pasteClips", to: { track: track.id, tick } });
     };
+    const more: MenuEntry[] = !track
+      ? []
+      : track.kind.kind === "keys"
+        ? [menuRow("menu.createClipHere", !busy, () => send({ type: "createClip", track: track.id, tick: Math.round(at) }))]
+        : [menuRow("menu.importAudio", !busy, () => send({ type: "importAudio", track: track.id }))];
     openContextMenu(e.clientX, e.clientY, [
       menuRow("menu.paste", !busy && track !== undefined && clipboardCount > 0, paste, modKey(t("key.paste"))),
+      ...more,
     ]);
   }
 
@@ -1593,7 +1680,7 @@
               style:left="{Math.max(G.tickToX(view, recShown.lapFrom), 0) + dims.hair}px"
               style:top="{G.rowTop(dims, row) + dims.inset + dims.mark}px"
             >
-              {t("arrange.recordingClip", { take: rec.take })}
+              {overdubName === null ? t("arrange.recordingClip", { take: rec.take }) : t("arrange.overdubClip", { clip: overdubName })}
             </div>
           {/if}
           {#each recVocals as v (v.track)}
@@ -1624,6 +1711,39 @@
             </div>
           {/each}
         </div>
+        {#if naming}
+          {@const c = naming.clip}
+          <div
+            class="clip-naming"
+            role="presentation"
+            data-over-clips
+            style:left="{naming.x}px"
+            style:top="{naming.y}px"
+            style:min-width="{naming.w}px"
+            onpointerdown={(e) => e.stopPropagation()}
+            ondblclick={(e) => e.stopPropagation()}
+          >
+            {#if naming.tag}
+              <span class="m-num take-tag selected">{t("arrange.takeTag", { take: c.take, takes: c.takes })}</span>
+            {/if}
+            <span class="name-cell">
+              <span class="name-sizer" aria-hidden="true">{nameDraft}</span>
+              <input
+                class="name-field"
+                type="text"
+                size="1"
+                spellcheck="false"
+                autocomplete="off"
+                aria-label={t("menu.renameClip")}
+                data-test="clip-name-field"
+                bind:this={nameField}
+                bind:value={nameDraft}
+                onkeydown={(e) => nameKey(e, c)}
+                onblur={() => nameBlur(c)}
+              />
+            </span>
+          </div>
+        {/if}
         <AudioClipNotes {view} {dims} tracks={song.tracks} askHost={timeBox} />
         <AudioClipHandles {view} {dims} tracks={song.tracks} selected={selectedSet} {busy} />
         <DropFrame {view} {dims} tracks={song.tracks} {map} {perBar} />
@@ -1939,6 +2059,42 @@
     left: 0;
     top: 0;
     background: var(--color-gray-10);
+  }
+  /* The clip name box: the same as the track name box (gray.0, border gray.10, weight 600, height 20). It may stick out of a narrow clip. */
+  .clip-naming {
+    position: absolute;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    width: max-content;
+    pointer-events: auto;
+  }
+  .name-cell {
+    flex: 1;
+    display: grid;
+  }
+  .name-sizer,
+  .name-field {
+    grid-area: 1 / 1;
+    box-sizing: border-box;
+    height: var(--part-toggle-size);
+    padding: 0 var(--space-1);
+    border: var(--line-hair) solid var(--color-gray-10);
+    font: inherit;
+    font-weight: var(--text-s-weight-600);
+    white-space: pre;
+  }
+  .name-sizer {
+    visibility: hidden;
+  }
+  .name-field {
+    width: 100%;
+    min-width: 0;
+    background: var(--color-gray-0);
+    border-radius: var(--radius-1);
+    color: var(--color-gray-10);
+    outline: none;
   }
   /* 囲む枠（ピアノロールの囲みと同じ accent の line.hair）。 */
   .box-frame {

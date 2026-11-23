@@ -271,7 +271,7 @@
     padding: 0;
   }
   .head {
-    border-bottom: var(--line-hair) solid var(--color-gray-5);
+    border-bottom: var(--line-hair) solid var(--color-line-thin);
   }
   .rows {
     position: relative;
@@ -288,7 +288,7 @@
     gap: var(--space-2);
     padding: 0 var(--space-3);
     background: var(--color-gray-2);
-    border-bottom: var(--line-hair) solid var(--color-gray-5);
+    border-bottom: var(--line-hair) solid var(--color-line-thin);
     white-space: nowrap;
   }
   .group .name {
@@ -310,7 +310,7 @@
     width: 100%;
     color: var(--color-gray-9);
     background: var(--color-gray-3);
-    border-bottom: var(--line-hair) solid var(--color-gray-4);
+    border-bottom: var(--line-hair) solid var(--color-line-row);
     border-left: var(--line-mark) solid var(--color-gray-3);
   }
   .row.selected {

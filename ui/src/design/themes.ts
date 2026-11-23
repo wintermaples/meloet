@@ -27,6 +27,10 @@ const light = {
   "color.rec": "#A5261F",
   "color.meter.ok": "#4CD964",
   "color.meter.hot": "#FFD60A",
+  "color.meter.ground": "#333333",
+  "color.meter.ground.mic": "#333333",
+  "color.meter.clip": "#FF6158",
+  "color.meter.peak": "#F2F2F2",
   "color.track.1": "#007F7F",
   "color.track.2": "#1977B6",
   "color.track.3": "#4668E1",
@@ -41,6 +45,12 @@ const light = {
   "color.row.white": "#FFFFFF",
   "color.row.black": "#F6F6F6",
   "color.row.out": "#E1E1E1",
+  "color.row.hatch": "#7A7A7A",
+  "color.line.bar": "#808080",
+  "color.line.beat": "#B9B9B9",
+  "color.line.grid": "#CECECE",
+  "color.line.thin": "#A7A7A7",
+  "color.line.row": "#C5C5C5",
 } as const satisfies Palette;
 
 const pinkDark = {
@@ -50,7 +60,7 @@ const pinkDark = {
   "color.gray.3": "#30282C",
   "color.gray.4": "#392F33",
   "color.gray.5": "#483B41",
-  "color.gray.6": "#57494F",
+  "color.gray.6": "#65555C",
   "color.gray.7": "#806E77",
   "color.gray.8": "#A7969E",
   "color.gray.9": "#DBD5D7",
@@ -59,6 +69,10 @@ const pinkDark = {
   "color.rec": "#FF685F",
   "color.meter.ok": "#4CD964",
   "color.meter.hot": "#FFD60A",
+  "color.meter.ground": "#040404",
+  "color.meter.ground.mic": "#392F33",
+  "color.meter.clip": "#FF685F",
+  "color.meter.peak": "#F3F2F2",
   "color.track.1": "#69E4E4",
   "color.track.2": "#5ABDF2",
   "color.track.3": "#6F8BED",
@@ -73,6 +87,12 @@ const pinkDark = {
   "color.row.white": "#292225",
   "color.row.black": "#211B1E",
   "color.row.out": "#040404",
+  "color.row.hatch": "#66575E",
+  "color.line.bar": "#7A6971",
+  "color.line.beat": "#4A3D43",
+  "color.line.grid": "#382F33",
+  "color.line.thin": "#56494F",
+  "color.line.row": "#3F3438",
 } as const satisfies Palette;
 
 const pinkLight = {
@@ -91,6 +111,10 @@ const pinkLight = {
   "color.rec": "#9F251E",
   "color.meter.ok": "#4CD964",
   "color.meter.hot": "#FFD60A",
+  "color.meter.ground": "#373134",
+  "color.meter.ground.mic": "#373134",
+  "color.meter.clip": "#FF685F",
+  "color.meter.peak": "#F3F2F2",
   "color.track.1": "#007B7B",
   "color.track.2": "#1873B0",
   "color.track.3": "#4164E0",
@@ -105,6 +129,12 @@ const pinkLight = {
   "color.row.white": "#FBF9F9",
   "color.row.black": "#F5EEF0",
   "color.row.out": "#E8D6DE",
+  "color.row.hatch": "#866F7A",
+  "color.line.bar": "#8F7582",
+  "color.line.beat": "#CDAABB",
+  "color.line.grid": "#DBC1CD",
+  "color.line.thin": "#BF98AA",
+  "color.line.row": "#D6B8C6",
 } as const satisfies Palette;
 
 const mintDark = {
@@ -114,7 +144,7 @@ const mintDark = {
   "color.gray.3": "#232E2A",
   "color.gray.4": "#293531",
   "color.gray.5": "#33423D",
-  "color.gray.6": "#3F514A",
+  "color.gray.6": "#5B7068",
   "color.gray.7": "#637971",
   "color.gray.8": "#8D9E98",
   "color.gray.9": "#D3D7D6",
@@ -123,6 +153,10 @@ const mintDark = {
   "color.rec": "#FF6A61",
   "color.meter.ok": "#4CD964",
   "color.meter.hot": "#FFD60A",
+  "color.meter.ground": "#040404",
+  "color.meter.ground.mic": "#293531",
+  "color.meter.clip": "#FF6A61",
+  "color.meter.peak": "#F1F3F2",
   "color.track.1": "#FFD54A",
   "color.track.2": "#5ABDF2",
   "color.track.3": "#6F8BED",
@@ -137,6 +171,12 @@ const mintDark = {
   "color.row.white": "#1D2723",
   "color.row.black": "#171F1C",
   "color.row.out": "#040404",
+  "color.row.hatch": "#4B5F57",
+  "color.line.bar": "#5D736B",
+  "color.line.beat": "#35453F",
+  "color.line.grid": "#293531",
+  "color.line.thin": "#3F514A",
+  "color.line.row": "#2E3B36",
 } as const satisfies Palette;
 
 const mintLight = {
@@ -155,6 +195,10 @@ const mintLight = {
   "color.rec": "#A0251E",
   "color.meter.ok": "#4CD964",
   "color.meter.hot": "#FFD60A",
+  "color.meter.ground": "#2D3432",
+  "color.meter.ground.mic": "#2D3432",
+  "color.meter.clip": "#FF6A61",
+  "color.meter.peak": "#F1F3F2",
   "color.track.1": "#8F6800",
   "color.track.2": "#1874B0",
   "color.track.3": "#4165E0",
@@ -169,6 +213,12 @@ const mintLight = {
   "color.row.white": "#F8FAF9",
   "color.row.black": "#EBF2EF",
   "color.row.out": "#D0DFDA",
+  "color.row.hatch": "#617C73",
+  "color.line.bar": "#668279",
+  "color.line.beat": "#9DBAB0",
+  "color.line.grid": "#B7CEC7",
+  "color.line.thin": "#8AABA0",
+  "color.line.row": "#ACC6BE",
 } as const satisfies Palette;
 
 export const palettes: Readonly<Record<ThemeId, Palette>> = {

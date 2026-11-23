@@ -252,7 +252,7 @@
 </div>
 
 <style>
-  /* Mock F4-Mixer: rows have 8 left and right, gap 8, a gray.4 line below. */
+  /* Mock F4-Mixer: rows have 8 left and right, gap 8, a line.row line below. */
   .row {
     height: var(--part-param-height);
     flex-shrink: 0;
@@ -260,7 +260,7 @@
     align-items: center;
     gap: var(--space-2);
     padding: 0 var(--space-2);
-    border-bottom: var(--line-hair) solid var(--color-gray-4);
+    border-bottom: var(--line-hair) solid var(--color-line-row);
     white-space: nowrap;
   }
   .row:hover {

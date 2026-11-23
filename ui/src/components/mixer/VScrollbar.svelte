@@ -82,7 +82,7 @@
     z-index: 5;
     width: var(--part-scrollbar-width);
     background: var(--color-gray-3);
-    border-left: var(--line-hair) solid var(--color-gray-5);
+    border-left: var(--line-hair) solid var(--color-line-thin);
   }
   .thumb {
     width: 100%;

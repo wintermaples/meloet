@@ -270,7 +270,7 @@
   }
   .group {
     background: var(--color-gray-4);
-    border-bottom: var(--line-hair) solid var(--color-gray-5);
+    border-bottom: var(--line-hair) solid var(--color-line-thin);
   }
   .group:hover,
   .more:hover {
@@ -278,7 +278,7 @@
   }
   .more {
     padding-left: calc(var(--space-3) + var(--space-4));
-    border-bottom: var(--line-hair) solid var(--color-gray-4);
+    border-bottom: var(--line-hair) solid var(--color-line-row);
   }
   .group-name {
     flex: 1;

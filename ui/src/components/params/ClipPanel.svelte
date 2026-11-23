@@ -339,14 +339,14 @@
 {/if}
 
 <style>
-  /* The name and file lines (mock F7-AudioEdit: 8 above and below, 12 left and right, gap 4, a gray.5 line below; the file line wraps). */
+  /* The name and file lines (mock F7-AudioEdit: 8 above and below, 12 left and right, gap 4, a line.thin line below; the file line wraps). */
   .who {
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
     gap: var(--space-1);
     padding: var(--space-2) var(--space-3);
-    border-bottom: var(--line-hair) solid var(--color-gray-5);
+    border-bottom: var(--line-hair) solid var(--color-line-thin);
   }
   .line {
     display: flex;
@@ -396,7 +396,7 @@
     gap: var(--space-2);
     padding: var(--space-2) var(--space-3);
     border-left: var(--line-mark) solid var(--color-gray-8);
-    border-bottom: var(--line-hair) solid var(--color-gray-4);
+    border-bottom: var(--line-hair) solid var(--color-line-row);
     white-space: normal;
   }
   .buttons {
@@ -415,7 +415,7 @@
     gap: var(--space-2);
     padding: 0 var(--space-3);
     background: var(--color-gray-4);
-    border-bottom: var(--line-hair) solid var(--color-gray-5);
+    border-bottom: var(--line-hair) solid var(--color-line-thin);
     white-space: nowrap;
   }
   .group:hover {
@@ -433,7 +433,7 @@
     align-items: center;
     gap: var(--space-2);
     padding: 0 var(--space-3);
-    border-bottom: var(--line-hair) solid var(--color-gray-4);
+    border-bottom: var(--line-hair) solid var(--color-line-row);
     white-space: nowrap;
   }
   .label {
@@ -475,7 +475,7 @@
     align-items: center;
     gap: var(--space-2);
     padding: 0 var(--space-3);
-    border-bottom: var(--line-hair) solid var(--color-gray-5);
+    border-bottom: var(--line-hair) solid var(--color-line-thin);
     white-space: nowrap;
   }
   .bar {

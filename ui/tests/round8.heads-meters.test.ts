@@ -108,23 +108,23 @@ describe("mic meter (spec 3 (94-17, 38-B), mic meter background and line)", () =
     expect([-Infinity, -70, -60, -36, -12, -6, 0, 3].map(micDbToLength)).toEqual([0, 0, 0, 0.25, 0.5, 0.75, 1, 1]);
   });
 
-  it("background gray.4. The ok/hot border is −3 dB, the same as the master. The white vertical line is 1 pixel at the 1-second peak, across 2 lines", () => {
+  it("background meter.ground.mic. The ok/hot border is −3 dB, the same as the master. The white vertical line is 1 pixel at the 1-second peak, across 2 lines", () => {
     const b = new Batch();
     b.clip(0, 0, 4000, 4000);
     const at = (db: number) => ({ length: micDbToLength(db), clipped: false });
     paintMeter(b, { x0: 0, y0: 0, x1: 200, y1: 10 }, 2, 2, at(-6), at(-1), false, { peak: micDbToLength(-12) });
-    expect(ofColor(b, "color.gray.4")).toEqual([
+    expect(ofColor(b, "color.meter.ground.mic")).toEqual([
       [0, 0, 200, 4],
       [0, 6, 200, 10],
     ]);
-    expect(ofColor(b, "color.gray.0")).toEqual([]);
+    expect(ofColor(b, "color.meter.ground")).toEqual([]);
     // −3 dB is 0.875 (175).
     expect(ofColor(b, "color.meter.ok")).toEqual([
       [0, 0, 150, 4],
       [0, 6, 175, 10],
     ]);
     expect(ofColor(b, "color.meter.hot")).toEqual([[175, 6, 192, 10]]);
-    expect(ofColor(b, "color.gray.10")).toEqual([[100, 0, 101, 10]]);
+    expect(ofColor(b, "color.meter.peak")).toEqual([[100, 0, 101, 10]]);
   });
 
   it("no line when there is no peak (−∞). The 0 dB line is the 1 pixel at the right end", () => {
@@ -136,7 +136,7 @@ describe("mic meter (spec 3 (94-17, 38-B), mic meter background and line)", () =
     const top = new Batch();
     top.clip(0, 0, 4000, 4000);
     paintMeter(top, { x0: 0, y0: 0, x1: 200, y1: 10 }, 2, 2, silent, silent, false, { peak: 1 });
-    expect(ofColor(top, "color.gray.10")).toEqual([[199, 0, 200, 10]]);
+    expect(ofColor(top, "color.meter.peak")).toEqual([[199, 0, 200, 10]]);
   });
 
   it("the input meter's mic meter slot passes the same number as the dB text (the whole-number 1-second peak) to the line. Scale text is −60, −12, 0", () => {

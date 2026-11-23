@@ -161,7 +161,7 @@ describe("WebGL surfaces", () => {
     // From the top meter to the bottom of the box (600).
     expect([c.width, c.height, c.style.top]).toEqual([180, 450, "50px"]);
     // 7 meters are visible (the background has 2 each on left and right), and a cut 8th (598–607, only on the left background).
-    const grounds = drawn.at(-1)!.rects.filter((r) => r.slice(4).join() === f32(rgb("color.gray.0")).join());
+    const grounds = drawn.at(-1)!.rects.filter((r) => r.slice(4).join() === f32(rgb("color.meter.ground")).join());
     expect(grounds).toHaveLength(15);
     expect(grounds.at(-1)!.slice(0, 4)).toEqual([0, 448, 180, 450]);
     engine.destroy();
@@ -265,7 +265,7 @@ describe("WebGL surfaces", () => {
     expect(c.parentElement).toBe(strips);
     // The first 6 are visible. The surface runs from the left of the 1st (140) to the right end of the box (500), since there are more slots to the right.
     expect([c.width, c.height, c.style.left, c.style.top]).toEqual([360, 100, "40px", "20px"]);
-    const ground = f32(rgb("color.gray.0")).join();
+    const ground = f32(rgb("color.meter.ground")).join();
     const ok = f32(rgb("color.meter.ok")).join();
     const of = (color: string) => drawn.at(-1)!.rects.filter((r) => r.slice(4).join() === color).map((r) => r.slice(0, 4));
     expect(of(ground)).toHaveLength(12);
@@ -294,8 +294,8 @@ describe("WebGL surfaces", () => {
       [a + 128, 30, a + 132, 100],
       [a + 133, 30, a + 137, 100],
     ]);
-    // Return B (11th): the right went over 0 dB. A 2px rec at the top end.
-    expect(of(f32(rgb("color.rec")).join())).toEqual([[a + 64 + 5, 0, a + 64 + 9, 2]]);
+    // Return B (11th): the right went over 0 dB. A 2px meter.clip at the top end.
+    expect(of(f32(rgb("color.meter.clip")).join())).toEqual([[a + 64 + 5, 0, a + 64 + 9, 2]]);
     engine.destroy();
   });
 

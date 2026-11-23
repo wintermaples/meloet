@@ -219,7 +219,7 @@
   .table {
     display: flex;
     flex-direction: column;
-    border: var(--line-hair) solid var(--color-gray-5);
+    border: var(--line-hair) solid var(--color-line-thin);
   }
   .row {
     box-sizing: border-box;
@@ -228,7 +228,7 @@
     gap: var(--space-2);
     min-height: var(--size-toolbar);
     padding: var(--space-1) 0;
-    border-bottom: var(--line-hair) solid var(--color-gray-4);
+    border-bottom: var(--line-hair) solid var(--color-line-row);
   }
   .row:last-child {
     border-bottom: 0;

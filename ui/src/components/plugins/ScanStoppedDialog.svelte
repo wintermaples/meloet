@@ -127,7 +127,7 @@
   .intro {
     margin: 0;
     padding: var(--space-3) var(--space-4);
-    border-bottom: var(--line-hair) solid var(--color-gray-5);
+    border-bottom: var(--line-hair) solid var(--color-line-thin);
     white-space: normal;
   }
   .row {
@@ -135,7 +135,7 @@
     flex-direction: column;
     gap: var(--space-1);
     padding: var(--space-2) var(--space-4);
-    border-bottom: var(--line-hair) solid var(--color-gray-5);
+    border-bottom: var(--line-hair) solid var(--color-line-thin);
   }
   .top {
     display: flex;

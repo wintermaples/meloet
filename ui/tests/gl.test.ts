@@ -19,7 +19,7 @@ interface NodeFs {
 const fs = (globalThis as unknown as { process: { getBuiltinModule(id: "node:fs"): NodeFs } }).process.getBuiltinModule("node:fs");
 const here = import.meta.url;
 const mockHtml = (board: string) => fs.readFileSync(new URL(`../../docs/design/mock/${board}.dc.html`, here), "utf8");
-/** The dark grays the mock boards were drawn with, before the contrast fix of user:2026-11-23 (docs/spec/1-tokens.md). */
+/** The dark grays the mock boards were drawn with, before the contrast fix of user:2026-11-23 (docs/spec/1-tokens.md). The mocks draw the lines of the keyboard picture in gray.6; the picture uses line.thin for them. */
 const mockColors: Partial<Record<keyof typeof colors, string>> = {
   "color.gray.0": "#0A0A0A",
   "color.gray.3": "#1A1A1A",
@@ -71,7 +71,7 @@ describe("dB → length", () => {
     expect(FALL_DB_PER_S).toBeCloseTo(20 / 1.7, 10);
     expect(text).toContain(`Up to −3 dB (${METER_HOT_FROM * 100} % of the length) is meter.ok, above that meter.hot`);
     expect(dbToLength(-3)).toBeCloseTo(METER_HOT_FROM, 10);
-    expect(text).toContain(`Above 0 dB, a rec 2px at the top end for ${CLIP_HOLD_MS / 1000} seconds`);
+    expect(text).toContain(`Above 0 dB, a meter.clip 2px at the top end for ${CLIP_HOLD_MS / 1000} seconds`);
   });
   it("on a mark, the mark value; between, a straight line", () => {
     for (const [db, length] of DB_SCALE) expect(dbToLength(db)).toBeCloseTo(length, 10);
@@ -275,7 +275,7 @@ describe("rect lists", () => {
     const down = new Set([60, 61]);
     paintKeyboard(b, { x0: 100, y0: 10, x1: 100 + 1 + 29 * FULL.white.w, y1: 10 + FULL.white.h }, full, 36, 84, (n) => down.has(n));
 
-    expect(ofColor(b, "color.gray.6")).toEqual([[100, 10, 449, 42]]);
+    expect(ofColor(b, "color.line.thin")).toEqual([[100, 10, 449, 42]]);
     const whites = ofColor(b, "color.gray.3");
     expect(whites.length).toBe(28);
     // White key i: from right of its left line to before its right line (11 px). Inside the top and bottom lines.
@@ -297,7 +297,7 @@ describe("rect lists", () => {
     const b = batch();
     paintKeyboard(b, { x0: 0, y0: 0, x1: 1 + 29 * FULL.white.w, y1: FULL.white.h }, full, 36, 84, () => false, true);
     expect(ofColor(b, "color.gray.5")).toEqual([[0, 0, 349, 32]]);
-    expect(ofColor(b, "color.gray.6").length).toBe(20);
+    expect(ofColor(b, "color.line.thin").length).toBe(20);
     expect(ofColor(b, "color.gray.7")).toEqual([]);
     expect(ofColor(b, "color.gray.3").length).toBe(29);
     expect(ofColor(b, "color.gray.0").length).toBe(20);
@@ -344,7 +344,7 @@ describe("rect lists", () => {
   it("slim keys (when the full input meter is narrow): white key 8, black key width 5, height 19", () => {
     const b = batch();
     paintKeyboard(b, { x0: 0, y0: 0, x1: 233, y1: 32 }, blackKeyPx("narrow", 100, 1), 36, 84, (n) => n === 61);
-    expect(ofColor(b, "color.gray.6")).toEqual([[0, 0, 233, 32]]);
+    expect(ofColor(b, "color.line.thin")).toEqual([[0, 0, 233, 32]]);
     expect(ofColor(b, "color.gray.3")[0]).toEqual([1, 1, 8, 31]);
     expect(ofColor(b, "color.gray.7")[0]).toEqual([8 - 2, 0, 8 + 3, 19]);
     expect(ofColor(b, "color.gray.0")[0]).toEqual([8 - 1, 1, 8 + 2, 18]);
@@ -397,7 +397,7 @@ describe("rect lists", () => {
     ]);
     expect(METER_HOT_FROM).toBe(0.7);
     expect(ofColor(b, "color.meter.hot")).toEqual([[80, 28, 100, 32]]);
-    expect(ofColor(b, "color.rec")).toEqual([[108, 28, 110, 32]]);
+    expect(ofColor(b, "color.meter.clip")).toEqual([[108, 28, 110, 32]]);
   });
   it("vertical meter: L left, R right. 0 % at the bottom, 100 % at the top. Dividers and the clipping mark have the same length as horizontal, mark at the top", () => {
     const b = batch();
@@ -411,7 +411,7 @@ describe("rect lists", () => {
       [28, 40, 32, 110],
     ]);
     expect(ofColor(b, "color.meter.hot")).toEqual([[28, 20, 32, 40]]);
-    expect(ofColor(b, "color.rec")).toEqual([[28, 10, 32, 12]]);
+    expect(ofColor(b, "color.meter.clip")).toEqual([[28, 10, 32, 12]]);
 
     // The horizontal meter turned 90 degrees; same number and length of rects.
     const flat = batch();
@@ -425,7 +425,7 @@ describe("rect lists", () => {
     const b = batch();
     const clipped = { length: 1, clipped: true };
     paintMeter(b, { x0: 0, y0: 0, x1: 100, y1: 10 }, 2, clipMarkPx(125, 1), clipped, clipped);
-    expect(ofColor(b, "color.rec")).toEqual([
+    expect(ofColor(b, "color.meter.clip")).toEqual([
       [97, 0, 100, 4],
       [97, 6, 100, 10],
     ]);
@@ -436,11 +436,11 @@ describe("rect lists", () => {
     paintMeter(b, { x0: 0, y0: 0, x1: 132, y1: 12 }, 4, 2, silent, silent);
     expect(b.rectCount).toBe(2);
   });
-  it("bar lines: from firstBarX every barPx. Only inside the box. Fractions snap to pixels", () => {
+  it("bar lines alone (line.beat, Main): from firstBarX every barPx. Only inside the box. Fractions snap to pixels", () => {
     const b = batch();
     b.clip(100, 0, 300, 50);
     paintArrangeGrid(b, { x0: 100, y0: 0, x1: 300, y1: 50 }, 0, 64);
-    expect(ofColor(b, "color.gray.4")).toEqual([
+    expect(ofColor(b, "color.line.beat")).toEqual([
       [100, 0, 101, 50],
       [164, 0, 165, 50],
       [228, 0, 229, 50],
@@ -448,22 +448,22 @@ describe("rect lists", () => {
     ]);
     const scrolled = batch();
     paintArrangeGrid(scrolled, { x0: 0, y0: 0, x1: 100, y1: 10 }, -70.5, 40.25);
-    expect(ofColor(scrolled, "color.gray.4").map((r) => r[0])).toEqual([10, 50, 91]);
+    expect(ofColor(scrolled, "color.line.beat").map((r) => r[0])).toEqual([10, 50, 91]);
     const none = batch();
     paintArrangeGrid(none, { x0: 0, y0: 0, x1: 100, y1: 10 }, 0, 0);
     expect(none.rectCount).toBe(0);
   });
-  it("when beat lines are drawn too (B-61): bars gray.6, beats gray.4 (split the same way as the piano roll)", () => {
+  it("when beat lines are drawn too (B-61): bars line.bar, beats line.beat (split the same way as the piano roll)", () => {
     const b = batch();
     b.clip(0, 0, 300, 10);
     paintArrangeGrid(b, { x0: 0, y0: 0, x1: 300, y1: 10 }, 0, 128, 4);
-    expect(ofColor(b, "color.gray.6").map((r) => r[0])).toEqual([0, 128, 256]);
-    expect(ofColor(b, "color.gray.4").map((r) => r[0])).toEqual([32, 64, 96, 160, 192, 224, 288]);
+    expect(ofColor(b, "color.line.bar").map((r) => r[0])).toEqual([0, 128, 256]);
+    expect(ofColor(b, "color.line.beat").map((r) => r[0])).toEqual([32, 64, 96, 160, 192, 224, 288]);
     const scrolled = batch();
     scrolled.clip(0, 0, 100, 10);
     paintArrangeGrid(scrolled, { x0: 0, y0: 0, x1: 100, y1: 10 }, -150, 120, 6);
-    expect(ofColor(scrolled, "color.gray.6").map((r) => r[0])).toEqual([90]);
-    expect(ofColor(scrolled, "color.gray.4").map((r) => r[0])).toEqual([10, 30, 50, 70]);
+    expect(ofColor(scrolled, "color.line.bar").map((r) => r[0])).toEqual([90]);
+    expect(ofColor(scrolled, "color.line.beat").map((r) => r[0])).toEqual([10, 30, 50, 70]);
   });
   it("the border gap of the shrunk arrange is the A-PianoRoll mock value", () => {
     expect(mockHtml("A-PianoRoll")).toContain(`top:${OVERVIEW.inset}px;width:256px;height:37px;border:1px solid ${colors[OVERVIEW.frame]}`);

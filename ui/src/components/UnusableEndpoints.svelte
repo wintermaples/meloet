@@ -70,7 +70,7 @@
   .head.connect {
     height: var(--part-endpoint-height-connect);
     padding: 0 var(--space-3);
-    border-bottom: var(--line-hair) solid var(--color-gray-5);
+    border-bottom: var(--line-hair) solid var(--color-line-thin);
   }
   .head:focus-visible {
     outline: var(--line-hair) solid var(--color-gray-10);

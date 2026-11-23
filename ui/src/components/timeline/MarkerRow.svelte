@@ -223,7 +223,7 @@
     height: var(--size-row);
     flex-shrink: 0;
     background: var(--color-gray-3);
-    border-bottom: var(--line-hair) solid var(--color-gray-5);
+    border-bottom: var(--line-hair) solid var(--color-line-thin);
     touch-action: none;
   }
   .tag {

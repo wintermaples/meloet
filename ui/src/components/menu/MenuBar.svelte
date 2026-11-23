@@ -122,7 +122,7 @@
     align-items: stretch;
     padding: 0 var(--space-1);
     background: var(--color-gray-1);
-    border-bottom: var(--line-hair) solid var(--color-gray-5);
+    border-bottom: var(--line-hair) solid var(--color-line-thin);
     white-space: nowrap;
     overflow: hidden;
   }

@@ -524,7 +524,7 @@
     gap: var(--space-2);
     padding: 0 var(--space-3);
     background: var(--color-gray-4);
-    border-bottom: var(--line-hair) solid var(--color-gray-5);
+    border-bottom: var(--line-hair) solid var(--color-line-thin);
     white-space: nowrap;
   }
   /* Inspector rows (.rw in mock A-PianoRoll; the left is indented). */
@@ -535,7 +535,7 @@
     align-items: center;
     gap: var(--space-2);
     padding: 0 var(--space-3) 0 var(--mock-inspector-indent);
-    border-bottom: var(--line-hair) solid var(--color-gray-4);
+    border-bottom: var(--line-hair) solid var(--color-line-row);
     white-space: nowrap;
   }
   .value {
@@ -563,7 +563,7 @@
     align-items: center;
     gap: var(--space-2);
     padding: 0 var(--space-3) 0 var(--mock-inspector-indent);
-    border-bottom: var(--line-hair) solid var(--color-gray-4);
+    border-bottom: var(--line-hair) solid var(--color-line-row);
     white-space: nowrap;
   }
   .bulk-label {
@@ -644,7 +644,7 @@
     display: flex;
     gap: var(--space-2);
     padding: var(--mock-inspector-buttons-pad-y) var(--space-3) var(--mock-inspector-buttons-pad-y) var(--mock-inspector-indent);
-    border-bottom: var(--line-hair) solid var(--color-gray-4);
+    border-bottom: var(--line-hair) solid var(--color-line-row);
   }
 
   /* Stacking: the same as the 「拡大率」 list in the status line (above dialogs at 30, below term tips at 1000). */

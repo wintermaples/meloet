@@ -239,7 +239,7 @@ describe("mouse (drag.ts)", () => {
 });
 
 describe("picture (paint.ts)", () => {
-  const SIZES = { noteH: 11, edge: 2, velBar: 3, velCap: 7, velFull: 64, velMid: 36, endMark: 16, drumGap: 8, hatch: 6 };
+  const SIZES = { noteH: 11, edge: 2, velBar: 3, velCap: 7, velFull: 64, velMid: 36, endMark: 16, drumGap: 8, hatch: 12 };
   const BOX = { x0: 0, y0: 0, x1: 696, y1: 440 };
   const colorOf = (r: number[]) => [r[4], r[5], r[6]].join(",");
   const is = (name: Parameters<typeof rgb>[0]) => Array.from(Float32Array.from(rgb(name))).join(",");
@@ -297,7 +297,7 @@ describe("picture (paint.ts)", () => {
     expect(rects.some((x) => x[1] === 12 * 36 && x[2] === 696)).toBe(false);
   });
 
-  it("the thin grid lines (gray.3) are seen on both drum rows in every theme (1.08 : 1, the faint kind); no hatch, even with scale lock on", () => {
+  it("the fine grid lines (line.grid) are seen on both drum rows in every theme (1.2 : 1, the grid kind); no hatch, even with scale lock on", () => {
     const lum = (hex: string) =>
       hexToRgb(hex)
         .map((c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4))
@@ -305,7 +305,7 @@ describe("picture (paint.ts)", () => {
     const ratio = (a: string, b: string) => (Math.max(lum(a), lum(b)) + 0.05) / (Math.min(lum(a), lum(b)) + 0.05);
     for (const id of THEME_IDS) {
       const p = palettes[id];
-      for (const row of ["color.row.white", "color.row.black"] as const) expect(ratio(p["color.gray.3"], p[row]), `${id} ${row}`).toBeGreaterThanOrEqual(1.08);
+      for (const row of ["color.row.white", "color.row.black"] as const) expect(ratio(p["color.line.grid"], p[row]), `${id} ${row}`).toBeGreaterThanOrEqual(1.2);
     }
     const out = new Batch();
     out.clip(BOX.x0, BOX.y0, BOX.x1, BOX.y1);

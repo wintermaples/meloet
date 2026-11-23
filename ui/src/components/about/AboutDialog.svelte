@@ -274,7 +274,7 @@
     flex-direction: column;
     gap: var(--space-1);
     padding: var(--mock-about-name-pad-top) var(--space-4) var(--space-4);
-    border-bottom: var(--line-hair) solid var(--color-gray-5);
+    border-bottom: var(--line-hair) solid var(--color-line-thin);
   }
   .name {
     color: var(--color-gray-10);
@@ -286,7 +286,7 @@
     display: flex;
     flex-direction: column;
     padding: var(--space-2) var(--space-4);
-    border-bottom: var(--line-hair) solid var(--color-gray-5);
+    border-bottom: var(--line-hair) solid var(--color-line-thin);
   }
   .fact {
     display: flex;
@@ -298,7 +298,7 @@
     flex-shrink: 0;
     width: var(--mock-about-label);
   }
-  /* Row to the second page of a dialog (spec 2: height 32, 16 left and right, a gray.3 line below). */
+  /* Row to the second page of a dialog (spec 2: height 32, 16 left and right, a line.thin line below). */
   .next {
     width: 100%;
     display: flex;
@@ -307,12 +307,16 @@
     height: var(--part-dialognext-height);
     padding: 0 var(--space-4);
     border: 0;
-    border-bottom: var(--line-hair) solid var(--color-gray-3);
+    border-bottom: var(--line-hair) solid var(--color-line-thin);
     background: none;
     color: inherit;
     font: inherit;
     text-align: left;
     cursor: pointer;
+  }
+  /* The last row sits on the foot's top line; that line is its line below. */
+  .next:last-child {
+    border-bottom: 0;
   }
   .next:hover {
     background: var(--color-gray-4);
@@ -325,7 +329,7 @@
     gap: var(--space-2);
     height: var(--mock-about-search);
     padding: 0 var(--space-4);
-    border-bottom: var(--line-hair) solid var(--color-gray-5);
+    border-bottom: var(--line-hair) solid var(--color-line-thin);
   }
   .search {
     flex: 1;
@@ -362,12 +366,12 @@
   .hd {
     padding: 0 var(--space-3);
     background: var(--color-gray-4);
-    border-bottom: var(--line-hair) solid var(--color-gray-5);
+    border-bottom: var(--line-hair) solid var(--color-line-thin);
   }
   .row {
     padding: 0 var(--space-3) 0 var(--mock-about-indent);
     background: none;
-    border-bottom: var(--line-hair) solid var(--color-gray-4);
+    border-bottom: var(--line-hair) solid var(--color-line-row);
   }
   .row.opened {
     background: var(--color-gray-4);
@@ -384,7 +388,7 @@
     display: flex;
     flex-direction: column;
     padding: var(--mock-about-fields-pad-top) 0 var(--space-2);
-    border-bottom: var(--line-hair) solid var(--color-gray-5);
+    border-bottom: var(--line-hair) solid var(--color-line-thin);
   }
   .field {
     display: flex;
@@ -403,7 +407,7 @@
     height: var(--size-row);
     padding: 0 var(--space-4);
     background: var(--color-gray-1);
-    border-bottom: var(--line-hair) solid var(--color-gray-5);
+    border-bottom: var(--line-hair) solid var(--color-line-thin);
   }
   /* Full text box: only the inside of this box scrolls. */
   .text-box {
@@ -412,7 +416,7 @@
     height: var(--mock-about-text);
     margin: 0 var(--space-4) var(--space-2) var(--mock-about-indent);
     background: var(--color-gray-0);
-    border: var(--line-hair) solid var(--color-gray-5);
+    border: var(--line-hair) solid var(--color-line-thin);
   }
   .text {
     padding: var(--space-2);

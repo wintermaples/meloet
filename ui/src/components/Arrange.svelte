@@ -540,7 +540,7 @@
       const h = rows.height;
       for (const bar of [shownLoop.from, shownLoop.to]) {
         const x = G.tickToX(v, barLineTick(map, bar));
-        if (x >= 0 && x < v.width) out.push({ x, y: 0, w: dims.hair, h, color: "color.gray.7" });
+        if (x >= 0 && x < v.width) out.push({ x, y: 0, w: dims.hair, h, color: "color.gray.8" });
       }
     }
     for (const h of handles) out.push(h);
@@ -1874,7 +1874,7 @@
     align-items: center;
     gap: var(--space-2);
     padding: 0 var(--space-2);
-    border-bottom: var(--line-hair) solid var(--color-gray-5);
+    border-bottom: var(--line-hair) solid var(--color-line-thin);
     white-space: nowrap;
   }
   /* − ＋ (mock R3-Arrange: 24×24, space.1 between buttons). Pushed right with the grid tag. */
@@ -1890,7 +1890,7 @@
   .tempo-head {
     flex-shrink: 0;
     background: var(--color-gray-4);
-    border-bottom: var(--line-hair) solid var(--color-gray-5);
+    border-bottom: var(--line-hair) solid var(--color-line-thin);
   }
   .tempo-toggle {
     width: 100%;
@@ -1925,7 +1925,7 @@
     flex-shrink: 0;
     position: relative;
     background: var(--color-gray-3);
-    border-bottom: var(--line-hair) solid var(--color-gray-5);
+    border-bottom: var(--line-hair) solid var(--color-line-thin);
   }
   .ruler.bars,
   .lanes {
@@ -1979,12 +1979,12 @@
   }
   .lane {
     height: var(--size-track);
-    border-bottom: var(--line-hair) solid var(--color-gray-5);
+    border-bottom: var(--line-hair) solid var(--color-line-thin);
   }
   /* The time side of the 「▸ パン ▸ プラグインのパラメータ」 row (nothing is placed). */
   .add-row {
     height: var(--size-row);
-    border-bottom: var(--line-hair) solid var(--color-gray-5);
+    border-bottom: var(--line-hair) solid var(--color-line-thin);
   }
   .rec-host {
     position: absolute;

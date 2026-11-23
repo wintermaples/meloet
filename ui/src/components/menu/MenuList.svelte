@@ -176,15 +176,15 @@
     background: var(--color-gray-4);
     flex-shrink: 0;
   }
-  /* Group separator (spec 2 "List row: added forms"): a gray.5 line.hair with space.1 above and below. */
+  /* Group separator (spec 2 "List row: added forms"): a line.thin line.hair with space.1 above and below. */
   .separator {
     flex-shrink: 0;
-    border-top: var(--line-hair) solid var(--color-gray-5);
+    border-top: var(--line-hair) solid var(--color-line-thin);
     margin: var(--space-1) 0;
   }
   .row {
     height: var(--part-list-row);
-    border-bottom: var(--line-hair) solid var(--color-gray-4);
+    border-bottom: var(--line-hair) solid var(--color-line-row);
     display: flex;
     align-items: center;
     gap: var(--space-2);

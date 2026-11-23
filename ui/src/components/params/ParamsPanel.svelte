@@ -197,7 +197,7 @@
     background: var(--color-gray-2);
     box-shadow: inset 0 0 0 var(--line-hair) var(--color-gray-8);
   }
-  /* Name, format and place (height 48; mock F4-Mixer: 12 left and right, a gray.5 line below). */
+  /* Name, format and place (height 48; mock F4-Mixer: 12 left and right, a line.thin line below). */
   .who {
     height: calc(2 * var(--size-row));
     flex-shrink: 0;
@@ -205,7 +205,7 @@
     flex-direction: column;
     justify-content: center;
     padding: 0 var(--space-3);
-    border-bottom: var(--line-hair) solid var(--color-gray-5);
+    border-bottom: var(--line-hair) solid var(--color-line-thin);
     white-space: nowrap;
     overflow: hidden;
   }
@@ -239,7 +239,7 @@
     gap: var(--space-1);
     padding: var(--space-2) var(--space-3);
     border-left: var(--line-mark) solid var(--color-gray-7);
-    border-bottom: var(--line-hair) solid var(--color-gray-5);
+    border-bottom: var(--line-hair) solid var(--color-line-thin);
     white-space: normal;
   }
   .notice .m-lbl {
@@ -252,7 +252,7 @@
     align-items: center;
     gap: var(--space-2);
     padding: 0 var(--space-3);
-    border-bottom: var(--line-hair) solid var(--color-gray-5);
+    border-bottom: var(--line-hair) solid var(--color-line-thin);
   }
   .search {
     flex: 1;

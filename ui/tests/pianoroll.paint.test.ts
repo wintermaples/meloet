@@ -10,7 +10,7 @@ import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 import { GEOM, take } from "./pianoroll-fixture";
 
 const BOX = { x0: 0, y0: 0, x1: 696, y1: 492 };
-const SIZES = { noteH: 11, edge: 2, velBar: 3, velCap: 7, velFull: 64, velMid: 36, endMark: 16, drumGap: 8, hatch: 6 };
+const SIZES = { noteH: 11, edge: 2, velBar: 3, velCap: 7, velFull: 64, velMid: 36, endMark: 16, drumGap: 8, hatch: 12 };
 const colorOf = (r: number[]) => [r[4], r[5], r[6]].join(",");
 const is = (name: Parameters<typeof rgb>[0]) => Array.from(Float32Array.from(rgb(name))).join(",");
 
@@ -66,13 +66,13 @@ describe("notes", () => {
     expect(colorOf(rowAt(61, picture({ scale: { root: 0, mode: "major", lock: true } })))).toBe(is("color.row.out"));
   });
 
-  it("bar lines gray.6, beat lines gray.4, grid lines gray.3", () => {
+  it("bar lines line.bar, beat lines line.beat, grid lines line.grid", () => {
     const rects = draw(picture());
     const line = (x: number) => rects.find((r) => r[0] === x && r[2] === x + 1 && r[1] === 0 && r[3] === 492)!;
-    expect(colorOf(line(0))).toBe(is("color.gray.6"));
-    expect(colorOf(line(40))).toBe(is("color.gray.4"));
-    expect(colorOf(line(10))).toBe(is("color.gray.3"));
-    expect(colorOf(line(160))).toBe(is("color.gray.6"));
+    expect(colorOf(line(0))).toBe(is("color.line.bar"));
+    expect(colorOf(line(40))).toBe(is("color.line.beat"));
+    expect(colorOf(line(10))).toBe(is("color.line.grid"));
+    expect(colorOf(line(160))).toBe(is("color.line.bar"));
   });
 
   it("a quantized take shows a gray.7 border at the old position only for notes that moved. Drawn after (on top of) the notes (B-64)", () => {

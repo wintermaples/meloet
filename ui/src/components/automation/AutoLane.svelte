@@ -272,7 +272,7 @@
     position: relative;
     height: var(--size-lane);
     background: var(--color-gray-2);
-    border-bottom: var(--line-hair) solid var(--color-gray-5);
+    border-bottom: var(--line-hair) solid var(--color-line-thin);
     touch-action: none;
   }
   /* The part being written over (spec 3 (Y16): a line.hair border in the rec color). */

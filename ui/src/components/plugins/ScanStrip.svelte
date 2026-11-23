@@ -23,7 +23,7 @@
     flex-direction: column;
     gap: var(--space-1);
     padding: var(--space-2) var(--space-3);
-    border-top: var(--line-hair) solid var(--color-gray-5);
+    border-top: var(--line-hair) solid var(--color-line-thin);
     white-space: nowrap;
   }
   .line {

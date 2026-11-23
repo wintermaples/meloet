@@ -1,5 +1,5 @@
-// 画面のテンポの地図が、Rust の地図（crates/meloet-model/src/tempo_map.rs）と同じ答えを出すか。
-// 答えの表は `cargo test -p meloet-model --test tempo_map` が書く。
+// Checks that the screen's tempo map gives the same answers as the Rust map (crates/meloet-model/src/tempo_map.rs).
+// The answer table is written by `cargo test -p meloet-model --test tempo_map`.
 import { describe, expect, it } from "vitest";
 import { clicksPerBar, TempoMap, type TimelineShape } from "../src/time/tempoMap";
 import table from "../src/time/tempoMap.table.json";
@@ -22,16 +22,16 @@ const shapeOf = (t: TableTimeline): TimelineShape => ({
   meterChanges: t.meterChanges.map((c) => ({ bar: c.bar, meterNum: c.meter[0]!, meterDen: c.meter[1]! })),
 });
 
-/** 相対 1e-9（JS の log1p と expm1 は、最後の桁が Rust とちがうことがある）。 */
+/** Relative 1e-9 (JS log1p and expm1 can differ from Rust in the last digit). */
 function near(got: number, want: number, what: string): void {
   expect(Math.abs(got - want), `${what}: ${got} / ${want}`).toBeLessThanOrEqual(1e-9 * Math.abs(want));
 }
 
 const BAR = 4 * TPQ;
-/** 9 小節目（3/4）の 2 拍目、その拍の中のティック TPQ / 3 の所。 */
+/** Bar 9 (3/4), beat 2, at tick TPQ / 3 inside that beat. */
 const IN_BAR_9 = 8 * BAR + (4 * TPQ) / 3;
 
-// F6-Tempo: 96.00 ・ 4/4、5 小節目 104 から 9 小節目 120 へだんだん、9 小節目 3/4、13 小節目 96 ・ 4/4。
+// F6-Tempo: 96.00 and 4/4, a ramp from 104 at bar 5 to 120 at bar 9, 3/4 at bar 9, 96 and 4/4 at bar 13.
 const F6: TimelineShape = {
   tempoBpm: 96,
   meterNum: 4,
@@ -48,8 +48,8 @@ const F6: TimelineShape = {
   ],
 };
 
-describe("テンポの地図", () => {
-  it("答えの表には地図が 6 つある", () => {
+describe("tempo map", () => {
+  it("the answer table has 6 maps", () => {
     expect(table.maps.length).toBe(6);
   });
 
@@ -57,38 +57,38 @@ describe("テンポの地図", () => {
     describe(entry.name, () => {
       const map = new TempoMap(shapeOf(entry.timeline));
 
-      it("ティック → 秒、その所のテンポ", () => {
+      it("tick -> seconds, and the tempo at that place", () => {
         for (const row of entry.atTicks) {
           near(map.secondsAt(row.tick), row.seconds, `secondsAt(${row.tick})`);
           near(map.tempoAt(row.tick), row.tempo, `tempoAt(${row.tick})`);
         }
       });
 
-      it("秒 → ティック", () => {
+      it("seconds -> tick", () => {
         for (const row of entry.atSeconds) near(map.tickAt(row.seconds), row.tick, `tickAt(${row.seconds})`);
       });
 
-      it("小節 . 拍 . ティック", () => {
+      it("bar . beat . tick", () => {
         for (const row of entry.positions) {
           const b = map.barBeatTick(row.tick);
           expect([b.bar, b.beat, b.tick], `barBeatTick(${row.tick})`).toEqual(row.barBeatTick);
         }
       });
 
-      it("メトロノームの次に鳴る所", () => {
+      it("where the metronome sounds next", () => {
         for (const row of entry.clicks) {
           const c = map.nextClick(row.tick);
           expect([c.tick, c.downbeat], `nextClick(${row.tick})`).toEqual([row.next, row.downbeat]);
         }
       });
 
-      it("整数のティックは、秒にして戻すと同じティック", () => {
+      it("an integer tick turned into seconds and back is the same tick", () => {
         for (const row of entry.positions) expect(Math.round(map.tickAt(map.secondsAt(row.tick)))).toBe(row.tick);
       });
     });
   }
 
-  it("仕様書の例: 7 小節目で 112.00、だんだんの全体は 8.586 秒", () => {
+  it("the spec's example: 112.00 at bar 7, the whole ramp is 8.586 seconds", () => {
     const map = new TempoMap(F6);
     expect(map.tempoAt(6 * BAR)).toBe(112);
     expect(map.barBeatTick(6 * BAR)).toEqual({ bar: 7, beat: 1, tick: 0 });
@@ -98,7 +98,7 @@ describe("テンポの地図", () => {
     expect(map.pieceCount).toBe(4);
   });
 
-  it("小節の頭と、その所の拍子", () => {
+  it("bar starts and the meter at that place", () => {
     const map = new TempoMap(F6);
     expect([0, 1, 8, 9, 12, 13].map((bar) => map.tickOfBar(bar))).toEqual([0, BAR, 8 * BAR, 35 * TPQ, 44 * TPQ, 12 * BAR]);
     expect(map.meterAt(8 * BAR - 1)).toEqual({ num: 4, den: 4, bar: 7, barTick: 7 * BAR });
@@ -110,7 +110,7 @@ describe("テンポの地図", () => {
     expect(map.barBeatTick(6 * BAR + 0.9)).toEqual({ bar: 7, beat: 1, tick: 0 });
   });
 
-  it("次の拍の頭", () => {
+  it("start of the next beat", () => {
     const map = new TempoMap(F6);
     expect(map.nextBeat(0)).toEqual({ tick: 0, downbeat: true });
     expect(map.nextBeat(0.5)).toEqual({ tick: TPQ, downbeat: false });
@@ -122,7 +122,7 @@ describe("テンポの地図", () => {
     expect(map.nextBeat(-BAR)).toEqual({ tick: -BAR, downbeat: true });
   });
 
-  it("テンポは 4 分音符の数で、拍子の旗の前後で変わらない", () => {
+  it("tempo is in quarter notes and does not change across a meter flag", () => {
     const map = new TempoMap({
       tempoBpm: 96,
       meterNum: 4,
@@ -138,7 +138,7 @@ describe("テンポの地図", () => {
     expect(map.secondsAt(BAR + 3 * TPQ) - map.secondsAt(BAR)).toBeCloseTo((3 * 60) / 96, 12);
   });
 
-  it("6/8 のテンポ 120.00 で、1 小節は 1.5 秒、メトロノームは付点 4 分ごと", () => {
+  it("6/8 at tempo 120.00: 1 bar is 1.5 seconds, the metronome every dotted quarter", () => {
     const map = new TempoMap({ tempoBpm: 120, meterNum: 6, meterDen: 8, headRamp: false, tempoPoints: [], meterChanges: [] });
     expect(map.secondsAt(3 * TPQ)).toBeCloseTo(1.5, 12);
     expect(map.nextClick(1)).toEqual({ tick: (3 * TPQ) / 2, downbeat: false });
@@ -148,7 +148,7 @@ describe("テンポの地図", () => {
     expect(map.clicksPerBarAt(0)).toBe(2);
   });
 
-  it("1 小節の鳴る数", () => {
+  it("clicks in 1 bar", () => {
     const cases: [number, number, number][] = [
       [6, 8, 2],
       [9, 8, 3],
@@ -164,7 +164,7 @@ describe("テンポの地図", () => {
     for (const [num, den, n] of cases) expect(clicksPerBar(num, den), `${num}/${den}`).toBe(n);
   });
 
-  it("入れ物をわたせば、新しい物を作らない", () => {
+  it("given a container, it makes nothing new", () => {
     const map = new TempoMap(F6);
     const meter = { num: 0, den: 0, bar: 0, barTick: 0 };
     const position = { bar: 0, beat: 0, tick: 0 };
@@ -175,7 +175,7 @@ describe("テンポの地図", () => {
     expect(position).toEqual({ bar: 9, beat: 2, tick: TPQ / 3 });
   });
 
-  it("形のくずれた入力でも、Rust と同じ 1 つの地図になる", () => {
+  it("even broken input becomes the same single map as Rust", () => {
     const point = (tick: number, tempoBpm: number) => ({ tick, tempoBpm, ramp: false });
     const head = { tempoBpm: 96, meterNum: 4, meterDen: 4, headRamp: false };
     const broken = new TempoMap({

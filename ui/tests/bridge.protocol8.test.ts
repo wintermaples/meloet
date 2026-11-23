@@ -30,8 +30,8 @@ async function opened(name: string) {
 
 const clipsOf = (s: AppState) => s.song.tracks.map((t) => t.clips.map((c) => [c.id, c.start / BAR + 1]));
 
-describe("約束 8 の偽物の場面", () => {
-  it("トラック 3 本: ベースが選んだトラックでミュート、ドラムがソロ、2 本のトラックにまたがるクリップ 2 つを選んでいる", () => {
+describe("protocol 8 fake scenes", () => {
+  it("3 tracks: the bass is the chosen track and muted, the drums solo, 2 clips across 2 tracks are selected", () => {
     const s = fakeScene("arrangeSelect")!.state;
     expect(s.song.tracks.map((t) => [t.name, t.muted, t.soloed])).toEqual([
       ["ピアノ", false, false],
@@ -42,11 +42,11 @@ describe("約束 8 の偽物の場面", () => {
     expect(s.arrange).toEqual({ selectedClips: [3, 41], selectedClip: 41, pianoRollClip: 41, clipboardClips: 1, tallTrack: null });
   });
 
-  it("ベロシティ固定がオン（100）", () => {
+  it("fixed velocity is on (100)", () => {
     expect(fakeScene("velocityFixed")!.state.keyboards.velocityFixed).toEqual({ on: true, value: 100 });
   });
 
-  it("丸めた文と、そろえた文が状態行に出る（文はヤチヨさんの決めのまま）", () => {
+  it("the rounded text and the aligned text show in the status line (wording as the owner chose)", () => {
     const fill = (m: AppState["status"]["message"]) => {
       if (m?.id === "valueClamped") return t("msg.valueClamped", { field: t(m.field === "velocity" ? "value.velocity" : "value.meterDen"), range: t(m.field === "velocity" ? "value.velocityRange" : "value.meterDenRange"), value: m.value });
       if (m?.id === "velocityMatched") return t("msg.velocityMatched", { count: m.count, value: m.value });
@@ -57,7 +57,7 @@ describe("約束 8 の偽物の場面", () => {
     expect(fill(fakeScene("velocityMatched")!.state.status.message)).toBe("3 ノートのベロシティを 100 にそろえました。");
   });
 
-  it("位置の小節・拍・ティックを丸めた文（小節だけ「1 から」のあとに空白がない）", () => {
+  it("text for rounding bar / beat / tick positions (only for bars, no space after 「1 から」)", () => {
     const pos = fakeScene("positionClamped")!.state.status.message;
     expect(pos).toEqual({ id: "valueClamped", field: "beat", value: "3. 4. 000", range: "1〜4" });
     if (pos?.id !== "valueClamped") throw new Error();
@@ -68,7 +68,7 @@ describe("約束 8 の偽物の場面", () => {
     expect(t("msg.valueClampedBar", { value: bar.value })).toBe("小節は 1 からなので、1. 1. 000 にしました。");
   });
 
-  it("クリップが重なって置けなかった文（ヤチヨさんの決めのまま）", () => {
+  it("text when overlapping clips could not be placed (wording as the owner chose)", () => {
     expect(fakeScene("clipsNotMoved")!.state.status.message).toEqual({ id: "clipsNotMoved" });
     expect(t("msg.clipsNotMoved")).toBe("ほかのクリップと重なるので、動かしませんでした。");
     expect(t("msg.clipsNotPasted")).toBe("ほかのクリップと重なるので、貼りつけませんでした。");
@@ -76,8 +76,8 @@ describe("約束 8 の偽物の場面", () => {
   });
 });
 
-describe("偽物の Rust: 約束 8 の意図", () => {
-  it("トラックを選ぶ、ミュートとソロを切りかえる", async () => {
+describe("fake Rust: protocol 8 intents", () => {
+  it("choose a track, toggle mute and solo", async () => {
     const f = await opened("arrangeSelect");
     let s = await f.send({ type: "selectTrack", track: 3, fromArm: false }, { type: "toggleMute", track: 2 }, { type: "toggleSolo", track: 1 });
     expect(s.song.playTarget).toBe(3);
@@ -90,7 +90,7 @@ describe("偽物の Rust: 約束 8 の意図", () => {
     expect(s.song.playTarget).toBe(3);
   });
 
-  it("クリップを押すと、そのトラックも選ぶ。Shift で足し、囲みで入れかえ、Mod A でぜんぶ", async () => {
+  it("pressing a clip also chooses its track. Shift adds, a box replaces, Mod A selects all", async () => {
     const f = await opened("arrangeSelect");
     let s = await f.send({ type: "selectClip", clip: 1 });
     expect([s.arrange.selectedClips, s.arrange.selectedClip, s.song.playTarget]).toEqual([[1], 1, 1]);
@@ -104,7 +104,7 @@ describe("偽物の Rust: 約束 8 の意図", () => {
     expect([s.arrange.selectedClips, s.arrange.selectedClip]).toEqual([[], null]);
   });
 
-  it("もう選んであるクリップを Shift で押すと、それが押したクリップになる（core と同じ）", async () => {
+  it("Shift-pressing an already selected clip makes it the pressed clip (same as core)", async () => {
     const f = await opened("arrangeSelect");
     let s = await f.send({ type: "selectClip", clip: 1 }, { type: "selectClips", clips: [43], mode: "add" });
     expect([s.arrange.selectedClips, s.arrange.selectedClip]).toEqual([[1, 43], 43]);
@@ -112,7 +112,7 @@ describe("偽物の Rust: 約束 8 の意図", () => {
     expect([s.arrange.selectedClips, s.arrange.selectedClip, s.arrange.pianoRollClip, s.song.playTarget]).toEqual([[1, 43], 1, 1, 1]);
   });
 
-  it("重なって置けないときは状態行で言う。トラックの外へはみだすときは言わない", async () => {
+  it("if clips overlap and cannot be placed, the status line says so. Going outside the tracks says nothing", async () => {
     const f = await opened("arrangeSelect");
     const before = clipsOf(f.now());
     let s = await f.send({ type: "moveClips", clips: [1], ticks: 4 * BAR, tracks: 0, copy: false });
@@ -129,9 +129,9 @@ describe("偽物の Rust: 約束 8 の意図", () => {
     expect([clipsOf(s), s.status.message?.id]).toEqual([before, "summary"]);
   });
 
-  it("まとめて動かす（トラックの行の差で）。はみだす・重なるときは何もしない", async () => {
+  it("move together (by the track row difference). Nothing happens if it goes outside or overlaps", async () => {
     const f = await opened("arrangeSelect");
-    // ピアノの「Aメロ」（5–9）とベースの「ベース A」（5–9）を 1 行下、4 小節うしろへ。
+    // The piano's 「Aメロ」 (5–9) and the bass's 「ベース A」 (5–9) go 1 row down and 4 bars later.
     let s = await f.send({ type: "moveClips", clips: [3, 41], ticks: 4 * BAR, tracks: 1, copy: false });
     expect(clipsOf(s)).toEqual([[[1, 1]], [[3, 9]], [[43, 1], [41, 9]]]);
     expect([s.arrange.selectedClips, s.arrange.selectedClip]).toEqual([[3, 41], 41]);
@@ -142,7 +142,7 @@ describe("偽物の Rust: 約束 8 の意図", () => {
     expect(clipsOf(s)).toEqual(before);
   });
 
-  it("まとめて複製はまとまりのすぐうしろ。写しを選ぶ", async () => {
+  it("copying many goes right after the group. The copies are selected", async () => {
     const f = await opened("arrangeSelect");
     const s = await f.send({ type: "duplicateClips", clips: [3, 41] });
     expect(clipsOf(s)[0]!.map((c) => c[1])).toEqual([1, 5, 9]);
@@ -151,11 +151,11 @@ describe("偽物の Rust: 約束 8 の意図", () => {
     expect(s.arrange.selectedClips).not.toContain(3);
   });
 
-  it("コピー・切り取り・貼りつけ（Mod V は選んだトラックの再生の位置の小節の頭、右クリックは押した所）", async () => {
+  it("copy / cut / paste (Mod V at the bar start of the play position on the chosen track, right-click at the pressed place)", async () => {
     const f = await opened("arrangeSelect");
     let s = await f.send({ type: "copyClips", clips: [3, 41] });
     expect(s.arrange.clipboardClips).toBe(2);
-    // 選んだトラックはベース（2）、再生の位置は 5 小節め: 重なる。
+    // The chosen track is the bass (2), the play position is bar 5: overlaps.
     s = await f.send({ type: "pasteClips", to: null });
     expect(clipsOf(s)[1]).toEqual([[41, 5]]);
     s = await f.send({ type: "locate", tick: 12 * BAR + 300 }, { type: "selectTrack", track: 1, fromArm: false }, { type: "pasteClips", to: null });
@@ -163,7 +163,7 @@ describe("偽物の Rust: 約束 8 の意図", () => {
     expect(clipsOf(s)[1]!.map((c) => c[1])).toEqual([5, 13]);
     s = await f.send({ type: "pasteClips", to: { track: 1, tick: 20 * BAR + 10 } });
     expect(clipsOf(s)[0]!.at(-1)![1]).toBe(21 + 10 / BAR);
-    // 3 本目の下にはみだす所へは貼らない。
+    // No paste where it goes below the 3rd track.
     const before = clipsOf(s);
     s = await f.send({ type: "pasteClips", to: { track: 3, tick: 40 * BAR } });
     expect(clipsOf(s)).toEqual(before);
@@ -171,14 +171,14 @@ describe("偽物の Rust: 約束 8 の意図", () => {
     expect([s.arrange.clipboardClips, clipsOf(s)[0]![0]![0]]).toEqual([1, 3]);
   });
 
-  it("Delete は選んだクリップぜんぶ", async () => {
+  it("Delete deletes all selected clips", async () => {
     const f = await opened("arrangeSelect");
     const s = await f.send({ type: "deleteSelected" });
     expect(clipsOf(s)).toEqual([[[1, 1]], [], [[43, 1]]]);
     expect(s.arrange.selectedClips).toEqual([]);
   });
 
-  it("ベロシティ固定、丸めた値、そろえた文", async () => {
+  it("fixed velocity, rounded value, aligned text", async () => {
     const f = await opened("pianoRoll");
     let s = await f.send({ type: "setVelocityFixed", on: true, value: 200 });
     expect(s.keyboards.velocityFixed).toEqual({ on: true, value: 127 });
@@ -192,7 +192,7 @@ describe("偽物の Rust: 約束 8 の意図", () => {
     expect(s.status.message?.id).toBe("summary");
   });
 
-  it("再生の位置は押した所そのまま", async () => {
+  it("the play position is the pressed place as it is", async () => {
     const f = await opened("arrangeSelect");
     const s = await f.send({ type: "locate", tick: 4 * BAR + 123 });
     expect(s.transport.position).toBe(4 * BAR + 123);

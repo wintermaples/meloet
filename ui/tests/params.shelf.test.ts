@@ -1,4 +1,4 @@
-// 第 4 回 区切り3: 棚のエフェクト（「空き ＋」からひらく insertEffect のモード、音源のモードでは見るだけ）。
+// Effects on the shelf (insertEffect mode opened from 「空き ＋」; in instrument mode, view only).
 import { flushSync, mount, unmount, type Component } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, Command } from "../src/bridge";
@@ -43,21 +43,21 @@ function press(state: AppState, key: string): Command[] {
   return sent;
 }
 
-describe("棚のエフェクトの行", () => {
+describe("effect rows on the shelf", () => {
   const effects = (query: string) => {
     const s = scene("shelfEffects");
     const look = { query, favoritesOnly: false, open: {}, searchOpen: {}, searchFor: "" };
     return shelfModel("effects", s.shelf, s.library, look).rows.map((r) => (r.effect?.kind === "builtin" ? r.effect.effect : null));
   };
-  it("EFFECT_KINDS の順。さがす文字は名前にふくまれる物", () => {
+  it("in EFFECT_KINDS order. The search text matches inside the name", () => {
     expect(effects("")).toEqual(["eq4", "compressor", "reverb", "delay", "chorus", "limiter"]);
     expect(effects("ー")).toEqual(["compressor", "reverb", "chorus", "limiter"]);
     expect(effects("eq")).toEqual(["eq4"]);
   });
 });
 
-describe("「空き ＋」からひらいた棚（insertEffect）", () => {
-  it("見出しは「（ストリップ）にエフェクトを入れる」、一覧はエフェクト、名前の右は「最初から入っている」。▶ はなく、星はある（86-4）", () => {
+describe("shelf opened from 「空き ＋」 (insertEffect)", () => {
+  it("the heading is 「（ストリップ）にエフェクトを入れる」, the list is effects, right of the name is 「最初から入っている」. No ▶, but a star (86-4)", () => {
     const s = scene("shelfEffects");
     show(RightRail, s);
     const track = s.song.tracks.find((x) => x.id === (s.shelf.mode as { strip: { id: number } }).strip.id)!;
@@ -76,21 +76,21 @@ describe("「空き ＋」からひらいた棚（insertEffect）", () => {
     expect(qa("[data-effect].selected").map((r) => r.dataset.effect)).toEqual(["compressor"]);
   });
 
-  it("行を押すと ShelfChooseEffect（えらんでいる行では送らない）", () => {
+  it("pressing a row sends ShelfChooseEffect (not for the chosen row)", () => {
     show(RightRail, scene("shelfEffects"));
     q("[data-effect=compressor]")!.click();
     q("[data-effect=delay]")!.click();
     expect(app.sent).toEqual([{ type: "shelfChooseEffect", effect: { kind: "builtin", effect: "delay" } }]);
   });
 
-  it("↑ ↓ でえらび、Enter で ShelfConfirm", () => {
+  it("↑ ↓ choose, Enter sends ShelfConfirm", () => {
     const s = scene("shelfEffects");
     show(RightRail, s);
     const choose = (effect: string) => [{ type: "shelfChooseEffect", effect: { kind: "builtin", effect } }];
     expect(press(s, "ArrowDown")).toEqual(choose("reverb"));
     expect(press(s, "ArrowUp")).toEqual(choose("eq4"));
     expect(press(s, "Enter")).toEqual([{ type: "shelfConfirm" }]);
-    // F はえらんだエフェクトのお気に入り（仕様書 4 章「棚の中（エフェクト）: お気に入りの印」）。
+    // F is the favorite of the chosen effect (spec 4 (In the shelf (effects): favorite mark)).
     expect(press(s, "f")).toEqual([{ type: "toggleFavoriteEffect", effect: { kind: "builtin", effect: "compressor" } }]);
     s.shelf.chosenEffect = null;
     expect(press(s, "Enter")).toEqual([]);
@@ -98,7 +98,7 @@ describe("「空き ＋」からひらいた棚（insertEffect）", () => {
     expect(press(s, "ArrowDown")).toEqual(choose("eq4"));
   });
 
-  it("「入れる」のボタン: えらんだ行の下、押すと ShelfConfirm。行をえらんでいないときは一覧の下で、使えない", () => {
+  it("the 「入れる」 button: below the chosen row, pressing sends ShelfConfirm. With no row chosen it is below the list and disabled", () => {
     const s = scene("shelfEffects");
     show(RightRail, s);
     const button = () => q<HTMLButtonElement>("[data-test=shelf-insert-confirm]")!;
@@ -113,14 +113,14 @@ describe("「空き ＋」からひらいた棚（insertEffect）", () => {
     flushSync();
     expect(qa("[data-test=shelf-insert-confirm]").length).toBe(1);
     expect(button().disabled).toBe(true);
-    // 一覧のいちばん下（「あとから入れたもの ・ 0」の行の下）。
+    // The bottom of the list (below the 「あとから入れたもの ・ 0」 row).
     const list = q("[data-test=shelf-list]")!;
     expect([...list.querySelectorAll("[data-effect], [data-test=section\\:added], [data-test=shelf-insert]")].at(-1)).toBe(q("[data-test=shelf-insert]"));
     button().click();
     expect(app.sent.length).toBe(1);
   });
 
-  it("入ったあとは、その子がえらばれ、パラメータの欄が前に出る（偽物の答え）", () => {
+  it("once added, that child is chosen and the params panel comes to the front (the fake's answer)", () => {
     const s = scene("shelfEffects");
     const r = reduceMixer(s, s.shelf, s.song, { type: "shelfConfirm" })!;
     const mode = s.shelf.mode as { strip: { kind: "track"; id: number }; slot: number };
@@ -131,7 +131,7 @@ describe("「空き ＋」からひらいた棚（insertEffect）", () => {
     expect(r.shelf.mode).toEqual({ kind: "newTrack" });
   });
 
-  it("「音源」に切りかえて見ても、行を押してもためし弾きにしない", () => {
+  it("switching to 「音源」 to look, or pressing a row, does not start a try-out", () => {
     show(RightRail, scene("shelfEffects"));
     q("[data-test=shelf-instruments]")!.click();
     flushSync();
@@ -141,8 +141,8 @@ describe("「空き ＋」からひらいた棚（insertEffect）", () => {
   });
 });
 
-describe("音源のモードのエフェクトは見るだけ（A-14）", () => {
-  it("「エフェクト 6」で一覧を見られる。押しても ↑ ↓ ・ Enter でも入れない", () => {
+describe("effects in instrument mode are view only (A-14)", () => {
+  it("「エフェクト 6」 shows the list. Pressing, ↑ ↓ and Enter do not add", () => {
     const s = scene("shelfNewTrack");
     show(RightRail, s);
     q("[data-test=shelf-effects]")!.click();
@@ -158,7 +158,7 @@ describe("音源のモードのエフェクトは見るだけ（A-14）", () => 
     expect(app.sent).toEqual([]);
   });
 
-  it("モードが変わると、そのモードの一覧に戻る", () => {
+  it("when the mode changes, the list of that mode comes back", () => {
     const s = scene("shelfNewTrack");
     show(RightRail, s);
     q("[data-test=shelf-effects]")!.click();
@@ -169,7 +169,7 @@ describe("音源のモードのエフェクトは見るだけ（A-14）", () => 
     expect(q("[data-row]")).not.toBeNull();
   });
 
-  it("棚の数: 見出しと縦の見出しは「音源 11 ・ エフェクト 6」（仕様書 4 章）", () => {
+  it("shelf counts: the heading and the vertical heading are 「音源 11 ・ エフェクト 6」 (spec 4)", () => {
     const s = scene("mixer");
     show(RightRail, s);
     expect(text(q("nav [data-band=shelf]"))).toBe(`▸ 棚 音源 ${s.shelf.available.length} ・ エフェクト 6 P`);

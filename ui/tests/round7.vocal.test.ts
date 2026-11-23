@@ -1,4 +1,4 @@
-// 第 7 回 区切り2 の 2 回目（画面）: 歌のトラックの見出し、入力計の左右、録る、状態行、音の設定 ▸ くわしい設定、遅れを測る、19-A の欄。
+// Screen part: vocal track heads, input meter left and right, recording, status line, sound settings ▸ advanced settings, latency measuring, the 19-A panel.
 import { flushSync, mount, unmount, type Component } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, Command, StatusMessage } from "../src/bridge";
@@ -53,8 +53,8 @@ const scene = (name: string) => fakeScene(name)!.state as FakeState;
 const menuRows = () => (contextMenu.open?.entries ?? []).filter((e): e is MenuRow => e.kind === "row");
 const vocalOf = (s: AppState) => s.song.tracks.find((x) => x.kind.kind === "vocal")!;
 
-describe("歌のトラックの見出し（仕様書 2 章、モック F7-VocalTrack ・ F7-VocalRec）", () => {
-  it("2 段目は「入口 1 ・ モノ ▾」と「モニター」。dB は出さない。鍵盤のトラックは今のまま", () => {
+describe("vocal track heads (spec 2 (Vocal track head), mocks F7-VocalTrack / F7-VocalRec)", () => {
+  it("the second line is 「入口 1 ・ モノ ▾」 and 「モニター」. No dB. Keyboard tracks stay as they are", () => {
     show(Arrange, scene("vocalTrack"));
     const heads = qa('[data-test="track-head"]');
     expect(heads).toHaveLength(6);
@@ -65,14 +65,14 @@ describe("歌のトラックの見出し（仕様書 2 章、モック F7-VocalT
     expect(heads[0]!.textContent).toContain("dB");
   });
 
-  it("入口がないときは「入口なし ▾」（gray.8 の class）", () => {
+  it("with no input, 「入口なし ▾」 (gray.8 class)", () => {
     show(Arrange, scene("vocalNoInput"));
     const input = q('[data-test="track-input"]')!;
     expect(text(input)).toBe("入口なし ▾");
     expect(input.classList.contains("no-input")).toBe(true);
   });
 
-  it("モニターのオンは「えらんでいる」の形。押すと toggleMonitor", () => {
+  it("monitor on has the 「えらんでいる」 form. Pressing sends toggleMonitor", () => {
     show(Arrange, scene("vocalMonitorOn"));
     const monitor = q('[data-test="track-monitor"]')!;
     expect(monitor.classList.contains("on")).toBe(true);
@@ -81,7 +81,7 @@ describe("歌のトラックの見出し（仕様書 2 章、モック F7-VocalT
     expect(app.sent).toEqual([{ type: "toggleMonitor", track: vocalOf(scene("vocalMonitorOn")).id }]);
   });
 
-  it("● は選んでいなくても赤い（armed）。押すと toggleVocalArm。鍵盤のトラックの ● は弾くと鳴る先（keysTarget）", () => {
+  it("● is red (armed) even when not chosen. Pressing sends toggleVocalArm. ● of a keyboard track is the play target (keysTarget)", () => {
     const s = scene("twoRec");
     s.transport.state = "stopped";
     s.transport.recording = null;
@@ -97,7 +97,7 @@ describe("歌のトラックの見出し（仕様書 2 章、モック F7-VocalT
     ]);
   });
 
-  it("● がついている間、レベルの棒は入ってくる音（mic）。外れているとトラックの棒", () => {
+  it("while ● is on, the level bar is the incoming sound (mic). When off, the track bar", () => {
     show(Arrange, scene("vocalTrack"));
     const meter = (head: HTMLElement) => slots.get(head.querySelector<HTMLElement>(".meter")!);
     const heads = qa('[data-test="track-head"]');
@@ -105,7 +105,7 @@ describe("歌のトラックの見出し（仕様書 2 章、モック F7-VocalT
     expect(meter(heads[0]!)).toMatchObject({ kind: "meter", source: { track: 1 } });
   });
 
-  it("入口の一覧: 3 つの入口（いまの入口に印）と、区切り、「音の設定…」。行は setVocalInput、音の設定は openSettings", () => {
+  it("input list: 3 inputs (mark on the current one), a divider, 「音の設定…」. Rows send setVocalInput, sound settings sends openSettings", () => {
     const s = scene("vocalTrack");
     show(Arrange, s);
     q('[data-test="track-input"]')!.click();
@@ -126,7 +126,7 @@ describe("歌のトラックの見出し（仕様書 2 章、モック F7-VocalT
     ]);
   });
 
-  it("右クリックの「録音待機」は、歌のトラックでは ● の切りかえ", () => {
+  it("「録音待機」 on right-click toggles ● on vocal tracks", () => {
     const s = scene("twoRec");
     s.transport.state = "stopped";
     s.transport.recording = null;
@@ -141,8 +141,8 @@ describe("歌のトラックの見出し（仕様書 2 章、モック F7-VocalT
   });
 });
 
-describe("ミキサーの音源の枠（仕様書 3 章「歌のトラックの見出し」）", () => {
-  it("歌のトラックは「入口 1 ・ モノ」。押すと同じ入口の一覧", () => {
+describe("mixer instrument slot (spec 3, vocal track head)", () => {
+  it("a vocal track shows 「入口 1 ・ モノ」. Pressing opens the same input list", () => {
     const s = scene("vocalTrack");
     show(MixerStrips, s);
     const frames = qa('[data-test="mixer-frame"]');
@@ -152,8 +152,8 @@ describe("ミキサーの音源の枠（仕様書 3 章「歌のトラックの�
   });
 });
 
-describe("入力計の帯（左右に分けた形。仕様書 2 章、3 章 31-C、モック F7-VocalTrack ・ R11-Fit）", () => {
-  it("● のついた歌のトラックか、選んだ歌のトラックがあると左右に分ける。右は入口の名前とトラック、目盛、モニター", () => {
+describe("input meter band (split left and right; spec 2, spec 3 (31-C), mocks F7-VocalTrack / R11-Fit)", () => {
+  it("split left and right when there is a vocal track with ● or a chosen vocal track. The right has the input name and track, scale marks, monitor", () => {
     show(InputMeter, scene("vocalTrack"));
     expect(q('[data-test="meter-keys-half"]')).not.toBeNull();
     const mic = q('[data-test="meter-mic-half"]')!;
@@ -162,17 +162,17 @@ describe("入力計の帯（左右に分けた形。仕様書 2 章、3 章 31-C
     expect([...mic.querySelectorAll(".mic-scale span")].map((x) => x.textContent)).toEqual(["−60", "−12", "0"]);
     expect(text(mic.querySelector('[data-test="mic-monitor"]'))).toBe("モニター オフ");
     expect(slots.get(mic.querySelector<HTMLElement>('[data-test="mic-bar"]')!)).toMatchObject({ kind: "meter", mic: { peakDb: -Infinity }, gap: 0 });
-    // ペダルなどは引っこめる。
+    // Pedals and so on are hidden.
     expect(q('[data-test="pitch-bend"]')).toBeNull();
     expect(q('[data-test="velocity-fixed"]')).not.toBeNull();
   });
 
-  it("歌のトラックがなければ今のまま", () => {
+  it("with no vocal track, as before", () => {
     show(InputMeter, scene("tracks6"));
     expect(q('[data-test="meter-mic-half"]')).toBeNull();
   });
 
-  it("弾くと鳴る先は鍵盤の行き先（keysTarget。歌を選んでいても 1 ピアノ。B-94-1）。なければ「—」", () => {
+  it("the play target is where keys go (keysTarget; 「1 ピアノ」 even with the vocal chosen; B-94-1). 「—」 if none", () => {
     show(InputMeter, scene("vocalTrack"));
     expect(text(q('[data-test="meter-target"]'))).toBe("1 ピアノ");
     unmount(mounted!);
@@ -182,7 +182,7 @@ describe("入力計の帯（左右に分けた形。仕様書 2 章、3 章 31-C
     expect(text(q('[data-test="meter-target"]'))).toBe("—");
   });
 
-  it("いまの dB は直近の大きい値（整数）。0 dB に届いたら字が rec。字の箱は canvas の下（cover）", () => {
+  it("the current dB is the latest high value (integer). At 0 dB the text is rec. The text box is under the canvas (cover)", () => {
     const s = scene("vocalTrack");
     show(InputMeter, s);
     const id = vocalOf(s).id;
@@ -197,14 +197,14 @@ describe("入力計の帯（左右に分けた形。仕様書 2 章、3 章 31-C
     expect(q('[data-test="mic-db"]')!.classList.contains("rec")).toBe(true);
   });
 
-  it("モニターがオンなら「モニター オン」", () => {
+  it("「モニター オン」 when monitor is on", () => {
     show(InputMeter, scene("vocalMonitorOn"));
     expect(text(q('[data-test="mic-monitor"]'))).toBe("モニター オン");
   });
 });
 
-describe("録っている歌のクリップ（モック F7-VocalRec ・ F7-TwoRec）", () => {
-  it("録っている歌のトラックごとに、のびている先（recordingClip の slot）と rec の名前「歌 テイク 1」", () => {
+describe("audio clips being recorded (mocks F7-VocalRec / F7-TwoRec)", () => {
+  it("for each vocal track being recorded, the growing head (slot of recordingClip) and the rec name 「歌 テイク 1」", () => {
     show(Arrange, scene("twoRec"));
     expect(qa('[data-test="vocal-rec-tail"]')).toHaveLength(1);
     const label = q('[data-test="vocal-rec-label"]')!;
@@ -213,13 +213,13 @@ describe("録っている歌のクリップ（モック F7-VocalRec ・ F7-TwoRe
     expect(slots.get(q('[data-test="vocal-rec-tail"]')!)).toMatchObject({ kind: "rects" });
   });
 
-  it("止まっていれば出さない", () => {
+  it("not shown when stopped", () => {
     show(Arrange, scene("vocalTrack"));
     expect(q('[data-test="vocal-rec-tail"]')).toBeNull();
   });
 });
 
-describe("状態行の文（仕様書 6 章）", () => {
+describe("status line text (spec 6)", () => {
   const say = (message: StatusMessage, edit: (s: AppState) => void = () => {}) => {
     const s = scene("vocalTrack");
     s.status.message = message;
@@ -229,7 +229,7 @@ describe("状態行の文（仕様書 6 章）", () => {
   };
   const six = { number: 6, name: "歌" };
 
-  // 約束 24 の文（位置は 4 けたのティック）。1 つだけ持ってきているときの文は 6 章「音のファイルを 1 つ持ってきている」の出る所の列。
+  // Protocol 24 text (positions in 4-digit ticks). The text when dragging in one file is the where-shown column of 「音のファイルを 1 つ持ってきている」 in chapter 6.
   it.each<[string, StatusMessage, string]>([
     ["見つからない音", { id: "audioMissing", count: 2 }, "曲で使っている音のファイルが 2 つ見つかりません。そのクリップは鳴りません。"],
     ["切った", { id: "clipSplit", name: "歌 テイク 1", tick: 6 * 7680, count: 1 }, "歌 テイク 1 を 7. 1. 0000 で切りました。"],
@@ -241,12 +241,12 @@ describe("状態行の文（仕様書 6 章）", () => {
     expect(say(message)).toBe(line);
   });
 
-  it("歌を録っている: 頭の「● 録音中 ・ 」は札が言う", () => {
+  it("recording vocals: the leading 「● 録音中 ・ 」 is said by the tag", () => {
     const line = say({ id: "recordingVocals", keys: null, vocals: [{ track: six, input: "mono1" }], monitor: true }, (s) => (s.transport.state = "recording"));
     expect(line).toBe("6 歌（入口 1）・ モニター オン ・ 止めるには Space");
   });
 
-  it("鍵盤と歌を録っている", () => {
+  it("recording keyboard and vocals", () => {
     const line = say(
       { id: "recordingVocals", keys: { number: 1, name: "ピアノ" }, vocals: [{ track: six, input: "mono1" }], monitor: true },
       (s) => (s.transport.state = "recording"),
@@ -254,7 +254,7 @@ describe("状態行の文（仕様書 6 章）", () => {
     expect(line).toBe("1 ピアノ（鍵盤）と 6 歌（入口 1）に録っています ・ 止めるには Space");
   });
 
-  it("歌 2 本以上を録っている（6 章）。モニターがオフなら「モニター オン ・ 」を外す", () => {
+  it("recording 2 or more vocals (chapter 6). With monitor off, 「モニター オン ・ 」 is removed", () => {
     const vocals = [{ track: six, input: "mono1" as const }, { track: { number: 7, name: "歌 2" }, input: "mono2" as const }];
     const line = say({ id: "recordingVocals", keys: null, vocals, monitor: false }, (s) => (s.transport.state = "recording"));
     expect(line).toBe("6 歌（入口 1）、7 歌 2（入口 2）・ 止めるには Space");
@@ -263,7 +263,7 @@ describe("状態行の文（仕様書 6 章）", () => {
     expect(`${text(q('[data-test="status-badge"]'))} ・ ${on}`).toBe(t("msg.recordingVocals", { vocals: "6 歌（入口 1）、7 歌 2（入口 2）", stopKey: "Space" }));
   });
 
-  it("マイクの音が大きすぎる（いつまで）: 最後に 0 dB に届いてから 4 秒で、いつものまとめに戻す。また届けば出す", () => {
+  it("mic too loud (how long): back to the usual summary 4 s after it last reached 0 dB. Shown again if it reaches it again", () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
     const vocal = vocalOf(scene("vocalTrack")).id;
     const mic = (clipped: boolean) => app.setTelemetry(app.telemetryWith({ mics: [{ track: vocal, peak: [1, 1], clipped, stereo: false }] }));
@@ -290,7 +290,7 @@ describe("状態行の文（仕様書 6 章）", () => {
     }
   });
 
-  it("歌のトラックを足した ・ 入口がない（音の設定…）・ はじめてモニター ・ 大きすぎる ・ ピアノロールはない ・ 遅れを測る", () => {
+  it("vocal track added / no input (「音の設定…」) / first monitor / too loud / no piano roll / measure latency", () => {
     expect(say({ id: "vocalTrackAdded", track: six, input: "mono1" })).toBe(
       "6 歌 を足しました ・ 入口 1 から録ります ・ 歌のトラックの ● は、選んでいなくても自分でつけます",
     );
@@ -309,7 +309,7 @@ describe("状態行の文（仕様書 6 章）", () => {
     expect(say({ id: "noParams", sound: { kind: "builtin", instrument: "grandPiano" } })).toBe("グランドピアノには、動かせるパラメータがありません");
   });
 
-  it("帯もいっしょに消えた: 最初の「。」の前に「（そのパラメータの帯 2 本も消えました）」", () => {
+  it("bands removed too: 「（そのパラメータの帯 2 本も消えました）」 before the first 「。」", () => {
     const line = say({
       id: "effectRemoved",
       insert: { strip: { kind: "track", id: vocalOf(scene("vocalTrack")).id }, slot: 0 },
@@ -320,8 +320,8 @@ describe("状態行の文（仕様書 6 章）", () => {
   });
 });
 
-describe("19-A のパラメータの欄（モック F7-Answers92）", () => {
-  it("音色の名前と「最初から入っている」、文 2 つ、「音源を入れかえる…」は棚を「入れかえる」でひらく", () => {
+describe("the 19-A params panel (mock F7-Answers92)", () => {
+  it("the sound name and 「最初から入っている」, 2 texts, 「音源を入れかえる…」 opens the shelf with 「入れかえる」", () => {
     const s = scene("paramsSound");
     show(ParamsPanel, s, { onfold: () => {} });
     expect(text(q('[data-test="params-name"]'))).toBe("グランドピアノ");
@@ -335,7 +335,7 @@ describe("19-A のパラメータの欄（モック F7-Answers92）", () => {
     expect(app.sent).toEqual([{ type: "openShelf", mode: { kind: "replace", track: id } }]);
   });
 
-  it("SF2 の音色は形式の印「SF2」", () => {
+  it("SF2 sounds have the format mark 「SF2」", () => {
     const s = scene("paramsSound");
     s.params.selected = { kind: "sound", track: s.song.tracks[0]!.id, sound: { kind: "sf2", name: "Clean Guitar", file: "FluidR3_GM.sf2" } };
     show(ParamsPanel, s, { onfold: () => {} });
@@ -344,8 +344,8 @@ describe("19-A のパラメータの欄（モック F7-Answers92）", () => {
   });
 });
 
-describe("遅れを測る（モック F7-Latency）", () => {
-  it("測っている間: 「測っています」と棒と「3 / 5」、PC が言う数と測った数（まだ 3 回の平均）。この数を使うは使えない。やめるは stop", () => {
+describe("latency measuring (mock F7-Latency)", () => {
+  it("while measuring: 「測っています」, a bar and 「3 / 5」, the number the PC says and the measured number (average of 3 so far). Use-this-number is disabled. Stop sends stop", () => {
     show(LatencyDialog, scene("latency"));
     expect(text(q('[data-test="latency-progress"]'))).toBe("測っています 3 / 5");
     expect(text(q('[data-test="latency-reported"]'))).toBe("8.0 ms");
@@ -357,7 +357,7 @@ describe("遅れを測る（モック F7-Latency）", () => {
     expect(app.sent).toEqual([{ type: "stopLatencyMeasure" }, { type: "closeLatencyMeasure" }]);
   });
 
-  it("測り終わったら「もう一度」と「この数を使う」（仕様書 3 章 94-19）", () => {
+  it("after measuring, 「もう一度」 and 「この数を使う」 (spec 3 (94-19))", () => {
     show(LatencyDialog, scene("latencyDone"));
     expect(q('[data-test="latency-progress"]')).toBeNull();
     expect(qa(".foot button").map((b) => b.dataset.test)).toEqual(["latency-cancel", "latency-again", "latency-use"]);
@@ -367,7 +367,7 @@ describe("遅れを測る（モック F7-Latency）", () => {
     expect(app.sent).toEqual([{ type: "startLatencyMeasure" }, { type: "useMeasuredLatency" }]);
   });
 
-  it("測れなかった: 仕様書の文と「もう一度」", () => {
+  it("could not measure: the spec text and 「もう一度」", () => {
     show(LatencyDialog, scene("latencyFailed"));
     expect(text(q('[data-test="latency-failed"]'))).toBe("音が小さくて測れませんでした。ヘッドホンの音量を上げて、もう一度測ってください。");
     q('[data-test="latency-again"]')!.click();
@@ -375,7 +375,7 @@ describe("遅れを測る（モック F7-Latency）", () => {
   });
 });
 
-describe("偽物の答え（約束 23 の意図）", () => {
+describe("fake answers (protocol 23 intents)", () => {
   const memo = (): FakeVocalMemo => ({ monitorSaid: false });
   const apply = (s: FakeState, c: Command, m = memo()): FakeState => {
     const changes = reduceRound7(s, c, m)!;
@@ -384,7 +384,7 @@ describe("偽物の答え（約束 23 の意図）", () => {
     return next;
   };
 
-  it("歌のトラックを足す: 名前は「歌」、入口 1、選んで ● がつく。状態行で言う", () => {
+  it("adding a vocal track: named 「歌」, input 1, chosen with ● on. The status line says so", () => {
     const s = scene("tracks6");
     s.inputs.chosen = "mic";
     const next = apply(s, { type: "addVocalTrack" });
@@ -395,14 +395,14 @@ describe("偽物の答え（約束 23 の意図）", () => {
     expect(next.status.message).toEqual({ id: "vocalTrackAdded", track: { number: added.number, name: "歌" }, input: "mono1" });
   });
 
-  it("歌のトラックで E: ピアノロールはひらかず、状態行で言う", () => {
+  it("E on a vocal track: the piano roll does not open, the status line says so", () => {
     const s = scene("vocalTrack");
     const next = apply(s, { type: "toggleBand", band: "pianoRoll" });
     expect(next.status.message).toEqual({ id: "vocalHasNoPianoRoll" });
     expect(next.workspace.layout).toEqual(s.workspace.layout);
   });
 
-  it("はじめてモニターをオンにしたときだけ言う", () => {
+  it("said only the first time monitor is turned on", () => {
     const s = scene("vocalTrack");
     const m = memo();
     const on = apply(s, { type: "toggleMonitor", track: vocalOf(s).id }, m);
@@ -413,7 +413,7 @@ describe("偽物の答え（約束 23 の意図）", () => {
     expect(reduceRound7(off, { type: "toggleMonitor", track: vocalOf(s).id }, m)!.some((c) => c.section === "status")).toBe(false);
   });
 
-  it("鍵盤のトラックの音色を押すと、パラメータのない音色の欄（19-A）", async () => {
+  it("pressing the sound of a keyboard track shows the sound panel with no parameters (19-A)", async () => {
     const transport = createFakeTransport(structuredClone(scene("tracks6")));
     const before = (await transport.snapshot()).state;
     let state = before;
@@ -431,8 +431,8 @@ describe("偽物の答え（約束 23 の意図）", () => {
   });
 });
 
-describe("WebGL: マイクの計（区画も文脈もふやさない）", () => {
-  it("Levels は歌のトラックの入口を、トラックの id でひく。計っていない間は -1", () => {
+describe("WebGL: the mic meter (no more slots or contexts)", () => {
+  it("Levels look up vocal track inputs by track id. -1 while not measuring", () => {
     const levels = new Levels();
     expect(levels.micChannel(16)).toBe(-1);
     levels.onTelemetry(app.telemetryWith({ trackPeaks: new Float32Array(4), mics: [{ track: 16, peak: [0.5, 0.25], clipped: true, stereo: true }] }), 0);

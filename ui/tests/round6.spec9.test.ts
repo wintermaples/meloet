@@ -1,4 +1,4 @@
-// デザインの第 9 版の 88〜91（第 6 回 区切り0）: 状態行の新しい文、曲のダイアログの名前、窓が 1 つのとき、「サイン波で代わり」の文、音源の名前の右クリック。
+// 88 to 91 of design version 9: new status line text, dialog names in song dialogs, a single window, the 「サイン波で代わり」 text, right-click on the instrument name.
 import { flushSync, mount, unmount, type Component } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, StatusMessage } from "../src/bridge";
@@ -41,7 +41,7 @@ function show(state: AppState, component: Component<any>): void {
 const q = (sel: string) => target.querySelector<HTMLElement>(sel);
 const qa = (sel: string) => [...target.querySelectorAll<HTMLElement>(sel)];
 
-describe("状態行（仕様書 6 章の第 9 版の文）", () => {
+describe("status line (spec 6 text of version 9)", () => {
   const says = (message: StatusMessage, base = scene("tracks6")) => {
     base.status.message = message;
     show(base, StatusLine);
@@ -52,7 +52,7 @@ describe("状態行（仕様書 6 章の第 9 版の文）", () => {
   };
   const FLUID = "FluidR3_GM.sf2";
 
-  it("SF2 でないファイル、いくつも足した SF2（89-8 ・ 89-10）", () => {
+  it("a file that is not an SF2, and many SF2s added (89-8, 89-10)", () => {
     expect(says({ id: "notSf2Dragging" })).toBe("SF2 ではないファイルを持ってきています（足せません）");
     expect(says({ id: "sf2AddedMany", added: 2, first: FLUID, skipped: 1 })).toBe(
       "SF2 を 2 つ足しました（FluidR3_GM.sf2 ほか 1 つ）。1 つは SF2 ではないので、足していません。",
@@ -63,7 +63,7 @@ describe("状態行（仕様書 6 章の第 9 版の文）", () => {
     );
   });
 
-  it("見つからない ・ 読みこめないプラグイン（曲をひらいた）、音源のプラグインを外した（89-5 ・ 89-9 ・ 89-12）", () => {
+  it("missing / unreadable plugins (song opened), an instrument plugin removed (89-5, 89-9, 89-12)", () => {
     expect(says({ id: "pluginMissing", name: "Surge XT", tracks: 1 })).toBe("曲で使っている Surge XT が見つかりません。1 本のトラックはサイン波で鳴らしています。");
     expect(says({ id: "pluginUnreadable", name: "Surge XT", tracks: 1 })).toBe(
       "曲で使っている Surge XT を読みこめませんでした。1 本のトラックはサイン波で鳴らしています。",
@@ -73,13 +73,13 @@ describe("状態行（仕様書 6 章の第 9 版の文）", () => {
     );
   });
 
-  it("プラグインの窓: 1 つは名前で、2 つ以上は数で。ひらけなかったとき（91-1 ・ 91-2）", () => {
+  it("plugin windows: one by name, two or more by count. When it could not open (91-1, 91-2)", () => {
     expect(says({ id: "pluginWindowOpen", name: "Surge XT" })).toBe("Surge XT の窓がひらいています");
     expect(says({ id: "pluginWindowsOpen", count: 3 })).toBe("プラグインの窓が 3 つひらいています");
     expect(says({ id: "pluginWindowFailed", name: "Surge XT" })).toBe("Surge XT の窓をひらけませんでした。パラメータの欄では動かせます。");
   });
 
-  it("「窓」の一覧をひらいている間も、窓が 1 つなら名前で", () => {
+  it("while the 「窓」 list is open, still by name if there is one window", () => {
     const s = scene("paramMany");
     s.status.message = { id: "summary", loopBars: null, nothingSelected: true, notes: null };
     show(s, StatusLine);
@@ -88,7 +88,7 @@ describe("状態行（仕様書 6 章の第 9 版の文）", () => {
     expect(text(q(".message"))).toBe("Surge XT の窓がひらいています");
   });
 
-  it("曲のダイアログは、ダイアログの名前で言う（曲の名前は出さない。89-6）", () => {
+  it("song dialogs are named by the dialog name (no song name; 89-6)", () => {
     for (const [name, said] of [
       ["unsaved", "「保存していない変更」のダイアログをひらいています"],
       ["cannotSave", "「保存できませんでした」のダイアログをひらいています"],
@@ -102,8 +102,8 @@ describe("状態行（仕様書 6 章の第 9 版の文）", () => {
   });
 });
 
-describe("「サイン波で代わり」に乗ったときの文（89-9）", () => {
-  it("音の素材 ・ SF2 ・ 見つからないプラグイン ・ 読みこめなかったプラグイン", () => {
+describe("text when hovering 「サイン波で代わり」 (89-9)", () => {
+  it("sound pack, SF2, missing plugin, unreadable plugin", () => {
     const sf2 = { kind: "sf2", file: "FluidR3_GM.sf2", bank: 0, program: 0, name: "Piano", family: "piano" } as const;
     const plugin = { kind: "plugin", key: "vst3:x", name: "Surge XT", format: "vst3", state: "missing" } as const;
     expect(standInTip("packMissing", { kind: "builtin", instrument: "grandPiano" })).toBe("音の素材が見つからないので、サイン波で鳴らしています。");
@@ -112,7 +112,7 @@ describe("「サイン波で代わり」に乗ったときの文（89-9）", () 
     expect(standInTip("pluginUnreadable", { ...plugin, state: "stopped" })).toBe("Surge XT を読みこめなかったので、サイン波で鳴らしています。");
   });
 
-  it("読みこめなかったプラグインの音源の枠は、止まった赤い枠にしない", () => {
+  it("the instrument slot of an unreadable plugin is not the red stopped border", () => {
     const s = scene("pluginTrack");
     const surge = s.song.tracks[4]!;
     if (surge.sound.kind !== "plugin") throw new Error("the scene's fifth track is Surge XT");
@@ -125,8 +125,8 @@ describe("「サイン波で代わり」に乗ったときの文（89-9）", () 
   });
 });
 
-describe("音源の名前の右クリックは「音源を入れかえる…」（第 9 版で入口を変えた ・ 90）", () => {
-  it("最初から入っている音色でも、右クリックで一覧", () => {
+describe("right-click on the instrument name gives 「音源を入れかえる…」 (90)", () => {
+  it("a list on right-click for built-in sounds too", () => {
     const s = scene("tracks6");
     show(s, TrackHeads);
     qa("[data-test=track-instrument]")[0]!.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));

@@ -1,5 +1,5 @@
-// 第 8 回 区切り3（画面）: 音の素材（仕様書 2 章「案内の帯（音の素材）」「棚の「まだの音色」の行」、3 章 43-B ・ 44-A ・ 45-A ・
-// 「音の素材をあとから取る所」、6 章の音の素材の 7 場面。モック F8-PackAsk ・ F8-PackGet ・ F8-PackFail ・ F8-PackSettings ・ Opt8-PackShow）。
+// Sound pack on screen (spec 2 (Hint band (sound pack)), (「まだの音色」 row in the shelf), spec 3 43-B, 44-A, 45-A and
+// where the sound pack can be fetched later, the 7 sound pack scenes in spec 6. mock F8-PackAsk, F8-PackGet, F8-PackFail, F8-PackSettings, Opt8-PackShow).
 import { flushSync, mount, unmount, type Component } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, PackFailure } from "../src/bridge";
@@ -46,8 +46,8 @@ const click = (sel: string) => {
   flushSync();
 };
 
-describe("入力計の帯の案内（3 章 43-B ・ 44-A）", () => {
-  it("聞いている（F8-PackAsk）: 2 行と「取りにいく」（えらんでいる形）「あとで」。左は入力と、いま押している音だけ。出しただけでは何も送らない", () => {
+describe("hint in the input meter band (spec 3 43-B, 44-A)", () => {
+  it("asking (F8-PackAsk): 2 lines, 「取りにいく」 (the chosen look) and 「あとで」. Left shows only the input and the held notes. Showing it sends nothing", () => {
     show(InputMeter, scene("packAsk"));
     const band = q("[data-test=pack-band]")!;
     expect(band.dataset.kind).toBe("ask");
@@ -65,7 +65,7 @@ describe("入力計の帯の案内（3 章 43-B ・ 44-A）", () => {
     expect(app.sent).toEqual([{ type: "fetchPack" }, { type: "packLater" }]);
   });
 
-  it("取っている（F8-PackGet）: 2 行、棒、「やめる」。のこりの時間がわかるまでは出さない", () => {
+  it("fetching (F8-PackGet): 2 lines, a bar, 「やめる」. The time left is not shown until known", () => {
     const s = scene("packGet");
     show(InputMeter, s);
     expect(q("[data-test=pack-band]")!.dataset.kind).toBe("fetching");
@@ -84,7 +84,7 @@ describe("入力計の帯の案内（3 章 43-B ・ 44-A）", () => {
     ["packFailDiskFull", { kind: "diskFull", neededBytes: 160 * MB, freeBytes: 10 * MB }, "ディスクがいっぱいで、音の素材を置けません（あと 150 MB 要ります）。", "もう一度"],
     ["packFailCorrupt", { kind: "corrupt" }, "取った音の素材がこわれていました。取りなおしても直りませんでした。", "もう一度"],
   ];
-  it.each(failures)("取れなかった（%s）: わけごとの文と、えらんでいる形のボタン、「あとで」", (name, failure, detail, again) => {
+  it.each(failures)("could not fetch (%s): the text for each reason, the button in the chosen look, 「あとで」", (name, failure, detail, again) => {
     show(InputMeter, scene(name));
     expect(q("[data-test=pack-band]")!.dataset.kind).toBe("failed");
     expect(text(q("[data-test=pack-title]"))).toBe("音の素材を取りにいけませんでした");
@@ -97,7 +97,7 @@ describe("入力計の帯の案内（3 章 43-B ・ 44-A）", () => {
     expect(app.sent).toEqual([{ type: "fetchPack" }, { type: "packLater" }]);
   });
 
-  it("流れ 1〜4 の案内が出ている間は、聞くのを待つ（鍵盤がない ・ 出口がまだ）。アレンジの中の「音が出ました」は待たない（B-95-12）", () => {
+  it("while a hint of flows 1 to 4 is shown, asking waits (no keyboard, no output yet). 「音が出ました」 in the arrange does not wait (B-95-12)", () => {
     const base = scene("packAsk");
     expect(flowHintUp(base)).toBe(false);
     const noKeys = structuredClone(base);
@@ -118,7 +118,7 @@ describe("入力計の帯の案内（3 章 43-B ・ 44-A）", () => {
     expect(text(q("[data-test=meter-right]"))).toContain("鍵盤を USB でつなぐと、ここに出ます。");
   });
 
-  it("歌のトラックで左右に分けた形のときも、案内が先（マイクの計は出さない）", () => {
+  it("on an audio track in the split form too, the hint comes first (no mic meter)", () => {
     const s = scene("vocalFit");
     s.sounds.ask = true;
     show(InputMeter, s);
@@ -126,7 +126,7 @@ describe("入力計の帯の案内（3 章 43-B ・ 44-A）", () => {
     expect(q("[data-test=meter-mic-half]")).toBeNull();
   });
 
-  it("細い入力計（下の帯がひらいている）では 1 行にならべる", () => {
+  it("on the slim input meter (lower band open), in one line", () => {
     const s = scene("packGet");
     s.workspace.layout.meter = "slim";
     show(InputMeter, s);
@@ -134,7 +134,7 @@ describe("入力計の帯の案内（3 章 43-B ・ 44-A）", () => {
     expect(text(q("[data-test=pack-title]"))).toBe("音の素材を取りにいっています");
   });
 
-  it("数の出しかた: % は取りおえるまで 100 にしない。のこりは分（1 分より短くても 1）", () => {
+  it("numbers: % does not reach 100 until done. Time left in minutes (1 even under a minute)", () => {
     expect(percentOf(92 * MB, 240 * MB)).toBe(38);
     expect(percentOf(240 * MB - 1, 240 * MB)).toBe(99);
     expect(percentOf(240 * MB, 240 * MB)).toBe(100);
@@ -143,8 +143,8 @@ describe("入力計の帯の案内（3 章 43-B ・ 44-A）", () => {
   });
 });
 
-describe("状態行（6 章の音の素材の 7 場面、44-B の形）", () => {
-  it("取っている間に流れの案内が出たら、進みは状態行の左（「音の素材を取りにいっています」、棒、38 %、「やめる」）", () => {
+describe("status line (the 7 sound pack scenes in spec 6, the 44-B form)", () => {
+  it("if a flow hint appears while fetching, progress goes to the left of the status line (「音の素材を取りにいっています」, bar, 38 %, 「やめる」)", () => {
     const s = scene("packGet");
     s.workspace.chooser = scene("connect2").workspace.chooser;
     expect(packInStatus(s)).not.toBeNull();
@@ -158,14 +158,14 @@ describe("状態行（6 章の音の素材の 7 場面、44-B の形）", () => 
     expect(app.sent).toEqual([{ type: "stopPackFetch" }]);
   });
 
-  it("鍵盤がない ・ 抜けた ・ 入力が止まっている間（ずっと出ている案内）は、聞くのも状態行で（「取りにいく」「あとで」）", () => {
+  it("while there is no keyboard, it was pulled out, or input stopped (hints that stay), asking is also in the status line (「取りにいく」「あとで」)", () => {
     const base = scene("packAsk");
     const noKeys = structuredClone(base);
     noKeys.keyboards.list = [];
     noKeys.keyboards.active = null;
     const stopped = structuredClone(base);
     stopped.keyboards.inputStopped = true;
-    // はじめての起動で鍵盤がないと、出口もまだで、出口えらびは出ない。それでも聞く。
+    // At the first start without a keyboard, there is no output yet and the output chooser is not shown. It still asks.
     const noKeysNoOutput = structuredClone(noKeys);
     noKeysNoOutput.outputs.chosen = null;
     for (const s of [noKeys, stopped, noKeysNoOutput]) expect(askInStatus(s)).toBe(true);
@@ -179,7 +179,7 @@ describe("状態行（6 章の音の素材の 7 場面、44-B の形）", () => 
     expect(app.sent).toEqual([{ type: "fetchPack" }, { type: "packLater" }]);
   });
 
-  it("出口えらびや一度だけの案内の間は、状態行でも聞かずに待つ（終わったら帯に出す）", () => {
+  it("during the output chooser or a one-time hint, the status line also waits without asking (shown in the band after)", () => {
     const base = scene("packAsk");
     expect(askInStatus(base)).toBe(false);
     const chooser = structuredClone(base);
@@ -203,7 +203,7 @@ describe("状態行（6 章の音の素材の 7 場面、44-B の形）", () => 
     expect(askInStatus(answered)).toBe(false);
   });
 
-  it("帯に出ている間は、状態行に進みを出さない", () => {
+  it("while in the band, no progress in the status line", () => {
     show(StatusLine, scene("packGet"));
     expect(q("[data-test=pack-status]")).toBeNull();
     expect(text(target)).toContain("グランドピアノ が鳴るようになりました ・ のこりの音色を取っています");
@@ -217,7 +217,7 @@ describe("状態行（6 章の音の素材の 7 場面、44-B の形）", () => 
     ["packFailCorrupt", "取った音の素材がこわれていました。取りなおしても直りませんでした。", "もう一度"],
     ["packNew", "音の素材の新しい包みがあります（12 MB）。", "取りにいく"],
   ];
-  it.each(lines)("%s: 文とボタン", (name, line, button) => {
+  it.each(lines)("%s: text and buttons", (name, line, button) => {
     show(StatusLine, scene(name));
     expect(text(q(".message"))).toBe(line);
     const link = q(".link");
@@ -229,7 +229,7 @@ describe("状態行（6 章の音の素材の 7 場面、44-B の形）", () => 
     }
   });
 
-  it("ぜんぶ取れた: 「音の素材をぜんぶ取りました。31 の音色が鳴ります。」", () => {
+  it("all fetched: 「音の素材をぜんぶ取りました。31 の音色が鳴ります。」", () => {
     const s = scene("packGet");
     s.status.message = { id: "packFetched", count: 31 };
     show(StatusLine, s);
@@ -237,8 +237,8 @@ describe("状態行（6 章の音の素材の 7 場面、44-B の形）", () => 
   });
 });
 
-describe("棚の「まだの音色」の行（2 章、3 章 45-A、モック F8-PackGet）", () => {
-  it("名前 gray.8 と「取ってきています」「まだ」。星 ・ ▶ はなく、押しても何も送らない。数は本物（音源 31）", () => {
+describe("「まだの音色」 rows on the shelf (spec 2, spec 3 45-A, mock F8-PackGet)", () => {
+  it("name gray.8 and 「取ってきています」「まだ」. No star or ▶, pressing sends nothing. The count is real (31 instruments)", () => {
     show(RightRail, scene("packGet"));
     const waiting = qa("[data-test=shelf-not-yet]");
     expect(waiting.length).toBe(31 - 5 - 4);
@@ -258,7 +258,7 @@ describe("棚の「まだの音色」の行（2 章、3 章 45-A、モック F8-
     expect(text(qa("[data-test=shelf-heading]")[0]!)).toBe("▾ ピアノ ・ 鍵盤 11");
   });
 
-  it("棚をたたんでいても、偽物は「まだ」の音色をなくさない（縦の見出しの「音源 31」）", async () => {
+  it("even with the shelf folded, the fake keeps the 「まだ」 instruments (「音源 31」 in the vertical heading)", async () => {
     const f = createFakeTransport(scene("packAsk"));
     await f.send({ type: "setViewport", width: 1280, height: 800 });
     const s = (await f.snapshot()).state;
@@ -267,14 +267,14 @@ describe("棚の「まだの音色」の行（2 章、3 章 45-A、モック F8-
     expect(text(target)).toContain("音源 31");
   });
 
-  it("包みがそろうと「まだ」の行はなくなる", () => {
+  it("once the packs are all there, the 「まだ」 rows go away", () => {
     show(RightRail, scene("shelf"));
     expect(qa("[data-test=shelf-not-yet]")).toEqual([]);
   });
 });
 
-describe("音の設定 ▸ くわしい設定の「音の素材」（3 章、モック F8-PackSettings、B-95-7）", () => {
-  it("まだ 12 / 31 と「取りにいく」、下に置き場所", () => {
+describe("「音の素材」 in sound settings ▸ advanced settings (spec 3, mock F8-PackSettings, B-95-7)", () => {
+  it("「まだ 12 / 31」 and 「取りにいく」, with the location below", () => {
     const s = scene("packSettings");
     show(SettingsDialog, s);
     const row = q("[data-test=settings-pack]")!;
@@ -285,7 +285,7 @@ describe("音の設定 ▸ くわしい設定の「音の素材」（3 章、モ
     expect(app.sent.at(-1)).toEqual({ type: "fetchPack" });
   });
 
-  it("ぜんぶあるときは「ぜんぶあります ・ 240 MB」だけ", () => {
+  it("when all are there, only 「ぜんぶあります ・ 240 MB」", () => {
     const s = scene("packSettings");
     s.sounds.have = s.sounds.total;
     show(SettingsDialog, s);
@@ -294,8 +294,8 @@ describe("音の設定 ▸ くわしい設定の「音の素材」（3 章、モ
   });
 });
 
-describe("「meloet について」の 2 段目（3 章「音の素材をあとから取る所」）", () => {
-  it("「音の素材」の見出しをひらくと、中に置き場所", () => {
+describe("second level of 「meloet について」 (spec 3, where the sound pack can be fetched later)", () => {
+  it("opening the 「音の素材」 heading shows the location inside", () => {
     const s = scene("packAsk");
     app.setState(s);
     openAbout();
@@ -308,8 +308,8 @@ describe("「meloet について」の 2 段目（3 章「音の素材をあと�
   });
 });
 
-describe("取る前の音色のトラック（3 章 45-A ・ 85）", () => {
-  it("見出しの音源は「サイン波で代わり」", () => {
+describe("tracks with instruments not fetched yet (spec 3 45-A, 85)", () => {
+  it("the instrument in the head is 「サイン波で代わり」", () => {
     show(Arrange, scene("packAsk"));
     expect(text(target)).toContain(t("track.standIn"));
   });

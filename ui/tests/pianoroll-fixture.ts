@@ -1,9 +1,9 @@
-// ピアノロールのテストで使うテイクと見かた。
+// Takes and views used in piano roll tests.
 import { NO_FROM, type TakeNotes } from "../src/bridge";
 import type { RollGeom } from "../src/components/pianoroll/geom";
 import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 
-/** [始まり, 長さ, 鍵, ベロシティ] のならびからテイクを作る。 */
+/** Makes a take from a list of [start, length, key, velocity]. */
 export function take(notes: [number, number, number, number?][], id = 7, extra: Partial<TakeNotes> = {}): TakeNotes {
   return {
     id,
@@ -22,5 +22,5 @@ export function take(notes: [number, number, number, number?][], id = 7, extra: 
   };
 }
 
-/** 1 拍 40 px（1 ティック 40 / TPQ px）、上の行が C5、1 行 12 px、696 × 492（モック A-PianoRoll の大きさ）。 */
+/** 40 px per beat (40 / TPQ px per tick), top row C5, 12 px per row, 696 × 492 (the size of mock A-PianoRoll). */
 export const GEOM: RollGeom = { scrollTick: 0, ppt: 40 / TPQ, topKey: 72, rowH: 12, width: 696, height: 492 };

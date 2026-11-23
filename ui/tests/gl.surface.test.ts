@@ -1,4 +1,4 @@
-// 面は、区画（glRegion の箱）ごとに 1 枚。文脈は使いまわし、数は予算の中。WebGL2 のない所（jsdom）でも、画面がこわれない。
+// One surface per section (glRegion box). Contexts are reused and their number stays in budget. Without WebGL2 (jsdom) the screen does not break.
 import { flushSync, mount, unmount } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Surface from "../src/gl/Surface.svelte";
@@ -18,7 +18,7 @@ class FakeResizeObserver {
   disconnect() {}
 }
 
-/** 呼ばれた事だけを数える、にせの WebGL2。 */
+/** A fake WebGL2 that only counts calls. */
 function fakeGl() {
   const calls = { drawArrays: 0, clear: 0 };
   const gl = new Proxy(
@@ -36,14 +36,14 @@ function fakeGl() {
 
 type Made = { canvas: HTMLCanvasElement; alpha: boolean; calls: { drawArrays: number; clear: number } };
 
-/** にせの WebGL2 と、手で回す rAF。 */
+/** A fake WebGL2 and a rAF turned by hand. */
 function fakePage() {
   vi.stubGlobal("ResizeObserver", FakeResizeObserver);
   const frames: FrameRequestCallback[] = [];
   vi.stubGlobal("requestAnimationFrame", (f: FrameRequestCallback) => frames.push(f));
   vi.stubGlobal("cancelAnimationFrame", () => {});
   const made: Made[] = [];
-  /** 写しを受けとった canvas（bitmaprenderer。WebGL の文脈ではない）。 */
+  /** A canvas that receives a copy (bitmaprenderer, not a WebGL context). */
   const copied: HTMLCanvasElement[] = [];
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(function (this: HTMLCanvasElement, id: string, options?: unknown) {
     if (id === "bitmaprenderer") return { transferFromImageBitmap: () => void copied.push(this) } as never;
@@ -83,7 +83,7 @@ function slot(node: HTMLElement, s: GlSlot): { destroy(): void } {
   return a;
 }
 
-describe("WebGL の面", () => {
+describe("WebGL surfaces", () => {
   beforeEach(() => resetPool());
   afterEach(() => {
     for (const a of actions.splice(0)) a.destroy();
@@ -92,7 +92,7 @@ describe("WebGL の面", () => {
     document.body.innerHTML = "";
   });
 
-  it("WebGL2 が取れなければ、箱を空のままにして 1 回だけ知らせる", () => {
+  it("if WebGL2 cannot be got, leave the box empty and report once", () => {
     vi.stubGlobal("ResizeObserver", FakeResizeObserver);
     const frames: FrameRequestCallback[] = [];
     vi.stubGlobal("requestAnimationFrame", (f: FrameRequestCallback) => frames.push(f));
@@ -110,9 +110,9 @@ describe("WebGL の面", () => {
     unmount(surface);
   });
 
-  it("区画ごとに、slot のある所の大きさの面を 1 枚。中を全部ぬる区画は不透明。変わった面だけを描く", () => {
+  it("one surface per section, the size of where the slots are. A section that fills everything is opaque. Only changed surfaces are drawn", () => {
     const { made, frame } = fakePage();
-    // 画素の間から始まる箱: 面は、はしを画素に合わせる。
+    // A box starting between pixels: the surface aligns its edges to pixels.
     const keys = region(box(new DOMRect(10.4, 20, 349, 32)), "pianoRollKeys");
     const meterHost = region(box(new DOMRect(480, 10, 120, 30)), "masterMeter");
     const bar = box(new DOMRect(500, 20, 64, 4), meterHost);
@@ -128,13 +128,13 @@ describe("WebGL の面", () => {
     expect([k.canvas.width, k.canvas.height]).toEqual([349, 32]);
     expect(parseFloat(k.canvas.style.left)).toBeCloseTo(-0.4);
     expect(k.canvas.style.width).toBe("349px");
-    // メーターの面は、区画の箱ではなく、slot のある所だけ。
+    // The meter surface covers only where the slots are, not the section box.
     expect(m.canvas.parentElement).toBe(meterHost);
     expect([m.canvas.width, m.canvas.height]).toEqual([64, 4]);
     expect([m.canvas.style.left, m.canvas.style.top]).toEqual(["20px", "10px"]);
     expect([k.calls.clear, m.calls.clear]).toEqual([1, 1]);
 
-    // 鍵: 鍵盤の面だけ。同じ絵なら描かない。
+    // Keys: only the keyboard surface. The same picture is not drawn.
     engine.onEvent({ type: "note", note: 60, on: true, velocity: 90, tUs: 1 });
     frame();
     expect([k.calls.clear, m.calls.clear]).toEqual([2, 1]);
@@ -146,7 +146,7 @@ describe("WebGL の面", () => {
     expect(document.querySelector("canvas")).toBe(null);
   });
 
-  it("トラックが 16 本でも、メーターの面は 1 枚。面は区画の箱の中で切る", () => {
+  it("even with 16 tracks, one meter surface. The surface is cut inside the section box", () => {
     const { made, drawn, frame } = fakePage();
     const head = region(box(new DOMRect(0, 100, 200, 500)), "trackMeters");
     const engine = new Engine();
@@ -158,16 +158,16 @@ describe("WebGL の面", () => {
     expect(made).toHaveLength(1);
     expect(contextsMade()).toBe(1);
     const c = made[0]!.canvas;
-    // 一番上のメーターから、箱の下のはし（600）まで。
+    // From the top meter to the bottom of the box (600).
     expect([c.width, c.height, c.style.top]).toEqual([180, 450, "50px"]);
-    // 見えるメーターは 7 本（地が左右で 2 本ずつ）と、切れた 8 本め（598〜607 の、左の地の上だけ）。
+    // 7 meters are visible (the background has 2 each on left and right), and a cut 8th (598–607, only on the left background).
     const grounds = drawn.at(-1)!.rects.filter((r) => r.slice(4).join() === f32(rgb("color.gray.0")).join());
     expect(grounds).toHaveLength(15);
     expect(grounds.at(-1)!.slice(0, 4)).toEqual([0, 448, 180, 450]);
     engine.destroy();
   });
 
-  it("ひらいて閉じる区画は、文脈を作りなおさずに使いまわす", () => {
+  it("a section that opens and closes reuses its context without making a new one", () => {
     const { made, frame } = fakePage();
     const engine = new Engine();
     slot(region(box(new DOMRect(0, 0, 300, 20)), "pianoRollKeys"), { kind: "keyboard", size: "full", firstNote: 36, lastNote: 84 });
@@ -193,7 +193,7 @@ describe("WebGL の面", () => {
     engine.destroy();
   });
 
-  it("入力計: 鍵盤とベロシティの棒で 1 枚。間の文字の所は何も描かず、すける。鍵 1 つで出す面は 1 枚", () => {
+  it("input meter: one surface for the keyboard and the velocity bar. The text area between draws nothing and is see-through. One key shows one surface", () => {
     const { made, drawn, frame } = fakePage();
     const meter = region(box(new DOMRect(0, 0, 1280, 52)), "inputMeter");
     const keys = box(new DOMRect(212.5, 10, 349, 32), meter);
@@ -207,10 +207,10 @@ describe("WebGL の面", () => {
     expect(made.map((m) => m.alpha)).toEqual([true]);
     const c = made[0]!.canvas;
     expect(c.parentElement).toBe(meter);
-    // 鍵盤の左上から、棒の右はしまで。
+    // From the top left of the keyboard to the right end of the bar.
     expect([c.width, c.height, c.style.top]).toEqual([611, 32, "10px"]);
     expect(parseFloat(c.style.left)).toBe(213);
-    // 四角は、どれも 2 つの slot の中。間（x 349〜547）には 1 つもない。
+    // Every rectangle is inside the two slots. None in between (x 349–547).
     const inSlot = (r: number[]) => (r[2]! <= 349 && r[3]! <= 32) || (r[0]! >= 547 && r[1]! >= 20 && r[3]! <= 24);
     expect(drawn.at(-1)!.rects.length).toBeGreaterThan(50);
     expect(drawn.at(-1)!.rects.every(inSlot)).toBe(true);
@@ -228,10 +228,10 @@ describe("WebGL の面", () => {
     engine.destroy();
   });
 
-  it("ミキサー: 縦のメーターが何本でも 1 枚。戻り A ・ B の値が出る。横にスクロールしても 1 枚のままで、slot の位置だけ変わる", () => {
+  it("mixer: one surface for any number of vertical meters. Values of returns A and B show. Scrolling sideways keeps one surface; only slot positions change", () => {
     const { made, drawn, frame } = fakePage();
     vi.spyOn(performance, "now").mockReturnValue(1000);
-    // 横にスクロールする箱（見えているのは x 100〜500）。ストリップは 64 ごとに 12 本: トラック 9、戻り A ・ B、マスター。
+    // A box that scrolls sideways (visible x 100–500). 12 strips every 64: 9 tracks, returns A and B, master.
     const strips = region(box(new DOMRect(100, 300, 400, 200)), "mixerMeters");
     const sources: MeterSource[] = [...Array.from({ length: 9 }, (_, i) => ({ track: i + 1 })), { ret: "a" }, { ret: "b" }, "master"];
     sources.forEach((source, i) => {
@@ -263,7 +263,7 @@ describe("WebGL の面", () => {
     expect(made).toHaveLength(1);
     const c = made[0]!.canvas;
     expect(c.parentElement).toBe(strips);
-    // 見えているのは最初の 6 本。面は 1 本めの左（140）から、箱の右はし（500）まで（右にまだ slot があるので）。
+    // The first 6 are visible. The surface runs from the left of the 1st (140) to the right end of the box (500), since there are more slots to the right.
     expect([c.width, c.height, c.style.left, c.style.top]).toEqual([360, 100, "40px", "20px"]);
     const ground = f32(rgb("color.gray.0")).join();
     const ok = f32(rgb("color.meter.ok")).join();
@@ -275,17 +275,17 @@ describe("WebGL の面", () => {
     ]);
     expect(of(ok)).toEqual([]);
 
-    // 右のはしまで送る（中身 768、見える幅 400）。
+    // Scroll to the right end (content 768, visible width 400).
     strips.scrollLeft = 368;
     strips.dispatchEvent(new Event("scroll"));
     frame();
     expect(made).toHaveLength(1);
     expect(strips.querySelectorAll("canvas")).toHaveLength(1);
-    // 見えているのは 6 本めの右の棒の残り（x 100〜101）から、マスター（485 まで）。面は中身といっしょに流れないよう、送った分だけ右へ置く。
+    // Visible: from the rest of the 6th's right bar (x 100–101) to the master (up to 485). The surface is moved right by the scrolled amount so it does not flow with the content.
     expect([c.width, c.height, c.style.left, c.style.top]).toEqual([385, 100, "368px", "20px"]);
     expect(of(ground)[0]).toEqual([0, 0, 1, 100]);
     expect(of(ground)).toHaveLength(13);
-    // 戻り A（10 本め）: 左だけ 0.5。下から、ok の色で。
+    // Return A (10th): only the left at 0.5. From the bottom, in the ok color.
     const a = 64 * 9 + 40 - 368;
     const half = Math.round(100 * dbToLength(peakToDb(0.5)));
     expect(of(ok)).toEqual([
@@ -294,12 +294,12 @@ describe("WebGL の面", () => {
       [a + 128, 30, a + 132, 100],
       [a + 133, 30, a + 137, 100],
     ]);
-    // 戻り B（11 本め）: 右が 0 dB をこえた。上はしに rec の 2px。
+    // Return B (11th): the right went over 0 dB. A 2px rec at the top end.
     expect(of(f32(rgb("color.rec")).join())).toEqual([[a + 64 + 5, 0, a + 64 + 9, 2]]);
     engine.destroy();
   });
 
-  it("ミキサーは、いつも: WebGL の面はページの外に置き、左と右の 2 つの写しを 1 コマに 1 つずつ出す。文脈は 1 つのまま", async () => {
+  it("mixer, always: the WebGL surface sits outside the page, and the left and right copies are shown one per frame. Still one context", async () => {
     const { made, drawn, frame, copied } = fakePage();
     vi.spyOn(performance, "now").mockReturnValue(1000);
     const asked: number[][] = [];
@@ -307,7 +307,7 @@ describe("WebGL の面", () => {
       asked.push([x, y, w, h]);
       return Promise.resolve({ close() {} });
     });
-    // ストリップは 64 ごとに 15 本（トラック 12、戻り A ・ B、マスター）。全部見えている。
+    // 15 strips every 64 (12 tracks, returns A and B, master). All visible.
     const strips = region(box(new DOMRect(0, 300, 1000, 200)), "mixerMeters");
     const sources: MeterSource[] = [...Array.from({ length: 12 }, (_, i) => ({ track: i + 1 })), { ret: "a" }, { ret: "b" }, "master"];
     sources.forEach((source, i) => {
@@ -344,12 +344,12 @@ describe("WebGL の面", () => {
     expect(gl.parentElement).toBeNull();
     const tiles = [...strips.querySelectorAll("canvas")];
     expect(tiles).toHaveLength(2);
-    // 左は 1〜7 本め（40 から 393）、右は 8〜15 本め（488 から 945）。間のすきまは、どちらの面にも入らない。
+    // Left is the 1st–7th (40 to 393), right is the 8th–15th (488 to 945). The gap between goes in neither surface.
     expect(tiles.map((c) => [c.style.left, c.style.top, c.style.width, c.style.height])).toEqual([
       ["40px", "20px", "393px", "100px"],
       ["488px", "20px", "457px", "100px"],
     ]);
-    // WebGL の面は、大きいほうの写しの大きさ。はじめのコマは 2 つとも描く。
+    // The WebGL surface is the size of the larger copy. The first frame draws both.
     expect([gl.width, gl.height]).toEqual([457, 100]);
     expect(drawn.map((d) => [d.width, d.height])).toEqual([
       [393, 100],
@@ -362,7 +362,7 @@ describe("WebGL の面", () => {
     await Promise.resolve();
     expect(copied).toEqual(tiles);
 
-    // 値が変わった: 1 コマに 1 つ。左、次のコマで右、そのあとは描かない。
+    // A value changed: one per frame. Left, then right on the next frame, then no draws.
     levels(0.5);
     frame();
     expect(drawn.slice(2).map((d) => d.width)).toEqual([393]);
@@ -371,19 +371,19 @@ describe("WebGL の面", () => {
     frame();
     frame();
     expect(drawn).toHaveLength(4);
-    // 次も左から。
+    // The next also starts from the left.
     levels(0.8);
     frame();
     frame();
     expect(drawn.slice(4).map((d) => d.width)).toEqual([393, 457]);
 
-    // 送る ・ 大きさが変わる（すぐ描くコマ）は、2 つとも同じコマで。
+    // Scrolling and resizing (frames that draw at once) do both in the same frame.
     strips.dispatchEvent(new Event("scroll"));
     levels(0.95);
     frame();
     expect(drawn.slice(6).map((d) => d.width)).toEqual([393, 457]);
 
-    // トラックが 10 本にへっても、分けたまま（いつも 30 Hz。user:2026-11-20）。
+    // Even with tracks down to 10, it stays split (always 30 Hz, user:2026-11-20).
     engine.setTracks(tracks(10));
     frame();
     expect([...strips.querySelectorAll("canvas")]).toEqual(tiles);
@@ -392,7 +392,7 @@ describe("WebGL の面", () => {
     expect(strips.querySelectorAll("canvas")).toHaveLength(0);
   });
 
-  it("写しを作れない所（createImageBitmap がない）では、WebGL の面 1 枚のまま、33 ms に 1 回描く", () => {
+  it("where copies cannot be made (no createImageBitmap), one WebGL surface, drawn once per 33 ms", () => {
     const { made, drawn, frame } = fakePage();
     const now = vi.spyOn(performance, "now").mockReturnValue(1000);
     const strips = region(box(new DOMRect(0, 300, 1000, 200)), "mixerMeters");
@@ -432,7 +432,7 @@ describe("WebGL の面", () => {
     engine.destroy();
   });
 
-  it("上の帯: マスターの面は、数字の箱（cover）までおおう。ミキサーのメーターを出すコマは、変わっていなくてもマスターの面も出す", () => {
+  it("top band: the master surface covers up to the number box (cover). A frame that shows the mixer meters also shows the master surface, even unchanged", () => {
     const { made, frame } = fakePage();
     const now = vi.spyOn(performance, "now").mockReturnValue(1000);
     const bar = region(box(new DOMRect(0, 0, 1000, 48)), "masterMeter");
@@ -464,7 +464,7 @@ describe("WebGL の面", () => {
     expect([m.canvas.width, m.canvas.height, m.canvas.style.left, m.canvas.style.top]).toEqual([620, 38, "300px", "6px"]);
     expect(m.calls.clear).toBe(1);
 
-    // ミキサーがないとき: マスターが同じなら、出さない。
+    // Without the mixer: if the master is the same, it is not shown.
     engine.onTelemetry(telemetry(0.2));
     frame();
     expect(m.calls.clear).toBe(1);
@@ -474,12 +474,12 @@ describe("WebGL の面", () => {
     frame();
     const x = made[1]!;
     expect([m.calls.clear, x.calls.clear]).toEqual([2, 1]);
-    // トラックだけ変わった: ミキサーの面が出るので、マスターの面も（ミキサーは 30 Hz なので、33 ms あと）。
+    // Only tracks changed: the mixer surface shows, so the master surface too (the mixer is 30 Hz, so 33 ms later).
     now.mockReturnValue(1040);
     engine.onTelemetry(telemetry(0.4));
     frame();
     expect([m.calls.clear, x.calls.clear]).toEqual([3, 2]);
-    // 何も変わらない: どちらも出さない。
+    // Nothing changed: neither is shown.
     now.mockReturnValue(1080);
     engine.onTelemetry(telemetry(0.4));
     frame();
@@ -487,14 +487,14 @@ describe("WebGL の面", () => {
     engine.destroy();
   });
 
-  it("中身を送る箱（data-gl-clip）の中の slot は、その箱が見せている所だけ描く。面も、そこまで（アレンジのトラックの行）", () => {
+  it("slots inside a box that scrolls its content (data-gl-clip) draw only what that box shows. The surface too goes only that far (the arrange track rows)", () => {
     const { made, drawn, frame } = fakePage();
-    // 区画の箱（y 100〜400）。上の 50 は送らない帯、その下（y 150〜400）が、中身を送る箱。
+    // Section box (y 100–400). The top 50 is a band that does not scroll; below it (y 150–400) is the scrolling box.
     const wrap = region(box(new DOMRect(0, 100, 300, 300)), "arrangeLanes");
     slot(box(new DOMRect(0, 100, 300, 50), wrap), { kind: "rects", rects: [{ x: 10, y: 10, w: 20, h: 20, color: "color.rec" }] });
     const view = box(new DOMRect(0, 150, 300, 250), wrap);
     view.setAttribute("data-gl-clip", "");
-    // 中身は 1000 高く、120 上へ送ってある（y 30 から）。四角は、中身の y 0・100・200・900。
+    // The content is 1000 tall, scrolled up by 120 (from y 30). Rectangles at content y 0, 100, 200, 900.
     const rows = box(new DOMRect(0, 30, 300, 1000), view);
     slot(rows, { kind: "rects", rects: [0, 100, 200, 900].map((y) => ({ x: 0, y, w: 50, h: 40, color: "color.accent" as const })) });
     const engine = new Engine();
@@ -502,11 +502,11 @@ describe("WebGL の面", () => {
 
     const c = made[0]!.canvas;
     expect(c.parentElement).toBe(wrap);
-    // 面は区画の箱いっぱい（上の帯から、送る箱の下まで）。送る箱の上へはみ出した中身の分は、広がらない。
+    // The surface fills the section box (from the top band to the bottom of the scrolling box). Content sticking out above the scrolling box does not grow it.
     expect([c.width, c.height, c.style.top]).toEqual([300, 300, "0px"]);
     const accent = f32(rgb("color.accent")).join();
     const got = drawn.at(-1)!.rects.filter((r) => r.slice(4).join() === accent).map((r) => r.slice(0, 4));
-    // 窓の y 30（見えない）、130〜170（送る箱の上 150 で切る）、230〜270、930（箱の下の外）。面の左上は y 100。
+    // Window y 30 (hidden), 130–170 (cut at the scrolling box top 150), 230–270, 930 (below the box). The surface's top left is y 100.
     expect(got).toEqual([
       [0, 50, 50, 70],
       [0, 130, 50, 170],
@@ -514,12 +514,12 @@ describe("WebGL の面", () => {
     engine.destroy();
   });
 
-  it("区画の数: 窓の高さと帯のどの組み合わせでも 10 枚まで。組み合わせを全部わたり歩いても、作る文脈は 10 個", () => {
+  it("number of sections: at most 10 for any window height and band mix. Walking through every mix makes 10 contexts", () => {
     const { made, frame } = fakePage();
     const engine = new Engine();
-    // いつもある物。入力計は、太くても細くても箱が 1 つ。
+    // Always there. The input meter has one box, full or slim.
     const always: RegionName[] = ["inputMeter", "masterMeter"];
-    // アレンジは、トラックの行のまま（窓が高い、または下の帯がない）か、ちぢんだ形（overview）。
+    // The arrange is either track rows (tall window, or no lower band) or the shrunk form (overview).
     const arrange: Record<"rows" | "overview", RegionName[]> = {
       rows: ["trackMeters", "arrangeLanes", "recordingClip"],
       overview: ["overview"],
@@ -552,7 +552,7 @@ describe("WebGL の面", () => {
     engine.destroy();
   });
 
-  it("区画の箱が来たときに文脈を作り、箱があるうちは slot がなくても持っている（鍵やドラッグの瞬間に作らない）", () => {
+  it("contexts are made when the section box comes, and kept while the box exists even with no slots (not made at the moment of a key or a drag)", () => {
     const { made, drawn, frame } = fakePage();
     const engine = new Engine();
     const host = box(new DOMRect(0, 0, 400, 200));
@@ -577,7 +577,7 @@ describe("WebGL の面", () => {
     expect(made).toHaveLength(1);
     expect(contextsMade()).toBe(1);
 
-    // 箱が去ると池に戻り、次の区画が使う。
+    // When the box goes, the context returns to the pool and the next section uses it.
     r.destroy();
     host.remove();
     frame();
@@ -590,7 +590,7 @@ describe("WebGL の面", () => {
     engine.destroy();
   });
 
-  it("予算をこえて文脈を作ろうとしたら、開発とテストでは落とす", () => {
+  it("making a context over the budget fails in development and tests", () => {
     const { frame } = fakePage();
     const engine = new Engine();
     for (let i = 0; i <= CONTEXT_BUDGET; i++) {
@@ -601,7 +601,7 @@ describe("WebGL の面", () => {
     engine.destroy();
   });
 
-  it("区画の外の slot は、開発とテストでは落とす", () => {
+  it("a slot outside its section fails in development and tests", () => {
     const { frame } = fakePage();
     const engine = new Engine();
     slot(box(new DOMRect(0, 0, 64, 4)), { kind: "velocity" });
@@ -609,7 +609,7 @@ describe("WebGL の面", () => {
     engine.destroy();
   });
 
-  it("四角の並び: CSS px を画素にする。あとの slot が上", () => {
+  it("order of rectangles: CSS px become pixels. Later slots are on top", () => {
     const { drawn, frame } = fakePage();
     vi.stubGlobal("devicePixelRatio", 1.5);
     const lanes = region(box(new DOMRect(100, 100, 400, 200)), "arrangeLanes");
@@ -622,12 +622,12 @@ describe("WebGL の面", () => {
         { x: 10.2, y: 3, w: 5, h: 2, color: "color.gray.0" },
       ],
     });
-    // 先に印をつけても、ページの順で描く。
+    // Even when marked first, they are drawn in page order.
     slot(lanes, grid);
     const engine = new Engine();
     frame();
     const rects = drawn.at(-1)!.rects;
-    // 小節の線（x = 0）が先、クリップがあと。クリップの箱は (180, 165) から。
+    // The bar line (x = 0) first, the clip after. The clip box starts at (180, 165).
     expect(rects.map((r) => r.slice(0, 4))).toEqual([
       [0, 0, 1, 300],
       [30, 15, 180, 75],
@@ -637,7 +637,7 @@ describe("WebGL の面", () => {
     engine.destroy();
   });
 
-  it("everyGlFrame: コマの頭で呼ばれ、そこで変えた slot は同じコマで描く。やめるまでコマが続く", () => {
+  it("everyGlFrame: called at the start of the frame; slots changed there are drawn in the same frame. Frames go on until it stops", () => {
     const { drawn, frame } = fakePage();
     const engine = new Engine();
     const host = region(box(new DOMRect(0, 0, 100, 20)), "recordingClip");
@@ -662,7 +662,7 @@ describe("WebGL の面", () => {
     engine.destroy();
   });
 
-  it("区画の表: どの区画も名前がつき、予算は WebKitGTK の限りより小さい", () => {
+  it("section table: every section has a name, and the budget is below the WebKitGTK limit", () => {
     expect(Object.keys(REGIONS).length).toBeLessThanOrEqual(CONTEXT_BUDGET);
     expect(CONTEXT_BUDGET).toBeLessThan(16);
   });

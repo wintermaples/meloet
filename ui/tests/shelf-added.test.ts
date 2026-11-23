@@ -1,5 +1,5 @@
-// 第 5 回 区切り2 の画面: 棚の「あとから入れたもの」（SF2 とプラグイン）、さがす、お気に入り、ためし弾きの箱、ファイルを持ってきている間の知らせ、
-// 見つからない物の知らせ、「サイン波で代わり」、止まった枠、85 の残り（ドラムの鍵の列の光り、上下の読み値、「スネア ×2」、押している音）。
+// The shelf's 「あとから入れたもの」 (SF2 and plugins), search, favorites, the try-out box, the notice while a file is brought in,
+// the missing-item notice, 「サイン波で代わり」, the stopped frame, the rest of 85 (light on the drum key column, readouts above and below, 「スネア ×2」, held notes).
 import { flushSync, mount, unmount, type Component } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, Command } from "../src/bridge";
@@ -65,10 +65,10 @@ function press(state: AppState, key: string): Command[] {
   return sent;
 }
 
-describe("棚の見出し（モック F5-SF2Shelf ・ F5-PluginLoading、仕様書 3 章 83 ・ Y12）", () => {
-  it("最初から入っているもの → あとから入れたもの。いま足した SF2 のファイルだけひらき、仲間とほかの見出しはたたむ", () => {
+describe("shelf headings (mock F5-SF2Shelf, F5-PluginLoading, spec 3 83, Y12)", () => {
+  it("built-in -> added later. Only the SF2 file just added is open; its group and other headings are folded", () => {
     show(RightRail, scene("sf2Shelf"));
-    // 「最初から入っているもの」は、ほかと同じたためる見出し（仕様書 3 章 89-11）。はじめはたたむ。
+    // 「最初から入っているもの」 is a foldable heading like the others (spec 3 89-11). Folded at first.
     expect(q("[data-test='section:builtin']")).toBeNull();
     expect(text(q("[data-test='section:added']"))).toBe("あとから入れたもの ・ 137 SF2 を足す…");
     let h = headings();
@@ -82,7 +82,7 @@ describe("棚の見出し（モック F5-SF2Shelf ・ F5-PluginLoading、仕様�
     click('[data-group="builtin:sounds"]');
     expect(h.at(-1)).toBe("▸ ドラムのキット 9");
     expect(qa("[data-test=shelf-row]")).toEqual([]);
-    // 仲間をひらくと行（英語の名前のまま、右に GM の番号。形式の印「SF2」は行には出さない）。
+    // Opening a group shows rows (English names as they are, the GM number on the right. The 「SF2」 format mark is not shown on rows).
     click(`[data-group="ff:guitar:${FLUID}"]`);
     expect(qa("[data-test=shelf-row]").map(text)).toEqual([
       "Nylon String Guitar 25",
@@ -95,17 +95,17 @@ describe("棚の見出し（モック F5-SF2Shelf ・ F5-PluginLoading、仕様�
       "Guitar Harmonics 32",
     ]);
     expect(rowNamed("Clean Guitar").classList.contains("selected")).toBe(true);
-    // バンクが 0 でない音色は「・ バンク 128」。
+    // Instruments whose bank is not 0 show 「・ バンク 128」.
     click(`[data-group="ff:drumKit:${FLUID}"]`);
     expect(text(rowNamed("Standard"))).toBe("Standard 1 ・ バンク 128");
-    // ファイルの見出しでたたむと、中の見出しも消える（見出しと数は残る）。
+    // Folding by the file heading hides the headings inside too (the heading and count stay).
     click(`[data-group="f:${FLUID}"]`);
     expect(headings().at(-1)).toBe(`▸ ${FLUID} SF2 137`);
   });
 
-  it("プラグインの種類の見出し（14-A の並び）。行は星、▶、名前、作った人、使う形式の印と「＋1」", () => {
+  it("plugin type headings (in the 14-A order). A row has a star, ▶, name, maker, the mark of the format used, and 「＋1」", () => {
     show(RightRail, scene("shelfPlugins"));
-    // 31 ＋ SF2 137 ＋ プラグイン 34（モックの 182 は音色 11 のころの数）。
+    // 31 + SF2 137 + plugins 34 (the mock's 182 is from when there were 11 instruments).
     expect(text(q(".head"))).toBe("▾ 棚 音源 202 エフェクト 512 P");
     expect(headings().slice(-5)).toEqual(["▸ シンセ 21", "▸ サンプラー 6", "▸ ドラム 4", "▸ ピアノ ・ 鍵盤 2", "▸ そのほか 1"]);
     click('[data-group="c:instrument:synth"]');
@@ -114,7 +114,7 @@ describe("棚の見出し（モック F5-SF2Shelf ・ F5-PluginLoading、仕様�
     expect(surge.querySelector("[data-test=shelf-sample]")).not.toBeNull();
     expect(surge.querySelector(".mark.used")).not.toBeNull();
     expect(text(rowNamed("Helm"))).toBe("Helm Matt Tytel LV2");
-    // エフェクトの見出し（EQ、ダイナミクス、リバーブ…の順）。
+    // Effect headings (in the order EQ, dynamics, reverb…).
     click("[data-test=shelf-effects]");
     expect(headings()).toEqual([
       "▸ 最初から入っているもの 6",
@@ -135,7 +135,7 @@ describe("棚の見出し（モック F5-SF2Shelf ・ F5-PluginLoading、仕様�
     expect(app.sent).toContainEqual({ type: "rescanPlugins" });
   });
 
-  it("「＋1」: 乗ると「LV2 ・ VST3 があります。…」、押すと使う形式をえらぶ一覧（UsePluginFormat）", () => {
+  it("「＋1」: hover shows 「LV2 ・ VST3 があります。…」, pressing opens a list to choose the format used (UsePluginFormat)", () => {
     show(RightRail, scene("shelfPlugins"));
     click('[data-group="c:instrument:synth"]');
     const more = rowNamed("Surge XT").querySelector<HTMLElement>("[data-test=shelf-formats]")!;
@@ -146,14 +146,14 @@ describe("棚の見出し（モック F5-SF2Shelf ・ F5-PluginLoading、仕様�
       ["VST3", false],
       ["LV2", true],
     ]);
-    // 行はえらばない。
+    // The row is not chosen.
     expect(app.sent).toEqual([]);
     rows[0]!.run();
     expect(app.sent).toEqual([{ type: "usePluginFormat", key: vst3Key("Surge XT") }]);
     expect(t("shelf.formatsTip", { formats: "LV2 ・ VST3" })).toBe("LV2 ・ VST3 があります。押すと、使う形式をえらべます。");
   });
 
-  it("あとから入れた物がないときは今までの形（見出しなし）。いちばん下に「あとから入れたもの ・ 0」と「SF2 を足す…」", () => {
+  it("with nothing added later, the old form (no headings). At the bottom 「あとから入れたもの ・ 0」 and 「SF2 を足す…」", () => {
     show(RightRail, scene("shelfNewTrack"));
     expect(q("[data-test='section:builtin']")).toBeNull();
     expect(headings()[0]).toBe("▾ ピアノ ・ 鍵盤 11");
@@ -162,7 +162,7 @@ describe("棚の見出し（モック F5-SF2Shelf ・ F5-PluginLoading、仕様�
     expect(app.sent).toEqual([{ type: "addSf2" }]);
   });
 
-  it("スキャン中は、スキャンの帯が「あとから入れたもの」の見出しのすぐ下", () => {
+  it("while scanning, the scan band is just below the 「あとから入れたもの」 heading", () => {
     const s = scene("shelfPlugins");
     s.plugins.scan = { state: "running", done: 37, total: 112 };
     show(RightRail, s);
@@ -171,8 +171,8 @@ describe("棚の見出し（モック F5-SF2Shelf ・ F5-PluginLoading、仕様�
   });
 });
 
-describe("さがす（モック F5-ShelfSearch）", () => {
-  it("名前 ・ 作った人 ・ 種類にあたり、合う物のある見出しだけをひらく。数は「合う数 / 全部」", () => {
+describe("search (mock F5-ShelfSearch)", () => {
+  it("matches name, maker and type, and opens only headings with a match. The count is 「matches / all」", () => {
     show(RightRail, scene("shelfSearch"));
     shelfUi.query = "Dragonfly";
     flushSync();
@@ -185,15 +185,15 @@ describe("さがす（モック F5-ShelfSearch）", () => {
       "Dragonfly Plate Reverb",
       "Dragonfly Room Reverb",
     ]);
-    // 作った人でも。
+    // By maker too.
     shelfUi.query = "michael";
     flushSync();
     expect(qa("[data-test=shelf-row]").length).toBe(4);
-    // 種類の名前に当たれば、その見出しの行はぜんぶ。
+    // If the type name matches, all rows under that heading.
     shelfUi.query = "ピッチ";
     flushSync();
     expect(headings()).toEqual(["▾ ピッチ 9 / 9"]);
-    // さがしている間も、見出しでたたむ。
+    // Headings fold while searching too.
     click('[data-group="c:effect:pitch"]');
     expect(headings()).toEqual(["▸ ピッチ 9 / 9"]);
     shelfUi.query = "";
@@ -201,7 +201,7 @@ describe("さがす（モック F5-ShelfSearch）", () => {
     expect(headings()[3]).toBe("▸ リバーブ 23");
   });
 
-  it("SF2 は音色の名前と仲間の名前に当たる", () => {
+  it("SF2 matches the instrument name and the group name", () => {
     show(RightRail, scene("sf2Added"));
     shelfUi.query = "guitar";
     flushSync();
@@ -211,7 +211,7 @@ describe("さがす（モック F5-ShelfSearch）", () => {
     expect(headings()).toEqual([`▾ ${FLUID} SF2 8 / 137`, "▾ マレット 8 / 8"]);
   });
 
-  it("状態行は「さがす「Dragonfly」・ 合う物 4 個」", () => {
+  it("the status line is 「さがす「Dragonfly」・ 合う物 4 個」", () => {
     const s = scene("shelfSearch");
     shelfUi.view = "effects";
     shelfUi.query = "Dragonfly";
@@ -220,8 +220,8 @@ describe("さがす（モック F5-ShelfSearch）", () => {
   });
 });
 
-describe("お気に入り（仕様書 3 章 86-4）", () => {
-  it("エフェクトの一覧にも星と「すべて ・ お気に入り」。はじめはリバーブとディレイ。星は ToggleFavoriteEffect", () => {
+describe("favorites (spec 3 86-4)", () => {
+  it("the effect list also has stars and 「すべて ・ お気に入り」. At first, reverb and delay. A star sends ToggleFavoriteEffect", () => {
     show(RightRail, scene("shelfFx"));
     expect(text(q("[data-test=shelf-all]"))).toBe("すべて 512");
     expect(text(q("[data-test=shelf-favorites]"))).toBe("お気に入り 2");
@@ -236,7 +236,7 @@ describe("お気に入り（仕様書 3 章 86-4）", () => {
     expect(app.sent).toEqual([{ type: "toggleFavoriteEffect", effect: { kind: "plugin", key: lv2Key("MVerb") } }]);
   });
 
-  it("プラグインと SF2 の音色の星は ToggleFavoriteSound", () => {
+  it("stars on plugins and SF2 instruments send ToggleFavoriteSound", () => {
     const s = scene("shelfPlugins");
     s.shelf.favoriteSounds = [...s.shelf.favoriteSounds, { kind: "plugin", key: lv2Key("Helm") }];
     show(RightRail, s);
@@ -251,14 +251,14 @@ describe("お気に入り（仕様書 3 章 86-4）", () => {
       { type: "toggleFavoriteSound", sound: { kind: "plugin", key: lv2Key("Dexed") } },
       { type: "toggleFavoriteSound", sound: { kind: "sf2", file: FLUID, bank: 0, program: 3 } },
     ]);
-    // お気に入りだけにすると、星のある行の見出しだけ。
+    // With favorites only, only headings of rows with a star.
     click("[data-test=shelf-favorites]");
     expect(headings().filter((h) => !h!.includes("鍵盤") && !h!.includes("ドラム") && !h!.includes("最初から"))).toEqual(["▾ シンセ 1"]);
   });
 });
 
-describe("ためし弾きの箱（モック F5-PluginLoading ・ F5-PluginAudition ・ F5-ShelfFx、仕様書 3 章 Y14）", () => {
-  it("読みこみ中: 「読みこみ中」「Surge XT を読みこんでいます…」と「やめる Esc」", () => {
+describe("try-out box (mock F5-PluginLoading, F5-PluginAudition, F5-ShelfFx, spec 3 Y14)", () => {
+  it("loading: 「読みこみ中」「Surge XT を読みこんでいます…」 and 「やめる Esc」", () => {
     show(RightRail, scene("pluginLoading"));
     click('[data-group="c:instrument:synth"]');
     const box = q("[data-test=shelf-loading]")!;
@@ -268,7 +268,7 @@ describe("ためし弾きの箱（モック F5-PluginLoading ・ F5-PluginAuditi
     expect(app.sent).toEqual([{ type: "shelfCancel" }]);
   });
 
-  it("読みこめない: 見つからない物の知らせの箱に「Surge XT を読みこめませんでした。こわれているか…」と「やめる Esc」（仕様書 3 章 89-12）", () => {
+  it("cannot load: the missing-item notice box shows 「Surge XT を読みこめませんでした。こわれているか…」 and 「やめる Esc」 (spec 3 89-12)", () => {
     show(RightRail, scene("pluginUnreadable"));
     click('[data-group="c:instrument:synth"]');
     const box = q("[data-test=shelf-unreadable]")!;
@@ -281,7 +281,7 @@ describe("ためし弾きの箱（モック F5-PluginLoading ・ F5-PluginAuditi
     expect(q("[data-test=shelf-confirm]")).toBeNull();
   });
 
-  it("ためし弾き中: 「トラック 6 を作る」「やめる」、「窓をひらく」と「音色は窓でえらべます」。窓をひらくは OpenPluginWindow（slot なし）", () => {
+  it("in try-out: 「トラック 6 を作る」「やめる」, 「窓をひらく」 and 「音色は窓でえらべます」. 「窓をひらく」 sends OpenPluginWindow (no slot)", () => {
     show(RightRail, scene("pluginAudition"));
     click('[data-group="c:instrument:synth"]');
     expect(text(q("[data-test=shelf-audition]"))).toBe(
@@ -291,7 +291,7 @@ describe("ためし弾きの箱（モック F5-PluginLoading ・ F5-PluginAuditi
     expect(app.sent).toEqual([{ type: "openPluginWindow", slot: null }]);
   });
 
-  it("▶ のサンプル: 読みこんでいる間は時間の場所が「読みこみ中…」。SF2 と最初から入っている音源には「窓をひらく」はない", () => {
+  it("sample ▶: while loading, the time place shows 「読みこみ中…」. SF2 and built-in instruments have no 「窓をひらく」", () => {
     const s = scene("pluginAudition");
     s.shelf.soundSample = { sound: { kind: "plugin", key: lv2Key("Surge XT") }, playing: null };
     show(RightRail, s);
@@ -302,7 +302,7 @@ describe("ためし弾きの箱（モック F5-PluginLoading ・ F5-PluginAuditi
     expect(q("[data-test=shelf-open-window]")).toBeNull();
   });
 
-  it("エフェクトを入れる: 「5 Surge XT のインサート 2 に入れます。ミックスは、はじめ 30 %。」と「入れる」「やめる」", () => {
+  it("adding an effect: 「5 Surge XT のインサート 2 に入れます。ミックスは、はじめ 30 %。」 and 「入れる」「やめる」", () => {
     show(RightRail, scene("shelfFx"));
     click('[data-group="c:effect:reverb"]');
     const box = q("[data-test=shelf-insert]")!;
@@ -314,8 +314,8 @@ describe("ためし弾きの箱（モック F5-PluginLoading ・ F5-PluginAuditi
   });
 });
 
-describe("ファイルを持ってきている間の知らせ（仕様書 2 章、モック F5-SF2Drop）", () => {
-  it("足せる: ファイルの名前、落とすと何が起きるか、やめかた。足せない: 「SF2 のファイルではないので、足せません。」と gray.8", () => {
+describe("notice while a file is dragged in (spec 2, mock F5-SF2Drop)", () => {
+  it("can add: the file name, what happens on drop, how to stop. Cannot add: 「SF2 のファイルではないので、足せません。」 in gray.8", () => {
     show(FileDropNotice, scene("sf2DropAddable"), { drop: { name: FLUID, addable: true, files: 1, sf2: 1, audio: 0 } });
     expect(text(q("[data-test=file-drop]"))).toBe(`${FLUID} ${t("sf2.dropHere")} ${t("sf2.dropCancel")}`);
     expect(q(".box")!.classList.contains("no")).toBe(false);
@@ -323,7 +323,7 @@ describe("ファイルを持ってきている間の知らせ（仕様書 2 章�
     show(FileDropNotice, scene("sf2DropNotAddable"), { drop: { name: "piano-demo.wav", addable: false, files: 1, sf2: 0, audio: 0 } });
     expect(text(q("[data-test=file-drop]"))).toBe(`piano-demo.wav SF2 のファイルではないので、足せません。 ${t("sf2.dropCancel")}`);
     expect(q(".box")!.classList.contains("no")).toBe(true);
-    // いくつも持ってきたときは「3 つのファイル ・ SF2 は 2 つ」（仕様書 3 章 89-10）。
+    // With several files, 「3 つのファイル ・ SF2 は 2 つ」 (spec 3 89-10).
     unmount(mounted!);
     show(FileDropNotice, scene("sf2DropMany"), { drop: { name: FLUID, addable: true, files: 3, sf2: 2, audio: 0 } });
     expect(text(q("[data-test=file-drop-name]"))).toBe("3 つのファイル ・ SF2 は 2 つ");
@@ -332,7 +332,7 @@ describe("ファイルを持ってきている間の知らせ（仕様書 2 章�
     expect(text(q("[data-test=file-drop]"))).toBe(`2 つのファイル SF2 のファイルではないので、足せません。 ${t("sf2.dropCancel")}`);
   });
 
-  it("Esc は CancelFileDrop（棚をとじる番より前）。状態行は「SF2 のファイルを持ってきています」", () => {
+  it("Esc sends CancelFileDrop (before the turn to close the shelf). The status line is 「SF2 のファイルを持ってきています」", () => {
     const s = scene("sf2DropAddable");
     expect(press(s, "Escape")).toEqual([{ type: "cancelFileDrop" }]);
     show(StatusLine, s);
@@ -340,17 +340,17 @@ describe("ファイルを持ってきている間の知らせ（仕様書 2 章�
   });
 });
 
-describe("見つからない物の知らせ（仕様書 2 章 ・ 3 章 83 ・ 85、モック R8-Missing）", () => {
-  it("音の素材がない: 一覧の上に知らせ、行はサイン波だけ", () => {
+describe("notice of missing things (spec 2, spec 3 83 and 85, mock R8-Missing)", () => {
+  it("no sound pack: a notice above the list, and only the sine wave row", () => {
     show(RightRail, scene("missingPack"));
     expect(text(q("[data-test=shelf-notice-pack]"))).toBe(`${t("shelf.soundsMissing")} ${t("button.fetchPack")}`);
     expect(qa("[data-test=shelf-row]").map((r) => r.dataset.row)).toEqual(["sine"]);
-    // 仕様書 3 章「音の素材をあとから取る所」: 棚の見つからない物の知らせにも「取りにいく」。
+    // Spec 3, where the sound pack can be fetched later: the shelf's missing-item notice also has 「取りにいく」.
     q("[data-test=shelf-fetch-pack]")!.click();
     expect(app.sent.at(-1)).toEqual({ type: "fetchPack" });
   });
 
-  it("SF2 がない: 「曲で使っている FluidR3_GM.sf2 が見つかりません。…」と「SF2 を足す…」「曲から外す」", () => {
+  it("no SF2: 「曲で使っている FluidR3_GM.sf2 が見つかりません。…」 with 「SF2 を足す…」「曲から外す」", () => {
     show(RightRail, scene("missingSf2"));
     const notice = q("[data-test=shelf-notice-sf2]")!;
     expect(text(notice)).toBe(`曲で使っている ${FLUID} が見つかりません。2 本のトラックはサイン波で鳴らしています。 SF2 を足す… 曲から外す`);
@@ -359,7 +359,7 @@ describe("見つからない物の知らせ（仕様書 2 章 ・ 3 章 83 ・ 8
     expect(app.sent).toEqual([{ type: "addSf2" }, { type: "removeMissing", missing: { kind: "sf2", file: FLUID } }]);
   });
 
-  it("プラグインがない: 名前（gray.8）と「見つかりません」、「前はここにありました: …」と 3 つのボタン。音源の一覧には音源だけ", () => {
+  it("no plugin: the name (gray.8) and 「見つかりません」, 「前はここにありました: …」 and 3 buttons. The instrument list has only instruments", () => {
     show(RightRail, scene("missingPlugin"));
     const notices = qa("[data-test=shelf-notice-plugin]");
     expect(notices.length).toBe(1);
@@ -377,7 +377,7 @@ describe("見つからない物の知らせ（仕様書 2 章 ・ 3 章 83 ・ 8
     expect(text(q("[data-test=shelf-notice-plugin]"))).toContain("MVerb 見つかりません LV2 前はここにありました: ~/.lv2/MVerb.lv2。");
   });
 
-  it("トラックの見出し ・ ミキサーの音源の枠 ・ 入力計の弾くと鳴る先は「サイン波で代わり」（gray.8）", () => {
+  it("the track head, the mixer's instrument frame and the input meter's play target show 「サイン波で代わり」 (gray.8)", () => {
     const s = scene("missingPack");
     show(TrackHeads, s);
     expect(qa("[data-test=track-instrument]").map(text)).toEqual(Array(4).fill("サイン波で代わり"));
@@ -392,7 +392,7 @@ describe("見つからない物の知らせ（仕様書 2 章 ・ 3 章 83 ・ 8
     expect(t("track.standInPackTip")).toBe("音の素材が見つからないので、サイン波で鳴らしています。");
   });
 
-  it("状態行: 曲をひらいたとき", () => {
+  it("status line: when a song is opened", () => {
     show(StatusLine, scene("missingPack"));
     expect(text(q(".message"))).toBe("音の素材が見つからないので、4 本のトラックをサイン波で鳴らしています。");
     app.setState(scene("missingSf2"));
@@ -401,8 +401,8 @@ describe("見つからない物の知らせ（仕様書 2 章 ・ 3 章 83 ・ 8
   });
 });
 
-describe("プラグインの名前と止まった枠（仕様書 2 章 ・ 6 章「プラグインが止まった」）", () => {
-  it("トラックとミキサーはプラグインの名前。止まった枠は赤い枠と「止」、右クリックで「もう一度読みこむ」「外す」", () => {
+describe("plugin name and stopped frame (spec 2, spec 6 (Plugin stopped))", () => {
+  it("track and mixer show the plugin name. The stopped frame is a red frame with 「止」; right click gives 「もう一度読みこむ」「外す」", () => {
     const s = scene("shelfFx");
     show(MixerStrips, s);
     const surge = s.song.tracks[4]!;
@@ -427,7 +427,7 @@ describe("プラグインの名前と止まった枠（仕様書 2 章 ・ 6 章
     ]);
   });
 
-  it("棚の下に、止まったプラグインの箱（「Brick EQ が止まりました ・ 3 ドラム」と 2 つのボタン）", () => {
+  it("below the shelf, the box of the stopped plugin (「Brick EQ が止まりました ・ 3 ドラム」 and 2 buttons)", () => {
     const s = scene("shelfFx");
     show(RightRail, s);
     const box = q("[data-test=shelf-stopped]")!;
@@ -436,7 +436,7 @@ describe("プラグインの名前と止まった枠（仕様書 2 章 ・ 6 章
     expect(app.sent).toEqual([{ type: "reloadPlugin", slot: { kind: "insert", insert: { strip: { kind: "track", id: s.song.tracks[2]!.id }, slot: 1 } } }]);
   });
 
-  it("見出しの音源の名前はプラグインの名前。入れかえのためし弾き中は SF2 の音色の名前（英語のまま）", () => {
+  it("the instrument name in the head is the plugin name. While trying out a replacement, the SF2 instrument name (in English as it is)", () => {
     const s = scene("pluginTrack");
     show(TrackHeads, s);
     expect(text(qa("[data-test=track-instrument]")[4]!)).toBe("Surge XT");
@@ -448,8 +448,8 @@ describe("プラグインの名前と止まった枠（仕様書 2 章 ・ 6 章
   });
 });
 
-describe("状態行の新しい文（約束 17）", () => {
-  it("11 種", () => {
+describe("new status line text (protocol 17)", () => {
+  it("11 kinds", () => {
     const s = scene("tracks6");
     show(StatusLine, s);
     const say = (message: AppState["status"]["message"]) => {
@@ -480,11 +480,11 @@ describe("状態行の新しい文（約束 17）", () => {
   });
 });
 
-describe("85 の残り", () => {
+describe("the rest of 85", () => {
   const KICK = 36;
   const SNARE = 38;
 
-  it("ドラムの鍵の列: 鳴っている行と弾いている行の左に印（accent、録音中は rec）", () => {
+  it("drum key column: a mark left of the sounding row and the played row (accent, rec while recording)", () => {
     const drum: DrumGeom = { keys: [49, 42, 38, 36], top: 0, hitW: 8, names: "sf2" };
     const g: RollGeom = { scrollTick: 0, ppt: 1, topKey: 0, rowH: 20, width: 100, height: 80, drum };
     const out = new Batch();
@@ -496,19 +496,19 @@ describe("85 の残り", () => {
     expect(marks.map((r) => [r[0], r[1], r[2]])).toEqual([[0, 40, 2]]);
   });
 
-  it("ドラムで上下に動かすときの読み値: 「+0.120 ・ 上へ 1 行」「下へ 2 行」", () => {
+  it("readout when moving drums up and down: 「+0.120 ・ 上へ 1 行」「下へ 2 行」", () => {
     const rows = [49, 42, 38, 36];
     expect(drumMoveReading(rows, SNARE, 42 - SNARE, "+0.120", true)).toBe("+0.120 ・ 上へ 1 行");
     expect(drumMoveReading(rows, 49, SNARE - 49, "+0.000", false)).toBe("下へ 2 行");
     expect(drumMoveReading(rows, SNARE, 0, "+0.240", true)).toBe("+0.240");
   });
 
-  it("同じ名前をまとめる「スネア ×2」「C4 ×2 E4」。5 つ以上は 4 つと「…」", () => {
+  it("same names are grouped: 「スネア ×2」「C4 ×2 E4」. 5 or more show 4 and 「…」", () => {
     expect(keyCountsText([{ key: KICK, count: 4 }, { key: SNARE, count: 2 }], "builtin")).toBe("キック ×4 スネア ×2");
     expect(keyCountsText([{ key: 60, count: 2 }, { key: 64, count: 1 }], false)).toBe("C4 ×2 E4");
     expect(selectedKeysText([64, 60, 60], false)).toBe("C4 ×2 E4");
     expect(selectedKeysText([60, 62, 64, 65, 67, 67], false)).toBe("C4 D4 E4 F4 …");
-    // 状態行は約束の names から。
+    // The status line comes from the protocol's names.
     const s = scene("tracks6");
     show(StatusLine, s);
     app.setState({
@@ -519,7 +519,7 @@ describe("85 の残り", () => {
     expect(text(q(".message"))).toBe("選択 6 ノート ・ C4 D4 E4 F4 …");
   });
 
-  it("止まっているときも、鍵盤を押している間は終わりに「・ 押している音 キック スネア」", () => {
+  it("even when stopped, while keys are held the end shows 「・ 押している音 キック スネア」", () => {
     const s = scene("drumRoll");
     s.transport.state = "stopped";
     s.status.message = { id: "summary", loopBars: null, nothingSelected: true, notes: null };
@@ -532,7 +532,7 @@ describe("85 の残り", () => {
     expect(text(q(".message"))).toBe("選択なし");
   });
 
-  it("SF2 のドラムのキット: 行はキットが持つ鍵（drumKeys）、名前は鍵の番号の表、表にない鍵は音名", () => {
+  it("SF2 drum kit: rows are the keys the kit has (drumKeys), names come from the key number table, keys not in the table use the note name", () => {
     const s = scene("drumRollSf2");
     const kit = s.song.tracks[2]!;
     expect(trackDrums(kit)).toBe("sf2");
@@ -545,11 +545,11 @@ describe("85 の残り", () => {
   });
 });
 
-describe("新しい欄だけを読む（区切り2 のあとで古い欄を消すため）", () => {
-  it("古い欄（instrument ・ inserts ・ selected …）が食いちがっていても、新しい欄で見せる", () => {
+describe("reads only the new fields (so the old fields can be removed)", () => {
+  it("even when the old fields (instrument, inserts, selected …) disagree, shows the new fields", () => {
     const s = scene("shelfAudition");
     const picked = s.shelf.selectedSound;
-    // 古い欄だけをでたらめにする。
+    // Make only the old fields random.
     s.shelf.selected = "organ";
     s.shelf.favorites = [];
     for (const tr of s.song.tracks) {

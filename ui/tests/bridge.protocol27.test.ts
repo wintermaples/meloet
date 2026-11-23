@@ -1,5 +1,5 @@
-// 約束 27（第 8 回 区切り2 ・ 3 の 1 回目）: いくつも選んだ歌のクリップ、書き出す前のたしかめとソロ、6 章の新しい知らせ、音の素材。
-// 形と、偽物の場面と、偽物の意図と、状態行の文。画面の部品は 2 回目。
+// Protocol 27: several selected audio clips, the check before export and solo, new notices in spec 6, sound packs.
+// Shapes, fake scenes, fake intents and status line text. The screen parts come in the second pass.
 import { flushSync, mount, unmount } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, Change, Command, SoundsView, StatusMessage } from "../src/bridge";
@@ -14,7 +14,7 @@ vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));
 const scene = (name: string) => fakeScene(name)!.state as FakeState;
 const MB = 1_000_000;
 
-/** 変わった区画を入れた状態。 */
+/** The state with the changed sections put in. */
 function applied(state: FakeState, changes: Change[] | null): FakeState {
   expect(changes).not.toBeNull();
   const s = structuredClone(state);
@@ -23,8 +23,8 @@ function applied(state: FakeState, changes: Change[] | null): FakeState {
 }
 const pack = (s: FakeState, command: Command) => applied(s, reducePack(s, command));
 
-describe("約束 27 の形", () => {
-  it("版は 27。新しい曲では、音の素材はぜんぶあり、聞かず、取っていない。いくつも選んだクリップの欄もない", () => {
+describe("shape of protocol 27", () => {
+  it("version is 27. A new song has every sound pack, does not ask, and is not fetching. No panel for several selected clips", () => {
     expect(PROTOCOL_VERSION).toBeGreaterThanOrEqual(27);
     const s = fakeState();
     expect(s.sounds).toEqual({
@@ -40,15 +40,15 @@ describe("約束 27 の形", () => {
     expect(s.params.clips).toBeNull();
   });
 
-  it("取る順は B-95-1: グランドピアノ、スタジオキット、Y2 の急ぐ順のうち包みにある物、そのあと棚の並び。計算で作る 5 つは取らない", () => {
+  it("fetch order is B-95-1: grand piano, studio kit, those of the Y2 urgent order that are in the pack, then the shelf order. The 5 computed sounds are not fetched", () => {
     expect(FETCH_ORDER.slice(0, 6)).toEqual(["grandPiano", "studioKit", "fingerBass", "strings", "electricPiano", "organ"]);
     expect(FETCH_ORDER).toHaveLength(26);
     for (const computed of ["synthBass", "electroKit", "warmPad", "synthLead", "sine"] as const) expect(FETCH_ORDER).not.toContain(computed);
   });
 });
 
-describe("偽物の場面（モック F8-*）", () => {
-  it("packAsk（F8-PackAsk）: 帯が聞き、1 ピアノ はサイン波で代わり、棚の 26 はまだ", () => {
+describe("fake scenes (mock F8-*)", () => {
+  it("packAsk (F8-PackAsk): the band asks, 1 piano uses a sine stand-in, 26 in the shelf not yet", () => {
     const s = scene("packAsk");
     expect(s.sounds.ask).toBe(true);
     expect(s.sounds.fetch).toEqual({ state: "idle" });
@@ -58,7 +58,7 @@ describe("偽物の場面（モック F8-*）", () => {
     expect(s.status.message).toEqual({ id: "packAsking" });
   });
 
-  it("packGet（F8-PackGet）: エレクトリックピアノを取っている。38 % ・ 92 / 240 MB ・ のこり 約 2 分", () => {
+  it("packGet (F8-PackGet): fetching the electric piano. 38 %, 92 / 240 MB, about 2 minutes left", () => {
     const s = scene("packGet");
     expect(s.sounds.fetch).toEqual({ state: "fetching", instrument: "electricPiano", doneBytes: 92 * MB, totalBytes: 240 * MB, remainingS: 120 });
     expect(s.shelf.available).toContain("grandPiano");
@@ -78,19 +78,19 @@ describe("偽物の場面（モック F8-*）", () => {
     expect(s.status.message).toEqual({ id: "packFailed", failure, doneBytes: 92 * MB, totalBytes: 240 * MB });
   });
 
-  it("packSettings（F8-PackSettings）: くわしい設定がひらき、まだ 12 / 31", () => {
+  it("packSettings (F8-PackSettings): advanced settings open, 12 / 31 so far", () => {
     const s = scene("packSettings");
     expect(s.workspace.settings?.advancedOpen).toBe(true);
     expect([s.sounds.have, s.sounds.total]).toEqual([12, 31]);
   });
 
-  it("packNew（6 章「音の素材 ・ 新しい包み」）", () => {
+  it("packNew (spec 6「音の素材 ・ 新しい包み」)", () => {
     const s = scene("packNew");
     expect(s.sounds.newPackBytes).toBe(12 * MB);
     expect(s.status.message).toEqual({ id: "newPack", bytes: 12 * MB });
   });
 
-  it("multiClip（F8-MultiClip）: 3 つ選び、トラックは 6 歌 と 7 歌 2。音量はちがうので「—」、ほかは同じ", () => {
+  it("multiClip (F8-MultiClip): 3 selected, tracks 6 vocal and 7 vocal 2. Gains differ so「—」, the rest are the same", () => {
     const s = scene("multiClip");
     const clips = s.params.clips!;
     expect(s.params.selected).toBeNull();
@@ -100,38 +100,38 @@ describe("偽物の場面（モック F8-*）", () => {
     expect([clips.follow, clips.semitones, clips.cents]).not.toContain(null);
   });
 
-  it("exportCheck（F8-ExportCheck）: 数えている途中で、2 ベース をソロにしている", () => {
+  it("exportCheck (F8-ExportCheck): in the middle of counting, with 2 bass on solo", () => {
     const d = scene("exportCheck").export.dialog!;
     expect(d.check).toEqual({ state: "counting", percent: 38, peakDb: -3.5, clips: false, over: 0 });
     expect(d.solo).toEqual({ first: { number: 2, name: "ベース" }, others: 0 });
     expect(d.canExport).toBe(true);
   });
 
-  it("exportClip（F8-ExportClip）: 0 dB をこえる所が 3 か所、いちばん大きい所 +1.2 dB。ソロはない", () => {
+  it("exportClip (F8-ExportClip): 3 places over 0 dB, the loudest +1.2 dB. No solo", () => {
     const d = scene("exportClip").export.dialog!;
     expect(d.check).toEqual({ state: "done", peakDb: 1.2, clips: true, over: 3 });
     expect(d.solo).toBeNull();
   });
 });
 
-describe("偽物の意図（音の素材）", () => {
-  it("取りにいく → 進みが動き、取れた音色から鳴る → ぜんぶ取れた", () => {
+describe("fake intents (sound packs)", () => {
+  it("fetch → the progress moves, fetched sounds play → all fetched", () => {
     let s = pack(scene("packAsk"), { type: "fetchPack" });
     expect(s.sounds.ask).toBe(false);
     expect(s.sounds.fetch).toMatchObject({ state: "fetching", instrument: "grandPiano", remainingS: null });
     expect(s.status.message).toBeNull();
-    // まだ 1 つ目が取れきらない間は、バイトだけ。
+    // While the first one is not fully fetched, only bytes.
     s = applied(s, advancePack(s, 1));
     expect(s.sounds.fetch).toMatchObject({ state: "fetching", instrument: "grandPiano" });
     expect(s.sounds.fetch.state === "fetching" && s.sounds.fetch.remainingS).toBeGreaterThan(0);
-    // グランドピアノが取れた: 棚の行と 1 ピアノ の音が戻り、状態行が言う。
+    // Grand piano fetched: the shelf row and the sound of 1 piano come back, and the status line says so.
     s = applied(s, advancePack(s, 5));
     expect(s.shelf.available).toContain("grandPiano");
     expect(s.shelf.notYet).not.toContain("grandPiano");
     expect(s.song.tracks[0]!.standIn).toBeNull();
     expect(s.status.message).toEqual({ id: "soundReady", instrument: "grandPiano" });
     expect(s.sounds.fetch).toMatchObject({ instrument: "studioKit" });
-    // 最後まで。
+    // To the end.
     s = applied(s, advancePack(s, 1000));
     expect(s.sounds).toMatchObject({ fetch: { state: "idle" }, have: 31 });
     expect(s.shelf.notYet).toEqual([]);
@@ -139,36 +139,36 @@ describe("偽物の意図（音の素材）", () => {
     expect(advancePack(s, 1)).toEqual([]);
   });
 
-  it("やめる ・ あとで ・ もう一度。どれも手ではない", () => {
+  it("cancel, later, again. None is an undo step", () => {
     const fetching = scene("packGet");
     const stopped = pack(fetching, { type: "stopPackFetch" });
     expect(stopped.sounds.fetch).toEqual({ state: "idle" });
     expect(reducePack(stopped, { type: "stopPackFetch" })).toEqual([]);
-    // 取っている間の「取りにいく」は何もしない。
+    // 「取りにいく」while fetching does nothing.
     expect(reducePack(fetching, { type: "fetchPack" })).toEqual([]);
     const later = pack(scene("packAsk"), { type: "packLater" });
     expect([later.sounds.ask, later.status.message]).toEqual([false, null]);
     const failed = scene("packFailCutOff");
     expect(pack(failed, { type: "packLater" }).sounds.fetch).toEqual({ state: "idle" });
-    // 「続きから」: 取ってあった所から。
+    // 「続きから」: from where it got to.
     const again = pack(failed, { type: "fetchPack" });
     expect(again.sounds.fetch).toMatchObject({ state: "fetching", instrument: "studioKit" });
     for (const command of ["fetchPack", "packLater", "stopPackFetch"] as const) {
       const changes = reducePack(scene("packAsk"), { type: command }) ?? [];
       expect(changes.some((c) => c.section === "song" || c.section === "history"), command).toBe(false);
     }
-    // ぜんぶあれば、取りにいかない。新しい包みがあれば取る。
+    // With everything there, do not fetch. With a new pack, fetch.
     expect(reducePack(fakeState(), { type: "fetchPack" })).toEqual([]);
     expect(pack(scene("packNew"), { type: "fetchPack" }).sounds.newPackBytes).toBeNull();
   });
 });
 
-describe("偽物の意図（いくつも選んだ歌のクリップ）", () => {
+describe("fake intents (several selected audio clips)", () => {
   const s = scene("multiClip");
   const ids = s.params.clips!.clips;
   const gains = (state: FakeState) => state.song.tracks.flatMap((t) => t.clips).filter((c) => ids.includes(c.id)).map((c) => c.audio!.gainDb);
 
-  it("線のドラッグ: ぜんぶが同じ dB だけ動く（1 手、範囲で止まる）", () => {
+  it("line drag: all move by the same dB (1 step, stops at the range)", () => {
     const before = gains(s);
     const moved = applied(s, reduceClips27(s, { type: "shiftClipGains", clips: ids, byDb: 2 }));
     expect(gains(moved)).toEqual(before.map((g) => g + 2));
@@ -178,25 +178,25 @@ describe("偽物の意図（いくつも選んだ歌のクリップ）", () => {
     expect(reduceClips27(s, { type: "shiftClipGains", clips: ids, byDb: 0 })).toEqual([]);
   });
 
-  it("欄に打つ: ぜんぶがその値（1 手）。同じになった欄は「—」でなくなる", () => {
+  it("typing in the field: all take that value (1 step). A field that became the same is no longer「—」", () => {
     const set = applied(s, reduceClips27(s, { type: "setClipGains", clips: ids, db: -6 }));
     expect(gains(set)).toEqual([-6, -6, -6]);
     expect(fakeClipsPanel(set)!.gainDb).toBe(-6);
     const pitched = applied(s, reduceClips27(s, { type: "setClipsStretch", clips: ids, change: { kind: "semitones", semitones: 2.4 } }));
     expect(fakeClipsPanel(pitched)!.semitones).toBe(2);
     expect(pitched.song.undoCount).toBe(s.song.undoCount + 1);
-    // もう同じ値なら手にならない。
+    // Already the same value: not an undo step.
     expect(reduceClips27(set, { type: "setClipGains", clips: ids, db: -6 })).toEqual([]);
   });
 
-  it("1 つだけ、または鍵盤のクリップがまざると、まとめての欄はない", () => {
+  it("with only one, or with a keyboard clip mixed in, there is no field for all", () => {
     expect(fakeClipsPanel({ ...s, arrange: { ...s.arrange, selectedClips: [ids[0]!] } })).toBeNull();
     const keys = s.song.tracks[0]!.clips[0]!.id;
     expect(fakeClipsPanel({ ...s, arrange: { ...s.arrange, selectedClips: [...ids, keys] } })).toBeNull();
   });
 });
 
-describe("状態行の文（6 章 第 12 版）", () => {
+describe("status line text (spec 6, version 12)", () => {
   let target: HTMLElement;
   let mounted: Record<string, unknown> | null = null;
   beforeEach(() => {

@@ -1,5 +1,5 @@
-// CC の帯（cc.ts、paint.ts の paintLane）: 値と高さ、点の拾いかた、帯をたたむ決まり、マウス（書く ・ 選ぶ ・ 動かす ・ 囲む ・ 消す ・ Esc）、
-// オン ・ オフの吸いつき、読み値、絵（点 6×6、線、ピッチベンドの 0 の線）。Q と、点の Delete。偽物の場面の CC の数と、そろえる前の位置の枠。
+// The CC band (cc.ts, paintLane in paint.ts): value and height, picking points, the rule to fold bands, the mouse (draw, select, move, box, erase, Esc),
+// on/off snapping, readouts, the picture (6×6 points, lines, the 0 line of pitch bend). Q, and Delete on points. The fake scene's CC counts, and the frame of the position before aligning.
 import { beforeEach, describe, expect, it } from "vitest";
 import { type AppState, type Command, type ControlKind, type IndexRange } from "../src/bridge";
 import { createFakeTransport, fakeScene, fakeState } from "../src/bridge/fake";
@@ -29,10 +29,10 @@ import { GEOM, take } from "./pianoroll-fixture";
 const SUSTAIN: ControlKind = { kind: "cc", number: 64 };
 const PB: ControlKind = { kind: "pitchBend" };
 const MOD: ControlKind = { kind: "cc", number: 1 };
-/** 1 本 48、上下のあき 9（モック R3-Lanes）。 */
+/** 48 each, 9 of space above and below (mock R3-Lanes). */
 const LANE: LaneBox = { height: 48, pad: 9 };
 
-/** サステイン 127 ・ 0（ティック 0 と TPQ）、ピッチベンド 0 ・ 4096（TPQ / 2 と 2 * TPQ）、モジュレーション 64（(3 * TPQ) / 2）。tick の順。 */
+/** Sustain 127 and 0 (tick 0 and TPQ), pitch bend 0 and 4096 (TPQ / 2 and 2 * TPQ), modulation 64 ((3 * TPQ) / 2). In tick order. */
 const withControls = (id = 7) =>
   take([[0, TPQ, 60]], id, {
     controlTicks: Uint32Array.from([0, TPQ / 2, TPQ, (3 * TPQ) / 2, 2 * TPQ]),
@@ -42,8 +42,8 @@ const withControls = (id = 7) =>
   });
 const shown = (base = 0) => G.shownOf(withControls(), base);
 
-describe("値と高さ", () => {
-  it("CC は 127 が上のあき 9、0 が下のあき 9。ピッチベンドの 0 はまん中", () => {
+describe("value and height", () => {
+  it("for CC, 127 is at the top space of 9 and 0 at the bottom space of 9. Pitch bend 0 is in the middle", () => {
     expect(valueToY(MOD, LANE, 127)).toBe(9);
     expect(valueToY(MOD, LANE, 0)).toBe(39);
     expect(valueToY(PB, LANE, 0)).toBe(24);
@@ -53,7 +53,7 @@ describe("値と高さ", () => {
     expect(yToValue(PB, LANE, -100)).toBe(8191);
   });
 
-  it("オン ・ オフの CC（64〜69）は 0 か 127 にだけ止まる。ほかは範囲で止まる", () => {
+  it("on/off CCs (64 to 69) stop only at 0 or 127. Others stop at the range", () => {
     expect(settle(SUSTAIN, 63)).toBe(0);
     expect(settle(SUSTAIN, 64)).toBe(127);
     expect(settle({ kind: "cc", number: 69 }, 100)).toBe(127);
@@ -64,8 +64,8 @@ describe("値と高さ", () => {
   });
 });
 
-describe("帯の点", () => {
-  it("帯ごとに、その種類の点だけ（tick の順）", () => {
+describe("points on a band", () => {
+  it("each band has only points of its kind (in tick order)", () => {
     const t = withControls();
     expect([...lanePoints(t, SUSTAIN)]).toEqual([0, 2]);
     expect([...lanePoints(t, PB)]).toEqual([1, 4]);
@@ -73,9 +73,9 @@ describe("帯の点", () => {
     expect([...lanePoints(t, { kind: "cc", number: 7 })]).toEqual([]);
   });
 
-  it("点に乗る（縦も横も 4 以内）。囲むと、かかった点", () => {
+  it("over a point (within 4 both ways). A box gets the points it covers", () => {
     const n = shown();
-    // 1 拍 40 px: TPQ は 40 px。
+    // 1 beat is 40 px: TPQ is 40 px.
     expect(hitPoint(n, SUSTAIN, GEOM, LANE, 40, 39, 4)).toBe(2);
     expect(hitPoint(n, SUSTAIN, GEOM, LANE, 45, 39, 4)).toBe(-1);
     expect(hitPoint(n, SUSTAIN, GEOM, LANE, 40, 9, 4)).toBe(-1);
@@ -84,8 +84,8 @@ describe("帯の点", () => {
   });
 });
 
-describe("帯の高さ（仕様書 3 章: ノートが 10 行を下まわるなら、古いほうの帯をたたむ）", () => {
-  it("古くひらいたほうからたたむ。いちばん新しい帯は残す", () => {
+describe("band height (spec 3: when notes drop under 10 rows, fold the older band)", () => {
+  it("fold from the one opened earliest. The newest band stays", () => {
     expect(fitLanes(["pitchBend", "sustain"], 120, 48, 12)).toEqual(["pitchBend", "sustain"]);
     expect(fitLanes(["pitchBend", "sustain"], 119, 48, 12)).toEqual(["sustain"]);
     expect(fitLanes(["modulation", "pitchBend", "sustain"], 80, 48, 12)).toEqual(["pitchBend", "sustain"]);
@@ -93,7 +93,7 @@ describe("帯の高さ（仕様書 3 章: ノートが 10 行を下まわるな�
   });
 });
 
-describe("マウス（LaneMouse）", () => {
+describe("mouse (LaneMouse)", () => {
   let sent: Command[];
   let tool: Tool;
   let selected: IndexRange[];
@@ -121,16 +121,16 @@ describe("マウス（LaneMouse）", () => {
     control = PB;
   });
 
-  it("書く道具で押すと点がふえる。横はグリッドに吸いつき（Shift で吸いつかない）、値は押した高さ", () => {
+  it("pressing with the draw tool adds a point. Horizontally snaps to the grid (not with Shift), the value is the pressed height", () => {
     tool = "draw";
     const m = make();
-    m.down(33, 24, none); // (33 * TPQ) / 40 ティック → 1/16（TPQ / 4）の (3 * TPQ) / 4
+    m.down(33, 24, none); // (33 * TPQ) / 40 ticks -> (3 * TPQ) / 4 on the 1/16 grid (TPQ / 4)
     expect(m.up()).toEqual({ type: "addControl", take: 7, tick: (3 * TPQ) / 4, control: PB, value: 0 });
     m.down(33, 9, shift);
     expect(m.up()).toEqual({ type: "addControl", take: 7, tick: (33 * TPQ) / 40, control: PB, value: 8191 });
   });
 
-  it("オン ・ オフの CC は、書いても 0 か 127", () => {
+  it("on/off CCs are 0 or 127 even when drawn", () => {
     tool = "draw";
     control = SUSTAIN;
     const m = make();
@@ -142,7 +142,7 @@ describe("マウス（LaneMouse）", () => {
     expect(m.up()).toMatchObject({ value: 0 });
   });
 
-  it("選ぶ道具で点を押すと選ぶ（Shift で足す、Mod で入れかえ）", () => {
+  it("pressing a point with the select tool selects it (Shift adds, Mod toggles)", () => {
     const m = make();
     m.down(20, 24, none);
     expect(sent).toEqual([{ type: "selectControls", take: 7, points: [1], mode: "replace" }]);
@@ -155,26 +155,26 @@ describe("マウス（LaneMouse）", () => {
     expect(m.drag).toBeNull();
   });
 
-  it("押したまま動かすと、横はグリッドに吸いつき、縦は値。離して MoveControls を 1 つ。読み値は「+0512 ・ 1.3.0000」の形", () => {
+  it("moving while pressed: horizontally snaps to the grid, vertically the value. Releasing sends one MoveControls. The readout looks like 「+0512 ・ 1.3.0000」", () => {
     selected = [{ start: 1, end: 2 }, { start: 4, end: 5 }];
     const m = make(4 * TPQ);
-    // 点 1 は 4 * TPQ + TPQ / 2 ティック → x = 4.5 拍 × 40 px = 180。値 0 は y 24。
+    // Point 1 is at 4 * TPQ + TPQ / 2 ticks -> x = 4.5 beats × 40 px = 180. Value 0 is y 24.
     m.down(180, 24, none);
     expect(sent).toEqual([]);
     const up = valueToY(PB, LANE, 512) - 24;
-    expect(m.move(180 + 23, 24 + up, none)).toBe(true); // (23 * TPQ) / 40 ティック → TPQ / 2 に吸いつく
+    expect(m.move(180 + 23, 24 + up, none)).toBe(true); // (23 * TPQ) / 40 ticks snaps to TPQ / 2
     expect(m.reading()).toBe("+0512 ・ 2.2.0000");
     expect(m.up()).toEqual({ type: "moveControls", take: 7, points: [1, 4], ticks: TPQ / 2, value: 512 });
   });
 
-  it("選んだ点を押して動かさずに離すと、その点だけを選ぶ", () => {
+  it("pressing a selected point and releasing without moving selects only that point", () => {
     selected = [{ start: 1, end: 2 }, { start: 4, end: 5 }];
     const m = make();
     m.down(20, 24, none);
     expect(m.up()).toEqual({ type: "selectControls", take: 7, points: [1], mode: "replace" });
   });
 
-  it("値は、動かす点がどれも範囲に入る所で止まる。曲の頭より前へは出ない", () => {
+  it("the value stops where every moved point stays in range. Never before the start of the song", () => {
     selected = [{ start: 1, end: 2 }, { start: 4, end: 5 }];
     const m = make();
     m.down(20, 24, none);
@@ -182,16 +182,16 @@ describe("マウス（LaneMouse）", () => {
     expect(m.up()).toEqual({ type: "moveControls", take: 7, points: [1, 4], ticks: -TPQ / 2, value: 8191 - 4096 });
   });
 
-  it("オン ・ オフの CC は、動かしても 0 か 127 に吸いつく", () => {
+  it("on/off CCs snap to 0 or 127 even when moved", () => {
     control = SUSTAIN;
     const m = make();
-    m.down(0, 9, none); // 点 0（127）
+    m.down(0, 9, none); // Point 0 (127)
     m.move(0, 30, shift);
     expect(m.reading()).toBe("OFF（0）");
     expect(m.up()).toEqual({ type: "moveControls", take: 7, points: [0], ticks: 0, value: -127 });
   });
 
-  it("空いている所から囲んでえらぶ。押しただけなら選択を外す", () => {
+  it("box select from an empty place. A plain press clears the selection", () => {
     const m = make();
     m.down(5, 1, none);
     m.move(100, 47, none);
@@ -201,7 +201,7 @@ describe("マウス（LaneMouse）", () => {
     expect(m.up()).toEqual({ type: "selectControls", take: 7, points: [], mode: "replace" });
   });
 
-  it("消す道具は、押す ・ なぞると消す（DeleteControls）。乗せている点を覚える", () => {
+  it("the erase tool erases on press and drag (DeleteControls). Remembers the point under the pointer", () => {
     tool = "erase";
     const m = make();
     expect(m.hover(80, 15)).toBe(true);
@@ -211,7 +211,7 @@ describe("マウス（LaneMouse）", () => {
     expect(m.up()).toEqual({ type: "deleteControls", take: 7, points: [1, 4] });
   });
 
-  it("Esc（cancel）で、動かす前に戻す（意図を送らない）", () => {
+  it("Esc (cancel) goes back to before the move (sends no intent)", () => {
     const m = make();
     m.down(20, 24, none);
     m.move(60, 10, none);
@@ -220,13 +220,13 @@ describe("マウス（LaneMouse）", () => {
     expect(sent).toEqual([{ type: "selectControls", take: 7, points: [1], mode: "replace" }]);
   });
 
-  it("CC の差は 3 けた、ピッチベンドは 4 けた", () => {
+  it("CC difference in 3 digits, pitch bend in 4 digits", () => {
     expect(deltaText(MOD, 12)).toBe("+012");
     expect(deltaText(PB, -512)).toBe("−0512");
   });
 });
 
-describe("帯の絵（paintLane）", () => {
+describe("band picture (paintLane)", () => {
   const BOX = { x0: 0, y0: 0, x1: 696, y1: 48 };
   const colorOf = (r: number[]) => [r[4], r[5], r[6]].join(",");
   const is = (name: Parameters<typeof rgb>[0]) => Array.from(Float32Array.from(rgb(name))).join(",");
@@ -251,7 +251,7 @@ describe("帯の絵（paintLane）", () => {
   };
   const squares = (rects: number[][]) => rects.filter((r) => r[2]! - r[0]! === 6 && r[3]! - r[1]! === 6);
 
-  it("点は 6×6 の gray.10、選ぶと accent。ピッチベンドは 0 の所に gray.5 の線", () => {
+  it("points are 6×6 gray.10, accent when selected. Pitch bend has a gray.5 line at 0", () => {
     const rects = draw(picture());
     const dots = squares(rects);
     expect(dots.map((r) => [r[0], r[1], colorOf(r)])).toEqual([
@@ -261,20 +261,20 @@ describe("帯の絵（paintLane）", () => {
     expect(rects.some((r) => r[1] === 24 && r[3] === 25 && r[2]! - r[0]! === 696 && colorOf(r) === is("color.gray.5"))).toBe(true);
   });
 
-  it("消す道具で乗せている点は gray.7", () => {
+  it("the point under the erase tool is gray.7", () => {
     const dots = squares(draw(picture({ eraseHover: 1 })));
     expect(colorOf(dots[0]!)).toBe(is("color.gray.7"));
   });
 
-  it("サステインは段の線（次の点まで値をたもつ）: 127 の高さの横線が、点 0 から点 2 まで", () => {
+  it("sustain is a step line (keeps the value until the next point): a horizontal line at height 127 from point 0 to point 2", () => {
     const rects = draw(picture({ control: SUSTAIN, selected: null }));
     const line = rects.filter((r) => colorOf(r) === is("color.gray.9"));
     expect(line.some((r) => r[0] === 0 && r[2] === 41 && r[1] === 9)).toBe(true);
-    // 点 2 で、127 から 0 へ縦に下りる。
+    // At point 2, it goes straight down from 127 to 0.
     expect(line.some((r) => r[0] === 40 && r[2] === 41 && r[1] === 9 && r[3] === 40)).toBe(true);
   });
 
-  it("動かしている間は、もとの位置に gray.7 の枠だけ（線と点は動く面）", () => {
+  it("while moving, only a gray.7 frame at the old place (lines and points are on the moving surface)", () => {
     const drag = { kind: "move" as const, press: { x: 0, y: 0, moved: true }, points: [1], grab: 1, ticks: TPQ / 4, value: 0, selectOnClick: false };
     const rects = draw(picture({ drag }));
     expect(rects.some((r) => colorOf(r) === is("color.gray.9"))).toBe(false);
@@ -282,7 +282,7 @@ describe("帯の絵（paintLane）", () => {
   });
 });
 
-describe("Q と、点の Delete（仕様書 4 章）", () => {
+describe("Q, and Delete on points (spec 4)", () => {
   const k = (key: string, mods: Partial<KeyInput> = {}): KeyInput => ({ key, ctrl: false, meta: false, alt: false, shift: false, ...mods });
   const n = G.shownOf(withControls(), 0);
   let state: AppState;
@@ -300,13 +300,13 @@ describe("Q と、点の Delete（仕様書 4 章）", () => {
     prView.picked = "notes";
   });
 
-  it("Q はクオンタイズ。文字を打っている最中は効かない", () => {
+  it("Q is quantize. Does not work while typing", () => {
     expect(keyAction(k("q"), false, "other")).toEqual({ kind: "quantize" });
     expect(keyAction(k("q"), true, "other")).toBeNull();
     expect(keyAction(k("q", { shift: true }), false, "other")).toBeNull();
   });
 
-  it("選んだノートに、なければ全部（notes が空）に Quantize。ピアノロールにフォーカスがなければ何もしない", () => {
+  it("Quantize the selected notes, or all if none (notes is empty). Does nothing if the piano roll has no focus", () => {
     press("q");
     state.pianoRoll = { ...state.pianoRoll, selectedNotes: [{ start: 0, end: 1 }] };
     press("q");
@@ -318,7 +318,7 @@ describe("Q と、点の Delete（仕様書 4 章）", () => {
     ]);
   });
 
-  it("Delete: 点だけを選んでいれば点を消す。両方を選んでいるときは、最後に押したほう", () => {
+  it("Delete: if only points are selected, deletes the points. With both selected, the one pressed last", () => {
     state.pianoRoll = { ...state.pianoRoll, selectedControls: [{ start: 1, end: 2 }, { start: 4, end: 5 }] };
     press("Delete");
     state.pianoRoll = { ...state.pianoRoll, selectedNotes: [{ start: 0, end: 1 }] };
@@ -333,8 +333,8 @@ describe("Q と、点の Delete（仕様書 4 章）", () => {
   });
 });
 
-describe("偽物の場面 pianoRoll", () => {
-  it("CC の札の数はモック A-PianoRoll と同じ（踏む 5 ・ 点 6 ・ 点 0）。そのほかに CC 7", async () => {
+describe("fake scene pianoRoll", () => {
+  it("the number of CC tags is the same as mock A-PianoRoll (5 pedal, 6 points, 0 points). CC 7 as well", async () => {
     const t = fakeScene("pianoRoll")!.state;
     const transport = createFakeTransport(t);
     const shownTake = decodeTake(await transport.takeNotes(t.pianoRoll.take!));
@@ -342,7 +342,7 @@ describe("偽物の場面 pianoRoll", () => {
     expect([cc.sustain, cc.pitchBend, cc.modulation, cc.others]).toEqual([5, 6, 0, [7]]);
   });
 
-  it("そろえる前の位置の枠は、もとと位置か長さがちがうノート 3 つにだけ", async () => {
+  it("the frame of the position before aligning is only on the 3 notes whose position or length differ from the original", async () => {
     const t = fakeScene("pianoRoll")!.state;
     const transport = createFakeTransport(t);
     const q = decodeTake(await transport.takeNotes(t.pianoRoll.take!));
@@ -351,7 +351,7 @@ describe("偽物の場面 pianoRoll", () => {
     expect(moved).toEqual([14, 15, 16]);
   });
 
-  it("偽物は SelectControls に、選んだ点を返す", async () => {
+  it("the fake answers SelectControls with the selected points", async () => {
     const t = fakeScene("pianoRoll")!.state;
     const transport = createFakeTransport(t);
     await transport.send({ type: "selectControls", take: t.pianoRoll.take!, points: [3, 1, 999], mode: "replace" });

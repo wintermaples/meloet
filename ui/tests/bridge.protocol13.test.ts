@@ -1,4 +1,4 @@
-// 約束 13: トラックは id で指す。録音待機は、いつも選んだトラック。音源の種類と、棚の状態。
+// Protocol 13: tracks are pointed to by id. Record arm is always the selected track. Instrument kinds and the shelf state.
 import { describe, expect, it } from "vitest";
 import { createFakeTransport, fakeScene, fakeState } from "../src/bridge/fake";
 import { INSTRUMENT_GROUPS, type AppState, type Command, type ServerMessage } from "../src/bridge/types";
@@ -7,8 +7,8 @@ import { mockScreenText } from "./design-sources";
 
 const state = (scene: string) => fakeScene(scene)!.state;
 
-describe("約束 13 の形", () => {
-  it("音源は 31、グループは 7。並びは棚の順（仕様書 3 章 84）で、どれにも名前がある", () => {
+describe("shape of protocol 13", () => {
+  it("31 instruments, 7 groups. In shelf order (spec 3 (84)), and each has a name", () => {
     expect(INSTRUMENT_GROUPS.map((g) => [t(`instrumentGroup.${g.group}`), g.instruments.map((i) => t(`instrument.${i}`))])).toEqual([
       [
         "ピアノ ・ 鍵盤",
@@ -38,7 +38,7 @@ describe("約束 13 の形", () => {
     expect(new Set(all.map((i) => t(`instrument.${i}`))).size).toBe(31);
   });
 
-  it("新しい曲の 1 本目はグランドピアノ。棚はとじていて、お気に入りはグランドピアノとスタジオキット", () => {
+  it("the first track of a new song is the grand piano. The shelf is closed, and the favorites are the grand piano and the studio kit", () => {
     const s = fakeState();
     expect(s.song.tracks.map((x) => [x.id, x.number, x.instrument])).toEqual([[1, 1, "grandPiano"]]);
     expect(s.song.playTarget).toBe(1);
@@ -46,8 +46,8 @@ describe("約束 13 の形", () => {
   });
 });
 
-describe("約束 13 の偽物の場面", () => {
-  it("tracks6（モック R7-Arrange6）: 6 本。番号は並びの順、id は番号とちがう。色は 6 本目で 1 に戻る", () => {
+describe("fake scenes of protocol 13", () => {
+  it("tracks6 (mock R7-Arrange6): 6 tracks. Numbers follow the order, ids differ from numbers. Colors go back to 1 at the 6th track", () => {
     const s = state("tracks6");
     expect(s.song.tracks.map((x) => [x.number, x.name, t(`instrument.${x.instrument}`), x.color])).toEqual([
       [1, "ピアノ", "グランドピアノ", 1],
@@ -58,16 +58,16 @@ describe("約束 13 の偽物の場面", () => {
       [6, "ベース 2", "シンセベース", 1],
     ]);
     expect(s.song.tracks.map((x) => x.id)).toEqual([11, 12, 13, 14, 15, 16]);
-    // ● で「2 ベース」を選んだ所。選んだトラックは id で言う。
+    // 「2 ベース」 selected with ●. The selected track is given by id.
     expect(s.song.playTarget).toBe(12);
     expect(s.status.message).toEqual({ id: "armMoved", track: { number: 2, name: "ベース" } });
-    // モックの見出しの文と同じ。
+    // the same as the mock's heading text.
     const mock = mockScreenText("R7-Arrange6");
     for (const x of s.song.tracks) expect(mock).toContain(`${x.name}MS●${t(`instrument.${x.instrument}`)}`);
     expect(mock).toContain(t("status.armMoved", { recordKey: t("key.record"), track: "2 ベース" }));
   });
 
-  it("shelfNewTrack: 棚が「新しいトラック」でひらき、何もえらんでいない。行は 11 ぜんぶ", () => {
+  it("shelfNewTrack: the shelf opens on 「新しいトラック」 with nothing chosen. All 11 rows", () => {
     const s = state("shelfNewTrack");
     expect(s.workspace.layout.rightFront).toBe("shelf");
     expect(s.shelf.mode).toEqual({ kind: "newTrack" });
@@ -77,7 +77,7 @@ describe("約束 13 の偽物の場面", () => {
     expect(s.transport.canRecord).toBe(true);
   });
 
-  it("shelfAudition（モック F4-ShelfAudition）: シンセベースをためし弾き中。録音はできない", () => {
+  it("shelfAudition (mock F4-ShelfAudition): auditioning the synth bass. Cannot record", () => {
     const s = state("shelfAudition");
     expect(s.shelf).toMatchObject({ mode: { kind: "newTrack" }, selected: "synthBass", current: null });
     expect(s.transport.canRecord).toBe(false);
@@ -87,11 +87,11 @@ describe("約束 13 の偽物の場面", () => {
     expect(mock).toContain(t("button.makeTrack", { number: s.song.tracks.length + 1 }));
   });
 
-  it("shelfReplace（モック F4-ShelfReplace）: 1 ピアノのエレクトリックピアノをためし弾き中。いまの音源はグランドピアノ", () => {
+  it("shelfReplace (mock F4-ShelfReplace): auditioning the electric piano on track 1 piano. The current instrument is the grand piano", () => {
     const s = state("shelfReplace");
     const track = s.song.tracks[0]!;
     expect(s.shelf).toMatchObject({ mode: { kind: "replace", track: track.id }, selected: "electricPiano", current: "grandPiano" });
-    // 曲は変えていない。
+    // the song is not changed.
     expect(track.instrument).toBe("grandPiano");
     expect(s.status.message).toEqual({
       id: "auditionReplace",
@@ -112,8 +112,8 @@ describe("約束 13 の偽物の場面", () => {
   });
 });
 
-describe("偽物の Rust: トラックは id で指す", () => {
-  it("selectTrack ・ toggleMute は id。番号で送っても、どのトラックにも当たらない", async () => {
+describe("fake Rust: tracks are pointed to by id", () => {
+  it("selectTrack and toggleMute use the id. Sending a number hits no track", async () => {
     const scene = fakeScene("tracks6")!;
     const transport = createFakeTransport(structuredClone(scene.state));
     let s: AppState = structuredClone(scene.state);
@@ -135,8 +135,8 @@ describe("偽物の Rust: トラックは id で指す", () => {
   });
 });
 
-describe("文面の穴は、約束の種類の名前と合っている", () => {
-  it("instrument.* と instrumentGroup.* は、約束にある種類だけ", () => {
+describe("holes in the wording match the kind names in the protocol", () => {
+  it("instrument.* and instrumentGroup.* have only the kinds in the protocol", () => {
     const keys = (prefix: string) => (Object.keys(texts) as TextKey[]).filter((k) => k.startsWith(prefix)).map((k) => k.slice(prefix.length));
     expect(keys("instrument.")).toEqual(INSTRUMENT_GROUPS.flatMap((g) => g.instruments));
     expect(keys("instrumentGroup.")).toEqual(INSTRUMENT_GROUPS.map((g) => g.group));

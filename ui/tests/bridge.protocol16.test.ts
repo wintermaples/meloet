@@ -1,4 +1,4 @@
-// 約束 16: プラグインのスキャン、止まった物の一覧、プラグインの場所。
+// Protocol 16: plugin scan, the list of stopped ones, plugin locations.
 import { describe, expect, it } from "vitest";
 import { createFakeTransport, fakeScene, fakeState } from "../src/bridge/fake";
 import { PROTOCOL_VERSION, type AppState, type Command, type ServerMessage } from "../src/bridge/types";
@@ -21,8 +21,8 @@ async function open(scene: string) {
   return { held, send: async (c: Command) => void (await transport.send(c)) };
 }
 
-describe("約束 16 の形", () => {
-  it("版は 23（22 より後）。新しい曲では、スキャンは動いておらず、止まった物はなく、場所は LV2 と VST3 のふつうの場所だけ", () => {
+describe("protocol 16 shape", () => {
+  it("version is 23 (after 22). In a new song, no scan runs, nothing stopped, and the locations are only the usual LV2 and VST3 places", () => {
     expect(PROTOCOL_VERSION).toBeGreaterThanOrEqual(26);
     const p = fakeState().plugins;
     expect(p.scan).toEqual({ state: "idle" });
@@ -40,15 +40,15 @@ describe("約束 16 の形", () => {
   });
 });
 
-describe("約束 16 の偽物の場面", () => {
-  it("scanning（モック R9-Scan）: 棚をひらいたまま、37 / 112", () => {
+describe("protocol 16 fake scenes", () => {
+  it("scanning (mock R9-Scan): shelf open, 37 / 112", () => {
     const s = state("scanning");
     expect(s.plugins.scan).toEqual({ state: "running", done: 37, total: 112 });
     expect(s.workspace.layout.rightOpen).toContain("shelf");
     expect(mockScreenText("R9-Scan")).toContain("37 / 112");
   });
 
-  it("scanFinished と pluginsFound: 状態行の知らせと、棚の下の数", () => {
+  it("scanFinished and pluginsFound: status line notice and the count under the shelf", () => {
     const s = state("scanFinished");
     expect(s.plugins.scan).toEqual({ state: "finished", added: 667, stopped: 4 });
     expect(s.plugins.stopped).toHaveLength(4);
@@ -56,18 +56,18 @@ describe("約束 16 の偽物の場面", () => {
     expect(state("pluginsFound").status.message).toEqual({ id: "pluginsFound", count: 3 });
   });
 
-  it("pluginPlaces（モック R9-Scan）: くわしい設定がひらき、足した場所が 2 つ。CLAP の場所はない", () => {
+  it("pluginPlaces (mock R9-Scan): advanced settings open, 2 added locations. No CLAP location", () => {
     const s = state("pluginPlaces");
     expect(s.workspace.settings).toMatchObject({ advancedOpen: true });
     expect(s.plugins.placesOpen).toBe(true);
     const mock = mockScreenText("R9-Scan");
-    // /usr/local/lib/vst3 はモックにない（VST3 のふつうの場所として足した。docs/history/research/plugin-formats.md 8 章）。
+    // /usr/local/lib/vst3 is not in the mock (added as a usual VST3 place; docs/history/research/plugin-formats.md section 8).
     for (const p of s.plugins.places.filter((x) => x.shownPath !== "/usr/local/lib/vst3")) expect(mock, p.shownPath).toContain(p.shownPath);
     expect(s.plugins.places.filter((p) => p.added).map((p) => p.shownPath)).toEqual(["~/音楽/プラグイン", "/opt/surge-xt/lib/vst3"]);
     expect(s.plugins.places.some((p) => p.path.includes("clap"))).toBe(false);
   });
 
-  it("scanStopped（モック F5-ScanStopped）: 名前 ・ 形式 ・ わけ ・ 場所の 4 行", () => {
+  it("scanStopped (mock F5-ScanStopped): 4 lines of name, format, reason, location", () => {
     const s = state("scanStopped");
     expect(s.plugins.stoppedOpen).toBe(true);
     expect(s.status.message).toEqual({ id: "scanStoppedOpen" });
@@ -85,8 +85,8 @@ describe("約束 16 の偽物の場面", () => {
   });
 });
 
-describe("約束 16 の意図（偽物）", () => {
-  it("止まった物のダイアログ: ひらく、ためす、閉じる。Esc でも閉じる", async () => {
+describe("protocol 16 intents (fake)", () => {
+  it("stopped-plugins dialog: open, retry, close. Esc closes too", async () => {
     const { held, send } = await open("scanFinished");
     await send({ type: "openScanStopped" });
     expect(held.s.plugins.stoppedOpen).toBe(true);
@@ -101,7 +101,7 @@ describe("約束 16 の意図（偽物）", () => {
     expect(held.s.plugins.stoppedOpen).toBe(false);
   });
 
-  it("「プラグインの場所…」: ダイアログを閉じ、音の設定をくわしい設定と場所をひらいて出す", async () => {
+  it("「プラグインの場所…」: closes the dialog and opens sound settings with advanced settings and locations shown", async () => {
     const { held, send } = await open("scanStopped");
     await send({ type: "openPluginPlaces" });
     expect(held.s.plugins).toMatchObject({ stoppedOpen: false, placesOpen: true });
@@ -110,13 +110,13 @@ describe("約束 16 の意図（偽物）", () => {
     expect(held.s.plugins.placesOpen).toBe(false);
   });
 
-  it("場所を外す: 足した場所だけ。ふつうの場所は外れない", async () => {
+  it("removing a location: only added ones. Usual places cannot be removed", async () => {
     const { held, send } = await open("pluginPlaces");
     await send({ type: "removePluginPlace", path: "/usr/lib/lv2" });
     expect(held.s.plugins.places).toHaveLength(8);
     await send({ type: "removePluginPlace", path: "/opt/surge-xt/lib/vst3" });
     expect(held.s.plugins.places.filter((p) => p.added).map((p) => p.shownPath)).toEqual(["~/音楽/プラグイン"]);
-    // 偽物はスキャンをしない。
+    // The fake does not scan.
     await send({ type: "rescanPlugins" });
     await send({ type: "addPluginPlace" });
     expect(held.s.plugins.scan).toEqual({ state: "idle" });

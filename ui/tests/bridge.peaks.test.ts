@@ -1,5 +1,5 @@
-// ピークのバイナリ（docs/architecture.md 22-17）と、画面がためる所（PeakStore）。
-// 見本は `cargo test -p meloet-protocol` が書く（tests/fixtures/peaks-v1.{bin,json}）。
+// The peaks binary (architecture 22-17) and the screen's store (PeakStore).
+// The sample is written by `cargo test -p meloet-protocol` (tests/fixtures/peaks-v1.{bin,json}).
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { createFakeTransport } from "../src/bridge/fake";
@@ -14,15 +14,15 @@ function fixtureBytes(): ArrayBuffer {
   return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer;
 }
 
-describe("ピークのバイナリ（型 4 ・ 版 1）", () => {
-  it("Rust が書いた見本を読める。書きもどすと同じバイト", () => {
+describe("peaks binary (type 4, version 1)", () => {
+  it("reads the sample Rust wrote. Writing it back gives the same bytes", () => {
     const bytes = fixtureBytes();
     const got = decodePeaks(bytes);
     expect({ ...got, values: [...got.values] }).toEqual(expected);
     expect(new Uint8Array(encodePeaks(got))).toEqual(new Uint8Array(bytes));
   });
 
-  it("こわれた物は読まない: 短い、型 ・ 版 ・ 段 ・ チャンネルがちがう、長さが頭の数と合わない", () => {
+  it("does not read broken data: too short, wrong type, version, level or channel, length not matching the header count", () => {
     const good = new Uint8Array(fixtureBytes());
     const withByte = (at: number, value: number) => {
       const b = good.slice();
@@ -37,7 +37,7 @@ describe("ピークのバイナリ（型 4 ・ 版 1）", () => {
     expect(() => decodePeaks(good.slice(0, good.length - 1).buffer)).toThrow(/the header says/);
   });
 
-  it("段: 256 から 4 倍ずつ 5 つ。描く段は、1 px のこま数より細かい中でいちばん粗い段", () => {
+  it("levels: 5, from 256 by 4 times. The level to draw is the coarsest one still finer than the frames per 1 px", () => {
     expect(PEAK_LEVELS).toEqual([256, 1024, 4096, 16384, 65536]);
     expect([10, 256, 1023, 1024, 5000, 65536, 1e9].map(levelFor)).toEqual([0, 0, 0, 1, 2, 4, 4]);
   });
@@ -45,7 +45,7 @@ describe("ピークのバイナリ（型 4 ・ 版 1）", () => {
 
 const VOICE: FakeAudio = { id: 7, file: "歌.wav", sampleRate: 48000, bits: 24, channels: 2, frames: 10 * 48000 };
 
-/** 偽物の音 `files` に答える取りにいきかたと、その呼ばれた回数。 */
+/** A fetcher that answers for the fake audio `files`, and how many times it was called. */
 function fetcher(files: FakeAudio[]) {
   const calls: [number, number, number, number][] = [];
   const fetch = async (audio: number, level: number, first: number, count: number) => {
@@ -65,8 +65,8 @@ function fetcher(files: FakeAudio[]) {
   return { calls, fetch };
 }
 
-describe("偽物の波（それらしい形）", () => {
-  it("同じ音はいつも同じ。粗い段のピークは、細かい段の 4 つを包む", () => {
+describe("fake wave (a plausible shape)", () => {
+  it("the same audio always gives the same. A coarse level's peak covers four of the finer level", () => {
     expect(fakePeakCount(VOICE, 0)).toBe(1875);
     expect(fakePeakCount(VOICE, 4)).toBe(8);
     const fine = fakePeakValues(VOICE, 0, 0, 1875);
@@ -81,14 +81,14 @@ describe("偽物の波（それらしい形）", () => {
         expect(coarse[(peak * 2 + channel) * 2 + 1]).toBe(Math.max(...highs));
       }
     }
-    // 声らしく、大きい所と静かな所がある。
+    // Like a voice, with loud and quiet parts.
     const tops = Array.from({ length: 1875 }, (_, i) => fine[i * 4 + 1]!);
     expect(Math.max(...tops)).toBeGreaterThan(20000);
     expect(tops.filter((v) => v < 2000).length).toBeGreaterThan(100);
     expect(tops.every((v, i) => v >= 0 && fine[i * 4]! <= 0)).toBe(true);
   });
 
-  it("偽物の transport の peaks: 場面の音に答え、ない音と見つからない音は断る", async () => {
+  it("peaks of the fake transport: answers for the scene's audio, refuses missing and not-found audio", async () => {
     const t = createFakeTransport();
     const got = decodePeaks(await t.peaks(60, 0, 10, 5));
     expect([got.audio, got.level, got.channels, got.first, got.count, got.total, got.growing]).toEqual([60, 0, 1, 10, 5, 1875, false]);
@@ -98,8 +98,8 @@ describe("偽物の波（それらしい形）", () => {
   });
 });
 
-describe("ピークをためる所（PeakStore）", () => {
-  it("段を丸ごと 1 回で取り、次からは取りにいかない。同時に 2 回頼んでも 1 回", async () => {
+describe("peak store (PeakStore)", () => {
+  it("fetches a whole level once and not again. Two requests at the same time make one", async () => {
     const { calls, fetch } = fetcher([VOICE]);
     const store = new PeakStore(fetch);
     expect(store.peek(7, 0)).toBeUndefined();
@@ -116,7 +116,7 @@ describe("ピークをためる所（PeakStore）", () => {
     expect(store.held()).toMatchObject({ ready: 2, dropped: 0 });
   });
 
-  it("長い音は PEAKS_MAX_COUNT ずつ、つづきを取る", async () => {
+  it("long audio fetches the rest PEAKS_MAX_COUNT at a time", async () => {
     const long: FakeAudio = { ...VOICE, id: 8, channels: 1, frames: (PEAKS_MAX_COUNT + 100) * 256 };
     const { calls, fetch } = fetcher([long]);
     const got = await new PeakStore(fetch).get(8, 0);
@@ -124,7 +124,7 @@ describe("ピークをためる所（PeakStore）", () => {
     expect(got.count).toBe(PEAKS_MAX_COUNT + 100);
   });
 
-  it("録っている音: growing の間は more でつづきを取る（最後のピークは取りなおす）。終わったら取りにいかない", async () => {
+  it("audio being recorded: while growing, fetch the rest with more (the last peak again). After it ends, do not fetch", async () => {
     const rec: FakeAudio = { id: 9, file: "歌 9.wav", sampleRate: 48000, bits: 24, channels: 1, frames: 0, growingTo: 1000 };
     const { calls, fetch } = fetcher([rec]);
     const store = new PeakStore(fetch);
@@ -144,10 +144,10 @@ describe("ピークをためる所（PeakStore）", () => {
     expect(calls.length).toBe(asked);
   });
 
-  it("使っていない音のピークは脇へ。新しい物から上限のバイトまで残し、また使えば戻る。別の曲が来たらぜんぶ手ばなす", async () => {
+  it("peaks of audio not in use go aside. Keep the newest up to the byte limit, and they come back when used again. A different song drops them all", async () => {
     const files = [1, 2, 3].map((id): FakeAudio => ({ ...VOICE, id, channels: 1, frames: 1000 * 256 }));
     const { calls, fetch } = fetcher(files);
-    // 1 つの段は 1000 ピーク × 4 バイト。脇に 2 つまで。
+    // One level is 1000 peaks × 4 bytes. Up to two aside.
     const store = new PeakStore(fetch, 8000);
     for (const f of files) await store.get(f.id, 0);
     store.keepOnly([3]);
@@ -156,7 +156,7 @@ describe("ピークをためる所（PeakStore）", () => {
     store.keepOnly([]);
     expect(store.held()).toEqual({ ready: 0, dropped: 2, bytes: 8000 });
     expect(store.peek(1, 0)).toBeUndefined();
-    // 取り消しで戻った音: 脇から戻り、取りにいかない。
+    // Audio back after undo: back from aside, not fetched.
     store.keepOnly([2]);
     expect(store.held()).toMatchObject({ ready: 1, dropped: 1 });
     await store.get(2, 0);
@@ -166,7 +166,7 @@ describe("ピークをためる所（PeakStore）", () => {
     expect(KEEP_DROPPED_PEAK_BYTES).toBe(4 * 1024 * 1024);
   });
 
-  it("曲が使っている音: 歌のクリップの音と、録っている音", () => {
+  it("audio the song uses: audio of audio clips, and audio being recorded", () => {
     const song = { tracks: [{ clips: [{ audio: null }, { audio: { audio: 60 } }] }, { clips: [{ audio: { audio: 60 } }, { audio: { audio: 61 } }] }] };
     expect(songAudioIds(song)).toEqual([60, 61]);
     expect(songAudioIds(song, [{ audio: 59 }, { audio: 61 }])).toEqual([60, 61, 59]);

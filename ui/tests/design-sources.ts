@@ -124,7 +124,7 @@ export function tableAfterH3(doc: Document, title: string): HTMLTableElement {
   let el = h3?.nextElementSibling ?? null;
   while (el && !el.querySelector("table") && el.tagName !== "TABLE") el = el.nextElementSibling;
   const table = el?.tagName === "TABLE" ? (el as HTMLTableElement) : el?.querySelector("table");
-  if (!table) throw new Error(`表がない: ${title}`);
+  if (!table) throw new Error(`no table: ${title}`);
   return table;
 }
 

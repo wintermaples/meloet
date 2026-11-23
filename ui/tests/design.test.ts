@@ -24,12 +24,12 @@ const doc = specDocument();
 const triple = (s: string) => s.split("/").map((x) => Number(x.trim()));
 const sorted = (xs: Iterable<string>) => [...xs].sort();
 
-describe("仕様書 1 章の表と tokens.ts", () => {
-  it("色: 名前と値が全部一致する（R=G=B の列も）", () => {
+describe("spec 1 tables and tokens.ts", () => {
+  it("colors: all names and values match (the R=G=B column too)", () => {
     const seen: string[] = [];
     for (const [, nameCell, value, rgb, use] of rows(tableAfterH3(doc, "Colors"))) {
       if (nameCell === "color.tip.bg / color.tip.fg") {
-        // 値の列は地の色だけ。文字の色は「使う所」に gray.N で書いてある。
+        // The value column is background colors only. Text colors are written as gray.N in the "where used" column.
         expect(colors["color.tip.bg"]).toBe(value);
         const bg = use!.match(/background is (gray\.\d+)/)![1];
         const fg = use!.match(/the text is (gray\.\d+)/)![1];
@@ -49,7 +49,7 @@ describe("仕様書 1 章の表と tokens.ts", () => {
     expect(sorted(seen)).toEqual(sorted(Object.keys(colors)));
   });
 
-  it("文字: 大きさ・行の高さは率ごとに、太さは使ってよい組として一致する", () => {
+  it("text: size and line height match per scale; weight matches as the allowed sets", () => {
     const seen: string[] = [];
     for (const [name, sz, lh, weight] of rows(tableAfterH3(doc, "Text"))) {
       const tok = text[name as keyof typeof text];
@@ -66,7 +66,7 @@ describe("仕様書 1 章の表と tokens.ts", () => {
     ["Space", space],
     ["Sizes", size],
   ] as const) {
-    it(`${title}: 100 / 125 / 150 % の値が全部一致する`, () => {
+    it(`${title}: all values at 100 / 125 / 150 % match`, () => {
       const seen: string[] = [];
       for (const [name, values] of rows(tableAfterH3(doc, title))) {
         expect([...(table as Record<string, readonly number[]>)[name!]!], name).toEqual(triple(values!));
@@ -76,7 +76,7 @@ describe("仕様書 1 章の表と tokens.ts", () => {
     });
   }
 
-  it("線と角: 100 % の値と、決まりの文にある 125 % と 150 % の値が一致する", () => {
+  it("lines and corners: the 100 % values, and the 125 % and 150 % values in the rule text, match", () => {
     const seen: string[] = [];
     for (const [name, value, rule] of rows(tableAfterH3(doc, "Lines and corners"))) {
       seen.push(name!);
@@ -97,14 +97,14 @@ describe("仕様書 1 章の表と tokens.ts", () => {
     expect(sorted(seen)).toEqual(sorted([...Object.keys(line), ...Object.keys(radius)]));
   });
 
-  it("書体の名前の並びが仕様書と同じ", () => {
+  it("the order of font names is the same as the spec", () => {
     const css = doc.querySelector("style")!.textContent!;
     expect(css).toContain(`--sans:${fontFamily.sans};`);
     expect(css).toContain(`--mono:${fontFamily.mono};`);
   });
 });
 
-// 率をかけて整数にならないので、四捨五入した値（.5 は切り上げ）。部品の寸法は表の外なので、4 の倍数とはかぎらない。
+// Scaling does not give an integer, so the value is rounded (.5 rounds up). Part sizes are outside the table, so they are not always multiples of 4.
 const ROUNDED = [
   "part.audioclip.handle@125=7.5→8",
   "part.button.icon@125=12.5→13",
@@ -133,7 +133,7 @@ const ROUNDED = [
   "part.windowmark.size@125=12.5→13",
 ];
 
-describe("part.*（仕様書の文の中にしかない寸法）", () => {
+describe("part.* (sizes found only in the spec text)", () => {
   const tables = { s1: sectionTables(doc, "s1"), s2: sectionTables(doc, "s2"), s3: sectionTables(doc, "s3") };
 
   const fromSpec = Object.entries(plain).flatMap(([k, v]) => ("spec" in v ? [[k, v] as const] : []));
@@ -156,7 +156,7 @@ describe("part.*（仕様書の文の中にしかない寸法）", () => {
     expect(tok.spec.quote).toMatch(new RegExp(`(^|\\D)${tok.value}(\\D|$)`));
   });
 
-  it("率をかけて整数にならない値の一覧と、四捨五入した値（ふえたら、ここが落ちる）", () => {
+  it("the list of values that do not become integers when scaled, and their rounded values (this fails if more appear)", () => {
     const odd = (Object.keys(part) as PartName[]).flatMap((k) =>
       SCALES.filter((s) => !Number.isInteger((part[k].value * s) / 100)).map(
         (s) => `${k}@${s}=${(part[k].value * s) / 100}→${partAt(k, s)}`,
@@ -165,34 +165,34 @@ describe("part.*（仕様書の文の中にしかない寸法）", () => {
     expect(odd.sort()).toEqual(ROUNDED);
   });
 
-  it("partAt はどの率でも整数", () => {
+  it("partAt is an integer at every scale", () => {
     for (const k of Object.keys(part) as PartName[]) for (const s of SCALES) expect(Number.isInteger(partAt(k, s)), k).toBe(true);
   });
 });
 
-describe("仕様書 2 章「メーターとフェーダーの目盛」", () => {
+describe("spec 2 (Scale marks of meters and faders)", () => {
   const table = tableAfterH3(doc, "Scale marks of meters and faders");
   const num = (s: string) => Number(s.replace("−", "-").replace("+", "").replace(" %", ""));
 
-  it("表の dB と長さが meterScale と同じ", () => {
+  it("the table's dB and lengths are the same as meterScale", () => {
     const dbs = headers(table).slice(1).map(num);
     const lengths = rows(table)[0]!.slice(1).map(num);
     expect(rows(table)[0]![0]).toBe("Length");
     expect(meterScale).toEqual(dbs.map((db, i) => [db, lengths[i]]));
   });
 
-  it("落ちる速さは見出しの文のとおり", () => {
+  it("the fall speed follows the heading text", () => {
     const h3 = Array.from(doc.querySelectorAll("h3")).find((h) => cellText(h) === "Scale marks of meters and faders")!;
     expect(cellText(h3.nextElementSibling!)).toContain(`fall ${meterFall.fallDb} dB in ${meterFall.fallSeconds} seconds`);
   });
 
-  it("meter.hot-from は目盛の −3 dB の長さ", () => {
+  it("meter.hot-from is the length of −3 dB on the scale", () => {
     expect(meterScale.find(([db]) => db === -3)![1]).toBe(plain["meter.hot-from"].value);
   });
 });
 
-describe("率ごとの値と CSS の変数", () => {
-  it("line.hair はどの率でも物理 1px（1 / devicePixelRatio の CSS px）", () => {
+describe("values per scale and CSS variables", () => {
+  it("line.hair is 1 physical px at every scale (1 / devicePixelRatio CSS px)", () => {
     for (const s of SCALES) {
       expect(tokensAt(s, 1)["line.hair"]).toBe(1);
       expect(tokensAt(s, 2)["line.hair"]).toBe(0.5);
@@ -200,13 +200,13 @@ describe("率ごとの値と CSS の変数", () => {
     }
   });
 
-  it("line.mark は 2・2・3、line.track は 4・5・6、radius.1 は 1 のまま", () => {
+  it("line.mark is 2, 2, 3, line.track is 4, 5, 6, radius.1 stays 1", () => {
     expect(SCALES.map((s) => tokensAt(s, 1)["line.mark"])).toEqual([2, 2, 3]);
     expect(SCALES.map((s) => tokensAt(s, 1)["line.track"])).toEqual([4, 5, 6]);
     expect(SCALES.map((s) => tokensAt(s, 1)["radius.1"])).toEqual([1, 1, 1]);
   });
 
-  it("表の値は 100 % の値に率をかけたものと同じ", () => {
+  it("table values equal the 100 % values times the scale", () => {
     for (const tbl of [space, size] as Record<string, readonly number[]>[]) {
       for (const [k, v] of Object.entries(tbl)) {
         expect([v[0]! * 1.25, v[0]! * 1.5], k).toEqual([v[1], v[2]]);
@@ -214,7 +214,7 @@ describe("率ごとの値と CSS の変数", () => {
     }
   });
 
-  it("CSS の変数の名前と値", () => {
+  it("CSS variable names and values", () => {
     const v = cssVariables(125, 2);
     expect(v["--color-gray-4"]).toBe("#222222");
     expect(v["--color-meter-ok"]).toBe("#4CD964");
@@ -230,7 +230,7 @@ describe("率ごとの値と CSS の変数", () => {
     expect(v["--font-sans"]).toBe(fontFamily.sans);
   });
 
-  it("太さの変数は、その大きさで使ってよい組だけ（率によらない）", () => {
+  it("weight variables are only the sets allowed at that size (not depending on the scale)", () => {
     for (const sc of SCALES) {
       const names = Object.keys(cssVariables(sc, 1)).filter((k) => k.includes("-weight"));
       expect(names.sort()).toEqual(
@@ -247,7 +247,7 @@ describe("率ごとの値と CSS の変数", () => {
     }
   });
 
-  it(":root に書ける", () => {
+  it("can be written to :root", () => {
     writeCssVariables(150, 1);
     const st = document.documentElement.style;
     expect(st.getPropertyValue("--space-1")).toBe("6px");

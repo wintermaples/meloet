@@ -1,5 +1,5 @@
-// 区切り4 の直し（画面: 音を作っている %）: 見せる % は 1 秒に 2 回まで、クリップの下 ・ 選んだクリップの欄 ・ 状態行の 3 か所が同じ値で
-// 同じときに変わる。仕事の表は 1 回だけ引き、クリップの数に比例して引かない（docs/architecture.md 22-19）。
+// The % of making sound on screen: the shown % changes at most twice a second, and under the clip, in the selected clip's panel
+// and in the status line it is the same value at the same time. The job table is looked up once, not in proportion to the number of clips (docs/architecture.md 22-19).
 import { flushSync, mount, unmount } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, AudioJob, AudioWorkView } from "../src/bridge";
@@ -19,7 +19,7 @@ const view: View = { pxPerTick: 64 / BAR, scrollX: 0, width: 2000 };
 const scene = (name: string) => fakeScene(name)!.state as FakeState;
 const rendering = (clip: number, percent: number, audio = 1): AudioJob => ({ kind: "rendering", audio, clip, percent });
 
-describe("WorkShown（見せる進み）", () => {
+describe("WorkShown (the shown progress)", () => {
   let now = 0;
   let work: AudioWorkView | null = null;
   let shown: WorkShown;
@@ -41,7 +41,7 @@ describe("WorkShown（見せる進み）", () => {
     vi.advanceTimersByTime(ms);
   };
 
-  it("% だけが変わったときは、前に見せかえてから 500 ms たつまで前の値のまま", () => {
+  it("when only the % changes, the old value stays until 500 ms after the last change", () => {
     set([rendering(7, 10)]);
     const first = shown.current;
     expect(first.rendering.get(7)?.percent).toBe(10);
@@ -55,7 +55,7 @@ describe("WorkShown（見せる進み）", () => {
     expect(shown.current.rendering.get(7)?.percent).toBe(44);
   });
 
-  it("1 秒に 5 回の % でも、見せかえるのは 1 秒に 2 回", () => {
+  it("even with a % 5 times a second, the shown value changes twice a second", () => {
     const seen: number[] = [];
     for (let i = 0; i < 25; i++) {
       set([rendering(7, i * 4)]);
@@ -63,12 +63,12 @@ describe("WorkShown（見せる進み）", () => {
       if (seen.at(-1) !== p) seen.push(p);
       later(200);
     }
-    // 5 秒（25 回）で、はじめの 1 回と 500 ms ごとの 10 回まで。
+    // In 5 seconds (25 times): the first one and one every 500 ms, so 10 at most.
     expect(seen.length).toBeLessThanOrEqual(11);
     expect(seen.length).toBeGreaterThanOrEqual(9);
   });
 
-  it("仕事が始まった ・ 終わった（出る ・ 消える）はすぐ", () => {
+  it("a job starting or ending (appear, disappear) is shown at once", () => {
     set([rendering(7, 10)]);
     void shown.current;
     later(100);
@@ -82,7 +82,7 @@ describe("WorkShown（見せる進み）", () => {
     expect(shown.current.jobs).toEqual([]);
   });
 
-  it("何も変わらなければ同じ物を返す（読んだ所は動かない）", () => {
+  it("returns the same object when nothing changed (what was read does not move)", () => {
     set([rendering(7, 10)]);
     const first = shown.current;
     set([rendering(7, 10)]);
@@ -90,7 +90,7 @@ describe("WorkShown（見せる進み）", () => {
     expect(shown.current).toBe(first);
   });
 
-  it("表はクリップの id と音のファイルの番号で引ける。状態行には、いちばん先に始めたクリップのある仕事", () => {
+  it("the table can be looked up by clip id and audio file number. The status line shows the job of the clip that started first", () => {
     set([{ kind: "loading", audio: 3, clip: null, percent: 40 }, rendering(9, 5, 4), rendering(7, 1, 5)]);
     const s = shown.current;
     expect(s.loading.get(3)?.percent).toBe(40);
@@ -99,7 +99,7 @@ describe("WorkShown（見せる進み）", () => {
   });
 });
 
-describe("クリップの下 ・ 欄 ・ 状態行は、同じ % を同じときに出す", () => {
+describe("under the clip, the panel and the status line show the same % at the same time", () => {
   let mounted: Record<string, unknown>[] = [];
   let target: HTMLElement;
   beforeEach(() => {
@@ -137,7 +137,7 @@ describe("クリップの下 ・ 欄 ・ 状態行は、同じ % を同じとき
     return { ...base, audioWork: { jobs: [{ ...job, percent }] } };
   }
 
-  it("% が 200 ms ごとに来ても、3 つは 500 ms ごとにそろって変わる", () => {
+  it("even with a % every 200 ms, all 3 change together every 500 ms", () => {
     const base = scene("stretchRendering");
     showAll(base);
     expect(percents()).toEqual([34, 34, 34]);
@@ -160,7 +160,7 @@ describe("クリップの下 ・ 欄 ・ 状態行は、同じ % を同じとき
     expect(fill()).toBe("scaleX(0.47)");
   });
 
-  it("仕事が終わったら、3 つともすぐ消える", () => {
+  it("when the job ends, all 3 disappear at once", () => {
     const base = scene("stretchRendering");
     showAll(base);
     vi.advanceTimersByTime(100);
@@ -172,7 +172,7 @@ describe("クリップの下 ・ 欄 ・ 状態行は、同じ % を同じとき
   });
 });
 
-describe("仕事の表を引く回数は、クリップの数に比例しない", () => {
+describe("the number of job table lookups does not grow with the number of clips", () => {
   let mounted: Record<string, unknown> | null = null;
   let target: HTMLElement;
   beforeEach(() => {
@@ -188,7 +188,7 @@ describe("仕事の表を引く回数は、クリップの数に比例しない"
     shownWork.forget();
   });
 
-  /** clips 個の歌のクリップ（1 小節ずつ）と、そのうち jobs 個の「音を作っている」。表を読んだ回数を数える。 */
+  /** `clips` audio clips (1 bar each), `jobs` of them "making sound". Counts how many times the table is read. */
   function count(clips: number, jobs: number): number {
     const base = scene("stretchRendering");
     const vocal = base.song.tracks.find((tr) => tr.kind.kind === "vocal")!;
@@ -213,7 +213,7 @@ describe("仕事の表を引く回数は、クリップの数に比例しない"
     return reads;
   }
 
-  it("192 個のクリップに 190 の仕事でも、表を読むのは仕事の数の数倍まで（クリップ × 仕事ではない）", () => {
+  it("192 clips with 190 jobs read the table only a few times the number of jobs (not clips × jobs)", () => {
     const reads192 = count(192, 190);
     expect(reads192).toBeLessThanOrEqual(190 * 4);
     expect(count(380, 190)).toBe(reads192);

@@ -5,7 +5,7 @@ const enter = (el: HTMLElement) => el.dispatchEvent(new PointerEvent("pointerent
 const move = (el: HTMLElement) => el.dispatchEvent(new PointerEvent("pointermove"));
 const leave = (el: HTMLElement) => el.dispatchEvent(new PointerEvent("pointerleave"));
 
-describe("用語の説明", () => {
+describe("term tip", () => {
   let el: HTMLElement;
   beforeEach(() => {
     vi.useFakeTimers();
@@ -18,7 +18,7 @@ describe("用語の説明", () => {
     vi.useRealTimers();
   });
 
-  it("0.6 秒止めると出て、離れると消える", () => {
+  it("shows after resting 0.6 s, hides on leaving", () => {
     const a = term(el, "ループ") as { destroy(): void };
     enter(el);
     vi.advanceTimersByTime(TIP_DELAY_MS - 1);
@@ -30,7 +30,7 @@ describe("用語の説明", () => {
     a.destroy();
   });
 
-  it("動いているあいだは出ない（止まってから 0.6 秒）", () => {
+  it("not shown while moving (0.6 s after stopping)", () => {
     term(el, "ループ");
     enter(el);
     vi.advanceTimersByTime(400);
@@ -41,7 +41,7 @@ describe("用語の説明", () => {
     expect(tipVisible()).toBe(true);
   });
 
-  it("外から消せる（Esc）", () => {
+  it("can be hidden from outside (Esc)", () => {
     term(el, "テンポ");
     enter(el);
     vi.advanceTimersByTime(TIP_DELAY_MS);
@@ -50,7 +50,7 @@ describe("用語の説明", () => {
     expect(tipVisible()).toBe(false);
   });
 
-  it("画面に 1 つだけ", () => {
+  it("only one on the screen", () => {
     const other = document.createElement("span");
     document.body.append(other);
     term(el, "テンポ");
@@ -63,7 +63,7 @@ describe("用語の説明", () => {
     expect(tipView.value?.term).toBe("拍子");
   });
 
-  it("好きな文も出せる。空なら出さない", () => {
+  it("can show any text. Empty shows nothing", () => {
     const a = tip(el, "Arturia KeyLab Essential 61 mk3 MIDI 1") as { update(t: string | null): void };
     enter(el);
     vi.advanceTimersByTime(TIP_DELAY_MS);
@@ -75,6 +75,6 @@ describe("用語の説明", () => {
     expect(tipVisible()).toBe(false);
   });
 
-  // vitest が svelte を server の版で解決するため、いまは mount できない（vite.config.ts に resolve.conditions: ["browser"] が要る）。
-  it.todo("Tip.svelte: 形は「用語 — 説明」で、用語は strong");
+  // vitest resolves svelte to the server build, so it cannot be mounted for now (vite.config.ts needs resolve.conditions: ["browser"]).
+  it.todo("Tip.svelte: the form is「用語 — 説明」, and the term is strong");
 });

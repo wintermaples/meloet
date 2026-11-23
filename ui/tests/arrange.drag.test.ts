@@ -1,5 +1,5 @@
-// アレンジのクリップのドラッグ（仕様書 3 章「アレンジのクリップ」、4 章、モック R3-Arrange）: 決まり（arrangeDrag.ts）と、
-// Arrange を mount してマウスで動かしたときに送る物、ドラッグ中の絵、Mod D、偽物の Rust の答え。
+// Dragging clips in the arrange (spec 3 (arrange clips), spec 4, mock R3-Arrange): the rules (arrangeDrag.ts), and,
+// with Arrange mounted and moved by mouse, what it sends, the picture during the drag, Mod D, and the fake Rust answers.
 import { flushSync, mount, unmount } from "svelte";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, ClipView, Command } from "../src/bridge";
@@ -28,7 +28,7 @@ function track(number: number, clips: ClipView[]): TrackView {
   return { id: number, number, name: `トラック ${number}`, color: number, instrument: "sine", kind: { kind: "keys" }, sound: { kind: "builtin", instrument: "sine" }, standIn: null, drumKeys: null, gainDb: 0, pan: 0, sends: [null, null], sendDefaults: [null, null], inserts: [null, null, null, null], slots: [null, null, null, null], muted: false, soloed: false, lanes: [], clips };
 }
 
-// 1 小節 64 px、行の高さ 64、クリップは行の上下 3 あける（拡大率 100 %）。
+// 1 bar is 64 px, row height 64, clips leave 3 above and below in the row (scale 100 %).
 const view: G.View = { pxPerTick: 64 / BAR, scrollX: 0, width: WIDTH };
 const dims: G.LaneDims = { trackH: 64, inset: 3, hair: 1, mark: 2, nameH: 16, pad: 4, noteH: 2 };
 const twoTracks = () => [track(1, [clip(1, "イントロ", 1, 5), clip(3, "Aメロ", 5, 9)]), track(2, [clip(5, "ベース A", 3, 5)])];
@@ -42,20 +42,20 @@ function drag(tracks: TrackView[], from: [number, number], to: [number, number],
   return CD.dragClipTo(d, input(tracks, mods.shift), to[0], to[1], mods);
 }
 
-describe("押した所（arrangeDrag.clipHit）", () => {
-  it("クリップの左右のはし 6px は長さ、まん中は動かす。せまいクリップは幅の 1/3 まで", () => {
+describe("where it was pressed (arrangeDrag.clipHit)", () => {
+  it("6px at the left and right edges of a clip is length, the middle moves. For a narrow clip, up to 1/3 of the width", () => {
     const tracks = twoTracks();
     expect(CD.clipHit(view, dims, tracks, 257, 30, 6)).toMatchObject({ edge: "start", row: 0 });
     expect(CD.clipHit(view, dims, tracks, 300, 30, 6)).toMatchObject({ edge: null });
     expect(CD.clipHit(view, dims, tracks, 507, 30, 6)).toMatchObject({ edge: "end" });
     expect(CD.clipHit(view, dims, tracks, 300, 1, 6)).toBeNull();
     const narrow = [track(1, [{ ...clip(1, "x", 1, 2), end: TPQ / 2 }])];
-    // 幅 8 px: はしは 8/3 px
+    // width 8 px: the edges are 8/3 px
     expect(CD.clipHit(view, dims, narrow, 4, 30, 6)!.edge).toBeNull();
     expect(CD.clipHit(view, dims, narrow, 1, 30, 6)!.edge).toBe("start");
   });
 
-  it("カーソル: はしは左右、クリップは動かす（Alt で複製）、ほかは矢印", () => {
+  it("cursor: left-right at the edges, move on a clip (duplicate with Alt), arrow elsewhere", () => {
     const tracks = twoTracks();
     expect(CD.hoverCursor(CD.clipHit(view, dims, tracks, 507, 30, 6), false)).toBe("ew-resize");
     expect(CD.hoverCursor(CD.clipHit(view, dims, tracks, 300, 30, 6), false)).toBe("move");
@@ -64,8 +64,8 @@ describe("押した所（arrangeDrag.clipHit）", () => {
   });
 });
 
-describe("動かす（arrangeDrag）", () => {
-  it("グリッド（1 小節）に吸いつき、離すと MoveClip を 1 つ。読み値は「6.1.0000（+1 小節）」", () => {
+describe("moving (arrangeDrag)", () => {
+  it("snaps to the grid (1 bar) and sends one MoveClip on release. The reading is 「6.1.0000（+1 小節）」", () => {
     const tracks = twoTracks();
     const d = drag(tracks, [300, 30], [370, 30]);
     expect(d).toMatchObject({ kind: "move", ticks: BAR, toRow: 0, ok: true });
@@ -74,14 +74,14 @@ describe("動かす（arrangeDrag）", () => {
     expect(CD.clipDragCommand(d, tracks)).toEqual({ type: "moveClips", clips: [3], ticks: BAR, tracks: 0, copy: false });
   });
 
-  it("Shift で吸いつかない（読み値は小節の小数）", () => {
+  it("Shift does not snap (the reading is in parts of a bar)", () => {
     const tracks = twoTracks();
     const d = drag(tracks, [300, 30], [330, 30], { shift: true, alt: false });
     expect(d).toMatchObject({ ticks: (30 * BAR) / 64 });
     expect(CD.clipDragReading(d, METER)).toBe("5.2.1680（+0.469 小節）");
   });
 
-  it("押しただけ（space.1 より動かない）なら何も送らず、読み値も出さない", () => {
+  it("only a press (moved less than space.1) sends nothing and shows no reading", () => {
     const tracks = twoTracks();
     const d = drag(tracks, [300, 30], [302, 31]);
     expect(d.press.moved).toBe(false);
@@ -89,7 +89,7 @@ describe("動かす（arrangeDrag）", () => {
     expect(CD.clipDragCommand(d, tracks)).toBeNull();
   });
 
-  it("ほかのクリップと重なる所は「できない」のカーソルで、離しても何も送らない。端が触れるだけは置ける", () => {
+  it("where it overlaps another clip, the 「できない」 cursor, and release sends nothing. Only touching edges can be placed", () => {
     const tracks = twoTracks();
     const over = drag(tracks, [100, 30], [164, 30]);
     expect(over).toMatchObject({ ok: false });
@@ -98,7 +98,7 @@ describe("動かす（arrangeDrag）", () => {
     expect(CD.placeable(tracks, 1, 0, 2 * BAR, null)).toBe(true);
   });
 
-  it("曲の頭より前へは行かない（0 で止まる。動かなければ何も送らない）", () => {
+  it("does not go before the start of the song (stops at 0. Sends nothing if it did not move)", () => {
     const tracks = twoTracks();
     const d = drag(tracks, [100, 30], [10, 30]);
     expect(d).toMatchObject({ ticks: 0, ok: true });
@@ -107,17 +107,17 @@ describe("動かす（arrangeDrag）", () => {
     expect(b).toMatchObject({ ticks: -2 * BAR, ok: true });
   });
 
-  it("ほかのトラックへ。行に吸いつき、トラックの番号で送る。行の外は、いちばん上・下の行", () => {
+  it("to another track. Snaps to rows and sends the track number. Outside the rows, the top or bottom row", () => {
     const tracks = twoTracks();
     const d = drag(tracks, [300, 30], [300 + 128, 94]);
     expect(d).toMatchObject({ toRow: 1, ok: true });
     expect(CD.clipDragCommand(d, tracks)).toEqual({ type: "moveClips", clips: [3], ticks: 2 * BAR, tracks: 1, copy: false });
     expect(drag(tracks, [300, 30], [300, 400])).toMatchObject({ toRow: 1 });
-    // ベース A（3–4 小節）の所へは置けない
+    // cannot be placed where Bass A is (bars 3–4)
     expect(drag(tracks, [300, 30], [300 - 128, 94])).toMatchObject({ toRow: 1, ok: false });
   });
 
-  it("Alt で複製: もとは残り、写しが動く。読み値「複製 ・ 9.1.0000」、カーソル copy。もとの場所には置けない", () => {
+  it("duplicate with Alt: the original stays and the copy moves. Reading 「複製 ・ 9.1.0000」, cursor copy. Cannot be placed at the original place", () => {
     const tracks = twoTracks();
     const alt = { shift: false, alt: true };
     const d = drag(tracks, [300, 30], [300 + 256, 30], alt);
@@ -130,8 +130,8 @@ describe("動かす（arrangeDrag）", () => {
   });
 });
 
-describe("はしをつめる ・ のばす（arrangeDrag）", () => {
-  it("右のはしを 1 小節つめる。読み値「長さ 3.0.0000」、離して TrimClip を 1 つ", () => {
+describe("trimming and extending the edges (arrangeDrag)", () => {
+  it("trim the right edge by 1 bar. Reading 「長さ 3.0.0000」, sends one TrimClip on release", () => {
     const tracks = twoTracks();
     const d = drag(tracks, [509, 30], [445, 30]);
     expect(d).toMatchObject({ kind: "trim", edge: "end", start: 4 * BAR, end: 7 * BAR });
@@ -140,14 +140,14 @@ describe("はしをつめる ・ のばす（arrangeDrag）", () => {
     expect(CD.clipDragCommand(d, tracks)).toEqual({ type: "trimClip", clip: 3, edge: "end", ticks: -BAR });
   });
 
-  it("Shift で吸いつかない（モック R3-Arrange「長さ 2.2.000」の形）", () => {
+  it("Shift does not snap (the form of mock R3-Arrange 「長さ 2.2.000」)", () => {
     const tracks = twoTracks();
     const d = drag(tracks, [509, 30], [509 - 96, 30], { shift: true, alt: false });
     expect(CD.clipDragReading(d, METER)).toBe("長さ 2.2.0000");
     expect(CD.clipDragCommand(d, tracks)).toEqual({ type: "trimClip", clip: 3, edge: "end", ticks: -1.5 * BAR });
   });
 
-  it("となりのクリップの手前で止まる。左のはしは曲の頭で止まる", () => {
+  it("stops before the next clip. The left edge stops at the start of the song", () => {
     const tracks = twoTracks();
     const d = drag(tracks, [258, 30], [100, 30]);
     expect(d).toMatchObject({ start: 4 * BAR });
@@ -158,7 +158,7 @@ describe("はしをつめる ・ のばす（arrangeDrag）", () => {
     expect(right).toMatchObject({ end: 4 * BAR });
   });
 
-  it("短くても 1 ティック（吸いつくときはグリッド 1 つ）より短くならない。のばすのは、どこまでも", () => {
+  it("never shorter than 1 tick (one grid step when snapping). Extending has no limit", () => {
     const tracks = twoTracks();
     expect(drag(tracks, [509, 30], [0, 30])).toMatchObject({ start: 4 * BAR, end: 5 * BAR });
     expect(drag(tracks, [509, 30], [0, 30], { shift: true, alt: false })).toMatchObject({ end: 4 * BAR + 1 });
@@ -166,23 +166,23 @@ describe("はしをつめる ・ のばす（arrangeDrag）", () => {
     expect(CD.clipDragCommand(out, tracks)).toEqual({ type: "trimClip", clip: 3, edge: "end", ticks: 10 * BAR });
   });
 
-  it("長さの文は 小節 . 拍 . ティック（どれも 0 から）", () => {
+  it("the length text is bar . beat . tick (all from 0)", () => {
     expect(CD.clipLengthText(2.5 * BAR, METER)).toBe("2.2.0000");
     expect(CD.clipLengthText(BAR + TPQ / 4, METER)).toBe("1.0.0480");
     expect(CD.clipLengthText(3 * TPQ + TPQ / 2, { num: 3, den: 4 })).toBe("1.0.0960");
   });
 });
 
-describe("つめたクリップの絵", () => {
+describe("picture of a trimmed clip", () => {
   const take = { starts: [0, 2 * TPQ, BAR, 2 * BAR], lengths: [TPQ, 3 * TPQ, TPQ, TPQ], keys: [60, 62, 64, 67] };
 
-  it("アレンジ: 始まりがクリップの範囲の中のノートだけ（鳴る物と同じ）。はみ出す終わりは描く所で切る", () => {
-    // 頭を 1 小節つめた: テイクの 0 は曲の BAR より前（offset −BAR）
+  it("arrange: only notes that start inside the clip range (the same as what plays). Ends that go past are cut where drawn", () => {
+    // trimmed 1 bar from the start: the take's 0 is before the song's BAR (offset −BAR)
     const trimmed = { start: BAR, end: 2 * BAR, takeOffset: -BAR };
     expect(G.takeShapes(trimmed, take)).toEqual([
       { start: BAR, length: TPQ, key: 64 },
     ]);
-    // 終わりをつめた: 2 つ目は始まりが中なので描き、終わりは paintClip が右の枠で切る
+    // trimmed the end: the second note starts inside, so it is drawn; paintClip cuts its end at the right border
     const end = { start: 0, end: (25 * TPQ) / 8, takeOffset: 0 };
     expect(G.takeShapes(end, take).map((n) => n.key)).toEqual([60, 62]);
     const out: GlRect[] = [];
@@ -191,7 +191,7 @@ describe("つめたクリップの絵", () => {
     expect(Math.max(...notes.map((r) => r.x + r.w))).toBeLessThanOrEqual(G.tickToX(view, end.end) - dims.hair);
   });
 
-  it("もとの場所の枠は gray.7 の 1 本線（中は描かない）", () => {
+  it("the border at the original place is one gray.7 line (inside not drawn)", () => {
     const out: GlRect[] = [];
     G.paintFrame(out, view, dims, G.clipBox(view, dims, 1, 0, BAR), "color.gray.7");
     expect(out).toEqual([
@@ -202,7 +202,7 @@ describe("つめたクリップの絵", () => {
     ]);
   });
 
-  it("ピアノロール: 範囲の外に始まるノートは、描かない ・ 押せない ・ 囲めない ・ 鍵の範囲に入れない", () => {
+  it("piano roll: notes that start outside the range are not drawn, cannot be pressed or boxed, and are not in the key range", () => {
     const t = fixtureTake(take.starts.map((st, i) => [st, take.lengths[i]!, take.keys[i]!]), 9);
     const n = PG.shownOf(t, -BAR, { from: 0, to: BAR });
     const seen: number[] = [];
@@ -215,13 +215,13 @@ describe("つめたクリップの絵", () => {
   });
 });
 
-describe("偽物の Rust の答え（reduceClips）", () => {
+describe("fake Rust answers (reduceClips)", () => {
   const state = (): FakeState => {
     const s = fakeState();
     s.song.tracks = twoTracks();
     return s;
   };
-  it("MoveClip で動かし、写しは新しい id。動かしたクリップ（写し）をえらぶ。重なるときは何もせず、状態行で言う", () => {
+  it("MoveClip moves it, a copy gets a new id. The moved clip (the copy) is selected. On overlap it does nothing and says so in the status line", () => {
     const moved = reduceClips(state(), { type: "moveClips", clips: [3], ticks: BAR, tracks: 1, copy: false })!;
     expect(moved.song.tracks[0]!.clips.map((c) => c.id)).toEqual([1]);
     expect(moved.song.tracks[1]!.clips.map((c) => [c.id, c.start])).toEqual([[5, 2 * BAR], [3, 5 * BAR]]);
@@ -234,13 +234,13 @@ describe("偽物の Rust の答え（reduceClips）", () => {
     expect(reduceClips(s, { type: "moveClips", clips: [1], ticks: BAR, tracks: 0, copy: false })).toEqual({ song: s.song, arrange: s.arrange, notice: { id: "clipsNotMoved" } });
     expect(reduceClips(s, { type: "moveClips", clips: [1], ticks: BAR, tracks: 2, copy: false })).toBeNull();
   });
-  it("DuplicateClip はすぐうしろ。TrimClip はテイクの 0 を動かさない", () => {
+  it("DuplicateClip goes just after. TrimClip does not move the take's 0", () => {
     const dup = reduceClips(state(), { type: "duplicateClips", clips: [3] })!;
     expect(dup.song.tracks[0]!.clips.map((c) => [c.start, c.end])).toEqual([[0, 4 * BAR], [4 * BAR, 8 * BAR], [8 * BAR, 12 * BAR]]);
     const trim = reduceClips(state(), { type: "trimClip", clip: 3, edge: "start", ticks: BAR })!;
     expect(trim.song.tracks[0]!.clips[1]).toMatchObject({ start: 5 * BAR, end: 8 * BAR, takeOffset: -BAR });
   });
-  it("DeleteTake は 1 つ前のテイク（いちばん前なら次）に。テイクが 1 つなら何もしない", () => {
+  it("DeleteTake goes to the take before (or the next if it is the first). Does nothing when there is only one take", () => {
     const s = state();
     s.song.tracks[0]!.clips[1] = { ...s.song.tracks[0]!.clips[1]!, take: 2, takes: 3 };
     const once = reduceClips(s, { type: "deleteTake", clip: 3 })!;
@@ -252,14 +252,14 @@ describe("偽物の Rust の答え（reduceClips）", () => {
   });
 });
 
-// ---- Arrange を mount して ----
+// ---- with Arrange mounted ----
 
 const proto = HTMLElement.prototype;
 const had = Object.getOwnPropertyDescriptor(proto, "clientWidth");
 beforeAll(() => Object.defineProperty(proto, "clientWidth", { configurable: true, get: () => WIDTH }));
 afterAll(() => had && Object.defineProperty(proto, "clientWidth", had));
 
-describe("Arrange のマウス", () => {
+describe("mouse in Arrange", () => {
   let mounted: Record<string, unknown> | null = null;
   let target: HTMLElement;
   const slots = new Map<HTMLElement, GlSlot>();
@@ -305,7 +305,7 @@ describe("Arrange のマウス", () => {
     return s?.kind === "rects" ? s.rects : [];
   };
 
-  it("押したまま動かす間は何も送らず、見た目だけ: もとの場所は gray.7 の枠、動くクリップは小さな区画を transform で。離して MoveClip 1 つ", () => {
+  it("while held and moved nothing is sent, only the look: the original place is a gray.7 border, the moving clip is a small region with transform. One MoveClip on release", () => {
     show();
     pointer("pointerdown", 300, 30);
     pointer("pointermove", 340, 30);
@@ -315,13 +315,13 @@ describe("Arrange のマウス", () => {
     expect(target.querySelector('[data-test="arrange-reading"]')!.textContent!.trim()).toBe("6.1.0000（+1 小節）");
     expect(lanes().style.cursor).toBe("move");
     const box = target.querySelector<HTMLElement>(".rec-host .drag-clip")!;
-    // jsdom は「translate(64px, 0px)」を「translate(64px)」に書きかえる
+    // jsdom rewrites 「translate(64px, 0px)」 as 「translate(64px)」
     expect(box.style.transform).toBe("translate(64px)");
     expect(box.style.left).toBe("256px");
     expect(slots.get(box)?.kind).toBe("rects");
     const frame = laneRects().filter((r) => r.color === "color.gray.7");
     expect(frame).toHaveLength(4);
-    // 大きな面は、ドラッグの量では描きなおさない
+    // the big surface is not redrawn for the drag amount
     const before = laneRects();
     pointer("pointermove", 430, 30);
     expect(laneRects()).toBe(before);
@@ -331,7 +331,7 @@ describe("Arrange のマウス", () => {
     expect(dragReading.text).toBeNull();
   });
 
-  it("押した所のクリップをえらぶ（今の作り）。ほかのトラックへ動かすと、トラック 2 の番号で送る", () => {
+  it("selects the clip that was pressed (the current design). Moving to another track sends track 2's number", () => {
     show();
     pointer("pointerdown", 100, 30);
     pointer("pointermove", 100, 94);
@@ -343,7 +343,7 @@ describe("Arrange のマウス", () => {
     ]);
   });
 
-  it("置けない所は「できない」のカーソルで、離しても何も送らない", () => {
+  it("where it cannot be placed, the 「できない」 cursor, and release sends nothing", () => {
     show();
     pointer("pointerdown", 100, 30);
     pointer("pointermove", 164, 30);
@@ -352,7 +352,7 @@ describe("Arrange のマウス", () => {
     expect(moves()).toEqual([]);
   });
 
-  it("Esc（cancelDrag）でドラッグの前に戻り、離しても何も送らない", () => {
+  it("Esc (cancelDrag) goes back to before the drag, and release sends nothing", () => {
     show();
     pointer("pointerdown", 300, 30);
     pointer("pointermove", 366, 30);
@@ -366,7 +366,7 @@ describe("Arrange のマウス", () => {
     expect(cancelDrag()).toBe(false);
   });
 
-  it("Alt ＋ ドラッグで複製: もとはそのまま描き（枠にしない）、カーソルは copy", () => {
+  it("duplicate with Alt + drag: the original is drawn as it is (not a border), cursor copy", () => {
     show();
     pointer("pointerdown", 300, 30, { altKey: true });
     pointer("pointermove", 556, 30, { altKey: true });
@@ -377,7 +377,7 @@ describe("Arrange のマウス", () => {
     expect(moves()).toEqual([{ type: "moveClips", clips: [3], ticks: 4 * BAR, tracks: 0, copy: true }]);
   });
 
-  it("はし: 乗せると左右のカーソル。つめている間は行の幅の箱に描き、つめた所はもとの枠の中。離して TrimClip 1 つ", () => {
+  it("edges: hover gives the left-right cursor. While trimming it draws in a box the width of the row, and the trimmed part is inside the original border. One TrimClip on release", () => {
     show();
     pointer("pointermove", 509, 30);
     expect(lanes().style.cursor).toBe("ew-resize");
@@ -393,7 +393,7 @@ describe("Arrange のマウス", () => {
     expect(moves()).toEqual([{ type: "trimClip", clip: 3, edge: "end", ticks: -BAR }]);
   });
 
-  it("録音中とカウントイン中は、えらぶだけでドラッグしない", () => {
+  it("while recording and during count-in, only selects, no drag", () => {
     for (const state of ["recording", "countIn"] as const) {
       show((s) => {
         s.transport.state = state;
@@ -413,7 +413,7 @@ describe("Arrange のマウス", () => {
   });
 });
 
-describe("Mod D（仕様書 4 章「複製」）", () => {
+describe("Mod D (spec 4 (Duplicate))", () => {
   const press = (deps: KeyDeps) => {
     const ev = new KeyboardEvent("keydown", { key: "d", ctrlKey: true, cancelable: true });
     handleKeydown(ev, deps);
@@ -421,7 +421,7 @@ describe("Mod D（仕様書 4 章「複製」）", () => {
   };
   afterEach(() => (prView.focus = "arrange"));
 
-  it("アレンジにフォーカスがあり、クリップをえらんでいれば DuplicateClip。えらんでいなければ何も送らない", () => {
+  it("with focus on the arrange and a clip selected, DuplicateClip. Nothing is sent when nothing is selected", () => {
     const state = fakeState();
     const sent: Command[] = [];
     const deps: KeyDeps = { state: () => state, send: (c) => void sent.push(c), nav: { platform: "Linux" } };
@@ -432,7 +432,7 @@ describe("Mod D（仕様書 4 章「複製」）", () => {
     expect(sent).toEqual([{ type: "duplicateClips", clips: [3] }]);
   });
 
-  it("ピアノロールがひらいていても、最後に押したのがアレンジならクリップ。ピアノロールならノートのまま", () => {
+  it("even with the piano roll open, a clip if the arrange was pressed last. Notes if it was the piano roll", () => {
     const state = fakeState();
     state.workspace.layout = { ...state.workspace.layout, lower: [{ band: "pianoRoll", height: 640 }] };
     state.arrange = arrangeOf(3);
@@ -446,7 +446,7 @@ describe("Mod D（仕様書 4 章「複製」）", () => {
     expect(sent).toEqual([{ type: "duplicateClips", clips: [3] }]);
   });
 
-  it("録音中とカウントイン中は送らない", () => {
+  it("nothing is sent while recording and during count-in", () => {
     const state = fakeState();
     state.arrange = arrangeOf(3);
     state.transport.state = "recording";

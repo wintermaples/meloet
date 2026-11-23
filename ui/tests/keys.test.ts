@@ -11,7 +11,7 @@ const k = (key: string, mods: Partial<KeyInput> = {}): KeyInput => ({
 });
 
 describe("keyAction", () => {
-  it("一文字のキーで帯をひらく・たたむ（A は アレンジへ）", () => {
+  it("one-letter keys open and fold bands (A goes to the arrange)", () => {
     expect(keyAction(k("a"), false, "other")).toEqual({ kind: "arrange" });
     expect(keyAction(k("E"), false, "other")).toEqual({ kind: "toggleBand", band: "pianoRoll" });
     expect(keyAction(k("m"), false, "other")).toEqual({ kind: "toggleBand", band: "mixer" });
@@ -20,36 +20,36 @@ describe("keyAction", () => {
     expect(keyAction(k("u"), false, "other")).toEqual({ kind: "toggleBand", band: "params" });
   });
 
-  it("文字を打っている最中は、一文字のキーが効かない", () => {
+  it("one-letter keys do not work while typing", () => {
     for (const key of ["a", "e", "m", "h", "p", "u", "r", "l", "c", "t"]) {
       expect(keyAction(k(key), true, "other"), key).toBeNull();
     }
   });
 
-  it("文字を打っている最中は Space も効かず、空白として入る（Home は効く）", () => {
+  it("Space does not work while typing either and goes in as a space (Home works)", () => {
     expect(keyAction(k(" ", { code: "Space" }), true, "other")).toBeNull();
     expect(keyAction(k("Home"), true, "other")).toEqual({ kind: "toStart" });
   });
 
-  it("文字を打っている最中は Delete と Shift T も効かない（Delete は枠の中の文字を消す）", () => {
+  it("Delete and Shift T do not work while typing either (Delete removes text in the box)", () => {
     expect(keyAction(k("Delete"), true, "other")).toBeNull();
     expect(keyAction(k("T", { shift: true }), true, "other")).toBeNull();
   });
 
-  it("文字を打っている最中でも Esc と Mod つきは効く", () => {
+  it("Esc and Mod keys work even while typing", () => {
     expect(keyAction(k("Escape"), true, "other")).toEqual({ kind: "back" });
     expect(keyAction(k(",", { ctrl: true }), true, "other")).toEqual({ kind: "audioSettings" });
     expect(keyAction(k("2", { ctrl: true, alt: true }), true, "other")).toEqual({ kind: "scale", scale: 125 });
   });
 
-  it("Mod は Linux と Windows で Ctrl、Mac で Cmd", () => {
+  it("Mod is Ctrl on Linux and Windows, Cmd on Mac", () => {
     expect(keyAction(k(",", { ctrl: true }), false, "other")).toEqual({ kind: "audioSettings" });
     expect(keyAction(k(",", { meta: true }), false, "other")).toBeNull();
     expect(keyAction(k(",", { meta: true }), false, "mac")).toEqual({ kind: "audioSettings" });
     expect(keyAction(k(",", { ctrl: true }), false, "mac")).toBeNull();
   });
 
-  it("Mod+Alt+1/2/3 で拡大率。Mac の Option で key が変わっても code で読む", () => {
+  it("Mod+Alt+1/2/3 for scale. Reads code even when Option on Mac changes key", () => {
     expect(keyAction(k("1", { ctrl: true, alt: true, code: "Digit1" }), false, "other")).toEqual({ kind: "scale", scale: 100 });
     expect(keyAction(k("3", { ctrl: true, alt: true, code: "Digit3" }), false, "other")).toEqual({ kind: "scale", scale: 150 });
     expect(keyAction(k("¡", { meta: true, alt: true, code: "Digit1" }), false, "mac")).toEqual({ kind: "scale", scale: 100 });
@@ -57,21 +57,21 @@ describe("keyAction", () => {
     expect(keyAction(k("1", { ctrl: true }), false, "other")).toBeNull();
   });
 
-  it("修飾キーつきの一文字は、一文字のキーとしては効かない", () => {
+  it("a letter with a modifier key does not work as a one-letter key", () => {
     expect(keyAction(k("e", { ctrl: true }), false, "other")).toBeNull();
     expect(keyAction(k("E", { shift: true }), false, "other")).toBeNull();
     expect(keyAction(k("a", { alt: true }), false, "other")).toBeNull();
   });
 
-  it("英字でない key でも、code が KeyA なら A", () => {
+  it("A when code is KeyA, even if key is not a Latin letter", () => {
     expect(keyAction(k("ち", { code: "KeyA" }), false, "other")).toEqual({ kind: "arrange" });
   });
 
-  it("IME で変換している最中は何もしない", () => {
+  it("does nothing while the IME is converting", () => {
     expect(keyAction(k("Escape", { composing: true }), true, "other")).toBeNull();
   });
 
-  it("↑ ↓ Enter は出口えらびの中だけ", () => {
+  it("↑ ↓ Enter only inside the output chooser", () => {
     expect(keyAction(k("ArrowUp"), false, "other", "outputChooser")).toEqual({ kind: "chooserUp" });
     expect(keyAction(k("ArrowDown"), false, "other", "outputChooser")).toEqual({ kind: "chooserDown" });
     expect(keyAction(k("Enter"), false, "other", "outputChooser")).toEqual({ kind: "chooserConfirm" });
@@ -79,7 +79,7 @@ describe("keyAction", () => {
     expect(keyAction(k("Enter"), false, "other", "main")).toBeNull();
   });
 
-  it("Space、R、Home、L、C、T、Shift T、Delete（仕様書 4 章）", () => {
+  it("Space, R, Home, L, C, T, Shift T, Delete (spec 4)", () => {
     expect(keyAction(k(" ", { code: "Space" }), false, "other")).toEqual({ kind: "playStop" });
     expect(keyAction(k("r"), false, "other")).toEqual({ kind: "record" });
     expect(keyAction(k("Home"), false, "other")).toEqual({ kind: "toStart" });
@@ -91,21 +91,21 @@ describe("keyAction", () => {
     expect(keyAction(k("ち", { code: "KeyT", shift: true }), false, "other")).toEqual({ kind: "stepTake", delta: -1 });
   });
 
-  it("Shift つきの Space・R・Delete と、Mod つきの T は何もしない", () => {
+  it("Space, R, Delete with Shift and T with Mod do nothing", () => {
     expect(keyAction(k(" ", { code: "Space", shift: true }), false, "other")).toBeNull();
     expect(keyAction(k("R", { shift: true }), false, "other")).toBeNull();
     expect(keyAction(k("Delete", { shift: true }), false, "other")).toBeNull();
     expect(keyAction(k("t", { ctrl: true }), false, "other")).toBeNull();
   });
 
-  it("ほかのキーは何もしない", () => {
+  it("other keys do nothing", () => {
     expect(keyAction(k("x"), false, "other")).toBeNull();
     expect(keyAction(k("F5"), false, "other")).toBeNull();
   });
 });
 
 describe("platformOf", () => {
-  it("Mac と、それ以外", () => {
+  it("Mac and the others", () => {
     expect(platformOf({ platform: "MacIntel" })).toBe("mac");
     expect(platformOf({ platform: "Linux x86_64" })).toBe("other");
     expect(platformOf({ platform: "Win32" })).toBe("other");
@@ -121,7 +121,7 @@ describe("isTyping", () => {
     (document.body.querySelector("[data-f]") as HTMLElement).focus();
   };
 
-  it("文字の input、textarea、contenteditable にカーソルがあると true", () => {
+  it("true when the cursor is in a text input, textarea or contenteditable", () => {
     focus(`<input data-f type="text">`);
     expect(isTyping()).toBe(true);
     focus(`<input data-f type="search">`);
@@ -134,7 +134,7 @@ describe("isTyping", () => {
     expect(isTyping()).toBe(true);
   });
 
-  it("ボタン、チェックボックス、何もないときは false", () => {
+  it("false for a button, a checkbox, or nothing", () => {
     focus(`<button data-f>x</button>`);
     expect(isTyping()).toBe(false);
     focus(`<input data-f type="checkbox">`);

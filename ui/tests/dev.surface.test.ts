@@ -1,4 +1,4 @@
-// 自動で動かす係は、測るとき（MELOET_MEASURE_DIR）に、Rust が台本を渡したときだけ読みこまれる。ふだんは何もしない。
+// The helper that moves by itself is loaded only when measuring (MELOET_MEASURE_DIR) and Rust passes a script. Usually it does nothing.
 import { flushSync, mount, unmount } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -33,8 +33,8 @@ beforeEach(() => {
 
 afterEach(() => vi.unstubAllGlobals());
 
-describe("自動で動かす係のはじまり", () => {
-  it("測っていないときは、台本をたずねず、係を読みこまない", async () => {
+describe("start of the helper that moves by itself", () => {
+  it("when not measuring, does not ask for a script and does not load the helper", async () => {
     bridge.measureEnabled.mockResolvedValue(false);
     const stop = await mounted();
     expect(bridge.uiScript).not.toHaveBeenCalled();
@@ -42,7 +42,7 @@ describe("自動で動かす係のはじまり", () => {
     stop();
   });
 
-  it("測っていても、台本がなければ動かさない", async () => {
+  it("even when measuring, does not move without a script", async () => {
     bridge.measureEnabled.mockResolvedValue(true);
     bridge.uiScript.mockResolvedValue(null);
     const stop = await mounted();
@@ -51,7 +51,7 @@ describe("自動で動かす係のはじまり", () => {
     stop();
   });
 
-  it("測っていて台本があれば、その台本で動かし、面を外すと止める", async () => {
+  it("when measuring with a script, moves with that script, and stops when the surface is removed", async () => {
     bridge.measureEnabled.mockResolvedValue(true);
     const stopScript = vi.fn();
     dev.startUiScript.mockReturnValue(stopScript);

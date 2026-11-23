@@ -1,5 +1,5 @@
-// ピアノロールの絵（paint.ts）: ノート（左はし gray.10 の 2px、面はベロシティ、選んだら accent）、そろえる前の位置の枠、
-// 動かしているノートのもとの位置の枠、ベロシティの棒、鍵盤の列の光る鍵。
+// Piano roll painting (paint.ts): notes (a 2px gray.10 left edge, face by velocity, accent when selected), the border of the position before quantize,
+// the border of the old position of moving notes, the velocity bars, and lit keys in the key column.
 import { describe, expect, it } from "vitest";
 import { Batch } from "../src/gl/batch";
 import { rgb } from "../src/gl/color";
@@ -39,8 +39,8 @@ function draw(p: RollPicture, marks: Uint8Array | null = null): number[][] {
   return out.rects();
 }
 
-describe("ノート", () => {
-  it("左はし gray.10 の 2px と面。線の 1px をあけ、高さ 11", () => {
+describe("notes", () => {
+  it("a 2px gray.10 left edge and the face. Leaves the 1px line, height 11", () => {
     const rects = draw(picture());
     const y = (72 - 60) * 12;
     const edge = rects.find((r) => r[0] === 1 && r[1] === y && r[3] === y + 11)!;
@@ -51,14 +51,14 @@ describe("ノート", () => {
     expect(colorOf(face)).toBe(is("color.gray.8"));
   });
 
-  it("選んだノートは accent、ベロシティ 100 は gray.10", () => {
+  it("selected notes are accent, velocity 100 is gray.10", () => {
     const rects = draw(picture());
     const faceAt = (key: number, x: number) => rects.find((r) => r[0] === x && r[1] === (72 - key) * 12)!;
     expect(colorOf(faceAt(62, 43))).toBe(is("color.accent"));
     expect(colorOf(faceAt(64, 83))).toBe(is("color.gray.10"));
   });
 
-  it("書けない行（スケール固定の音階の外）は gray.0、黒鍵の行は gray.1、白鍵の行は gray.2", () => {
+  it("rows not allowed (outside the scale lock scale) gray.0, black key rows gray.1, white key rows gray.2", () => {
     const rowAt = (key: number, p: RollPicture) =>
       draw(p).find((r) => r[0] === 0 && r[1] === (72 - key) * 12 && r[2] === 696 && r[3] === (72 - key) * 12 + 11)!;
     expect(colorOf(rowAt(61, picture()))).toBe(is("color.gray.1"));
@@ -66,7 +66,7 @@ describe("ノート", () => {
     expect(colorOf(rowAt(61, picture({ scale: { root: 0, mode: "major", lock: true } })))).toBe(is("color.gray.0"));
   });
 
-  it("小節の線 gray.6、拍の線 gray.4、グリッドの線 gray.3", () => {
+  it("bar lines gray.6, beat lines gray.4, grid lines gray.3", () => {
     const rects = draw(picture());
     const line = (x: number) => rects.find((r) => r[0] === x && r[2] === x + 1 && r[1] === 0 && r[3] === 492)!;
     expect(colorOf(line(0))).toBe(is("color.gray.6"));
@@ -75,7 +75,7 @@ describe("ノート", () => {
     expect(colorOf(line(160))).toBe(is("color.gray.6"));
   });
 
-  it("クオンタイズしたテイクは、もとと位置がちがうノートだけ、もとの位置に gray.7 の枠。ノートのあとに（上に）描く（B-64）", () => {
+  it("a quantized take shows a gray.7 border at the old position only for notes that moved. Drawn after (on top of) the notes (B-64)", () => {
     const played = G.shownOf(take([[(3 * TPQ) / 40, TPQ, 60], [TPQ, (3 * TPQ) / 4, 62], [2 * TPQ, TPQ / 2, 64]], 3), 0);
     const quantized = G.shownOf(
       take([[0, TPQ, 60], [TPQ, (3 * TPQ) / 4, 62], [2 * TPQ, TPQ / 2, 64]], 4, { origin: 3, froms: Uint32Array.from([0, 1, 2]) }),
@@ -88,7 +88,7 @@ describe("ノート", () => {
     expect(rects.slice(-4)).toEqual(frames);
   });
 
-  it("そろえる前の位置の枠は、選んでいるノートの分だけ accent（B-64）", () => {
+  it("the border of the position before quantize is accent only for selected notes (B-64)", () => {
     const played = G.shownOf(take([[(3 * TPQ) / 40, TPQ, 60], [(25 * TPQ) / 24, (3 * TPQ) / 4, 62], [2 * TPQ, TPQ / 2, 64]], 3), 0);
     const quantized = G.shownOf(
       take([[0, TPQ, 60], [TPQ, (3 * TPQ) / 4, 62], [2 * TPQ, TPQ / 2, 64]], 4, { origin: 3, froms: Uint32Array.from([0, 1, 2]) }),
@@ -103,7 +103,7 @@ describe("ノート", () => {
     expect(Math.min(...accentFrames.map((r) => r[0]!))).toBe(Math.round(((25 * TPQ) / 24) * GEOM.ppt) + 1);
   });
 
-  it("動かしている間は、もとの位置が accent の枠だけになり、ほかのノートのあとに描く（ノートは動く面が描く。B-64）", () => {
+  it("while moving, the old position is only an accent border, drawn after the other notes (the moving surface draws the notes, B-64)", () => {
     const drag: Drag = {
       kind: "move",
       press: { x: 0, y: 0, moved: true },
@@ -123,19 +123,19 @@ describe("ノート", () => {
     const frames = rects.slice(-4);
     expect(frames.every((r) => colorOf(r) === is("color.accent"))).toBe(true);
     expect(Math.min(...frames.map((r) => r[1]!))).toBe(y);
-    // 複製（Alt）のときは、もとのノートはそのまま
+    // With copy (Alt), the original notes stay
     expect(noteMarks(3, { ...drag, copy: true }, -1)).toEqual(new Uint8Array(3));
   });
 
-  it("消す道具で乗せているノートは gray.7", () => {
+  it("a note under the erase tool is gray.7", () => {
     const rects = draw(picture(), noteMarks(3, null, 2));
     const face = rects.find((r) => r[0] === 83 && r[1] === (72 - 64) * 12)!;
     expect(colorOf(face)).toBe(is("color.gray.7"));
   });
 });
 
-describe("ベロシティの帯と鍵盤の列", () => {
-  it("棒は幅 3、上はしに幅 7 の横線、127 で高さ 64。動かしている間は、もとの高さに gray.7 の横線", () => {
+describe("velocity band and key column", () => {
+  it("bars are 3 wide with a 7 wide line at the top, height 64 at 127. While moving, a gray.7 line at the old height", () => {
     const box = { x0: 0, y0: 0, x1: 696, y1: 71 };
     const out = new Batch();
     out.clip(0, 0, 696, 71);
@@ -144,7 +144,7 @@ describe("ベロシティの帯と鍵盤の列", () => {
     const rects = out.rects();
     const bar0 = rects.find((r) => r[0] === 1 && r[2] === 4)!;
     expect(bar0.slice(1, 4)).toEqual([71 - Math.round((60 * 64) / 127), 4, 71]);
-    // 横線は棒の 2 つ左から幅 7（左はしは面の外なので切れる）
+    // The line is 7 wide from 2 left of the bar (the left end is outside the surface, so it is cut)
     const cap0 = rects.find((r) => r[2] === 6 && r[3]! - r[1]! === 1)!;
     expect(cap0.slice(0, 2)).toEqual([0, bar0[1]]);
     const bar2 = rects.find((r) => r[0] === 81 && r[2] === 84)!;
@@ -153,7 +153,7 @@ describe("ベロシティの帯と鍵盤の列", () => {
     expect(grayCap.slice(0, 4)).toEqual([79, 71 - Math.round((100 * 64) / 127), 86, 71 - Math.round((100 * 64) / 127) + 1]);
   });
 
-  it("鍵盤の列: 白鍵 gray.5、黒鍵 gray.0、光る鍵 accent", () => {
+  it("key column: white keys gray.5, black keys gray.0, lit keys accent", () => {
     const out = new Batch();
     out.clip(0, 0, 55, 492);
     paintRollKeys(out, { x0: 0, y0: 0, x1: 55, y1: 492 }, GEOM, (key) => key === 60, 1);

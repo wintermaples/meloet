@@ -1,4 +1,4 @@
-// 約束 29（第 10 回）: トラックの見出しの「ピアノロールでひらく」と、「AI とつなぐ」の切りかえ。形と偽物の意図と場面。
+// Protocol 29: 「ピアノロールでひらく」 in the track head and the 「AI とつなぐ」 toggle. The shapes, fake intents and scenes.
 import { describe, expect, it } from "vitest";
 import type { AppState, Command } from "../src/bridge";
 import { PROTOCOL_VERSION } from "../src/bridge";
@@ -20,15 +20,15 @@ async function opened(scene = "tempoFolded") {
 
 const pianoRollOpen = (s: AppState) => s.workspace.layout.lower.some((b) => b.band === "pianoRoll");
 
-describe("約束 29 の形", () => {
-  it("版は 29。新しい曲では「AI とつなぐ」は切れていて、口は閉じている", () => {
+describe("shape of protocol 29", () => {
+  it("version 29. In a new song 「AI とつなぐ」 is off and the door is closed", () => {
     expect(PROTOCOL_VERSION).toBe(29);
     expect(fakeState().aiLink).toEqual({ on: false, port: "closed" });
   });
 });
 
-describe("偽物の意図", () => {
-  it("「AI とつなぐ」: オンで「待っています」、オフで「閉じています」。曲は変わらない", async () => {
+describe("fake intents", () => {
+  it("「AI とつなぐ」: on gives 「待っています」, off gives 「閉じています」. The song does not change", async () => {
     const { now, send } = await opened();
     const before = (await now()).song;
     let s = await send({ type: "setAiLink", on: true });
@@ -38,7 +38,7 @@ describe("偽物の意図", () => {
     expect(s.aiLink).toEqual({ on: false, port: "closed" });
   });
 
-  it("「ピアノロールでひらく」: 再生の線のクリップを見せ、なければクリップなし。帯はひらいたまま。手ではない", async () => {
+  it("「ピアノロールでひらく」: shows the clip under the play line, or no clip if there is none. The band stays open. Not a step", async () => {
     const { now, send } = await opened();
     const first = await now();
     const at = first.transport.position;
@@ -61,7 +61,7 @@ describe("偽物の意図", () => {
     expect(s.song.undoCount).toBe(first.song.undoCount);
   });
 
-  it("歌のトラックでは何もしない", async () => {
+  it("does nothing on a vocal track", async () => {
     const { now, send } = await opened("multiClip");
     const first = await now();
     const vocal = first.song.tracks.find((t) => t.kind.kind === "vocal")!;
@@ -71,8 +71,8 @@ describe("偽物の意図", () => {
   });
 });
 
-describe("場面", () => {
-  it("くわしい設定の 3 つの状態", () => {
+describe("scenes", () => {
+  it("the three states in the advanced settings", () => {
     expect(fakeScene("aiLinkOff")!.state.aiLink).toEqual({ on: false, port: "closed" });
     expect(fakeScene("aiLinkWaiting")!.state.aiLink).toEqual({ on: true, port: "waiting" });
     const connected = fakeScene("aiLinkConnected")!.state;

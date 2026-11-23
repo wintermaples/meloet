@@ -7,8 +7,8 @@ import { texts } from "../src/text/ja";
 
 const scene = (name: string) => fakeScene(name)!.state;
 
-describe("約束 14: 偽物の場面（ミキサー）", () => {
-  it("mixer はモック F4-Mixer の曲", () => {
+describe("protocol 14: fake scene (mixer)", () => {
+  it("mixer is the song of mock F4-Mixer", () => {
     const s = scene("mixer");
     expect(s.song.tracks.map((t) => [t.number, t.name, t.instrument, t.gainDb, t.pan, t.sends, t.inserts[0]])).toEqual([
       [1, "ピアノ", "grandPiano", 0, 0, [-15, null], null],
@@ -34,11 +34,11 @@ describe("約束 14: 偽物の場面（ミキサー）", () => {
     expect(s.workspace.layout.rightFront).toBe("params");
   });
 
-  it("paramsDelay はモック R6-Delay（戻り B のディレイ）、shelfEffects は「空き ＋」からの棚", () => {
+  it("paramsDelay is mock R6-Delay (the delay on return B), shelfEffects is the shelf opened from 「空き ＋」", () => {
     const delay = builtinOf(scene("paramsDelay").params)!;
     expect(delay.insert).toEqual({ strip: { kind: "return", bus: "b" }, slot: 0 });
     expect(delay.effect).toBe("delay");
-    // 間隔 1/8、テンポに合わせる オン、くり返し 35 %、5000 Hz、200 Hz、左右にゆれる オフ、ミックス 100 %。
+    // Interval 1/8, sync to tempo on, repeat 35 %, 5000 Hz, 200 Hz, ping-pong off, mix 100 %.
     expect(delay.values).toEqual([2, 250, 1, 35, 5000, 200, 0, 100]);
     expect(EFFECT_PARAMS.delay[0]!.steps[delay.values[0]!]).toBe("eighth");
 
@@ -48,7 +48,7 @@ describe("約束 14: 偽物の場面（ミキサー）", () => {
     expect(shelf.workspace.layout.rightFront).toBe("shelf");
   });
 
-  it("新しい曲は、戻り A にリバーブ、B にディレイ、マスターにリミッター。ピアノは A へ −15", () => {
+  it("a new song has a reverb on return A, a delay on B and a limiter on the master. The piano sends −15 to A", () => {
     const s = fakeState();
     expect(s.song.returns.map((r) => r.inserts[0])).toEqual(["reverb", "delay"]);
     expect(s.song.master.inserts[0]).toBe("limiter");
@@ -58,10 +58,10 @@ describe("約束 14: 偽物の場面（ミキサー）", () => {
   });
 });
 
-describe("約束 14: エフェクトの表と文面", () => {
+describe("protocol 14: the effect table and its text", () => {
   const has = (key: string) => expect(key in texts, key).toBe(true);
 
-  it("6 つのエフェクトと、どのパラメータにも名前がある", () => {
+  it("6 effects, and every parameter has a name", () => {
     expect(EFFECT_KINDS).toEqual(["eq4", "compressor", "reverb", "delay", "chorus", "limiter"]);
     for (const kind of EFFECT_KINDS) {
       has(`effect.${kind}`);
@@ -76,15 +76,15 @@ describe("約束 14: エフェクトの表と文面", () => {
     }
   });
 
-  it("リバーブとディレイは、仕様書 3 章の順", () => {
+  it("reverb and delay follow the order in spec 3", () => {
     const names = (kind: "reverb" | "delay") => EFFECT_PARAMS[kind].map((p) => (texts as Record<string, { text: string }>)[`param.${kind}.${p.id}`]!.text);
     expect(names("reverb")).toEqual(["響きの長さ", "部屋の大きさ", "プリディレイ", "高い音を落とす", "低い音を落とす", "広がり", "ミックス"]);
     expect(names("delay")).toEqual(["間隔", "間隔", "テンポに合わせる", "くり返し", "高い音を落とす", "低い音を落とす", "左右にゆれる", "ミックス"]);
   });
 });
 
-describe("約束 14: 計器（版 3）の戻り A ・ B", () => {
-  it("偽物が書いた物を、読み手が同じに読む", () => {
+describe("protocol 14: returns A and B in the meters (version 3)", () => {
+  it("what the fake writes, the reader reads the same", () => {
     const bytes = encodeTelemetry({ master: [0.5, 0.25], returns: [[0.125, 0.0625], [0, 2]], tracks: [[0.75, 1]] }, 3, 1000, 1);
     const t = decodeTelemetry(bytes);
     expect(Array.from(t.returnPeaks)).toEqual([0.125, 0.0625, 0, 2]);
@@ -94,10 +94,10 @@ describe("約束 14: 計器（版 3）の戻り A ・ B", () => {
   });
 });
 
-describe("約束 14: 偽物の「決める」と「音だけ変える」", () => {
+describe("protocol 14: the fake's commit and sound-only preview", () => {
   const run = (s: AppState, command: Command) => reduceMixer(s, s.shelf, s.song, command);
 
-  it("commit: false は状態を変えない。commit: true で曲が変わり、範囲に入る", () => {
+  it("commit: false does not change the state. commit: true changes the song and goes into the range", () => {
     const s = scene("mixer");
     const track = { kind: "track", id: s.song.tracks[0]!.id } as const;
     expect(run(s, { type: "setGain", strip: track, db: -9, commit: false })!.song).toEqual(s.song);
@@ -115,7 +115,7 @@ describe("約束 14: 偽物の「決める」と「音だけ変える」", () =>
     expect(run(s, { type: "setParam", insert, effect: "delay", param: 0, value: 1, commit: true })!.params).toEqual(s.params);
   });
 
-  it("えらぶ: インサートの枠、パラメータの行、棚からエフェクトを入れる", () => {
+  it("choose: insert slot, parameter row, add an effect from the shelf", () => {
     const s = scene("shelfEffects");
     const master: InsertRef = { strip: { kind: "master" }, slot: 0 };
     const picked = run(s, { type: "selectInsert", insert: master })!;
@@ -136,7 +136,7 @@ describe("約束 14: 偽物の「決める」と「音だけ変える」", () =>
     const removed = run(after, { type: "removeEffect", insert: { strip: track, slot: 1 } })!;
     expect(removed.song.tracks[0]!.inserts).toEqual([null, null, null, null]);
     expect(removed.params.selected).toBeNull();
-    // リバーブ ・ ディレイのミックス: トラック ・ マスターに入れたときは 30 %、戻りは表のとおり 100 %。
+    // Mix of reverb and delay: 30 % when added to a track or the master; returns use 100 % as in the table.
     const mixOf = (strip: InsertRef["strip"], effect: "reverb" | "delay" | "chorus") => {
       const open = { ...s, shelf: { ...s.shelf, mode: { kind: "insertEffect", strip, slot: 3 } as const, selectedEffect: effect } };
       const values = builtinOf(run(open, { type: "shelfConfirm" })!.params)!.values;
@@ -145,7 +145,7 @@ describe("約束 14: 偽物の「決める」と「音だけ変える」", () =>
     expect([mixOf(track, "reverb"), mixOf(track, "delay"), mixOf({ kind: "master" }, "reverb")]).toEqual([30, 30, 30]);
     expect([mixOf({ kind: "return", bus: "a" }, "reverb"), mixOf({ kind: "return", bus: "b" }, "delay")]).toEqual([100, 100]);
     expect(mixOf(track, "chorus")).toBe(EFFECT_PARAMS.chorus.find((p) => p.id === "mix")!.default);
-    // 音源の棚の Enter は、ここでは扱わない。
+    // Enter on the instrument shelf is not handled here.
     expect(run(scene("shelfAudition"), { type: "shelfConfirm" })).toBeNull();
   });
 });

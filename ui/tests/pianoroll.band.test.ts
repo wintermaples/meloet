@@ -1,4 +1,4 @@
-// ピアノロールの帯を mount して、道具の列（文、テイクの札、道具、− ＋、グリッドの一覧、三連符、スケール固定）、左右の欄のたたみ、CC の札を見る。
+// Mounts the piano roll band and checks the toolbar (text, take tags, tools, − ＋, grid list, triplets, scale lock), folding the left and right panels, and the CC tags.
 import { flushSync, mount, unmount } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState } from "../src/bridge";
@@ -58,15 +58,15 @@ const settle = async () => {
   }
 };
 
-describe("道具の列", () => {
-  it("クリップの文（モック A-PianoRoll）。選んだ数は accent", () => {
+describe("toolbar", () => {
+  it("clip text (mock A-PianoRoll). The selected count is accent", () => {
     show(scene());
     expect(text(q("[data-test=pr-info]"))).toBe("1 ピアノ ・ イントロ ・ 小節 1–4 ・ ノート 23（選択 3）");
     expect(text(q("[data-test=pr-info] .selected"))).toBe("3");
     expect(q("[data-test=pr-take]")).toBeNull();
   });
 
-  it("テイクが 2 つ以上なら切りかえの札。◂ ▸ は StepTake", () => {
+  it("with 2 or more takes, a switch tag. ◂ ▸ is StepTake", () => {
     const s = scene();
     s.song.tracks[0]!.clips[0] = { ...s.song.tracks[0]!.clips[0]!, take: 2, takes: 3 };
     show(s);
@@ -75,7 +75,7 @@ describe("道具の列", () => {
     expect(app.sent).toEqual([{ type: "stepTake", delta: -1 }]);
   });
 
-  it("道具（選ぶ ・ 書く ・ 消す）は画面だけの状態", () => {
+  it("the tool (select, draw, erase) is a screen-only state", () => {
     show(scene());
     q("[data-test=pr-tool-draw]")!.click();
     flushSync();
@@ -84,7 +84,7 @@ describe("道具の列", () => {
     expect(app.sent).toEqual([]);
   });
 
-  it("− ＋ で横の拡大を 1 段", () => {
+  it("− ＋ zooms one step sideways", () => {
     show(scene());
     q("[data-test=pr-zoom-in]")!.click();
     expect(prView.quarterPx).toBe(57);
@@ -93,7 +93,7 @@ describe("道具の列", () => {
     expect(prView.quarterPx).toBe(28);
   });
 
-  it("グリッドの一覧（1 小節 ・ 1/2 ・ 1/4 ・ 1/8 ・ 1/16 ・ 1/32）、三連符、スケール固定", () => {
+  it("grid list (「1 小節」, 1/2, 1/4, 1/8, 1/16, 1/32), triplets, scale lock", () => {
     show(scene());
     expect(text(q("[data-test=pr-grid]"))).toBe("グリッド 1/16");
     q("[data-test=pr-grid]")!.click();
@@ -116,8 +116,8 @@ describe("道具の列", () => {
   });
 });
 
-describe("クリップがない所（モック F-PREmpty、仕様書 3 章 ・ 6 章）", () => {
-  it("道具の列は「1 ピアノ ・ クリップなし」（番号は Mono）。ノートの場所の左上に案内の 2 文（「2」は Mono）", async () => {
+describe("where there is no clip (mock F-PREmpty, spec 3 and 6)", () => {
+  it("the toolbar is「1 ピアノ ・ クリップなし」(the number is Mono). Two hint sentences at the top left of the note area (「2」is Mono)", async () => {
     show(fakeScene("pianoRollEmpty")!.state);
     await settle();
     expect(text(q("[data-test=pr-info]"))).toBe("1 ピアノ ・ クリップなし");
@@ -131,7 +131,7 @@ describe("クリップがない所（モック F-PREmpty、仕様書 3 章 ・ 6
     expect(text(hint.querySelector(".m-num"))).toBe("2");
   });
 
-  it("書く道具でクリップができたら、案内は消え、道具の列はクリップの文", async () => {
+  it("when the draw tool makes a clip, the hint goes and the toolbar shows the clip text", async () => {
     const s = fakeScene("pianoRollEmpty")!.state;
     show(s);
     await settle();
@@ -143,15 +143,15 @@ describe("クリップがない所（モック F-PREmpty、仕様書 3 章 ・ 6
     expect(text(q("[data-test=pr-info]"))).toContain("1 ピアノ ・ イントロ");
   });
 
-  it("クリップがあれば案内は出さない", async () => {
+  it("no hint when there is a clip", async () => {
     show(scene());
     await settle();
     expect(q("[data-test=pr-empty-hint]")).toBeNull();
   });
 });
 
-describe("左右の欄と CC の札", () => {
-  it("見出しは欄ごとに 1 つ（▾ ノートの一覧 23 ・ ▾ 選んだノート 3）。押すとたたんで縦の見出し、押すとひらく", () => {
+describe("left and right panels and CC tags", () => {
+  it("one heading per panel (「▾ ノートの一覧 23」, 「▾ 選んだノート 3」). Pressing folds it to a vertical heading; pressing again opens it", () => {
     show(scene());
     expect(text(q("[data-test=pr-list-fold]"))).toBe("▾ ノートの一覧 23");
     expect(text(q("[data-test=pr-inspector-fold]"))).toBe("▾ 選んだノート 3");
@@ -169,7 +169,7 @@ describe("左右の欄と CC の札", () => {
     expect(prPanels).toEqual({ list: true, inspector: false });
   });
 
-  it("CC の札は本物の数で、押せる（jsdom は幅 0 なので「そのほかの CC」は出ない）", async () => {
+  it("CC tags show real counts and can be pressed (jsdom has width 0, so「そのほかの CC」is not shown)", async () => {
     show(scene());
     await settle();
     const tags = [...target.querySelectorAll<HTMLElement>(".cc-row button")];
@@ -178,7 +178,7 @@ describe("左右の欄と CC の札", () => {
     expect(tags.map((b) => text(b))[1]).toMatch(/^▸ ?ピッチベンド ?(点 )?1$/);
   });
 
-  it("札を押すと帯がひらいて ▾、もう一度押すとたたむ。ひらいた帯は覚えている（ひらいた順）", async () => {
+  it("pressing a tag opens the band with ▾, pressing again folds it. Open bands are remembered (in opening order)", async () => {
     show(scene());
     await settle();
     q("[data-test=pr-cc-pitchBend]")!.click();
@@ -186,7 +186,7 @@ describe("左右の欄と CC の札", () => {
     flushSync();
     expect(ccLanes.open).toEqual(["pitchBend", "sustain"]);
     expect(text(q("[data-test=pr-cc-sustain]"))).toMatch(/^▾ ?サステイン/);
-    // 帯の順は札と同じ（サステイン、ピッチベンド）。
+    // The band order is the same as the tags (sustain, pitch bend).
     expect([...target.querySelectorAll("[data-test^=pr-lane-]:not([data-test^=pr-lane-fold])")].map((l) => l.getAttribute("data-test"))).toEqual([
       "pr-lane-sustain",
       "pr-lane-pitchBend",

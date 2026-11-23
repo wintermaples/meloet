@@ -1,4 +1,4 @@
-// アレンジを mount して、名前と札、切りかえ、録音待機、目盛のドラッグ、クリップをえらぶ、横のスクロールを見る。
+// Mounts the arrange and checks names and tabs, take switching, record arm, dragging the ruler, choosing clips, and horizontal scroll.
 import { flushSync, mount, unmount } from "svelte";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, ClipView } from "../src/bridge";
@@ -14,7 +14,7 @@ vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));
 const BAR = 4 * TPQ;
 const WIDTH = 1000;
 
-// jsdom は大きさを測らない。時間の列の幅を 1000 にする。
+// jsdom does not measure sizes. Set the width of the time column to 1000.
 const proto = HTMLElement.prototype;
 const had = Object.getOwnPropertyDescriptor(proto, "clientWidth");
 beforeAll(() =>
@@ -44,7 +44,7 @@ function show(state: AppState): void {
   flushSync();
 }
 
-/** 部品をつけたまま、状態だけを入れかえる。 */
+/** Swaps only the state while the component stays mounted. */
 function show2(state: AppState): void {
   app.setState(state);
   flushSync();
@@ -69,7 +69,7 @@ function clip(id: number, name: string, fromBar: number, toBar: number, take = 1
   };
 }
 
-/** モック F-Takes: 「Aメロ」はテイク 3 つのうち 2 つ目で、えらんである。 */
+/** mock F-Takes: 「Aメロ」 is take 2 of 3, and is selected. */
 const takes = (selected: number | null = 3) =>
   app.stateWith((s) => {
     s.song.tracks[0]!.clips = [clip(1, "イントロ", 1, 5), clip(3, "Aメロ", 5, 9, 2, 3)];
@@ -81,7 +81,7 @@ function pointer(el: HTMLElement, type: string, clientX: number, clientY = 10, m
   flushSync();
 }
 
-/** トラック 3 本（偽物の場面 arrangeSelect と同じ形）。selected のクリップを選んである。 */
+/** 3 tracks (the same shape as the fake scene arrangeSelect). The `selected` clip is selected. */
 const three = (selected: number[] = [], clicked: number | null = null) =>
   app.stateWith((s) => {
     const base = s.song.tracks[0]!;
@@ -97,8 +97,8 @@ const three = (selected: number[] = [], clicked: number | null = null) =>
 
 const rows = () => (contextMenu.open?.entries ?? []).filter((e): e is MenuRow => e.kind === "row");
 
-describe("クリップの名前と札（仕様書 2 章「テイクの印と切りかえ」、モック F-Takes）", () => {
-  it("名前はクリップの中。テイクが 2 つ以上なら名前の前に「2/3」。えらんだクリップの札は accent", () => {
+describe("clip name and tabs (spec 2 (Take mark and switch), mock F-Takes)", () => {
+  it("the name is inside the clip. With 2 or more takes, 「2/3」 before the name. The selected clip's tab is accent", () => {
     show(takes());
     const labels = qa(".clip-label");
     expect(labels.map(text)).toEqual(["イントロ", "2/3 Aメロ"]);
@@ -107,7 +107,7 @@ describe("クリップの名前と札（仕様書 2 章「テイクの印と切�
     expect(q(".take-tag")!.classList.contains("selected")).toBe(true);
   });
 
-  it("幅が 28 より狭いクリップは、6×6 の四角だけ", () => {
+  it("a clip narrower than 28 shows only a 6×6 square", () => {
     show(
       app.stateWith((s) => {
         s.song.tracks[0]!.clips = [{ ...clip(1, "サビ", 1, 2, 2, 3), end: (5 * TPQ) / 6 }];
@@ -117,7 +117,7 @@ describe("クリップの名前と札（仕様書 2 章「テイクの印と切�
     expect(q(".take-square")).not.toBeNull();
   });
 
-  it("えらんだクリップのすぐ上に切りかえの札。◂ ▸ で stepTake", () => {
+  it("the switch tab is just above the selected clip. ◂ ▸ send stepTake", () => {
     show(takes());
     const sw = q(".switcher")!;
     expect(text(sw)).toBe("◂ テイク 2 / 3 ▸ T");
@@ -133,14 +133,14 @@ describe("クリップの名前と札（仕様書 2 章「テイクの印と切�
     ]);
   });
 
-  it("テイクが 1 つのクリップや、何もえらんでいないときは、切りかえの札なし", () => {
+  it("no switch tab for a clip with 1 take, or when nothing is selected", () => {
     show(takes(1));
     expect(q(".switcher")).toBeNull();
   });
 });
 
-describe("押す: クリップをえらぶ、録音待機", () => {
-  it("クリップを押すと selectClip。何もない所は、動かさずに離すと null。えらんであるクリップは送らない", () => {
+describe("press: choose a clip, record arm", () => {
+  it("pressing a clip sends selectClip. An empty place sends null when released without moving. A selected clip is not sent", () => {
     show(takes());
     const lanes = q(".lanes")!;
     pointer(lanes, "pointerdown", 100, 30);
@@ -155,7 +155,7 @@ describe("押す: クリップをえらぶ、録音待機", () => {
     ]);
   });
 
-  it("● は、そのトラックを選ぶ（録音待機は、いつも選んだトラック）。オンは rec。M ・ S も押せて、オンは on（accent）", () => {
+  it("● selects that track (record arm always follows the selected track). On is rec. M and S can be pressed too, on is on (accent)", () => {
     show(three());
     const arm = qa("button[aria-label=録音待機]");
     expect(arm.map((b) => b.getAttribute("aria-pressed"))).toEqual(["false", "true", "false"]);
@@ -176,7 +176,7 @@ describe("押す: クリップをえらぶ、録音待機", () => {
     ]);
   });
 
-  it("録音中 ・ カウントイン中も M ・ S ・ ● は押せる（ミュートは A-14 で受けるようになった）", () => {
+  it("M, S and ● can be pressed while recording and during count-in (A-14 made mute accepted)", () => {
     for (const state of ["recording", "countIn"] as const) {
       const s = three();
       s.transport.state = state;
@@ -198,8 +198,8 @@ describe("押す: クリップをえらぶ、録音待機", () => {
   });
 });
 
-describe("選んだトラック（B-70）", () => {
-  it("playTarget の見出しは selected（地 gray.4）。見出しを押して離すと selectTrack、M ・ S ・ ● の上や、選んであるトラックは送らない", () => {
+describe("selected track (B-70)", () => {
+  it("the playTarget head is selected (bg gray.4). Pressing and releasing a head sends selectTrack; not over M, S, ● or for the selected track", () => {
     show(three());
     const heads = qa("[data-test=track-head]");
     expect(heads.map((h) => h.classList.contains("selected"))).toEqual([false, true, false]);
@@ -211,8 +211,8 @@ describe("選んだトラック（B-70）", () => {
   });
 });
 
-describe("クリップを何個も選ぶ ・ 動かす（B-71）", () => {
-  it("選んだクリップはぜんぶ「選んだ」の札。テイクの切りかえの札は selectedClip だけ", () => {
+describe("select and move many clips (B-71)", () => {
+  it("all selected clips have the selected tab. The take switch tab is only for selectedClip", () => {
     show(three([3, 41], 41));
     expect(qa(".take-tag.selected").length).toBe(1);
     expect(q(".switcher")).toBeNull();
@@ -220,7 +220,7 @@ describe("クリップを何個も選ぶ ・ 動かす（B-71）", () => {
     expect(q(".switcher")).not.toBeNull();
   });
 
-  it("Shift ＋ 押すと selectClips add。選んである中の 1 つを動かさずに離すと、それだけを selectClip", () => {
+  it("Shift + press sends selectClips add. Releasing one of the selected clips without moving sends selectClip for it alone", () => {
     show(three([3], 3));
     const lanes = q(".lanes")!;
     pointer(lanes, "pointerdown", 300, 100, { shiftKey: true });
@@ -234,10 +234,10 @@ describe("クリップを何個も選ぶ ・ 動かす（B-71）", () => {
     expect(app.sent).toEqual([{ type: "selectClip", clip: 3 }]);
   });
 
-  it("空いた所から囲むと selectClips（Shift で add）。枠は accent の box-frame。Esc でやめる", () => {
+  it("a box drawn from an empty place sends selectClips (add with Shift). The frame is the accent box-frame. Esc stops it", () => {
     show(three([1], 1));
     const lanes = q(".lanes")!;
-    // 行 2（ベース）の 3 小節目の空き → 行 1 の 6 小節目まで。イントロ、Aメロ、ベース A にかかる。
+    // From the empty bar 3 of row 2 (bass) to bar 6 of row 1. Covers the intro, 「Aメロ」 and 「ベース A」.
     pointer(lanes, "pointerdown", 140, 100);
     pointer(lanes, "pointermove", 330, 30);
     const box = q("[data-test=arrange-box]")!;
@@ -257,7 +257,7 @@ describe("クリップを何個も選ぶ ・ 動かす（B-71）", () => {
     ]);
   });
 
-  it("選んであるクリップをつかむと、選んだぜんぶを moveClips。もとの場所はぜんぶ gray.7 の枠", () => {
+  it("grabbing a selected clip sends moveClips for all selected. Every old place gets a gray.7 frame", () => {
     show(three([3, 41], 41));
     const lanes = q(".lanes")!;
     pointer(lanes, "pointerdown", 300, 100);
@@ -268,20 +268,20 @@ describe("クリップを何個も選ぶ ・ 動かす（B-71）", () => {
     expect(app.sent).toEqual([{ type: "moveClips", clips: [3, 41], ticks: BAR, tracks: 0, copy: false }]);
   });
 
-  it("選ばれていないクリップをつかむと、それだけを選んで動かす", () => {
+  it("grabbing a clip that is not selected selects and moves only it", () => {
     show(three([3, 41], 41));
     const lanes = q(".lanes")!;
     pointer(lanes, "pointerdown", 100, 170);
     pointer(lanes, "pointermove", 100, 100);
     pointer(lanes, "pointerup", 100, 100);
     expect(app.sent[0]).toEqual({ type: "selectClip", clip: 43 });
-    // ドラムの 8ビート（1–9）をベースの行へ: ベース A と重なるので送らない。
+    // The drum 8-beat (1–9) to the bass row: it overlaps 「ベース A」, so nothing is sent.
     expect(app.sent).toHaveLength(1);
   });
 });
 
-describe("目盛（ヤチヨさんの決め: ループは目盛のドラッグ）", () => {
-  it("ドラッグすると、その間は見た目だけ先に動き、離すと setLoop", () => {
+describe("ruler (the owner's decision: the loop is a drag on the ruler)", () => {
+  it("while dragging, only the look moves first; releasing sends setLoop", () => {
     show(takes());
     const ruler = q(".ruler.bars")!;
     pointer(ruler, "pointerdown", 256);
@@ -292,7 +292,7 @@ describe("目盛（ヤチヨさんの決め: ループは目盛のドラッグ�
     expect(app.sent).toEqual([{ type: "setLoop", fromBar: 5, toBar: 9 }]);
   });
 
-  it("押すだけなら locate。目盛に見えている線（ふだんは小節）に吸いつき、Shift なら吸いつかない（B-61）", () => {
+  it("a plain press sends locate. Snaps to the lines shown on the ruler (bars by default); with Shift it does not snap (B-61)", () => {
     show(takes());
     const ruler = q(".ruler.bars")!;
     pointer(ruler, "pointerdown", 300);
@@ -306,7 +306,7 @@ describe("目盛（ヤチヨさんの決め: ループは目盛のドラッグ�
     expect(q(".loop-mark")).toBeNull();
   });
 
-  it("ループがオンなら、目盛の上辺に accent と「マーカー ・ ループ 5–9」。オフなら出さない", () => {
+  it("with the loop on, accent on the top edge of the ruler and 「マーカー ・ ループ 5–9」. Not shown when off", () => {
     const on = takes();
     on.song.loopRange = { start: 4 * BAR, end: 8 * BAR };
     on.song.loopOn = true;
@@ -321,7 +321,7 @@ describe("目盛（ヤチヨさんの決め: ループは目盛のドラッグ�
   });
 });
 
-describe("右クリックの一覧（B-60）", () => {
+describe("context menu (B-60)", () => {
   const ctx = (el: HTMLElement, x: number, y: number, more: MouseEventInit = {}) => {
     const ev = new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 2, ...more });
     el.dispatchEvent(ev);
@@ -330,7 +330,7 @@ describe("右クリックの一覧（B-60）", () => {
   };
   afterEach(() => (contextMenu.open = null));
 
-  it("クリップ: 選ばれていなければ選んでから。行と右のキー。テイクが 1 つなら次 ・ 前のテイクは使えない", () => {
+  it("clip: selects it first if not selected. Rows and keys on the right. With 1 take, next and previous take are disabled", () => {
     show(three([3], 3));
     const ev = ctx(q(".lanes")!, 300, 100);
     expect(ev.defaultPrevented).toBe(true);
@@ -353,11 +353,11 @@ describe("右クリックの一覧（B-60）", () => {
       "menu.deleteTake",
     ]);
     expect(rows().map((r) => r.key)).toEqual(["E", "Ctrl X", "Ctrl C", "Ctrl V", "Ctrl D", "Delete", undefined, "Ctrl J", "F2", "T", "Shift T", undefined]);
-    // つなげるのは 2 つ以上選んだとき（右クリックで 41 だけを選びなおした）。
+    // Join needs 2 or more selected (the right click selected only 41 again).
     expect(rows().map((r) => r.usable)).toEqual([true, true, true, true, true, true, true, false, true, false, false, false]);
   });
 
-  it("クリップの行は、押したときの選択に向く。選んであるクリップは選びなおさない", () => {
+  it("the clip rows act on the selection at the time of the press. A selected clip is not selected again", () => {
     show(three([3, 41], 41));
     ctx(q(".lanes")!, 300, 30);
     expect(app.sent).toEqual([]);
@@ -369,7 +369,7 @@ describe("右クリックの一覧（B-60）", () => {
       { type: "pasteClips", to: null },
       { type: "duplicateClips", clips: [3, 41] },
       { type: "deleteSelected" },
-      // ここで切る: 右クリックした所（4.69 小節）を、目盛に見えている線（小節）に寄せる。切るのは右クリックしたクリップだけ。
+      // Cut here: the right-clicked place (bar 4.69) snaps to the lines shown on the ruler (bars). Only the right-clicked clip is cut.
       { type: "splitClipAt", clip: 3, tick: 5 * BAR },
       { type: "joinClips", clips: [3, 41] },
       { type: "stepTake", delta: 1 },
@@ -378,7 +378,7 @@ describe("右クリックの一覧（B-60）", () => {
     ]);
   });
 
-  it("録音中は、曲を変える行が使えない（ピアノロールでひらく ・ コピーは使える）", () => {
+  it("while recording, rows that change the song are disabled (open in piano roll and copy still work)", () => {
     const s = three([3], 3);
     s.transport.state = "recording";
     show(s);
@@ -386,7 +386,7 @@ describe("右クリックの一覧（B-60）", () => {
     expect(rows().map((r) => r.usable)).toEqual([true, false, true, false, false, false, false, false, false, false, false, false]);
   });
 
-  it("空いた所: 貼りつけ。押した所をグリッド（1 小節）に寄せ、Shift なら寄せない", () => {
+  it("empty place: paste. The pressed place snaps to the grid (1 bar); not with Shift", () => {
     show(three());
     ctx(q(".lanes")!, 600, 100);
     expect(rows().map((r) => [r.label, r.key, r.usable])).toEqual([
@@ -396,7 +396,7 @@ describe("右クリックの一覧（B-60）", () => {
     rows()[0]!.run();
     ctx(q(".lanes")!, 600, 100, { shiftKey: true });
     rows()[0]!.run();
-    // ここにクリップを作る: 押した所のティックのまま（小節に寄せるのは Rust）。
+    // Make a clip here: the pressed tick as it is (Rust snaps it to the bar).
     rows()[1]!.run();
     expect(app.sent).toEqual([
       { type: "pasteClips", to: { track: 2, tick: 9 * BAR } },
@@ -405,7 +405,7 @@ describe("右クリックの一覧（B-60）", () => {
     ]);
   });
 
-  it("トラックの見出し（モック R6-Tracks）: ミュート ・ ソロ ・ 録音待機 ／ 名前 ・ 色 ・ 上へ ・ 下へ ／ 消す。選ばれていなければ selectTrack してから", () => {
+  it("track head (mock R6-Tracks): mute, solo, record arm / name, color, up, down / delete. Sends selectTrack first if not selected", () => {
     show(three());
     ctx(qa("[data-test=track-head]")[0]!, 10, 10);
     expect(app.sent).toEqual([{ type: "selectTrack", track: 1, fromArm: false }]);
@@ -443,16 +443,16 @@ describe("右クリックの一覧（B-60）", () => {
   });
 });
 
-describe("キーが向く帯の印（B-72）", () => {
-  it("見出しの行と目盛の上を横いっぱいに（帯の箱のすぐ下に 1 つ）", () => {
+describe("mark of the band that keys go to (B-72)", () => {
+  it("across the whole head row and ruler (one, just below the band's box)", () => {
     show(takes());
     const mark = q("[data-test=arrange-focus-mark]")!;
     expect(mark.parentElement!.classList.contains("arrange")).toBe(true);
   });
 });
 
-describe("横のスクロール", () => {
-  it("Shift＋ホイールと横のホイールで、目盛とクリップがいっしょに動く。0 より左へは行かない", () => {
+describe("horizontal scroll", () => {
+  it("Shift+wheel and the horizontal wheel move the ruler and clips together. Never left of 0", () => {
     const s = takes();
     s.song.tracks[0]!.clips.push(clip(5, "サビ", 30, 34));
     show(s);
@@ -481,7 +481,7 @@ describe("横のスクロール", () => {
   });
 });
 
-describe("録っているあいだ（モック F-ArrangeRec）", () => {
+describe("while recording (mock F-ArrangeRec)", () => {
   const recording = () =>
     app.stateWith((s) => {
       s.song.tracks[0]!.clips = [clip(1, "イントロ", 1, 5), clip(3, "ピアノ", 5, 7)];
@@ -498,7 +498,7 @@ describe("録っているあいだ（モック F-ArrangeRec）", () => {
       };
     });
 
-  it("クリップの名前の所は「● 録音中 テイク 2」。下になったクリップの名前は出さない。線は rec", () => {
+  it("the clip name place shows 「● 録音中 テイク 2」. Names of clips underneath are hidden. The line is rec", () => {
     show(recording());
     expect(qa(".clip-label").map(text)).toEqual(["イントロ", "● 録音中 テイク 2"]);
     expect(q(".clip-label.recording")).not.toBeNull();
@@ -507,7 +507,7 @@ describe("録っているあいだ（モック F-ArrangeRec）", () => {
     expect(q(".rec-tail")!.parentElement!.dataset.glRegion).toBe("recordingClip");
   });
 
-  it("止まっていれば線は accent で、transport.position の所", () => {
+  it("when stopped, the line is accent at transport.position", () => {
     show(takes());
     const line = q(".play-line")!;
     expect(line.classList.contains("rec")).toBe(false);
@@ -521,8 +521,8 @@ describe("録っているあいだ（モック F-ArrangeRec）", () => {
   });
 });
 
-describe("全体図（高さ 136 未満）", () => {
-  it("クリップの線（rects）と、見えている範囲の枠と、再生の位置の線", () => {
+describe("overview (height under 136)", () => {
+  it("clip lines (rects), the frame of the visible range, and the play position line", () => {
     const s = takes();
     s.workspace.layout = {
       ...s.workspace.layout,

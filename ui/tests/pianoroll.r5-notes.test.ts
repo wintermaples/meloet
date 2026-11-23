@@ -1,5 +1,5 @@
-// 第 5 版の「選んだノート」と一覧（docs/history/design-notes.ja.md C-6 50 ・ 51 ・ 58 ・ 67）: 長さをそろえる、かける / かけなおす、
-// 音の欄の Shift 12、ひらいた「CC の一覧」。
+// 「選んだノート」 and the list in version 5 (docs/history/design-notes.ja.md C-6 50, 51, 58, 67): match length, apply / apply again,
+// Shift 12 in the sound field, the opened 「CC の一覧」.
 import { flushSync, mount, unmount, type Component } from "svelte";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, TakeNotes } from "../src/bridge";
@@ -69,8 +69,8 @@ function show(component: Component): void {
   flushSync();
 }
 
-describe("長さをそろえる（C-6 51）", () => {
-  it("▸ gray.8 でたたんで始まり、押すと ▾ と「まとめて変える行」。ばらばらなら空。Enter かボタンで matchLength", async () => {
+describe("match length (C-6 51)", () => {
+  it("starts folded with ▸ gray.8; pressing gives ▾ and the change-all row. Empty when they differ. matchLength with Enter or the button", async () => {
     const { take } = await scene("pianoRoll");
     show(NoteInspector);
     const head = q('[data-test="inspector-same-length"]')!;
@@ -94,7 +94,7 @@ describe("長さをそろえる（C-6 51）", () => {
     expect(input.value).toBe("0.0960");
     app.sent.length = 0;
 
-    // 拍 . ティックのティックは 0〜1919（4/4）。ほかの欄と同じく近いはしにして、状態行で言う。
+    // the tick of beat . tick is 0 to 1919 (4/4). Like the other fields, it goes to the nearest end and the status line says so.
     typeInto(input, "1.9999");
     button.click();
     expect(app.sent).toEqual([
@@ -109,7 +109,7 @@ describe("長さをそろえる（C-6 51）", () => {
     expect(app.sent).toEqual([{ type: "rejectValue", field: "length", kept: "ばらばら", range: expect.any(String) }]);
   });
 
-  it("みな同じならその値。↑ ↓ は表示のいちばん下のけた。クリップの外まではのばさない。選んでいなければ使えない", async () => {
+  it("the value when all are the same. ↑ ↓ change the lowest shown digit. Does not extend past the clip. Disabled when nothing is selected", async () => {
     const { take } = await scene("pianoRoll", (s) => (s.pianoRoll.selectedNotes = [{ start: 14, end: 15 }]));
     inspectorFolds.sameLength = true;
     show(NoteInspector);
@@ -141,15 +141,15 @@ describe("長さをそろえる（C-6 51）", () => {
     expect(app.sent).toEqual([]);
   });
 
-  it("状態行「3 ノートの長さを 0.0960 にそろえました。」（仕様書 6 章「まとめてそろえた」の形）", async () => {
+  it("status line 「3 ノートの長さを 0.0960 にそろえました。」 (the form of spec 6 「まとめてそろえた」)", async () => {
     await scene("lengthMatched");
     show(StatusLine);
     expect(text(q(".message"))).toBe("3 ノートの長さを 0.0960 にそろえました。");
   });
 });
 
-describe("まとめて変える行の寸法（C-6 67）", () => {
-  it("長さとベロシティの行は同じ部品（字 ・ 入力の枠 ・ そろえる）。寸法は絵で見る", async () => {
+describe("sizes of the change-all row (C-6 67)", () => {
+  it("the length and velocity rows are the same part (text, input box, align). Sizes are checked in pictures", async () => {
     await scene("pianoRoll");
     inspectorFolds.sameLength = true;
     inspectorFolds.velocityAll = true;
@@ -163,8 +163,8 @@ describe("まとめて変える行の寸法（C-6 67）", () => {
   });
 });
 
-describe("かける と かけなおす（C-6 58）", () => {
-  it("まだかけていないテイクは「かける」で、もとの位置へ戻すは使えない。かけたあとは「かけなおす」", async () => {
+describe("apply and apply again (C-6 58)", () => {
+  it("a take not applied yet shows 「かける」, and going back to the original position is disabled. After applying, 「かけなおす」", async () => {
     await scene("pianoRoll", undefined, (take) => (take.origin = 0));
     show(NoteInspector);
     const buttons = qa(".buttons .m-btn");
@@ -178,8 +178,8 @@ describe("かける と かけなおす（C-6 58）", () => {
   });
 });
 
-describe("音の欄の Shift ↑ ↓ は 12 半音（C-6 58）", () => {
-  it("音は 12、ほかの欄は 10", async () => {
+describe("Shift ↑ ↓ in the sound field is 12 semitones (C-6 58)", () => {
+  it("12 for sound, 10 for the other fields", async () => {
     const { take } = await scene("pianoRoll");
     const clip = shown.shown.clip!;
     const keySpec = noteFieldSpec("key", take, clip, [14], METER)!;
@@ -189,9 +189,9 @@ describe("音の欄の Shift ↑ ↓ は 12 半音（C-6 58）", () => {
   });
 });
 
-// ---- CC の一覧（C-6 50、モック R5-Lists） ----
+// ---- CC list (C-6 50, mock R5-Lists) ----
 
-/** CC の点を 4 つ（サステイン踏む ・ サステイン離す ・ ピッチベンド ・ CC 7）にしたテイク。 */
+/** A take with 4 control points (sustain down, sustain up, pitch bend, CC 7). */
 function withControls(take: TakeNotes): void {
   take.controlTicks = Uint32Array.from([0, (7 * TPQ) / 4, 2 * TPQ, (5 * TPQ) / 2]);
   take.controlKinds = Uint8Array.from([CONTROL_CC, CONTROL_CC, CONTROL_PITCH_BEND, CONTROL_CC]);
@@ -199,7 +199,7 @@ function withControls(take: TakeNotes): void {
   take.controlValues = Int16Array.from([127, 0, 2048, 100]);
 }
 
-/** tick の順で CC 7 ・ モジュレーション ・ ピッチベンド ・ サステイン ・ CC 11 ・ サステイン ・ ピッチベンド。 */
+/** In tick order: CC 7, modulation, pitch bend, sustain, CC 11, sustain, pitch bend. */
 function mixedControls(take: TakeNotes): void {
   take.controlTicks = Uint32Array.from([0, 1, 2, 3, 4, 5, 6].map((i) => (i * 5 * TPQ) / 24));
   take.controlKinds = Uint8Array.from([CONTROL_CC, CONTROL_CC, CONTROL_PITCH_BEND, CONTROL_CC, CONTROL_CC, CONTROL_CC, CONTROL_PITCH_BEND]);
@@ -207,8 +207,8 @@ function mixedControls(take: TakeNotes): void {
   take.controlValues = Int16Array.from([100, 64, 0, 127, 90, 0, 2048]);
 }
 
-describe("CC の一覧の行と欄（DOM なし）", () => {
-  it("種類は帯と同じ名前、値は帯の読み値と同じ書きかた", async () => {
+describe("CC list rows and fields (no DOM)", () => {
+  it("kinds have the same names as the bands, values are written like the band readings", async () => {
     const { take } = await scene("pianoRoll", undefined, withControls);
     const clip = shown.shown.clip!;
     const rows = [0, 1, 2, 3].map((i) => ccRow(take, clip, i, METER));
@@ -220,7 +220,7 @@ describe("CC の一覧の行と欄（DOM なし）", () => {
     ]);
   });
 
-  it("種類ごとのまとまりは CC の札と同じ順（サステイン、ピッチベンド、モジュレーション、そのほかは番号の順）。テイクにない種類は出さない", async () => {
+  it("groups by kind are in the same order as the CC tags (sustain, pitch bend, modulation, the others by number). Kinds not in the take are not shown", async () => {
     const { take } = await scene("pianoRoll", undefined, mixedControls);
     const groups = ccGroups(take);
     expect(groups.map((g) => [g.name, g.points])).toEqual([
@@ -238,7 +238,7 @@ describe("CC の一覧の行と欄（DOM なし）", () => {
     expect(neighborPoint(lines, 8, 1)).toBeNull();
   });
 
-  it("値: 範囲の外は近いはし。オン ・ オフの CC は 0 か 127 にだけ止まる。決めると moveControls 1 つ", async () => {
+  it("value: outside the range goes to the nearest end. On/off CCs stop only at 0 or 127. Setting it sends one moveControls", async () => {
     const { take } = await scene("pianoRoll", undefined, withControls);
     const clip = shown.shown.clip!;
     const pb = controlFieldSpec("value", take, clip, 2, METER)!;
@@ -258,8 +258,8 @@ describe("CC の一覧の行と欄（DOM なし）", () => {
   });
 });
 
-describe("ひらいた CC の一覧（mount）", () => {
-  it("列の見出し 位置 ・ 値、種類ごとの見出しの下に点を位置の順に。選んだ行は selected。押すと selectControls", async () => {
+describe("opened CC list (mount)", () => {
+  it("column headings position and value; points in position order under each kind heading. The chosen row is selected. Pressing sends selectControls", async () => {
     const { take } = await scene(
       "pianoRoll",
       (s) => (s.pianoRoll.selectedControls = [{ start: 2, end: 3 }]),
@@ -270,7 +270,7 @@ describe("ひらいた CC の一覧（mount）", () => {
     const rows = qa(".row");
     expect(rows.map((r) => text(r)!.split(" ").slice(1).join(" "))).toEqual(["踏む（127）", "OFF（0）", "+2048", "100"]);
     expect(rows.map((r) => r.classList.contains("selected"))).toEqual([false, false, true, false]);
-    // 見出しと点の行は、上から順に同じ高さで重ならない。
+    // heading rows and point rows are the same height from the top and do not overlap.
     const order = qa(".group, .row").map((el) => [el.dataset.group ?? el.dataset.point, el.style.transform]);
     expect(order).toEqual([
       ["cc64", "translateY(0px)"],
@@ -285,7 +285,7 @@ describe("ひらいた CC の一覧（mount）", () => {
     expect(app.sent).toEqual([{ type: "selectControls", take: take.id, points: [3], mode: "add" }]);
   });
 
-  it("Enter で位置の枠、Tab で値の枠（種類はとばす）、Enter で決める。Esc でやめる", async () => {
+  it("Enter goes to the position box, Tab to the value box (skipping kind), Enter sets. Esc cancels", async () => {
     const { take } = await scene("pianoRoll", undefined, withControls);
     show(CcListPanel);
     const row = qa(".row")[2]!;
@@ -317,7 +317,7 @@ describe("ひらいた CC の一覧（mount）", () => {
     expect(app.sent).toEqual([]);
   });
 
-  it("点が何千あっても、見えている行だけ作る", async () => {
+  it("even with thousands of points, only visible rows are made", async () => {
     const n = 5000;
     await scene("pianoRoll", undefined, (take) => {
       take.controlTicks = Uint32Array.from({ length: n }, (_, i) => i);
@@ -330,7 +330,7 @@ describe("ひらいた CC の一覧（mount）", () => {
     expect(q(".rows")!.style.height).toBe(`${(n + 1) * 20}px`);
   });
 
-  it("種類の見出し: ▾ 名前 数。押すとたたみ（▸ gray.8）、もう一度でひらく。たたんだ状態は一覧をとじても覚えている", async () => {
+  it("kind heading: ▾ name count. Pressing folds it (▸ gray.8), again opens it. The folded state is kept even after the list closes", async () => {
     await scene("pianoRoll", undefined, mixedControls);
     show(CcListPanel);
     const heads = () => qa(".group").map((g) => text(g));
@@ -358,12 +358,12 @@ describe("ひらいた CC の一覧（mount）", () => {
     q('[data-group="pitchBend"]')!.click();
     flushSync();
     expect(heads()[1]).toBe("▾ ピッチベンド 2");
-    // 窓は 200（10 行）なので、11 行目までを作る。
+    // the window is 200 (10 rows), so rows up to the 11th are made.
     expect(qa(".row").map((r) => r.dataset.point)).toEqual(["3", "5", "2", "6", "1", "0"]);
     expect(ccList.folded).toEqual([]);
   });
 
-  it("Tab で行を移るとき、見出しと、たたんだ種類の行はとばす", async () => {
+  it("moving rows with Tab skips headings and rows of folded kinds", async () => {
     await scene("pianoRoll", undefined, mixedControls);
     ccList.folded = ["pitchBend"];
     show(CcListPanel);

@@ -1,9 +1,9 @@
-// 測るときだけ動く、ピアノロールを自動で動かす係（ui/src/dev/script.ts）。本物のできごとを、ノートの場所の部品に送る。
+// The helper that moves the piano roll by itself, only when measuring (ui/src/dev/script.ts). It sends real events to the note area part.
 import { describe, expect, it } from "vitest";
 import { parseUiScript, SCRIPT_REPORT, UiScript, type Clock, type ScriptRecord, type Target } from "../src/dev/script";
 
-describe("MELOET_UI_SCRIPT の読みかた", () => {
-  it("名前と回数を , でつなぐ。回数がなければ 100", () => {
+describe("reading MELOET_UI_SCRIPT", () => {
+  it("names and counts joined with , . 100 when there is no count", () => {
     expect(parseUiScript("pr-scroll:20")).toEqual([{ kind: "scroll", count: 20 }]);
     expect(parseUiScript("pr-zoom, pr-drag:1000")).toEqual([
       { kind: "zoom", count: 100 },
@@ -11,14 +11,14 @@ describe("MELOET_UI_SCRIPT の読みかた", () => {
     ]);
   });
 
-  it("読めない物が 1 つでもあれば、何もしない", () => {
+  it("does nothing if even one item cannot be read", () => {
     for (const bad of ["", "pr-fly:3", "pr-scroll:0", "pr-scroll:-1", "pr-scroll:1.5", "pr-scroll:2:3", "pr-scroll:x"]) {
       expect(parseUiScript(bad), bad).toBeNull();
     }
   });
 });
 
-/** 時計は手で進む。frame と wait は、すぐ返る。 */
+/** The clock moves by hand. frame and wait return at once. */
 function fakeClock(): Clock {
   let t = 0;
   return {
@@ -44,7 +44,7 @@ function setup(over: Partial<Target> = {}) {
   };
   area.addEventListener("wheel", (e) => {
     record(e);
-    // 横は 0〜2 の間だけ動く（はしで止まる）。拡大は 0〜4。
+    // horizontally it moves only between 0 and 2 (stops at the ends). Zoom is 0 to 4.
     if (e.shiftKey) scrollTick = Math.min(2, Math.max(0, scrollTick + Math.sign(e.deltaY)));
     if (e.ctrlKey) zoom = Math.min(4, Math.max(0, zoom - Math.sign(e.deltaY)));
   });
@@ -71,14 +71,14 @@ function setup(over: Partial<Target> = {}) {
   return { area, events, target, reports, report };
 }
 
-describe("自動で動かす係", () => {
-  it("横に送る: ノートの場所に Shift ＋ ホイールを送り、はしで向きを変える。動いた段だけを数える", async () => {
+describe("the helper that moves by itself", () => {
+  it("scrolling across: sends Shift + wheel to the note area and turns at the ends. Counts only the steps that moved", async () => {
     const s = setup();
     const script = new UiScript("pr-scroll:5", [{ kind: "scroll", count: 5 }], s.target, fakeClock(), s.report);
     await script.run();
     const wheels = s.events.filter((e) => e.type === "wheel");
     expect(wheels.every((e) => e.shift && !e.ctrl)).toBe(true);
-    // 0→1→2、はし（動かない 1 回）、2→1→0、はし、0→1
+    // 0→1→2, end (one turn that does not move), 2→1→0, end, 0→1
     expect(wheels.map((e) => Math.sign(e.deltaY))).toEqual([1, 1, 1, -1, -1, -1, 1]);
     const last = s.reports.at(-1)!;
     expect(last.done).toBe(true);
@@ -87,7 +87,7 @@ describe("自動で動かす係", () => {
     expect(last.parts[0]!.marks).toEqual([expect.objectContaining({ done: 5 })]);
   });
 
-  it("拡大: Mod（Ctrl）＋ ホイール", async () => {
+  it("zoom: Mod (Ctrl) + wheel", async () => {
     const s = setup();
     await new UiScript("pr-zoom:3", [{ kind: "zoom", count: 3 }], s.target, fakeClock(), s.report).run();
     const wheels = s.events.filter((e) => e.type === "wheel");
@@ -95,7 +95,7 @@ describe("自動で動かす係", () => {
     expect(s.reports.at(-1)!.parts[0]!.steps.every((st) => st.changed)).toBe(true);
   });
 
-  it("縦の段: Mod Shift ＋ ホイールで、決めた行の高さまで動かしてから次へ", async () => {
+  it("vertical steps: with Mod Shift + wheel, moves to the set row height, then the next", async () => {
     const steps = [8, 12, 16, 20, 24];
     let at = 1;
     const s = setup({ rowPx: () => steps[at]! });
@@ -114,7 +114,7 @@ describe("自動で動かす係", () => {
     expect(s.reports.at(-1)!.done).toBe(true);
   });
 
-  it("ドラッグ: 押す → 動かす 4 回 → 離す。行きと帰りをくりかえし、新しいテイクが見えるまで待つ", async () => {
+  it("drag: press → move 4 times → release. Repeats there and back, and waits until the new take is seen", async () => {
     const s = setup();
     await new UiScript("pr-drag:2", [{ kind: "drag", count: 2 }], s.target, fakeClock(), s.report).run();
     expect(s.events.map((e) => e.type)).toEqual([
@@ -131,7 +131,7 @@ describe("自動で動かす係", () => {
     expect(steps.every((st) => typeof st.replyMs === "number")).toBe(true);
   });
 
-  it("ピアノロールがひらかなければ、何も送らずに、そのことを書く", async () => {
+  it("if the piano roll does not open, sends nothing and writes that down", async () => {
     const s = setup({ ready: () => false });
     let t = 0;
     const clock = { ...fakeClock(), now: () => (t += 10000) };
@@ -140,7 +140,7 @@ describe("自動で動かす係", () => {
     expect(s.reports.at(-1)).toMatchObject({ done: false, error: expect.stringContaining("did not show") });
   });
 
-  it("止めたら、それより先は送らない", async () => {
+  it("after stopping, sends nothing more", async () => {
     const s = setup();
     const script = new UiScript("pr-scroll:5", [{ kind: "scroll", count: 5 }], s.target, fakeClock(), s.report);
     script.stop();

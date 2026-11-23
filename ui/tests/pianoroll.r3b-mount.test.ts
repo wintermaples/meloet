@@ -1,5 +1,5 @@
-// 第 3 回の続きの区切り1 を mount して見る: 縦の − ＋、左の鍵盤の列を押して鳴らす、目盛を押す ・ ドラッグする、
-// 右クリックの一覧（中身は contextMenu.open に入る。描くのは App の ContextMenu）、ベロシティをまとめて変える。
+// Mounted checks: vertical − ＋, pressing the left key column to play, pressing / dragging the ruler,
+// the context menu (contents go into contextMenu.open; App's ContextMenu draws it), changing velocity for many notes.
 import { flushSync, mount, unmount, type Component } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, TakeNotes } from "../src/bridge";
@@ -57,8 +57,8 @@ function show(component: Component<any>): void {
 const pointer = (el: Element, type: string, init: PointerEventInit) =>
   el.dispatchEvent(new PointerEvent(type, { bubbles: true, button: 0, pointerId: 1, ...init }));
 
-describe("縦の − ＋（B-63）", () => {
-  it("目盛の左の角。押すと 1 段。はしの段では押せない", async () => {
+describe("vertical − ＋ (B-63)", () => {
+  it("at the left corner of the ruler. One step per press. Cannot be pressed at the end steps", async () => {
     await scene("pianoRoll");
     show(Roll);
     const zoomIn = q<HTMLButtonElement>('[data-test="pr-row-zoom-in"]')!;
@@ -79,21 +79,21 @@ describe("縦の − ＋（B-63）", () => {
     expect(zoomOut.disabled).toBe(true);
   });
 
-  it("Mod Shift ＋ ホイールでも（上へ回すと拡大）", async () => {
+  it("Mod Shift + wheel works too (up zooms in)", async () => {
     await scene("pianoRoll");
     show(Roll);
     q(".middle")!.dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: -100, ctrlKey: true, shiftKey: true }));
     flushSync();
     expect(prView.rowPx).toBe(16);
-    // Shift ＋ ホイールを横に変える環境（deltaX に来る）でも。
+    // Also where Shift + wheel turns sideways (comes in deltaX).
     q(".middle")!.dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaX: 100, ctrlKey: true, shiftKey: true }));
     flushSync();
     expect(prView.rowPx).toBe(12);
   });
 });
 
-describe("左の鍵盤の列を押して鳴らす（B-62）", () => {
-  it("押している間だけ。なぞると次の鍵に入れかえ、離すと止める。強さは 100", async () => {
+describe("pressing the left key column plays (B-62)", () => {
+  it("only while pressed. Sliding switches to the next key, release stops. Velocity 100", async () => {
     await scene("pianoRoll");
     show(Roll);
     const keys = q('[data-test="pr-keys"]')!;
@@ -108,7 +108,7 @@ describe("左の鍵盤の列を押して鳴らす（B-62）", () => {
     ]);
   });
 
-  it("ベロシティ固定がオンならその値。録音中も鳴らす", async () => {
+  it("fixed velocity value when on. Plays while recording too", async () => {
     await scene("pianoRollRec", (s) => (s.keyboards.velocityFixed = { on: true, value: 64 }));
     show(Roll);
     const keys = q('[data-test="pr-keys"]')!;
@@ -121,8 +121,8 @@ describe("左の鍵盤の列を押して鳴らす（B-62）", () => {
   });
 });
 
-describe("ピアノロールの目盛（B-61）", () => {
-  it("押すと locate（グリッドに寄せる。Shift で寄せない）", async () => {
+describe("piano roll ruler (B-61)", () => {
+  it("pressing locates (snaps to the grid; Shift does not snap)", async () => {
     const { s } = await scene("pianoRoll");
     show(Roll);
     const ruler = q('[data-test="pr-ruler"]')!;
@@ -140,7 +140,7 @@ describe("ピアノロールの目盛（B-61）", () => {
     ]);
   });
 
-  it("ドラッグはループの範囲（小節の単位）。ドラッグ中の Esc で前の範囲に戻し、何も送らない", async () => {
+  it("dragging sets the loop range (in bars). Esc during the drag returns to the old range and sends nothing", async () => {
     const { s } = await scene("pianoRoll");
     show(Roll);
     const ruler = q('[data-test="pr-ruler"]')!;
@@ -163,8 +163,8 @@ describe("ピアノロールの目盛（B-61）", () => {
   });
 });
 
-describe("右クリックの一覧（B-60）", () => {
-  it("ノートの場所の空いた所: 貼りつけ ・ ぜんぶ選ぶ。WebKit の一覧は出さない", async () => {
+describe("context menu (B-60)", () => {
+  it("empty part of the note area: paste, select all. No WebKit menu", async () => {
     await scene("pianoRoll", (s) => (s.pianoRoll.clipboardNotes = 2));
     show(Roll);
     const e = new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 40, clientY: 30 });
@@ -177,8 +177,8 @@ describe("右クリックの一覧（B-60）", () => {
   });
 });
 
-describe("ベロシティをまとめて変える（B-67）", () => {
-  it("ひらくと「ベロシティ」の入力の枠と「そろえる」。ばらばらなら空。Enter かボタンで matchVelocity", async () => {
+describe("changing velocity for many notes (B-67)", () => {
+  it("opening shows the 「ベロシティ」 input box and 「そろえる」. Empty if values differ. Enter or the button sends matchVelocity", async () => {
     const { take } = await scene("pianoRoll");
     show(NoteInspector);
     const head = q('[data-test="inspector-velocity-all"]')!;
@@ -213,7 +213,7 @@ describe("ベロシティをまとめて変える（B-67）", () => {
     expect(app.sent).toEqual([{ type: "rejectValue", field: "velocity", kept: "77 – 83", range: null }]);
   });
 
-  it("みな同じ値ならその値。ノートを選んでいなければ使えない。ひらいたのを覚えている", async () => {
+  it("the value if all are the same. Disabled with no notes selected. Remembers it was open", async () => {
     await scene("pianoRoll", (s) => (s.pianoRoll.selectedNotes = [{ start: 14, end: 15 }]));
     inspectorFolds.velocityAll = true;
     show(NoteInspector);

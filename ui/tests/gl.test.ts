@@ -1,4 +1,4 @@
-// WebGL の面の、純粋な部分: dB → 長さ、鍵の位置、色の読みかえ、四角の並び、計測の記録。
+// The pure parts of the WebGL surfaces: dB → length, key positions, color reading, rect lists, measurement records.
 import { describe, expect, it } from "vitest";
 import { colors } from "../src/design/tokens";
 import { Batch } from "../src/gl/batch";
@@ -26,30 +26,30 @@ const batch = (w = 4000, h = 4000) => {
   b.clip(0, 0, w, h);
   return b;
 };
-/** 四角のうち、その色の物だけ（[x0, y0, x1, y1]）。 */
+/** Only the rects of that color ([x0, y0, x1, y1]). */
 const ofColor = (b: Batch, name: keyof typeof colors) =>
   b
     .rects()
     .filter((r) => r.slice(4).every((v, i) => Math.abs(v - hex(name)[i]!) < 1e-6))
     .map((r) => r.slice(0, 4));
 
-describe("色の読みかえ", () => {
-  it("16 進数を 0〜1 の 3 つの数にする", () => {
+describe("color reading", () => {
+  it("hex becomes 3 numbers from 0 to 1", () => {
     expect(hexToRgb("#FFB000")).toEqual([1, 176 / 255, 0]);
     expect(hexToRgb("#0a0A0a")).toEqual([10 / 255, 10 / 255, 10 / 255]);
   });
-  it("形のちがう文字は断る", () => {
+  it("text in a wrong form is refused", () => {
     for (const bad of ["#FFF", "FFB000", "#FFB0000", "rgb(0,0,0)"]) expect(() => hexToRgb(bad)).toThrow();
   });
-  it("tokens の色は全部読める。名前で引くと同じ値", () => {
+  it("all token colors can be read. Looking up by name gives the same value", () => {
     for (const name of Object.keys(colors) as (keyof typeof colors)[]) {
       expect(rgb(name)).toEqual(hexToRgb(colors[name]));
     }
   });
 });
 
-describe("dB → 長さ", () => {
-  it("目盛は仕様書の「メーターとフェーダーの目盛」の表と同じ", () => {
+describe("dB → length", () => {
+  it("scale marks are the same as the spec table 「メーターとフェーダーの目盛」", () => {
     const doc = specDocument();
     const table = tableAfterH3(doc, "Scale marks of meters and faders");
     const dbs = headers(table).slice(1).map((t) => Number(t.replace("−", "-")));
@@ -65,7 +65,7 @@ describe("dB → 長さ", () => {
     expect(dbToLength(-3)).toBeCloseTo(METER_HOT_FROM, 10);
     expect(text).toContain(`Above 0 dB, a rec 2px at the top end for ${CLIP_HOLD_MS / 1000} seconds`);
   });
-  it("目盛の上では目盛の値、間は直線", () => {
+  it("on a mark, the mark value; between, a straight line", () => {
     for (const [db, length] of DB_SCALE) expect(dbToLength(db)).toBeCloseTo(length, 10);
     expect(dbToLength(3)).toBeCloseTo(0.9, 10);
     expect(dbToLength(-1.5)).toBeCloseTo(0.75, 10);
@@ -73,7 +73,7 @@ describe("dB → 長さ", () => {
     expect(dbToLength(-42)).toBeCloseTo(0.1, 10);
     expect(dbToLength(-59)).toBeCloseTo(0.2 / 36, 10);
   });
-  it("はしでは止まる", () => {
+  it("stops at the ends", () => {
     expect(dbToLength(6.1)).toBe(1);
     expect(dbToLength(100)).toBe(1);
     expect(dbToLength(DB_FLOOR)).toBe(0);
@@ -81,7 +81,7 @@ describe("dB → 長さ", () => {
     expect(dbToLength(-200)).toBe(0);
     expect(dbToLength(-Infinity)).toBe(0);
   });
-  it("大きい音ほど長い", () => {
+  it("louder is longer", () => {
     let last = -1;
     for (let db = DB_FLOOR; db <= 6; db += 0.25) {
       const length = dbToLength(db);
@@ -89,23 +89,23 @@ describe("dB → 長さ", () => {
       last = length;
     }
   });
-  it("最大値を dB にする", () => {
+  it("the peak value to dB", () => {
     expect(peakToDb(1)).toBe(0);
     expect(peakToDb(0.5)).toBeCloseTo(-6.0206, 3);
     expect(peakToDb(0)).toBe(-Infinity);
   });
 });
 
-describe("メーターの落ちかた", () => {
-  it("上がるときはすぐ", () => {
+describe("meter fall", () => {
+  it("rises at once", () => {
     expect(fall(-30, -6, 0)).toBe(-6);
     expect(fall(-Infinity, -6, 16)).toBe(-6);
   });
-  it("下がるときは決めた速さで", () => {
+  it("falls at the set speed", () => {
     expect(fall(0, -Infinity, 1000)).toBeCloseTo(-FALL_DB_PER_S, 10);
     expect(fall(0, -Infinity, 500)).toBeCloseTo(-FALL_DB_PER_S / 2, 10);
   });
-  it("行き先より下には行かない。底についたら無音", () => {
+  it("does not go below the target. At the bottom, silence", () => {
     expect(fall(0, -3, 1000)).toBe(-3);
     expect(fall(DB_FLOOR + 1, -Infinity, 1000)).toBe(-Infinity);
     expect(fall(-Infinity, -Infinity, 1000)).toBe(-Infinity);
@@ -131,8 +131,8 @@ const telemetry = (over: Partial<Telemetry> = {}): Telemetry => ({
   ...over,
 });
 
-describe("画面のレベル", () => {
-  it("上がってから、時間で落ちて、行き先で止まる", () => {
+describe("screen level", () => {
+  it("rises, then falls with time, and stops at the target", () => {
     const levels = new Levels();
     levels.onTelemetry(telemetry({ masterPeak: [1, 0.5], trackPeaks: new Float32Array([0.25, 0]) }), 1000);
     expect(levels.bar(0, 1000).length).toBeCloseTo(0.8, 6);
@@ -148,7 +148,7 @@ describe("画面のレベル", () => {
     expect(levels.advance(3000)).toBe(false);
     expect(levels.bar(0, 3000).length).toBeCloseTo(dbToLength(peakToDb(0.5)), 6);
   });
-  it("音割れの印は 2 秒", () => {
+  it("the clipping mark lasts 2 s", () => {
     const levels = new Levels();
     levels.onTelemetry(telemetry({ masterPeak: [1.2, 0.5], trackPeaks: new Float32Array([0, 1.01]) }), 500);
     expect(levels.bar(0, 500).clipped).toBe(true);
@@ -160,13 +160,13 @@ describe("画面のレベル", () => {
     expect(levels.bar(0, 500 + CLIP_HOLD_MS).clipped).toBe(false);
     expect(levels.nextClipEnd(500 + CLIP_HOLD_MS)).toBe(null);
   });
-  it("マスターが割れた旗は、左右の両方に印", () => {
+  it("the master clipping flag marks both left and right", () => {
     const levels = new Levels();
     levels.onTelemetry(telemetry({ masterClipped: true, trackPeaks: new Float32Array([0.1, 0.1]) }), 0);
     expect([0, 1, trackChannel(0), trackChannel(0) + 1].map((c) => levels.bar(c, 1).clipped)).toEqual([true, true, false, false]);
     expect([RETURN_A_CHANNEL, RETURN_B_CHANNEL].map((c) => levels.bar(c, 1).clipped)).toEqual([false, false]);
   });
-  it("戻り A ・ B は、マスターとトラックの間の 4 本（A 左 ・ 右、B 左 ・ 右）。同じ目盛、同じ落ちかた、同じ音割れの印", () => {
+  it("returns A and B are 4 bars between master and tracks (A left / right, B left / right). Same scale, same fall, same clipping mark", () => {
     const levels = new Levels();
     const t = telemetry({ returnPeaks: new Float32Array([0.5, 0.25, 1.2, 0]), trackPeaks: new Float32Array([1, 1]) });
     levels.onTelemetry(t, 1000);
@@ -185,29 +185,29 @@ describe("画面のレベル", () => {
   });
 });
 
-describe("鍵の位置", () => {
-  it("49 鍵（C2〜C6）は白 29、黒 20", () => {
+describe("key positions", () => {
+  it("49 keys (C2 to C6): 29 white, 20 black", () => {
     const { whiteCount, keys } = keyboardLayout(36, 84);
     expect(keys.length).toBe(49);
     expect(whiteCount).toBe(29);
     expect(keys.filter((k) => k.black).length).toBe(20);
     expect(keys.filter((k) => !k.black).map((k) => k.index)).toEqual(Array.from({ length: 29 }, (_, i) => i));
   });
-  it("黒鍵のならびは Opt-Meter のモックと同じ（白鍵 i の右に黒鍵があるか）", () => {
+  it("black key order matches the Opt-Meter mock (whether white key i has a black key on its right)", () => {
     const blk = [1, 1, 0, 1, 1, 1, 0];
     const fromMock = Array.from({ length: 29 }, (_, i) => i < 28 && blk[i % 7] === 1);
     expect(mockHtml("Opt-Meter")).toContain("black: i < 28 && blk[i % 7] === 1");
     const { keys } = keyboardLayout(36, 84);
     const lines = new Set(keys.filter((k) => k.black).map((k) => k.index));
-    // 黒鍵は線 index（白鍵 index の左はし）に乗る。白鍵 i の右の線は i + 1。
+    // A black key sits on line index (the left edge of white key index). The line right of white key i is i + 1.
     expect(Array.from({ length: 29 }, (_, i) => lines.has(i + 1))).toEqual(fromMock);
   });
-  it("黒鍵は C#・D#・F#・G#・A#", () => {
+  it("black keys are C#, D#, F#, G#, A#", () => {
     expect([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].filter(isBlack)).toEqual([1, 3, 6, 8, 10]);
     expect(isBlack(61)).toBe(true);
     expect(isBlack(60)).toBe(false);
   });
-  it("黒鍵から始まる範囲や、白鍵のない範囲でもこわれない", () => {
+  it("does not break for a range that starts on a black key or has no white keys", () => {
     expect(keyboardLayout(61, 62)).toEqual({
       whiteCount: 1,
       keys: [
@@ -220,13 +220,13 @@ describe("鍵の位置", () => {
   });
 });
 
-describe("押している鍵", () => {
+describe("held keys", () => {
   const bits = (...notes: number[]) => {
     const keys = new Uint32Array(4);
     for (const n of notes) keys[n >>> 5]! |= 1 << (n & 31);
     return keys;
   };
-  it("Event が来たら、計器を待たずに変わる", () => {
+  it("changes when an Event comes, without waiting for meters", () => {
     const held = new HeldKeys();
     expect(held.onEvent(60, true, 1000)).toBe(true);
     expect(held.isDown(60)).toBe(true);
@@ -234,7 +234,7 @@ describe("押している鍵", () => {
     expect(held.onEvent(60, false, 2000)).toBe(true);
     expect(held.isDown(60)).toBe(false);
   });
-  it("計器だけでも変わる（Event を見ていない鍵）", () => {
+  it("changes with meters alone too (keys not seen in Events)", () => {
     const held = new HeldKeys();
     expect(held.onTelemetry(bits(31, 32, 127), 5)).toBe(true);
     expect([31, 32, 127, 60].map((n) => held.isDown(n))).toEqual([true, true, true, false]);
@@ -242,7 +242,7 @@ describe("押している鍵", () => {
     expect([31, 32, 127].map((n) => held.isDown(n))).toEqual([false, true, false]);
     expect(held.onTelemetry(bits(32), 7)).toBe(false);
   });
-  it("Event より古い計器、すぐ後の計器では消えない。十分あとの計器には従う", () => {
+  it("not cleared by meters older than the Event or just after it. Follows meters well after", () => {
     const held = new HeldKeys();
     held.onEvent(60, true, 1_000_000);
     expect(held.onTelemetry(bits(), 999_000)).toBe(false);
@@ -251,18 +251,18 @@ describe("押している鍵", () => {
     expect(held.onTelemetry(bits(), 1_000_001 + EVENT_WINS_US)).toBe(true);
     expect(held.isDown(60)).toBe(false);
   });
-  it("範囲の外の番号は無視", () => {
+  it("numbers out of range are ignored", () => {
     const held = new HeldKeys();
     expect(held.onEvent(128, true, 0)).toBe(false);
     expect(held.onEvent(-1, true, 0)).toBe(false);
   });
 });
 
-describe("四角の並び", () => {
+describe("rect lists", () => {
   const FULL = KEY_FORMS.full;
   const full = blackKeyPx("full", 100, 1);
   const slim = blackKeyPx("slim", 100, 1);
-  it("太い鍵盤: モック（F-Connect2）と同じ画素。幅 1 + 29 × 12、高さ 32", () => {
+  it("full keyboard: the same pixels as the mock (F-Connect2). Width 1 + 29 × 12, height 32", () => {
     const b = batch();
     const down = new Set([60, 61]);
     paintKeyboard(b, { x0: 100, y0: 10, x1: 100 + 1 + 29 * FULL.white.w, y1: 10 + FULL.white.h }, full, 36, 84, (n) => down.has(n));
@@ -270,22 +270,22 @@ describe("四角の並び", () => {
     expect(ofColor(b, "color.gray.6")).toEqual([[100, 10, 449, 42]]);
     const whites = ofColor(b, "color.gray.3");
     expect(whites.length).toBe(28);
-    // 白鍵 i: 左の線の右どなりから、右の線の手前まで（11 画素）。上下の線の内がわ。
+    // White key i: from right of its left line to before its right line (11 px). Inside the top and bottom lines.
     expect(whites[0]).toEqual([101, 11, 112, 41]);
     expect(whites[1]).toEqual([113, 11, 124, 41]);
-    // 押した白鍵（C4 = 白鍵 14）と黒鍵（C#4 = 線 15）は accent。
+    // The pressed white key (C4 = white key 14) and black key (C#4 = line 15) are accent.
     expect(ofColor(b, "color.accent")).toEqual([
       [100 + 14 * 12 + 1, 11, 100 + 15 * 12, 41],
       [100 + 15 * 12 - 2, 11, 100 + 15 * 12 + 3, 28],
     ]);
-    // 黒鍵: 線の上にまん中を合わせた幅 7、高さ 19。枠は 1 画素。
+    // Black key: width 7 centered on the line, height 19. Border 1 px.
     const frames = ofColor(b, "color.gray.7");
     expect(frames.length).toBe(20);
     expect(frames[0]).toEqual([100 + 12 - 3, 10, 100 + 12 + 4, 29]);
     expect(ofColor(b, "color.gray.0")[0]).toEqual([100 + 12 - 2, 11, 100 + 12 + 3, 28]);
     expect(ofColor(b, "color.gray.0").length).toBe(19);
   });
-  it("鍵盤がないとき（F-Connect1）: 線だけ暗い。モックの HTML の色と同じ", () => {
+  it("no keyboard (F-Connect1): only the lines are dark. Same colors as the mock HTML", () => {
     const b = batch();
     paintKeyboard(b, { x0: 0, y0: 0, x1: 1 + 29 * FULL.white.w, y1: FULL.white.h }, full, 36, 84, () => false, true);
     expect(ofColor(b, "color.gray.5")).toEqual([[0, 0, 349, 32]]);
@@ -301,13 +301,13 @@ describe("四角の並び", () => {
     expect(html.split(black).length - 1).toBe(20);
     expect(html).toContain(`<div class="f" style="border-left:1px solid ${colors["color.gray.5"]};flex-shrink:0">`);
   });
-  it("細い鍵盤: 黒鍵も描く（1 + 29 × 8、高さ 12。黒鍵は幅 5、高さ 7）。押した黒鍵は accent", () => {
+  it("slim keyboard: draws black keys too (1 + 29 × 8, height 12; black keys width 5, height 7). A pressed black key is accent", () => {
     const b = batch();
     const down = new Set([64, 61]);
     paintKeyboard(b, { x0: 0, y0: 0, x1: 233, y1: 12 }, slim, 36, 84, (n) => down.has(n));
     expect(b.rectCount).toBe(1 + 29 + 2 * 20);
     expect(ofColor(b, "color.gray.3")[28 - 1]).toEqual([225, 1, 232, 11]);
-    // E4 = 白鍵 16、C#4 = 線 15。
+    // E4 = white key 16, C#4 = line 15.
     expect(ofColor(b, "color.accent")).toEqual([
       [16 * 8 + 1, 1, 17 * 8, 11],
       [15 * 8 - 1, 1, 15 * 8 + 2, 6],
@@ -318,7 +318,7 @@ describe("四角の並び", () => {
     expect(ofColor(b, "color.gray.0")[0]).toEqual([8 - 1, 1, 8 + 2, 6]);
     expect(ofColor(b, "color.gray.0").length).toBe(19);
   });
-  it("細い鍵盤と細い鍵の寸法は、F-MeterLongName のモックと仕様書と同じ", () => {
+  it("slim keyboard and slim key sizes match the F-MeterLongName mock and the spec", () => {
     const { slim: s, narrow: n } = KEY_FORMS;
     const html = mockHtml("F-MeterLongName");
     const key = (white: { w: number; h: number }, black: { w: number; h: number }) =>
@@ -333,7 +333,7 @@ describe("四角の並び", () => {
     expect(s3).toContain(`The keyboard in the slim input meter also draws black keys (width ${s.black.w}, height ${s.black.h}). A pressed black key lights up in accent.`);
     expect(cellText(doc.body)).toContain(`the keyboard picture to thin keys (width ${n.white.w})`);
   });
-  it("細い鍵（太い入力計がせまいとき）: 白鍵 8、黒鍵は幅 5、高さ 19", () => {
+  it("slim keys (when the full input meter is narrow): white key 8, black key width 5, height 19", () => {
     const b = batch();
     paintKeyboard(b, { x0: 0, y0: 0, x1: 233, y1: 32 }, blackKeyPx("narrow", 100, 1), 36, 84, (n) => n === 61);
     expect(ofColor(b, "color.gray.6")).toEqual([[0, 0, 233, 32]]);
@@ -342,7 +342,7 @@ describe("四角の並び", () => {
     expect(ofColor(b, "color.gray.0")[0]).toEqual([8 - 1, 1, 8 + 2, 18]);
     expect(ofColor(b, "color.accent")).toEqual([[15 * 8 - 1, 1, 15 * 8 + 2, 18]]);
   });
-  it("黒鍵の大きさ: 率をかけて四捨五入（.5 は切り上げ）。それから画面の画素へ", () => {
+  it("black key size: multiply by the scale and round (.5 goes up). Then to screen pixels", () => {
     const at = (form: "full" | "narrow" | "slim") => [100, 125, 150].map((scale) => blackKeyPx(form, scale, 1));
     expect(at("full")).toEqual([{ w: 7, h: 19 }, { w: 9, h: 24 }, { w: 11, h: 29 }]);
     expect(at("narrow")).toEqual([{ w: 5, h: 19 }, { w: 6, h: 24 }, { w: 8, h: 29 }]);
@@ -350,13 +350,13 @@ describe("四角の並び", () => {
     expect(blackKeyPx("slim", 150, 2)).toEqual({ w: 16, h: 22 });
     expect(blackKeyPx("slim", 100, 1.5)).toEqual({ w: 8, h: 11 });
   });
-  it("幅が偶数の黒鍵（細い鍵盤の 125 %）: 線の左に 2、右に 3", () => {
+  it("black keys with even width (slim keyboard at 125 %): 2 left of the line, 3 right", () => {
     const b = batch();
     paintKeyboard(b, { x0: 0, y0: 0, x1: 1 + 29 * 10, y1: 15 }, blackKeyPx("slim", 125, 1), 36, 84, () => false);
     expect(ofColor(b, "color.gray.7")[0]).toEqual([10 - 2, 0, 10 + 4, 9]);
     expect(ofColor(b, "color.gray.0")[0]).toEqual([10 - 1, 1, 10 + 3, 8]);
   });
-  it("拡大しても線は 1 画素（150 % × 2 倍の画面 = 白鍵 36 画素）", () => {
+  it("lines stay 1 px when zoomed (150 % × 2x screen = white key 36 px)", () => {
     const b = batch();
     paintKeyboard(b, { x0: 0, y0: 0, x1: 1 + 29 * 36, y1: 96 }, blackKeyPx("full", 150, 2), 36, 84, () => false);
     const whites = ofColor(b, "color.gray.3");
@@ -367,7 +367,7 @@ describe("四角の並び", () => {
     expect(frame).toEqual([36 - 10, 0, 36 + 12, 58]);
     expect(inner).toEqual([frame[0]! + 1, 1, frame[2]! - 1, 57]);
   });
-  it("ベロシティの棒: 87 は 68 %（モックと同じ）", () => {
+  it("velocity bar: 87 is 68 % (same as the mock)", () => {
     const b = batch();
     paintVelocity(b, { x0: 0, y0: 0, x1: 100, y1: 4 }, 87);
     expect(ofColor(b, "color.gray.4")).toEqual([[0, 0, 100, 4]]);
@@ -376,7 +376,7 @@ describe("四角の並び", () => {
     paintVelocity(none, { x0: 0, y0: 0, x1: 100, y1: 4 }, 0);
     expect(none.rectCount).toBe(1);
   });
-  it("メーター: 2 本、70 %（−3 dB）までは ok、その上は hot、音割れは右はしに印", () => {
+  it("meter: 2 bars, ok up to 70 % (−3 dB), hot above, clipping marked at the right end", () => {
     const b = batch();
     paintMeter(b, { x0: 10, y0: 20, x1: 110, y1: 32 }, 4, 2, { length: 0.5, clipped: false }, { length: 0.9, clipped: true });
     expect(ofColor(b, "color.gray.0")).toEqual([
@@ -391,7 +391,7 @@ describe("四角の並び", () => {
     expect(ofColor(b, "color.meter.hot")).toEqual([[80, 28, 100, 32]]);
     expect(ofColor(b, "color.rec")).toEqual([[108, 28, 110, 32]]);
   });
-  it("縦のメーター: 左が L、右が R。下が 0 %、上が 100 %。区切りと音割れの印は横と同じ長さで、印は上はし", () => {
+  it("vertical meter: L left, R right. 0 % at the bottom, 100 % at the top. Dividers and the clipping mark have the same length as horizontal, mark at the top", () => {
     const b = batch();
     paintMeter(b, { x0: 20, y0: 10, x1: 32, y1: 110 }, 4, 2, { length: 0.5, clipped: false }, { length: 0.9, clipped: true }, true);
     expect(ofColor(b, "color.gray.0")).toEqual([
@@ -405,13 +405,13 @@ describe("四角の並び", () => {
     expect(ofColor(b, "color.meter.hot")).toEqual([[28, 20, 32, 40]]);
     expect(ofColor(b, "color.rec")).toEqual([[28, 10, 32, 12]]);
 
-    // 横のメーターを 90 度まわした形と、四角の数も長さも同じ。
+    // The horizontal meter turned 90 degrees; same number and length of rects.
     const flat = batch();
     paintMeter(flat, { x0: 10, y0: 20, x1: 110, y1: 32 }, 4, 2, { length: 0.5, clipped: false }, { length: 0.9, clipped: true });
     const sizes = (bb: Batch, along: 0 | 1) => bb.rects().map((r) => [r[2 + along]! - r[along]!, r[3 - along]! - r[1 - along]!]);
     expect(sizes(b, 1)).toEqual(sizes(flat, 0));
   });
-  it("音割れの印の太さ: 2px に率をかけて四捨五入（2 / 3 / 3）。それから画面の画素へ", () => {
+  it("clipping mark thickness: 2px times the scale, rounded (2 / 3 / 3). Then to screen pixels", () => {
     expect([100, 125, 150].map((scale) => clipMarkPx(scale, 1))).toEqual([2, 3, 3]);
     expect(clipMarkPx(125, 2)).toBe(6);
     const b = batch();
@@ -422,13 +422,13 @@ describe("四角の並び", () => {
       [97, 6, 100, 10],
     ]);
   });
-  it("メーター: 空のときは地だけ", () => {
+  it("meter: only the background when empty", () => {
     const b = batch();
     const silent = { length: 0, clipped: false };
     paintMeter(b, { x0: 0, y0: 0, x1: 132, y1: 12 }, 4, 2, silent, silent);
     expect(b.rectCount).toBe(2);
   });
-  it("小節の線: firstBarX から barPx ごと。箱の中だけ。端数は画素に合わせる", () => {
+  it("bar lines: from firstBarX every barPx. Only inside the box. Fractions snap to pixels", () => {
     const b = batch();
     b.clip(100, 0, 300, 50);
     paintArrangeGrid(b, { x0: 100, y0: 0, x1: 300, y1: 50 }, 0, 64);
@@ -445,7 +445,7 @@ describe("四角の並び", () => {
     paintArrangeGrid(none, { x0: 0, y0: 0, x1: 100, y1: 10 }, 0, 0);
     expect(none.rectCount).toBe(0);
   });
-  it("拍の線も描くとき（B-61）: 小節 gray.6、拍 gray.4（ピアノロールと同じ分けかた）", () => {
+  it("when beat lines are drawn too (B-61): bars gray.6, beats gray.4 (split the same way as the piano roll)", () => {
     const b = batch();
     b.clip(0, 0, 300, 10);
     paintArrangeGrid(b, { x0: 0, y0: 0, x1: 300, y1: 10 }, 0, 128, 4);
@@ -457,10 +457,10 @@ describe("四角の並び", () => {
     expect(ofColor(scrolled, "color.gray.6").map((r) => r[0])).toEqual([90]);
     expect(ofColor(scrolled, "color.gray.4").map((r) => r[0])).toEqual([10, 30, 50, 70]);
   });
-  it("ちぢんだアレンジの枠のあきは、A-PianoRoll のモックの値", () => {
+  it("the border gap of the shrunk arrange is the A-PianoRoll mock value", () => {
     expect(mockHtml("A-PianoRoll")).toContain(`top:${OVERVIEW.inset}px;width:256px;height:37px;border:1px solid ${colors[OVERVIEW.frame]}`);
   });
-  it("ちぢんだアレンジ: 1 画素の枠だけ", () => {
+  it("shrunk arrange: only a 1 px border", () => {
     const b = batch();
     paintOverview(b, { x0: 0, y0: 0, x1: 256, y1: 39 }, 1);
     expect(ofColor(b, "color.accent")).toEqual([
@@ -470,7 +470,7 @@ describe("四角の並び", () => {
       [255, 1, 256, 38],
     ]);
   });
-  it("四角は切りぬきの箱の外に出ない。同じ並びは同じと分かる", () => {
+  it("rects do not leave the clip box. The same list is seen as the same", () => {
     const a = new Batch();
     a.clip(10, 10, 20, 20);
     a.rect(0, 0, 100, 100, [1, 0, 0]);
@@ -487,8 +487,8 @@ describe("四角の並び", () => {
   });
 });
 
-describe("鍵 → 画面の計測", () => {
-  it("受けた時刻と描いた時刻を記録し、時計の差といっしょに送る", async () => {
+describe("key → screen measurement", () => {
+  it("records the receive time and draw time, and sends them with the clock difference", async () => {
     let now = 100;
     const sent: [string, string][] = [];
     const m = new KeyToScreen({
@@ -522,7 +522,7 @@ describe("鍵 → 画面の計測", () => {
     m.drawn(120);
     expect(JSON.parse(m.json()).keys[2].drawMs).toBe(120);
   });
-  it("時計を合わせられなくても、送れなくても、止まらない。10 秒たったら合わせなおす", async () => {
+  it("does not stop when the clock cannot be matched or sending fails. Matches again after 10 s", async () => {
     let now = 0;
     let clockCalls = 0;
     let fail = true;
@@ -556,8 +556,8 @@ describe("鍵 → 画面の計測", () => {
   });
 });
 
-describe("slot の見はり", () => {
-  it("前からある箱を先に、あとは足す・変える・消すたびに知らせる。見はりをやめたら知らせない", () => {
+describe("watching slots", () => {
+  it("tells about existing boxes first, then on every add, change, remove. Nothing after watching stops", () => {
     const a = document.createElement("i");
     const b = document.createElement("i");
     const host = document.createElement("div");

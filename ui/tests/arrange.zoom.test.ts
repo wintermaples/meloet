@@ -1,4 +1,4 @@
-// アレンジの横の拡大 ・ 縮小（− ＋、Mod ＋ ホイール）、横の棒、全体図の「見えている範囲の枠」（仕様書 3 章、モック R3-Arrange・A-PianoRoll）。
+// Horizontal zoom of the arrange (− ＋, Mod + wheel), the horizontal scroll bar, and the overview's「見えている範囲の枠」(spec 3, mock R3-Arrange, A-PianoRoll).
 import { flushSync, mount, unmount } from "svelte";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, ClipView } from "../src/bridge";
@@ -66,14 +66,14 @@ function show(state: AppState): void {
 
 const longSong = () => app.stateWith((s) => (s.song.tracks[0]!.clips = [clip(1, 1, 5), clip(2, 30, 34)]));
 
-describe("アレンジの見出しの行の − ＋ と「グリッド 1 小節」（モック R3-Arrange）", () => {
-  it("見出しの行は「アレンジ − ＋ グリッド 1 小節」", () => {
+describe("the − ＋ and「グリッド 1 小節」in the arrange heading row (mock R3-Arrange)", () => {
+  it("the heading row is「アレンジ − ＋ グリッド 1 小節」", () => {
     show(longSong());
     expect(text(q(".head .row"))).toBe("アレンジ − ＋ グリッド 1 小節");
     expect(qa(".zoom-btn").map((b) => b.getAttribute("aria-label"))).toEqual(["横に縮小", "横に拡大"]);
   });
 
-  it("＋ で 1 小節 64 → 91 px。目盛の番号もそれに合わせて動く。− で戻る", () => {
+  it("＋ makes 1 bar 64 → 91 px. The ruler numbers move with it. − goes back", () => {
     show(longSong());
     qa(".zoom-btn")[1]!.click();
     flushSync();
@@ -84,27 +84,27 @@ describe("アレンジの見出しの行の − ＋ と「グリッド 1 小節�
     expect(qa(".bar-number")[1]!.style.left).toBe("64px");
   });
 
-  it("縮小して番号が重なるときは間引く（1 小節 16 px なら 2 小節おき）", () => {
+  it("when zoomed out and the numbers overlap, skip some (at 16 px per bar, every 2 bars)", () => {
     arrangeView.barPx = 16;
     show(longSong());
     expect(qa(".bar-number").slice(0, 3).map(text)).toEqual(["1", "3", "5"]);
   });
 
-  it("Ctrl ＋ ホイールで、カーソルの所を中心に拡大する（その所のティックが画面の同じ所に残る）", () => {
+  it("Ctrl + wheel zooms around the cursor (the tick there stays at the same place on screen)", () => {
     show(longSong());
     const time = q(".time")!;
-    // 曲の頭から 640 px（11 小節目の頭）にカーソル。左はしは 0。
+    // Cursor at 640 px from the song start (start of bar 11). The left edge is 0.
     time.dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: -100, ctrlKey: true, clientX: 640 }));
     flushSync();
     expect(arrangeView.barPx).toBe(91);
-    // 11 小節目の頭（10 × 91 = 910 px）が、まだ 640 px の所にある: 左はしは 270 px。
-    // 数字は曲の頭からの x で置き、数字の帯ごと transform で送る。
+    // The start of bar 11 (10 × 91 = 910 px) is still at 640 px: the left edge is 270 px.
+    // The numbers are placed by x from the song start, and the whole number strip is moved with transform.
     const eleven = qa(".bar-number").find((b) => text(b) === "11")!;
     const shift = Number(/translateX\((-?[\d.]+)px\)/.exec(q(".bar-strip")!.style.transform)![1]);
     expect(parseFloat(eleven.style.left) + shift).toBeCloseTo(640, 5);
   });
 
-  it("アレンジを押すと、Mod ＋ ・ Mod − の行き先がアレンジになる", () => {
+  it("pressing the arrange makes Mod ＋, Mod − go to the arrange", () => {
     prView.focus = "pianoRoll";
     show(longSong());
     q(".lanes")!.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, button: 0 }));
@@ -112,19 +112,19 @@ describe("アレンジの見出しの行の − ＋ と「グリッド 1 小節�
   });
 });
 
-describe("横に送る（docs/architecture.md 23-13）", () => {
+describe("scrolling sideways (architecture 23-13)", () => {
   const lane = () => slots.get(q(".lanes > .fill")!) as Extract<GlSlot, { kind: "rects" }>;
   const sideways = (dx: number) => {
     q(".time")!.dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: dx, shiftKey: true }));
     flushSync();
   };
-  /** クリップ 2（30 小節目から）の枠の、画面の x。 */
+  /** Screen x of the border of clip 2 (from bar 30). */
   const secondClipX = () => {
     const s = lane();
     return Math.min(...s.rects.filter((r) => r.color === "color.gray.6").map((r) => r.x - (s.shiftX ?? 0)).filter((x) => x > 500));
   };
 
-  it("大きな面の四角は作りなおさず、送った分だけ shiftX が変わる。目盛の数字は帯ごと transform で", () => {
+  it("the rectangles of the big surface are not rebuilt; shiftX changes by the scrolled amount. The ruler numbers move as a strip with transform", () => {
     show(longSong());
     const before = lane();
     expect(secondClipX()).toBeCloseTo(29 * 64, 6);
@@ -139,7 +139,7 @@ describe("横に送る（docs/architecture.md 23-13）", () => {
     expect(fifth().style.left).toBe("256px");
   });
 
-  it("左はしにかかる長いクリップの札は、送っても幅を変えない（見えている幅の 2 つぶんで切る）", () => {
+  it("the tag of a long clip over the left edge keeps its width when scrolled (cut at two visible widths)", () => {
     show(app.stateWith((s) => (s.song.tracks[0]!.clips = [clip(1, 1, 40)])));
     const label = () => q(".clip-label")!;
     sideways(100);
@@ -148,7 +148,7 @@ describe("横に送る（docs/architecture.md 23-13）", () => {
     expect([label().style.left, label().style.width]).toEqual(["1px", `${2 * WIDTH - 2}px`]);
   });
 
-  it("見えている幅 1 つぶん送ると、窓を作りなおす（画面の x は同じ式）", () => {
+  it("scrolling by one visible width rebuilds the window (screen x uses the same formula)", () => {
     show(longSong());
     const before = lane();
     sideways(WIDTH + 50);
@@ -157,8 +157,8 @@ describe("横に送る（docs/architecture.md 23-13）", () => {
   });
 });
 
-describe("横の棒（仕様書 2 章「スクロールの棒」を横にした物）", () => {
-  it("入りきる曲では出さない。入りきらなければトラックの行のいちばん下に重ねる", () => {
+describe("horizontal scroll bar (spec 2 (Scroll bar), laid on its side)", () => {
+  it("not shown when the song fits. When it does not fit, laid over the bottom of the track rows", () => {
     show(app.stateWith((s) => (s.song.tracks[0]!.clips = [clip(1, 1, 5)])));
     expect(q('[data-testid="hscrollbar"]')).toBeNull();
     unmount(mounted!);
@@ -166,12 +166,12 @@ describe("横の棒（仕様書 2 章「スクロールの棒」を横にした�
     show(longSong());
     const bar = q('[data-testid="hscrollbar"]')!;
     expect(bar.parentElement!.classList.contains("lanes-box")).toBe(true);
-    // 右のはし: 34 小節目の頭（33 × 64 = 2112 px）が画面のまん中まで。中身は 2112 − 500 + 1000 = 2612。
+    // Right end: the start of bar 34 (33 × 64 = 2112 px) up to the middle of the screen. Content is 2112 − 500 + 1000 = 2612.
     expect(Number(bar.dataset.total)).toBeCloseTo(2612, 5);
     expect(bar.dataset.visible).toBe(String(WIDTH));
   });
 
-  it("つまみの外を押すと 1 画面ぶん送る（次の再生まで追わない）", () => {
+  it("pressing outside the handle scrolls one screen (does not follow until the next play)", () => {
     show(longSong());
     const bar = q('[data-testid="hscrollbar"]')!;
     bar.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, button: 0, clientX: 900 }));
@@ -180,7 +180,7 @@ describe("横の棒（仕様書 2 章「スクロールの棒」を横にした�
     expect(text(q(".bar-number"))).toBe("16");
   });
 
-  it("HScrollbar だけ: つまみは長さに比例し、いちばん短くて 8。ドラッグで動かす", () => {
+  it("HScrollbar alone: the handle length is in proportion, shortest 8. Dragging moves it", () => {
     const seen: number[] = [];
     app.setState(app.stateWith(() => {}));
     mounted = mount(HScrollbar, { target, props: { total: 100_000, visible: 1000, offset: 0, onscroll: (o: number) => seen.push(o) } });
@@ -197,7 +197,7 @@ describe("横の棒（仕様書 2 章「スクロールの棒」を横にした�
   });
 });
 
-describe("全体図の「見えている範囲の枠」", () => {
+describe("the overview's「見えている範囲の枠」", () => {
   const overview = (pianoRoll: boolean) =>
     app.stateWith((s) => {
       s.song.tracks[0]!.clips = [clip(1, 1, 5), clip(2, 30, 34)];
@@ -208,13 +208,13 @@ describe("全体図の「見えている範囲の枠」", () => {
     return rects.filter((r) => r.color === "color.accent");
   };
 
-  it("ピアノロールがひらいていなければ、今までどおり全体図いっぱいの枠（overview の slot）", () => {
+  it("with the piano roll closed, the frame fills the overview as before (the overview slot)", () => {
     show(overview(false));
     expect(qa(".overview-slot [data-gl-slot]").map((e) => e.dataset.glSlot)).toEqual(["rects", "overview"]);
     expect(accent()).toEqual([]);
   });
 
-  it("ピアノロールがひらいていれば、ピアノロールで見えている範囲（A-PianoRoll: 1〜5 小節 → x 0〜256）", () => {
+  it("with the piano roll open, the range visible in the piano roll (A-PianoRoll: bars 1–5 → x 0–256)", () => {
     Object.assign(prView, { scrollTick: 0, areaWidth: 1280, quarterPx: 80 });
     show(overview(true));
     expect(qa(".overview-slot [data-gl-slot]").map((e) => e.dataset.glSlot)).toEqual(["rects"]);
@@ -223,7 +223,7 @@ describe("全体図の「見えている範囲の枠」", () => {
     expect(top.w).toBe(256);
   });
 
-  it("枠をドラッグすると、ピアノロールが横に送られる（手で動かしたので、次の再生まで追わない）", () => {
+  it("dragging the frame scrolls the piano roll sideways (moved by hand, so it does not follow until the next play)", () => {
     Object.assign(prView, { scrollTick: 0, areaWidth: 1280, quarterPx: 80 });
     show(overview(true));
     const slot = q(".overview-slot")!;
@@ -236,7 +236,7 @@ describe("全体図の「見えている範囲の枠」", () => {
     expect(accent()[0]!.x).toBe(64);
   });
 
-  it("ピアノロールが全体図の外まで送られたら、全体図を送って枠を見せる", () => {
+  it("when the piano roll is scrolled outside the overview, the overview scrolls to show the frame", () => {
     Object.assign(prView, { scrollTick: 0, areaWidth: 1280, quarterPx: 80 });
     show(overview(true));
     prView.scrollTick = 20 * BAR;
@@ -247,8 +247,8 @@ describe("全体図の「見えている範囲の枠」", () => {
   });
 });
 
-describe("トラックの行を縦に送る（仮の形、user:2026-11-20）", () => {
-  /** トラック 6 本（行の高さ 64 × 6 = 384）。見えている高さは、上の beforeAll の 39。 */
+describe("scrolling the track rows up and down (temporary form, user:2026-11-20)", () => {
+  /** 6 tracks (row height 64 × 6 = 384). The visible height is 39, from the beforeAll above. */
   const six = (target = 100) =>
     app.stateWith((s) => {
       const first = s.song.tracks[0]!;
@@ -263,7 +263,7 @@ describe("トラックの行を縦に送る（仮の形、user:2026-11-20）", (
   };
   const tops = () => [q(".lanes-view")!.scrollTop, q(".heads-view")!.scrollTop];
 
-  it("ふつうのホイールで、見出しの列とレーンを同じだけ送る。下のはしで止まる。上の行は、送る箱の外", () => {
+  it("a plain wheel scrolls the heading column and the lanes by the same amount. Stops at the bottom. The top row is outside the scrolling box", () => {
     show(six());
     expect(tops()).toEqual([0, 0]);
     const e = wheel(q(".time")!, { deltaY: 30 });
@@ -280,7 +280,7 @@ describe("トラックの行を縦に送る（仮の形、user:2026-11-20）", (
     expect(q(".lanes-view")!.hasAttribute("data-gl-clip")).toBe(true);
   });
 
-  it("Shift ＋ ホイールは横、Mod ＋ ホイールは拡大のまま（縦には送らない）", () => {
+  it("Shift + wheel stays sideways and Mod + wheel stays zoom (no vertical scroll)", () => {
     show(six());
     wheel(q(".time")!, { deltaY: 40, shiftKey: true });
     expect(tops()).toEqual([0, 0]);
@@ -288,7 +288,7 @@ describe("トラックの行を縦に送る（仮の形、user:2026-11-20）", (
     expect(tops()).toEqual([0, 0]);
   });
 
-  it("右はしに縦の棒（入りきるときは出さない）。棒で送れる", () => {
+  it("a vertical scroll bar at the right end (not shown when it fits). It can scroll", () => {
     show(six());
     const bar = q("[data-test=arrange-vscrollbar]")!;
     expect(bar.parentElement!.classList.contains("lanes-box")).toBe(true);
@@ -310,11 +310,11 @@ describe("トラックの行を縦に送る（仮の形、user:2026-11-20）", (
     }
   });
 
-  it("えらんだトラックが変わったら、そのトラックが見える所まで送る。同じトラックのままなら送らない", () => {
+  it("when the selected track changes, scroll until that track is visible. Do not scroll if it stays the same", () => {
     show(six());
     app.setState(six(105));
     flushSync();
-    // 6 本めの行は 320〜384。見えている 39 より高いので、行の上に合わせる。
+    // Row 6 is 320–384. It is taller than the visible 39, so align to the top of the row.
     expect(tops()).toEqual([320, 320]);
     wheel(q(".time")!, { deltaY: -100 });
     expect(tops()).toEqual([220, 220]);
@@ -326,13 +326,13 @@ describe("トラックの行を縦に送る（仮の形、user:2026-11-20）", (
     expect(tops()).toEqual([0, 0]);
   });
 
-  it("マウスでえらんだトラックへは送らない。キーでえらんだ ・ 足したトラックへは送る（仕様書 3 章 92 の残り）", () => {
+  it("do not scroll to a track selected with the mouse. Scroll to a track selected by keys or added (spec 3, the rest of 92)", () => {
     show(six());
     document.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, button: 0 }));
     app.setState(six(105));
     flushSync();
     expect(tops()).toEqual([0, 0]);
-    // 足したトラックは、マウスで足しても送る。
+    // An added track is scrolled to even when added with the mouse.
     app.setState(
       app.stateWith((s) => {
         const first = s.song.tracks[0]!;

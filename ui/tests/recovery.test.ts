@@ -1,4 +1,4 @@
-// なおすためのファイルの案内と状態行（仕様書 3 章・6 章、モック F-Recover1〜3）。
+// The recovery file hint and the status line (spec 3 and 6, mock F-Recover1–3).
 import { flushSync, mount, unmount, type Component } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState } from "../src/bridge";
@@ -44,14 +44,14 @@ const text = (sel: string) => q(sel)?.textContent?.replace(/\s+/g, " ").trim() ?
 const lines = () => [...q('[data-test="recovery-hint"]')!.children].slice(0, 2).map((e) => e.textContent);
 const buttons = () => [...document.querySelectorAll<HTMLButtonElement>('[data-test="recovery-hint"] button')];
 
-describe("戻した曲の案内（F-Recover1）", () => {
-  it("PC が終わったとき: 仕様書 6 章の 2 文と、保存する Ctrl S ・ 戻さない", () => {
+describe("hint for a restored song (F-Recover1)", () => {
+  it("when the PC shut down: the two sentences of spec 6, and save Ctrl S, 「戻さない」", () => {
     show(RecoveryHint, scene("recover1"));
     expect(lines()).toEqual([
       "PC が終わる前の演奏を戻しました。まだ保存していません。",
       "11 月 15 日 22:41 に PC が終わったときの「新しい曲」です。テイク 2 つ。",
     ]);
-    // 文とキーの間は、ボタンの gap（space.1）。
+    // Between text and key is the button gap (space.1).
     expect(buttons().map((b) => b.textContent)).toEqual(["保存するCtrl S", "戻さない"]);
     expect(q('[data-test="recovery-save"] .key')!.textContent).toBe("Ctrl S");
     buttons()[0]!.click();
@@ -59,7 +59,7 @@ describe("戻した曲の案内（F-Recover1）", () => {
     expect(app.sent).toEqual([{ type: "saveSong" }, { type: "discardRecovered" }]);
   });
 
-  it("ふだん書いた物: ヤチヨさんの 2 文。保存した曲は名前", () => {
+  it("written in normal use: the owner's two sentences. A saved song shows its name", () => {
     show(
       RecoveryHint,
       scene("recover1", (s) => {
@@ -73,7 +73,7 @@ describe("戻した曲の案内（F-Recover1）", () => {
     ]);
   });
 
-  it("テイクが 0 なら、2 文目は「…です。」で終わる", () => {
+  it("with 0 takes, the second sentence ends with「…です。」", () => {
     show(
       RecoveryHint,
       scene("recover1", (s) => {
@@ -84,7 +84,7 @@ describe("戻した曲の案内（F-Recover1）", () => {
     expect(lines()[1]).toBe("11 月 15 日 22:41 に PC が終わったときの「新しい曲」です。");
   });
 
-  it("状態行: なおすためのファイルから戻しました ・ まだ保存していません（用語の説明つき）", () => {
+  it("status line: restored from the recovery file, not saved yet (with a term tip)", () => {
     vi.useFakeTimers();
     show(StatusLine, scene("recover1"));
     expect(text(".status .message")).toBe("なおすためのファイルから戻しました ・ まだ保存していません");
@@ -96,15 +96,15 @@ describe("戻した曲の案内（F-Recover1）", () => {
   });
 });
 
-describe("戻さないを押した（F-Recover2）", () => {
-  it("状態行: 戻した変更をすてて、最後に保存した形にしました。取り消せます（Ctrl Z）", () => {
+describe("pressed「戻さない」(F-Recover2)", () => {
+  it("status line: dropped the restored changes and went back to the last saved form. Can be undone (Ctrl Z)", () => {
     show(StatusLine, scene("recover2"));
     expect(text(".status .message")).toBe("戻した変更をすてて、最後に保存した形にしました。取り消せます（Ctrl Z）");
   });
 });
 
-describe("読めないとき（F-Recover3）", () => {
-  it("2 文と、ファイルの場所をひらく ・ 閉じる。用語に説明がつく", () => {
+describe("when it cannot be read (F-Recover3)", () => {
+  it("two sentences, and open the file location, close. The terms get tips", () => {
     vi.useFakeTimers();
     show(RecoveryHint, scene("recover3"));
     expect(lines()).toEqual([
@@ -125,7 +125,7 @@ describe("読めないとき（F-Recover3）", () => {
     word.dispatchEvent(new Event("pointerleave"));
   });
 
-  it("保存したことのない曲なら、2 文目は「新しい曲をひらいています。…」", () => {
+  it("for a song never saved, the second sentence is「新しい曲をひらいています。…」", () => {
     show(RecoveryHint, scene("recover3", (s) => (s.workspace.recovery = { kind: "unreadable", song: null })));
     expect(lines()[1]).toBe("新しい曲をひらいています。ファイルは消さずに残してあります。");
   });
@@ -139,11 +139,11 @@ describe("読めないとき（F-Recover3）", () => {
   });
 });
 
-describe("時刻と用語の分けかた", () => {
-  it("地元の時刻で、分は 2 けた", () => {
+describe("splitting time and terms", () => {
+  it("local time, minutes in 2 digits", () => {
     expect(dayAndTime(new Date(2026, 0, 2, 9, 5).getTime())).toEqual({ month: 1, day: 2, time: "9:05" });
   });
-  it("用語のある所だけを分ける", () => {
+  it("splits only where there are terms", () => {
     expect(termParts("あ語い語", "語")).toEqual([
       { text: "あ", term: false },
       { text: "語", term: true },

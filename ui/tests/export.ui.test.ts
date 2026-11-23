@@ -1,5 +1,5 @@
-// 第 7 回 区切り5 の 2 回目（画面）: 書き出しのダイアログ、「くわしく」、状態行の進みと「やめる」、「フォルダをひらく」、メニューとキー
-// （仕様書 3 章 34-B、2 章「書き出しの進み」、6 章、モック F7-Export ・ F7-Exporting ・ F-Export ・ R11-Fit、docs/history/design-notes.ja.md B-94-69〜75）。
+// Screen: the export dialog, 「くわしく」, progress and 「やめる」 in the status line, 「フォルダをひらく」, menu and keys
+// (spec 3 (34-B), spec 2 (Export progress), spec 6, mock F7-Export, F7-Exporting, F-Export, R11-Fit, docs/history/design-notes.ja.md B-94-69 to 75).
 import { flushSync, mount, unmount, type Component } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, Command, ExportDialogView, ExportView } from "../src/bridge";
@@ -51,15 +51,15 @@ const withDialog = (name: string, over: Partial<ExportDialogView>): FakeState =>
   return s;
 };
 
-describe("文の部品（B-94-75）", () => {
-  it("いちばん大きい所: 小数 1 けた、0 dB をこえたら +、音がなければ −∞", () => {
+describe("text parts (B-94-75)", () => {
+  it("the peak: 1 decimal place, + above 0 dB, −∞ when there is no sound", () => {
     expect([peakNumber(-0.6), peakNumber(1.44), peakNumber(0.01), peakNumber(null), peakNumber(-200)]).toEqual(["−0.6", "+1.4", "0.0", "−∞", "−∞"]);
   });
-  it("長さは 3:02、残りは 1 分まで秒、ほかは分。まだわからなければ —", () => {
+  it("length is 3:02, time left is in seconds up to 1 minute, minutes otherwise. — when not known yet", () => {
     expect([lengthText(182), lengthText(59.9), lengthText(3600)]).toEqual(["3:02", "0:59", "60:00"]);
     expect([leftText(40), leftText(0.2), leftText(59), leftText(60), leftText(130), leftText(null)]).toEqual(["40 秒", "1 秒", "59 秒", "1 分", "2 分", "—"]);
   });
-  it("範囲の下の行とたたんだ「くわしく」の行（しっぽなし ・ 実時間）", () => {
+  it("the row below the range and the folded 「くわしく」 row (no tail, real time)", () => {
     const s = scene("exportDialog");
     const d = s.export.dialog!;
     const bars = mapOf(s.timeline);
@@ -72,8 +72,8 @@ describe("文の部品（B-94-75）", () => {
   });
 });
 
-describe("書き出しのダイアログ（モック F7-Export、仕様書 3 章 34-B）", () => {
-  it("F7-Export: 範囲 3 つ、形は wav と flac（mp3 は出さない）、保存する所、たしかめ、たたんだ「くわしく」、やめる ・ 書き出す", () => {
+describe("export dialog (mock F7-Export, spec 3 (34-B))", () => {
+  it("F7-Export: 3 ranges, formats wav and flac (no mp3), where to save, the check, folded 「くわしく」, cancel and export", () => {
     show(ExportDialog, scene("exportDialog"));
     expect(text(q(".head"))).toBe("書き出し 閉じるEsc");
     expect(qa('[data-test^="export-range-"]').map(text)).toEqual(["曲ぜんぶ", "ループ 5〜9", "トラックごと"]);
@@ -81,7 +81,7 @@ describe("書き出しのダイアログ（モック F7-Export、仕様書 3 章
     expect(text(q('[data-test="export-span"]'))).toBe("曲ぜんぶ ・ 1. 1. 0000 〜 17. 1. 0000 と、音が消えるまで");
     expect(qa('[data-test^="export-format-"]').map(text)).toEqual(["wav", "flac"]);
     expect(text(q('[data-test="export-place"]'))).toBe("~/音楽/はじめての曲.wav");
-    // 仕様書 6 章「書き出しの前」の文（モックの「音割れなし」ではなく）。
+    // the spec 6 text 「書き出しの前」 (not the mock's 「音割れなし」).
     expect(qa('[data-test="export-check-line"]').map(text)).toEqual(["いちばん大きい所 −0.6 dB ・ 音割れはありません"]);
     expect(text(q('[data-test="export-stopped"]'))).toBe("止まっているプラグインはありません");
     expect(text(q('[data-test="export-details"]'))).toBe("▸ くわしく 48000 Hz ・ 24 ビット ・ しっぽは音が消えるまで（最大 10 秒）");
@@ -91,7 +91,7 @@ describe("書き出しのダイアログ（モック F7-Export、仕様書 3 章
     expect(q<HTMLButtonElement>('[data-test="export-start"]')!.disabled).toBe(false);
   });
 
-  it("押した物は意図だけを送る", () => {
+  it("pressed things only send intents", () => {
     show(ExportDialog, scene("exportDialog"));
     for (const sel of ["export-range-loop", "export-range-tracks", "export-format-flac", "export-choose", "export-details", "export-start", "export-cancel", "export-close"])
       q(`[data-test="${sel}"]`)!.click();
@@ -107,27 +107,27 @@ describe("書き出しのダイアログ（モック F7-Export、仕様書 3 章
     ] satisfies Command[]);
   });
 
-  it("ループのない曲 ・ トラックのない曲: その範囲は使えない（数のない「ループ」）", () => {
+  it("a song without a loop or without tracks: that range is disabled (「ループ」 without numbers)", () => {
     show(ExportDialog, withDialog("exportDialog", { loopRange: null, tracks: 0 }));
     expect(text(q('[data-test="export-range-loop"]'))).toBe("ループ");
     expect(q<HTMLButtonElement>('[data-test="export-range-loop"]')!.disabled).toBe(true);
     expect(q<HTMLButtonElement>('[data-test="export-range-tracks"]')!.disabled).toBe(true);
   });
 
-  it("たしかめの用意: 「用意をしています」で、書き出すは押せない（仕様書 3 章 41-A）", () => {
+  it("getting the check ready: 「用意をしています」, and export cannot be pressed (spec 3 (41-A))", () => {
     show(ExportDialog, scene("exportWaiting"));
     expect(qa('[data-test="export-check-line"]').map(text)).toEqual(["用意をしています"]);
     expect(q<HTMLButtonElement>('[data-test="export-start"]')!.disabled).toBe(true);
   });
 
-  it("数えている途中: 「たしかめています ・ 棒 ・ 38 %」と「ここまでのいちばん大きい所」の 2 行。書き出すは押せる（3 章 41-A）", () => {
+  it("while counting: two rows, 「たしかめています ・ 棒 ・ 38 %」 and 「ここまでのいちばん大きい所」. Export can be pressed (spec 3 (41-A))", () => {
     show(ExportDialog, scene("exportCounting"));
     expect(qa('[data-test="export-check-line"]').map(text)).toEqual(["たしかめています 38 %", "ここまでのいちばん大きい所 −3.5 dB"]);
     expect(q<HTMLElement>('[data-test="export-check-line"] .fill')!.style.transform).toBe("scaleX(0.38)");
     expect(q<HTMLButtonElement>('[data-test="export-start"]')!.disabled).toBe(false);
   });
 
-  it("音が割れる: 3 章 41-A の rec の文と gray.8 の文、「このまま書き出す」。数えている途中でも", () => {
+  it("clipping: the rec text and the gray.8 text of spec 3 (41-A), 「このまま書き出す」. Also while counting", () => {
     show(ExportDialog, scene("exportClips"));
     const over = (count: number, peak: string) => `0 dB をこえる所が ${count} か所あります（いちばん大きい所 ${peak} dB）。音が割れます。`;
     const hint = "マスターのフェーダーを下げるか、リミッターの上限を見てください。";
@@ -141,20 +141,20 @@ describe("書き出しのダイアログ（モック F7-Export、仕様書 3 章
     expect(qa('[data-test="export-check-line"]').map(text)).toEqual(["たしかめています 50 %", "ここまでのいちばん大きい所 +0.4 dB", over(2, "+0.4"), hint]);
     expect(text(q('[data-test="export-start"]'))).toBe("このまま書き出すEnter");
     unmount(mounted!);
-    // 32 ビットの wav: こえた所があっても割れない（clips は false）。音割れの文は出さない。
+    // 32-bit wav: it does not clip even with parts over (clips is false). No clipping text.
     show(ExportDialog, withDialog("exportDialog", { check: { state: "done", peakDb: 0.4, clips: false, over: 2 } }));
     expect(qa('[data-test="export-check-line"]').map(text)).toEqual(["いちばん大きい所 +0.4 dB ・ 音割れはありません"]);
     expect(text(q('[data-test="export-start"]'))).toBe("書き出すEnter");
   });
 
-  it("止まっているプラグイン（F-Export）: 名前と居場所は rec、とばした音で書き出す", () => {
+  it("stopped plugin (F-Export): name and location in rec, exports with the bypassed sound", () => {
     show(ExportDialog, scene("exportStopped"));
     const row = q('[data-test="export-stopped"]')!;
     expect(text(row)).toMatch(/^止まっているプラグイン Brick EQ ・ \d .+ この枠をとばした音で書き出します$/);
     expect(text(row.querySelector(".rec"))).toMatch(/^Brick EQ ・ /);
   });
 
-  it("たしかめができない: 仮の文、書き出すは押せない", () => {
+  it("the check fails: a stand-in text, export cannot be pressed", () => {
     show(ExportDialog, scene("exportCheckFailed"));
     expect(qa('[data-test="export-check-line"]').map(text)).toEqual(["Surge XT を書き出し用に読みこめませんでした"]);
     expect(q<HTMLButtonElement>('[data-test="export-start"]')!.disabled).toBe(true);
@@ -163,7 +163,7 @@ describe("書き出しのダイアログ（モック F7-Export、仕様書 3 章
     expect(qa('[data-test="export-check-line"]').map(text)).toEqual(["作業の場所に書けませんでした"]);
   });
 
-  it("ひらいた「くわしく」: サンプルレート ・ ビット ・ しっぽは一覧で、実時間は選ぶ印", () => {
+  it("opened 「くわしく」: sample rate, bits and tail are lists, real time is a choice mark", () => {
     show(ExportDialog, scene("exportAdvanced"));
     expect(text(q('[data-test="export-details"]'))).toBe("▾ くわしく");
     expect(qa('[data-test="export-adv"] .row').map(text)).toEqual([
@@ -198,13 +198,13 @@ describe("書き出しのダイアログ（モック F7-Export、仕様書 3 章
     ] satisfies Command[]);
   });
 
-  it("速く回せないプラグインがあれば、実時間は外せない（使えない形でオン）", () => {
+  it("if a plugin cannot run fast, real time cannot be turned off (on, disabled)", () => {
     show(ExportDialog, withDialog("exportAdvanced", { realtime: true, realtimeForced: true }));
     const pick = q<HTMLButtonElement>('[data-test="export-realtime"]')!;
     expect([pick.disabled, pick.getAttribute("aria-checked")]).toEqual([true, "true"]);
   });
 
-  it("R11-Fit: 中身はスクロールする箱の中、見出しと下のボタンはその外", () => {
+  it("R11-Fit: the contents are in a scrolling box, the heading and the bottom buttons are outside it", () => {
     show(ExportDialog, scene("exportFit"));
     const body = q('[data-test="export-body"]')!;
     expect(body.contains(q('[data-test="export-check"]'))).toBe(true);
@@ -213,7 +213,7 @@ describe("書き出しのダイアログ（モック F7-Export、仕様書 3 章
   });
 });
 
-describe("キー（仕様書 4 章、3 章の Esc の順）", () => {
+describe("keys (spec 4, Esc order in spec 3)", () => {
   function key(s: AppState, init: KeyboardEventInit): Command[] {
     const sent: Command[] = [];
     handleKeydown(new KeyboardEvent("keydown", { cancelable: true, ...init }), {
@@ -224,19 +224,19 @@ describe("キー（仕様書 4 章、3 章の Esc の順）", () => {
     return sent;
   }
 
-  it("Esc でとじる、Enter で書き出す（押せないときは何もしない）", () => {
+  it("Esc closes, Enter exports (does nothing when it cannot be pressed)", () => {
     expect(key(scene("exportDialog"), { key: "Escape" })).toEqual([{ type: "closeExport" }]);
     expect(key(scene("exportDialog"), { key: "Enter" })).toEqual([{ type: "startExport" }]);
     expect(key(scene("exportWaiting"), { key: "Enter" })).toEqual([]);
   });
 
-  it("棚でためし弾き中でも、ダイアログが先", () => {
+  it("the dialog comes first even while auditioning in the shelf", () => {
     const s = scene("shelfAudition");
     s.export.dialog = scene("exportDialog").export.dialog;
     expect(key(s, { key: "Escape" })).toEqual([{ type: "closeExport" }]);
   });
 
-  it("Mod Shift E でひらく。録音中 ・ カウントイン中 ・ 書き出している間 ・ もうひらいているときは送らない（B-94-74）", () => {
+  it("opens with Mod Shift E. Not sent while recording, during count-in, while exporting, or when already open (B-94-74)", () => {
     const modShiftE = { key: "E", code: "KeyE", ctrlKey: true, shiftKey: true };
     expect(key(scene("tracks6"), modShiftE)).toEqual([{ type: "openExport" }]);
     for (const st of ["recording", "countIn"] as const) {
@@ -250,7 +250,7 @@ describe("キー（仕様書 4 章、3 章の Esc の順）", () => {
   });
 });
 
-describe("保存する所の欄: 入りきらない道は、頭を省いて終わり（ファイルの名前）を見せる", () => {
+describe("the where-to-save field: a path that does not fit drops its start and shows its end (the file name)", () => {
   const LONG = "~/ミュージック/とても長い名前のフォルダ/もっと長い名前のフォルダ/k7m5-song16.wav";
   const BOX = 300;
   const CHAR = 8;
@@ -258,7 +258,7 @@ describe("保存する所の欄: 入りきらない道は、頭を省いて終�
   const hadOffset = Object.getOwnPropertyDescriptor(proto, "offsetWidth");
   let observed: { fire: () => void; nodes: Element[] }[] = [];
   beforeEach(() => {
-    // jsdom はレイアウトをしない: 字は 1 字 8、欄は 300 とする。
+    // jsdom does no layout: each letter is 8 and the field is 300.
     Object.defineProperty(proto, "offsetWidth", {
       configurable: true,
       get(this: HTMLElement) {
@@ -287,11 +287,11 @@ describe("保存する所の欄: 入りきらない道は、頭を省いて終�
     vi.unstubAllGlobals();
   });
 
-  it("幅は内がわのすきまを引いてくらべる", () => {
+  it("the width is compared after taking away the padding", () => {
     expect([isCut(284, 300, 8, 8), isCut(285, 300, 8, 8), isCut(300, 300, 0, 0)]).toEqual([false, true, false]);
   });
 
-  it("入りきる道には印がない。入りきらない道は data-cut がつき、字はまるごと「終わりをそろえる箱」の中にある", () => {
+  it("a path that fits has no mark. A path that does not fit gets data-cut, and the whole text is inside the 「終わりをそろえる箱」", () => {
     show(ExportDialog, scene("exportDialog"));
     const short = q('[data-test="export-place"]')!;
     expect(short.hasAttribute("data-cut")).toBe(false);
@@ -300,14 +300,14 @@ describe("保存する所の欄: 入りきらない道は、頭を省いて終�
     show(ExportDialog, withDialog("exportDialog", { place: LONG }));
     const field = q('[data-test="export-place"]')!;
     expect(field.hasAttribute("data-cut")).toBe(true);
-    // 字は切らずに置く（終わりのファイルの名前まで）。頭を隠すのは CSS（data-cut の欄の「…」と、箱の終わりそろえ）。
+    // the text is placed without cutting (up to the file name at the end). CSS hides the start (the 「…」 of the data-cut field and the end alignment of the box).
     const inner = field.querySelector(".path > [data-cut-text]")!;
     expect(inner.textContent).toBe(LONG);
     expect(inner.textContent!.endsWith("k7m5-song16.wav")).toBe(true);
     expect(text(field)).toBe(LONG);
   });
 
-  it("道や幅が変わると測りなおす（欄と字の大きさを見はる）", () => {
+  it("measures again when the path or width changes (watches the field and the text size)", () => {
     const s = withDialog("exportDialog", { place: LONG });
     show(ExportDialog, s);
     const field = q('[data-test="export-place"]')!;
@@ -321,13 +321,13 @@ describe("保存する所の欄: 入りきらない道は、頭を省いて終�
   });
 });
 
-describe("状態行（仕様書 2 章「書き出しの進み」、6 章、モック F7-Export ・ F7-Exporting）", () => {
-  it("ダイアログをひらいている間は「「書き出し」のダイアログをひらいています」", () => {
+describe("status line (spec 2 (Export progress), spec 6, mock F7-Export, F7-Exporting)", () => {
+  it("while the dialog is open, 「「書き出し」のダイアログをひらいています」", () => {
     show(StatusLine, scene("exportDialog"));
     expect(text(q(".message"))).toBe("「書き出し」のダイアログをひらいています");
   });
 
-  it("書き出している間: 札の代わりに「書き出しています」、棒、%、ファイルと残り、「やめる」は cancelExport", () => {
+  it("while exporting: 「書き出しています」 in place of the tag, a bar, %, the file and time left; 「やめる」 is cancelExport", () => {
     show(StatusLine, scene("exporting"));
     const run = q('.status [data-test="export-run"]')!;
     expect(q('.status [data-test="status-badge"]')).toBeNull();
@@ -339,7 +339,7 @@ describe("状態行（仕様書 2 章「書き出しの進み」、6 章、モ�
     expect(app.sent).toEqual([{ type: "cancelExport" }]);
   });
 
-  it("書き出し中に録音（仕様書 3 章 94-84 ・ 6 章）: 「● 録音中」が先、進みは左の終わりに短く「書き出し 46 %」", () => {
+  it("recording while exporting (spec 3 (94-84), spec 6): 「● 録音中」 first, the progress short at the left end as 「書き出し 46 %」", () => {
     const s = scene("exporting");
     s.transport.state = "recording";
     s.status.message = { id: "recording", track: { number: 1, name: "ピアノ" }, take: 2 };
@@ -351,19 +351,19 @@ describe("状態行（仕様書 2 章「書き出しの進み」、6 章、モ�
     expect(left.indexOf("status-badge")).toBeLessThan(left.indexOf("export-aside"));
   });
 
-  it("実時間で書き出している: 仕様書 6 章の文", () => {
+  it("exporting in real time: the spec 6 text", () => {
     show(StatusLine, scene("exportingRealtime"));
     expect(text(q('.status [data-test="export-rest"]'))).toBe("速く書き出せないプラグインがあるので、実時間で書き出します（3:02）。");
   });
 
-  it("人が「実時間で書き出す」を選んだだけのときは、プラグインのせいにしない", () => {
+  it("when the person only chose 「実時間で書き出す」, it does not blame a plugin", () => {
     const s = scene("exportingRealtime");
     s.export.run = { state: "running", percent: 12, file: "はじめての曲.wav", remainingS: 160, realtime: true, realtimeForced: false, lengthS: 182 };
     show(StatusLine, s);
     expect(text(q('.status [data-test="export-rest"]'))).toBe("実時間で書き出しています（3:02）。");
   });
 
-  it("終わった: 1 つのファイルは「書き出した」の文と「フォルダをひらく」（showExported）。トラックごとはフォルダ", () => {
+  it("finished: one file gives the 「書き出した」 text and 「フォルダをひらく」 (showExported). Per track gives the folder", () => {
     show(StatusLine, scene("exportDone"));
     expect(text(q('.status [data-test="status-badge"]'))).toBe("■ 停止中");
     expect(text(q(".status .message"))).toBe("はじめての曲.wav を書き出しました（3:02 ・ 48000 Hz ・ 24 ビット）。");
@@ -377,7 +377,7 @@ describe("状態行（仕様書 2 章「書き出しの進み」、6 章、モ�
     expect(text(q(".status .message"))).toBe("書き出しました: ~/ミュージック/はじめての曲/");
   });
 
-  it("やめた ・ できなかった", () => {
+  it("cancelled, failed", () => {
     show(StatusLine, scene("exportCancelled"));
     expect(text(q(".status .message"))).toBe("書き出しをやめました。途中までのファイルは消しました。");
     unmount(mounted!);
@@ -390,7 +390,7 @@ describe("状態行（仕様書 2 章「書き出しの進み」、6 章、モ�
     expect(text(q(".status .message"))).toBe("書き出せませんでした。Surge XT が止まりました。途中までのファイルは消しました。");
   });
 
-  it("% は 1 秒に 2 回まで（22-22 と同じ）。終わった時はすぐ", () => {
+  it("% at most twice a second (the same as 22-22). Right away when finished", () => {
     vi.useFakeTimers();
     const s = scene("exporting");
     show(StatusLine, s);
@@ -408,7 +408,7 @@ describe("状態行（仕様書 2 章「書き出しの進み」、6 章、モ�
   });
 });
 
-describe("ExportShown（見せる数）", () => {
+describe("ExportShown (the numbers shown)", () => {
   let now = 1000;
   let view: ExportView | null = null;
   let shown: ExportShown;
@@ -430,7 +430,7 @@ describe("ExportShown（見せる数）", () => {
     run: null,
   });
 
-  it("たしかめの % だけなら 500 ms に 1 回。ほかの所が変わったらすぐ", () => {
+  it("only the check % changes: once per 500 ms. Right away when other parts change", () => {
     view = counting(10);
     const first = shown.current;
     later(100);

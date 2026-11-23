@@ -1,5 +1,5 @@
-// 区切り4 の 2 回目（画面）: 選んだクリップの欄の「のび縮み ・ 音の高さ」（仕様書 3 章「のび縮み」「音の高さ」「音を作っている間」、
-// モック F7-Stretch ・ F7-AudioEdit）、クリップの印の字、状態行、右クリックの一覧の席、「meloet について」の写したソース。
+// Screen part: 「のび縮み ・ 音の高さ」 in the panel of the chosen clip (spec 3 (stretch, pitch, while the sound is made),
+// mocks F7-Stretch / F7-AudioEdit), the clip mark text, the status line, the place in the context menu, and the copied sources in 「meloet について」.
 import { flushSync, mount, unmount } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, StatusMessage } from "../src/bridge";
@@ -48,7 +48,7 @@ function type(field: string, value: string): void {
   flushSync();
 }
 
-describe("のび縮み ・ 音の高さの 4 行（約束 25 の場面）", () => {
+describe("the 4 rows of stretch and pitch (protocol 25 scenes)", () => {
   it.each([
     ["stretch", ["曲のテンポについていく オン", "この音のテンポ 76.80", "音の高さ +2 半音 0 セント", "声の感じを保つ オン"]],
     ["stretchRendering", ["曲のテンポについていく オン", "この音のテンポ 76.80", "音の高さ +2 半音 0 セント", "声の感じを保つ オン"]],
@@ -61,7 +61,7 @@ describe("のび縮み ・ 音の高さの 4 行（約束 25 の場面）", () =
     expect(target.querySelectorAll(".row.unusable")).toHaveLength(0);
   });
 
-  it("オン ・ オフは 12×12 の四角の印を押して、SetClipStretch を 1 つ", () => {
+  it("on / off is pressing the 12×12 square mark, one SetClipStretch", () => {
     const s = scene("stretch");
     panel(s);
     expect(q('[data-test="clip-switch-follow"]')!.getAttribute("aria-checked")).toBe("true");
@@ -73,7 +73,7 @@ describe("のび縮み ・ 音の高さの 4 行（約束 25 の場面）", () =
     ]);
   });
 
-  it("この音のテンポ: 2 回押して打つ。読めない字は RejectValue（テンポの範囲の文）。同じ数は送らない", () => {
+  it("source tempo: press twice and type. Unreadable text gives RejectValue (the tempo range text). The same number is not sent", () => {
     panel(scene("stretch"));
     type("sourceBpm", "120");
     type("sourceBpm", "76.80");
@@ -84,7 +84,7 @@ describe("のび縮み ・ 音の高さの 4 行（約束 25 の場面）", () =
     ]);
   });
 
-  it("「—」のときだけ「さがす」: 押すと FindSourceTempo。偽物は見つけた数を入れて、状態行で言う", () => {
+  it("「さがす」 only with 「—」: pressing sends FindSourceTempo. The fake puts in the found number and says so in the status line", () => {
     const s = scene("stretchNoTempo");
     panel(s);
     q('[data-test="clip-find-tempo"]')!.click();
@@ -95,21 +95,21 @@ describe("のび縮み ・ 音の高さの 4 行（約束 25 の場面）", () =
     expect(q('[data-test="clip-find-tempo"]')).toBeNull();
   });
 
-  it("音の高さ: 半音を上へドラッグすると字だけが先に動き、離したときに 1 手。Esc でやめると何も送らない", () => {
+  it("pitch: dragging semitones up moves only the text first, 1 step on release. Esc cancels and sends nothing", () => {
     panel(scene("stretch"));
     const semis = q('[data-test="clip-value-semitones"]')!;
     pointer(semis, "pointerdown", 100);
     pointer(semis, "pointermove", 100 - 3 * 8);
     expect(text(semis)).toBe("+5");
     expect(app.sent).toEqual([]);
-    // 状態行とその場の読み値（仕様書 6 章「音の高さを動かしている」）。
+    // The status line and the reading in place (spec 6 「音の高さを動かしている」).
     expect(dragReading.text).toBe("音の高さ +5 半音 +0 セント（ドラッグ中）");
     expect(text(q('[data-test="clip-value-semitones-reading"]'))).toBe("+5 ・ +0");
     pointer(semis, "pointerup", 100 - 3 * 8);
     expect(dragReading.text).toBeNull();
     expect(q('[data-test="clip-value-semitones-reading"]')).toBeNull();
     expect(app.sent.map((c) => (c.type === "setClipStretch" ? c.change : c))).toEqual([{ kind: "semitones", semitones: 5 }]);
-    // 範囲のはしで止まる。Esc はもとの値に戻す。
+    // Stops at the range ends. Esc returns to the original value.
     const cents = q('[data-test="clip-value-cents"]')!;
     pointer(cents, "pointerdown", 0);
     pointer(cents, "pointermove", 1000);
@@ -123,7 +123,7 @@ describe("のび縮み ・ 音の高さの 4 行（約束 25 の場面）", () =
     expect(app.sent).toHaveLength(1);
   });
 
-  it("音の高さ: 半音とセントを別々に打ちこむ（−、+ も読む）。範囲の外は Rust がはしに入れる（B-94-29 と同じ）", () => {
+  it("pitch: semitones and cents typed separately (also reads −, +). Rust clamps out of range to the ends (same as B-94-29)", () => {
     panel(scene("stretch"));
     type("semitones", "−3");
     type("cents", "+60");
@@ -134,7 +134,7 @@ describe("のび縮み ・ 音の高さの 4 行（約束 25 の場面）", () =
     ]);
   });
 
-  it("録音中は押せない（送らない）", () => {
+  it("cannot be pressed while recording (not sent)", () => {
     const s = scene("stretch");
     s.transport.state = "recording";
     panel(s);
@@ -145,7 +145,7 @@ describe("のび縮み ・ 音の高さの 4 行（約束 25 の場面）", () =
     expect(app.sent).toEqual([]);
   });
 
-  it("音を作っている間は、欄の上に進みの棒「音を作っています ▬ 34 %」（このクリップの rendering だけ）", () => {
+  it("while the sound is made, a progress bar 「音を作っています ▬ 34 %」 above the panel (only rendering of this clip)", () => {
     panel(scene("stretchRendering"));
     expect(text(q('[data-test="clip-rendering"]'))).toBe("音を作っています 34 %");
     expect(q<HTMLElement>('[data-test="clip-rendering"] .fill')!.style.transform).toBe("scaleX(0.34)");
@@ -158,8 +158,8 @@ describe("のび縮み ・ 音の高さの 4 行（約束 25 の場面）", () =
   });
 });
 
-describe("字の決まり", () => {
-  it("印: ×は小数 2 けたで 1.00 は出さない。音の高さは「+2」「−1 ・ +30」「+0 ・ −20」（セントにも符号。仕様書 3 章「印の読みかた」）、0 なら出さない", () => {
+describe("text rules", () => {
+  it("mark: × has 2 decimals and 1.00 is not shown. Pitch is 「+2」「−1 ・ +30」「+0 ・ −20」 (cents have a sign too; spec 3, how to read the mark), not shown when 0", () => {
     const base = { follow: true, sourceBpm: 96, ratio: null, semitones: 0, cents: 0, keepFormant: true };
     expect(clipMarks(base)).toBe(NO_MARKS);
     expect(clipMarks({ ...base, ratio: 1.25, semitones: 2 })).toEqual(["×1.25", "+2"]);
@@ -169,7 +169,7 @@ describe("字の決まり", () => {
     expect(clipMarks({ ...base, semitones: 2, cents: 30 })).toEqual(["+2 ・ +30"]);
     expect([ratioMarkValue(0.996), ratioMarkValue(0.994), ratioMarkValue(1.125), ratioMarkValue(null)]).toEqual([null, "0.99", "1.13", null]);
   });
-  it("打ちこみとドラッグの段", () => {
+  it("steps for typing and dragging", () => {
     expect([parseWhole("+2"), parseWhole("−1"), parseWhole("３"), parseWhole("2.6"), parseWhole("a"), parseWhole("")]).toEqual([2, -1, 3, 3, null, null]);
     expect([parseSourceBpm("120"), parseSourceBpm("96.5"), parseSourceBpm("0"), parseSourceBpm("-3"), parseSourceBpm("x")]).toEqual([120, 96.5, null, null, null]);
     expect([dragSteps(24, 8), dragSteps(-9, 8), dragSteps(7, 8), dragSteps(5, 0)]).toEqual([3, -1, 0, 0]);
@@ -177,30 +177,30 @@ describe("字の決まり", () => {
   });
 });
 
-describe("状態行", () => {
+describe("status line", () => {
   function line(state: AppState): string {
     app.setState(state);
     mounted = mount(StatusLine, { target });
     flushSync();
     return text(q(".message")) ?? "";
   }
-  it("音を作っている間は、いつものまとめの代わりに「歌 テイク 1 の音を作っています 34 % ・ …」（モック F7-Stretch）", () => {
+  it("while the sound is made, 「歌 テイク 1 の音を作っています 34 % ・ …」 instead of the usual summary (mock F7-Stretch)", () => {
     expect(line(scene("stretchRendering"))).toBe("歌 テイク 1 の音を作っています 34 % ・ できるまでは、もとの音で鳴らします");
   });
-  it("ほかの知らせ（さがした答え）は、音を作っている間でも先に出す", () => {
+  it("other notices (the search answer) come first even while the sound is made", () => {
     const s = scene("stretchRendering");
     s.status.message = { id: "sourceTempoFound", name: "ドラム ループ", bpm: 120, bars: 2, same: false } satisfies StatusMessage;
     expect(line(s)).toBe("この音のテンポは 120.00 くらいです（さがした数を入れました）。");
   });
-  it("見つからなかったとき", () => {
+  it("when not found", () => {
     const s = scene("stretchNoTempo");
     s.status.message = { id: "sourceTempoNotFound", name: "ドラム" };
     expect(line(s)).toBe("この音のテンポは見つかりませんでした。数を打ちこんでください。");
   });
 });
 
-describe("meloet について: 写したソース（Signalsmith Stretch ・ Linear）", () => {
-  it("upstream の vendored は、名前と版で部品の行になる（MIT の見出しの中）", () => {
+describe("「meloet について」: copied sources (Signalsmith Stretch, Linear)", () => {
+  it("upstream vendored parts become part rows by name and version (under the MIT heading)", () => {
     const list: LicenseList = {
       meloet: { version: "0.1.0", license: "MIT OR Apache-2.0" },
       sounds: [],
@@ -215,7 +215,7 @@ describe("meloet について: 写したソース（Signalsmith Stretch ・ Line
     expect(parts.map((p) => `${p.kind}:${p.name}@${p.version}`)).toEqual(["crate:serde@1.0.0", "vendored:Signalsmith Stretch@1.4.0"]);
     expect(partGroups(parts, "signalsmith").map((g) => [g.group, g.parts.map((p) => p.name)])).toEqual([["MIT", ["Signalsmith Stretch"]]]);
   });
-  it("作った一覧（generated/licenses.json）に 2 つとも入っている", async () => {
+  it("both are in the generated list (generated/licenses.json)", async () => {
     const { licenseList } = await import("../src/components/about/licenses");
     const names = allParts(licenseList)
       .filter((p) => p.kind === "vendored")

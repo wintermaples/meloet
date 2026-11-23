@@ -1,5 +1,5 @@
-// 第 7 回 区切り3 の 2 回目（画面の HTML）: 160 の行、フェードの取っ手と音量の線、選んだクリップの欄、見つからない音と読みこんでいる途中の文、
-// 音のファイルを持ってきている間（入る所の枠、分かれた箱、落としたときの DropAudio）、メニュー、S、落ちたあとの歌の行。
+// Screen HTML: the 160 row, fade handles and the gain line, the selected clip panel, texts for missing sounds and loading,
+// while a sound file is dragged in (the frame where it goes, the split box, DropAudio on drop), menus, S, and the vocal row after a crash.
 import { flushSync, mount, unmount, type Component } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, Command } from "../src/bridge";
@@ -62,8 +62,8 @@ function pointer(el: Element, type: string, clientX: number, clientY: number): v
   flushSync();
 }
 
-describe("選んだクリップの欄（仕様書 3 章 93-4、モック F7-AudioEdit）", () => {
-  it("名前と「選んだクリップ」、ファイルの行、クリップの 4 行、のび縮みの 4 行", () => {
+describe("selected clip panel (spec 3 (93-4), mock F7-AudioEdit)", () => {
+  it("name and 「選んだクリップ」, the file row, 4 clip rows, 4 stretch rows", () => {
     show(ParamsPanel, scene("audioEdit"), { onfold: () => {} });
     expect(text(q('[data-test="params-name"]'))).toBe("歌 テイク 1");
     expect(text(q('[data-test="clip-params"]'))).toContain("選んだクリップ");
@@ -71,14 +71,14 @@ describe("選んだクリップの欄（仕様書 3 章 93-4、モック F7-Audi
     expect(text(q('[data-test="clip-value-start"]'))).toBe("7. 1. 0000");
     expect(text(q('[data-test="clip-value-length"]'))).toBe("2. 0. 0000");
     expect(text(q('[data-test="clip-value-gainDb"]'))).toBe("−3.0 dB");
-    // モックの「前 0.120 ・ 後 0.000」を 4 けたのティックで（B-94-28）。
+    // the mock's 「前 0.120 ・ 後 0.000」 as 4-digit ticks (B-94-28).
     expect(text(q('[data-test="clip-value-fade"]'))).toBe("前 0.0480 ・ 後 0.0000");
     const stretch = ["follow", "source-tempo", "pitch", "keepFormant"].map((k) => text(q(`[data-test="clip-${k}"]`)));
     expect(stretch).toEqual(["曲のテンポについていく オン", "この音のテンポ 96.00", "音の高さ +0 半音 0 セント", "声の感じを保つ オン"]);
     expect(qa(".row.unusable")).toEqual([]);
   });
 
-  it("サンプルレートがちがうファイルは「44100 Hz（曲に合わせて鳴らします）」、ビットのない形は出さない", () => {
+  it("a file with a different sample rate shows 「44100 Hz（曲に合わせて鳴らします）」; formats with no bits do not show it", () => {
     const s = scene("audioLoading");
     s.params.selected = { kind: "clip", track: vocalRow(s).vocal.id, clip: 70, missing: null };
     show(ParamsPanel, s, { onfold: () => {} });
@@ -86,7 +86,7 @@ describe("選んだクリップの欄（仕様書 3 章 93-4、モック F7-Audi
     expect(text(q('[data-test="clip-source-tempo"]'))).toBe("この音のテンポ さがす —");
   });
 
-  it("値を 2 回押して打つと SetClipField を 1 つ。読めない位置は RejectValue", () => {
+  it("pressing a value twice and typing sends one SetClipField. An unreadable position gives RejectValue", () => {
     show(ParamsPanel, scene("audioEdit"), { onfold: () => {} });
     const type = (field: string, value: string) => {
       q(`[data-test="clip-value-${field}"]`)!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
@@ -110,7 +110,7 @@ describe("選んだクリップの欄（仕様書 3 章 93-4、モック F7-Audi
     ]);
   });
 
-  it("見つからない音: 知らせの文と「さがす…」「曲から外す」（モック F7-AudioMissing）", () => {
+  it("missing sound: the notice text, 「さがす…」 and 「曲から外す」 (mock F7-AudioMissing)", () => {
     show(ParamsPanel, scene("audioMissing"), { onfold: () => {} });
     expect(text(q('[data-test="clip-missing"]'))).toBe(
       "歌 テイク 1.wav が見つかりません。前はここにありました: はじめての曲/音/歌 テイク 1.wav さがす… 曲から外す",
@@ -125,9 +125,9 @@ describe("選んだクリップの欄（仕様書 3 章 93-4、モック F7-Audi
   });
 });
 
-describe("欄の字", () => {
+describe("panel text", () => {
   const meter = { num: 4, den: 4 };
-  it("長さは「2. 0. 0000」、フェードは「0.0480」。打った字は空白も全角も読む", () => {
+  it("length is 「2. 0. 0000」, fade is 「0.0480」. Typed text is read with spaces and full-width characters too", () => {
     expect(clipLengthLabel(2 * BAR, meter)).toBe("2. 0. 0000");
     expect(clipLengthLabel(BAR + TPQ + 5, meter)).toBe("1. 1. 0005");
     expect(fadeLengthText(TPQ / 4, meter)).toBe("0.0480");
@@ -142,14 +142,14 @@ describe("欄の字", () => {
 
 const dims: LaneDims = { trackH: 64, inset: 3, hair: 1, mark: 2, nameH: 16, pad: 4, noteH: 2 };
 const view: View = { pxPerTick: 64 / BAR, scrollX: 0, width: 2000 };
-/** audioEdit の 6 本目（歌）だけを 1 行にした形。 */
+/** audioEdit with only the 6th track (vocal) as one row. */
 function vocalRow(s: AppState) {
   const vocal = s.song.tracks.find((tr) => tr.kind.kind === "vocal")!;
   return { vocal, tracks: [vocal] };
 }
 
-describe("フェードの取っ手と音量の線（仕様書 3 章 27-A ・「クリップの音量」）", () => {
-  it("どの歌のクリップにも左右の取っ手（絵は WebGL の四角）。音量の線は選んだクリップだけ。クリップごとの HTML は置かない", () => {
+describe("fade handles and the gain line (spec 3 (27-A), clip gain)", () => {
+  it("every audio clip has left and right handles (drawn as WebGL squares). The gain line only on the selected clip. No HTML per clip", () => {
     const s = scene("audioEdit");
     const { tracks } = vocalRow(s);
     show(AudioClipHandles, s, { view, dims, tracks, selected: new Set([72]), busy: false });
@@ -158,14 +158,14 @@ describe("フェードの取っ手と音量の線（仕様書 3 章 27-A ・「�
     const rects: GlRect[] = [];
     for (const clip of tracks[0]!.clips) handleRects(rects, view, dims, clipBox(view, dims, 0, clip.start, clip.end), audioShapeOf(clip)!, 6);
     expect(rects.map((r) => [r.w, r.h, r.color])).toEqual(Array(4).fill([6, 6, "color.gray.10"]));
-    // フェードがある側の取っ手は、フェードの切れ目がまん中。ない側は、クリップの角。
+    // on the side with a fade, the handle is centered on the fade's end point. On the side without, the clip corner.
     const right = tracks[0]!.clips[1]!;
     const box = clipBox(view, dims, 0, right.start, right.end);
     expect(rects[2]!.x + 3).toBeCloseTo((right.start + right.audio!.fadeIn) * view.pxPerTick);
     expect(rects[3]!.x + 6).toBeCloseTo(waveArea(dims, box).x1);
   });
 
-  it("ポインタが取っ手の上に来たら、その 1 つだけ HTML（カーソルの形）。はなれたら消える。録音中は出ない", () => {
+  it("when the pointer is over a handle, only that one gets HTML (for the cursor shape). It goes away when the pointer leaves. Not while recording", () => {
     const s = scene("audioEdit");
     const { tracks } = vocalRow(s);
     show(AudioClipHandles, s, { view, dims, tracks, selected: new Set(), busy: false });
@@ -185,7 +185,7 @@ describe("フェードの取っ手と音量の線（仕様書 3 章 27-A ・「�
     expect(audioDrag.now).toBeNull();
   });
 
-  it("線を上下にドラッグ: 画面だけが先に動き（audioDrag.now）、離して SetClipField を 1 つ。状態行は「… −3.0 dB（ドラッグ中）…」", () => {
+  it("dragging the line up or down: only the screen moves first (audioDrag.now), one SetClipField on release. The status line is 「… −3.0 dB（ドラッグ中）…」", () => {
     const s = scene("audioEdit");
     const { tracks } = vocalRow(s);
     show(AudioClipHandles, s, { view, dims, tracks, selected: new Set([72]), busy: false });
@@ -203,7 +203,7 @@ describe("フェードの取っ手と音量の線（仕様書 3 章 27-A ・「�
     expect(dragReading.text).toBeNull();
   });
 
-  it("Esc はドラッグをやめて、何も送らない。2 回押すと 0.0 dB", () => {
+  it("Esc cancels the drag and sends nothing. Pressing twice gives 0.0 dB", () => {
     const s = scene("audioEdit");
     const { tracks } = vocalRow(s);
     show(AudioClipHandles, s, { view, dims, tracks, selected: new Set([72]), busy: false });
@@ -220,7 +220,7 @@ describe("フェードの取っ手と音量の線（仕様書 3 章 27-A ・「�
     expect(app.sent).toEqual([{ type: "setClipField", clip: 72, field: "gainDb", value: 0 }]);
   });
 
-  it("取っ手を横にひっぱるとフェード（ティック）。もとの位置に gray.7 の枠", () => {
+  it("pulling a handle sideways makes a fade (ticks). A gray.7 border at the original position", () => {
     const s = scene("audioEdit");
     const { tracks } = vocalRow(s);
     show(AudioClipHandles, s, { view, dims, tracks, selected: new Set(), busy: false });
@@ -228,7 +228,7 @@ describe("フェードの取っ手と音量の線（仕様書 3 章 27-A ・「�
     const b = fadeHandleBox(view, dims, clipBox(view, dims, 0, clip.start, clip.end), audioShapeOf(clip)!, "fadeIn", 6);
     const x0 = b.x0 + 3;
     const y = b.y0 + 3;
-    // 押した出来事は、クリップの面（親）のほかの係には届かない。
+    // the press event does not reach the other handlers of the clip surface (the parent).
     const reached: string[] = [];
     target.addEventListener("pointerdown", () => reached.push("down"));
     pointer(target, "pointerdown", x0, y);
@@ -236,20 +236,20 @@ describe("フェードの取っ手と音量の線（仕様書 3 章 27-A ・「�
     pointer(target, "pointermove", x0 + 16, y);
     expect(audioDrag.now).toEqual({ clip: 72, fadeIn: TPQ / 4 + TPQ });
     expect(q(".origin-handle")).not.toBeNull();
-    // 状態行とその場の読み値（仕様書 6 章「フェードを動かしている」）。
+    // the status line and the reading in place (spec 6 「フェードを動かしている」).
     expect(dragReading.text).toBe("歌 テイク 1 の前のフェード 0. 1. 0480（ドラッグ中）・ 離すと決まります ・ やめるには Esc");
     expect(text(q('[data-test="clip-gain-reading"]'))).toBe("0. 1. 0480");
-    // ひっぱっている間、HTML の取っ手は値についていく。
+    // while pulling, the HTML handle follows the value.
     expect(parseFloat(q('[data-test="clip-fade-grip"]')!.style.left)).toBeCloseTo(b.x0 + 16);
     pointer(target, "pointerup", x0 + 16, y);
     expect(app.sent).toEqual([{ type: "setClipField", clip: 72, field: "fadeIn", value: TPQ / 4 + TPQ }]);
     expect(dragReading.text).toBeNull();
-    // 取っ手のない所を押しても、何もしない（クリップの面の係に届く）。
+    // pressing where there is no handle does nothing (it reaches the clip surface handler).
     pointer(target, "pointerdown", x0 + 100, y + 20);
     expect(reached).toEqual(["down"]);
   });
 
-  it("録音中は取っ手も線も押せない", () => {
+  it("handles and line cannot be pressed while recording", () => {
     const s = scene("audioEdit");
     const { tracks } = vocalRow(s);
     show(AudioClipHandles, s, { view, dims, tracks, selected: new Set([72]), busy: true });
@@ -259,8 +259,8 @@ describe("フェードの取っ手と音量の線（仕様書 3 章 27-A ・「�
   });
 });
 
-describe("歌のクリップの中の文", () => {
-  it("見つからない音は「音のファイルが見つかりません」、読みこんでいる途中は「読みこんでいます 40 %」", () => {
+describe("text inside an audio clip", () => {
+  it("a missing sound shows 「音のファイルが見つかりません」, loading shows 「読みこんでいます 40 %」", () => {
     const missing = scene("audioMissing");
     show(AudioClipNotes, missing, { view, dims, tracks: vocalRow(missing).tracks });
     expect(qa('[data-test="audio-clip-missing"]').map(text)).toEqual(["音のファイルが見つかりません", "音のファイルが見つかりません"]);
@@ -271,8 +271,8 @@ describe("歌のクリップの中の文", () => {
   });
 });
 
-describe("160 の行（仕様書 3 章「歌のトラックでピアノロールをひらこうとしたとき」）", () => {
-  it("tallTrack の行だけ高く、下の行と帯はその分さがる", () => {
+describe("the 160 row (spec 3, when the piano roll is opened on a vocal track)", () => {
+  it("only the tallTrack row is tall, and the rows and bands below move down by that much", () => {
     const s = scene("audioTall");
     const rows = arrangeRows(s.song.tracks, [], { trackH: 64, laneH: 48, rowH: 24, tall: { track: s.arrange.tallTrack, h: 160 } });
     const at = s.song.tracks.findIndex((tr) => tr.id === s.arrange.tallTrack);
@@ -281,7 +281,7 @@ describe("160 の行（仕様書 3 章「歌のトラックでピアノロール
     expect(rows.height - arrangeRows(s.song.tracks, [], { trackH: 64, laneH: 48, rowH: 24 }).height).toBe(96);
   });
 
-  it("見出しも同じ高さ", () => {
+  it("the head is the same height too", () => {
     show(TrackHeads, scene("audioTall"));
     const heads = qa('[data-test="track-head"]');
     expect(heads[5]!.style.height).toBe("160px");
@@ -289,8 +289,8 @@ describe("160 の行（仕様書 3 章「歌のトラックでピアノロール
   });
 });
 
-describe("音のファイルを持ってきている間（仕様書 3 章 29-A ・ 30-C、モック F7-AudioDrop）", () => {
-  it("2 つ以上: 箱を左右に分け、ポインタのいる側を「乗っている」に", () => {
+describe("while a sound file is dragged in (spec 3 (29-A, 30-C), mock F7-AudioDrop)", () => {
+  it("two or more: the box splits left and right, and the side with the pointer is 「乗っている」", () => {
     const s = scene("audioDrop");
     app.setState(s);
     window.innerWidth = 1280;
@@ -306,13 +306,13 @@ describe("音のファイルを持ってきている間（仕様書 3 章 29-A �
     expect(q('[data-test="file-drop-separate"]')!.classList.contains("on")).toBe(false);
   });
 
-  it("SF2 とまぜたら「SF2 は 1 つ棚へ ・ 音のファイル 3 つはアレンジへ」", () => {
+  it("mixed with SF2: 「SF2 は 1 つ棚へ ・ 音のファイル 3 つはアレンジへ」", () => {
     const s = scene("audioDropMixed");
     show(FileDropNotice, s, { drop: s.workspace.fileDrop });
     expect(text(q('[data-test="file-drop-mixed"]'))).toBe("SF2 は 1 つ棚へ ・ 音のファイル 3 つはアレンジへ");
   });
 
-  it("1 つ: 名前、入る所（6 章「音のファイルを 1 つ持ってきている」）、やめかた。SF2 の「足せる」文は出さない", () => {
+  it("one: name, where it goes (spec 6 「音のファイルを 1 つ持ってきている」), how to cancel. The SF2 「足せる」 text is not shown", () => {
     const s = scene("audioDropOne");
     fileDrag.at = null;
     show(FileDropNotice, s, { drop: s.workspace.fileDrop });
@@ -331,7 +331,7 @@ describe("音のファイルを持ってきている間（仕様書 3 章 29-A �
     }
   });
 
-  it("fileDrag で場所を覚え、fileDrop で DropAudio を 1 つ（左右は窓の半分、1 つなら落とした所のトラックへ）", () => {
+  it("fileDrag remembers the place, fileDrop sends one DropAudio (left and right are halves of the window; with one, to the track where it was dropped)", () => {
     const s = scene("audioDrop");
     app.setState(s);
     window.innerWidth = 1280;
@@ -352,8 +352,8 @@ describe("音のファイルを持ってきている間（仕様書 3 章 29-A �
   });
 });
 
-describe("メニュー ・ 右クリック ・ S", () => {
-  it("ファイル ▸ 音のファイルを入れる…: 選んだ歌のトラックへ（鍵盤のトラックなら null）", () => {
+describe("menu, right-click, S", () => {
+  it("File ▸ 「音のファイルを入れる…」: to the selected vocal track (null for a keyboard track)", () => {
     const s = scene("audioEdit");
     const deps = { state: () => s, send: (c: Command) => void app.sent.push(c), playTick: () => 0 };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -369,7 +369,7 @@ describe("メニュー ・ 右クリック ・ S", () => {
     expect(app.sent.slice(-1)).toEqual([{ type: "importAudio", track: vocalRow(s).vocal.id }]);
   });
 
-  it("歌のトラックの右クリックだけに「音のファイルを入れる…」", () => {
+  it("「音のファイルを入れる…」 only on the right-click of a vocal track", () => {
     const s = scene("audioEdit");
     const send = (c: Command) => void app.sent.push(c);
     const vocal = s.song.tracks.find((tr) => tr.kind.kind === "vocal")!;
@@ -382,7 +382,7 @@ describe("メニュー ・ 右クリック ・ S", () => {
     expect(keys.some((e) => e.kind === "row" && e.label === "menu.importAudio")).toBe(false);
   });
 
-  it("S は splitClips。打っている最中と録音中は効かない", () => {
+  it("S is splitClips. Does not work while typing or recording", () => {
     const k = (key: string): KeyInput => ({ key, ctrl: false, meta: false, alt: false, shift: false });
     expect(keyAction(k("s"), false, "other")).toEqual({ kind: "splitClips" });
     expect(keyAction(k("s"), true, "other")).toBeNull();
@@ -396,13 +396,13 @@ describe("メニュー ・ 右クリック ・ S", () => {
   });
 });
 
-describe("落ちたあとの案内の歌の行（区切り2 の測りで見つけた事 2）", () => {
+describe("vocal row in the hint after a crash (found while measuring)", () => {
   it("「録っていた歌 1 つを、止まる直前（9. 3. 0000 ごろ）まで残しました。」", () => {
     show(RecoveryHint, scene("recoverVocal"));
     expect(text(q('[data-test="recovery-vocals"]'))).toBe("録っていた歌 1 つを、止まる直前（9. 3. 0000 ごろ）まで残しました。");
   });
 
-  it("歌がなければ出さない", () => {
+  it("not shown with no vocals", () => {
     show(RecoveryHint, scene("recover1"));
     expect(q('[data-test="recovery-vocals"]')).toBeNull();
   });

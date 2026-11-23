@@ -1,5 +1,5 @@
-// 第 3 回のあとの直し（docs/history/design-notes.ja.md B-64・65・72〜75）を mount して見る: ベロシティの帯をたたむ、キーが向く帯の印、
-// ボタンのキー、ひらいた帯の見出しでたたむ、スケール固定の ▾、ループの範囲と全体図の枠のドラッグ中の Esc、強さ ・ スウィングの棒のキー、用語の説明。
+// Mounts and checks fixes from docs/history/design-notes.ja.md B-64, 65, 72–75: folding the velocity band, the mark of the band keys go to,
+// keys on buttons, folding by an open band's heading, the scale lock ▾, Esc while dragging the loop range and the overview frame, keys for the strength and swing bars, term tips.
 import { flushSync, mount, unmount, type Component } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState } from "../src/bridge";
@@ -59,7 +59,7 @@ const click = (sel: string) => {
   flushSync();
 };
 
-/** el に 0.6 秒マウスを止めたときの用語。 */
+/** The term shown when the mouse rests on el for 0.6 s. */
 function termAt(el: Element): string | null {
   vi.useFakeTimers();
   el.dispatchEvent(new PointerEvent("pointerenter"));
@@ -71,8 +71,8 @@ function termAt(el: Element): string | null {
   return found;
 }
 
-describe("ベロシティの帯をたたむ（仕様書 3 章の帯の表「ベロシティ」、1 章の例）", () => {
-  it("「▾ ベロシティ」でたたむと、CC の札の行の左はしに「▸ ベロシティ」。押すとひらく。覚えている", () => {
+describe("folding the velocity band (spec 3 band table「ベロシティ」, the example in spec 1)", () => {
+  it("folding with「▾ ベロシティ」shows「▸ ベロシティ」at the left of the CC tag row. Pressing opens it. It is remembered", () => {
     showRoll();
     expect(q('[data-test="pr-velocity"]')).not.toBeNull();
     expect(q('[data-test="pr-velocity-open"]')).toBeNull();
@@ -83,7 +83,7 @@ describe("ベロシティの帯をたたむ（仕様書 3 章の帯の表「ベ�
     expect(tag.parentElement!.firstElementChild).toBe(tag);
     expect(velocityLane.open).toBe(false);
 
-    // 帯をたたんでひらきなおしても、たたんだまま。
+    // Folding and opening the band again keeps it folded.
     unmount(mounted!);
     mounted = null;
     showRoll();
@@ -93,15 +93,15 @@ describe("ベロシティの帯をたたむ（仕様書 3 章の帯の表「ベ�
     expect(q('[data-test="pr-velocity-open"]')).toBeNull();
   });
 
-  // 仕様書 1 章の例は 18 行 ・ 24 行。上のメニューの行（150 % で 36）が入って 2 行ずつへった（docs/history/design-notes.ja.md B-59）。
-  // The chord row under the tool row (36 at 150 %) takes 2 more rows (round 10).
-  it("窓 1280×800 で 150 % のとき、ノートは 14 行。たたむと 20 行（たたんだ 72 はノートの場所へ）", () => {
+  // The spec 1 example is 18 rows and 24 rows. The menu bar (36 at 150 %) takes 2 rows from each (docs/history/design-notes.ja.md B-59).
+  // The chord row under the tool row (36 at 150 %) takes 2 more rows.
+  it("at 150 % in a 1280×800 window, 14 note rows. Folded, 20 rows (the folded 72 goes to the note area)", () => {
     const scale: Scale = 150;
     const scene = fakeScene("pianoRoll150")!;
     const band = scene.state.workspace.layout.lower.find((l) => l.band === "pianoRoll")!.height;
     const px = tokensAt(scale, 1);
     const n = (name: string) => px[name] as number;
-    // 帯の高さから、道具の列、調の和音の列、目盛、ベロシティの帯、CC の札の行を引いた残りがノートの場所（Roll.svelte と PianoRoll.svelte の縦の並び）。
+    // The note area is the band height minus the toolbar, the key's chord row, the ruler, the velocity band and the CC tag row (the vertical order in Roll.svelte and PianoRoll.svelte).
     const around = n("size.toolbar") + n("size.row") + n("mock.pianoroll.ruler") + n("size.row");
     const rows = (velocity: boolean) => Math.floor((Math.round((band * scale) / 100) - around - (velocity ? n("size.lane.vel") : 0)) / n("size.note"));
     expect(scene.state.workspace.viewportWidth).toBe(1280);
@@ -111,8 +111,8 @@ describe("ベロシティの帯をたたむ（仕様書 3 章の帯の表「ベ�
   });
 });
 
-describe("キーが向く帯の印（B-72）", () => {
-  it("ピアノロールに向いているときは、道具の列の上辺。アレンジに向いているときは、アレンジの見出しの行", () => {
+describe("mark of the band keys go to (B-72)", () => {
+  it("when keys go to the piano roll, the top edge of the toolbar. When they go to the arrange, the arrange heading row", () => {
     const state = fakeScene("pianoRoll")!.state;
     showRoll(state);
     expect(q('[data-test="pr-focus-mark"]')).toBeNull();
@@ -129,21 +129,21 @@ describe("キーが向く帯の印（B-72）", () => {
     expect(q('[data-test="arrange-focus-mark"]')).not.toBeNull();
   });
 
-  it("ピアノロールがひらいていなければ、いつもアレンジ", () => {
+  it("with the piano roll closed, always the arrange", () => {
     prView.focus = "pianoRoll";
     show(Arrange, app.stateWith(() => {}));
     expect(q('[data-test="arrange-focus-mark"]')).not.toBeNull();
   });
 });
 
-describe("ボタンのキー（B-73）", () => {
+describe("keys on buttons (B-73)", () => {
   const ready = (edit: (s: AppState) => void = () => {}) =>
     app.stateWith((s) => {
       s.transport.canPlay = true;
       edit(s);
     });
 
-  it("再生まわり: ⏮ Home、▶ Space、● R、ループ L、メトロノーム C。■ とカウントインには書かない（F-WideArrange）", () => {
+  it("transport: ⏮ Home, ▶ Space, ● R, loop L, metronome C. Not written on ■ and count-in (F-WideArrange)", () => {
     show(Transport, ready());
     const keyOf = (name: string) => text(q(`[data-test="transport-${name}"] .key`));
     expect(["to-start", "play", "stop", "record", "loop", "metronome", "count-in"].map(keyOf)).toEqual([
@@ -157,14 +157,14 @@ describe("ボタンのキー（B-73）", () => {
     ]);
   });
 
-  it("ピアノロールの道具: 選ぶ 1 ・ 書く 2 ・ 消す 3", () => {
+  it("piano roll tools:「選ぶ」1, 「書く」2, 「消す」3", () => {
     showRoll();
     expect(["select", "draw", "erase"].map((tool) => text(q(`[data-test="pr-tool-${tool}"]`)))).toEqual(["選ぶ1", "書く2", "消す3"]);
   });
 });
 
-describe("ひらいた帯の見出しを押すとたたむ（B-74）", () => {
-  it("「▾ ピアノロール」は toggleBand pianoRoll", () => {
+describe("pressing an open band's heading folds it (B-74)", () => {
+  it("「▾ ピアノロール」is toggleBand pianoRoll", () => {
     showRoll();
     click('[data-test="pr-fold"]');
     expect(app.sent).toEqual([{ type: "toggleBand", band: "pianoRoll" }]);
@@ -197,8 +197,8 @@ describe("ひらいた帯の見出しを押すとたたむ（B-74）", () => {
   });
 });
 
-describe("スケール固定の ▾（B-65）", () => {
-  it("ボタンの右に ▾。音階の一覧をひらき、えらぶと lock: true で setMusicalScale", async () => {
+describe("scale lock ▾ (B-65)", () => {
+  it("▾ to the right of the button. Opens the list of scales; choosing sends setMusicalScale with lock: true", async () => {
     showRoll();
     const lock = q('[data-test="pr-scale-lock"]')!;
     const stub = q('[data-test="pr-scale-menu"]')!;
@@ -218,8 +218,8 @@ describe("スケール固定の ▾（B-65）", () => {
   });
 });
 
-describe("ドラッグ中の Esc（仕様書 4 章）", () => {
-  it("ループの範囲のドラッグをやめて、前の範囲に戻す", () => {
+describe("Esc while dragging (spec 4)", () => {
+  it("cancels the loop range drag and returns to the old range", () => {
     const s = app.stateWith(() => {});
     show(Arrange, s);
     const ruler = q(".ruler.bars")!;
@@ -238,7 +238,7 @@ describe("ドラッグ中の Esc（仕様書 4 章）", () => {
     expect(cancelDrag()).toBe(false);
   });
 
-  it("強さ ・ スウィングの棒: ドラッグをやめて、動かす前の値に戻す。onchange は送らない", () => {
+  it("strength and swing bars: cancel the drag and return to the value before. onchange is not sent", () => {
     const changes: number[] = [];
     show(PercentSlider, app.stateWith(() => {}), { value: 75, label: "強さ", test: "s", onchange: (v: number) => changes.push(v) });
     const bar = q('[data-test="s"]')!;
@@ -254,8 +254,8 @@ describe("ドラッグ中の Esc（仕様書 4 章）", () => {
   });
 });
 
-describe("強さ ・ スウィングの棒に Tab で届き、← → で動く（仕様書 4 章）", () => {
-  it("tabindex 0。← → で 10、Shift で 1。document のキーの係には渡さない", () => {
+describe("strength and swing bars are reached with Tab and move with ← → (spec 4)", () => {
+  it("tabindex 0. ← → by 10, with Shift by 1. Not passed to the document key handler", () => {
     const changes: number[] = [];
     show(PercentSlider, app.stateWith(() => {}), { value: 75, label: "強さ", test: "s", onchange: (v: number) => changes.push(v) });
     const bar = q('[data-test="s"]')!;
@@ -277,9 +277,9 @@ describe("強さ ・ スウィングの棒に Tab で届き、← → で動く�
   });
 });
 
-describe("用語の説明（仕様書 5 章）", () => {
-  it("帯札: アレンジ ・ ピアノロール ・ ミキサーの名前と、ピアノロールの件数の「ノート」", () => {
-    // jsdom には幅がないので、件数まで入る幅にする。
+describe("term tips (spec 5)", () => {
+  it("band tabs: the names arrange, piano roll and mixer, and「ノート」in the piano roll count", () => {
+    // jsdom has no width, so give a width that fits the count.
     vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1280);
     show(BandRow, app.stateWith(() => {}));
     const name = (band: string) => q(`[data-band="${band}"] .m-name`)!;
@@ -290,7 +290,7 @@ describe("用語の説明（仕様書 5 章）", () => {
     expect(termAt(note)).toBe("ノート");
   });
 
-  it("ピアノロール: 見出し、左右の欄の「ノート」、ベロシティ、CC の札", () => {
+  it("piano roll: heading,「ノート」in the left and right panels, velocity, CC tags", () => {
     showRoll(fakeScene("pianoRollCc")!.state);
     expect(termAt(q('[data-test="pr-fold"] .m-name')!)).toBe("ピアノロール");
     const word = (root: string, w: string) => [...q(root)!.querySelectorAll("span")].find((s) => s.textContent === w)!;
@@ -302,7 +302,7 @@ describe("用語の説明（仕様書 5 章）", () => {
     expect(termAt(word('[data-test="pr-cc-modulation"]', "モジュレーション"))).toBe("モジュレーション");
   });
 
-  it("アレンジ: 見出し、トラックの名前、トラックの dB", () => {
+  it("arrange: heading, track names, track dB", () => {
     show(Arrange, app.stateWith(() => {}));
     expect(termAt(q(".title-row .m-name")!)).toBe("アレンジ");
     expect(termAt(q(".track-name")!)).toBe("トラック");

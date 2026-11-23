@@ -1,4 +1,4 @@
-// 約束 21（第 6 回 区切り2 ・ 3）: `automation` と `history` の区画、帯の見出しと点、履歴の行、手の名前、偽物の場面、状態行の文。
+// Protocol 21: the `automation` and `history` sections, band headings and points, history rows, step names, fake scenes, status line text.
 import { flushSync, mount, unmount } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, AutomationView, Command, HistoryRow, HistoryView, LaneRef, StatusMessage } from "../src/bridge";
@@ -20,8 +20,8 @@ const BAR = 4 * TPQ;
 const TRACK = 10;
 const volume = (number: number): LaneRef => ({ track: TRACK + number, target: { kind: "volume" } });
 
-describe("約束 21 の形", () => {
-  it("版は 23（22 より後）。新しい曲に帯はなく、履歴は 0 手。インサートは id を持つ（新しい曲は 1 ・ 2 ・ 3）", () => {
+describe("protocol 21 shape", () => {
+  it("version is 23 (after 22). A new song has no bands and 0 steps in history. Inserts have ids (1, 2, 3 in a new song)", () => {
     expect(PROTOCOL_VERSION).toBeGreaterThanOrEqual(26);
     const s = fakeState();
     expect(s.automation).toEqual({ folded: [], armed: [], writing: [], held: [], selected: null } satisfies AutomationView);
@@ -30,7 +30,7 @@ describe("約束 21 の形", () => {
     expect([...s.song.returns, s.song.master].map((strip) => strip.slots[0]!.id)).toEqual([1, 2, 3]);
   });
 
-  it("意図: 帯はトラックと動かす物で、点は laneId と番号で指す。履歴のとびは行の番号と手の番号", () => {
+  it("intents: a band is pointed at by track and target, a point by laneId and index. A history jump uses the row index and the step number", () => {
     const commands: Command[] = [
       { type: "addLane", track: 11, target: { kind: "pan" } },
       { type: "addLane", track: 11, target: { kind: "send", bus: "a" } },
@@ -52,11 +52,11 @@ describe("約束 21 の形", () => {
   });
 });
 
-describe("手の名前（仕様書 3 章 Y19）", () => {
+describe("step names (spec 3 (Y19))", () => {
   const names = Object.entries(stepNames) as [string, Entry][];
   const filled = (e: Entry) => fill(e.text, e.example ?? {});
 
-  it("約束のどの種類にも名前があり、約束にない名前はない（名前のない手が 1 つでもあると落ちる）", () => {
+  it("every kind in the protocol has a name, and no name is outside the protocol (fails if even one step has no name)", () => {
     expect(STEP_NAME_KINDS.length).toBe(77);
     expect(names.map(([kind]) => kind).sort()).toEqual([...STEP_NAME_KINDS].sort());
     for (const [kind, e] of names) {
@@ -66,15 +66,15 @@ describe("手の名前（仕様書 3 章 Y19）", () => {
     }
   });
 
-  /** 3 章の一覧を名前にひらく: 「CC の点を書く ・ 動かす ・ 消す」→「CC の点を書く」「CC の点を動かす」「CC の点を消す」、「…名前を変える」→「…の名前を変える」。 */
+  /** Opens the chapter 3 list into names: 「CC の点を書く ・ 動かす ・ 消す」→「CC の点を書く」「CC の点を動かす」「CC の点を消す」, 「…名前を変える」→「…の名前を変える」. */
   function specNames(): string[] {
     const text = sectionText(specDocument(), "s3");
     const list = /The step names are (.+?)\. For a step typed into a field/.exec(text)![1]!;
     const out: string[] = [];
     for (const entry of list.split(", ")) {
-      // 「名前」のあとに、半角のかっこで注（例の名前は「」つき）。
+      // After the name, a note in half-width parentheses (example names in 「」).
       const [, item, note] = /^「([^「」]+)」(?: \((.*)\))?$/.exec(entry)!;
-      // 「だんだんにする ・ だんだんをやめる」は、2 つとも名前のまま。
+      // 「だんだんにする ・ だんだんをやめる」: both are names as they are.
       if (item === "だんだんにする ・ だんだんをやめる") {
         out.push(...item.split(" ・ "));
         continue;
@@ -93,26 +93,26 @@ describe("手の名前（仕様書 3 章 Y19）", () => {
     return out;
   }
 
-  it("出どころが spec:3 の名前は、3 章の一覧の言いかたのまま", () => {
+  it("names from spec:3 keep the wording of the chapter 3 list", () => {
     const spec = specNames();
     expect(spec).toContain("CC の点を動かす");
     expect(spec).toContain("トラックの名前を変える");
     expect(spec).toContain("テンポ ・ 拍子の変更を消す");
     expect(spec).toContain("コンプレッサーの「しきい値」を変える");
     for (const [kind, e] of names.filter(([, x]) => x.source === "spec:3")) expect(spec, kind).toContain(filled(e));
-    // 一覧にあって、手にない名前: 「パラメータを変える」（「コンプレッサーの「しきい値」を変える」の形で出す）、プラグインの窓（6 章の文で出す）。
-    // 「戻した変更をすてる」は 6 章の「戻した変更をすてる（最後に保存した形にする）」。
+    // Names in the list but not in the steps: 「パラメータを変える」 (shown in the form 「コンプレッサーの「しきい値」を変える」), and plugin windows (shown with the chapter 6 text).
+    // 「戻した変更をすてる」 is 「戻した変更をすてる（最後に保存した形にする）」 in chapter 6.
     const used = new Set(names.map(([, e]) => filled(e).replace(/（[^）]*）$/, "")));
     expect(spec.filter((name) => !used.has(name))).toEqual(["パラメータを変える", "（プラグイン）の窓で変えた所"]);
   });
 
-  it("出どころが spec:6 ・ mock の名前は、そこにそのまま書いてある", () => {
+  it("names from spec:6 and mock are written there as they are", () => {
     expect(sectionText(specDocument(), "s6")).toContain(filled(stepNames.discardRecovered));
     expect(sectionText(specDocument(), "s6")).toContain(filled(stepNames.pluginWindow));
     expect(mockScreenText("F-Recover2")).toContain(filled(stepNames.recovered));
   });
 
-  it("一覧にない手の仮の名前（builder。docs/history/design-notes.ja.md B-92 に戻してある物）。ほかの仮の名前は第 11 版で 3 章の一覧に入った（92-7）", () => {
+  it("temporary names of steps not in the list (builder; returned to the design in docs/history/design-notes.ja.md B-92). The other temporary names went into the chapter 3 list in version 11 (92-7)", () => {
     expect(Object.fromEntries(names.filter(([, e]) => e.source.startsWith("builder:")).map(([kind, e]) => [kind, e.text]))).toEqual({
       cutClips: "クリップを切り取る",
       cutNotes: "ノートを切り取る",
@@ -127,7 +127,7 @@ describe("手の名前（仕様書 3 章 Y19）", () => {
     });
   });
 
-  it("値をうめこむ名前", () => {
+  it("names with values filled in", () => {
     expect(stepNameText({ kind: "setParam", effect: "compressor", param: 0 })).toBe("コンプレッサーの「おさえはじめ」を変える");
     expect(stepNameText({ kind: "setPluginParam", plugin: "Surge XT", param: "A Filter 1 Cutoff" })).toBe("Surge XT の「A Filter 1 Cutoff」を変える");
     expect(stepNameText({ kind: "setPluginParam", plugin: "Surge XT", param: null })).toBe("Surge XT のパラメータを変える");
@@ -136,11 +136,11 @@ describe("手の名前（仕様書 3 章 Y19）", () => {
   });
 });
 
-describe("履歴の行の文（モック R10-History ・ F-History）", () => {
+describe("history row text (mocks R10-History / F-History)", () => {
   const ctx = scene("historyUndone3").state;
   const text = (row: HistoryRow) => [row.index, historyRowText(row, ctx), stepPlaceText(row.place, ctx)];
 
-  it("historyUndone3（R10-History）: 16 手、3 手取り消してあり、いまここは 13 手目。行はモックの文", () => {
+  it("historyUndone3 (R10-History): 16 steps, 3 undone, now at step 13. Rows use the mock text", () => {
     const s = scene("historyUndone3");
     expect(s.state.history).toEqual({ total: 16, redo: 3, current: 13, newest: 16 });
     expect([s.state.song.undoCount, s.state.song.redoCount]).toEqual([13, 3]);
@@ -157,12 +157,12 @@ describe("履歴の行の文（モック R10-History ・ F-History）", () => {
       [10, "「テンポを変える」・ 5 小節目 96.00 → 120.00", "アレンジ"],
     ]);
     const board = mockScreenText("R10-History");
-    // 仕様書 3 章 92-3 で、音量は「4 パッド ・ −10.5 → −12.0 dB」、テンポは「5 小節目 96.00 → 120.00」になった（モックより新しい）。
-    // モックの 14 手目は「1/16 ・ 12 ノート」（グリッドは、まだ手が持っていない）。ほかの行はモックの文のまま。
+    // In spec 3 (92-3), gain is 「4 パッド ・ −10.5 → −12.0 dB」 and tempo is 「5 小節目 96.00 → 120.00」 (newer than the mock).
+    // Step 14 of the mock is 「1/16 ・ 12 ノート」 (steps do not hold the grid yet). Other rows keep the mock text.
     for (const [index, row] of s.history.slice(9).map(text)) if (![14, 13, 10].includes(index as number)) expect(board, String(index)).toContain(row as string);
   });
 
-  it("historyList（F-History）: 14 手、上の 2 手はやりなおせる", () => {
+  it("historyList (F-History): 14 steps, the top 2 can be redone", () => {
     const s = scene("historyList");
     expect(s.state.history).toEqual({ total: 14, redo: 2, current: 12, newest: 14 });
     expect(s.state.status.message).toEqual({ id: "undoPending", count: 2 });
@@ -176,7 +176,7 @@ describe("履歴の行の文（モック R10-History ・ F-History）", () => {
     ]);
   });
 
-  it("（何を）と「どこで」のほかの形", () => {
+  it("other forms of (what) and 「どこで」", () => {
     const what = (name: HistoryRow["name"], w: HistoryRow["what"]) => stepWhatText(name, w, ctx);
     const pad = { number: 4, name: "パッド" };
     expect(what({ kind: "mute" }, { kind: "none" })).toBeNull();
@@ -205,7 +205,7 @@ describe("履歴の行の文（モック R10-History ・ F-History）", () => {
     expect([laneNameText({ kind: "pan" }), laneNameText({ kind: "mute" })]).toEqual(["パン", "ミュート"]);
   });
 
-  it("行の（何を）: 右の欄にトラックの名前が出る手は名前を書かない。窓は「プラグインの窓」（仕様書 3 章 94-6）", () => {
+  it("(what) in a row: steps whose track name shows in the right column do not write the name. Windows are 「プラグインの窓」 (spec 3 (94-6))", () => {
     const piano = { number: 1, name: "ピアノ" };
     const surge = { number: 5, name: "Surge XT" };
     const row = (name: HistoryRow["name"], what: HistoryRow["what"], place: HistoryRow["place"]): HistoryRow => ({ index: 1, step: 1, name, what, place });
@@ -216,7 +216,7 @@ describe("履歴の行の文（モック R10-History ・ F-History）", () => {
       to: { kind: "builtin", instrument: "organDrawbar" },
     };
     expect(text(row({ kind: "setInstrument" }, replaced, { kind: "track", track: piano }))).toEqual([1, "「音源を入れかえる」・ グランドピアノ → ドローバーオルガン", "1 ピアノ"]);
-    // 状態行（取り消した ・ やりなおした）には右の欄がないので、名前を残す。
+    // The status line (undone / redone) has no right column, so the name stays.
     expect(stepWhatText({ kind: "setInstrument" }, replaced, ctx)).toBe("1 ピアノ ・ グランドピアノ → ドローバーオルガン");
     expect(text(row({ kind: "pluginWindow", plugin: "Surge XT" }, { kind: "none" }, { kind: "pluginWindow", strip: { kind: "track", track: surge } }))).toEqual([
       1,
@@ -224,21 +224,21 @@ describe("履歴の行の文（モック R10-History ・ F-History）", () => {
       "5 Surge XT ・ プラグインの窓",
     ]);
     expect(text(row({ kind: "record" }, { kind: "take", number: 2 }, { kind: "track", track: piano }))).toEqual([1, "「録音」・ テイク 2", "1 ピアノ"]);
-    // アレンジ ・ ミキサーの手は名前を残す。
+    // Arrange and mixer steps keep the name.
     expect(text(row({ kind: "setTrackColor" }, { kind: "color", track: { number: 4, name: "パッド" }, color: 3 }, { kind: "arrange" }))).toEqual([1, "「トラックの色を変える」・ 4 パッド ・ 色 3", "アレンジ"]);
     expect(text(row({ kind: "mute" }, { kind: "strip", strip: { kind: "track", track: { number: 4, name: "パッド" } } }, { kind: "mixer" }))).toEqual([1, "「ミュート」・ 4 パッド ・ オン", "ミキサー"]);
   });
 
-  it("場面にない行は、偽物が作る（番号と手の番号は同じ）", () => {
+  it("rows not in the scene are made by the fake (index and step number are the same)", () => {
     expect(fakeHistoryRows([], 3, 0, 9).map((r) => [r.index, r.step])).toEqual([[1, 1], [2, 2], [3, 3]]);
     expect(fakeHistoryRows(scene("historyList").history, 14, 13, 99).map((r) => r.name.kind)).toEqual(["quantize", "setGain"]);
   });
 });
 
-describe("偽物の場面: オートメーション", () => {
+describe("fake scenes: automation", () => {
   const lanesOf = (s: AppState, number: number) => s.song.tracks[number - 1]!.lanes;
 
-  it("autoRec（F6-AutoRec）: 1 ピアノの音量の帯は「● 書く」がオンで、6.3.000 から書いている。パンとしきい値の帯はたたんである", () => {
+  it("autoRec (F6-AutoRec): the gain band of 「1 ピアノ」 has 「● 書く」 on, writing from 6.3.000. Pan and threshold bands are folded", () => {
     const s = scene("autoRec").state;
     const piano = s.song.tracks[0]!;
     const compressor = piano.slots[1]!;
@@ -262,7 +262,7 @@ describe("偽物の場面: オートメーション", () => {
     expect(s.status.message).toEqual({ id: "automationWriting", track: { number: 1, name: "ピアノ" }, target: { kind: "volume" } });
   });
 
-  it("autoRest（F6-AutoRest）: フェーダーを手で −12 dB にしたので、音量の帯は休み", () => {
+  it("autoRest (F6-AutoRest): the fader was set to −12 dB by hand, so the gain band rests", () => {
     const s = scene("autoRest").state;
     expect(lanesOf(s, 1).map((l) => l.resting)).toEqual([true, false, false]);
     expect(s.song.tracks[0]!.gainDb).toBe(-12);
@@ -270,12 +270,12 @@ describe("偽物の場面: オートメーション", () => {
     expect(s.status.message).toEqual({ id: "automationRested", track: { number: 1, name: "ピアノ" }, target: { kind: "volume" } });
   });
 
-  it("mixerAuto ・ mixerRest（F6-MixerAuto ・ F6-MixerRest）: 1 ピアノと 4 パッドの音量の帯。休みは 4 パッド", async () => {
+  it("mixerAuto / mixerRest (F6-MixerAuto / F6-MixerRest): gain bands of 「1 ピアノ」 and 「4 パッド」. 「4 パッド」 rests", async () => {
     const auto = scene("mixerAuto").state;
     expect(auto.workspace.layout.lower.map((b) => b.band)).toEqual(["mixer"]);
     expect([lanesOf(auto, 1)[0]!.laneId, lanesOf(auto, 4)[0]!.laneId]).toEqual([501, 504]);
     expect(auto.status.message).toEqual({ id: "automationMoving", tracks: [{ number: 1, name: "ピアノ" }, { number: 4, name: "パッド" }] });
-    // 再生の線（9.2.000）の所で、1 ピアノの線は −2.4 dB（モックのフェーダーの数字）、4 パッドは −10.5 dB。
+    // At the play line (9.2.000), the 「1 ピアノ」 line is −2.4 dB (the mock's fader number), 「4 パッド」 is −10.5 dB.
     const t = createFakeTransport(auto);
     const piano = decodeLane(await t.lane(501));
     const pad = decodeLane(await t.lane(504));
@@ -291,11 +291,11 @@ describe("偽物の場面: オートメーション", () => {
     expect(rest.status.message).toEqual({ id: "automationRested", track: { number: 4, name: "パッド" }, target: { kind: "volume" } });
   });
 
-  it("autoAdd ・ autoMove ・ autoBox（R10-AutoEdit）: 足した点、動かす点、囲んだ 3 つの点がえらんである", async () => {
+  it("autoAdd / autoMove / autoBox (R10-AutoEdit): the added point, the moved point, and 3 boxed points are chosen", async () => {
     const add = scene("autoAdd").state;
     expect(add.automation.selected).toEqual({ laneId: 511, points: [{ start: 3, end: 4 }] });
     const added = decodeLane(await createFakeTransport(add).lane(511));
-    // 5.3.000 に −8.4 dB（モックの読み値）。
+    // −8.4 dB at 5.3.000 (the mock's reading).
     expect([added.ticks[3], added.values[3]]).toEqual([4 * BAR + 2 * TPQ, Math.fround(dbToFrac(-8.4))]);
     expect(lanesOf(add, 1)).toHaveLength(1);
     expect(lanesOf(add, 1)[0]!.points).toBe(6);
@@ -305,7 +305,7 @@ describe("偽物の場面: オートメーション", () => {
     expect(lanesOf(scene("autoBox").state, 1)[0]!.points).toBe(5);
   });
 
-  it("paramMany6（F6-ParamMany）: 「オートメーションに書いている」の 2 行は、たたんだ帯 2 本", () => {
+  it("paramMany6 (F6-ParamMany): the 2 rows 「オートメーションに書いている」 are 2 folded bands", () => {
     const s = scene("paramMany6").state;
     const selected = s.params.selected!;
     expect(selected.kind === "plugin" && selected.automated).toEqual([1000, 1012]);
@@ -315,12 +315,12 @@ describe("偽物の場面: オートメーション", () => {
       [{ kind: "instrument", param: 1012 }, { kind: "plugin", plugin: "Surge XT", param: "A Osc 1 Pitch" }, 2],
     ]);
     expect(s.automation.folded.map((l) => l.target)).toEqual([{ kind: "instrument", param: 1000 }, { kind: "instrument", param: 1012 }]);
-    // もとの場面（F-ParamMany）は、帯を持たないまま。
+    // The original scene (F-ParamMany) still has no bands.
     expect(lanesOf(scene("paramMany").state, 1)).toEqual([]);
   });
 });
 
-describe("偽物の動き", () => {
+describe("fake behavior", () => {
   async function connected(name: string) {
     // The scene's rows are the fake's own when it starts from the URL; a state handed in has made-up rows.
     const t = createFakeTransport(scene(name).state);
@@ -333,12 +333,12 @@ describe("偽物の動き", () => {
     return { t, state: () => state };
   }
 
-  it("たたむ ・ 「● 書く」・ えらぶ ・ もどす ・ 帯を足す ・ 消す", async () => {
+  it("fold / 「● 書く」 / choose / restore / add band / delete", async () => {
     const { t, state } = await connected("autoRest");
     const piano = TRACK + 1;
     await t.send({ type: "foldLane", track: piano, target: { kind: "volume" }, folded: true });
     expect(state().automation.folded.map((l) => l.target.kind)).toEqual(["pan", "insert", "volume"]);
-    // 休みの帯は「書く」にならない。もどすと 1 手で、状態行が言う。
+    // A resting band does not turn to 「書く」. Restoring is 1 step, and the status line says so.
     await t.send({ type: "setLaneWrite", track: piano, target: { kind: "volume" }, on: true });
     expect(state().automation.armed).toEqual([]);
     await t.send({ type: "restoreLane", track: piano, target: { kind: "volume" } });
@@ -356,7 +356,7 @@ describe("偽物の動き", () => {
     const mute = state().song.tracks[0]!.lanes.at(-1)!;
     expect([mute.name, mute.points, mute.step, mute.resting]).toEqual([{ kind: "mute" }, 0, true, false]);
     expect(decodeLane(await t.lane(mute.laneId)).ticks.length).toBe(0);
-    // もうある帯は、ひらくだけ（手ではない）。
+    // A band that exists only opens (not a step).
     const steps = state().song.undoCount;
     await t.send({ type: "addLane", track: piano, target: { kind: "pan" } });
     expect(state().automation.folded.some((l) => l.target.kind === "pan")).toBe(false);
@@ -364,12 +364,12 @@ describe("偽物の動き", () => {
     await t.send({ type: "deleteLane", track: piano, target: { kind: "volume" } });
     expect(state().song.tracks[0]!.lanes.map((l) => l.name.kind)).toEqual(["pan", "builtin", "mute"]);
     expect(state().automation.armed).toEqual([]);
-    // 音源がプラグインでないトラックに、音源のパラメータの帯は作れない。
+    // A track whose instrument is not a plugin cannot get an instrument parameter band.
     await t.send({ type: "addLane", track: piano, target: { kind: "instrument", param: 1 } });
     expect(state().song.tracks[0]!.lanes).toHaveLength(3);
   });
 
-  it("履歴のとび: 行がいまここになり、状態行が言う。手の番号が古ければ何もしない", async () => {
+  it("history jump: the row becomes the current one and the status line says so. An old step number does nothing", async () => {
     const { t, state } = await connected("historyUndone3");
     const rows = await t.historyRows(1, 16);
     expect(rows).toHaveLength(16);
@@ -385,7 +385,7 @@ describe("偽物の動き", () => {
   });
 });
 
-describe("状態行の文", () => {
+describe("status line text", () => {
   let target: HTMLElement;
   beforeEach(() => {
     app.reset();
@@ -407,7 +407,7 @@ describe("状態行の文", () => {
   const piano = { number: 1, name: "ピアノ" };
   const pad = { number: 4, name: "パッド" };
 
-  it("仕様書 6 章の 7 つ（Mod は Ctrl）", () => {
+  it("the 7 in spec 6 (Mod is Ctrl)", () => {
     expect(says({ id: "undone", name: { kind: "moveNotes" }, what: { kind: "notes", count: 3 } })).toBe(
       "「ノートを動かす」を取り消しました（3 ノート）。やりなおすには Ctrl Shift Z",
     );
@@ -421,11 +421,11 @@ describe("状態行の文", () => {
     expect(says({ id: "automationRestored", track: pad, target: { kind: "volume" } })).toBe("4 パッド の音量を、オートメーションのとおりに戻しました。");
   });
 
-  it("モック F6-MixerAuto の文と、仮の形", () => {
+  it("mock F6-MixerAuto text, and temporary forms", () => {
     expect(says(scene("mixerAuto").state.status.message!, scene("mixerAuto").state)).toBe("1 ピアノ と 4 パッド の音量は、オートメーションで動いています");
     expect(says({ id: "automationMoving", tracks: [piano] })).toBe("1 ピアノ の音量は、オートメーションで動いています");
     expect(says({ id: "automationMoving", tracks: [piano, { number: 2, name: "ベース" }, pad] })).toBe("1 ピアノ、2 ベース と 4 パッド の音量は、オートメーションで動いています");
-    // （何を）のない手は、かっこを出さない。
+    // A step with no (what) shows no parentheses.
     expect(says({ id: "undone", name: { kind: "recovered" }, what: { kind: "none" } })).toBe("「なおすためのファイルから戻す」を取り消しました。やりなおすには Ctrl Shift Z");
     expect(says({ id: "redone", name: { kind: "pluginWindow", plugin: "Surge XT" }, what: { kind: "none" } })).toBe("「Surge XT の窓で変えた所」をやりなおしました。");
     expect(says({ id: "historyJumped", index: 14, name: { kind: "quantize" }, steps: 2, forward: true })).toBe("14 手目「クオンタイズ」までやりなおしました（2 手）。");

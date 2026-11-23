@@ -1,10 +1,10 @@
-// 画面ぜんたいを偽物の場面で組み立てて、骨組みの文と押した時のコマンドを見る。
+// Builds the whole screen from a fake scene, and checks the frame's text and the commands sent on a press.
 import { flushSync, mount, unmount } from "svelte";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import App from "../src/App.svelte";
 import { current } from "../src/state/app.svelte";
 
-// jsdom に WebGL2 はない。面は WebGL の係のテストで見る。
+// jsdom has no WebGL2. The surfaces are checked in the WebGL tests.
 vi.mock("../src/gl/Surface.svelte", () => ({ default: () => {} }));
 
 const settle = async () => {
@@ -12,7 +12,7 @@ const settle = async () => {
   flushSync();
 };
 
-describe("画面の骨組み（?scene=bufferFixed）", () => {
+describe("screen frame (?scene=bufferFixed)", () => {
   let app: ReturnType<typeof mount>;
   beforeAll(async () => {
     history.replaceState(null, "", "/?scene=bufferFixed&scale=100");
@@ -26,21 +26,21 @@ describe("画面の骨組み（?scene=bufferFixed）", () => {
 
   const text = (sel: string) => document.querySelector(sel)?.textContent?.replace(/\s+/g, " ").trim();
 
-  it("つながったら、いまの窓の大きさを送る（つながる前の大きさの変化を落とさない）", () => {
+  it("once connected, sends the current window size (does not lose size changes from before connecting)", () => {
     expect(current.failure).toBeNull();
     expect(current.state!.workspace.viewportWidth).toBe(window.innerWidth);
     expect(current.state!.workspace.viewportHeight).toBe(window.innerHeight);
   });
 
-  it("上から、再生まわり・アレンジ・帯札・状態行がある", () => {
-    // jsdom では幅が 0 なので、曲の名前などは引っこんでいる。
+  it("from the top: transport, arrange, band tabs, status line", () => {
+    // jsdom has width 0, so the song name and such are hidden.
     expect(text(".transport")).toContain("96.00");
     expect(document.querySelector("[data-gl-slot=gridLines]")).not.toBeNull();
     expect(document.querySelectorAll("[data-gl-slot=meter]")).toHaveLength(2);
     expect(text("nav.row")).toContain("アレンジ A");
   });
 
-  it("状態行: バッファが固定されている文と、くわしく、右の入口・出口・バッファ", () => {
+  it("status line: the text that the buffer is fixed, 「くわしく」, and the input, output and buffer on the right", () => {
     const s = text("footer.status")!;
     expect(s).toContain("バッファが PC 全体の設定で 1024 に固定されています ・ 音が出るまで 約 53 ms（256 なら 約 13.5 ms）");
     expect(s).toContain("出口: アナログヘッドフォン");
@@ -48,14 +48,14 @@ describe("画面の骨組み（?scene=bufferFixed）", () => {
     expect(s).toContain("バッファ 1024 ・ 頼んだ数 256");
   });
 
-  it("くわしく で音の設定の奥がひらく", async () => {
+  it("「くわしく」 opens the sound settings in detail", async () => {
     const button = [...document.querySelectorAll("footer.status button")].find((b) => b.textContent === "くわしく") as HTMLButtonElement;
     button.click();
     await settle();
     expect(document.querySelector(".dialog")).not.toBeNull();
   });
 
-  it("帯札を押すと帯がひらき、Esc の案内が出る", async () => {
+  it("pressing a band tab opens the band and shows the Esc hint", async () => {
     (document.querySelector("nav.row [data-band=history]") as HTMLButtonElement).click();
     await settle();
     expect(document.querySelector("section.band[data-band=history]")).not.toBeNull();

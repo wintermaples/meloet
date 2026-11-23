@@ -1,5 +1,5 @@
-// ドラムのトラックのピアノロール（モック R7-Drum）を mount して見る: 鍵の列の楽器の名前、スケール固定は「使えない」、
-// ノートの一覧の列、右の欄、状態行と入力計の音の名前。ドラムでないトラックに切りかえると、もとのピアノロールに戻る。
+// Mounts the piano roll of a drum track (mock R7-Drum) and checks: the instrument names in the key column, scale lock disabled,
+// the note list columns, the right panel, and the sound names in the status line and input meter. Switching to a non-drum track goes back to the normal piano roll.
 import { flushSync, mount, unmount, type Component } from "svelte";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, ClipView, TakeNotes, TrackView } from "../src/bridge";
@@ -20,7 +20,7 @@ import { take } from "./pianoroll-fixture";
 vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));
 vi.mock("../src/components/pianoroll/shown.svelte", () => import("./fake-shown.svelte"));
 
-// jsdom は大きさを測らない。ノートの場所をモック R7-Drum の 668 × 440 にする（行の高さ 36）。
+// jsdom does not measure sizes. The note area is 668 × 440 as in mock R7-Drum (row height 36).
 const proto = HTMLElement.prototype;
 const hadW = Object.getOwnPropertyDescriptor(proto, "clientWidth");
 const hadH = Object.getOwnPropertyDescriptor(proto, "clientHeight");
@@ -64,7 +64,7 @@ interface Song {
   take: TakeNotes;
 }
 
-/** モック R7-Drum の曲。見せているのは「3 ドラム」の「8ビート」。 */
+/** The song of mock R7-Drum. It shows 「8ビート」 of 「3 ドラム」. */
 async function drumSong(edit?: (s: AppState) => void): Promise<Song> {
   const s = fakeScene("drumRoll")!.state;
   edit?.(s);
@@ -81,8 +81,8 @@ function show(component: Component): void {
   flushSync();
 }
 
-describe("鍵の列（モック R7-Drum）", () => {
-  it("12 の音の名前を上から。叩いている行は明るく、使っていない行も出す。幅は part.drum.keys の列", async () => {
+describe("key column (mock R7-Drum)", () => {
+  it("12 sound names from the top. Rows being hit are bright, unused rows are shown too. The width is the part.drum.keys column", async () => {
     await drumSong();
     show(Roll);
     expect(q(".roll")!.classList.contains("drums")).toBe(true);
@@ -105,12 +105,12 @@ describe("鍵の列（モック R7-Drum）", () => {
     expect(used).toEqual(["クラッシュ", "クローズハイハット", "ハイタム", "ミッドタム", "ロータム", "スネア", "キック"]);
     expect(names.map((n) => n.style.height)).toEqual(Array(12).fill("36px"));
     expect(names[11]!.style.top).toBe(`${11 * 36}px`);
-    // 用語の説明は名前の中の言葉にだけ（「ハイタム」の「タム」）。
+    // term tips are only on words inside the name (「タム」 in 「ハイタム」).
     expect(text(names[5]!.querySelector("span"))).toBe("タム");
     expect(q(".key-names")).toBeNull();
   });
 
-  it("ドラムでないトラックのクリップに切りかえると、もとの鍵盤の列と行の高さに戻る", async () => {
+  it("switching to a clip on a non-drum track goes back to the keyboard column and row height", async () => {
     const { s } = await drumSong();
     show(Roll);
     expect(prView.drums).toBe(true);
@@ -127,7 +127,7 @@ describe("鍵の列（モック R7-Drum）", () => {
     expect(q(".key-names")).not.toBeNull();
   });
 
-  it("縦の − ＋ はドラムの行の高さを 4 ずつ（ふつうの行の高さは変えない）", async () => {
+  it("the vertical − ＋ change the drum row height by 4 (the normal row height does not change)", async () => {
     await drumSong();
     show(Roll);
     const rowPx = prView.rowPx;
@@ -139,8 +139,8 @@ describe("鍵の列（モック R7-Drum）", () => {
   });
 });
 
-describe("道具の列のスケール固定", () => {
-  it("「使えない」で「スケール固定 —」。押しても何も送らない", async () => {
+describe("scale lock in the toolbar", () => {
+  it("disabled, with 「スケール固定 —」. Pressing sends nothing", async () => {
     await drumSong();
     show(Toolbar);
     const lock = q("[data-test=pr-scale-lock]")!;
@@ -154,8 +154,8 @@ describe("道具の列のスケール固定", () => {
   });
 });
 
-describe("ノートの一覧", () => {
-  it("「長さ」の列を出さない: 位置 ・ 音（楽器の名前）・ Vel", async () => {
+describe("note list", () => {
+  it("no 「長さ」 column: position, sound (instrument name), Vel", async () => {
     await drumSong();
     show(NoteListPanel);
     expect(text(q(".head"))).toBe("位置 音 Vel");
@@ -164,7 +164,7 @@ describe("ノートの一覧", () => {
     expect(qa(".row.selected").map(text)).toEqual(["1.2.0000 スネア 96", "2.2.0000 スネア 96"]);
   });
 
-  it("キットにない鍵のノートは音名で", async () => {
+  it("notes on keys not in the kit use note names", async () => {
     const song = await drumSong();
     const odd = take([[0, TPQ / 4, 60, 90], [0, TPQ / 4, 36, 104]], song.clip.takeId);
     shown.setShown({ clip: song.clip, track: song.track, take: odd });
@@ -173,8 +173,8 @@ describe("ノートの一覧", () => {
   });
 });
 
-describe("右の欄（選んだノート）", () => {
-  it("音は楽器の名前。スケールは音階「—」、固定「使えない」", async () => {
+describe("right panel (selected notes)", () => {
+  it("the sound is the instrument name. The scale is 「—」, scale lock disabled", async () => {
     await drumSong();
     show(NoteInspector);
     expect(text(q("[data-test=inspector-keys]"))).toBe("スネア ×2");
@@ -184,14 +184,14 @@ describe("右の欄（選んだノート）", () => {
   });
 });
 
-describe("状態行と入力計", () => {
-  it("選んだノートの音名は楽器の名前", async () => {
+describe("status line and input meter", () => {
+  it("the note name of the selected note is the instrument name", async () => {
     await drumSong();
     show(StatusLine);
     expect(text(q(".status"))).toContain("選択 2 ノート ・ スネア ×2");
   });
 
-  it("入力計の「いま押している音」: 弾くと鳴る先がドラムなら楽器の名前（「キック スネア」）", async () => {
+  it("「いま押している音」 in the input meter: instrument names when the play target is drums (「キック スネア」)", async () => {
     await drumSong();
     show(InputMeter);
     app.setTelemetry(app.telemetryWith({ keys: [38, 36] }));
@@ -199,7 +199,7 @@ describe("状態行と入力計", () => {
     expect(text(q('[data-test="held"]'))).toBe("キック スネア");
   });
 
-  it("鳴る先がドラムでなければ音名", async () => {
+  it("note names when the play target is not drums", async () => {
     await drumSong((s) => (s.song.playTarget = s.song.keysTarget = s.song.tracks[0]!.id));
     show(InputMeter);
     app.setTelemetry(app.telemetryWith({ keys: [38, 36] }));

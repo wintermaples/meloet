@@ -1,4 +1,4 @@
-// 第 4 回 区切り3: パラメータの欄（モック F4-Mixer ・ R6-Delay）と状態行の「…をえらんでいます」。
+// The params panel (mock F4-Mixer, R6-Delay) and 「…をえらんでいます」 in the status line.
 import { flushSync, mount, unmount, type Component } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, EffectKind } from "../src/bridge";
@@ -18,8 +18,8 @@ const param = (effect: EffectKind, id: string) => EFFECT_PARAMS[effect].findInde
 const spec = (effect: EffectKind, id: string) => EFFECT_PARAMS[effect][param(effect, id)]!;
 const text = (el: Element | null) => el?.textContent?.replace(/\s+/g, " ").trim() ?? null;
 
-describe("値の書きかた（仕様書 3 章「2.40 s」「20 ms」「−6.0 dB」「35 %」「6000 Hz」、19-3 の表）", () => {
-  it("単位と小数のけた", () => {
+describe("how values are written (spec 3 「2.40 s」「20 ms」「−6.0 dB」「35 %」「6000 Hz」, the table of 19-3)", () => {
+  it("units and decimal places", () => {
     expect(valueText("reverb", spec("reverb", "decay"), 2.4)).toBe("2.40 s");
     expect(valueText("reverb", spec("reverb", "preDelay"), 20)).toBe("20 ms");
     expect(valueText("reverb", spec("reverb", "highCut"), 6000)).toBe("6000 Hz");
@@ -33,20 +33,20 @@ describe("値の書きかた（仕様書 3 章「2.40 s」「20 ms」「−6.0 d
     expect(valueText("limiter", spec("limiter", "ceiling"), -0.3)).toBe("−0.3 dB");
   });
 
-  it("マイナスもある範囲だけ「+」。0 は「0.0」（−0.0 にしない）", () => {
+  it("「+」 only for ranges that also go below zero. 0 is 「0.0」 (not −0.0)", () => {
     expect(valueText("eq4", spec("eq4", "lowGain"), 3)).toBe("+3.0 dB");
     expect(valueText("eq4", spec("eq4", "lowGain"), -0.01)).toBe("0.0 dB");
     expect(valueText("compressor", spec("compressor", "makeup"), 3)).toBe("3.0 dB");
   });
 
-  it("段階は段の名前、スイッチはオン ・ オフ", () => {
+  it("steps use the step name, switches on and off", () => {
     expect(valueText("delay", spec("delay", "intervalStep"), 2)).toBe("1/8");
     expect(valueText("delay", spec("delay", "intervalStep"), 1)).toBe("1/8 付点");
     expect(valueText("delay", spec("delay", "sync"), 1)).toBe("オン");
     expect(valueText("delay", spec("delay", "pingPong"), 0)).toBe("オフ");
   });
 
-  it("棒: 高さ ・ 時間で広い物は対数、ほかは直線。棒 → 値は見せるけたに丸める", () => {
+  it("bar: wide ranges of frequency and time are logarithmic, others are linear. bar → value rounds to the digits shown", () => {
     const highCut = spec("reverb", "highCut");
     expect(fractionOf(highCut, 1000)).toBe(0);
     expect(fractionOf(highCut, 20000)).toBe(1);
@@ -59,7 +59,7 @@ describe("値の書きかた（仕様書 3 章「2.40 s」「20 ms」「−6.0 d
     expect(valueAt(spec("chorus", "rate"), 0.5)).toBe(Math.round(Math.sqrt(0.05 * 5) * 100) / 100);
   });
 
-  it("← → は棒の 1/20、Shift は見せるけたの 1 つ。段階は 1 段、はしで止まる", () => {
+  it("← → is 1/20 of the bar, Shift is one shown digit. Steps move one step and stop at the ends", () => {
     const mix = spec("reverb", "mix");
     expect(keyStep(mix, 50, 1, false)).toBe(55);
     expect(keyStep(mix, 50, -1, true)).toBe(49);
@@ -70,14 +70,14 @@ describe("値の書きかた（仕様書 3 章「2.40 s」「20 ms」「−6.0 d
   });
 });
 
-describe("行の並び", () => {
-  it("リバーブは 7 行、見出しなし", () => {
+describe("row order", () => {
+  it("reverb has 7 rows and no headings", () => {
     const groups = allRows("reverb", []);
     expect(groups.map((g) => g.group)).toEqual([null]);
     expect(groups[0]!.rows.map((r) => r.name)).toEqual(["響きの長さ", "部屋の大きさ", "プリディレイ", "高い音を落とす", "低い音を落とす", "広がり", "ミックス"]);
   });
 
-  it("ディレイの「間隔」は 1 行。テンポに合わせるがオンなら段階、オフなら ms（A-14）", () => {
+  it("the delay 「間隔」 is one row. Steps when tempo sync is on, ms when off (A-14)", () => {
     const values = EFFECT_PARAMS.delay.map((p) => p.default);
     const on = allRows("delay", values)[0]!.rows;
     expect(on.map((r) => r.name)).toEqual(["間隔", "テンポに合わせる", "くり返し", "高い音を落とす", "低い音を落とす", "左右にゆれる", "ミックス"]);
@@ -89,7 +89,7 @@ describe("行の並び", () => {
     expect(off[0]!.covers).toEqual([param("delay", "intervalStep"), param("delay", "intervalMs")]);
   });
 
-  it("EQ は 4 つの見出しの下に", () => {
+  it("EQ is under 4 headings", () => {
     const groups = allRows("eq4", []);
     expect(groups.map((g) => [g.name, g.rows.map((r) => r.name)])).toEqual([
       ["低い音", ["高さ", "上げ下げ"]],
@@ -99,7 +99,7 @@ describe("行の並び", () => {
     ]);
   });
 
-  it("さがす枠: 名前にふくまれる行だけ。残らない見出しは出さない。↑ ↓ ははしで止まる", () => {
+  it("search box: only rows whose name contains it. Headings with no rows left are not shown. ↑ ↓ stop at the ends", () => {
     const eq = allRows("eq4", []);
     expect(searchRows(eq, "幅").map((g) => [g.group, g.rows.length])).toEqual([
       ["lowMid", 1],
@@ -150,29 +150,29 @@ function pointer(el: Element, type: string, clientX: number): void {
   el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX, clientY: 5, button: 0 }));
   flushSync();
 }
-/** 棒の箱を 0〜100 px にする（jsdom は大きさを持たない）。 */
+/** Makes the bar box 0 to 100 px (jsdom has no sizes). */
 function sizeBar(el: HTMLElement): void {
   el.getBoundingClientRect = () => ({ left: 0, right: 100, width: 100, top: 0, bottom: 12, height: 12, x: 0, y: 0, toJSON: () => ({}) });
 }
 
-describe("パラメータの欄（モック F4-Mixer）", () => {
-  it("名前、最初から入っている、居場所、さがす枠と数、行と値。えらんだ行の印", () => {
+describe("params panel (mock F4-Mixer)", () => {
+  it("name, built in, location, search box and count, rows and values. The mark of the chosen row", () => {
     show(RightRail, scene("mixer"));
     expect(text(q("[data-test=params-name]"))).toBe("リバーブ");
-    // インサートの子は「とばす B」（仕様書 3 章 86-1）。最初から入っている物に窓のボタンはない。
+    // the insert's plugin is 「とばす B」 (spec 3 (86-1)). Built-in effects have no window button.
     expect(text(q("[data-test=params] .who"))).toBe("リバーブ 最初から入っている とばす B A リバーブ ・ インサート 1");
     expect(q("[data-test=params-window]")).toBeNull();
     expect((q("[data-test=params-search]") as HTMLInputElement).placeholder).toBe("名前");
     expect(text(q("[data-test=params-count]"))).toBe("7 / 7");
     expect(qa("[data-test=param-value]").map(text)).toEqual(["2.40 s", "60 %", "20 ms", "6000 Hz", "120 Hz", "100 %", "100 %"]);
     expect(qa("[data-test=param-row]").map((r) => r.classList.contains("selected"))).toEqual([true, false, false, false, false, false, false]);
-    // 「この子は窓を持ちません。」の行は出さない（仕様書 3 章 Y8）。
+    // the 「この子は窓を持ちません。」 row is not shown (spec 3 (Y8)).
     expect(target.textContent).not.toContain("窓を持ちません");
-    // オートメーションに書く印は、トラックのインサートなら押せる（戻り ・ マスターは「使えない」。docs/history/design-notes.ja.md A-19 の 7）。
+    // the mark for writing to automation can be pressed on a track insert (on returns and the master it is disabled. docs/history/design-notes.ja.md A-19 item 7).
     expect(qa("[data-test=param-row] button[aria-label=オートメーションに書く]").length).toBe(7);
   });
 
-  it("行を押すと SelectParam（えらんでいる行では送らない）", () => {
+  it("pressing a row sends SelectParam (not sent for the chosen row)", () => {
     show(RightRail, scene("mixer"));
     const rows = qa("[data-test=param-row]");
     pointer(rows[2]!, "pointerdown", 5);
@@ -180,9 +180,9 @@ describe("パラメータの欄（モック F4-Mixer）", () => {
     expect(app.sent).toEqual([{ type: "selectParam", param: 2 }]);
   });
 
-  it("ドラッグ: 画面が先に動き、1 コマに 1 回 commit: false、離して commit: true が 1 つ。もとの位置は gray.7 の枠", () => {
+  it("drag: the screen moves first, commit: false at most once per frame, and one commit: true on release. The original position is a gray.7 border", () => {
     show(RightRail, scene("mixer"));
-    const slider = qa("[data-test=param-slider]")[1]!; // 部屋の大きさ 60 %
+    const slider = qa("[data-test=param-slider]")[1]!; // room size 60 %
     sizeBar(slider);
     app.sent.length = 0;
     pointer(slider, "pointerdown", 30);
@@ -201,11 +201,11 @@ describe("パラメータの欄（モック F4-Mixer）", () => {
       { type: "setParam", insert, effect: "reverb", param: 1, value: 50, commit: true },
     ]);
     expect(slider.querySelector(".ghost")).toBeNull();
-    // Rust の答えが来るまで、離した値のまま。
+    // keeps the released value until the Rust answer comes.
     expect(text(qa("[data-test=param-value]")[1]!)).toBe("50 %");
   });
 
-  it("ドラッグ中の Esc は、もとの値に戻して CancelMixPreview。commit は送らない", () => {
+  it("Esc during a drag goes back to the original value and sends CancelMixPreview. No commit is sent", () => {
     show(RightRail, scene("mixer"));
     const slider = qa("[data-test=param-slider]")[1]!;
     sizeBar(slider);
@@ -220,17 +220,17 @@ describe("パラメータの欄（モック F4-Mixer）", () => {
     expect(cancelDrag()).toBe(false);
   });
 
-  it("押して動かさずに離したら、何も送らない（値が同じ）", () => {
+  it("pressing and releasing without moving sends nothing (the value is the same)", () => {
     show(RightRail, scene("mixer"));
-    const slider = qa("[data-test=param-slider]")[0]!; // 響きの長さ
+    const slider = qa("[data-test=param-slider]")[0]!; // decay time
     app.sent.length = 0;
-    // 大きさのない棒では、押した所はいまの値のまま。
+    // on a bar with no size, the pressed place keeps the current value.
     pointer(slider, "pointerdown", 30);
     pointer(slider, "pointerup", 30);
     expect(app.sent.filter((c) => c.type === "setParam")).toEqual([]);
   });
 
-  it("← → で 1 手ずつ。↑ ↓ で行をえらぶ", () => {
+  it("← → move one step at a time. ↑ ↓ choose the row", () => {
     show(RightRail, scene("mixer"));
     const slider = qa("[data-test=param-slider]")[1]!;
     app.sent.length = 0;
@@ -243,7 +243,7 @@ describe("パラメータの欄（モック F4-Mixer）", () => {
     ]);
   });
 
-  it("さがす枠: 数が変わり、合わなければ文と「さがす枠を空にする」", () => {
+  it("search box: the count changes, and with no match the text and 「さがす枠を空にする」", () => {
     show(RightRail, scene("mixer"));
     const input = q("[data-test=params-search]") as HTMLInputElement;
     input.value = "落とす";
@@ -261,7 +261,7 @@ describe("パラメータの欄（モック F4-Mixer）", () => {
     expect(qa("[data-test=param-row]").length).toBe(7);
   });
 
-  it("何もえらんでいなければ、見出しの下に 2 行（仕様書 3 章 86-5）", () => {
+  it("with nothing chosen, two rows below the heading (spec 3 (86-5))", () => {
     show(RightRail, scene("params"));
     expect(text(q("[data-test=params]"))).toBe(
       "▾ パラメータ U ミキサーでインサートの枠をえらぶと、ここにパラメータが出ます。 音源の枠をえらぶと、音源のパラメータが出ます。",
@@ -270,8 +270,8 @@ describe("パラメータの欄（モック F4-Mixer）", () => {
   });
 });
 
-describe("ディレイ（モック R6-Delay）", () => {
-  it("間隔は段階（◂ 5 つの四角 ▸）、テンポに合わせるはオン、左右にゆれるはオフ", () => {
+describe("delay (mock R6-Delay)", () => {
+  it("interval is steps (◂ 5 squares ▸), tempo sync is on, ping-pong is off", () => {
     show(RightRail, scene("paramsDelay"));
     expect(text(q("[data-test=params] .who"))).toBe("ディレイ 最初から入っている とばす B B ディレイ ・ インサート 1");
     expect(text(q("[data-test=params-count]"))).toBe("7 / 7");
@@ -281,7 +281,7 @@ describe("ディレイ（モック R6-Delay）", () => {
     expect(qa("[data-test=param-row]").some((r) => r.classList.contains("selected"))).toBe(false);
   });
 
-  it("段階の ◂ ▸ と四角、スイッチは押すと 1 手", () => {
+  it("step ◂ ▸ and squares, and switches, are one step when pressed", () => {
     show(RightRail, scene("paramsDelay"));
     app.sent.length = 0;
     q("[data-test=param-next]")!.click();
@@ -295,7 +295,7 @@ describe("ディレイ（モック R6-Delay）", () => {
     ]);
   });
 
-  it("テンポに合わせるがオフなら、間隔は ms の棒", () => {
+  it("when tempo sync is off, the interval is an ms bar", () => {
     const s = scene("paramsDelay");
     builtinOf(s.params)!.values[param("delay", "sync")] = 0;
     show(RightRail, s);
@@ -305,20 +305,20 @@ describe("ディレイ（モック R6-Delay）", () => {
   });
 });
 
-describe("縦の見出しと状態行", () => {
-  it("パラメータがうしろにあるとき、縦の見出しにえらんだ子の名前と数（モック F-WindowOpen）", () => {
+describe("vertical heading and status line", () => {
+  it("when the parameters are behind, the vertical heading shows the chosen plugin's name and count (mock F-WindowOpen)", () => {
     const s = scene("mixer");
     s.workspace.layout.rightFront = "shelf";
     show(RightRail, s);
     expect(text(q("[data-test=params-tab-count]"))).toBe("リバーブ 7");
   });
 
-  it("状態行: 「ループ 5–9 ・ A リバーブの「響きの長さ」をえらんでいます」（モック F4-Mixer）", () => {
+  it("status line: 「ループ 5–9 ・ A リバーブの「響きの長さ」をえらんでいます」 (mock F4-Mixer)", () => {
     show(StatusLine, scene("mixer"));
     expect(text(q(".status"))).toContain("ループ 5–9 ・ A リバーブの「響きの長さ」をえらんでいます");
   });
 
-  it("状態行: トラックのストリップは「2 ベース ・ コンプレッサーの「…」」（仕様書 3 章 86-10）と、ループのないとき", () => {
+  it("status line: a track strip is 「2 ベース ・ コンプレッサーの「…」」 (spec 3 (86-10)), and the case with no loop", () => {
     const s = scene("mixer");
     s.status.message = { id: "paramSelected", loopBars: null, insert: { strip: { kind: "track", id: s.song.tracks[1]!.id }, slot: 0 }, effect: "compressor", param: 1 };
     show(StatusLine, s);

@@ -1,4 +1,4 @@
-// テイクの id は曲ごとに 1 から。曲の通し番号（song.serial）が変わったら、同じ id でも新しい曲の中身を取りにいく。
+// Take ids start from 1 in each song. When the song serial (song.serial) changes, fetch the new song's content even for the same id.
 import { flushSync } from "svelte";
 import { describe, expect, it, vi } from "vitest";
 import type { AppState } from "../src/bridge";
@@ -43,7 +43,7 @@ function stateWith(serial: number, takeId: number): AppState {
 }
 
 describe("TakeStore.clear", () => {
-  it("空にしたあとは、同じ id でも取りなおす", async () => {
+  it("after clearing, fetch again even for the same id", async () => {
     let key = 60;
     const fetched: number[] = [];
     const s = new TakeStore(async (id) => {
@@ -58,7 +58,7 @@ describe("TakeStore.clear", () => {
     expect(fetched).toEqual([3, 3]);
   });
 
-  it("空にする前に頼んだ答えはためず、新しい曲の中身を取りなおす", async () => {
+  it("answers asked for before clearing are not kept; the new song's content is fetched again", async () => {
     let key = 60;
     const answers: (() => void)[] = [];
     const s = new TakeStore(
@@ -77,7 +77,7 @@ describe("TakeStore.clear", () => {
     expect(s.peek(3)).toBeUndefined();
     answers[1]!();
     expect((await fresh).keys[0]).toBe(72);
-    // 古い頼みも、新しい頼みと同じ物を待ち、新しい曲の中身で答える。
+    // The old request waits for the same thing as the new one and answers with the new song's content.
     expect((await old).keys[0]).toBe(72);
     expect(answers.length).toBe(2);
     expect(s.peek(3)?.keys[0]).toBe(72);
@@ -85,7 +85,7 @@ describe("TakeStore.clear", () => {
 });
 
 describe("shown", () => {
-  it("通し番号が変わると、同じ id のテイクでも取りなおす。変わらなければ取りなおさない", async () => {
+  it("when the serial changes, fetch again even for a take with the same id. Not if it stays the same", async () => {
     song.asked.length = 0;
     song.key = 60;
     app.setState(stateWith(1, 3));
@@ -102,7 +102,7 @@ describe("shown", () => {
     song.key = 72;
     app.setState(stateWith(2, 3));
     flushSync();
-    // 新しい曲の中身が届くまで、前の曲のノートは見せない。
+    // Until the new song's content arrives, the old song's notes are not shown.
     expect(shown.take).toBeNull();
     await settle();
     expect(song.asked).toEqual([3, 3]);

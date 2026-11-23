@@ -33,8 +33,8 @@ async function opened(name: string) {
   return { scene, transport, got };
 }
 
-describe("偽物のピアノロール", () => {
-  it("テイクはモックのノートの一覧と同じ。そろえた 3 つは、もとのテイクの同じ番号から来て、位置だけちがう", async () => {
+describe("fake piano roll", () => {
+  it("the take matches the mock's note list. The 3 aligned notes come from the same indices of the original take and differ only in position", async () => {
     const { scene, transport } = await opened("pianoRoll");
     const pr = scene.state.pianoRoll;
     const take = decodeTake(await transport.takeNotes(pr.take!));
@@ -50,7 +50,7 @@ describe("偽物のピアノロール", () => {
     expect(pr.selectedNotes).toEqual([{ start: 14, end: 17 }]);
   });
 
-  it("テイクを 3 つ持つクリップ（テイク 2 / 3）と、録音中の押している音", () => {
+  it("a clip with 3 takes (take 2 / 3), and the notes held while recording", () => {
     const play = fakeScene("pianoRollPlay")!.state;
     const clip = play.song.tracks[0]!.clips[0]!;
     expect([clip.name, clip.take, clip.takes, clip.takeId]).toEqual(["Aメロ", 2, 3, play.pianoRoll.take]);
@@ -61,7 +61,7 @@ describe("偽物のピアノロール", () => {
     expect(fakeScene("pianoRollWide")!.state.song.tracks.map((t) => t.name)).toEqual(["ピアノ", "ベース", "ドラム", "パッド", "ボーカル"]);
   });
 
-  it("選ぶ、選択を消す、グリッドは状態に返る", async () => {
+  it("select, clear selection and grid come back in the state", async () => {
     const { scene, transport, got } = await opened("pianoRoll");
     const take = scene.state.pianoRoll.take!;
     await transport.send({ type: "selectNotes", take, notes: [0, 1], mode: "add" });
@@ -79,7 +79,7 @@ describe("偽物のピアノロール", () => {
     expect(got.at(-1)).toMatchObject({ section: "pianoRoll", value: { grid: { division: 8, triplet: true } } });
   });
 
-  it("番号の範囲は、ならべて、つながる物をまとめる", () => {
+  it("index ranges are sorted and joined where they touch", () => {
     expect(toRanges([5, 1, 2, 3, 3, 9])).toEqual([
       { start: 1, end: 4 },
       { start: 5, end: 6 },

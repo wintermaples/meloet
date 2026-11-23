@@ -1,9 +1,9 @@
-// 計測の口（MELOET_MEASURE_DIR があるとき）: コマごとの時間と、どの区画を何回描いたか。
+// The measuring hook (when MELOET_MEASURE_DIR is set): time per frame, and which sections were drawn how many times.
 import { describe, expect, it } from "vitest";
 import { FrameProfile, PROFILE_NAME } from "../src/gl/profile";
 
 describe("FrameProfile", () => {
-  it("コマごとに記録し、区画ごとの描いた回数を数え、まとめて書き出す", async () => {
+  it("records per frame, counts draws per section, and writes them out together", async () => {
     const written: [string, string][] = [];
     let now = 100;
     const p = new FrameProfile(

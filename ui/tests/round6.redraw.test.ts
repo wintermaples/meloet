@@ -1,5 +1,5 @@
-// 第 6 回の直し: オートメーションで動く値があっても、ミキサーとアレンジを 60 コマに（docs/architecture.md 7 章「レイアウトでためる Region」）。
-// 毎コマ変わる物はレイアウトを走らせない（transform、流れの外の字の箱）。つまみと字は、上の canvas を描くコマに見せる。
+// Keeps the mixer and arrange at 60 frames even with values moved by automation (docs/architecture.md 7, "The Region collected during layout").
+// Things that change every frame do not run layout (transform, text boxes out of flow). Knobs and text are shown on the frame that draws the canvas above them.
 import { flushSync, mount, unmount } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, LanePoints } from "../src/bridge";
@@ -20,20 +20,20 @@ vi.mock("../src/bridge", async (original) => ({
   lanePoints: (id: number) => Promise.resolve(POINTS.get(id)!),
 }));
 
-/** 0 から 1000 ティックで 0 → 1 の線。 */
+/** A line from 0 to 1 over ticks 0 to 1000. */
 const ramp = (id: number): LanePoints => ({ id, step: false, ticks: Float64Array.from([0, 1000]), values: Float32Array.from([0, 1]) });
 const VOLUME = { kind: "volume" } as const;
-/** トラック 1 と 2 に、音量の帯が 1 本ずつ。 */
+/** One volume band each on tracks 1 and 2. */
 const twoTracks = {
   automation: { held: [] },
   song: { tracks: [1, 2].map((id) => ({ id, lanes: [{ laneId: 10 + id, target: VOLUME, resting: false, points: 2 }] })) },
 } as unknown as AppState;
-/** ミキサーのストリップに見せている位置。 */
+/** The position shown on the mixer strip. */
 const shown = () => [1, 2].map((track) => shownPosition(track, VOLUME));
-/** 線の上のいちばん新しい位置（帯の見出し、パラメータの欄）。 */
+/** The newest position on the line (band heading, params panel). */
 const live = () => [1, 2].map((track) => livePosition(track, VOLUME));
 
-describe("待つトラック（autoState: canvas を描くコマに位置を見せる）", () => {
+describe("waiting tracks (autoState: show the position on the frame that draws the canvas)", () => {
   beforeEach(() => {
     POINTS.set(11, ramp(11));
     POINTS.set(12, ramp(12));
@@ -41,13 +41,13 @@ describe("待つトラック（autoState: canvas を描くコマに位置を見�
   });
   afterEach(() => POINTS.clear());
 
-  it("待たせていなければ、コマの中でもすぐ見せる", () => {
+  it("if not made to wait, shown at once even inside a frame", () => {
     refreshPositions(twoTracks, 500, true);
     expect(shown()).toEqual([0.5, 0.5]);
     expect(live()).toEqual([0.5, 0.5]);
   });
 
-  it("待つトラックは、showTrack（その箱の上の canvas を描くとき）まで前の位置のまま。見せたら、箱に知らせる。いちばん新しい位置は待たない", () => {
+  it("a waiting track keeps the old position until showTrack (when the canvas above its box is drawn). Once shown, the box is told. The newest position does not wait", () => {
     const told = vi.fn();
     const open = gateTrack(1, "gain", told);
     refreshPositions(twoTracks, 500, true);
@@ -57,16 +57,16 @@ describe("待つトラック（autoState: canvas を描くコマに位置を見�
     showTrack(1);
     expect(shown()).toEqual([0.5, 0.5]);
     expect(told).toHaveBeenCalledTimes(1);
-    // もう見せた位置は、もう一度呼んでも知らせない。
+    // A position already shown is not told again on another call.
     showTrack(1);
     expect(told).toHaveBeenCalledTimes(1);
     open();
   });
 
-  it("どの canvas も描かれないコマは次の番を待ち、MAX_WAIT_FRAMES コマ待ったら見せる", () => {
+  it("on a frame where no canvas is drawn, wait for the next turn, and show after MAX_WAIT_FRAMES frames", () => {
     const told = vi.fn();
     const open = gateTrack(1, "gain", told);
-    // 前のテストで描いたコマを、遠い昔にする。
+    // Make the frame drawn in the earlier test long ago.
     for (let i = 0; i <= MAX_WAIT_FRAMES; i++) refreshPositions(twoTracks, 0, true);
     refreshPositions(twoTracks, 250, true);
     for (let i = 0; i < MAX_WAIT_FRAMES; i++) {
@@ -79,7 +79,7 @@ describe("待つトラック（autoState: canvas を描くコマに位置を見�
     open();
   });
 
-  it("ほかのトラックの canvas は描かれているのに番が来ないトラック（見えていないストリップ）は、見えるまで待つ", () => {
+  it("a track whose turn does not come while other tracks' canvases are drawn (a strip not in view) waits until it is visible", () => {
     const open1 = gateTrack(1, "gain", () => {});
     const open2 = gateTrack(2, "gain", () => {});
     for (let i = 0; i < 4 * MAX_WAIT_FRAMES; i++) {
@@ -89,14 +89,14 @@ describe("待つトラック（autoState: canvas を描くコマに位置を見�
     expect(shown()[0]).toBe(0);
     expect(shown()[1]).toBeGreaterThan(0);
     expect(live()[0]).toBeGreaterThan(0);
-    // 見えた（canvas を描くときに呼ばれた）。
+    // Visible (called when its canvas was drawn).
     showTrack(1);
     expect(shown()[0]).toBe(live()[0]);
     open1();
     open2();
   });
 
-  it("コマの外（止まっているとき）は待たない。待たせるのをやめたら、すぐ見せる", () => {
+  it("no wait outside a frame (when stopped). Stopping the wait shows it at once", () => {
     const open = gateTrack(1, "gain", () => {});
     refreshPositions(twoTracks, 750);
     expect(shown()).toEqual([0.75, 0.75]);
@@ -106,7 +106,7 @@ describe("待つトラック（autoState: canvas を描くコマに位置を見�
     expect(shown()).toEqual([1, 1]);
   });
 
-  it("箱が 2 つあるトラックは、どちらもやめるまで待つ", () => {
+  it("a track with 2 boxes waits until both stop", () => {
     const a = gateTrack(1, "gain", () => {});
     const b = gateTrack(1, "gain", () => {});
     a();
@@ -116,7 +116,7 @@ describe("待つトラック（autoState: canvas を描くコマに位置を見�
     expect(shown()[0]).toBe(0.5);
   });
 
-  it("待つトラックのパンとセンドは、1 回に片方ずつ見せる（音量は毎回）。どのトラックも同じ番で、コマ 2 つごとに入れかわる", () => {
+  it("pan and send of a waiting track are shown one at a time (volume every time). All tracks take the same turn, switching every 2 frames", () => {
     const targets = [VOLUME, { kind: "pan" }, { kind: "send", bus: "a" }] as const;
     const three = {
       automation: { held: [] },
@@ -127,7 +127,7 @@ describe("待つトラック（autoState: canvas を描くコマに位置を見�
     const told = { gain: vi.fn(), pan: vi.fn(), sends: vi.fn() };
     const open = (["gain", "pan", "sends"] as const).map((part) => gateTrack(1, part, told[part]));
     const now = () => targets.map((target) => shownPosition(1, target));
-    // 8 コマ（左右の半分の番を 4 回ずつ）。毎コマ canvas を描いたとして、音量は毎回、パンとセンドは 2 コマずつ交互に追いつく。
+    // 8 frames (4 turns each for the left and right halves). Drawing the canvas every frame, volume catches up every time, pan and send by turns every 2 frames.
     const seen: (number | null)[][] = [];
     for (let frame = 1; frame <= 8; frame++) {
       refreshPositions(three, 100 * frame, true);
@@ -140,18 +140,18 @@ describe("待つトラック（autoState: canvas を描くコマに位置を見�
     expect(steps(1)).toBeLessThanOrEqual(4);
     expect(steps(2)).toBeGreaterThanOrEqual(3);
     expect(steps(2)).toBeLessThanOrEqual(4);
-    // 同じコマに、パンとセンドの両方は変わらない。
+    // Pan and send never both change in the same frame.
     expect(seen.some((s, f) => f > 0 && s[1] !== seen[f - 1]![1] && s[2] !== seen[f - 1]![2])).toBe(false);
     expect(told.gain).toHaveBeenCalledTimes(8);
     expect(told.pan.mock.calls.length + told.sends.mock.calls.length).toBe(8);
-    // コマの外（止まった時）は、ぜんぶ見せる。
+    // Outside a frame (when stopped), everything is shown.
     refreshPositions(three, 1000);
     expect(now()).toEqual([1, 1, 1]);
     for (const stop of open) stop();
     refreshPositions(twoTracks, 0);
   });
 
-  it("帯がなくなったトラックの位置は、どちらも null に戻る", () => {
+  it("positions of a track whose band is gone go back to null", () => {
     refreshPositions(twoTracks, 500);
     const one = { ...twoTracks, song: { tracks: [twoTracks.song.tracks[1]!] } } as unknown as AppState;
     refreshPositions(one, 500);
@@ -160,7 +160,7 @@ describe("待つトラック（autoState: canvas を描くコマに位置を見�
   });
 });
 
-describe("canvas の下に入れる箱（coverIf）", () => {
+describe("box placed under the canvas (coverIf)", () => {
   let slots: Map<HTMLElement, GlSlot>;
   let stop: () => void;
   beforeEach(() => {
@@ -175,7 +175,7 @@ describe("canvas の下に入れる箱（coverIf）", () => {
     POINTS.clear();
   });
 
-  it("askWhole は、見た目の同じ 2 つの値を入れかえる。同じコマ（同じ仕事の中）に何回呼んでも 1 回だけ", async () => {
+  it("askWhole swaps two values that look the same. Any number of calls in the same frame (the same task) count as one", async () => {
     const node = document.createElement("div");
     askWhole(node);
     const first = node.style.backgroundPosition;
@@ -191,10 +191,10 @@ describe("canvas の下に入れる箱（coverIf）", () => {
     expect(node.style.backgroundPosition).toBe(first);
   });
 
-  it("トラックがあるあいだ、箱いっぱいの空の箱が、絵を描くときに呼ばれる印（paint）になり、そこで位置を見せて、自分の四角を頼む", () => {
+  it("while there are tracks, an empty box filling the box becomes the mark called when painting (paint); there it shows the position and asks for its own rectangle", () => {
     const node = document.createElement("div");
     const action = coverIf(node, 1);
-    // canvas の下に入るのも、四角を頼むのも、同じ空の箱（中の物のはみ出しを入れず、canvas とぴったり重なる）。
+    // Going under the canvas and asking for a rectangle use the same empty box (no overflow of the content, it lies exactly on the canvas).
     const whole = node.querySelector<HTMLElement>("[data-test=ask-whole]")!;
     expect([...slots.keys()]).toEqual([whole]);
     const slot = slots.get(whole)!;
@@ -217,7 +217,7 @@ describe("canvas の下に入れる箱（coverIf）", () => {
   });
 });
 
-describe("ミキサーの動く物は、レイアウトを走らせない", () => {
+describe("moving things in the mixer do not run layout", () => {
   let mounted: Record<string, unknown> | null = null;
   let target: HTMLElement;
   beforeEach(() => {
@@ -234,7 +234,7 @@ describe("ミキサーの動く物は、レイアウトを走らせない", () =
   });
   const qa = (sel: string) => [...target.querySelectorAll<HTMLElement>(sel)];
 
-  it("フェーダーのつまみは transform（top は書かない）、画素に合わせた px", () => {
+  it("the fader knob uses transform (top is not written), px aligned to device pixels", () => {
     const knobs = qa("[data-test=mixer-fader-knob]");
     expect(knobs.length).toBe(qa("[data-test=mixer-strip]").length);
     for (const knob of knobs) {
@@ -243,7 +243,7 @@ describe("ミキサーの動く物は、レイアウトを走らせない", () =
     }
   });
 
-  it("センドの棒は scaleX（幅は書かない）", () => {
+  it("the send bar uses scaleX (width is not written)", () => {
     const fills = qa("[data-test=mixer-send] .fill");
     expect(fills.length).toBeGreaterThan(0);
     for (const fill of fills) {
@@ -252,7 +252,7 @@ describe("ミキサーの動く物は、レイアウトを走らせない", () =
     }
   });
 
-  it("値の字（フェーダー ・ パン ・ センド）は、流れの外の箱（.live > .in）の中", () => {
+  it("value text (fader, pan, send) is in a box out of flow (.live > .in)", () => {
     const texts = [...qa("[data-test=mixer-gain]"), ...qa("[data-test=mixer-pan-text]"), ...qa("[data-test=mixer-send] + .value > .in")];
     expect(texts.length).toBeGreaterThan(qa("[data-test=mixer-strip]").length * 2);
     for (const el of texts) {
@@ -262,7 +262,7 @@ describe("ミキサーの動く物は、レイアウトを走らせない", () =
     }
   });
 
-  it("帯が動かしているストリップだけ: フェーダーと値の箱が canvas の下に入り、動くパンの行は canvas の外で四角を頼む。値の字の行も四角を頼む", () => {
+  it("only strips moved by a band: the fader and value box go under the canvas, the moving pan row asks for a rectangle outside the canvas. The value text row also asks", () => {
     const wholes = qa("[data-test=ask-whole]");
     expect(wholes.map((w) => [w.parentElement!.classList[0], w.dataset.glSlot ?? null])).toEqual([
       ["pan-box", null],
@@ -274,12 +274,12 @@ describe("ミキサーの動く物は、レイアウトを走らせない", () =
     const [panBox, gainBox] = wholes.map((w) => w.parentElement!);
     expect(panBox!.querySelector("[data-test=mixer-pan]")).not.toBeNull();
     for (const part of ["mixer-fader", "mixer-gain"]) expect(gainBox!.querySelector(`[data-test=${part}]`), part).not.toBeNull();
-    // センドの 2 行は 1 つの箱（動いていないので、頼む箱はない）。
+    // The 2 send rows are one box (not moving, so no box asks).
     expect(qa(".sends-box").every((b) => b.querySelectorAll("[data-test=mixer-send]").length === 2 || b.querySelectorAll(".empty-row").length === 2)).toBe(true);
   });
 });
 
-describe("値の字は毎コマ（仕様書 3 章「オートメーションで動くつまみ」: つまみは 1 秒 30 回 ・ 15 回、値の字は間引かない）", () => {
+describe("value text every frame (spec 2 (Handle moved by automation): knobs 30 and 15 times a second, value text is not thinned)", () => {
   beforeEach(() => {
     POINTS.set(11, ramp(11));
     POINTS.set(12, ramp(12));
@@ -291,7 +291,7 @@ describe("値の字は毎コマ（仕様書 3 章「オートメーションで�
   });
   const nextTask = () => Promise.resolve();
 
-  it("askLive の箱は、待つトラックでも、いちばん新しい位置が変わるコマごとに四角を頼む", async () => {
+  it("an askLive box asks for a rectangle on every frame the newest position changes, even on a waiting track", async () => {
     const open = gateTrack(1, "gain", () => {});
     const node = document.createElement("div");
     const action = askLive(node, 1);
@@ -301,13 +301,13 @@ describe("値の字は毎コマ（仕様書 3 章「オートメーションで�
       await nextTask();
       const before = whole.style.backgroundPosition;
       refreshPositions(twoTracks, 100 * frame, true);
-      // 帯の見出しを書いたあとの、次の小さな仕事で。
+      // In the next small task after the band heading is written.
       expect(whole.style.backgroundPosition).toBe(before);
       await nextTask();
       expect(whole.style.backgroundPosition, `frame ${frame}`).not.toBe(before);
       seen.add(whole.style.backgroundPosition);
     }
-    // つまみ（見せる位置）は、まだ待っている。
+    // The knob (shown position) is still waiting.
     expect(shown()[0]).toBe(0);
     expect(live()[0]).toBe(Math.round(0.4 * 4096) / 4096);
     expect(seen.size).toBe(2);
@@ -315,7 +315,7 @@ describe("値の字は毎コマ（仕様書 3 章「オートメーションで�
     open();
   });
 
-  it("値の字の箱（askLive）とパンの行（askIf）は、同じコマにそれぞれ四角を頼む", async () => {
+  it("the value text box (askLive) and the pan row (askIf) each ask for a rectangle in the same frame", async () => {
     const open = gateTrack(1, "gain", () => {});
     const node = document.createElement("div");
     const live = askLive(node, 1);
@@ -333,7 +333,7 @@ describe("値の字は毎コマ（仕様書 3 章「オートメーションで�
   });
 });
 
-describe("ミキサーの値の字は、つまみを待たない", () => {
+describe("mixer value text does not wait for the knob", () => {
   let mounted: Record<string, unknown> | null = null;
   let target: HTMLElement;
   afterEach(() => {
@@ -342,7 +342,7 @@ describe("ミキサーの値の字は、つまみを待たない", () => {
     POINTS.clear();
   });
 
-  it("帯が音量を動かしているトラック: 字はいちばん新しい位置、フェーダーのつまみは canvas を描くコマまで前の位置", async () => {
+  it("a track whose volume is moved by a band: text at the newest position, the fader knob at the old position until the frame that draws the canvas", async () => {
     app.reset();
     const state = fakeScene("mixerRest")!.state;
     const track = state.song.tracks.find((x) => x.lanes.some((l) => l.target.kind === "volume" && !l.resting))!;

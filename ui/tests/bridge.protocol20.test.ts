@@ -1,4 +1,4 @@
-// 約束 20（第 6 回 区切り1）: `timeline` の区画、偽物の場面（F6-Tempo、R10-Markers）、状態行の文。
+// Protocol 20: the `timeline` section, fake scenes (F6-Tempo, R10-Markers), status line text.
 import { flushSync, mount, unmount } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, Command, StatusMessage, TimelineView } from "../src/bridge";
@@ -15,8 +15,8 @@ vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));
 const scene = (name: string): AppState => fakeScene(name)!.state;
 const BAR = 4 * TPQ;
 
-describe("約束 20 の形", () => {
-  it("版は 23（22 より後）。新しい曲の timeline は、曲の頭のテンポと拍子だけ。song にテンポと拍子はもうない", () => {
+describe("shape of protocol 20", () => {
+  it("version is 23 (after 22). A new song's timeline has only the tempo and time signature at the song start. song no longer has tempo or time signature", () => {
     expect(PROTOCOL_VERSION).toBeGreaterThanOrEqual(26);
     const s = fakeState();
     expect(s.timeline).toEqual({
@@ -34,7 +34,7 @@ describe("約束 20 の形", () => {
     for (const gone of ["tempoBpm", "meterNum", "meterDen", "tempoChanges"]) expect(s.song).not.toHaveProperty(gone);
   });
 
-  it("意図は、テンポの点をティック、拍子の旗を小節（0 から）、マーカーを id で指す", () => {
+  it("intents point to a tempo point by tick, a time signature flag by bar (from 0), and a marker by id", () => {
     const commands: Command[] = [
       { type: "setTimelineOpen", open: true },
       { type: "addTempoPoint", tick: 4 * BAR, bpm: 104 },
@@ -60,8 +60,8 @@ describe("約束 20 の形", () => {
   });
 });
 
-describe("偽物の場面", () => {
-  it("tempo（F6-Tempo）: 帯がひらいていて、再生の線の 7 小節目で運びのテンポは 112.00", () => {
+describe("fake scenes", () => {
+  it("tempo (F6-Tempo): the band is open, and the transport tempo at bar 7 of the play line is 112.00", () => {
     const s = scene("tempo");
     const tl = s.timeline;
     expect(tl.open).toBe(true);
@@ -80,14 +80,14 @@ describe("偽物の場面", () => {
     expect(map.barBeatTick(s.transport.position)).toEqual({ bar: 7, beat: 1, tick: 0 });
     expect(map.tempoAt(s.transport.position).toFixed(2)).toBe("112.00");
     expect(map.meterAt(s.transport.position)).toMatchObject({ num: 4, den: 4 });
-    // モックの目盛: テンポの点は 5 ・ 9 ・ 13 小節目、マーカーは 1 ・ 5 ・ 13 小節目。
+    // Ruler in the mock: tempo points at bars 5, 9, 13; markers at bars 1, 5, 13.
     expect(tl.tempoPoints.map((p) => map.barBeatTick(p.tick).bar)).toEqual([5, 9, 13]);
     expect(tl.markers.map((m) => [m.name, map.barBeatTick(m.tick).bar])).toEqual([
       ["イントロ", 1],
       ["Aメロ", 5],
       ["サビ", 13],
     ]);
-    // クリップは、拍子が変わっても小節の頭にいる。
+    // Clips stay at bar starts even when the time signature changes.
     const lead = s.song.tracks[4]!.clips;
     expect(lead.map((c) => [c.name, map.barBeatTick(c.start).bar, map.barBeatTick(c.end).bar])).toEqual([
       ["リード", 9, 13],
@@ -101,14 +101,14 @@ describe("偽物の場面", () => {
     expect(s.song.file).toBe("changed");
   });
 
-  it("tempoFolded: 帯はたたんであり、変更は 1 件", () => {
+  it("tempoFolded: the band is folded, with 1 change", () => {
     const tl = scene("tempoFolded").timeline;
     expect(tl.open).toBe(false);
     expect(tl.tempoPoints.length + tl.meterChanges.length).toBe(1);
     expect(new TempoMap(tl).tempoAt(scene("tempoFolded").transport.position)).toBe(96);
   });
 
-  it("markerAdded ・ markerRenaming ・ markerMoving（R10-Markers）", () => {
+  it("markerAdded, markerRenaming, markerMoving (R10-Markers)", () => {
     const added = scene("markerAdded");
     expect(added.timeline.markers.map((m) => m.name)).toEqual(["イントロ", "Aメロ", "マーカー 4", "サビ"]);
     expect(added.timeline.markers.map((m) => m.tick)).toEqual([0, 4 * BAR, 6 * BAR, 9 * BAR]);
@@ -127,7 +127,7 @@ describe("偽物の場面", () => {
   });
 });
 
-describe("状態行の文", () => {
+describe("status line text", () => {
   let target: HTMLElement;
   beforeEach(() => {
     app.reset();
@@ -147,20 +147,20 @@ describe("状態行の文", () => {
     return out;
   };
 
-  it("仕様書 6 章の 2 つ", () => {
+  it("the two in spec 6", () => {
     expect(says(scene("tempo").status.message!, scene("tempo"))).toBe(
       "5 小節目の変更をえらんでいます ・ 104.00 から 9 小節目の 120.00 へ、だんだん速く",
     );
     expect(says({ id: "markerAdded", name: "マーカー 4" })).toBe("マーカー 4 を足しました。名前を打って Enter");
   });
 
-  it("曲の頭のテンポがだんだんの始まり（仕様書 3 章 94-10 ・ 6 章）", () => {
+  it("the tempo at the song start begins a ramp (spec 3 94-10, spec 6)", () => {
     expect(says({ id: "tempoRampSelected", bar: 1, beat: 1, tempoBpm: 96, toBar: 5, toBeat: 1, toTempoBpm: 120 })).toBe(
       "曲の頭のテンポをえらんでいます ・ 96.00 から 5 小節目の 120.00 へ、だんだん速く",
     );
   });
 
-  it("仮の文（B-92）: おそくなるだんだん、だんだんでない点、拍子の旗、再生まわりで打って変えた点", () => {
+  it("temporary text (B-92): a slowing ramp, a point that is not a ramp, a time signature flag, a point changed by tapping in the transport", () => {
     expect(says({ id: "tempoRampSelected", bar: 9, beat: 1, tempoBpm: 120, toBar: 13, toBeat: 3, toTempoBpm: 96 })).toBe(
       "9 小節目の変更をえらんでいます ・ 120.00 から 13 小節目の 3 拍目の 96.00 へ、だんだん遅く",
     );

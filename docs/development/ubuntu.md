@@ -49,7 +49,7 @@ The scene names are in `ui/src/bridge/fake.ts`. Add `&theme=light` (or another t
 
 ```bash
 MELOET_DOCKER_SG=1 scripts/build-deb.sh   # needs docker; puts the deb in target/deb/
-sudo apt install ./target/deb/meloet_0.2.0_amd64.deb
+sudo apt install ./target/deb/meloet_0.2.1_amd64.deb
 ```
 
 - `scripts/build-deb.sh` builds in an Ubuntu 24.04 container (`packaging/Dockerfile`). It copies the files git knows (committed, changed, and new files that are not ignored) to `target/deb-work/src` and builds `-p meloet-app`, `-p meloet-plughost` and `-p meloet-mcp` only, with the default features.

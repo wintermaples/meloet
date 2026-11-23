@@ -135,6 +135,20 @@ pub enum AiAsk {
     },
     /// Not while the song has unsaved changes.
     NewSong,
+    /// Keeps the mutes now, and the solo, as the mute set `name` (`meloet_model::mute_sets`);
+    /// over a set of that name only with `overwrite`. The same as the set: no step, done.
+    SaveMuteSet {
+        name: String,
+        overwrite: bool,
+    },
+    /// Mutes as the set says (one step) and solos as it says (no step). As the set says
+    /// already: no step, done.
+    RecallMuteSet {
+        name: String,
+    },
+    DeleteMuteSet {
+        name: String,
+    },
     /// An audio file into a vocal track (id; `None`: a new one) from `tick`. With a ticket.
     ImportAudio {
         path: PathBuf,
@@ -253,6 +267,9 @@ impl AiAsk {
             AiAsk::SaveAs { .. } => "save the song as",
             AiAsk::Open { .. } => "open the song",
             AiAsk::NewSong => "start a new song",
+            AiAsk::SaveMuteSet { .. } => "save the mute set",
+            AiAsk::RecallMuteSet { .. } => "recall the mute set",
+            AiAsk::DeleteMuteSet { .. } => "delete the mute set",
             AiAsk::ImportAudio { .. } => "import audio",
             AiAsk::WriteNotes { .. } => "write notes",
             AiAsk::DeleteNotes { .. } => "delete notes",
@@ -284,6 +301,12 @@ pub struct AiSong {
     pub library: LibraryView,
     /// The song's file, once it has one.
     pub file: Option<PathBuf>,
+    /// Song files opened or saved lately, the newest first (`crate::recent`). One may be gone
+    /// since.
+    pub recent: Vec<PathBuf>,
+    /// Where a song's first save makes its folder, and where 「名前をつけて保存」 starts for a
+    /// song with no file.
+    pub songs_dir: Option<PathBuf>,
     /// The song does not match its file.
     pub unsaved: bool,
     /// The rate the audio runs at (or would).
@@ -392,6 +415,12 @@ pub enum AiRefusal {
     /// The song has unsaved changes.
     Unsaved,
     NeverSaved,
+    /// No mute set of that name.
+    NoSuchMuteSet(String),
+    /// A mute set of that name is there, and `overwrite` was not given.
+    MuteSetExists(String),
+    /// The song holds as many mute sets as it can.
+    TooManyMuteSets,
     /// A save or an open goes on, or a dialog asks something.
     FilesBusy,
     /// The file is there and `overwrite` was not given.

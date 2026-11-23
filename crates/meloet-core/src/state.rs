@@ -433,6 +433,8 @@ pub enum Effect {
     /// Release every sounding note and forget the held keys.
     AllNotesOff,
     SaveSettings(Settings),
+    /// Keep the song files opened or saved lately (`crate::recent`) in the state folder.
+    SaveRecentSongs(Vec<PathBuf>),
     /// Answer with [`Input::AudioRetry`] after this long.
     RetryAudio {
         after: Duration,

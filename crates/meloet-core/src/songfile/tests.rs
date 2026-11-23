@@ -324,6 +324,113 @@ fn mute_is_saved_and_solo_is_not() {
     assert_eq!(back.doc, song.doc);
 }
 
+fn with_mute_sets(song: &Song) -> Song {
+    let soloed = BTreeSet::from([TrackId(1)]);
+    let doc = &song.doc;
+    let doc = mute_sets::save_mute_set(doc, &soloed, "爽快セット", false)
+        .unwrap()
+        .doc;
+    let doc = meloet_model::edit::toggle_mute(&doc, TrackId(1))
+        .unwrap()
+        .doc;
+    let doc = mixer::toggle_return_mute(&doc, Bus::B).doc;
+    let doc = mute_sets::save_mute_set(&doc, &BTreeSet::new(), "クール", false)
+        .unwrap()
+        .doc;
+    Song {
+        doc,
+        session: song.session.clone(),
+    }
+}
+
+#[test]
+fn mute_sets_come_back_and_a_song_without_them_is_written_as_before() {
+    let plain = rich_song("x", 3);
+    let bytes = encode(&plain);
+    assert!(
+        !String::from_utf8(bytes.clone())
+            .unwrap()
+            .contains("muteSets")
+    );
+    assert_eq!(decode(&bytes).unwrap(), plain);
+
+    let song = with_mute_sets(&plain);
+    let v: serde_json::Value = serde_json::from_slice(&encode(&song)).unwrap();
+    assert_eq!(
+        v["song"]["muteSets"],
+        serde_json::json!([
+            {"name": "爽快セット", "tracks": [1], "muted": [], "mutedReturns": ["a"],
+             "soloed": [1]},
+            {"name": "クール", "tracks": [1], "muted": [1], "mutedReturns": ["a", "b"]}
+        ])
+    );
+    let back = decode(&encode(&song)).unwrap();
+    assert_eq!(back, song);
+
+    // Every set deleted: the same bytes as a song that never had one.
+    let mut none = back.doc;
+    for name in ["爽快セット", "クール"] {
+        none = mute_sets::delete_mute_set(&none, name).unwrap().doc;
+    }
+    let none = Song {
+        doc: meloet_model::edit::toggle_mute(&none, TrackId(1))
+            .unwrap()
+            .doc,
+        session: plain.session.clone(),
+    };
+    let none = Song {
+        doc: mixer::toggle_return_mute(&none.doc, Bus::B).doc,
+        ..none
+    };
+    assert_eq!(encode(&none), bytes);
+
+    // A file without the field reads as before.
+    let mut v = v;
+    v["song"].as_object_mut().unwrap().remove("muteSets");
+    let read = decode(&serde_json::to_vec(&v).unwrap()).unwrap();
+    assert!(read.doc.mute_sets.is_empty());
+    assert_eq!(read.doc.tracks, song.doc.tracks);
+}
+
+#[test]
+fn mute_sets_that_cannot_be_are_left_out_and_cost_nothing_else() {
+    let song = with_mute_sets(&rich_song("x", 3));
+    let mut v: serde_json::Value = serde_json::from_slice(&encode(&song)).unwrap();
+    let next_id = v["song"]["nextId"].as_u64().unwrap();
+    v["song"]["muteSets"] = serde_json::json!([
+        // Ids out of order and twice, a muted track the set does not name, an id that this
+        // song never gave out, a return that is not known.
+        {"name": " A ", "tracks": [5, 1, 5, next_id + 3], "muted": [1, 9, next_id + 3],
+         "mutedReturns": ["b", "c"], "soloed": [5], "later": true},
+        {"name": "A", "tracks": [1], "muted": []},
+        {"name": "", "tracks": [1]},
+        {"name": "B", "tracks": "all"},
+        "C",
+        {"name": "D", "tracks": [1], "muted": [1]}
+    ]);
+    let back = decode(&serde_json::to_vec(&v).unwrap()).unwrap();
+    assert_eq!(
+        back.doc.mute_sets[..],
+        [
+            MuteSet {
+                name: "A".into(),
+                tracks: vec![TrackId(1), TrackId(5)],
+                muted: vec![TrackId(1)],
+                muted_returns: [false, true],
+                soloed: vec![TrackId(5)],
+            },
+            MuteSet {
+                name: "D".into(),
+                tracks: vec![TrackId(1)],
+                muted: vec![TrackId(1)],
+                muted_returns: [false, false],
+                soloed: Vec::new(),
+            },
+        ]
+    );
+    assert_eq!(back.doc.tracks, song.doc.tracks);
+}
+
 #[test]
 fn newer_older_and_broken_files_do_not_read() {
     let good: serde_json::Value = serde_json::from_slice(&encode(&rich_song("x", 3))).unwrap();

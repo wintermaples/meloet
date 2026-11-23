@@ -300,6 +300,19 @@ pub enum StepKind {
         bus: Bus,
         muted: bool,
     },
+    /// A mute set kept, new or written over: `index` in the `Doc` after the step.
+    SaveMuteSet {
+        index: usize,
+    },
+    /// The mutes of several tracks and the returns, as the set at `index` says (either
+    /// `Doc`). The solo that came with it is no part of the step.
+    RecallMuteSet {
+        index: usize,
+    },
+    /// `index` in the `Doc` before the step.
+    DeleteMuteSet {
+        index: usize,
+    },
     /// 「外す」 on the stopped plugin that was the track's instrument (spec 3, 89-5): the track
     /// sounds as the sine wave. The `Doc` before the step has the plugin.
     RemoveInstrument {

@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use meloet_model::effects::{EffectKind, ParamShape};
+use meloet_model::mute_sets::MuteSet;
 use meloet_model::{
     AudioId, AudioShape, AudioSource, AudioTake, AutoPoint, AutoTarget, BuiltinInstrument, Bus,
     Channel, Clip, ClipGain, ClipId, ClipTake, ClipTakes, ControlPoint, ControlValue, Doc, Gain,
@@ -18,7 +19,7 @@ use meloet_model::{
     Meter, MeterChange, MusicalScale, Note, OriginIndex, Pan, PluginRef, QuantizeAlign,
     QuantizeSettings, Return, RollSettings, ScaleMode, Session, Sf2Ref, Song, SourceTempo, Take,
     TakeId, TakeOrigin, Tempo, TempoPoint, TickRange, Timeline, Track, TrackColor, TrackId,
-    TrackKind, VocalInput, mixer,
+    TrackKind, VocalInput, mixer, mute_sets,
 };
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer, Serialize};
@@ -90,6 +91,11 @@ struct DocFile {
     meter_changes: Vec<MeterChangeFile>,
     #[serde(default)]
     markers: Vec<MarkerFile>,
+    /// The mute sets (`MuteSetFile`), left out when there are none: a song with none is
+    /// written as before, and a meloet of the same version that does not know the field skips
+    /// it. A set that is not understood is skipped.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    mute_sets: Vec<serde_json::Value>,
     #[serde(default, rename = "loop")]
     loop_range: Option<SpanFile>,
     next_id: u32,
@@ -187,6 +193,77 @@ struct MarkerFile {
     id: u32,
     tick: u64,
     name: String,
+}
+
+/// `{"name": "爽快セット", "tracks": [1, 2, 5], "muted": [2], "mutedReturns": ["b"],
+/// "soloed": [5]}`: track ids. `mutedReturns` and `soloed` are left out when empty.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MuteSetFile {
+    name: String,
+    tracks: Vec<u32>,
+    #[serde(default)]
+    muted: Vec<u32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    muted_returns: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    soloed: Vec<u32>,
+}
+
+fn mute_set_file(set: &MuteSet) -> serde_json::Value {
+    let ids = |ids: &[TrackId]| ids.iter().map(|t| t.0).collect();
+    let file = MuteSetFile {
+        name: set.name.clone(),
+        tracks: ids(&set.tracks),
+        muted: ids(&set.muted),
+        muted_returns: (Bus::ALL.into_iter())
+            .filter(|b| set.muted_returns[b.index()])
+            .map(|b| bus_name(b).to_owned())
+            .collect(),
+        soloed: ids(&set.soloed),
+    };
+    serde_json::to_value(file).expect("a mute set always serializes")
+}
+
+/// The sets that are understood, each name once, as many as a song holds. An id of a track
+/// the song does not have stays when it was given out (`kept`): the set skips it when
+/// recalled. One that was not could be given to a new track, and is left out.
+fn mute_sets_of(values: Vec<serde_json::Value>, kept: impl Fn(u32) -> bool) -> Vec<MuteSet> {
+    let mut sets: Vec<MuteSet> = Vec::new();
+    for value in values {
+        let Ok(file) = serde_json::from_value::<MuteSetFile>(value) else {
+            continue;
+        };
+        let name = file.name.trim();
+        if name.is_empty()
+            || sets.iter().any(|s| s.name == name)
+            || sets.len() >= mute_sets::MAX_MUTE_SETS
+        {
+            continue;
+        }
+        let ids = |ids: Vec<u32>| {
+            let set: BTreeSet<TrackId> = ids
+                .into_iter()
+                .filter(|&id| kept(id))
+                .map(TrackId)
+                .collect();
+            set.into_iter().collect::<Vec<_>>()
+        };
+        let tracks = ids(file.tracks);
+        let of_set = |list: Vec<u32>| {
+            let mut list = ids(list);
+            list.retain(|id| tracks.binary_search(id).is_ok());
+            list
+        };
+        sets.push(MuteSet {
+            name: name.to_owned(),
+            muted: of_set(file.muted),
+            soloed: of_set(file.soloed),
+            muted_returns: Bus::ALL.map(|b| file.muted_returns.iter().any(|n| n == bus_name(b))),
+            tracks,
+        });
+    }
+    sets
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1124,6 +1201,7 @@ pub fn encode(song: &Song) -> Vec<u8> {
                     name: m.name.clone(),
                 })
                 .collect(),
+            mute_sets: doc.mute_sets.iter().map(mute_set_file).collect(),
             loop_range: doc.loop_range.map(|r| SpanFile {
                 start: r.start(),
                 end: r.end(),
@@ -1634,6 +1712,9 @@ fn to_song(file: SongFile) -> Option<Song> {
         name: d.name,
         timeline: Arc::new(timeline),
         markers: Arc::new(markers),
+        mute_sets: Arc::new(mute_sets_of(d.mute_sets, |id| {
+            track_ids.contains(&id) || id < d.next_id
+        })),
         loop_range: match loop_range {
             Some(r) => Some(TickRange::new(r.start, r.end)?),
             None => None,

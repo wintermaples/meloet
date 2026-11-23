@@ -1,7 +1,12 @@
 //! The song's files: saving, opening, a new song, and writing the song out as an audio file
 //! as 「書き出し」 does.
 
-use meloet_core::ai::{AiAsk, AiRender, AiRenderWhat};
+use std::ffi::OsStr;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use meloet_core::ai::{AiAsk, AiRender, AiRenderWhat, AiSong};
 use meloet_core::settings::SAMPLE_RATE_CHOICES;
 use meloet_model::TickRange;
 use meloet_protocol::{ExportFormat, RecordFormat};
@@ -11,11 +16,11 @@ use rmcp::{
     tool_router,
 };
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
 use super::render::rendered_value;
-use super::{Tools, done, done_value, failed, path_ok};
+use super::{Tools, closing, done, done_value, failed, path_ok};
 
 /// The ending of a song file.
 const SONG_ENDING: &str = "meloet";
@@ -84,6 +89,181 @@ pub struct ExportArgs {
     /// Write over a file of the same name (default false: that is an error).
     #[serde(default)]
     pub overwrite: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+pub struct ListSongsArgs {
+    /// A folder to look in, an absolute path: the song files in it and in the folders right
+    /// under it. Leave out for the songs opened or saved lately, the song open now and
+    /// meloet's songs folder.
+    #[serde(default)]
+    #[schemars(length(min = 1, max = 4096))]
+    pub folder: Option<String>,
+    /// How many songs of the folder to give at most (default 100, most 500).
+    #[serde(default)]
+    #[schemars(range(min = 1, max = 500))]
+    pub limit: Option<u32>,
+    /// How many songs of the folder to skip first, newest first (default 0).
+    #[serde(default)]
+    pub offset: Option<u32>,
+}
+
+/// Songs a folder is looked through for, at most.
+const MOST_SONGS: usize = 500;
+/// Entries of a folder and the folders right under it that are looked at, at most.
+const MOST_ENTRIES: usize = 20_000;
+const DEFAULT_LIMIT: usize = 100;
+
+/// "2026-11-23T05:01:02Z".
+fn utc_text(time: SystemTime) -> Option<String> {
+    let secs = time.duration_since(UNIX_EPOCH).ok()?.as_secs();
+    let days = (secs / 86_400) as i64;
+    let rest = secs % 86_400;
+    // Howard Hinnant's civil-from-days.
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    Some(format!(
+        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}Z",
+        rest / 3600,
+        rest % 3600 / 60,
+        rest % 60
+    ))
+}
+
+/// A song file as list_songs gives it. `meta`: `None` for a file that is gone.
+fn song_value(path: &Path, meta: Option<&fs::Metadata>, open: Option<&Path>) -> Value {
+    json!({
+        "path": path.display().to_string(),
+        "name": path.file_stem().map(|n| n.to_string_lossy().into_owned()),
+        "modified": meta.and_then(|m| m.modified().ok()).and_then(utc_text),
+        "size": meta.map(fs::Metadata::len),
+        "open_now": open == Some(path),
+    })
+}
+
+/// A song file's name: `<name>.meloet`, not hidden. Not `.prev`, not a temporary file.
+fn is_song(name: &OsStr) -> bool {
+    let name = Path::new(name);
+    !name.to_string_lossy().starts_with('.')
+        && name.extension().is_some_and(|e| e == SONG_ENDING)
+        && name.file_stem().is_some_and(|s| !s.is_empty())
+}
+
+/// What a look through folders found so far.
+struct Look {
+    songs: Vec<(PathBuf, fs::Metadata)>,
+    looked: usize,
+}
+
+impl Look {
+    /// The song files of `dir`; its folders go into `under` when it is given. `false` once a
+    /// limit is reached.
+    fn dir(&mut self, dir: &Path, mut under: Option<&mut Vec<PathBuf>>) -> std::io::Result<bool> {
+        for entry in fs::read_dir(dir)? {
+            self.looked += 1;
+            if self.looked > MOST_ENTRIES || self.songs.len() >= MOST_SONGS {
+                return Ok(false);
+            }
+            let Ok(entry) = entry else { continue };
+            // The kind of the entry itself: a symbolic link is neither.
+            let Ok(kind) = entry.file_type() else {
+                continue;
+            };
+            let name = entry.file_name();
+            if kind.is_file() && is_song(&name) {
+                if let Ok(meta) = entry.metadata() {
+                    self.songs.push((entry.path(), meta));
+                }
+            } else if kind.is_dir()
+                && !name.to_string_lossy().starts_with('.')
+                && let Some(under) = under.as_deref_mut()
+            {
+                under.push(entry.path());
+            }
+        }
+        Ok(true)
+    }
+}
+
+/// The song files of `folder` and of the folders right under it, newest first, and whether
+/// every place was looked at. Symbolic links are not followed.
+fn songs_in(folder: &Path) -> std::io::Result<(Vec<(PathBuf, fs::Metadata)>, bool)> {
+    let mut look = Look {
+        songs: Vec::new(),
+        looked: 0,
+    };
+    let mut under = Vec::new();
+    let mut complete = look.dir(folder, Some(&mut under))?;
+    under.sort();
+    for dir in &under {
+        if !complete {
+            break;
+        }
+        // A folder that cannot be read is passed by.
+        complete = look.dir(dir, None).unwrap_or(true);
+    }
+    let modified = |m: &fs::Metadata| m.modified().ok();
+    (look.songs).sort_by(|a, b| modified(&b.1).cmp(&modified(&a.1)).then(a.0.cmp(&b.0)));
+    Ok((look.songs, complete))
+}
+
+/// A page of the songs of `folder`.
+fn folder_value(
+    folder: &Path,
+    open: Option<&Path>,
+    limit: usize,
+    offset: usize,
+) -> Result<Value, String> {
+    let (songs, complete) =
+        songs_in(folder).map_err(|e| format!("{} cannot be read ({e})", folder.display()))?;
+    let page: Vec<Value> = (songs.iter().skip(offset).take(limit))
+        .map(|(path, meta)| song_value(path, Some(meta), open))
+        .collect();
+    Ok(json!({
+        "folder": folder.display().to_string(),
+        "total": songs.len(),
+        "offset": offset,
+        "songs": page,
+        "complete": complete,
+    }))
+}
+
+/// What list_songs gives: of `folder`, or with none of the songs meloet knows.
+fn songs_listed(
+    folder: Option<&Path>,
+    read: &AiSong,
+    limit: usize,
+    offset: usize,
+) -> Result<Value, String> {
+    let open = read.file.as_deref();
+    if let Some(folder) = folder {
+        return folder_value(folder, open, limit, offset);
+    }
+    let recent: Vec<Value> = (read.recent.iter())
+        .filter_map(|path| {
+            let meta = fs::metadata(path).ok().filter(fs::Metadata::is_file)?;
+            Some(song_value(path, Some(&meta), open))
+        })
+        .collect();
+    let open_now = open.map(|path| song_value(path, fs::metadata(path).ok().as_ref(), open));
+    let songs_folder = (read.songs_dir.as_deref()).map(|dir| {
+        folder_value(dir, open, limit, offset).unwrap_or_else(|_| {
+            json!({ "folder": dir.display().to_string(), "total": 0, "offset": offset,
+                    "songs": [], "complete": true, "exists": false })
+        })
+    });
+    Ok(json!({
+        "song_open_now": open_now,
+        "recent": recent,
+        "songs_folder": songs_folder,
+    }))
 }
 
 /// A name a file can have: no slash, no control characters, not "." or "..".
@@ -178,6 +358,60 @@ impl Tools {
         let (_, path) = check!(self.ticketed(AiAsk::Open { path }).await);
         let value = json!({ "file": path.map(|p| p.display().to_string()) });
         Ok(done(format!("Opened.\n{value}"), value))
+    }
+
+    /// Song files to give to open_song, newest first. No `folder`: the songs opened or saved
+    /// lately, the song open now and meloet's songs folder. With `folder`: the songs in it and
+    /// one folder down (meloet saves `<name>/<name>.meloet`). Each with its name, when it was
+    /// written (UTC), its size and `open_now`. Only song files; symbolic links are not
+    /// followed.
+    #[tool(annotations(title = "List songs", read_only_hint = true, open_world_hint = false))]
+    async fn list_songs(
+        &self,
+        Parameters(a): Parameters<ListSongsArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        check!(self.allowed());
+        let limit = a
+            .limit
+            .map_or(DEFAULT_LIMIT, |l| (l as usize).clamp(1, MOST_SONGS));
+        let offset = a.offset.unwrap_or(0) as usize;
+        let folder = match &a.folder {
+            Some(text) => Some(check!(folder_ok(text))),
+            None => None,
+        };
+        let read = check!(self.read().await);
+        let look = move || songs_listed(folder.as_deref(), &read, limit, offset);
+        let value = match tokio::task::spawn_blocking(look).await {
+            Ok(Ok(value)) => value,
+            Ok(Err(why)) => return Ok(failed(why)),
+            Err(_) => return Ok(closing()),
+        };
+        let mut lines = Vec::new();
+        if a.folder.is_none() {
+            lines.push(match value["song_open_now"]["path"].as_str() {
+                Some(path) => format!("Open now: {path}"),
+                None => "Open now: a song never saved.".to_owned(),
+            });
+            let recent = value["recent"].as_array().map_or(0, Vec::len);
+            lines.push(format!("{recent} song(s) opened or saved lately."));
+        }
+        let shown = match &a.folder {
+            Some(_) => &value,
+            None => &value["songs_folder"],
+        };
+        if let Some(folder) = shown["folder"].as_str() {
+            lines.push(format!(
+                "{} song(s) in {folder}{}.",
+                shown["total"],
+                if shown["complete"] == false {
+                    " (not all looked at)"
+                } else {
+                    ""
+                }
+            ));
+        }
+        lines.push(value.to_string());
+        Ok(done(lines.join("\n"), value))
     }
 
     /// Starts a new, empty song in place of this one. Refused while the song has unsaved
@@ -285,5 +519,35 @@ impl Tools {
         )];
         lines.extend(rendered.files.iter().map(|f| f.display().to_string()));
         Ok(done(lines.join("\n"), value))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::*;
+
+    #[test]
+    fn times_are_utc_in_iso_8601() {
+        let at = |secs: u64| utc_text(UNIX_EPOCH + Duration::from_secs(secs)).unwrap();
+        assert_eq!(at(0), "1970-01-01T00:00:00Z");
+        assert_eq!(at(951_868_799), "2000-02-29T23:59:59Z");
+        assert_eq!(at(1_795_410_062), "2026-11-23T05:01:02Z");
+    }
+
+    #[test]
+    fn only_song_files_are_songs() {
+        for (name, song) in [
+            ("曲.meloet", true),
+            ("曲.meloet.prev", false),
+            (".曲.meloet.new", false),
+            (".hidden.meloet", false),
+            ("recovery.json", false),
+            ("曲.MELOET", false),
+            (".meloet", false),
+        ] {
+            assert_eq!(is_song(OsStr::new(name)), song, "{name}");
+        }
     }
 }

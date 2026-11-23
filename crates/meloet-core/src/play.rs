@@ -2750,6 +2750,7 @@ mod history;
 mod mix;
 pub(crate) mod mixer;
 mod mixsync;
+mod mute_sets;
 mod params;
 mod plugs;
 mod seats;

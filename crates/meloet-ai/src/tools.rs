@@ -17,6 +17,7 @@ mod files;
 mod mixer;
 mod notes;
 mod render;
+mod sets;
 mod timing;
 
 use std::path::{Component, Path, PathBuf};
@@ -319,6 +320,16 @@ pub fn refusal_text(r: &AiRefusal) -> String {
         AiRefusal::NeverSaved => {
             "the song was never saved; call save_song_as with a folder and a name".into()
         }
+        AiRefusal::NoSuchMuteSet(name) => {
+            format!("the song has no mute set \"{name}\"; call list_mute_sets")
+        }
+        AiRefusal::MuteSetExists(name) => format!(
+            "a mute set \"{name}\" is there already; give `overwrite: true` to write over it"
+        ),
+        AiRefusal::TooManyMuteSets => format!(
+            "the song holds {} mute sets, as many as it can; delete one first",
+            meloet_model::mute_sets::MAX_MUTE_SETS
+        ),
         AiRefusal::FilesBusy => {
             "a save or an open is going on, or meloet asks the person something; try later".into()
         }
@@ -402,6 +413,7 @@ impl Tools {
                 + Self::timing_router()
                 + Self::arrange_router()
                 + Self::files_router()
+                + Self::sets_router()
                 + Self::render_router(),
         }
     }

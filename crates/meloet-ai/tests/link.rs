@@ -247,6 +247,8 @@ impl Meloet for Recording {
             busy: Some(AiBusy::Recording),
             library: Default::default(),
             file: None,
+            recent: Vec::new(),
+            songs_dir: None,
             unsaved: false,
             sample_rate: 48_000,
             outcomes: Vec::new(),

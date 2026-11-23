@@ -505,7 +505,11 @@ impl Core {
             .with_export_dirs(crate::export::ExportDirs {
                 home: dirs::home_dir(),
                 usual: dirs::audio_dir(),
-            });
+            })
+            .with_song_places(
+                options.songs_dir.clone(),
+                (options.state_dir.as_deref()).map_or_else(Vec::new, crate::recent::load),
+            );
         let audio_store = Arc::new(
             crate::audiofiles::AudioStore::new(options.state_dir.clone())
                 .with_cache(options.cache_dir.clone()),
@@ -2865,6 +2869,13 @@ impl Worker {
                             && let Err(e) = settings::save(dir, &settings)
                         {
                             eprintln!("meloet: settings not saved in {}: {e}", dir.display());
+                        }
+                    }
+                    Effect::SaveRecentSongs(songs) => {
+                        if let Some(dir) = &self.state_dir
+                            && let Err(e) = crate::recent::save(dir, &songs)
+                        {
+                            eprintln!("meloet: recent songs not saved in {}: {e}", dir.display());
                         }
                     }
                     Effect::SaveSong { song, to } => {

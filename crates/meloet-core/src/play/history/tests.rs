@@ -183,6 +183,9 @@ fn every_step_kind() -> Vec<StepKind> {
             bus: Bus::A,
             muted: true,
         },
+        SaveMuteSet { index: 0 },
+        RecallMuteSet { index: 0 },
+        DeleteMuteSet { index: 0 },
         RemoveInstrument { track },
         AddLane { track, target },
         DeleteLane { track, target },
@@ -281,6 +284,9 @@ fn every_step_kind() -> Vec<StepKind> {
             | PluginWindow { .. }
             | SetPluginParam { .. }
             | MuteReturn { .. }
+            | SaveMuteSet { .. }
+            | RecallMuteSet { .. }
+            | DeleteMuteSet { .. }
             | RemoveInstrument { .. }
             | AddLane { .. }
             | DeleteLane { .. }

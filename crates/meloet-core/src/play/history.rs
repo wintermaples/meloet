@@ -964,6 +964,18 @@ pub(crate) fn step_text(row: &StepRow) -> (StepName, StepWhat, Option<StepPlace>
             },
             mixer,
         ),
+        // Saving and deleting a set have no name of their own yet (a question for the owner):
+        // 「ミュート」 and the set's name, as for a recall.
+        StepKind::SaveMuteSet { index } | StepKind::RecallMuteSet { index } => (
+            StepName::Mute,
+            named(a.after.mute_sets.get(index).map(|s| s.name.clone())),
+            mixer,
+        ),
+        StepKind::DeleteMuteSet { index } => (
+            StepName::Mute,
+            named(a.before.mute_sets.get(index).map(|s| s.name.clone())),
+            mixer,
+        ),
         StepKind::AddLane { track, target } => (
             StepName::AddLane,
             a.lane(track, target, None),

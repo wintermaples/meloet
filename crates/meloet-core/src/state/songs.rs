@@ -62,6 +62,10 @@ pub(super) struct Files {
     /// The save or the read going on was asked for by the AI link, with this ticket: it
     /// hears how it ended, and no dialog is put up for it.
     ai: Option<u64>,
+    /// Song files opened or saved lately, the newest first (`crate::recent`).
+    recent: Vec<PathBuf>,
+    /// Where a song's first save makes its folder.
+    songs_dir: Option<PathBuf>,
 }
 
 impl Files {
@@ -72,6 +76,30 @@ impl Files {
 }
 
 impl Model {
+    /// The songs folder, and the songs opened or saved lately as the state folder keeps them.
+    pub fn with_song_places(mut self, songs_dir: Option<PathBuf>, recent: Vec<PathBuf>) -> Model {
+        self.files.songs_dir = songs_dir;
+        self.files.recent = recent;
+        self
+    }
+
+    pub fn recent_songs(&self) -> &[PathBuf] {
+        &self.files.recent
+    }
+
+    pub fn songs_dir(&self) -> Option<&Path> {
+        self.files.songs_dir.as_deref()
+    }
+
+    /// The song at `path` was opened or saved: it heads the list.
+    fn note_recent(&mut self, path: &Path, effects: &mut Vec<Effect>) {
+        let list = crate::recent::noted(&self.files.recent, path);
+        if list != self.files.recent {
+            self.files.recent = list.clone();
+            effects.push(Effect::SaveRecentSongs(list));
+        }
+    }
+
     /// A save was asked for and has not answered yet.
     pub(super) fn saving(&self) -> bool {
         matches!(self.files.waiting, Some(Waiting::Save(_)))
@@ -276,6 +304,7 @@ impl Model {
                 }
                 self.files.waiting = None;
                 self.files.save_as = None;
+                self.note_recent(&path, effects);
                 self.files.path = Some(path);
                 self.play.saved_as(name);
                 self.recovery_done(effects);
@@ -306,6 +335,7 @@ impl Model {
                     self.ai_ended(ticket, AiOutcome::Done(Some(path.clone())));
                 }
                 self.files.waiting = None;
+                self.note_recent(&path, effects);
                 self.files.path = Some(path);
                 self.take_song(*song, from_previous, effects);
                 self.say_missing();

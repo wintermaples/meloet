@@ -8,6 +8,7 @@ use crate::audio::{AudioId, AudioShape, AudioSource, AudioTake, TrackKind};
 use crate::automation::{AutoTarget, Lane};
 use crate::chunked::ChunkedVec;
 use crate::mixer::{self, Channel, Return, Sends};
+use crate::mute_sets::MuteSet;
 use crate::roll::{QuantizeSettings, RollSettings};
 use crate::tempo_map::Timeline;
 use crate::time::{Meter, Tempo, TickRange};
@@ -325,6 +326,8 @@ pub struct Doc {
     pub timeline: Arc<Timeline>,
     /// In the order of tick, those at one tick in the order of id.
     pub markers: Arc<Vec<Marker>>,
+    /// In the order they were made.
+    pub mute_sets: Arc<Vec<MuteSet>>,
     /// The loop's range; whether the loop is on is in the `Session`.
     pub loop_range: Option<TickRange>,
     pub tracks: Vec<Arc<Track>>,
@@ -346,6 +349,7 @@ impl Doc {
                 Meter::FOUR_FOUR,
             )),
             markers: Arc::new(Vec::new()),
+            mute_sets: Arc::default(),
             loop_range: None,
             tracks: vec![Arc::new(Track {
                 id: TrackId(1),

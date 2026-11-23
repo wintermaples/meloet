@@ -109,6 +109,8 @@ impl Model {
             busy: self.ai_busy(),
             library: self.library_view(),
             file: self.files.path.clone(),
+            recent: self.recent_songs().to_vec(),
+            songs_dir: self.songs_dir().map(|d| d.to_path_buf()),
             unsaved: self.play.has_unsaved_changes(),
             sample_rate: self.export_scene().sample_rate,
             outcomes: self.ai.outcomes.iter().cloned().collect(),
@@ -342,6 +344,15 @@ impl Model {
                 }
                 AiWrote::default()
             }
+            AiAsk::SaveMuteSet { name, overwrite } => {
+                no_step = true;
+                self.play.ai_save_mute_set(&name, overwrite, effects)?
+            }
+            AiAsk::RecallMuteSet { name } => {
+                no_step = true;
+                self.play.ai_recall_mute_set(&name, effects)?
+            }
+            AiAsk::DeleteMuteSet { name } => self.play.ai_delete_mute_set(&name, effects)?,
             AiAsk::ImportAudio { path, track, tick } => {
                 if let Some(track) = track {
                     let t = (self.play.song().doc.track(TrackId(track)))

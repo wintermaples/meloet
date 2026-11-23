@@ -13,6 +13,7 @@ pub mod history;
 mod id_book;
 pub mod instrument;
 pub mod mixer;
+pub mod mute_sets;
 pub mod notes;
 pub mod playback;
 pub mod quantize;
@@ -51,6 +52,7 @@ pub use mixer::{
     Bus, Channel, Gain, INSERT_SLOTS, Insert, InsertId, Inserts, Pan, PluginChange, PluginPlace,
     Return, Sends, StripId,
 };
+pub use mute_sets::MuteSet;
 pub use notes::{NoteField, NotesEdited, WriteAt};
 pub use roll::{Grid, MusicalScale, QuantizeAlign, QuantizeSettings, RollSettings, ScaleMode};
 pub use song::{

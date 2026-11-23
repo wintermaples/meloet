@@ -2428,6 +2428,21 @@ export const texts = {
     "builder:2026-11-23",
     { count: "1" },
   ),
+  // 「音のクリップにする」 (round 12, A7): the rows of the keys clip's and the keys track head's right-click menus, and the status line.
+  "menu.bounceClips": e("音のクリップにする", "user:2026-11-23"),
+  "menu.bounceTrack": e("このトラックを音にする", "user:2026-11-23"),
+  "msg.bouncing": e("音にしています… {percent} %", "user:2026-11-23", { percent: "40" }),
+  // The spec has no text for these: made in the words of the lines around.
+  "msg.bounced": e("{track} に音のクリップを置きました。もとのトラックはミュートしました。", "builder:2026-11-23", {
+    track: "2 ピアノ（音）",
+  }),
+  "msg.bounceCancelled": e("音にするのをやめました。", "builder:2026-11-23"),
+  "msg.bounceFailedPlugin": e("音にできませんでした。{plugin} が止まりました。", "builder:2026-11-23", { plugin: "Surge XT" }),
+  "msg.bounceFailedWrite": e("音にできませんでした。作業の場所に書けません。", "builder:2026-11-23"),
+  "msg.bounceGone": e("もとのトラックがなくなったので、できた音はすてました。", "builder:2026-11-23"),
+  "msg.bounceBusy": e("書き出しか「音にする」の途中なので、終わってからもう一度ためしてください。", "builder:2026-11-23"),
+  "msg.nothingToBounce": e("このトラックにはクリップがありません。", "builder:2026-11-23"),
+  "msg.exportWaitsForBounce": e("音にしているあいだは書き出せません。終わってからひらいてください。", "builder:2026-11-23"),
   "latency.measuring": s6("Measuring the latency", "測っています {done} / {total}", { done: "3", total: "5" }),
   "latency.failed": s6("Latency cannot be measured", "音が小さくて測れませんでした。ヘッドホンの音量を上げて、もう一度測ってください。"),
   "button.useThisValue": e("この数を使う", "spec:6"),

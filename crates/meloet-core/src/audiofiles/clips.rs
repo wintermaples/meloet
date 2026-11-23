@@ -254,7 +254,7 @@ fn write_backwards(
 /// Gives the whole file at `temp` the first name of `wanted`, `wanted` with " 2", " 3" …,
 /// that no file of the song's places has and `taken` does not name. A file that gets the
 /// same name at the same moment (a recording) keeps it.
-fn put_in_place(
+pub(super) fn put_in_place(
     store: &AudioStore,
     work: &Path,
     temp: &Path,

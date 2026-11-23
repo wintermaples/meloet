@@ -215,6 +215,7 @@ pub struct CompPiece {
     pub take: usize,
 }
 
+pub mod bounce;
 pub mod clips;
 pub mod fade;
 pub mod follow;

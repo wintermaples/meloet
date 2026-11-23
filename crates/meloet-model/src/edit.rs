@@ -520,7 +520,7 @@ fn add_track_of(
 
 /// The ids a new track takes its own from: `next_id`, or past the highest track id when that
 /// is higher.
-fn track_ids(doc: &Doc) -> Result<Ids, EditError> {
+pub(crate) fn track_ids(doc: &Doc) -> Result<Ids, EditError> {
     let highest = doc.tracks.iter().map(|t| t.id.0).max();
     Ok(Ids(match highest {
         Some(h) => doc

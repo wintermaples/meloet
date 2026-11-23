@@ -19,6 +19,7 @@ import { reduceUpdates } from "./fakeUpdates";
 import { FakeTypedKeys, typedOn } from "./fakeTyped";
 import { CLICK_VOLUME_MAX_DB, CLICK_VOLUME_MIN_DB, REPEAT_COUNT_MAX } from "./types";
 import { fakeLoudnessOf } from "./fakeLoudness";
+import { reduceA7 } from "./fakeA7";
 import { reduceA9 } from "./fakeA9";
 import { fakeUserPreset, presetOf, reducePresets } from "./fakePresets";
 import { FAKE_ARP_OFF, fakeSpectrum, reduceSpectrum } from "./fakeWave3";
@@ -3478,6 +3479,29 @@ SCENES.audioNormalized = {
   meters: QUIET,
 };
 
+// Round 12, A7: 「このトラックを音にする」 of 「1 ピアノ」 while it runs (「音にしています… 40 %」 with 「やめる」), and its step: 「ピアノ（音）」
+// right below with the audio, the piano muted.
+SCENES.bouncing = {
+  setup(s) {
+    SCENES.muted!.setup(s);
+    const first = s.song.tracks[0]!;
+    s.audioWork = { ...s.audioWork, bounce: { track: { number: first.number, name: first.name }, percent: 40 } };
+  },
+  meters: QUIET,
+};
+SCENES.bounced = {
+  setup(s) {
+    SCENES.muted!.setup(s);
+    const changes = reduceA7(s, { type: "bounceTrack", track: s.song.tracks[0]!.id }, FAKE_AUDIO, () => {});
+    for (const c of changes ?? []) if (c.section === "song") s.song = c.value as SongView;
+  },
+  after(s) {
+    const made = s.song.tracks[1]!;
+    s.status.message = { id: "bounced", track: { number: made.number, name: made.name } };
+  },
+  meters: QUIET,
+};
+
 // ---- Protocol 25: following the song's tempo, the tempo of the audio, the pitch (mock F7-Stretch; spec 3, 28-A and
 // Y22). The screen's parts come later; these are the states they will show. ----
 
@@ -5625,6 +5649,10 @@ export function createFakeTransport(initial?: AppState): Transport {
         reduceSpectrum(state, command) ??
         reduceClips27(state, command) ??
         reduceA9(state, command, FAKE_AUDIO) ??
+        reduceA7(state, command, FAKE_AUDIO, (from, to) => {
+          const points = FAKE_LANES.get(from);
+          if (points) FAKE_LANES.set(to, { ...points, id: to });
+        }) ??
         reduceExport(state, command) ??
         reduceAudio(state, command) ??
         reduceRound7(state, command, vocalMemo) ??

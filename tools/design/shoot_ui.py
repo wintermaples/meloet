@@ -105,6 +105,9 @@ BOARDS = {
     "about": "R7-About",
     "aboutLicenses": "R7-AboutLicense",
     "aboutPart": "R7-AboutLicense",
+    # The key list (round 12 G1; no mock board).
+    "keyList": None,
+    "keyListFiltered": None,
     # The parameters panel and the effects in the shelf.
     "paramsDelay": "R6-Delay",
     "shelfEffects": None,
@@ -251,6 +254,12 @@ BOARDS = {
     "exportFailed": None,
 }
 # Double-clicks the Vel cell of a row of the note list and types into the field (R3-Lanes: "96|" and "200").
+TYPE_KEY_FILTER = """
+const input = document.querySelector('[data-test="keylist-search"]');
+input.value = "%s";
+input.dispatchEvent(new Event("input", { bubbles: true }));
+"""
+
 TYPE_IN_LIST = """
 const cell = document.querySelectorAll('[data-testid="pr-note-list"] .row')[%d].querySelector('[data-field="velocity"]');
 cell.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
@@ -513,10 +522,13 @@ CLICKS = {
     "trackDrag": ("tracks6", "js:" + DRAG_TRACK),
     "trackColorMenu": ("tracks6", "js:" + TRACK_COLORS),
     # Help ▸ About meloet, the open source licenses ▸, the heading of the most common license and its second row.
-    "about": ("tracks6", ('[data-menu="6"]', '[data-test="menubar-list"] [data-row="0"]')),
-    "aboutLicenses": ("tracks6", ('[data-menu="6"]', '[data-test="menubar-list"] [data-row="0"]', '[data-test="about-licenses"]')),
-    "aboutPart": ("tracks6", ('[data-menu="6"]', '[data-test="menubar-list"] [data-row="0"]', '[data-test="about-licenses"]',
+    "about": ("tracks6", ('[data-menu="6"]', '[data-test="menubar-list"] [data-row="3"]')),
+    "aboutLicenses": ("tracks6", ('[data-menu="6"]', '[data-test="menubar-list"] [data-row="3"]', '[data-test="about-licenses"]')),
+    "aboutPart": ("tracks6", ('[data-menu="6"]', '[data-test="menubar-list"] [data-row="3"]', '[data-test="about-licenses"]',
                                '[data-test="about-group"]', "js:" + OPEN_PART)),
+    # Help ▸ the key list, and the same with 「ループ」 typed in its filter box.
+    "keyList": ("tracks6", ('[data-menu="6"]', '[data-test="menubar-list"] [data-row="0"]')),
+    "keyListFiltered": ("tracks6", ('[data-menu="6"]', '[data-test="menubar-list"] [data-row="0"]', "js:" + TYPE_KEY_FILTER % "ループ")),
     "settingsAdv": ("settings", '[data-test="settings-advanced"]'),
     "settingsMoved": ("settings", drag_dialog('[data-test="settings-dialog"]', -200, -40)),
     "scanStoppedMoved": ("scanStopped", drag_dialog('[data-test="scan-stopped-dialog"]', 260, 120)),
@@ -633,6 +645,8 @@ ONLY = {
     "about": [(1280, 800, 100), (1280, 800, 150)],
     "aboutLicenses": [(1280, 800, 100), (1280, 800, 150)],
     "aboutPart": [(1280, 800, 100), (1920, 1080, 150)],
+    "keyList": [(1280, 800, 100), (1280, 800, 150)],
+    "keyListFiltered": [(1280, 800, 100)],
     # The mixer (F4-Mixer is 1280x800 at 100 %). 150 % is to see that it fits.
     "mixer": [(1280, 800, 100), (1280, 800, 150), (1920, 1080, 100)],
     "paramsDelay": [(1280, 800, 100), (1280, 800, 150)],

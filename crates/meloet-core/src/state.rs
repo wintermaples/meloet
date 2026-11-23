@@ -61,6 +61,9 @@ pub const REQUESTED_FRAMES: u32 = crate::settings::DEFAULT_BUFFER;
 pub use crate::settings::{BUFFER_CHOICES, SAMPLE_RATE_CHOICES};
 pub use vocal::Delays;
 pub const AUDIO_SYSTEM: &str = "PipeWire";
+/// The user guide 「使い方をひらく」 opens. The only place it is written.
+pub const USER_GUIDE_URL: &str =
+    "https://github.com/wintermaples/meloet/blob/main/docs/user/README.ja.md";
 /// Key to sound is about this many buffers (docs/architecture.md 4).
 const LATENCY_BUFFERS: f32 = 2.5;
 /// Measured key-to-sound times that make up the shown average.
@@ -511,6 +514,8 @@ pub enum Effect {
     EndingReady,
     /// Show the file in the PC's file manager.
     ShowFile(PathBuf),
+    /// Open this address (`https://` only) in the PC's browser.
+    OpenUrl(String),
     /// Read the samples of the instrument into memory, off the core thread. Answer with
     /// [`Input::SoundLoaded`] or [`Input::SoundUnreadable`].
     LoadSound(BuiltinInstrument),
@@ -2224,8 +2229,7 @@ impl Model {
             Command::OpenRecent { .. } | Command::ClearRecent => {}
             // round12 stub: A9
             Command::NormalizeClips { .. } | Command::ReverseClips { .. } => {}
-            // round12 stub: G1
-            Command::OpenUserGuide => {}
+            Command::OpenUserGuide => effects.push(Effect::OpenUrl(USER_GUIDE_URL.to_string())),
             // round12 stub: D1
             Command::SetCheckUpdates { .. }
             | Command::OpenReleasePage

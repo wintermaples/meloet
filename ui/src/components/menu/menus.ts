@@ -11,7 +11,8 @@ import { GRID_DIVISIONS, indexesOf } from "../pianoroll/geom";
 import { shown } from "../pianoroll/shown.svelte";
 import { shownFor } from "../pianoroll/shownNotes";
 import { prView, zoomRowsBy } from "../pianoroll/view.svelte";
-import { openAbout } from "../about/about.svelte";
+import { about, openAbout } from "../about/about.svelte";
+import { keyList, openKeyList } from "../keylist/keyList.svelte";
 import { trackRows } from "../trackMenu";
 import { openShelf } from "../tracks.svelte";
 import { listEntries } from "./contextMenu.svelte";
@@ -57,6 +58,7 @@ export function keyNames(platform: Platform) {
     modShift: (k: string) => `${mod} ${t("key.shift")} ${k}`,
     modAlt: (k: string) => `${mod} ${alt} ${k}`,
     shift: (k: string) => `${t("key.shift")} ${k}`,
+    alt: (k: string) => `${alt} ${k}`,
   };
 }
 
@@ -258,7 +260,13 @@ export function topMenus(state: AppState, deps: KeyDeps, platform: Platform): To
   ];
 
   // Not opened while another dialog (song, sound settings) is open (so the Esc order stays single).
-  const help: ListEntry[] = [plain("menu.about", !state.workspace.songDialog && !state.workspace.settings && !state.plugins.stoppedOpen, openAbout)];
+  const noDialog = !state.workspace.songDialog && !state.workspace.settings && !state.plugins.stoppedOpen;
+  const help: ListEntry[] = [
+    plain("menu.keyList", noDialog && !about.open, openKeyList),
+    plain("menu.userGuide", true, send({ type: "openUserGuide" })),
+    { kind: "separator" },
+    plain("menu.about", noDialog && !keyList.open, openAbout),
+  ];
 
   return [file, edit, view, play, notes, track, help].map((entries, i) => ({ label: t(TOP_MENUS[i]!), entries }));
 }

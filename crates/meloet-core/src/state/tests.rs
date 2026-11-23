@@ -1981,6 +1981,19 @@ fn a_song_with_what_this_pc_does_not_have_keeps_it_and_says_so() {
     assert_eq!(m.play().song().doc, song.doc);
 }
 
+/// 「使い方をひらく」 asks the shell to open the guide; the state does not change.
+#[test]
+fn the_user_guide_opens_in_the_browser_and_the_state_stays() {
+    let mut m = fresh();
+    let before = m.view();
+    assert_eq!(
+        cmd(&mut m, Command::OpenUserGuide),
+        [Effect::OpenUrl(super::USER_GUIDE_URL.to_string())]
+    );
+    assert!(super::USER_GUIDE_URL.starts_with("https://"));
+    assert_eq!(AppState::changes_from(&before, &m.view()), []);
+}
+
 /// Protocol 31 (round 12, wave 1): every new intent is taken, and until its feature is built
 /// it changes nothing, as an intent with an old id.
 #[test]
@@ -2042,7 +2055,6 @@ fn the_commands_of_round_12_are_taken_and_change_nothing_yet() {
         Command::ClearRecent,
         Command::NormalizeClips { clips: vec![1] },
         Command::ReverseClips { clips: vec![1] },
-        Command::OpenUserGuide,
         Command::SetCheckUpdates { on: false },
         Command::OpenReleasePage,
         Command::DismissNewVersion,

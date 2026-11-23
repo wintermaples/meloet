@@ -16,6 +16,8 @@
 #[cfg(test)]
 pub(crate) mod fixture;
 pub(crate) mod job;
+#[cfg(test)]
+mod kit_tests;
 pub(crate) mod render;
 pub mod sink;
 pub(crate) mod told;

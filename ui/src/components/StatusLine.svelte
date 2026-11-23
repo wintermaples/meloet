@@ -68,6 +68,8 @@
     /** Slots whose values are shown in gray.10. */
     strong: string[];
     button: { label: string; command: Command } | null;
+    /** A second button after `button`. */
+    also?: { label: string; command: Command };
     /** Words in the text that get a term tip. */
     term?: string;
   }
@@ -681,6 +683,12 @@
       }
       case "newPack":
         return { ...plain("pack.newPack", { mb: mb(m.bytes) }), button: { label: t("button.fetchPack"), command: { type: "fetchPack" } } };
+      case "newVersion":
+        return {
+          ...plain("update.newVersion", { version: m.version }),
+          button: { label: t("button.openReleasePage"), command: { type: "openReleasePage" } },
+          also: { label: t("button.newVersionLater"), command: { type: "dismissNewVersion" } },
+        };
       default:
         return null;
     }
@@ -1122,6 +1130,10 @@
     {#if message.button}
       {@const command = message.button.command}
       <button class="m-plain m-hi link" onclick={() => send(command)}>{message.button.label}</button>
+    {/if}
+    {#if message.also}
+      {@const command = message.also.command}
+      <button class="m-plain m-hi link" onclick={() => send(command)}>{message.also.label}</button>
     {/if}
   {/if}
   {#if exporting && exportAside}

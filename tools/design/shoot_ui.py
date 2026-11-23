@@ -536,6 +536,8 @@ CLICKS = {
     # Help ▸ the key list, and the same with 「ループ」 typed in its filter box.
     "keyList": ("tracks6", ('[data-menu="6"]', '[data-test="menubar-list"] [data-row="0"]')),
     "keyListFiltered": ("tracks6", ('[data-menu="6"]', '[data-test="menubar-list"] [data-row="0"]', "js:" + TYPE_KEY_FILTER % "ループ")),
+    # 「meloet について」 with the line of a newer version (round 12, D1).
+    "aboutNewVersion": ("newVersion", ('[data-menu="6"]', '[data-test="menubar-list"] [data-row="3"]')),
     "settingsAdv": ("settings", '[data-test="settings-advanced"]'),
     "settingsMoved": ("settings", drag_dialog('[data-test="settings-dialog"]', -200, -40)),
     "scanStoppedMoved": ("scanStopped", drag_dialog('[data-test="scan-stopped-dialog"]', 260, 120)),
@@ -658,6 +660,7 @@ ONLY = {
     "aboutPart": [(1280, 800, 100), (1920, 1080, 150)],
     "keyList": [(1280, 800, 100), (1280, 800, 150)],
     "keyListFiltered": [(1280, 800, 100)],
+    "aboutNewVersion": [(1280, 800, 100), (1280, 800, 150)],
     # The mixer (F4-Mixer is 1280x800 at 100 %). 150 % is to see that it fits.
     "mixer": [(1280, 800, 100), (1280, 800, 150), (1920, 1080, 100)],
     "paramsDelay": [(1280, 800, 100), (1280, 800, 150)],

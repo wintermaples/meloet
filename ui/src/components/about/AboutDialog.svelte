@@ -27,6 +27,8 @@
   const searching = $derived(about.query.trim() !== "");
   /** Location of the sound pack (spec 3, the place to fetch the sound pack later: shown inside the 「音の素材」 heading). */
   const soundsPlace = $derived(current.state?.sounds.place ?? null);
+  /** A newer version that 「新しい版をたしかめる」 found (round 12, D1). */
+  const newVersion = $derived(current.state?.updates.newVersion ?? null);
   const sounds = $derived(soundsMatching(list.sounds, about.query));
   const fonts = $derived(fontsMatching(list.fonts, about.query));
   const parts = $derived(allParts(list));
@@ -108,6 +110,12 @@
               <span class="label fact-label">{t("about.version")}</span>
               <span class="mono strong" data-test="about-version">{list.meloet.version}</span>
             </div>
+            {#if newVersion}
+              <div class="fact">
+                <span class="fact-label"></span>
+                <span class="strong" data-test="about-new-version">{t("update.newVersion", { version: newVersion })}</span>
+              </div>
+            {/if}
             <div class="fact">
               <span class="label fact-label">{t("about.license")}</span>
               <span class="strong">{licenseText(list.meloet.license)}</span>

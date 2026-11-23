@@ -88,6 +88,7 @@ fn loop_recording_makes_one_take_per_lap_with_notes() {
         state_dir: None,
         sounds_dir: None,
         pack: None,
+        updates: None,
         plugins: None,
         sf2_dir: None,
         cache_dir: None,

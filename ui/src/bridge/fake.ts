@@ -13,6 +13,7 @@ import { FAKE_TABLES, FakeParamTables, SURGE_AUTOMATED, fakeParamCount } from ".
 import { FAKE_SONG_BPM, fakeAudioClip, fakePeaks, fakeStretch, fakeVocalClip, steadyTempo, type FakeAudio } from "./fakeAudio";
 import { advancePack, fakeClipsPanel, fakeSolo, fakeSounds, packAsking, packFailed, packFetching, reduceClips27, reducePack, withPack } from "./fakeRound8";
 import { reduceRound10 } from "./fakeRound10";
+import { reduceUpdates } from "./fakeUpdates";
 import {
   CLIP_CENTS_MAX,
   CLIP_SEMITONES_MAX,
@@ -3492,6 +3493,27 @@ SCENES.aiLinkOff = aiLinkScene({ on: false, port: "closed" });
 SCENES.aiLinkWaiting = aiLinkScene({ on: true, port: "waiting" });
 SCENES.aiLinkConnected = aiLinkScene({ on: true, port: "connected" });
 
+// ---- round 12 (D1): 「新しい版をたしかめる」 ----
+const NEW_VERSION = "0.4.0";
+// The look found a newer version: the status line says so while stopped (「meloet について」 has the same line: the shot aboutNewVersion).
+SCENES.newVersion = {
+  setup(s) {
+    bandSong(s);
+    s.updates = { check: true, newVersion: NEW_VERSION };
+  },
+  after: (s) => (s.status.message = { id: "newVersion", version: NEW_VERSION }),
+  meters: QUIET,
+};
+// The row 「新しい版をたしかめる」 of the advanced sound settings, turned off.
+SCENES.checkUpdatesOff = {
+  setup(s) {
+    settingsAdv7(s);
+    s.updates = { check: false, newVersion: null };
+  },
+  meters: QUIET,
+  scrollToEnd: true,
+};
+
 // F8-MultiClip: the two clips of 「6 歌」 and one of 「7 歌 2」 selected; their volumes differ.
 SCENES.multiClip = {
   setup(s) {
@@ -5072,6 +5094,7 @@ export function createFakeTransport(initial?: AppState): Transport {
       const changes =
         round10?.changes ??
         reducePack(state, command) ??
+        reduceUpdates(state, command) ??
         reduceClips27(state, command) ??
         reduceExport(state, command) ??
         reduceAudio(state, command) ??

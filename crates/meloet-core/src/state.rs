@@ -8,6 +8,7 @@ mod export;
 mod pack;
 mod recovery;
 mod songs;
+mod updates;
 mod vocal;
 
 use std::collections::VecDeque;
@@ -307,6 +308,8 @@ pub enum Input {
     Pack(crate::sounds::fetch::PackNews),
     /// The page subscribed and is up.
     ScreenUp,
+    /// The answer to [`Effect::CheckUpdates`]: a version newer than this meloet ("0.4.0").
+    NewVersion(String),
     /// The PC handed over a song file to open (a double click, `meloet <file>`).
     OpenGiven(PathBuf),
 }
@@ -514,8 +517,11 @@ pub enum Effect {
     EndingReady,
     /// Show the file in the PC's file manager.
     ShowFile(PathBuf),
-    /// Open this address (`https://` only) in the PC's browser.
+    /// Open this address (`https://`) in the PC's browser.
     OpenUrl(String),
+    /// Look for a new version of meloet, off the core thread. Answer with
+    /// [`Input::NewVersion`] when there is one.
+    CheckUpdates,
     /// Read the samples of the instrument into memory, off the core thread. Answer with
     /// [`Input::SoundLoaded`] or [`Input::SoundUnreadable`].
     LoadSound(BuiltinInstrument),
@@ -744,6 +750,7 @@ pub struct Model {
     ai: ai::AiSide,
     /// 「新しい版をたしかめる」 (round 12, D1): a meloet setting.
     check_updates: bool,
+    updates: updates::UpdatesSide,
 }
 
 /// Audio files let go of over the window (`Model::pending_drop`).
@@ -863,6 +870,7 @@ impl Model {
             pack: pack::PackSide::new(settings.pack_fetch),
             ai: ai::AiSide::new(settings.ai_link),
             check_updates: settings.check_updates,
+            updates: updates::UpdatesSide::default(),
         }
     }
 
@@ -1264,12 +1272,15 @@ impl Model {
             Input::ScreenUp => {
                 self.pack_screen_up(&mut effects);
                 self.songs_screen_up(&mut effects);
+                self.updates_screen_up(&mut effects);
             }
+            Input::NewVersion(version) => self.new_version_found(version),
             Input::OpenGiven(path) => self.open_given(path, &mut effects),
             Input::AiPort(port) => self.ai.port_said(port),
             Input::Ai(ask) => self.ai_ask(ask, &mut effects),
         }
         self.settle_export(&mut effects);
+        self.settle_updates();
         if !self.play.is_moving() {
             self.disk_slow_said = false;
         }
@@ -2230,10 +2241,9 @@ impl Model {
             // round12 stub: A9
             Command::NormalizeClips { .. } | Command::ReverseClips { .. } => {}
             Command::OpenUserGuide => effects.push(Effect::OpenUrl(USER_GUIDE_URL.to_string())),
-            // round12 stub: D1
-            Command::SetCheckUpdates { .. }
-            | Command::OpenReleasePage
-            | Command::DismissNewVersion => {}
+            Command::SetCheckUpdates { on } => self.set_check_updates(on, effects),
+            Command::OpenReleasePage => self.open_release_page(effects),
+            Command::DismissNewVersion => self.dismiss_new_version(),
         }
         None
     }
@@ -2765,11 +2775,7 @@ impl Model {
             sounds: self.sounds_view(),
             ai_link: self.ai.view(),
             recent: self.recent_view(),
-            // round12 stub: D1
-            updates: UpdatesView {
-                check: self.check_updates,
-                new_version: None,
-            },
+            updates: self.updates_view(),
             status: StatusView { message: status },
         }
     }
@@ -2911,6 +2917,10 @@ impl Model {
             return Some(m);
         }
         if let Some(m) = self.play.sample_status() {
+            return Some(m);
+        }
+        // Before the lasting keyboard lines: 「あとで」 puts it away.
+        if let Some(m) = self.new_version_status() {
             return Some(m);
         }
         let Some(active) = active else {

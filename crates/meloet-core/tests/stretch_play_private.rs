@@ -181,6 +181,7 @@ fn follow_the_tempo(root: &Path, buffer: u32, attempt: u32) -> Option<(Vec<f64>,
         cache_dir: Some(cache.clone()),
         sounds_dir: None,
         pack: None,
+        updates: None,
         plugins: None,
         sf2_dir: None,
     });

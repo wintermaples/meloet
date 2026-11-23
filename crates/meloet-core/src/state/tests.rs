@@ -2055,7 +2055,6 @@ fn the_commands_of_round_12_are_taken_and_change_nothing_yet() {
         Command::ClearRecent,
         Command::NormalizeClips { clips: vec![1] },
         Command::ReverseClips { clips: vec![1] },
-        Command::SetCheckUpdates { on: false },
         Command::OpenReleasePage,
         Command::DismissNewVersion,
     ];

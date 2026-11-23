@@ -33,6 +33,7 @@ pub mod sf2store;
 pub mod songfile;
 mod sounds;
 pub mod state;
+pub mod updates;
 pub mod vocalrec;
 
 pub use hub::{MessageSink, TelemetrySink};

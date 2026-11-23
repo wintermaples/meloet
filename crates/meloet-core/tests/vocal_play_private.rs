@@ -204,6 +204,7 @@ fn play_what_was_recorded(
         cache_dir: Some(root.join("cache")),
         sounds_dir: None,
         pack: None,
+        updates: None,
         plugins: None,
         sf2_dir: None,
     });

@@ -58,6 +58,7 @@ The `MELOET_*` variables below exist **only in development builds** (`cargo buil
 | `MELOET_SOUNDS_DIR=dir` | The sound pack folder (with `pack.json`). When set, no other place is searched and nothing is downloaded |
 | `MELOET_PACK_ORIGIN=http://127.0.0.1:8000/` | For tests: where sounds and the online catalog (`<origin>catalog.json`) are fetched from (`http://` is allowed) |
 | `MELOET_PACK_CATALOG=file` | For tests: reads that file instead of the built-in catalog (`tools/sounds/catalog.json`) |
+| `MELOET_UPDATE_URL=http://127.0.0.1:8000/latest` | For tests: where 「新しい版をたしかめる」 reads the newest release (a JSON with `tag_name`; `http://` is allowed). A build with the hooks never looks for a new version without it, and remembers nothing of what it read |
 | `MELOET_OPEN_SONG=file.meloet` | Opens that song at start |
 | `MELOET_MEASURE_DIR=dir` | Writes the key → sound and key → screen records |
 | `MELOET_UI_SCRIPT=pr-scroll\|pr-zoom\|pr-drag:N` | Only with `MELOET_MEASURE_DIR`: repeats scrolling, zooming or dragging in the page and measures |

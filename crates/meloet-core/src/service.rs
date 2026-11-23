@@ -112,6 +112,8 @@ pub struct CoreOptions {
     pub sounds_dir: Option<PathBuf>,
     /// Where the sound pack is fetched to, and from where. `None`: nothing is fetched.
     pub pack: Option<sounds::PackOptions>,
+    /// Where 「新しい版をたしかめる」 looks. `None`: meloet never looks.
+    pub updates: Option<crate::updates::Options>,
     /// `None`: no plugins; nothing is scanned and no process is started.
     pub plugins: Option<PluginOptions>,
     /// Where added SF2 files are copied to. `None`: none is listed, and none can be added.
@@ -233,6 +235,7 @@ impl CoreOptions {
             state_dir: recovery::dir(),
             sounds_dir: sounds::pinned_dir(),
             pack: sounds::PackOptions::from_env(),
+            updates: crate::updates::Options::from_env(settings::config_dir()),
             plugins: PluginOptions::from_env(),
             sf2_dir: sf2store::dir(),
             cache_dir: dirs::cache_dir().map(|d| d.join("meloet")),
@@ -252,6 +255,7 @@ impl CoreOptions {
             state_dir: None,
             sounds_dir: None,
             pack: None,
+            updates: None,
             plugins: None,
             sf2_dir: None,
             cache_dir: None,
@@ -303,6 +307,8 @@ enum Msg {
     Made(MadeNews),
     /// From the thread that fetches the sound pack.
     Pack(PackNews),
+    /// From the thread that looks for a new version of meloet.
+    NewVersion(String),
     /// From the scanner's threads.
     Scan(ScanNews),
     /// The screen subscribed: its page is up.
@@ -654,6 +660,7 @@ impl Core {
                 song_told: None,
                 exports: export::Exports::new(options.state_dir.as_deref()),
                 fetcher,
+                updates: options.updates.clone(),
                 config_dir: options.config_dir.clone(),
                 songs_dir: options.songs_dir.clone(),
                 state_dir: options.state_dir.clone(),
@@ -2231,6 +2238,8 @@ struct Worker {
     exports: export::Exports,
     /// The thread that fetches the sound pack.
     fetcher: Option<Fetcher>,
+    /// Where 「新しい版をたしかめる」 looks.
+    updates: Option<crate::updates::Options>,
     /// Where the switch 「AI とつなぐ」 goes.
     ai_switch: Option<AiSwitch>,
     /// The AI link's jobs given out.
@@ -2633,6 +2642,9 @@ impl Worker {
                     }
                     self.handle(Input::Pack(news));
                 }
+                Ok(Msg::NewVersion(version)) => {
+                    self.handle(Input::NewVersion(version));
+                }
                 #[cfg(test)]
                 Ok(Msg::Peek(look)) => look(&mut self),
                 Ok(Msg::AiSong(reply)) => {
@@ -2996,6 +3008,15 @@ impl Worker {
                     }
                     Effect::OpenUrl(url) => {
                         self.ask_shell(ShellRequest::OpenUrl { url });
+                    }
+                    Effect::CheckUpdates => {
+                        if let Some(options) = &self.updates {
+                            let tx = self.links.tx.clone();
+                            let tell = move |version| {
+                                let _ = tx.send(Msg::NewVersion(version));
+                            };
+                            crate::updates::spawn(options.clone(), Box::new(tell));
+                        }
                     }
                     Effect::LoadSound(instrument) => self.audio.sounds.load(instrument),
                     Effect::DropSound(instrument) => self.audio.sounds.let_go(instrument),
@@ -3841,5 +3862,7 @@ mod keys;
 mod plug_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod updates_tests;
 #[cfg(test)]
 mod window_tests;

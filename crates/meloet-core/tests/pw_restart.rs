@@ -66,6 +66,7 @@ fn the_core_waits_for_pipewire_and_comes_back_after_it_stopped() {
         state_dir: None,
         sounds_dir: None,
         pack: None,
+        updates: None,
         plugins: None,
         sf2_dir: None,
         cache_dir: None,

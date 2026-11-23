@@ -10,7 +10,7 @@ Last written: 2026-11-23, during round 9 (foundation at `ea66c22`).
 
 | What | Version | Where |
 |---|---|---|
-| Contract between Rust and the screen (protocol) | 27 | `crates/meloet-protocol/src/lib.rs` (`PROTOCOL_VERSION`), architecture 23-7 |
+| Contract between Rust and the screen (protocol) | 29 | `crates/meloet-protocol/src/lib.rs` (`PROTOCOL_VERSION`), architecture 24-5 and 24-11 |
 | Telemetry binary | 4 | architecture 3-3 |
 | Take content binary | 2 | architecture 3-4 |
 | Peaks answer | kind 4, version 1 | `crates/meloet-protocol/src/audio.rs` |

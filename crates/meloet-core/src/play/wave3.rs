@@ -3,6 +3,7 @@
 //! (A8), 「音程を寄せる」 (M7). The features change these; until they are built nothing does
 //! (`// round12 stub: <ID>`).
 
+use meloet_model::sections::{self, Section};
 use meloet_model::song::Clip;
 use meloet_model::{AudioShape, Doc, TempoMap};
 use meloet_protocol::{
@@ -82,24 +83,12 @@ pub(crate) fn master_lanes_view(doc: &Doc) -> Vec<LaneView> {
 /// a bar.
 pub(crate) fn sections(doc: &Doc) -> Vec<SectionUse> {
     let map = TempoMap::new(&doc.timeline);
-    let song_end = (doc.tracks.iter())
-        .filter_map(|t| t.clips.last())
-        .map(|c| c.end)
-        .max()
-        .map_or(0, |end| map.bar_at_or_after(end));
-    let on_bar = |tick: u64| map.bar_at_or_after(tick) == tick;
+    let end = sections::song_end(doc, &map);
     (doc.markers.iter())
-        .map(|m| {
-            let end = (doc.markers.iter().map(|n| n.tick))
-                .find(|&tick| tick > m.tick)
-                .unwrap_or(song_end);
-            if end <= m.tick {
-                SectionUse::Empty
-            } else if on_bar(m.tick) && on_bar(end) {
-                SectionUse::Usable
-            } else {
-                SectionUse::NotOnBars
-            }
+        .map(|m| match sections::section_from(doc, &map, m.tick, end) {
+            Section::Usable { .. } => SectionUse::Usable,
+            Section::NotOnBars => SectionUse::NotOnBars,
+            Section::Empty => SectionUse::Empty,
         })
         .collect()
 }

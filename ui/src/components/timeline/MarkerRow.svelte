@@ -2,8 +2,8 @@
      A tag has a line.mark line on the left and the name. A chosen tag has an accent line and a gray.4 background. Pressing goes to its position, pressing twice opens the name box,
      and holding and moving sideways snaps to beats (one intent on release; a gray.7 border at the original place, the reading in place is the position; Esc cancels). -->
 <script lang="ts">
-  import { onMount, tick as nextTick } from "svelte";
-  import type { MarkerView, TimelineView } from "../../bridge";
+  import { onDestroy, onMount, tick as nextTick } from "svelte";
+  import { INSERT_SPACE_BARS_DEFAULT, INSERT_SPACE_BARS_MAX, type MarkerView, type TimelineView } from "../../bridge";
   import { send } from "../../state/app.svelte";
   import { t } from "../../text/ja";
   import { nearestBeatTick } from "../../time/bars";
@@ -11,9 +11,11 @@
   import { tickToX, xToTick, type View } from "../arrangeGeom";
   import { openContextMenu } from "../menu/contextMenu.svelte";
   import { metrics } from "../metrics.svelte";
-  import { onDragCancel } from "../pianoroll/view.svelte";
+  import { dragReading, onDragCancel } from "../pianoroll/view.svelte";
   import { positionText } from "../time";
+  import { readBars } from "../valueClamp";
   import { pickTimeline } from "./pick";
+  import { closeSpaceBox, openSpaceBox, spaceBox } from "./spaceBox.svelte";
 
   interface Props {
     view: View;
@@ -110,8 +112,15 @@
     if (drag) return;
     pickTimeline();
     if (selectedId !== m.id) send({ type: "selectTimeline", target: { kind: "marker", id: m.id } });
+    // The rows of a whole section (round 12 A2): only when both ends of the section are heads of bars.
+    const section = !busy && m.section === "usable";
+    const hint = busy || m.section === "usable" ? undefined : t(m.section === "empty" ? "timeline.sectionEmpty" : "timeline.sectionNotOnBars");
     openContextMenu(e.clientX, e.clientY, [
       { kind: "row", label: "menu.loopFromMarker", usable: !busy, run: () => send({ type: "loopFromMarker", id: m.id }) },
+      { kind: "row", label: "menu.duplicateSection", usable: section, hint, run: () => send({ type: "duplicateSection", marker: m.id }) },
+      { kind: "row", label: "menu.deleteSection", usable: section, hint, run: () => send({ type: "deleteSection", marker: m.id }) },
+      { kind: "row", label: "menu.insertSpace", usable: section, hint, run: () => openSpaceBox(m.id) },
+      { kind: "separator" },
       { kind: "row", label: "menu.renameMarker", key: t("key.renameTrack"), usable: !busy, run: () => send({ type: "openMarkerName", id: m.id }) },
       { kind: "separator" },
       { kind: "row", label: "menu.delete", key: t("key.delete"), usable: !busy, run: () => send({ type: "deleteTimeline", target: { kind: "marker", id: m.id } }) },
@@ -150,6 +159,63 @@
   }
   function fieldBlur(id: number): void {
     if (timeline.renaming === id) send({ type: "closeMarkerName" });
+  }
+
+  // ---- The box of 「この前に空きを入れる…」 (round 12 A2): digits at the marker, the look of the repeat box ----
+
+  let spaceW = $state(0);
+  const spacing = $derived.by(() => {
+    const m = timeline.markers.find((x) => x.id === spaceBox.marker);
+    if (!m || m.section !== "usable") return null;
+    return { id: m.id, x: Math.min(Math.max(tickToX(view, m.tick), 0), Math.max(0, view.width - spaceW)) };
+  });
+  let spaceDraft = $state("");
+  let spaceField = $state<HTMLInputElement>();
+  let spaceFor: number | null = null;
+  const spaceRead = $derived(readBars(spaceDraft, INSERT_SPACE_BARS_MAX));
+  $effect(() => {
+    const id = spaceBox.marker;
+    if (id === spaceFor) return;
+    spaceFor = id;
+    if (id === null) return;
+    spaceDraft = String(INSERT_SPACE_BARS_DEFAULT);
+    void nextTick().then(() => {
+      spaceField?.focus();
+      spaceField?.select();
+    });
+  });
+  // Recording starting, or the marker or its section going away, closes the box.
+  $effect(() => {
+    if (spaceBox.marker !== null && (busy || !spacing)) closeSpaceBox();
+  });
+  // While the box is open, the status line says what Enter does.
+  $effect(() => {
+    if (!spacing) return;
+    dragReading.text = spaceRead === null ? null : t("timeline.readInsertSpace", { count: spaceRead.value });
+    return () => {
+      dragReading.text = null;
+    };
+  });
+  onDestroy(closeSpaceBox);
+  function spaceKey(e: KeyboardEvent, id: number): void {
+    if (e.isComposing) return;
+    if (e.key === "Enter") {
+      // A box that is not a whole number stays open.
+      if (spaceRead !== null) {
+        closeSpaceBox();
+        send({ type: "insertSpace", marker: id, bars: spaceRead.value });
+        if (spaceRead.clamp) send({ type: "clampValue", ...spaceRead.clamp });
+      }
+    } else if (e.key === "Escape") {
+      closeSpaceBox();
+    } else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+      const by = (e.key === "ArrowUp" ? 1 : -1) * (e.shiftKey ? 10 : 1);
+      spaceDraft = String(Math.min(INSERT_SPACE_BARS_MAX, Math.max(1, (spaceRead?.value ?? INSERT_SPACE_BARS_DEFAULT) + by)));
+    } else {
+      return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
   }
 
   const readingBox = $derived.by(() => {
@@ -210,6 +276,26 @@
       >
     {/if}
   {/each}
+  {#if spacing}
+    {@const id = spacing.id}
+    <div class="space-box" role="presentation" style:left="{spacing.x}px" bind:clientWidth={spaceW} onpointerdown={(e) => e.stopPropagation()} ondblclick={(e) => e.stopPropagation()}>
+      <input
+        class="space-field"
+        class:broken={spaceRead === null}
+        type="text"
+        inputmode="numeric"
+        spellcheck="false"
+        autocomplete="off"
+        aria-label={t("timeline.insertSpaceBars")}
+        aria-invalid={spaceRead === null}
+        data-test="insert-space-field"
+        bind:this={spaceField}
+        bind:value={spaceDraft}
+        onkeydown={(e) => spaceKey(e, id)}
+        onblur={closeSpaceBox}
+      />
+    </div>
+  {/if}
   {#if readingBox && drag}
     <div class="m-num reading" style:left="{readingBox.left}px" style:top="{readingBox.top}px" bind:clientWidth={readingW} bind:clientHeight={readingH} data-test="marker-reading">
       {positionText(drag.toTick, map)}
@@ -279,6 +365,34 @@
     font: inherit;
     font-weight: var(--text-s-weight-600);
     outline: none;
+  }
+  /* The box of 「この前に空きを入れる…」: the look of the repeat box of the arrange, two digits wide. */
+  .space-box {
+    position: absolute;
+    z-index: 4;
+    top: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+  }
+  .space-field {
+    box-sizing: border-box;
+    width: calc(2ch + 2 * var(--space-1) + 2 * var(--line-hair));
+    height: var(--part-toggle-size);
+    padding: 0 var(--space-1);
+    border: var(--line-hair) solid var(--color-gray-10);
+    border-radius: var(--radius-1);
+    background: var(--color-gray-0);
+    color: var(--color-gray-10);
+    font: inherit;
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-weight: var(--text-s-weight-600);
+    outline: none;
+  }
+  .space-field.broken {
+    border-color: var(--color-rec);
+    color: var(--color-rec);
   }
   .reading {
     position: absolute;

@@ -100,13 +100,18 @@ impl Lane {
     }
 }
 
-fn line_at(points: &[AutoPoint], step: bool, tick: u64) -> Option<f32> {
+pub(crate) fn line_at(points: &[AutoPoint], step: bool, tick: u64) -> Option<f32> {
     let first = points.first()?;
     let i = points.partition_point(|p| p.tick <= tick);
     if i == 0 {
         return Some(first.value);
     }
     Some(between(points[i - 1], points.get(i).copied(), step, tick))
+}
+
+/// The value at `tick` of the straight line from `a` to `b`, at `a` or after it.
+pub(crate) fn on_line(a: AutoPoint, b: AutoPoint, tick: u64) -> f32 {
+    between(a, Some(b), false, tick)
 }
 
 /// The line's value at `tick`, at or after the point `a` and before the next one `b`.

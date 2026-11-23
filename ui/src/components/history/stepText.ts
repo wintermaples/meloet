@@ -161,9 +161,8 @@ export function stepWhatText(name: StepName, what: StepWhat, ctx: StepContext): 
     // round12 stub: E3 (the knob and its values)
     case "soundKnob":
       return trackLabel(what.track);
-    // round12 stub: A2 (the bars)
     case "section":
-      return what.name;
+      return t("history.section", { name: what.name, bars: what.bars });
   }
 }
 

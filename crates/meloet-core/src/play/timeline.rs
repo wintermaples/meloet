@@ -4,10 +4,12 @@
 //! that names a place with nothing at it does nothing.
 
 use meloet_model::edit::{Edit, EditError};
+use meloet_model::sections;
 use meloet_model::timeline as edits;
 use meloet_model::{Doc, MAX_TICK, MarkerId, Meter, Tempo, TickRange};
 use meloet_protocol::{
-    MarkerView, MeterChangeView, StatusMessage, TempoPointView, TimelineRef, TimelineView,
+    INSERT_SPACE_BARS_MAX, MarkerView, MeterChangeView, StatusMessage, TempoPointView, TimelineRef,
+    TimelineView,
 };
 
 use super::{DEFAULT_LOOP_BARS, Play};
@@ -476,7 +478,75 @@ impl Play {
         self.song.session.loop_on = true;
         self.put_loop(Some(range), effects);
     }
+
+    /// 「この区間をすぐ後ろに複製」. Returns the notice to show.
+    pub fn duplicate_section(
+        &mut self,
+        marker: u32,
+        effects: &mut Vec<Effect>,
+    ) -> Option<StatusMessage> {
+        if self.busy() {
+            return None;
+        }
+        let edited = sections::duplicate_section(self.doc(), MarkerId(marker));
+        self.section_step(edited, effects)
+    }
+
+    /// 「この区間を消して詰める」. Returns the notice to show.
+    pub fn delete_section(
+        &mut self,
+        marker: u32,
+        effects: &mut Vec<Effect>,
+    ) -> Option<StatusMessage> {
+        if self.busy() {
+            return None;
+        }
+        let edited = sections::delete_section(self.doc(), MarkerId(marker));
+        self.section_step(edited, effects)
+    }
+
+    /// 「この前に空きを入れる…」: `bars` bars before the marker. Returns the notice to show.
+    pub fn insert_space(
+        &mut self,
+        marker: u32,
+        bars: u32,
+        effects: &mut Vec<Effect>,
+    ) -> Option<StatusMessage> {
+        if self.busy() || !(1..=INSERT_SPACE_BARS_MAX).contains(&bars) {
+            return None;
+        }
+        let edited = sections::insert_space(self.doc(), MarkerId(marker), bars);
+        self.section_step(edited, effects)
+    }
+
+    /// Makes the step of a whole section and lets go of everything selected, as a part of
+    /// the step: undo brings the selection back. The play line stays where it is.
+    fn section_step(
+        &mut self,
+        edited: Result<Edit, EditError>,
+        effects: &mut Vec<Effect>,
+    ) -> Option<StatusMessage> {
+        match edited {
+            Ok(e) => {
+                self.apply(e, effects);
+                self.clips_sel.clear();
+                self.selected = None;
+                self.set_selection([], []);
+                self.tl.select(None);
+                self.put_point_sel(None);
+                let now = self.sel();
+                if let Some((_, after)) = self.sel_undo.last_mut() {
+                    *after = now;
+                }
+                None
+            }
+            Err(EditError::OffTheSong) => Some(StatusMessage::SongTooLong),
+            Err(_) => None,
+        }
+    }
 }
 
+#[cfg(test)]
+mod section_tests;
 #[cfg(test)]
 mod tests;

@@ -2460,10 +2460,15 @@ impl Model {
             // round12 stub: M3
             Command::SetMonoListen { .. } => {}
 
-            // round12 stub: A2
-            Command::DuplicateSection { .. }
-            | Command::DeleteSection { .. }
-            | Command::InsertSpace { .. } => {}
+            Command::DuplicateSection { marker } => {
+                self.say(|p| p.duplicate_section(marker, effects));
+            }
+            Command::DeleteSection { marker } => {
+                self.say(|p| p.delete_section(marker, effects));
+            }
+            Command::InsertSpace { marker, bars } => {
+                self.say(|p| p.insert_space(marker, bars, effects));
+            }
 
             // round12 stub: A7
             Command::BounceToAudio { .. } | Command::BounceTrack { .. } => {}

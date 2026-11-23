@@ -71,6 +71,14 @@ export function readMeter(s: string): Read<Meter> | null {
   return { value: { num, den }, clamp };
 }
 
+/** A count of bars typed into a box (1 to max); the range comes with the note. */
+export function readBars(s: string, max: number): Read<number> | null {
+  const raw = readScaled(s, 0);
+  if (raw === null || !/^-?\d+$/.test(tidy(s))) return null;
+  const value = clampTo(raw, 1, max);
+  return { value, clamp: value === raw ? null : { field: "bars", value: String(value), range: `1〜${max}` } };
+}
+
 /** Velocity (1 to 127). */
 export function readVelocity(s: string): Read<number> | null {
   const raw = readScaled(s, 0);

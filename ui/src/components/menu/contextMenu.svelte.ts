@@ -15,6 +15,8 @@ export interface MenuRow {
   key?: string;
   usable: boolean;
   run: () => void;
+  /** The reason it is disabled (shown inside the row only on hover, as in list rows). */
+  hint?: string;
   /** The choice mark of an on/off row (the same as list rows). */
   checked?: boolean;
   /** The ▸ child list. */
@@ -54,6 +56,7 @@ export function listEntries(entries: readonly MenuEntry[]): ListEntry[] {
           key: e.key,
           usable: e.usable,
           run: e.run,
+          hint: e.hint,
           checked: e.checked,
           sub: e.sub ? listEntries(e.sub) : undefined,
           swatch: e.swatch,

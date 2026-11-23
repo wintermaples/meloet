@@ -2167,6 +2167,15 @@ export const texts = {
   "menu.tempoRamp": e("次の点まで、だんだん", "spec:3"),
   "menu.loopFromMarker": e("ここから次のマーカーまでをループに", "spec:3"),
   "menu.renameMarker": e("名前を変える", "spec:3"),
+  // Round 12 A2: whole sections (a marker to the next one), in the marker's context menu.
+  "menu.duplicateSection": e("この区間をすぐ後ろに複製", "user:2026-11-23"),
+  "menu.deleteSection": e("この区間を消して詰める", "user:2026-11-23"),
+  "menu.insertSpace": e("この前に空きを入れる…", "user:2026-11-23"),
+  "timeline.sectionNotOnBars": e("区間の両端が小節の頭のときに使えます", "user:2026-11-23"),
+  "timeline.sectionEmpty": e("このマーカーより後ろにクリップがないので、区間がありません", "builder:2026-11-24"),
+  "timeline.insertSpaceBars": e("入れる小節の数", "builder:2026-11-24"),
+  "timeline.readInsertSpace": e("{count} 小節の空きを入れます", "builder:2026-11-24", { count: "4" }),
+  "msg.songTooLong": e("曲が長くなりすぎるので、できませんでした。", "builder:2026-11-24"),
   // Context menu of a time signature flag (spec 3 (92-17)).
   "menu.typeMeter": e("拍子を打ちこむ…", "spec:3"),
 
@@ -2253,6 +2262,7 @@ export const texts = {
   "history.velocity": e("{count} ノート ・ {from} → {to}", "spec:3", { count: "3", from: "96", to: "110" }),
   "history.controlPoints": e("{control} ・ {count} 点", "spec:3", { control: "サステイン", count: "4" }),
   "history.color": e("{track} ・ 色 {color}", "spec:3", { track: "4 パッド", color: "3" }),
+  "history.section": e("{name} ・ {bars} 小節", "builder:2026-11-24", { name: "A メロ", bars: "8" }),
   "history.soundReplaced": e("{track} ・ {from} → {to}", "spec:3", { track: "1 ピアノ", from: "グランドピアノ", to: "オルガン" }),
   // Input list of a vocal track (spec 3, the vocal track head).
   "vocal.input.mono1": e("入口 1 ・ モノ", "spec:3"),

@@ -20,8 +20,8 @@ The version is written in many places. Do not edit them by hand: `scripts/bump-v
 
 1. Do this last, after all other work of the round is merged into `foundation`, and with no helper running.
 2. `source ~/.cargo/env; export PATH=$HOME/.local/node/bin:$PATH`, then `scripts/bump-version.sh X.Y.Z`. It stops with an error if any place still says the old version; fix that place (or the script, if a new place appeared) and run it again.
-3. Look at `git diff --stat`: about 20 files, each with only the version lines changed.
-4. If a new place that names the version was added in this round, add it to `scripts/bump-version.sh` (both the change and the check) and to the list above.
+3. Look at `git diff --stat`: about 22 files, each with only the version lines changed. Both READMEs (`README.md` and `README.ja.md`) must be in the list, with the deb name in the install steps changed; `grep -n "meloet_X.Y.Z_amd64" README.md README.ja.md` shows two lines in each.
+4. If a new place that names the version was added in this round, add it to `scripts/bump-version.sh` (both the change and the check) and to the list above. Look at the READMEs every time: they are the first thing users read, and a version written in a new way there (a version line, a badge, a link to a Release) must follow too. The English and Japanese READMEs are kept in step, so a place added to one is added to the other.
 5. `scripts/check-all.sh --release` must pass.
 6. Commit: `Version X.Y.Z` (small, on its own).
 7. Build the deb: `MELOET_DOCKER_SG=1 scripts/build-deb.sh` (Ubuntu 24.04 container; needs the docker group, through `sg docker`). Check `target/deb/meloet_X.Y.Z_amd64.deb`: `dpkg-deb -I` (control is ASCII only), `dpkg-deb -c` (the binaries `meloet`, `meloet-plughost`, `meloet-mcp`, the MIME XML, the .desktop, the icons), `sha256sum`, and that the binaries carry no development hook names (`scripts/check-release.sh` does this for the release build).

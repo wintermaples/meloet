@@ -79,6 +79,26 @@ export function transportWithKeep(
   return { ...transportWithOverdub(available, widths, stubs, overdub), keepPlayed: false };
 }
 
+/**
+ * The transport with the bars of the master's sound (round 12, E7): they come only into the room left when everything else is
+ * as it would be without them, so they never push anything out. spectrum is the width they add (with the gap before them);
+ * null while they are off.
+ */
+export function transportWithSpectrum(
+  available: number,
+  widths: TransportWidths,
+  stubs: TransportStubs,
+  overdub: number,
+  keep: number,
+  spectrum: number | null,
+): TransportParts & { overdub: boolean; keepPlayed: boolean; spectrum: boolean } {
+  const parts = transportWithKeep(available, widths, stubs, overdub, keep);
+  if (spectrum === null) return { ...parts, spectrum: false };
+  const shown = TRANSPORT_ORDER.reduce((sum, k) => sum + (parts[k] ? widths[k] : (stubs[k] ?? 0)), widths.base);
+  const need = shown + (parts.overdub ? overdub : 0) + (parts.keepPlayed ? keep : 0) + spectrum;
+  return { ...parts, spectrum: need <= available };
+}
+
 /** The order of hiding in the piano roll tool row: the tool keys, then the clip text (mock F-PR150). */
 const TOOLBAR_ORDER = ["keys", "info"] as const;
 export type ToolbarPart = (typeof TOOLBAR_ORDER)[number];

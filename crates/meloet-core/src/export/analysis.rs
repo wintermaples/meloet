@@ -3,7 +3,7 @@
 //! two tracks sound in one band at the same time, and the levels of sections. The samples
 //! come in as the export's thread takes them, block after block; nothing is kept but sums.
 
-mod fft;
+pub(crate) mod fft;
 #[cfg(test)]
 mod tests;
 

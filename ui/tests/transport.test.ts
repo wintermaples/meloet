@@ -312,6 +312,9 @@ describe("when there is not enough width (spec 1 (1), spec 2 (Song ▾, Metronom
       // The group of buttons is wider by 「さっきのを残す」 while that is in it, as in a real page.
       if (this.classList.contains("buttons") && this.querySelector('[data-test="transport-keep-played"]'))
         return part(undefined) + part("keepPlayed") + metrics.px("space.1");
+      // The master's box is wider by the bars of its sound (E7) while they are in it.
+      if (this.classList.contains("master") && this.querySelector('[data-test="transport-spectrum"]'))
+        return part(undefined) + part("spectrum") + metrics.px("space.1");
       return part(this.dataset.part);
     });
   }

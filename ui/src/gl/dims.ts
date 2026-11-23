@@ -66,6 +66,13 @@ export const METER = {
   clip: "color.meter.clip",
 } as const satisfies Record<string, ColorName>;
 
+/** E7 (round 12): the bars of the master's sound, on the meter's ground; from the left 5 bars of each track color, the last 4 of track.5. */
+export const SPECTRUM = {
+  ground: "color.meter.ground",
+  bars: ["color.track.1", "color.track.2", "color.track.3", "color.track.4", "color.track.5"],
+  perColor: 5,
+} as const satisfies { ground: ColorName; bars: readonly ColorName[]; perColor: number };
+
 /** Spec 3, "Scale marks of the mic meter" (38-B) and "Background and line of the mic meter": the dB in the middle, the ground, the white line of the 1 s peak. */
 export const MIC_MID_DB = -12;
 export const MIC_METER = { ground: "color.meter.ground.mic", peak: "color.meter.peak" } as const satisfies Record<string, ColorName>;

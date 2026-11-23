@@ -493,6 +493,59 @@ describe("WebGL surfaces", () => {
     engine.destroy();
   });
 
+  it("top band: the bars of the master's sound (E7) are a slot of the master surface inside its cover box. No new surface and no bigger one; drawn when the bands change, not when they stay", () => {
+    const { made, drawn, frame } = fakePage();
+    const bar = region(box(new DOMRect(0, 0, 1000, 48)), "masterMeter");
+    slot(box(new DOMRect(300, 10, 80, 30), bar), { kind: "cover" });
+    const master = box(new DOMRect(720, 6, 200, 38), bar);
+    slot(master, { kind: "cover" });
+    slot(box(new DOMRect(720, 6, 96, 38), master), { kind: "spectrum" });
+    slot(box(new DOMRect(824, 32, 96, 12), master), { kind: "meter", source: "master", gap: 1 });
+    const engine = new Engine();
+    const telemetry = (spectrum: number[]) => ({
+      seq: 0,
+      sentUs: 0,
+      keys: new Uint32Array(4),
+      lastVelocity: 0,
+      sustain: 0,
+      modulation: 0,
+      running: true,
+      masterClipped: false,
+      pitchBend: 0,
+      loadPermille: 0,
+      masterPeak: [0.5, 0.5] as [number, number],
+      position: null,
+      returnPeaks: new Float32Array(4),
+      trackPeaks: new Float32Array(0),
+      mics: [],
+      ...TELEMETRY_V5,
+      spectrum: Uint8Array.from({ length: 24 }, (_, i) => spectrum[i] ?? 0),
+    });
+    engine.onTelemetry(telemetry([255]));
+    frame();
+    expect(made).toHaveLength(1);
+    const m = made[0]!;
+    // From the number box to the master's right edge, as without the bars.
+    expect([m.canvas.width, m.canvas.height, m.canvas.style.left, m.canvas.style.top]).toEqual([620, 38, "300px", "6px"]);
+    const track1 = f32(rgb("color.track.1")).join();
+    // The lowest band full (96 / 24 = 4 px wide, its last pixel left as ground), from the box's top (y 0 of the surface) down.
+    expect(drawn.at(-1)!.rects.filter((r) => r.slice(4).join() === track1).map((r) => r.slice(0, 4))).toEqual([[420, 0, 423, 38]]);
+    expect(m.calls.clear).toBe(1);
+
+    // The same bands and the same master: nothing is drawn.
+    engine.onTelemetry(telemetry([255]));
+    frame();
+    expect(m.calls.clear).toBe(1);
+    // Only a band changed: the surface is drawn again.
+    engine.onTelemetry(telemetry([255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 128]));
+    frame();
+    expect(m.calls.clear).toBe(2);
+    const track5 = f32(rgb("color.track.5")).join();
+    expect(drawn.at(-1)!.rects.filter((r) => r.slice(4).join() === track5).map((r) => r.slice(0, 4))).toEqual([[512, 19, 515, 38]]);
+    expect(made).toHaveLength(1);
+    engine.destroy();
+  });
+
   it("slots inside a box that scrolls its content (data-gl-clip) draw only what that box shows. The surface too goes only that far (the arrange track rows)", () => {
     const { made, drawn, frame } = fakePage();
     // Section box (y 100–400). The top 50 is a band that does not scroll; below it (y 150–400) is the scrolling box.

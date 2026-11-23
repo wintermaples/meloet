@@ -174,6 +174,8 @@ export function topMenus(state: AppState, deps: KeyDeps, platform: Platform): To
     plain("menu.theme", true, undefined, {
       sub: THEME_IDS.map((id) => choice(t(`theme.${id}`), id === state.workspace.theme, true, send({ type: "setTheme", theme: id }))),
     }),
+    // Round 12 E7: the bars left of 「マスター」 in the top band.
+    plain("menu.spectrum", true, send({ type: "setSpectrum", on: !state.workspace.spectrum }), { checked: state.workspace.spectrum }),
   ];
 
   const tr = state.transport;

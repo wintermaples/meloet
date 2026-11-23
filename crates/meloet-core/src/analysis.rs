@@ -6,6 +6,9 @@
 //! what is in the ring and writes what it finds into [`Readings`], which the telemetry thread
 //! reads without waiting. A reader of a new engine ([`Analysis::set_reader`]), a new rate or
 //! frames the ring had no room for start the analysis afresh.
+//!
+//! The bands ([`spectrum`]) are worked only while 「音の動きを見せる」 is on
+//! ([`Analysis::set_spectrum`]); off, they read 0.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI16, AtomicU8, AtomicU64, Ordering::Relaxed};
@@ -16,8 +19,16 @@ use std::time::Duration;
 use meloet_engine::AnalysisReader;
 use meloet_protocol::{SPECTRUM_BANDS, TELEMETRY_NO_VALUE};
 
+use spectrum::Spectrum;
+
+pub mod spectrum;
+
 /// How often the thread takes what is in the ring: a tenth of what the ring holds at 96 kHz.
 pub const ANALYSIS_TICK: Duration = Duration::from_millis(10);
+
+/// Wakes in a row with no frames after which the stream is taken as stopped and the bars fall
+/// by the time: longer than a block of the largest quantum the PC may force (8192 at 44.1 kHz).
+const STALLED_WAKES: u32 = 20;
 
 /// What the analysis found last, in the telemetry's units. Only the analysis thread writes.
 pub struct Readings {
@@ -69,6 +80,7 @@ impl Readings {
 
 enum Msg {
     Reader(AnalysisReader),
+    Spectrum(bool),
     Quit,
 }
 
@@ -104,6 +116,11 @@ impl Analysis {
         let _ = self.tx.send(Msg::Reader(reader));
     }
 
+    /// 「音の動きを見せる」 (E7): off at the start.
+    pub fn set_spectrum(&self, on: bool) {
+        let _ = self.tx.send(Msg::Spectrum(on));
+    }
+
     pub fn readings(&self) -> &Arc<Readings> {
         &self.readings
     }
@@ -125,6 +142,10 @@ struct Side {
     dropped: u64,
     sample_rate: u32,
     readings: Arc<Readings>,
+    spectrum: Spectrum,
+    spectrum_on: bool,
+    /// Wakes in a row that found no frames.
+    idle: u32,
 }
 
 impl Side {
@@ -134,6 +155,9 @@ impl Side {
             dropped: 0,
             sample_rate: 0,
             readings,
+            spectrum: Spectrum::new(0),
+            spectrum_on: false,
+            idle: 0,
         }
     }
 
@@ -141,6 +165,7 @@ impl Side {
         loop {
             match rx.recv_timeout(ANALYSIS_TICK) {
                 Ok(Msg::Reader(reader)) => self.set_reader(reader),
+                Ok(Msg::Spectrum(on)) => self.set_spectrum(on),
                 Ok(Msg::Quit) | Err(RecvTimeoutError::Disconnected) => return,
                 Err(RecvTimeoutError::Timeout) => {}
             }
@@ -155,32 +180,65 @@ impl Side {
         self.afresh();
     }
 
+    fn set_spectrum(&mut self, on: bool) {
+        if on != self.spectrum_on {
+            self.spectrum_on = on;
+            self.spectrum.restart(self.sample_rate);
+            self.write_spectrum();
+        }
+    }
+
     /// What was heard before does not join what comes next.
     fn afresh(&mut self) {
-        // round12 stub: E7 (the bands start from silence)
+        self.spectrum.restart(self.sample_rate);
+        self.write_spectrum();
         // round12 stub: M3 (the loudness meters start anew)
     }
 
     /// Takes what is in the ring. Returns how many frames.
     fn pump(&mut self) -> usize {
-        let Some(reader) = self.reader.as_mut() else {
-            return 0;
-        };
-        let (dropped, sample_rate) = (reader.dropped(), reader.sample_rate());
-        if (dropped, sample_rate) != (self.dropped, self.sample_rate) {
-            (self.dropped, self.sample_rate) = (dropped, sample_rate);
-            self.afresh();
+        let mut dropped_frames = 0;
+        if let Some(reader) = self.reader.as_mut() {
+            let (dropped, sample_rate) = (reader.dropped(), reader.sample_rate());
+            if (dropped, sample_rate) != (self.dropped, self.sample_rate) {
+                // What the ring holds came before the gap (or at the rate before).
+                dropped_frames = reader.read(|_| {});
+                (self.dropped, self.sample_rate) = (dropped, sample_rate);
+                self.afresh();
+            }
         }
-        let Some(reader) = self.reader.as_mut() else {
-            return 0;
-        };
-        let frames = reader.read(|frames| {
-            // round12 stub: E7 (2048-point FFT into 24 bands)
-            // round12 stub: M3 (ebur128)
-            let _ = frames;
-        });
+        let spectrum_on = self.spectrum_on;
+        let Side {
+            reader, spectrum, ..
+        } = self;
+        let frames = reader.as_mut().map_or(0, |reader| {
+            reader.read(|frames| {
+                if spectrum_on {
+                    spectrum.push(frames);
+                }
+                // round12 stub: M3 (ebur128)
+            })
+        }) + dropped_frames;
         self.readings.frames.fetch_add(frames as u64, Relaxed);
+        self.idle = if frames == 0 {
+            self.idle.saturating_add(1)
+        } else {
+            0
+        };
+        if spectrum_on {
+            if self.idle > STALLED_WAKES {
+                self.spectrum.fall_for(ANALYSIS_TICK);
+            }
+            self.write_spectrum();
+        }
         frames
+    }
+
+    fn write_spectrum(&self) {
+        let bars = self.spectrum.bars();
+        for (band, bar) in self.readings.spectrum.iter().zip(bars) {
+            band.store(bar, Relaxed);
+        }
     }
 }
 

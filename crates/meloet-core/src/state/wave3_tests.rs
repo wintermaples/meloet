@@ -46,7 +46,6 @@ fn the_commands_of_round_12_waves_3_and_4_are_taken_and_change_nothing_yet() {
             value: 80.0,
             commit: true,
         },
-        Command::SetSpectrum { on: false },
         Command::SetMonoListen { on: true },
         Command::DuplicateSection { marker: 99 },
         Command::DeleteSection { marker: 99 },
@@ -110,6 +109,26 @@ fn the_commands_of_round_12_waves_3_and_4_are_taken_and_change_nothing_yet() {
     }
     assert_eq!(AppState::changes_from(&before, &m.view()), []);
     assert_eq!(m.play().undo_count(), 0);
+}
+
+/// E7 「音の動きを見せる」: a setting, not a step; the same value again saves nothing.
+#[test]
+fn the_spectrum_switch_is_kept_in_the_settings() {
+    let mut m = fresh();
+    let before = m.view();
+    let effects = cmd(&mut m, Command::SetSpectrum { on: false });
+    let [Effect::SaveSettings(saved)] = &effects[..] else {
+        panic!("{effects:?}");
+    };
+    assert!(!saved.spectrum);
+    assert!(!m.view().workspace.spectrum);
+    assert_eq!(m.play().undo_count(), 0);
+    assert_eq!(cmd(&mut m, Command::SetSpectrum { on: false }), []);
+    assert!(matches!(
+        &cmd(&mut m, Command::SetSpectrum { on: true })[..],
+        [Effect::SaveSettings(s)] if s.spectrum
+    ));
+    assert_eq!(AppState::changes_from(&before, &m.view()), []);
 }
 
 /// The settings of E7 and D4 are read and written back as they are; the screen stays

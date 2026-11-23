@@ -292,6 +292,9 @@ BOARDS = {
     # Round 12 M2: 「音が大きすぎます」 with the limiter and without (the mock is in the same file).
     "tooLoudLimiter": None,
     "tooLoudOver": None,
+    # Round 12 E7: the bars of the master's sound left of 「マスター」, and with them off (the mock is in the same file).
+    "spectrum": None,
+    "spectrumOff": None,
     # Round 12 M6: the parameters of the gate, the de-esser and the saturation (no mock).
     "paramsGate": None,
     "paramsDeEsser": None,

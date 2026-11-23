@@ -372,3 +372,33 @@ The readings behind these are in [chapter 7](7-readings.md), A-29; how each is b
 
 - Question: a 「ノーマライズ」 of a file that cannot be read, or a 「逆にする」 whose new file cannot be written (disk full), does nothing and says nothing. The shape `clipWorkFailed {count}` exists since protocol 32 but has no wording. What should it say?
 - From: architecture 25-12.
+
+### B-98-30 D4: where the language choice lives
+
+- Question: the spec says only "in the settings". It was put at 「表示 ▸ ことば / Language ▸」, next to the theme. Would the sound settings dialog be better?
+- Now: in the 「表示」 menu.
+- From: chapter 7 (D4).
+
+### B-98-31 D4: in English, the spectrum and the 「キーで弾く」 switch give way more often
+
+- Question: at 1280×800 in English the song name in the transport does not fold to 「▾」, so the spectrum (E7), which must not push other things out, is not shown in most scenes; and the input meter shows the modulation, so the "PC keys" switch (R2) has no room in five scenes (also while on). In Japanese both are shown. Keep the order of who gives way?
+- Now: the rules of E7 and R2 as they are.
+- From: the D4 helper's check of all scenes in both languages (2026-11-24).
+
+### B-98-32 D4: the English wording was translated by the developers
+
+- Question: 1535 texts, 99 step names and 107 terms are in English (`ui/src/text/en.ts`), following `glossary.md`. The owner has not read them. Words to look at first: いいとこ取り "Comping", 音程を寄せる "Pull to scale", さっきのを残す "Keep last", はじめての曲 "My first song", 「止」 "■", the short forms "Instr." and "Sel.". The texts shortened to fit are listed in chapter 7 (D4).
+- Now: shown as written.
+- From: chapter 7 (D4).
+
+### B-98-33 E1: the redraw rule with 10 000 notes, and the measuring tool
+
+- Question (for the lead and the owner): `tools/measure/webkit-damage.sh` stops the page at every changed rectangle, so the page runs at 15 to 25 paints a second and the arrange play line moves 2 px or more between paints; cut in three by the track meters it becomes 7 rectangles and the frame reaches 11. A feature that changes something every frame is measured worse than it is. Should the tool stop only at paints? And should the play line be kept from being cut by the track meter canvas (it can reach 11 in the real app too, when zoomed in or when frames drop)?
+- Now: E1 stays on by default; the numbers are in `docs/measurements/2026-11-24-round12.md` ("E1 after the fix").
+- From: the E1 fix (2026-11-24).
+
+### B-98-34 Measured at the edge in round 12: P2, M3, the export's speed
+
+- Question: (1) P2 「ほかのトラックも見せる」: scrolling costs +2.3 ms at p95 (pass mark 2 ms; zoom +2.0). (2) M3: with the mixer open and every strip sounding, whole-window paints went from 1 of 90 to 8 of 91, 7 of them with the rectangle of M3's numbers. (3) The export takes 0.7 to 1.0 s longer (16 vocal tracks 2.97 → 3.7 s), read as F1's loudness check. Accept, or fix in a later round?
+- Now: left as measured.
+- From: `docs/measurements/2026-11-24-round12.md`.

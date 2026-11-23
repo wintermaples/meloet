@@ -5,7 +5,9 @@
 use std::path::{Path, PathBuf};
 
 use meloet_model::Song;
-use meloet_protocol::{SongAnswer, SongDialogKind, SongDialogView, SongFile};
+use meloet_protocol::{
+    RECENT_SHOWN, RecentSong, SongAnswer, SongDialogKind, SongDialogView, SongFile,
+};
 
 use super::{Effect, Input, Model, SaveTo};
 use crate::ai::AiOutcome;
@@ -64,6 +66,11 @@ pub(super) struct Files {
     ai: Option<u64>,
     /// Song files opened or saved lately, the newest first (`crate::recent`).
     recent: Vec<PathBuf>,
+    /// `RecentSong::id` of each of `recent`: a path keeps its id while it stays in the list,
+    /// and an id is not given again, so an id from before the list changed names its song
+    /// or nothing.
+    recent_ids: Vec<u32>,
+    last_recent_id: u32,
     /// Where a song's first save makes its folder.
     songs_dir: Option<PathBuf>,
 }
@@ -79,8 +86,78 @@ impl Model {
     /// The songs folder, and the songs opened or saved lately as the state folder keeps them.
     pub fn with_song_places(mut self, songs_dir: Option<PathBuf>, recent: Vec<PathBuf>) -> Model {
         self.files.songs_dir = songs_dir;
-        self.files.recent = recent;
+        self.set_recent(recent);
         self
+    }
+
+    fn set_recent(&mut self, list: Vec<PathBuf>) {
+        let files = &mut self.files;
+        let ids = (list.iter())
+            .map(|path| {
+                let kept = files.recent.iter().position(|p| p == path);
+                kept.map(|i| files.recent_ids[i]).unwrap_or_else(|| {
+                    files.last_recent_id += 1;
+                    files.last_recent_id
+                })
+            })
+            .collect();
+        files.recent = list;
+        files.recent_ids = ids;
+    }
+
+    /// 「最近ひらいた曲 ▸」: the newest `RECENT_SHOWN`, by the song file's name and its folder.
+    pub(super) fn recent_view(&self) -> Vec<RecentSong> {
+        let home = self.plugins.home();
+        (self.files.recent.iter().zip(&self.files.recent_ids))
+            .take(RECENT_SHOWN)
+            .map(|(path, &id)| {
+                let name = path.file_stem().unwrap_or(path.as_os_str());
+                let mut place = path.parent().map_or_else(String::new, |folder| {
+                    crate::plugins::shown_path(folder, home)
+                });
+                if !place.ends_with('/') {
+                    place.push('/');
+                }
+                RecentSong {
+                    id,
+                    name: name.to_string_lossy().into_owned(),
+                    place,
+                }
+            })
+            .collect()
+    }
+
+    /// A row of 「最近ひらいた曲 ▸」: as 「ひらく…」 with the file already picked. The song open
+    /// now is left as it is.
+    pub(super) fn open_recent(&mut self, id: u32, effects: &mut Vec<Effect>) {
+        let Some(i) = self.files.recent_ids.iter().position(|&r| r == id) else {
+            return;
+        };
+        let path = self.files.recent[i].clone();
+        if self.song_free() && self.files.path.as_deref() != Some(path.as_path()) {
+            self.files.given = Some(path);
+            self.let_go(Then::OpenGiven, effects);
+        }
+    }
+
+    /// 「一覧を消す」.
+    pub(super) fn clear_recent(&mut self, effects: &mut Vec<Effect>) {
+        if !self.files.recent.is_empty() {
+            self.set_recent(Vec::new());
+            effects.push(Effect::SaveRecentSongs(Vec::new()));
+        }
+    }
+
+    /// A song file that did not read because it is gone leaves the list.
+    fn forget_if_gone(&mut self, path: &Path, effects: &mut Vec<Effect>) {
+        if self.files.recent.iter().any(|p| p == path) && !path.exists() {
+            let list: Vec<PathBuf> = (self.files.recent.iter())
+                .filter(|p| *p != path)
+                .cloned()
+                .collect();
+            self.set_recent(list.clone());
+            effects.push(Effect::SaveRecentSongs(list));
+        }
     }
 
     pub fn recent_songs(&self) -> &[PathBuf] {
@@ -95,7 +172,7 @@ impl Model {
     fn note_recent(&mut self, path: &Path, effects: &mut Vec<Effect>) {
         let list = crate::recent::noted(&self.files.recent, path);
         if list != self.files.recent {
-            self.files.recent = list.clone();
+            self.set_recent(list.clone());
             effects.push(Effect::SaveRecentSongs(list));
         }
     }
@@ -342,6 +419,7 @@ impl Model {
             }
             (Input::SongUnreadable { path, previous }, _) if reading => {
                 self.files.waiting = None;
+                self.forget_if_gone(&path, effects);
                 if let Some(ticket) = self.files.ai.take() {
                     let why = match previous {
                         true => "the file does not read; its .prev copy might",

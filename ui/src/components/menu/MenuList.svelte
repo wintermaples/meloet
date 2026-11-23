@@ -134,6 +134,7 @@
           <span class="choice" class:selected={entry.checked === true} class:none={entry.checked === undefined}><span class="dot"></span></span>
           {#if entry.swatch !== undefined}<span class="swatch" style:background="var(--color-track-{entry.swatch})"></span>{/if}
           <span class="label">{entry.label}</span>
+          {#if entry.detail}<span class="m-lbl" data-test="menu-detail">{entry.detail}</span>{/if}
           {#if entry.hint}<span class="m-lbl hint" data-test="menu-hint">{entry.hint}</span>{/if}
           <span class="m-spacer"></span>
           {#if entry.sub}<span class="m-lbl key">▸</span>{:else if entry.key}<span class="m-num m-lbl key">{entry.key}</span>{/if}

@@ -873,3 +873,136 @@ fn a_handed_file_is_let_go_while_recording() {
     assert_eq!(m.song_path(), None);
     assert!(m.view().transport.recording.is_some());
 }
+
+fn recent_ids(m: &Model) -> Vec<u32> {
+    m.view().recent.iter().map(|r| r.id).collect()
+}
+
+fn kept_recent(effects: &[Effect]) -> Option<Vec<PathBuf>> {
+    effects.iter().find_map(|e| match e {
+        Effect::SaveRecentSongs(songs) => Some(songs.clone()),
+        _ => None,
+    })
+}
+
+#[test]
+fn the_recent_rows_are_the_newest_ten_by_name_and_folder() {
+    let w = &mut World::new("flow-recent-rows");
+    let list: Vec<PathBuf> = (0..12)
+        .map(|n| w.songs.join(format!("曲{n}/曲{n}.meloet")))
+        .collect();
+    let m = &mut ready().with_song_places(None, list);
+    let rows = m.view().recent;
+    assert_eq!(rows.len(), meloet_protocol::RECENT_SHOWN);
+    assert_eq!(rows[0].name, "曲0");
+    let folder = crate::plugins::shown_path(&w.songs.join("曲0"), m.plugins.home());
+    assert_eq!(rows[0].place, format!("{folder}/"));
+    let mut ids = recent_ids(m);
+    ids.sort_unstable();
+    ids.dedup();
+    assert_eq!(ids.len(), rows.len(), "every row its own id");
+}
+
+#[test]
+fn a_recent_row_opens_its_song_asking_first_and_an_unknown_id_does_nothing() {
+    let w = &mut World::new("flow-recent-open");
+    let path = write_two_versions(&w.songs);
+    let other = w.songs.join("別/別.meloet");
+    let m = &mut ready().with_song_places(None, vec![other.clone(), path.clone()]);
+    w.input(m, Input::ScreenUp);
+    let ids = recent_ids(m);
+    cmd(m, Command::SetTempo { bpm: 100.0 });
+
+    w.cmd(m, Command::OpenRecent { id: ids[1] });
+    let d = dialog(m).unwrap();
+    assert_eq!(
+        (d.kind, d.title.as_str()),
+        (SongDialogKind::Unsaved, "はじめての曲")
+    );
+    w.answer(m, SongAnswer::DontSave);
+    assert_eq!(m.song_path(), Some(path.as_path()));
+    assert_eq!(m.view().timeline.tempo_bpm, 140.0);
+    assert!(
+        w.windows.is_empty(),
+        "the PC's open window is not asked for"
+    );
+
+    // Opened: it comes first, and keeps its id.
+    assert_eq!(m.recent_songs(), [path.clone(), other.clone()]);
+    assert_eq!(recent_ids(m), [ids[1], ids[0]]);
+
+    // The song open now, and an id no row has: nothing.
+    assert!(w.cmd(m, Command::OpenRecent { id: ids[1] }).is_empty());
+    assert!(w.cmd(m, Command::OpenRecent { id: 9_999 }).is_empty());
+    assert_eq!(dialog(m), None);
+}
+
+#[test]
+fn a_recent_song_that_is_gone_says_it_does_not_read_and_leaves_the_list() {
+    let w = &mut World::new("flow-recent-gone");
+    let path = write_two_versions(&w.songs);
+    let gone = w.songs.join("ない/ない.meloet");
+    let m = &mut ready().with_song_places(None, vec![gone, path.clone()]);
+    w.input(m, Input::ScreenUp);
+    let ids = recent_ids(m);
+
+    let rest = w.cmd(m, Command::OpenRecent { id: ids[0] });
+    let d = dialog(m).unwrap();
+    assert_eq!(
+        (d.kind, d.title.as_str(), d.previous),
+        (SongDialogKind::Broken, "ない.meloet", false)
+    );
+    assert_eq!(kept_recent(&rest), Some(vec![path.clone()]));
+    assert_eq!(recent_ids(m), [ids[1]]);
+    assert_eq!(song(m), Song::new_default());
+
+    // A file that is there but does not read stays in the list.
+    w.answer(m, SongAnswer::Cancel);
+    fs::write(&path, b"{\"format\": \"meloet-song\", \"version\": 1, \"so").unwrap();
+    let rest = w.cmd(m, Command::OpenRecent { id: ids[1] });
+    assert_eq!(kind(m), Some(SongDialogKind::Broken));
+    assert_eq!(kept_recent(&rest), None);
+    assert_eq!(recent_ids(m), [ids[1]]);
+
+    // The id of the row that left does nothing.
+    w.answer(m, SongAnswer::Cancel);
+    w.cmd(m, Command::OpenRecent { id: ids[0] });
+    assert_eq!(dialog(m), None);
+}
+
+#[test]
+fn clearing_the_recent_list_empties_it_and_ids_are_not_given_again() {
+    let w = &mut World::new("flow-recent-clear");
+    let path = write_two_versions(&w.songs);
+    let m = &mut ready().with_song_places(None, vec![path.clone()]);
+    w.input(m, Input::ScreenUp);
+    let old = recent_ids(m)[0];
+    let rest = w.cmd(m, Command::ClearRecent);
+    assert_eq!(kept_recent(&rest), Some(Vec::new()));
+    assert!(m.view().recent.is_empty());
+    assert!(m.recent_songs().is_empty());
+    let rest = w.cmd(m, Command::ClearRecent);
+    assert_eq!(kept_recent(&rest), None, "not written again");
+    w.cmd(m, Command::OpenRecent { id: old });
+    assert_eq!(m.song_path(), None);
+
+    // Opened again: the song gets a new id.
+    w.input(m, Input::OpenGiven(path.clone()));
+    assert_eq!(m.recent_songs(), [path]);
+    assert_ne!(recent_ids(m), [old]);
+}
+
+#[test]
+fn a_recent_row_does_nothing_while_recording() {
+    let w = &mut World::new("flow-recent-rec");
+    let path = write_two_versions(&w.songs);
+    let m = &mut ready().with_song_places(None, vec![path]);
+    w.input(m, Input::ScreenUp);
+    let id = recent_ids(m)[0];
+    cmd(m, Command::SetCountIn { bars: 0 });
+    cmd(m, Command::Record);
+    started(m);
+    w.cmd(m, Command::OpenRecent { id });
+    assert_eq!(dialog(m), None);
+    assert_eq!(m.song_path(), None);
+}

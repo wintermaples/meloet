@@ -1912,6 +1912,10 @@ export const texts = {
   "menu.track": e("トラック", "user:2026-11-18"),
   "menu.newSong": e("新しい曲", "user:2026-11-18"),
   "menu.openSong": e("ひらく…", "user:2026-11-18"),
+  // A5: the ▸ child list under 「ひらく…」 (the song's name, its place in thin text).
+  "menu.recentSongs": e("最近ひらいた曲", "user:2026-11-23"),
+  "menu.clearRecent": e("一覧を消す", "user:2026-11-23"),
+  "menu.noRecent": e("まだありません", "user:2026-11-23"),
   "menu.save": e("保存", "user:2026-11-18"),
   "menu.saveAs": e("名前をつけて保存…", "user:2026-11-18"),
   "menu.export": e("書き出し…", "user:2026-11-18"),

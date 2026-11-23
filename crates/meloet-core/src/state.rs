@@ -2220,8 +2220,8 @@ impl Model {
             Command::PlayExported => {}
             // round12 stub: A3
             Command::DuplicateTrack { .. } => {}
-            // round12 stub: A5
-            Command::OpenRecent { .. } | Command::ClearRecent => {}
+            Command::OpenRecent { id } => self.open_recent(id, effects),
+            Command::ClearRecent => self.clear_recent(effects),
             // round12 stub: A9
             Command::NormalizeClips { .. } | Command::ReverseClips { .. } => {}
             // round12 stub: G1
@@ -2760,8 +2760,7 @@ impl Model {
             export: self.export_view(),
             sounds: self.sounds_view(),
             ai_link: self.ai.view(),
-            // round12 stub: A5
-            recent: Vec::new(),
+            recent: self.recent_view(),
             // round12 stub: D1
             updates: UpdatesView {
                 check: self.check_updates,

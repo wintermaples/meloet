@@ -1505,6 +1505,20 @@ export const SCENES: Record<string, SceneDef> = {
     },
     meters: QUIET,
   },
+  // A5: 「ファイル ▸ 最近ひらいた曲 ▸」 with songs in it (shoot_ui.py menuRecent).
+  recentSongs: {
+    setup(s) {
+      changedSong(s);
+      s.song.undoCount = 14;
+      s.song.file = "saved";
+      s.recent = [
+        { id: 3, name: "はじめての曲", place: "~/ミュージック/はじめての曲/" },
+        { id: 2, name: "夜のピアノ", place: "~/ミュージック/夜のピアノ/" },
+        { id: 1, name: "ドラムの練習", place: "~/ミュージック/練習/ドラムの練習/" },
+      ];
+    },
+    meters: QUIET,
+  },
   // 2 of 14 steps taken back: the history band label "12 / 14" and the status line 「2 手ぶん取り消してあります…」.
   undone: {
     setup(s) {
@@ -4970,6 +4984,8 @@ function reduce(state: AppState, bands: FakeBands, rest: StatusMessage | null, s
   if (JSON.stringify(transport) !== JSON.stringify(state.transport)) changes.push({ section: "transport", value: transport });
   if (JSON.stringify(pianoRoll) !== JSON.stringify(state.pianoRoll)) changes.push({ section: "pianoRoll", value: pianoRoll });
   if (JSON.stringify(plugins) !== JSON.stringify(state.plugins)) changes.push({ section: "plugins", value: plugins });
+  // The fake has no song files: 「最近ひらいた曲 ▸」 opens nothing; 「一覧を消す」 empties the list.
+  if (command.type === "clearRecent" && state.recent.length > 0) changes.push({ section: "recent", value: [] });
   // Scenes set the rest of the status line by hand; only the notices and the selected notes move here.
   let message =
     notice ??

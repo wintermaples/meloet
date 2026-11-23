@@ -29,6 +29,8 @@ export interface ListRow {
   hint?: string;
   /** The ▸ child list (opens to the right). */
   sub?: ListEntry[];
+  /** Thin text after the name (the place of a recent song). */
+  detail?: string;
   /** Color list row (spec 2): a 24×12 color sample after the choice mark. Track colors 1–5. */
   swatch?: number;
 }
@@ -64,6 +66,16 @@ export function keyNames(platform: Platform) {
 function vocalTarget(state: AppState): number | null {
   const track = state.song.tracks.find((x) => x.id === state.song.playTarget);
   return track?.kind.kind === "vocal" ? track.id : null;
+}
+
+/** 「最近ひらいた曲 ▸」: newest first, then 「一覧を消す」; only a disabled 「まだありません」 when there are none. */
+function recentRows(state: AppState, canOpen: boolean, send: (c: Command) => () => void): ListEntry[] {
+  if (state.recent.length === 0) return [{ kind: "row", label: t("menu.noRecent"), usable: false }];
+  return [
+    ...state.recent.map((r): ListRow => ({ kind: "row", label: r.name, detail: r.place, usable: canOpen, run: send({ type: "openRecent", id: r.id }) })),
+    { kind: "separator" },
+    { kind: "row", label: t("menu.clearRecent"), usable: true, run: send({ type: "clearRecent" }) },
+  ];
 }
 
 /** Builds the menus. Sends to deps.send. scale and unfit are for the scale child list. */
@@ -102,6 +114,7 @@ export function topMenus(state: AppState, deps: KeyDeps, platform: Platform): To
   const file: ListEntry[] = [
     act("menu.newSong", { kind: "newSong" }, k.mod(t("key.newSong"))),
     act("menu.openSong", { kind: "openSong" }, k.mod(t("key.openSong"))),
+    plain("menu.recentSongs", true, undefined, { sub: recentRows(state, keyActionUsable({ kind: "openSong" }, look), send) }),
     act("menu.save", { kind: "saveSong" }, k.mod(t("key.saveSong"))),
     act("menu.saveAs", { kind: "saveSongAs" }, k.modShift(t("key.saveSong"))),
     { kind: "separator" },

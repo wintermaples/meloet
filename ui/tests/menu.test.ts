@@ -64,6 +64,7 @@ describe("menu contents (B-59)", () => {
     expect(keyed(0)).toEqual([
       "新しい曲 Ctrl N",
       "ひらく… Ctrl O",
+      "最近ひらいた曲 ▸",
       "保存 Ctrl S",
       "名前をつけて保存… Ctrl Shift S",
       "音のファイルを入れる…",
@@ -268,6 +269,35 @@ describe("menu contents (B-59)", () => {
     expect(row(menus[5]!.entries, "録音待機").checked).toBe(true);
   });
 
+  it("最近ひらいた曲 ▸: the songs newest first with their place, then 一覧を消す; only a disabled まだありません when empty (A5)", () => {
+    const sent: Command[] = [];
+    const s = withClip((s) => {
+      s.recent = [
+        { id: 4, name: "はじめての曲", place: "~/ミュージック/はじめての曲/" },
+        { id: 2, name: "夜のピアノ", place: "~/ミュージック/夜のピアノ/" },
+      ];
+    });
+    const sub = () => row(topMenus(s, depsOf(s, sent), "other")[0]!.entries, "最近ひらいた曲").sub!;
+    expect(sub().map((e) => (e.kind === "row" ? `${e.label}|${e.detail ?? ""}${e.usable ? "" : "!"}` : "-"))).toEqual([
+      "はじめての曲|~/ミュージック/はじめての曲/",
+      "夜のピアノ|~/ミュージック/夜のピアノ/",
+      "-",
+      "一覧を消す|",
+    ]);
+    row(sub(), "夜のピアノ").run!();
+    row(sub(), "一覧を消す").run!();
+    expect(sent).toEqual([{ type: "openRecent", id: 2 }, { type: "clearRecent" }]);
+
+    // While recording, the songs cannot be opened (as 「ひらく…」); the list can still be cleared.
+    s.transport.state = "recording";
+    expect(rows(sub()).map((r) => r.usable)).toEqual([false, false, true]);
+
+    s.recent = [];
+    const empty = topMenus(s, depsOf(s, sent), "other")[0]!.entries;
+    expect(row(empty, "最近ひらいた曲").usable).toBe(true);
+    expect(row(empty, "最近ひらいた曲").sub!).toEqual([{ kind: "row", label: "まだありません", usable: false }]);
+  });
+
   it("pressing a row takes the same path as the key (edit goes where keys go)", () => {
     const sent: Command[] = [];
     const s = withClip((s) => {
@@ -467,9 +497,28 @@ describe("menu bar (mount)", () => {
   it("pressing a row closes first, then acts", async () => {
     names()[0]!.click();
     await settle();
-    listRows()[3]!.click();
+    listRows()[4]!.click();
     await settle();
     expect(app.sent).toEqual([{ type: "saveSongAs" }]);
+    expect(list()).toBeNull();
+  });
+
+  it("a song of 最近ひらいた曲 ▸ shows its place in thin text; pressing it closes, then opens it (A5)", async () => {
+    app.setState({ ...withClip(), recent: [{ id: 7, name: "夜のピアノ", place: "~/ミュージック/夜のピアノ/" }] });
+    flushSync();
+    names()[0]!.click();
+    await settle();
+    listRows()[2]!.dispatchEvent(new PointerEvent("pointerenter"));
+    await settle();
+    const sub = document.querySelector('[data-test="menubar-list-sub"]')!;
+    const song = sub.querySelector<HTMLButtonElement>(".item > button")!;
+    expect(song.querySelector(".label")!.textContent).toBe("夜のピアノ");
+    const place = song.querySelector('[data-test="menu-detail"]')!;
+    expect(place.textContent).toBe("~/ミュージック/夜のピアノ/");
+    expect(place.classList.contains("m-lbl")).toBe(true);
+    song.click();
+    await settle();
+    expect(app.sent).toEqual([{ type: "openRecent", id: 7 }]);
     expect(list()).toBeNull();
   });
 

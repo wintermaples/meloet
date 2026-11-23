@@ -1,80 +1,80 @@
-# deb を本物の PC で確かめる手順（オーナーさんに頼む物）
+# Testing the deb on a real PC (steps for the owner)
 
-コンテナでは、入る ・ 消える ・ 共有ライブラリがそろう所までしか見られません（`scripts/build-deb.sh` のあと、棟梁や係が `ubuntu:24.04` と `ubuntu:26.04` の素のコンテナで見ています）。画面、音、鍵盤、プラグインの窓は、本物の PC か VM で見ます。
+In a container we can only see that the deb installs, removes, and finds all its shared libraries (after `scripts/build-deb.sh`, the lead or a helper checks this in plain `ubuntu:24.04` and `ubuntu:26.04` containers). The screen, the sound, the keyboard and the plugin windows are checked on a real PC or a VM.
 
-**相手**: Ubuntu 24.04 と Ubuntu 26.04 のそれぞれ（本物の PC か VM）。meloet をまだ入れたことのない、新しいユーザーで（`~/.config/meloet` などが無い状態）。VM なら、音の出口（ヘッドホンかスピーカー）と USB の鍵盤を VM に渡しておきます。
+**Where**: each of Ubuntu 24.04 and Ubuntu 26.04 (a real PC or a VM). Use a new user who has never installed meloet (no `~/.config/meloet` and so on). In a VM, pass the sound output (headphones or speakers) and the USB keyboard to the VM.
 
-**持っていく物**: `target/deb/meloet_0.1.0_amd64.deb`。
+**What to take**: `target/deb/meloet_0.1.0_amd64.deb`.
 
-各段で、思ったとおりでなかった所は、画面の写真と、端末に出た文（下の 2）を残してください。
+At each step, for anything that did not go as expected, keep a picture of the screen and the text shown in the terminal (step 2 below).
 
-## 1. 入れる
+## 1. Install
 
 ```bash
 sudo apt install ./meloet_0.1.0_amd64.deb
 ```
 
-- [ ] 依存の部品といっしょに入り、エラーなく終わる。
-- [ ] `ls -l /usr/bin/meloet /usr/bin/meloet-plughost` で 2 つともある。
-- [ ] `ls /usr/share/doc/meloet/` に `LICENSE-MIT`、`LICENSE-APACHE`、`NOTICE` がある。
-- [ ] アプリの一覧に「meloet」が出る（アイコンは黒い角丸の地に白い「m」と黄色の音符）。
+- [ ] It installs together with the parts it depends on, and ends with no errors.
+- [ ] `ls -l /usr/bin/meloet /usr/bin/meloet-plughost` shows both.
+- [ ] `ls /usr/share/doc/meloet/` has `LICENSE-MIT`, `LICENSE-APACHE` and `NOTICE`.
+- [ ] 「meloet」 is in the list of apps (the icon is a white 「m」 and a yellow note on a black square with round corners).
 
-## 2. ひらく
+## 2. Open
 
-アプリの一覧から 1 回、端末から `meloet` で 1 回ひらきます。端末からのときは、出た文を残します。
+Open it once from the list of apps, and once from the terminal with `meloet`. When it is from the terminal, keep the text it prints.
 
-- [ ] 窓が出て、画面が描かれる（真っ白、真っ黒、すぐ落ちる、がない）。
-- [ ] アレンジ、入力計、メーターが動く（WebGL の面が描かれている）。
-- [ ] 「音の素材（約 240 MB）を取りにいきます」が出る。
+- [ ] The window opens and the screen is drawn (not all white, not all black, and it does not fall over at once).
+- [ ] The arrange, the input meter and the meters move (the WebGL faces are drawn).
+- [ ] 「音の素材（約 240 MB）を取りにいきます」 is shown.
 
-### 2-1. 音のスレッドの優先度（端末から起こしたとき）
+### 2-1. Audio thread priority (when started from the terminal)
 
-端末から `meloet` で起こすと、はじめの数秒に次のどちらかの 1 行が出ます。どちらが出たかを返してください。
+When you start it from the terminal with `meloet`, one of these lines is printed in the first few seconds. Tell us which one it was.
 
-- `meloet: the audio output thread runs at real-time priority 20 (limit)` か `(rtkit)`: 音のスレッドがリアルタイムで回っています。
-- `meloet: no real-time priority for the audio output thread: …`: 上げられませんでした（音は出ますが、混んだ PC でとぎれやすくなります）。
+- `meloet: the audio output thread runs at real-time priority 20 (limit)` or `(rtkit)`: the audio thread runs at real-time priority.
+- `meloet: no real-time priority for the audio output thread: …`: the priority could not be raised (there is sound, but it breaks up more easily on a busy PC).
 
-## 3. 鍵盤をつなぐ
+## 3. Connect the keyboard
 
-- [ ] 鍵盤をつなぐ前は、入力計に「鍵盤を USB でつなぐと、ここに出ます。つながなくても、マウスで音を書けます。」。
-- [ ] USB の鍵盤をさすと、入力計に鍵盤の名前が出る。
-- [ ] 「音をどこから鳴らしますか」と出口の一覧が出る。行のテスト音が鳴る。Enter で決まる。
-- [ ] 鍵を押すと、入力計の鍵盤の絵が光る。この時点では、まだサイン波で鳴る。
-- [ ] 状態行のバッファの数を書きとめる（24.04 と 26.04 で PipeWire の版がちがうため）。
+- [ ] Before the keyboard is connected, the input meter shows 「鍵盤を USB でつなぐと、ここに出ます。つながなくても、マウスで音を書けます。」.
+- [ ] When the USB keyboard is plugged in, its name is shown in the input meter.
+- [ ] 「音をどこから鳴らしますか」 and the list of outputs are shown. The test sound of a row plays. Enter decides.
+- [ ] Pressing a key lights the keyboard picture in the input meter. At this point it still plays a sine wave.
+- [ ] Write down the buffer number on the status line (24.04 and 26.04 have different versions of PipeWire).
 
-## 4. 音の素材を取る
+## 4. Download the sound pack
 
-- [ ] 「取りにいく」を押すと、進み（% と MB）が出る。
-- [ ] 取っている間も、鍵盤で弾ける（まだの音色はサイン波）。
-- [ ] グランドピアノが先に届き、「グランドピアノ が鳴るようになりました ・ のこりの音色を取っています」が出る。
-- [ ] 1 本目のトラックが、グランドピアノの音で鳴る。
-- [ ] 最後に「音の素材をぜんぶ取りました。31 の音色が鳴ります。」。
-- [ ] `du -sh ~/.local/share/meloet/sounds` が約 240 MB。
-- [ ] （できれば）とちゅうでネットを切り、つなぎなおして「もう一度」で、続きから取れる。
+- [ ] Pressing 「取りにいく」 shows the progress (% and MB).
+- [ ] You can play the keyboard while it downloads (sounds not yet here play a sine wave).
+- [ ] The grand piano arrives first, and 「グランドピアノ が鳴るようになりました ・ のこりの音色を取っています」 is shown.
+- [ ] The first track plays with the grand piano sound.
+- [ ] At the end, 「音の素材をぜんぶ取りました。31 の音色が鳴ります。」.
+- [ ] `du -sh ~/.local/share/meloet/sounds` is about 240 MB.
+- [ ] (If you can) cut the network in the middle, connect again, press 「もう一度」, and the download goes on from where it stopped.
 
-## 5. プラグイン
+## 5. Plugins
 
-前もって、VST3 のプラグインを 1 つ入れておきます（例: `sudo apt install surge-xt` は Ubuntu の置き場にないことがあるので、LSP などの deb か、`/usr/lib/vst3` に入る物）。
+First install one VST3 plugin (for example, `sudo apt install surge-xt` may not be in the Ubuntu archive, so use a deb such as LSP, or something that installs into `/usr/lib/vst3`).
 
-- [ ] 棚（P）の「あとから入れたもの」に、`/usr/lib/vst3` のプラグインが出る（はじめてのスキャンは数十秒かかることがある）。
-- [ ] プラグインを入れて、鍵盤で鳴る（音源なら）か、音が変わる（エフェクトなら）。
-- [ ] プラグインの窓がひらく。
-- [ ] `ps -ef | grep meloet-plughost` に、プラグインを動かす係がいる。
+- [ ] The plugins in `/usr/lib/vst3` are shown under 「あとから入れたもの」 on the shelf (P) (the first scan can take tens of seconds).
+- [ ] Add the plugin: it plays from the keyboard (an instrument) or changes the sound (an effect).
+- [ ] The plugin window opens.
+- [ ] `ps -ef | grep meloet-plughost` shows the process that runs the plugin.
 
-## 6. 保存してひらく
+## 6. Save and open
 
-- [ ] 少し録って Ctrl+S、meloet を閉じて、またひらき、曲をひらくと同じ音で鳴る。
+- [ ] Record a little, press Ctrl+S, close meloet, open it again, open the song, and it plays with the same sound.
 
-## 7. 消す
+## 7. Remove
 
 ```bash
 sudo apt remove meloet
 ```
 
-- [ ] エラーなく終わる。`/usr/bin/meloet` と `/usr/bin/meloet-plughost` が無い。
-- [ ] アプリの一覧から消える。
-- [ ] `~/.config/meloet`、`~/.local/share/meloet` などは残る（ユーザーの物なので、残るのが正しい）。
+- [ ] It ends with no errors. `/usr/bin/meloet` and `/usr/bin/meloet-plughost` are gone.
+- [ ] It is gone from the list of apps.
+- [ ] `~/.config/meloet`, `~/.local/share/meloet` and so on stay (they belong to the user, so it is right that they stay).
 
-## 結果を返すとき
+## Sending the results
 
-24.04 と 26.04 のそれぞれについて、上の印のついた所と、ちがった所、端末に出た文、状態行のバッファの数、PC の型（本物か VM か、グラフィック: NVIDIA ・ AMD ・ Intel、X11 か Wayland か）を返してください。
+For each of 24.04 and 26.04, send the checked items above, what was different, the text printed in the terminal, the buffer number on the status line, and the kind of PC (real or VM; graphics: NVIDIA, AMD or Intel; X11 or Wayland).

@@ -1,116 +1,150 @@
+<p align="center"><img src="crates/meloet-app/icons/128x128.png" width="128" alt="meloet"></p>
+
 # meloet
 
-つかう人向けの案内（入れかた、鍵盤、音の素材、消しかた）は [`docs/user/README.ja.md`](docs/user/README.ja.md) です。
+meloet is a DAW for people who have just bought a MIDI keyboard. It is written in Rust, Tauri 2 and Svelte 5 with TypeScript.
 
-MIDI 鍵盤を買ったばかりの人のための DAW です。いまは第 3 回（ピアノロール）までができています。
-どこまでできたかは [`docs/history/progress.ja.md`](docs/history/progress.ja.md)、作りは [`docs/architecture.md`](docs/architecture.md) を見てください。
+What it can do now:
 
-ライセンス: MIT OR Apache-2.0。部品のライセンスは `licenses/check.mjs` が見はっています。
+- Record from a USB MIDI keyboard (with count-in, loop recording into takes, and the recorded keys placed where they were heard).
+- Edit notes in the piano roll: write, move, quantize, velocity and CC lanes (sustain, pitch bend, modulation, …).
+- Arrange clips on tracks; tempo and time signature changes, markers and automation.
+- A mixer with six built-in effects (4-band EQ, compressor, reverb, delay, chorus, limiter).
+- 31 built-in sounds. The 26 sampled ones come in a sound pack that meloet downloads from GitHub Releases on first start; the rest are made by calculation.
+- VST3 and LV2 plugins, run outside meloet in plugin host processes (`meloet-plughost`; copies of the same plugin share one process), and SF2 files.
+- Vocal tracks: record audio, import audio files, stretch and pitch.
+- Export, an undo history band, and a recovery file for changes that were not saved.
 
-## 用意（Ubuntu Studio 26.04 で確かめた）
+It runs on Linux only for now: Ubuntu 24.04 and 26.04 with PipeWire.
+
+For people who use meloet (installing, keyboards, the sound pack, plugins, removing), there is a guide in Japanese: [`docs/user/README.ja.md`](docs/user/README.ja.md).
+
+## Install
+
+meloet is handed out as a deb. There is no app release on GitHub yet, so for now you make the deb yourself:
+
+```bash
+MELOET_DOCKER_SG=1 scripts/build-deb.sh   # needs docker; puts the deb in target/deb/
+sudo apt install ./target/deb/meloet_0.1.0_amd64.deb
+```
+
+- `scripts/build-deb.sh` builds in an Ubuntu 24.04 container (`packaging/Dockerfile`). It copies the files git knows (committed, changed, and new files that are not ignored) to `target/deb-work/src` and builds `-p meloet-app` and `-p meloet-plughost` only, with the default features.
+- `MELOET_DOCKER_SG=1` runs docker through `sg docker` (for a user who is in the docker group only for the moment). Leave it out if you can run `docker` directly.
+- The tauri-cli is `@tauri-apps/cli` in the devDependencies of `ui`. `meloet-plughost` is added as `bundle.externalBin` only while the deb is built, and goes to `/usr/bin/` in the deb. It is not written in `tauri.conf.json`: there, a normal `cargo build` would overwrite `target/*/meloet-plughost` with an old copy.
+- After installing, meloet asks to download the sound pack (about 240 MB). How that goes is in [`docs/user/README.ja.md`](docs/user/README.ja.md).
+- The steps to test the deb on a real PC are in [`docs/install-check.md`](docs/install-check.md).
+
+## Development
+
+### Setup (checked on Ubuntu Studio 26.04)
 
 ```bash
 sudo apt install libwebkit2gtk-4.1-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev \
   libasound2-dev libpipewire-0.3-dev libspa-0.2-dev clang libclang-dev libudev-dev \
   liblilv-dev libdbus-1-dev
-# Rust（rustup、1.100）と Node.js（26）を PATH に
-cargo install cargo-deny          # ライセンスの見はりに使う
+# Rust (rustup, 1.100) and Node.js (26) on PATH
+cargo install cargo-deny          # used by the license check
 (cd ui && npm ci)
 ```
 
-## 動かす
+`packaging/Dockerfile` installs the same packages and versions.
+
+### Run
 
 ```bash
-(cd ui && npm run build)          # 画面を作る。meloet-app はビルドのときに ui/dist を取りこむ
-cargo run --release -p meloet-app # meloet が立ちあがる
+(cd ui && npm run build)          # builds the screen; meloet-app takes in ui/dist when it is built
+cargo run --release -p meloet-app
 ```
 
-- 鍵盤（USB MIDI）をさすと、入力計に名前が出ます。立ちあげる前からささっていても出ます。
-- 鍵盤が見つかると「音をどこから鳴らしますか」が出ます。↑ ↓ でえらび、Enter で決まります。えらんだ出口は覚えていて、次からは聞きません。
-- 覚えた設定は `~/.config/meloet/settings.json`（`$XDG_CONFIG_HOME` があればその下）。出口、拡大率、メトロノーム、カウントインの小節数。
-- 録る: トラックの ● が赤（録音待機）なら、R か ● で、カウントインのあと録りはじめます。Space で止めると、テイクとしてアレンジに残ります。Home で先頭へ、Space で聞きかえせます。
-- ループ: 目盛（小節の数字の行）をドラッグすると範囲が決まり、L でオン・オフ。ループ中に録ると、周ごとにテイクが分かれます。クリップをえらんで T・Shift T でテイクを切りかえます。
-- 保存: Ctrl+S。最初の保存は `~/ミュージック/はじめての曲/はじめての曲.meloet`（OS の「音楽」の場所）。左上の曲の名前を押すと、新しい曲・ひらく・保存の一覧。
-- ピアノロール: クリップをえらんで E（か帯札）でひらく。道具は 1 選ぶ・2 書く・3 消す。ノートを押したまま動かす、右はしで長さ、空いている所から囲んでえらぶ（Shift で足す）、Alt で複製、Esc でドラッグの前に戻る。↑ ↓ 半音（Shift で 1 オクターブ）、← → グリッド 1 つ、Ctrl+A・Ctrl+D・Ctrl+X・Ctrl+C・Ctrl+V。ドラッグ 1 回が取り消しの 1 手で、テイクの数は増えない。
-- 直す道具: Q でクオンタイズ（うすい枠が、そろえる前の位置。右の欄の「もとの位置へ戻す」で戻る）。下の札でサステイン・ピッチベンド・モジュレーション・そのほかの CC の帯をひらき、点を足す・動かす・消す。ノートの一覧と右の欄は、2 回押すか Enter で打ちこめる。
-- アレンジのクリップ: 押したまま動かす（ほかのトラックへも）、Alt で複製、Ctrl+D ですぐうしろに複製、左右のはしで長さをつめる・のばす（つめた所の中身は消えない）。Ctrl＋ ・ Ctrl− か Ctrl ＋ ホイールで横の拡大・縮小。
-- なおすためのファイル: 保存していない変更は、曲を変えて 2 秒たったときと PC が終わるときに `~/.local/state/meloet/recovery.json`（`$XDG_STATE_HOME` があればその下）に書かれ、次に起動すると戻した曲でひらく。保存すると消える。
-- キー: Space 再生・停止、R 録音、Home 先頭へ、L ループ、C メトロノーム、T・Shift T テイク、Delete 消す、Ctrl+Z・Ctrl+Shift+Z 取り消す・やりなおす、Ctrl+S・Ctrl+O・Ctrl+N 保存・ひらく・新しい曲、A アレンジへ帰る、E ピアノロール、M ミキサー、H 取り消しの履歴、P 棚、U パラメータ、Esc ひとつ戻る、Ctrl+, 音の設定、Ctrl+Alt+1・2・3 拡大率 100・125・150%。
+- Settings are kept in `~/.config/meloet/settings.json` (under `$XDG_CONFIG_HOME/meloet` if it is set).
+- Unsaved changes are written to `~/.local/state/meloet/recovery.json` (under `$XDG_STATE_HOME/meloet` if it is set).
+- The keys are in [`docs/spec/4-keys.md`](docs/spec/4-keys.md).
 
-画面だけをブラウザで見るとき（Tauri なし、偽物の状態）:
+To see only the screen in a browser (no Tauri, fake state):
 
 ```bash
 (cd ui && npm run dev)            # http://localhost:1420/?scene=connect2&scale=100
 ```
 
-場面の名前は `ui/src/bridge/fake.ts` にあります。
+The scene names are in `ui/src/bridge/fake.ts`.
 
-VS Code では（`.vscode/`、拡張機能 CodeLLDB が要る）:
+In VS Code (`.vscode/`, needs the CodeLLDB extension):
 
-- 実行とデバッグの「meloet（デバッグ）」: vite を立ちあげてから、Rust をデバッグ用にビルドして動かす。画面は ui/dist ではなく vite から読むので、`ui/` を書きかえるとすぐ窓に出る。
-- 「画面だけ（ブラウザ、偽物の場面）」: 場面と拡大率をえらんで、Chrome で開く。
-- タスク: 「meloet: release で動かす」「検査: 全部」「約束の型を書き出す（Rust → TS）」など。
+- "meloet (debug)" starts vite, then builds Rust for debugging and runs it. The screen comes from vite, not from `ui/dist`, so changes in `ui/` show in the window at once.
+- "UI only (browser, fake scenes)" opens a scene at a scale you choose in Chrome.
+- Tasks such as "meloet: run release", "Check: all" and "Write the protocol types (Rust → TS)".
 
-## 確かめる
+### The sound pack for development
 
-```bash
-scripts/check-all.sh             # 書きかたの検査、clippy、Rust のテスト、型の検査、画面のテスト、ライセンス
-scripts/check-all.sh --devices   # 上に加えて、鍵盤・PipeWire・音の出口が要るテスト
-scripts/check-release.sh         # 配る形（feature なしの release と本番の ui/dist）に、開発の仕込みの名前が 1 つもないこと
-tools/measure/build-dev.sh       # 測る道具が動かす形（MELOET_DEV_HOOKS=1 の画面と --features dev-hooks の release）を作る
-python3 -I tools/design/render_mocks.py target/mock-png          # モック（docs/design/mock/）を PNG に
-python3 -I tools/design/shoot_ui.py target/compare connect2      # 画面（偽物の状態）とモックを左右にならべる
-tools/measure/latency.sh --window 1920x1080 --count 120 --out target/measure/run   # 鍵 → 画面、鍵 → 音を測る（--state playing|recording も）
-tools/measure/real-keys.sh stopped      # 本物の鍵盤で鍵 → 画面、鍵 → 音（弾いて窓を閉じる）
-tools/measure/record-timing.sh private  # 録った位置のずれ（自分用の PipeWire、quantum 64〜1024。約 12 分）
-tools/measure/long-record.sh            # 10 分録りつづける（xrun、メモリ）
-```
+Builds of meloet look for the sound pack in `sounds/` beside the executable first. To build the pack:
 
-## 配る deb を作る
+1. Download the sources listed in `tools/sounds/sources.json` (each entry says how to get the exact same bytes) into `~/.cache/meloet/sounds-src`.
+2. Build the pack and link it beside the debug build (do the same for `target/release`):
 
 ```bash
-scripts/build-deb.sh              # Ubuntu 24.04 のコンテナ（packaging/Dockerfile）で作り、target/deb/ に置く。docker が要る
+python3 -I tools/sounds/build.py --out target/sounds/dev
+ln -sfn ../sounds/dev target/debug/sounds
 ```
 
-- 作るのは git が知っているファイル（コミットした物、変えた物、ignore されていない新しい物）を `target/deb-work/src` に写した物。`-p meloet-app` と `-p meloet-plughost` だけを、既定の feature で作る。
-- tauri-cli は `ui` の devDependencies の `@tauri-apps/cli`。`meloet-plughost` は、作るときだけ `bundle.externalBin` を足して deb の `/usr/bin/` に入れる（`tauri.conf.json` には書かない。書くと、ふだんの `cargo build` が `target/*/meloet-plughost` を古い写しで上書きするため）。
-- 本物の PC で確かめる手順は [`docs/install-check.md`](docs/install-check.md)。
+The sounds found there are not downloaded. `build.py` uses ffmpeg, ffprobe and numpy.
 
-## 開発用の環境変数（なければ何もしない）
+### Checks
 
-| 変数 | すること |
+```bash
+scripts/check-all.sh             # formatting, clippy, Rust tests, type checks, UI tests, licenses
+scripts/check-all.sh --devices   # also the tests that need a keyboard, PipeWire and an output
+scripts/check-all.sh --release   # also scripts/check-release.sh: no development hooks in the shipped build (slow)
+```
+
+### Development hooks and measuring
+
+The `MELOET_*` variables below exist **only in development builds** (`cargo build --release -p meloet-app --features dev-hooks`, and the screen built with `MELOET_DEV_HOOKS=1 npm run build`). `tools/measure/build-dev.sh` builds both (`--keep-ui` builds only the programs). In the shipped meloet (no features) they do nothing, and their names are not in the executable ([`docs/architecture.md`](docs/architecture.md) 23-11). The plugin host's `MELOET_PLUGHOST_FAKE`, `MELOET_PLUGHOST_RT` and `MELOET_PLUGHOST_NO_DUMP` are the same (`-p meloet-plughost --features dev-hooks`).
+
+| Variable (development builds only) | What it does |
 |---|---|
-| `JSC_useGenerationalGC` | meloet は立ちあがるときに 0 にする（ウェブのプロセスのメモリがふえつづけないように）。外から決めればそちらが勝つ |
+| `MELOET_WINDOW=1280x800` | The inner size of the window |
+| `MELOET_SNAPSHOT=out.png`, `MELOET_SNAPSHOT_AFTER_MS=1500` | Writes the screen to a PNG and ends |
+| `MELOET_COMMANDS='[{"afterMs":800,"command":{"type":"chooserConfirm"}}]'` | Sends intents at set times |
+| `MELOET_EVAL='[{"afterMs":900,"js":"…"}]'` | Runs JavaScript in the page at set times |
+| `MELOET_PIPE=fifo` | Keeps reading lines from that named pipe: `{"command":{…}}` is an intent, `{"js":"…"}` is JavaScript in the page (`tools/measure/remote.py`) |
+| `MELOET_EXIT_AFTER_MS=10000` | Ends after that time |
+| `MELOET_CLOSE_AFTER_MS=10000` | Closes the window after that time, the same way as the close button |
+| `MELOET_CONFIG_DIR=dir` | Where the settings file is |
+| `MELOET_STATE_DIR=dir` | Where the recovery file is |
+| `MELOET_SONGS_DIR=dir` | The "Music" folder where songs go |
+| `MELOET_SF2_DIR=dir` | Where copied SF2 files go |
+| `MELOET_SOUNDS_DIR=dir` | The sound pack folder (with `pack.json`). When set, no other place is searched and nothing is downloaded |
+| `MELOET_PACK_ORIGIN=http://127.0.0.1:8000/` | For tests: where sounds and the online catalog (`<origin>catalog.json`) are fetched from (`http://` is allowed) |
+| `MELOET_PACK_CATALOG=file` | For tests: reads that file instead of the built-in catalog (`tools/sounds/catalog.json`) |
+| `MELOET_OPEN_SONG=file.meloet` | Opens that song at start |
+| `MELOET_MEASURE_DIR=dir` | Writes the key → sound and key → screen records |
+| `MELOET_UI_SCRIPT=pr-scroll\|pr-zoom\|pr-drag:N` | Only with `MELOET_MEASURE_DIR`: repeats scrolling, zooming or dragging in the page and measures |
+| `MELOET_ACCEPT_VIRTUAL=1` | Also takes the test keyboard (`meloet-vkeys`) as a keyboard |
+| `MELOET_ONLY_VIRTUAL=1` | Ignores real keyboards and sees only virtual ones |
+| `MELOET_VKEYS_NAME=name[,name…]` | Takes only the virtual keyboards with those names (`meloet-vkeys --name`) |
+| `MELOET_MIDI_FAIL_AFTER=N` | For tests: stops the MIDI thread after N keys |
+| `MELOET_INPUT_SINK_MONITOR=sink` | For measuring: uses the monitor of that output as the input |
+| `MELOET_PCWINDOW_SHOT=out.png` | 1.5 s after the PC file dialog opens, draws it to a PNG |
+| `MELOET_DEBUG_SCREEN=1` | Prints the work area, window and inner size to stderr each time they are measured |
 
-下の `MELOET_*` は、**開発のビルドだけ**にある（`cargo build --release -p meloet-app --features dev-hooks`、画面は `MELOET_DEV_HOOKS=1 npm run build`。`tools/measure/build-dev.sh` が両方を作る）。配る meloet（feature なし）では、決めても何もしない（名前も実行ファイルに入っていない。`docs/architecture.md` 23-11）。プラグイン係の `MELOET_PLUGHOST_FAKE` ・ `MELOET_PLUGHOST_RT` ・ `MELOET_PLUGHOST_NO_DUMP` も同じ（`-p meloet-plughost --features dev-hooks`）。
+`JSC_useGenerationalGC` is not a hook: meloet sets it to 0 at start in every build (so the web process memory does not keep growing). A value set from outside wins.
 
-| 変数（開発のビルドだけ） | すること |
-|---|---|
-| `MELOET_WINDOW=1280x800` | 窓の内側の大きさ |
-| `MELOET_SNAPSHOT=out.png`、`MELOET_SNAPSHOT_AFTER_MS=1500` | 画面を PNG に書いて終わる |
-| `MELOET_COMMANDS='[{"afterMs":800,"command":{"type":"chooserConfirm"}}]'` | 決まった時間に意図を送る |
-| `MELOET_EVAL='[{"afterMs":900,"js":"…"}]'` | 決まった時間にページの中で JavaScript を動かす（本物のアプリの絵で、画面だけが知っている所をひらくため） |
-| `MELOET_PIPE=fifo` | その名前つきパイプから行を読みつづける。`{"command":{…}}` は意図、`{"js":"…"}` はページの中の JavaScript（外の道具が、見た物から次の手を決めて動かすため。`tools/measure/remote.py`） |
-| `MELOET_EXIT_AFTER_MS=10000` | その時間のあとに終わる |
-| `MELOET_CONFIG_DIR=dir` | 設定ファイルの場所を変える |
-| `MELOET_MEASURE_DIR=dir` | 鍵 → 音、鍵 → 画面の記録を書く |
-| `MELOET_ACCEPT_VIRTUAL=1` | 試験用の仮想の鍵盤（`meloet-vkeys`）も鍵盤とみなす |
-| `MELOET_ONLY_VIRTUAL=1` | 本物の鍵盤を見ず、仮想の鍵盤だけを見る |
-| `MELOET_VKEYS_NAME=名前[,名前…]` | その名前（`meloet-vkeys --name`）の仮想の鍵盤だけを受ける |
-| `MELOET_SONGS_DIR=dir` | 曲を置く「音楽」の場所を変える |
-| `MELOET_CLOSE_AFTER_MS=10000` | その時間のあとに、閉じるボタンと同じ道で窓を閉じる |
-| `MELOET_PCWINDOW_SHOT=out.png` | PC のファイルの窓が出て 1.5 秒後に、その窓を PNG に描く |
-| `MELOET_MIDI_FAIL_AFTER=N` | 試験用: MIDI のスレッドを N 個の鍵のあとで止める |
-| `MELOET_STATE_DIR=dir` | なおすためのファイルの場所を変える |
-| `MELOET_SOUNDS_DIR=dir` | 音の素材の包み（`tools/sounds/build.py` が作る、`pack.json` のあるフォルダ）の場所を決める。決めると、ほかの場所はさがさず、取りにもいかない。決めなければ、実行ファイルのそばの `sounds/` → `$XDG_DATA_HOME/meloet/sounds/`（配る meloet が自分で取ってきて置く所。`docs/architecture.md` 23-9）の順に、音色ごとにさがす。開発では `python3 -I tools/sounds/build.py --out target/sounds/dev` と `ln -sfn ../sounds/dev target/debug/sounds`（release も同じ）で、VS Code からの起動でも見つかり、そこにある音色は取りにいかない |
-| `MELOET_PACK_ORIGIN=http://127.0.0.1:8000/` | 試験用: 音の素材を取りにいく先と、ネットの目録（`<origin>catalog.json`）を、その場所に替える（`http://` も許す） |
-| `MELOET_PACK_CATALOG=file` | 試験用: 実行ファイルに入った目録（`tools/sounds/catalog.json`）のかわりに、そのファイルを読む |
-| `MELOET_OPEN_SONG=file.meloet` | 立ちあげたら、その曲をひらく（PC のファイルの窓のかわり） |
-| `MELOET_UI_SCRIPT=pr-scroll\|pr-zoom\|pr-drag:N` | `MELOET_MEASURE_DIR` があるときだけ、ページの中で送る・拡大・ドラッグを自動でくりかえして測る |
-| `MELOET_SF2_DIR=dir` | 試験用: 写した SF2 の置き場所を変える |
-| `MELOET_INPUT_SINK_MONITOR=sink` | 測る用: その出口のモニタを入力にする（線のいらない録りの試験） |
-| `MELOET_DEBUG_SCREEN=1` | 画面の働ける広さ、窓、内側の大きさを、計るたびに stderr に出す |
+The full list of tools (latency, long recording, screenshots, mocks, plugins, export, …) is in 「よく使うコマンド」 in [`CLAUDE.md`](CLAUDE.md).
 
-## 検証の試作
+### Documents
 
-`spikes/` には、本番の前に土台の賭けを確かめた試作があります。報告は [`docs/history/report.md`](docs/history/report.md)。消さずに残していますが、本番のコードには写していません。
+- [`docs/progress.md`](docs/progress.md): where the work is now, and what is left to do.
+- [`docs/architecture.md`](docs/architecture.md): the structure of meloet, its rules and the reasons.
+- [`docs/spec/`](docs/spec/): the design spec (the source of truth for the screen). [`docs/spec/glossary.md`](docs/spec/glossary.md) gives the English words.
+- [`docs/design/mock/`](docs/design/mock/): the screen mocks. When a mock and the spec do not agree, the spec is right.
+- [`docs/history/`](docs/history/): older records, kept in Japanese as they were (progress by round, the Japanese architecture, design notes, measurements, research, and the report on the `spikes/`).
+- `spikes/`: early tests of the base ideas, made before the real code. They are kept, but not copied into the real code.
+
+## License
+
+The code is under either of these, at your choice:
+
+- MIT ([`LICENSE-MIT`](LICENSE-MIT))
+- Apache License 2.0 ([`LICENSE-APACHE`](LICENSE-APACHE))
+
+The font IBM Plex is under OFL-1.1 (the woff2 files of @fontsource are used without change). The credits for the sound pack and the parts are in [`NOTICE`](NOTICE). `node licenses/check.mjs` checks the licenses of the parts and the sounds.

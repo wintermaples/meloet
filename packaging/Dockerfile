@@ -6,7 +6,7 @@ ARG RUST_VERSION=1.100.0
 ARG NODE_VERSION=26.13.1
 ARG NODE_SHA256=5c063e46bab0fbc1c17cc445d7ff129cbdcd0471be6ed83b6ab864f8143bc864
 
-# The same packages as "用意" in README.md, and what the deb bundler and the checks use.
+# The same packages as "Setup" in README.md, and what the deb bundler and the checks use.
 RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       build-essential pkg-config ca-certificates curl xz-utils file dpkg-dev \

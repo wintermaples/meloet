@@ -75,6 +75,15 @@
       checked: bits === d.bits,
       run: () => set({ kind: "bits", bits }),
     }));
+  const kbpsRows = (d: ExportDialogView): MenuEntry[] =>
+    d.mp3KbpsChoices.map((kbps) => ({
+      kind: "row",
+      label: "export.kbps",
+      text: t("export.kbps", { kbps }),
+      usable: true,
+      checked: kbps === d.mp3Kbps,
+      run: () => set({ kind: "mp3Kbps", kbps }),
+    }));
   const tailRows = (d: ExportDialogView): MenuEntry[] =>
     TAILS.map((tail) => ({
       kind: "row",
@@ -223,10 +232,17 @@
               <span class="strong name">{t("export.sampleRate")}</span>
               {@render dropdown(t("settings.rateHz", { rate: dialog.sampleRate }), "export-rate", (e) => choose(e, rateRows(dialog)))}
             </div>
-            <div class="row">
-              <span class="strong name">{t("export.bits")}</span>
-              {@render dropdown(t("settings.bits", { bits: bitsOf(dialog.bits) }), "export-bits", (e) => choose(e, bitsRows(dialog)))}
-            </div>
+            {#if dialog.format === "mp3"}
+              <div class="row">
+                <span class="strong name">{t("export.bitrate")}</span>
+                {@render dropdown(t("export.kbps", { kbps: dialog.mp3Kbps }), "export-kbps", (e) => choose(e, kbpsRows(dialog)))}
+              </div>
+            {:else}
+              <div class="row">
+                <span class="strong name">{t("export.bits")}</span>
+                {@render dropdown(t("settings.bits", { bits: bitsOf(dialog.bits) }), "export-bits", (e) => choose(e, bitsRows(dialog)))}
+              </div>
+            {/if}
             <div class="row">
               <span class="strong name">{t("export.tail")}</span>
               {@render dropdown(tailText(dialog.tail), "export-tail", (e) => choose(e, tailRows(dialog)))}

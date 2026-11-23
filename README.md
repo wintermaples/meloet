@@ -46,8 +46,8 @@ meloet is a music app (a DAW) for people who have just bought their first MIDI k
   - Comping: build one vocal from the best parts of several takes. Open 「いいとこ取り」 from a vocal clip's right-click menu and drag across a take to choose it for that part; the joins are cross-faded, and it can all be undone.
   - Pitch help for vocals: pull a sung clip toward the notes of a scale, from a light touch to all the way (0 to 100 %). For one voice or one-note-at-a-time instruments.
   - Reverse an audio clip, or normalize it so its loudest point is at −1.0 dB (right-click menu of the clip; both can be undone).
-- Export the song to a wav or flac file, as it plays or brought to the loudness music sites play at (−14 LUFS, true peak −1 dBTP). The check before export shows the loudness and the true peak.
-  - The export can write the song's title, its artist and a picture (png or jpg) into the file (flac; wav takes the title and the artist). The artist is remembered.
+- Export the song to a wav, flac or mp3 file (mp3 at 128 to 320 kbps), as it plays or brought to the loudness music sites play at (−14 LUFS, true peak −1 dBTP). The check before export shows the loudness and the true peak.
+  - The export can write the song's title, its artist and a picture (png or jpg) into the file (flac and mp3; wav takes the title and the artist). The artist is remembered.
   - When an export is done, a window shows the file's waveform, loudness and true peak, and can play the file in the PC's player or open its folder.
 - File ▸ Recently opened songs: open one of the last 10 songs in one step (with its folder shown); the list can be cleared.
 - Help ▸ Key list: every key by group, with a filter box. Help ▸ Open the user guide opens the user guide in your browser.

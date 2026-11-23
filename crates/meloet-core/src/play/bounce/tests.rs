@@ -153,6 +153,7 @@ fn bounced(place: &Place, doc: &Doc, track: TrackId, span: (u64, u64)) -> (Doc, 
         sample_rate: RATE,
         bits: RecordFormat::Bits32,
         loudness: ExportLoudness::AsIs,
+        mp3_kbps: meloet_protocol::EXPORT_MP3_DEFAULT_KBPS,
         info: SongInfo::default(),
     });
     run.until("finished", |n| matches!(n, ExportNews::Finished { .. }));

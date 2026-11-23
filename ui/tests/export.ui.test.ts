@@ -73,13 +73,13 @@ describe("text parts (B-94-75)", () => {
 });
 
 describe("export dialog (mock F7-Export, spec 3 (34-B))", () => {
-  it("F7-Export: 3 ranges, formats wav and flac (no mp3), where to save, the check, folded 「くわしく」, cancel and export", () => {
+  it("F7-Export: 3 ranges, formats wav, flac and mp3, where to save, the check, folded 「くわしく」, cancel and export", () => {
     show(ExportDialog, scene("exportDialog"));
     expect(text(q(".head"))).toBe("書き出し 閉じるEsc");
     expect(qa('[data-test^="export-range-"]').map(text)).toEqual(["曲ぜんぶ", "ループ 5〜9", "トラックごと"]);
     expect(q('[data-test="export-range-song"]')!.classList.contains("on")).toBe(true);
     expect(text(q('[data-test="export-span"]'))).toBe("曲ぜんぶ ・ 1. 1. 0000 〜 17. 1. 0000 と、音が消えるまで");
-    expect(qa('[data-test^="export-format-"]').map(text)).toEqual(["wav", "flac"]);
+    expect(qa('[data-test^="export-format-"]').map(text)).toEqual(["wav", "flac", "mp3"]);
     expect(text(q('[data-test="export-place"]'))).toBe("~/音楽/はじめての曲.wav");
     // the spec 6 text 「書き出しの前」 (not the mock's 「音割れなし」).
     expect(qa('[data-test="export-check-line"]').map(text)).toEqual([

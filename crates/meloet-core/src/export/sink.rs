@@ -1,11 +1,11 @@
 //! The file an export writes, whatever its format (docs/architecture.md 22-11, 22-20).
 //!
 //! The export's thread hands over the finished audio, already at the file's sample rate, as
-//! floats; an [`AudioSink`] makes the file's samples of them. Both formats go through the
+//! floats; an [`AudioSink`] makes the file's samples of them. wav and flac go through the
 //! same step from floats to whole numbers (with dither for 16 bits, once), so a wav and a
-//! flac file of the same export hold the same samples. A sink writes where it is told to,
-//! which is a file of the work place: moving the finished file to where the person wants it
-//! is the caller's.
+//! flac file of the same export hold the same samples; mp3 takes the floats as they are,
+//! within full scale, with no dither. A sink writes where it is told to, which is a file of
+//! the work place: moving the finished file to where the person wants it is the caller's.
 
 use std::fs::File;
 use std::io::{self, BufWriter, Seek, SeekFrom, Write};
@@ -16,17 +16,21 @@ use flacenc::component::{BitRepr, Stream, StreamInfo};
 use flacenc::config;
 use flacenc::error::{Verified, Verify};
 use flacenc::source::{Context, Fill, FrameBuf};
-use meloet_protocol::{ExportFormat, RecordFormat};
+use meloet_protocol::{EXPORT_MP3_KBPS, EXPORT_MP3_SAMPLE_RATES, ExportFormat, RecordFormat};
+use rusty_mp3::{Mp3Encoder, Mp3EncoderConfig};
 
 /// What the file is to be.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SinkSpec {
     pub format: ExportFormat,
+    /// One of `EXPORT_MP3_SAMPLE_RATES` for mp3.
     pub sample_rate: u32,
     /// 1 or 2.
     pub channels: u8,
-    /// One of `format.bits_choices()`. 32 bits are floats.
+    /// One of `format.bits_choices()`. 32 bits are floats. Not looked at for mp3.
     pub bits: RecordFormat,
+    /// One of `EXPORT_MP3_KBPS`, for mp3 only.
+    pub mp3_kbps: u16,
 }
 
 /// A file being written. Not for the audio thread: every call may wait for the disk.
@@ -42,19 +46,25 @@ pub trait AudioSink: Send {
 }
 
 /// Starts the file at `path`, over whatever is there: a wav as the recorder writes it
-/// (`crate::vocalrec`), or a flac made with `flacenc`.
+/// (`crate::vocalrec`), a flac made with `flacenc`, or an mp3 made with `rusty_mp3`.
 pub fn create(path: &Path, spec: SinkSpec) -> io::Result<Box<dyn AudioSink>> {
     if !(1..=2).contains(&spec.channels) || spec.sample_rate == 0 {
         return Err(invalid("an export has one or two channels and a rate"));
     }
-    if !spec.format.bits_choices().contains(&spec.bits) {
+    if spec.format == ExportFormat::Mp3 {
+        if !EXPORT_MP3_SAMPLE_RATES.contains(&spec.sample_rate) {
+            return Err(invalid("an mp3 is written at 44100 or 48000 Hz"));
+        }
+        if !EXPORT_MP3_KBPS.contains(&spec.mp3_kbps) {
+            return Err(invalid("an mp3 is written at 128, 192, 256 or 320 kbit/s"));
+        }
+    } else if !spec.format.bits_choices().contains(&spec.bits) {
         return Err(invalid("the format does not take these bits"));
     }
     Ok(match spec.format {
         ExportFormat::Wav => Box::new(WavSink::create(path, spec)?),
         ExportFormat::Flac => Box::new(FlacSink::create(path, spec)?),
-        // round12 stub: F2
-        ExportFormat::Mp3 => return Err(invalid("mp3 cannot be written yet")),
+        ExportFormat::Mp3 => Box::new(Mp3Sink::create(path, spec)?),
     })
 }
 
@@ -299,6 +309,139 @@ impl AudioSink for FlacSink {
         file.write_all(&flac_head(&info)?)?;
         file.sync_all()?;
         Ok(frames as u64)
+    }
+
+    fn abandon(self: Box<Self>) {
+        let path = self.path.clone();
+        drop(self);
+        let _ = std::fs::remove_file(path);
+    }
+}
+
+/// The environment variables `rusty_mp3` 1.2.2 reads outside its tests (tuning knobs); set,
+/// they would change the files. meloet's shell clears them before any thread starts. For
+/// another version of the crate, look for `env::var` in its `src/` again.
+pub const MP3_ENCODER_ENV: [&str; 11] = [
+    "MP3_RESERVOIR",
+    "MP3_RESV_GAIN",
+    "MP3_RESV_LOOKAHEAD",
+    "MP3_STEREO",
+    "MP3_PICK",
+    "MP3_SHAPE",
+    "MP3_PSY_DOMAIN",
+    "MP3_SHORT_SHAPE",
+    "MP3_THR_CAP",
+    "MP3_SMR_DB",
+    "RFF_MP3_XRPOW",
+];
+
+fn mp3_failed(e: rusty_mp3::Error) -> io::Error {
+    io::Error::other(format!("mp3: {e}"))
+}
+
+/// An mp3 file at a constant bitrate, written as the encoder hands out its frames. Its
+/// first frame is the Info tag (the length and the encoder's delay, so that a player plays
+/// exactly the samples given); it is known only at the end, and written again over the head
+/// of the file then.
+struct Mp3Sink {
+    out: BufWriter<File>,
+    path: PathBuf,
+    channels: u16,
+    sample_rate: u32,
+    encoder: Mp3Encoder,
+    /// The samples as the encoder is given them: within full scale, none that is no number.
+    taken: Vec<f32>,
+    /// The length of the first frame written, once one is.
+    head: Option<usize>,
+    pushed: bool,
+    samples: u64,
+}
+
+impl Mp3Sink {
+    fn create(path: &Path, spec: SinkSpec) -> io::Result<Mp3Sink> {
+        let encoder = Mp3Encoder::new(Mp3EncoderConfig {
+            bitrate_kbps: u32::from(spec.mp3_kbps),
+            vbr_quality: None,
+        });
+        Ok(Mp3Sink {
+            out: BufWriter::with_capacity(1 << 16, File::create(path)?),
+            path: path.to_owned(),
+            channels: spec.channels.into(),
+            sample_rate: spec.sample_rate,
+            encoder,
+            taken: Vec::new(),
+            head: None,
+            pushed: false,
+            samples: 0,
+        })
+    }
+
+    fn push(&mut self, interleaved: &[f32]) -> io::Result<()> {
+        self.taken.clear();
+        // The encoder lets up to 8 times full scale through; the file holds what a player
+        // can play.
+        let within = |s: f32| {
+            if s.is_finite() {
+                s.clamp(-1.0, 1.0)
+            } else {
+                0.0
+            }
+        };
+        self.taken.extend(interleaved.iter().map(|&s| within(s)));
+        (self.encoder)
+            .push_pcm_f32(&self.taken, self.channels, self.sample_rate)
+            .map_err(mp3_failed)?;
+        self.pushed = true;
+        self.drain()
+    }
+
+    /// Writes the frames the encoder has ready.
+    fn drain(&mut self) -> io::Result<()> {
+        loop {
+            match self.encoder.next_packet() {
+                Ok(frame) => {
+                    self.head.get_or_insert(frame.len());
+                    self.out.write_all(&frame)?;
+                }
+                Err(rusty_mp3::Error::Again | rusty_mp3::Error::Eof) => return Ok(()),
+                Err(e) => return Err(mp3_failed(e)),
+            }
+        }
+    }
+}
+
+impl AudioSink for Mp3Sink {
+    fn write(&mut self, interleaved: &[f32]) -> io::Result<()> {
+        self.push(interleaved)?;
+        self.samples += interleaved.len() as u64;
+        Ok(())
+    }
+
+    fn finish(mut self: Box<Self>) -> io::Result<u64> {
+        if !self.pushed {
+            // Nothing given: the format is still fixed, so that the file is a whole one.
+            self.push(&[])?;
+        }
+        self.encoder.finish();
+        self.drain()?;
+        let tag = self.encoder.lame_tag_frame().map(<[u8]>::to_vec);
+        let Mp3Sink {
+            out,
+            head,
+            channels,
+            samples,
+            ..
+        } = *self;
+        let mut file = out.into_inner().map_err(|e| e.into_error())?;
+        if let Some(tag) = tag {
+            if head != Some(tag.len()) {
+                return Err(io::Error::other("mp3: the Info tag does not fit its frame"));
+            }
+            file.seek(SeekFrom::Start(0))?;
+            file.write_all(&tag)?;
+        }
+        file.sync_all()?;
+        Ok(samples / u64::from(channels))
     }
 
     fn abandon(self: Box<Self>) {

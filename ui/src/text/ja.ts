@@ -2942,6 +2942,22 @@ export const texts = {
     mb: "5",
   }),
   "msg.exportPictureUnreadable": e("「{file}」は絵として読めません（使えるのは png ・ jpg）。", "builder:2026-11-24", { file: "表紙.bmp" }),
+  // mp3 in the export (round 12 F2): 「ビットレート」 in place of 「ビット」.
+  "export.bitrate": e("ビットレート", "user:2026-11-23"),
+  "export.kbps": e("{kbps} kbps", "user:2026-11-23", { kbps: "192" }),
+  "export.detailsSummaryMp3": e("{rate} Hz ・ {kbps} kbps ・ しっぽは音が消えるまで（最大 {seconds} 秒）", "builder:2026-11-24", {
+    rate: "48000",
+    kbps: "192",
+    seconds: "10",
+  }),
+  "export.detailsSummaryMp3NoTail": e("{rate} Hz ・ {kbps} kbps ・ しっぽなし", "builder:2026-11-24", { rate: "48000", kbps: "192" }),
+  "exported.detailsMp3": e("{length} ・ {rate} Hz ・ {kbps} kbps", "builder:2026-11-24", { length: "3 分 12 秒", rate: "48000", kbps: "192" }),
+  "msg.exportedFileMp3": e("{file} を書き出しました（{length} ・ {rate} Hz ・ {kbps} kbps）。", "builder:2026-11-24", {
+    file: "はじめての曲.mp3",
+    length: "3:02",
+    rate: "48000",
+    kbps: "192",
+  }),
   // The dialog 「書き出しました」 when an export ends (round 12 E9). 「フォルダをひらく」 and 「閉じる」 are button.openFolder and button.close.
   "exported.title": e("書き出しました", "user:2026-11-23"),
   "exported.files": e("{count} つのファイル", "user:2026-11-23", { count: "5" }),

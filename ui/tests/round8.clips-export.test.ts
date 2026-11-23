@@ -269,9 +269,9 @@ describe("checking before export (spec 3 (41-A, 42-C), mocks F8-ExportCheck / F8
     expect(text(q(".status"))).not.toContain(" ・ たしかめています");
   });
 
-  it("mp3 is not in the format list (A-24, 6)", () => {
+  it("mp3 is in the format list (A-23, C-11)", () => {
     show(ExportDialog, scene("exportCheck"));
-    expect(qa('[data-test^="export-format-"]').map(text)).toEqual(["wav", "flac"]);
+    expect(qa('[data-test^="export-format-"]').map(text)).toEqual(["wav", "flac", "mp3"]);
   });
 });
 

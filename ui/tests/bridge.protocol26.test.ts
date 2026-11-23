@@ -31,7 +31,7 @@ function after(state: FakeState, ...commands: Command[]): FakeState {
 const set = (change: ExportChange): Command => ({ type: "setExport", change });
 
 describe("shape of protocol 26", () => {
-  it("version 26. Formats are wav and flac (no mp3). 32 bit is wav only. The tail is at most 10 seconds", () => {
+  it("version 26. Formats are wav, flac and mp3 (mp3 has no bits). 32 bit is wav only. The tail is at most 10 seconds", () => {
     expect(PROTOCOL_VERSION).toBeGreaterThanOrEqual(26);
     expect(EXPORT_FORMATS).toEqual([
       { format: "wav", bits: ["bits16", "bits24", "bits32"] },
@@ -102,7 +102,7 @@ describe("fake scenes (mock F7-Export, F7-Exporting, R11-Fit)", () => {
       tracks: 4,
       span: { start: 0, end: 16 * BAR },
       format: "wav",
-      formats: ["wav", "flac"],
+      formats: ["wav", "flac", "mp3"],
       place: "~/音楽/はじめての曲.wav",
       check: { state: "done", peakDb: -0.6, clips: false, over: 0, lufs: -12.5, truePeakDb: -0.5 },
       solo: null,
@@ -113,7 +113,7 @@ describe("fake scenes (mock F7-Export, F7-Exporting, R11-Fit)", () => {
       bits: "bits24",
       bitsChoices: ["bits16", "bits24", "bits32"],
       mp3Kbps: 192,
-      mp3KbpsChoices: [],
+      mp3KbpsChoices: [128, 192, 256, 320],
       title: "はじめての曲",
       artist: "",
       picture: null,

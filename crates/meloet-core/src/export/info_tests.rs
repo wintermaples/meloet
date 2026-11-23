@@ -361,6 +361,7 @@ fn each_track_of_tracks_is_titled_after_the_song_and_one_file_after_the_title() 
             sample_rate: RATE,
             bits: RecordFormat::Bits24,
             loudness: ExportLoudness::AsIs,
+            mp3_kbps: meloet_protocol::EXPORT_MP3_DEFAULT_KBPS,
             info: info.clone(),
         });
         let seen = run.until("finished", |n| {
@@ -391,33 +392,4 @@ fn each_track_of_tracks_is_titled_after_the_song_and_one_file_after_the_title() 
     let tag = tagged.tag(TagType::RiffInfo).unwrap();
     assert_eq!(tag.title().as_deref(), Some("はじめての曲"));
     assert!(tag.pictures().is_empty());
-}
-
-/// mp3 did not meet its conditions (docs/round12/F2.md): it is not offered, and asking for
-/// it does nothing.
-#[test]
-fn mp3_is_not_offered() {
-    let mut m = song(Settings::default());
-    effects(&mut m, Command::OpenExport);
-    let before = dialog(&m);
-    assert_eq!(before.formats, [ExportFormat::Wav, ExportFormat::Flac]);
-    assert_eq!((before.mp3_kbps, before.mp3_kbps_choices.len()), (192, 0));
-    set(
-        &mut m,
-        ExportChange::Format {
-            format: ExportFormat::Mp3,
-        },
-    );
-    set(&mut m, ExportChange::Mp3Kbps { kbps: 320 });
-    assert_eq!(dialog(&m), before);
-    let refused = crate::export::sink::create(
-        &std::env::temp_dir().join("meloet-never.mp3"),
-        crate::export::sink::SinkSpec {
-            format: ExportFormat::Mp3,
-            sample_rate: 48_000,
-            channels: 2,
-            bits: RecordFormat::Bits24,
-        },
-    );
-    assert!(refused.is_err());
 }

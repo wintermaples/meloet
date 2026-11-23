@@ -22,6 +22,10 @@ pub(crate) mod job;
 #[cfg(test)]
 mod kit_tests;
 pub(crate) mod loudness;
+#[cfg(test)]
+mod mp3_gate_tests;
+#[cfg(test)]
+mod mp3_tests;
 pub(crate) mod render;
 pub mod sink;
 pub mod tags;
@@ -33,9 +37,10 @@ use std::sync::Arc;
 
 use meloet_model::{Doc, TickRange, TrackId};
 use meloet_protocol::{
-    Command, ExportChange, ExportCheck, ExportDialogView, ExportFailure, ExportFormat,
-    ExportLoudness, ExportRange, ExportRunView, ExportSolo, ExportStoppedPlugin, ExportTail,
-    ExportView, PluginSlotRef, RecordFormat, StatusMessage, TickSpan, TrackRef,
+    Command, EXPORT_MP3_DEFAULT_KBPS, EXPORT_MP3_KBPS, EXPORT_MP3_SAMPLE_RATES, ExportChange,
+    ExportCheck, ExportDialogView, ExportFailure, ExportFormat, ExportLoudness, ExportRange,
+    ExportRunView, ExportSolo, ExportStoppedPlugin, ExportTail, ExportView, PluginSlotRef,
+    RecordFormat, StatusMessage, TickSpan, TrackRef,
 };
 
 use crate::ai::{AiAnalysis, AiBandLayout};
@@ -115,6 +120,8 @@ pub struct ExportTarget {
     /// F1: with `Match` the job brings the file to the loudness of [`loudness::match_gain`],
     /// when the loudness it measured can be matched.
     pub loudness: ExportLoudness,
+    /// F2: the bitrate of an mp3; not looked at for the other formats.
+    pub mp3_kbps: u16,
     /// F2 「曲の情報」 written into every file; for 「トラックごと」 titled
     /// [`SongInfo::for_track`].
     pub info: SongInfo,
@@ -272,6 +279,8 @@ pub struct Exporting {
     format: ExportFormat,
     /// F2 「作者」, a meloet setting.
     artist: String,
+    /// F2 「ビットレート」 of mp3.
+    mp3_kbps: u16,
     /// F2 「題名」 as typed; `None`: the song's name. With the picture, it belongs to the
     /// song of `info_serial` and goes when another song is opened.
     title: Option<String>,
@@ -279,7 +288,8 @@ pub struct Exporting {
     /// Where the window for 「絵」 starts: the folder of the last picture chosen.
     picture_folder: Option<PathBuf>,
     info_serial: Option<u32>,
-    /// `None`: the rate the audio runs at.
+    /// `None`: the rate the audio runs at (for mp3, the one of
+    /// `EXPORT_MP3_SAMPLE_RATES` nearest to it, [`mp3_rate`]).
     sample_rate: Option<u32>,
     bits: RecordFormat,
     tail: ExportTail,
@@ -308,6 +318,7 @@ impl Exporting {
             range: ExportRange::Song,
             format: ExportFormat::Wav,
             artist: String::new(),
+            mp3_kbps: EXPORT_MP3_DEFAULT_KBPS,
             title: None,
             picture: None,
             picture_folder: None,
@@ -439,12 +450,11 @@ impl Exporting {
             return;
         }
         match change {
-            // round12 stub: F2 (mp3 is not offered: it did not meet its conditions,
-            // docs/round12/F2.md)
-            ExportChange::Format {
-                format: ExportFormat::Mp3,
+            ExportChange::Mp3Kbps { kbps } => {
+                if EXPORT_MP3_KBPS.contains(&kbps) {
+                    self.mp3_kbps = kbps;
+                }
             }
-            | ExportChange::Mp3Kbps { .. } => {}
             ExportChange::Title { title } => self.title = Some(title),
             ExportChange::Artist { artist } => self.artist = artist,
             ExportChange::ChoosePicture => {
@@ -473,7 +483,8 @@ impl Exporting {
             }
             ExportChange::Format { format } => {
                 self.format = format;
-                if !format.bits_choices().contains(&self.bits) {
+                // mp3 has no bits: the ones chosen stay for the other formats.
+                if format != ExportFormat::Mp3 && !format.bits_choices().contains(&self.bits) {
                     self.bits = RecordFormat::default();
                 }
             }
@@ -510,6 +521,7 @@ impl Exporting {
             sample_rate: self.sample_rate(scene),
             bits: self.bits,
             loudness: self.loudness_of(job),
+            mp3_kbps: self.mp3_kbps,
             info: SongInfo {
                 title: self.title(scene).to_owned(),
                 artist: self.artist.clone(),
@@ -681,8 +693,7 @@ impl Exporting {
                     ExportLoudness::AsIs => (going.lufs, going.true_peak_db),
                 };
                 let view = ExportRunView::Done {
-                    // round12 stub: F2 (no mp3 is written)
-                    mp3_kbps: None,
+                    mp3_kbps: (target.format == ExportFormat::Mp3).then_some(target.mp3_kbps),
                     file: files.first().and_then(|p| name(p)).unwrap_or_default(),
                     files: files.len() as u32,
                     place: shown_path(&target.path, self.dirs.home.as_deref()),
@@ -737,10 +748,17 @@ impl Exporting {
     }
 
     fn sample_rate(&self, scene: &Scene) -> u32 {
-        self.sample_rate.unwrap_or(scene.sample_rate)
+        let rate = self.sample_rate.unwrap_or(scene.sample_rate);
+        match self.format {
+            ExportFormat::Mp3 => mp3_rate(rate),
+            ExportFormat::Wav | ExportFormat::Flac => rate,
+        }
     }
 
     fn sample_rate_choices(&self, scene: &Scene) -> Vec<u32> {
+        if self.format == ExportFormat::Mp3 {
+            return EXPORT_MP3_SAMPLE_RATES.to_vec();
+        }
         let mut choices = SAMPLE_RATE_CHOICES.to_vec();
         if !choices.contains(&scene.sample_rate) {
             choices.push(scene.sample_rate);
@@ -853,8 +871,7 @@ impl Exporting {
                 tracks: scene.tracks(),
                 span: self.span(scene),
                 format: self.format,
-                // round12 stub: F2 (mp3 is not offered: it did not meet its conditions)
-                formats: vec![ExportFormat::Wav, ExportFormat::Flac],
+                formats: ExportFormat::ALL.to_vec(),
                 place,
                 check: self.check(job),
                 solo: (scene.soloed.split_first()).map(|(first, others)| ExportSolo {
@@ -867,9 +884,8 @@ impl Exporting {
                 sample_rate_choices: self.sample_rate_choices(scene),
                 bits: self.bits,
                 bits_choices: self.format.bits_choices().to_vec(),
-                // round12 stub: F2
-                mp3_kbps: meloet_protocol::EXPORT_MP3_DEFAULT_KBPS,
-                mp3_kbps_choices: Vec::new(),
+                mp3_kbps: self.mp3_kbps,
+                mp3_kbps_choices: EXPORT_MP3_KBPS.to_vec(),
                 title: self.title(scene).to_owned(),
                 artist: self.artist.clone(),
                 picture: self.picture.as_ref().map(|p| p.name.clone()),
@@ -899,6 +915,16 @@ impl Exporting {
             Run::Ended(view, _) => view.clone(),
         });
         ExportView { dialog, run }
+    }
+}
+
+/// F2: an mp3 is written at 44100 or 48000 Hz; another rate gives the one of its family
+/// (88200 → 44100, 96000 → 48000, 32000 → 48000).
+fn mp3_rate(rate: u32) -> u32 {
+    match rate {
+        _ if EXPORT_MP3_SAMPLE_RATES.contains(&rate) => rate,
+        _ if rate.is_multiple_of(11_025) => 44_100,
+        _ => 48_000,
     }
 }
 

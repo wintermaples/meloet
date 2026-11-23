@@ -204,13 +204,6 @@ Sent back at the end of round 8 with the items above:
 
 The readings behind these are in [chapter 7](7-readings.md), A-29; how each is built is architecture chapter 25. Nothing below was tried by the owner yet; "heard" means listened to by a person, which no helper did.
 
-### B-98-1 F2: mp3, ship or not
-
-- Question: mp3 export was built with `rusty_mp3` 1.2.2 but failed the request's acceptance condition 2 ("at 192 kbps the difference is 20 dB or more below the source, for a 1 kHz tone and pink noise"): pink noise came back 14.4 dB (44100 Hz) and 13.4 dB (48000 Hz) below. LAME 3.101 gives 13.7 / 12.8 dB on the same signal, and a rough estimate says no encoder can reach 20 dB on independent pink noise at 192 kbps, so the rule itself may be too strict. Conditions 1 (length) and 3 (odd signals, cancel) passed. Choices: keep mp3 hidden; change the rule (for example a tone and a real song only, or 256 kbps) and ship it; or ship it as it is.
-- Also to decide if it ships: `rusty_mp3` reads 11 environment variables in a normal build (`MP3_RESERVOIR`, `MP3_RESV_GAIN`, `MP3_RESV_LOOKAHEAD`, `MP3_STEREO`, `MP3_PICK`, `MP3_SHAPE`, `MP3_PSY_DOMAIN`, `MP3_SHORT_SHAPE`, `MP3_THR_CAP`, `MP3_SMR_DB`, `RFF_MP3_XRPOW`), so a person's environment could change the files; its own notes name a bug when the stereo mode switches nearly every frame, and its reservoir is off at 320 kbps.
-- Now: mp3 is not offered. The whole work (with tests and two scenes) is on the branch `fea/round12-f2-mp3`. Listening files: `target/r12-f2-ear/` (`test-song-192k.mp3`, `test-song-320k.mp3`, `test-song-24bit.wav`).
-- From: architecture 22-11, 25-25; chapter 7 A-23 (C-11).
-
 ### B-98-2 D2: the AppImage before any distribution
 
 - Question: the AppImage holds about 170 Ubuntu libraries under the LGPL and libfuse in its runtime; publishing it needs a source offer for them from the same place. It also holds `libwebkit2gtk-4.1.so.0` with bytes changed by linuxdeploy-plugin-gtk (`/usr` → `././`), a change to an LGPL library that has to be stated. How should these be done, and should the AppImage be published at all?

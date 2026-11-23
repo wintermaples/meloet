@@ -929,6 +929,7 @@ fn convert(
         sample_rate: target.sample_rate,
         channels: 2,
         bits: target.bits,
+        mp3_kbps: target.mp3_kbps,
     };
     let mut out = sink::create(to, spec)?;
     let mut work = || -> Result<(), Ended> {

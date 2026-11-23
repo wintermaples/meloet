@@ -6,6 +6,8 @@ The history of rounds 1 to 9 (what each round did, in order, with every number) 
 
 Last written: 2026-11-23, during round 9 (foundation at `ea66c22`).
 
+Branch: all work is on `main` from 2026-11-23 on. `foundation` is no longer used (the owner: the basic build is done); older lines that name it are records of that time.
+
 ## 1. Versions
 
 | What | Version | Where |

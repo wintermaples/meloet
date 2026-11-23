@@ -1,4 +1,4 @@
-// 見せているテイクを、曲の中の位置で読む形（geom.ts の Shown）にする。同じテイクと位置なら作りなおさない。
+// Turns the shown take into the form read at song positions (Shown in geom.ts). Not made again for the same take and position.
 
 import type { ClipView, TakeNotes } from "../../bridge";
 import { shownOf, type Shown } from "./geom";
@@ -13,13 +13,13 @@ function made(take: TakeNotes, base: number, from: number, to: number): Shown {
   return next;
 }
 
-/** 新しいテイクを取りにいっている間は、前のテイクのまま（shown.svelte.ts と同じく、ちらつかないように）。 */
+/** While a new take is being fetched, the previous take stays (the same as shown.svelte.ts, so it does not flicker). */
 export function shownFor(take: TakeNotes | null, clip: ClipView | null): Shown | null {
   if (!take || !clip) return null;
   return made(take, clip.start + clip.takeOffset, clip.start, clip.end);
 }
 
-/** もとのテイク（クオンタイズしたテイクの、そろえる前）。見せているテイクと同じ位置と範囲で読む。 */
+/** The original take (of a quantized take, before aligning). Read with the same position and range as the shown take. */
 export function originFor(origin: TakeNotes | null, shown: Shown | null): Shown | null {
   return origin && shown ? made(origin, shown.base, shown.from, shown.to) : null;
 }

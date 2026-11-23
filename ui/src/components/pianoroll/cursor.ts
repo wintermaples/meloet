@@ -1,6 +1,6 @@
-// カーソル（仕様書 2 章「カーソル（鉛筆 ・ 消しゴム）」、3 章「カーソルは OS の形を使う」）。
-// 鉛筆と消しゴムは meloet の部品: 16×16 の線画、面 gray.10、ふち gray.0 の 1px。形はモック R3-PRMouse の線画。
-// 押す点は、鉛筆が左下の先 (2, 14)、消しゴムが左下の角 (4, 12)。拡大率に合わせて大きくする。ほかは OS の形。
+// Cursors (spec 2 "Cursor (pencil, eraser)", spec 3 "Cursors use the OS shapes").
+// The pencil and eraser are meloet's own parts: a 16×16 line drawing, face gray.10, 1px edge gray.0. The shapes are the line drawings of mock R3-PRMouse.
+// The point that acts is the tip at the bottom left (2, 14) for the pencil, and the bottom-left corner (4, 12) for the eraser. They grow with the scale. Others use the OS shapes.
 
 import { colors, part } from "../../design/tokens";
 import type { CursorKind } from "./drag";
@@ -24,7 +24,7 @@ function drawn(kind: "pencil" | "eraser", scale: number): string {
 
 const cache = new Map<string, string>();
 
-/** CSS の cursor の値。scale は拡大率。 */
+/** The CSS cursor value. scale is the scale. */
 export function cursorCss(kind: CursorKind, scale: number): string {
   if (kind !== "pencil" && kind !== "eraser") return kind;
   const id = `${kind}@${scale}`;

@@ -1,8 +1,8 @@
-// ピアノロールの、画面だけが持つ状態（どこを見ているか、どの道具か）。Rust に送らない見た目の物（アレンジの横のスクロールと同じ）。
-// 帯をたたんでも覚えておく（仕様書 3 章「帯をたたんでも中身の状態（選んだノート、スクロールの位置、ひらいていた CC の帯）は覚えている」）ので、
-// 部品の外のこのモジュールに置く。アレンジの全体図の「見えている範囲の枠」も、ここを読む。
+// State of the piano roll that only the screen keeps (where it is looking, which tool). Looks that are not sent to Rust (like the arrange's horizontal scroll).
+// It is remembered when the band folds (spec 3: "Folding a band keeps the state of what is inside (the selected notes, the scroll position, the CC bands that were open)"), so
+// it is in this module outside the part. The 「見えている範囲の枠」 in the arrange overview reads this too.
 //
-// 位置はティック（4 分音符 = TICKS_PER_QUARTER）。幅は拡大率 100 % の CSS px で持ち、描く所で拡大率をかける。
+// Positions are ticks (quarter note = TICKS_PER_QUARTER). Widths are kept in CSS px at 100 % scale, and the scale is applied where drawn.
 
 import { DRUM_ROWS } from "../../bridge";
 import { metrics } from "../metrics.svelte";
@@ -11,59 +11,59 @@ import { TICKS_PER_QUARTER } from "../time";
 export type Tool = "select" | "draw" | "erase";
 
 /**
- * 横の拡大の段（拡大率 100 % で、4 分音符 1 つの px）。クリップをひらいたときは、そのクリップが入るいちばん大きい段にする
- * （geom.ts の fitQuarterPx。モック A-PianoRoll は 1 拍 40 px、F-WidePR は 80 px）。DEFAULT_QUARTER_PX は、まだクリップをひらいていないときの段。
+ * Steps of horizontal zoom (px per quarter note at 100 % scale). When a clip is opened, the largest step at which that clip fits
+ * (fitQuarterPx in geom.ts; mock A-PianoRoll is 40 px per beat, F-WidePR 80 px). DEFAULT_QUARTER_PX is the step before any clip is opened.
  */
 export const QUARTER_PX_STEPS = [10, 14, 20, 28, 40, 57, 80, 113, 160, 226, 320] as const;
 export const DEFAULT_QUARTER_PX = 80;
 
-/** 縦の拡大の段（拡大率 100 % で、1 行＝半音ひとつの px。docs/history/design-notes.ja.md B-63）。はじめは仕様書の size.note の 12。 */
+/** Steps of vertical zoom (px per row = one semitone at 100 % scale; docs/history/design-notes.ja.md B-63). At first, the spec's size.note, 12. */
 export const ROW_PX_STEPS = [8, 12, 16, 20, 24] as const;
 export const DEFAULT_ROW_PX = 12;
 
 export const prView = $state({
   tool: "select" as Tool,
-  /** 拡大率 100 % で、4 分音符 1 つの px（QUARTER_PX_STEPS のどれか）。 */
+  /** px per quarter note at 100 % scale (one of QUARTER_PX_STEPS). */
   quarterPx: DEFAULT_QUARTER_PX as number,
-  /** 拡大率 100 % で、1 行の px（ROW_PX_STEPS のどれか）。 */
+  /** px per row at 100 % scale (one of ROW_PX_STEPS). */
   rowPx: DEFAULT_ROW_PX as number,
-  /** ノートの場所の左はしの、曲の中のティック。 */
+  /** The song tick at the left edge of the note area. */
   scrollTick: 0,
-  /** ノートの場所のいちばん上の行の鍵（MIDI 0〜127）。 */
+  /** The key of the top row of the note area (MIDI 0 to 127). */
   topKey: 84,
-  /** ノートの場所の幅と高さ（CSS px、拡大率をかけたあと）。ノートの場所の部品が入れる。 */
+  /** The width and height of the note area (CSS px, with the scale applied). Set by the note area part. */
   areaWidth: 0,
   areaHeight: 0,
-  /** 再生の線を追って横に送るか。手で横に動かしたら、次に再生を始めるまで追わない（仕様書 3 章、アレンジと同じ）。 */
+  /** Whether to scroll sideways following the play line. If moved sideways by hand, it does not follow until playback starts again (spec 3, the same as the arrange). */
   follow: true,
-  /** いま見せているクリップ（ひらいたときに、そのクリップのはじまりまで送るため）。 */
+  /** The clip shown now (to scroll to its start when it opens). */
   shownClip: null as number | null,
-  /** Delete・Mod A・Mod D・切り取りなどを、ピアノロールとアレンジのどちらに向けるか。最後に押した場所。 */
+  /** Whether Delete, Mod A, Mod D, cut and so on go to the piano roll or the arrange. The place pressed last. */
   focus: "arrange" as "arrange" | "pianoRoll",
-  /** ピアノロールで最後に押したのはノート（ベロシティの帯もふくむ）か CC の点か。両方を選んでいるときの Delete は、こちらに向ける。 */
+  /** Whether the last thing pressed in the piano roll was a note (including the velocity lane) or a CC point. Delete goes here when both are selected. */
   picked: "notes" as "notes" | "controls",
-  /** ドラムの行を見せているか（ノートの場所の部品が入れる）。縦の拡大 ・ 縮小を、ドラムの行の高さに向ける。 */
+  /** Whether drum rows are shown (set by the note area part). Vertical zoom goes to the drum row height. */
   drums: false,
 });
 
-/** 拡大率 scale（100・125・150）での、1 ティックの CSS px。 */
+/** CSS px per tick at scale (100, 125, 150). */
 export function pxPerTick(scale: number): number {
   return (prView.quarterPx * scale) / 100 / TICKS_PER_QUARTER;
 }
 
-/** ノートの場所で見えている範囲 [start, end)（ティック）。全体図の枠はこれを描く。 */
+/** The visible range [start, end) of the note area (ticks). The overview border draws this. */
 export function visibleTicks(scale: number): { start: number; end: number } {
   const ppt = pxPerTick(scale);
   return { start: prView.scrollTick, end: ppt > 0 ? prView.scrollTick + prView.areaWidth / ppt : prView.scrollTick };
 }
 
-/** 手で横に動かした（全体図の枠のドラッグ、横の棒、Shift ＋ ホイール）。 */
+/** Moved sideways by hand (dragging the overview border, the horizontal bar, Shift + wheel). */
 export function scrollToTick(tick: number): void {
   prView.scrollTick = Math.max(0, tick);
   prView.follow = false;
 }
 
-/** 横の拡大・縮小（Mod ＋ ・ Mod −、− ＋ のボタン、Mod ＋ ホイール）を 1 段。anchorTick の位置が画面の同じ所に残るように送る（なければ左はし）。 */
+/** One step of horizontal zoom (Mod ＋ / Mod −, the − ＋ buttons, Mod + wheel). Scrolls so the anchorTick position stays at the same place on screen (the left edge if not given). */
 export function zoomBy(steps: number, scale: number, anchorTick?: number): void {
   const now = QUARTER_PX_STEPS.indexOf(prView.quarterPx as (typeof QUARTER_PX_STEPS)[number]);
   const at = Math.min(QUARTER_PX_STEPS.length - 1, Math.max(0, (now < 0 ? QUARTER_PX_STEPS.indexOf(DEFAULT_QUARTER_PX) : now) + steps));
@@ -75,14 +75,14 @@ export function zoomBy(steps: number, scale: number, anchorTick?: number): void 
   prView.scrollTick = Math.max(0, anchor - x / pxPerTick(scale));
 }
 
-/** 拡大率 scale での 1 行の CSS px（ROW_PX_STEPS は 100 % の値。125 % でも整数になる）。 */
+/** CSS px per row at scale (ROW_PX_STEPS are 100 % values; they are integers at 125 % too). */
 export function rowHeight(scale: number): number {
   return (prView.rowPx * scale) / 100;
 }
 
 /**
- * 縦の拡大 ・ 縮小（鍵盤の列の上の − ＋、Mod Shift ＋ ホイール、メニューの「表示」）を 1 段。変わったら true。
- * anchorY（ノートの場所の上はしからの CSS px）の所の行が、画面の同じ高さに残るように送る（なければ、まん中）。
+ * One step of vertical zoom (− ＋ above the keyboard column, Mod Shift + wheel, the 「表示」 menu). True if it changed.
+ * Scrolls so the row at anchorY (CSS px from the top edge of the note area) stays at the same height on screen (the middle if not given).
  */
 export function zoomRowsBy(steps: number, anchorY?: number): boolean {
   if (prView.drums) return zoomDrumRowsBy(steps, anchorY);
@@ -99,35 +99,35 @@ export function zoomRowsBy(steps: number, anchorY?: number): boolean {
   return true;
 }
 
-// ---- ドラムの行（仕様書 3 章「ドラムのピアノロール」）。ふつうの行の高さと見ている鍵とは別に持つ ----
+// ---- Drum rows (spec 3 "Drum piano roll"). Kept apart from the normal row height and the shown key ----
 
-/** ドラムの行の高さ（拡大率 100 % の px）: 12〜48 を 4 ずつ。 */
+/** Drum row heights (px at 100 % scale): 12 to 48 in steps of 4. */
 export const DRUM_ROW_MIN = 12;
 export const DRUM_ROW_MAX = 48;
 export const DRUM_ROW_STEP = 4;
 
 export const drumView = $state({
-  /** 拡大率 100 % の行の高さ。null は、まだ縦の − ＋ を押していない（全部の行がちょうど入る高さ）。 */
+  /** The row height at 100 % scale. null means the vertical − ＋ has not been pressed yet (the height at which all rows just fit). */
   rowPx: null as number | null,
-  /** いちばん上に見えている行（行の鍵の何番目か）。 */
+  /** The top visible row (an index in the row keys). */
   topRow: 0,
-  /** 行の数（最初から入っているキットは 12、SF2 のキットはキットが持つ音の数）。ピアノロールが決める。 */
+  /** The number of rows (12 for built-in kits; for SF2 kits, the number of sounds the kit has). The piano roll sets it. */
   rows: DRUM_ROWS.length as number,
 });
 
-/** 全部の行がちょうど入る高さ: ノートの場所の高さ（CSS px）÷ 行の数を、4 の倍数に切りすて、12〜48（拡大率 100 % の px）。 */
+/** The height at which all rows just fit: the note area height (CSS px) ÷ the number of rows, rounded down to a multiple of 4, in 12 to 48 (px at 100 % scale). */
 export function drumFitRowPx(areaHeight: number, rows: number, scale: number): number {
   const each = (areaHeight * 100) / scale / Math.max(1, rows);
   const floored = Math.floor(each / DRUM_ROW_STEP) * DRUM_ROW_STEP;
   return Math.min(DRUM_ROW_MAX, Math.max(DRUM_ROW_MIN, floored));
 }
 
-/** いまのドラムの行の高さ（拡大率 100 % の px）。 */
+/** The current drum row height (px at 100 % scale). */
 export function drumRowPx(rows: number, scale: number): number {
   return drumView.rowPx ?? drumFitRowPx(prView.areaHeight, rows, scale);
 }
 
-/** 見えている行の数で、いちばん上の行が動ける範囲に入れる。 */
+/** Puts the top row inside the range it can move to for the number of visible rows. */
 export function clampTopRow(top: number, rows: number, shownRows: number): number {
   return Math.min(Math.max(0, rows - Math.max(1, shownRows)), Math.max(0, Math.round(top)));
 }
@@ -146,16 +146,16 @@ function zoomDrumRowsBy(steps: number, anchorY?: number): boolean {
   return true;
 }
 
-// ---- ドラッグ中の読み値（仕様書 2 章「その場の読み値」: 同じ値を状態行にも出す） ----
+// ---- The reading while dragging (spec 2 "Reading in place": the same value is also shown on the status line) ----
 
-/** ドラッグしているあいだだけ、動かしている値の文（「+0.0960 ・ +2 半音」など）。状態行は、これがあれば core の文の代わりに出す。 */
+/** Only while dragging, the text of the value being moved (「+0.0960 ・ +2 半音」 and so on). When this is set, the status line shows it instead of the core's text. */
 export const dragReading = $state({ text: null as string | null });
 
-// ---- Esc の順のいちばん前の「ドラッグをやめる」（仕様書 4 章「ドラッグをやめて、動かす前に戻す Esc」） ----
+// ---- "Cancel the drag" at the very front of the Esc order (spec 4 "Cancel the drag and go back to before the move") ----
 
 let cancelers: Array<() => boolean> = [];
 
-/** ドラッグを持つ部品が登録する。返り値の関数で外す。canceler は、ドラッグ中ならやめて true、そうでなければ false を返す。 */
+/** A part that has a drag registers here. Remove with the returned function. canceler returns true after cancelling if dragging, otherwise false. */
 export function onDragCancel(canceler: () => boolean): () => void {
   cancelers.push(canceler);
   return () => {
@@ -163,34 +163,34 @@ export function onDragCancel(canceler: () => boolean): () => void {
   };
 }
 
-/** Esc のとき、キーの係がいちばん先に呼ぶ。どれかのドラッグをやめたら true（そのときは、ほかのことをしない）。 */
+/** On Esc, the key handler calls this first. True if any drag was cancelled (then nothing else is done). */
 export function cancelDrag(): boolean {
   for (const c of cancelers) if (c()) return true;
   return false;
 }
 
-// ---- アレンジの横の拡大（仕様書 3 章「横の拡大 ・ 縮小」）。キーの係（Mod ＋ ・ Mod −）とアレンジの部品の両方が使うので、ここに置く ----
+// ---- Horizontal zoom of the arrange (spec 3 "Horizontal zoom in and out"). Both the key handler (Mod ＋ / Mod −) and the arrange part use it, so it is here ----
 
 /**
- * アレンジの横の拡大の段（拡大率 100 % で、1 小節の px）。64 はモック F-Empty（mock.arrange.bar）。
- * ピアノロールの段（QUARTER_PX_STEPS）と同じ √2 きざみ。下は 8（120 小節が 960 px に入る）、上は 256（1 拍 64 px。ここより細かくはピアノロールで）。
+ * Steps of horizontal zoom of the arrange (px per bar at 100 % scale). 64 is mock F-Empty (mock.arrange.bar).
+ * The same √2 steps as the piano roll (QUARTER_PX_STEPS). The lowest is 8 (120 bars fit in 960 px), the highest 256 (64 px per beat; finer than this is for the piano roll).
  */
 export const ARRANGE_BAR_STEPS = [8, 11, 16, 23, 32, 45, 64, 91, 128, 181, 256] as const;
 export const DEFAULT_ARRANGE_BAR = 64;
 
 export const arrangeView = $state({
-  /** 拡大率 100 % で、1 小節の px（ARRANGE_BAR_STEPS のどれか）。 */
+  /** px per bar at 100 % scale (one of ARRANGE_BAR_STEPS). */
   barPx: DEFAULT_ARRANGE_BAR as number,
 });
 
-/** 段の並び steps の中で、now から by 段動かした値（はしで止まる。now が並びになければ fallback から）。 */
+/** The value moved by `by` steps from now in the list of steps (stops at the ends; from fallback if now is not in the list). */
 export function stepFrom(steps: readonly number[], now: number, by: number, fallback: number): number {
   const at = steps.indexOf(now);
   const from = at < 0 ? steps.indexOf(fallback) : at;
   return steps[Math.min(steps.length - 1, Math.max(0, from + by))]!;
 }
 
-/** アレンジの横を by 段。変わったら true。スクロールの位置はティックで持っているので、左はしの位置はそのまま残る。 */
+/** Moves the arrange's horizontal zoom by `by` steps. True if it changed. The scroll position is kept in ticks, so the left edge position stays. */
 export function zoomArrangeBy(by: number): boolean {
   const next = stepFrom(ARRANGE_BAR_STEPS, arrangeView.barPx, by, DEFAULT_ARRANGE_BAR);
   if (next === arrangeView.barPx) return false;
@@ -198,24 +198,24 @@ export function zoomArrangeBy(by: number): boolean {
   return true;
 }
 
-// ---- 左右の欄（ノートの一覧、選んだノート）がひらいているか。帯をたたんでも覚えておく ----
+// ---- Whether the left and right panels (note list, selected notes) are open. Remembered when the band folds ----
 
-/** null は、まだ決めていない（帯をはじめて出したときに決める: ノートの場所が 4 小節ぶん（640）を下まわるなら、たたんで始める。仕様書 3 章の帯の表）。 */
+/** null means not decided yet (decided when the band is first shown: if the note area is less than 4 bars (640), it starts folded. The band table in spec 3). */
 export const prPanels = $state({ list: null as boolean | null, inspector: null as boolean | null });
 
-// ---- ひらいている CC の帯（仕様書 3 章: 帯をたたんでも覚えている） ----
+// ---- Open CC lanes (spec 3: remembered when the band folds) ----
 
 export type LaneTag = "sustain" | "pitchBend" | "modulation" | "other";
 
-/** open はひらいた順（古い物から）。other は「そのほかの CC」でえらんだ番号。 */
+/** open is the order opened (oldest first). other is the number chosen with 「そのほかの CC」. */
 export const ccLanes = $state({ open: [] as LaneTag[], other: null as number | null });
 
-// ---- ベロシティの帯がひらいているか（仕様書 3 章の帯の表「ベロシティ」: たたむと CC の札の左はしに「▸ ベロシティ」）。帯をたたんでも覚えている ----
+// ---- Whether the velocity lane is open (the 「ベロシティ」 row in the band table of spec 3: when folded, 「▸ ベロシティ」 at the left end of the CC tabs). Remembered when the band folds ----
 
 export const velocityLane = $state({ open: true });
 
-// ---- 右の欄の「長さをそろえる」「ベロシティをまとめて変える」と、左の欄の「CC の一覧」がひらいているか。帯をたたんでも覚えている ----
+// ---- Whether 「長さをそろえる」「ベロシティをまとめて変える」 in the right panel and 「CC の一覧」 in the left panel are open. Remembered when the band folds ----
 
 export const inspectorFolds = $state({ sameLength: false, velocityAll: false });
-/** folded は、たたんだ種類の見出しのキー（`ccGroupKey`）。 */
+/** folded is the key of the folded kind headings (`ccGroupKey`). */
 export const ccList = $state({ open: false, folded: [] as string[] });

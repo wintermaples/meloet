@@ -1,9 +1,9 @@
-// テンポ ・ 拍子の変更とマーカーのキー（仕様書 4 章）。DOM を知らない。
-// K: 再生の線の所にマーカー（一文字なので、文字を打っている最中は効かない）。Alt → ・ Alt ←: 次 ・ 前のマーカーへ（効く）。
-// F2: えらんだマーカーの名前（えらんでいるのがマーカーのときだけ。ほかはトラックの名前）。
-// Delete: えらんだテンポの点 ・ 拍子の旗 ・ マーカーを消す（曲の頭は消せない）。キーがアレンジに向いていて、
-// クリップより後にえらんだときだけ（pick.ts）。録音中とカウントイン中は、どれも送らない（core も受けない）。
-// キーの係（ui/src/keys/attach.ts の handleKeydown）が、Esc のほかは、ほかのキーの決まりより先に呼ぶ。
+// Keys for tempo and time signature changes and markers (spec 4). Does not know the DOM.
+// K: a marker at the play line (one letter, so it does not work while typing). Alt → / Alt ←: to the next / previous marker (these work).
+// F2: rename the chosen marker (only when a marker is chosen; otherwise the track name).
+// Delete: removes the chosen tempo point, time signature flag or marker (the start of the song cannot be removed). Only when keys go to the arrange
+// and it was chosen after any clip (pick.ts). While recording and during count-in, none of them are sent (the core does not accept them either).
+// The key handler (handleKeydown in ui/src/keys/attach.ts) calls this before the other key rules, except for Esc.
 
 import type { Command, TimelineView } from "../../bridge";
 import { t } from "../../text/ja";
@@ -19,15 +19,15 @@ export interface TimelineKey {
 }
 
 export interface TimelineKeyContext {
-  /** 文字を打っている最中。 */
+  /** Typing text right now. */
   typing: boolean;
-  /** 録音中かカウントイン中。 */
+  /** Recording or in count-in. */
   busy: boolean;
-  /** キーがアレンジに向いている（ピアノロールがひらいていないか、最後に押したのがアレンジ）。 */
+  /** Keys go to the arrange (the piano roll is not open, or the arrange was pressed last). */
   toArrange: boolean;
 }
 
-/** 送る意図。テンポ ・ 拍子 ・ マーカーのキーでなければ null（ほかの決まりへ）。 */
+/** The intent to send. Null if this is not a tempo, time signature or marker key (go on to the other rules). */
 export function timelineKeyCommand(k: TimelineKey, c: TimelineKeyContext, timeline: TimelineView): Command | null {
   if (k.ctrl || k.meta || c.busy) return null;
   if (k.alt) {
@@ -41,7 +41,7 @@ export function timelineKeyCommand(k: TimelineKey, c: TimelineKeyContext, timeli
   if (k.key === "F2") return sel?.kind === "marker" ? { type: "openMarkerName", id: sel.id } : null;
   if (c.typing) return null;
   if (k.key === "Delete") {
-    // 曲の頭をえらんでいても、ここで受ける（core は曲の頭を消さない）。クリップへは回さない。
+    // Taken here even when the start of the song is chosen (the core does not remove it). Not passed on to clips.
     if (!sel || !c.toArrange || lastPick.kind !== "timeline") return null;
     return { type: "deleteTimeline", target: sel };
   }

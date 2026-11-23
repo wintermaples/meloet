@@ -1,6 +1,6 @@
-// ピアノロールのマウス（仕様書 3 章「第 3 回のための決まり」、モック R3-PRMouse・R3-Lanes）。DOM を知らない。
-// 押す → 動かす → 離す。動かしている間は見た目だけを変え（drag を描く）、離したときに曲を変える意図を 1 つだけ送る。
-// Esc（cancel）で、動かす前に戻す。座標はノートの場所（ベロシティの帯も同じ横の座標）の CSS px。
+// Mouse in the piano roll (spec 3 "Rules for round 3 (piano roll and clips)", mock R3-PRMouse, R3-Lanes). Does not know the DOM.
+// Press → move → release. While moving only the look changes (drag is drawn), and one intent that changes the song is sent on release.
+// Esc (cancel) goes back to before moving. Coordinates are CSS px of the note area (the velocity lane uses the same horizontal coordinate).
 
 import type { Command, MusicalScale } from "../../bridge";
 import type { Meter } from "../time";
@@ -42,20 +42,20 @@ import type { IndexRange } from "../../bridge";
 export interface Mods {
   shift: boolean;
   alt: boolean;
-  /** Ctrl（Mac は Cmd） */
+  /** Ctrl (Cmd on Mac) */
   mod: boolean;
 }
 
 interface Press {
   x: number;
   y: number;
-  /** space.1 より動いたら true（それまでは、ただ押しただけ） */
+  /** True once it moved more than space.1 (until then, it is only a press) */
   moved: boolean;
 }
 
 export type Drag =
   | { kind: "move"; press: Press; notes: number[]; grab: number; copy: boolean; ticks: number; keys: number; selectOnClick: boolean }
-  /** edge: 動かすはし。start は始まりを動かし、ticks が + なら短くなる。 */
+  /** edge: the end being moved. start moves the start, and a + ticks makes it shorter. */
   | { kind: "resize"; press: Press; notes: number[]; grab: number; edge: "start" | "end"; ticks: number }
   /** key: the pressed row, or the chord's root. keys: every key written (only `key` for one note). */
   | { kind: "draw"; press: Press; start: number; key: number; keys: number[]; length: number; velocity: number }
@@ -63,35 +63,35 @@ export type Drag =
   | { kind: "erase"; press: Press; x: number; y: number; hits: Set<number> }
   | { kind: "velocity"; press: Press; notes: number[]; grab: number; delta: number };
 
-/** カーソルの形。pencil と eraser は meloet の部品、ほかは OS の形。 */
+/** The cursor shape. pencil and eraser are meloet's own parts; the others are OS shapes. */
 export type CursorKind = "default" | "move" | "copy" | "ew-resize" | "ns-resize" | "not-allowed" | "pencil" | "eraser";
 
 export interface RollInput {
   shown(): Shown | null;
   geom(): RollGeom;
-  /** グリッド 1 つのティック */
+  /** The ticks of one grid step */
   step(): number;
-  /** 拍子の区間の頭から数えるグリッドに吸いつける（なければ 0 から step ずつ）。 */
+  /** Snap to a grid counted from the start of the time signature span (from 0 in steps of step if not given). */
   grid?(): Snapper;
   scale(): MusicalScale;
   meter(): Meter;
   tool(): Tool;
-  /** pianoRoll.selectedNotes（見せているテイクの物でなければ空） */
+  /** pianoRoll.selectedNotes (empty if not from the shown take) */
   selected(): readonly IndexRange[];
-  /** part.note.resize、space.1（押しただけとみなす動き）、ベロシティの 127 の高さ（CSS px） */
+  /** part.note.resize, space.1 (movement still treated as a press), the height of velocity 127 (CSS px) */
   edgePx(): number;
   stillPx(): number;
   velocityFullPx(): number;
-  /** ベロシティの帯の高さ（棒の下はし、CSS px） */
+  /** The height of the velocity lane (the bottom edge of the bars, CSS px) */
   velocityHeight(): number;
   send(command: Command): void;
-  /** 書く道具のノートと、その試聴の強さ（ベロシティ固定がオンならその値、ほかは 100）。 */
+  /** The draw tool's note and its audition strength (the fixed velocity value when on, otherwise 100). */
   drawVelocity(): number;
-  /** ノートを押した ・ 動かしたときに鳴らすか（止まっているときだけ）。 */
+  /** Whether to play when a note is pressed or moved (only when stopped). */
   mayAudition(): boolean;
-  /** ticks の長さが何 ms か（テンポから）。 */
+  /** How many ms a length of ticks lasts (from the tempo). */
   ticksToMs(ticks: number): number;
-  /** 画面が鳴らす音（audition.ts の Auditioner）。 */
+  /** The sound the screen plays (Auditioner in audition.ts). */
   audition: { play(keys: readonly number[], velocity: number, ms?: number | null): void; stop(): void };
   /** The chord of the draw tool (one note when missing, and on drums). */
   chord?(): ChordPick;
@@ -108,7 +108,7 @@ export interface Shadow {
 
 export class RollDrag {
   drag: Drag | null = null;
-  /** 消す道具を乗せている所のノート（-1 はなし） */
+  /** The note the erase tool is over (-1 for none) */
   eraseHover = -1;
   shadow: Shadow | null = null;
 
@@ -122,7 +122,7 @@ export class RollDrag {
     return this.input.shown()?.take.id ?? null;
   }
 
-  /** 何も押していないときのカーソルと、消す道具で乗せているノート。変わったら true。 */
+  /** The cursor and the note the erase tool is over when nothing is pressed. True if they changed. */
   hover(x: number, y: number, mods: Mods): { cursor: CursorKind; changed: boolean; shadowChanged: boolean } {
     const i = this.input;
     const hit = hitNote(i.shown(), i.geom(), x, y, i.edgePx(), true);
@@ -167,7 +167,7 @@ export class RollDrag {
     return this.input.chord?.() ?? SINGLE;
   }
 
-  /** ドラッグしている間のカーソル。 */
+  /** The cursor while dragging. */
   cursor(): CursorKind {
     const d = this.drag;
     if (!d) return "default";
@@ -187,7 +187,7 @@ export class RollDrag {
     }
   }
 
-  /** ノートの場所で押した。 */
+  /** Pressed in the note area. */
   down(x: number, y: number, mods: Mods): void {
     const i = this.input;
     const n = i.shown();
@@ -223,13 +223,13 @@ export class RollDrag {
         notes = mods.shift ? [...selected, hit.note] : [hit.note];
       }
       this.drag = { kind: "move", press, notes, grab: hit.note, copy: mods.alt, ticks: 0, keys: 0, selectOnClick };
-      // 押したノートを、その高さとベロシティで、離すまで（ノートの長さで止める）。
+      // The pressed note, at its pitch and velocity, until release (stopped at the note's length).
       if (i.mayAudition()) i.audition.play([n.take.keys[hit.note]!], n.take.velocities[hit.note]!, i.ticksToMs(n.take.lengths[hit.note]!));
       return;
     }
     if (i.tool() === "draw") {
       const key = yToKey(g, y);
-      // ドラムの行より下には書かない。
+      // Nothing is written below the drum rows.
       if (key < 0) return;
       const step = i.step();
       const start = drawStart(xToTick(g, x), mods.shift ? null : step, i.grid?.());
@@ -243,7 +243,7 @@ export class RollDrag {
         return;
       }
       if (!writable(key, i.scale())) {
-        // 書かない。Rust が状態行で言う（仕様書 6 章「音階の外に書こうとした」）。
+        // Not written. Rust says so on the status line (spec 6, "Tried to write outside the scale").
         i.send({ type: "addNote", take: this.takeId(), start, length: step, key, velocity });
         return;
       }
@@ -254,7 +254,7 @@ export class RollDrag {
     this.drag = { kind: "box", press, x, y, add: mods.shift, hits: [] };
   }
 
-  /** ベロシティの帯で押した。棒の上はしの近く（横は横線の幅、縦は space.1）でなければ何もしない。 */
+  /** Pressed in the velocity lane. Does nothing unless near the top edge of a bar (sideways the width of the cap line, vertically space.1). */
   downVelocity(x: number, y: number): void {
     const i = this.input;
     const n = i.shown();
@@ -283,7 +283,7 @@ export class RollDrag {
     this.drag = { kind: "velocity", press: { x, y, moved: false }, notes, grab, delta: 0 };
   }
 
-  /** 棒の上はしに乗っているか（カーソルを上下の形にする）。 */
+  /** Whether it is over the top edge of a bar (the cursor becomes the up-down shape). */
   overVelocityBar(x: number, y: number): boolean {
     const keep = this.drag;
     this.downVelocity(x, y);
@@ -292,7 +292,7 @@ export class RollDrag {
     return over;
   }
 
-  /** 押したまま動かした。見た目が変わったら true。 */
+  /** Moved while held. True if the look changed. */
   move(x: number, y: number, mods: Mods): boolean {
     const d = this.drag;
     const i = this.input;
@@ -313,7 +313,7 @@ export class RollDrag {
         const { ticks, keys } = moveDelta(n, d.notes, d.grab, (x - d.press.x) / g.ppt, dKeys, step, i.grid?.());
         const copy = mods.alt;
         if (ticks === d.ticks && keys === d.keys && copy === d.copy) return false;
-        // 高さが変わるたびに、動かしているノートを和音で。
+        // Each time the pitch changes, play the moved notes as a chord.
         if (keys !== d.keys && i.mayAudition()) {
           i.audition.play(
             chordOf(d.notes.map((k) => n.take.keys[k]!), keys),
@@ -335,7 +335,7 @@ export class RollDrag {
         return true;
       }
       case "draw": {
-        // ドラムは長さを見せないので、書くノートはいつもグリッドの 1 マス（仕様書 3 章）。
+        // Drums do not show length, so a written note is always one grid cell (spec 3).
         if (g.drum) return false;
         const length = drawLength(d.start, xToTick(g, x), i.step(), step !== null, i.grid?.());
         if (length === d.length) return false;
@@ -350,7 +350,7 @@ export class RollDrag {
       }
       case "erase": {
         const before = d.hits.size;
-        // 速く動かしても間のノートを飛ばさないように、半行ずつ見る。
+        // Check half a row at a time, so notes in between are not skipped when moving fast.
         const steps = Math.max(1, Math.ceil(Math.hypot(x - d.x, y - d.y) / (g.rowH / 2)));
         for (let s = 1; s <= steps; s++) {
           const px = d.x + ((x - d.x) * s) / steps;
@@ -371,7 +371,7 @@ export class RollDrag {
     }
   }
 
-  /** 離した。送った意図（曲を変える物か、選ぶ物）を返す。 */
+  /** Released. Returns the intent that was sent (one that changes the song, or one that selects). */
   up(): Command | null {
     const d = this.drag;
     this.drag = null;
@@ -384,7 +384,7 @@ export class RollDrag {
     return command;
   }
 
-  /** Esc: ドラッグをやめて、動かす前に戻す。やめたら true。 */
+  /** Esc: cancels the drag and goes back to before moving. True if cancelled. */
   cancel(): boolean {
     const d = this.drag;
     if (!d) return false;
@@ -393,7 +393,7 @@ export class RollDrag {
     return true;
   }
 
-  /** 「その場の読み値」と状態行に出す文。出さないときは null。 */
+  /** The text for the 「その場の読み値」 and the status line. Null when not shown. */
   reading(): string | null {
     const d = this.drag;
     const n = this.input.shown();
@@ -423,7 +423,7 @@ export class RollDrag {
     }
   }
 
-  /** 動かしているノートの、いまの見た目の箱（ノートの場所の CSS px）。読み値やライブの面の置き場所に使う。 */
+  /** The current box of the moved notes (CSS px of the note area). Used to place the reading and the live surface. */
   movedBox(): { x0: number; x1: number; y0: number; y1: number } | null {
     const d = this.drag;
     const n = this.input.shown();
@@ -445,10 +445,10 @@ export class RollDrag {
   }
 }
 
-/** 書く道具で書ける行か（ドラムの行より下は書けない）。 */
+/** Whether the draw tool can write on the row (not below the drum rows). */
 const drawable = (key: number, scale: MusicalScale) => key >= 0 && writable(key, scale);
 
-/** 離したときに送る意図。押しただけ、動かしても何も変わらないときは、選ぶ意図か null。 */
+/** The intent sent on release. For a press only, or a move that changes nothing, a select intent or null. */
 export function finish(d: Drag, take: number | null): Command | null {
   switch (d.kind) {
     case "move":
@@ -473,14 +473,14 @@ export function finish(d: Drag, take: number | null): Command | null {
   }
 }
 
-/** ベロシティの帯で動かしている間の値（1〜127 で止まる）。 */
+/** The value while moving in the velocity lane (clamped to 1 to 127). */
 export function draggedVelocity(v: number, delta: number): number {
   return clampVelocity(v + delta);
 }
 
 /**
- * ドラムでノートを上下に動かすときの読み値（仕様書 3 章 85）: 「+0.0480 ・ 上へ 1 行」「下へ 2 行」。
- * 横に動かしていなければ行だけ、行が変わらなければ横の量だけ。
+ * The reading when moving drum notes up or down (spec 3 (85)): 「+0.0480 ・ 上へ 1 行」「下へ 2 行」.
+ * Only rows if not moved sideways; only the sideways amount if the row did not change.
  */
 export function drumMoveReading(rows: readonly number[], grabKey: number, keys: number, ticks: string, sideways: boolean): string {
   const from = rows.indexOf(grabKey);

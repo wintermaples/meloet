@@ -1,5 +1,5 @@
-// キー（仕様書 4 章）のうち、ピアノロールにフォーカスがあるときの意図。DOM を知らない。
-// ↑ ↓ でノートを動かす意図を作ったときだけ、ピアノロールの部品に知らせる（動かしたノートを鳴らすため。audition.ts）。
+// Of the keys (spec 4), the intents when the piano roll has focus. Does not know the DOM.
+// Only when an intent to move notes with ↑ ↓ is made, the piano roll part is told (to play the moved notes; audition.ts).
 
 import type { AppState, Command } from "../../bridge";
 import type { Meter } from "../time";
@@ -10,7 +10,7 @@ import { drumMoveKeys, duplicateTicks, gridTicks, indexesOf, snapTick, type Show
 export type PianoRollKey =
   | { kind: "nudge"; steps: number; keys: number }
   | { kind: "deleteNotes" }
-  /** Delete で、点とノートのうち点のほうを消す（点だけを選んでいるか、最後に押したのが点のとき）。 */
+  /** With Delete, of points and notes, remove the points (when only points are selected, or a point was pressed last). */
   | { kind: "deleteControls" }
   | { kind: "quantize" }
   | { kind: "selectAll" }
@@ -21,13 +21,13 @@ export type PianoRollKey =
 
 export interface PianoRollKeyContext {
   state: AppState;
-  /** 見せているテイク（なければ null） */
+  /** The shown take (null if none) */
   shown: Shown | null;
-  /** いまの再生の位置（ティック） */
+  /** The current play position (ticks) */
   playTick: number;
 }
 
-/** null は「何もしない」。 */
+/** null is "do nothing". */
 export function pianoRollCommand(key: PianoRollKey, c: PianoRollKeyContext): Command | null {
   const pr = c.state.pianoRoll;
   const meter: Meter = { num: c.state.timeline.meterNum, den: c.state.timeline.meterDen };
@@ -48,7 +48,7 @@ export function pianoRollCommand(key: PianoRollKey, c: PianoRollKeyContext): Com
   }
   if (key.kind === "quantize") {
     if (n.take.starts.length === 0) return null;
-    // 何も選んでいなければ、空の notes（テイクの全部のノート）。
+    // If nothing is selected, empty notes (all notes of the take).
     return { type: "quantize", take: n.take.id, notes: indexesOf(pr.selectedNotes).filter((i) => i < n.take.starts.length) };
   }
   const notes = indexesOf(pr.selectedNotes).filter((i) => i < n.take.starts.length);
@@ -57,7 +57,7 @@ export function pianoRollCommand(key: PianoRollKey, c: PianoRollKeyContext): Com
   switch (key.kind) {
     case "nudge": {
       let keys = key.keys;
-      // ドラムの行は鍵の順ではないので、↑ ↓ は 1 行ずつ（動かせる所がなければ動かさない）。Shift ↑ ↓（1 オクターブ）は使わない。
+      // Drum rows are not in key order, so ↑ ↓ move one row at a time (no move if there is nowhere to go). Shift ↑ ↓ (one octave) is not used.
       const drums = pianoRollDrums(c.state);
       if (keys !== 0 && drums) {
         const rows = drumKeysOf(pianoRollTrack(c.state), drums);

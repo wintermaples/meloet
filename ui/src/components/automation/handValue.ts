@@ -1,6 +1,6 @@
-// 「● 書く」で書いている間の、手が置いている位置（0〜1）。ミキサーとパラメータの欄のドラッグが「音だけ変える」意図
-// （commit: false）を送るときに書き、帯（AutoLane）が書いている所の線を描くのに毎コマ読む。core は書いた値を離したときに
-// 1 手で入れる（docs/architecture.md 21-9）ので、それまでの線は画面が手の値から描く。プラグインの窓で動かした値は分からない。
+// The position (0 to 1) where the hand is while writing with 「● 書く」. Written when mixer and params panel drags send a "sound only" intent
+// (commit: false), and read every frame by the lane (AutoLane) to draw the line of the part being written. The core puts the written values in as
+// one step on release (docs/architecture.md 21-9), so until then the screen draws the line from the hand's value. Values moved in a plugin window are not known.
 
 import type { AutoTarget, Command } from "../../bridge";
 import { EFFECT_PARAMS } from "../../bridge/types";
@@ -10,7 +10,7 @@ import { laneKey, panPosition, paramPosition } from "./laneValue";
 
 const hands = new Map<string, number>();
 
-/** 意図が動かす帯（トラックと何を）と、その位置。帯にならない物（戻り、マスター）は null。 */
+/** The lane the intent moves (track and what), and its position. Null for things that are not lanes (returns, master). */
 function handOf(c: Command): { track: number; target: AutoTarget; pos: number } | null {
   switch (c.type) {
     case "setGain":
@@ -38,19 +38,19 @@ function handOf(c: Command): { track: number; target: AutoTarget; pos: number } 
   }
 }
 
-/** 「音だけ変える」意図を送るときに呼ぶ。 */
+/** Called when sending a "sound only" intent. */
 export function noteHand(c: Command): void {
   const h = handOf(c);
   if (h) hands.set(laneKey(h.track, h.target), Math.min(1, Math.max(0, h.pos)));
 }
 
-/** 離した ・ やめた。 */
+/** Released or cancelled. */
 export function forgetHand(c: Command): void {
   const h = handOf(c);
   if (h) hands.delete(laneKey(h.track, h.target));
 }
 
-/** その帯にいま手が置いている位置。手がなければ null。 */
+/** The position where the hand is now on that lane. Null if there is no hand. */
 export function handAt(track: number, target: AutoTarget): number | null {
   return hands.get(laneKey(track, target)) ?? null;
 }

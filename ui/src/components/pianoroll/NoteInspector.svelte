@@ -1,11 +1,11 @@
-<!-- ピアノロールの右の「選んだノート」の中身（モック A-PianoRoll・F-WidePR の右の欄: 選んだノート、クオンタイズ、スケール、長さをそろえる、
-     ベロシティをまとめて変える）。見出し（▾ 選んだノート 3）とたたんだ縦の見出しは、帯の部品（PianoRoll.svelte）が描く。これは、ひらいたときの中身だけを、親の箱いっぱいに描く。
-     選んだノートの 位置 ・ 音 ・ 長さ ・ ベロシティ は、押すと「入力の枠」（ノートの一覧と同じ。決めると選んだぜんぶへ setNotesField）。
-     クオンタイズの設定は、変えるたびに setQuantize（いまの設定ぜんぶ）。「かける」（かけたあとは「かけなおす」）は quantize、
-     「もとの位置へ戻す」は unquantize（選んだノート、なければ全部）。スケールは setMusicalScale。
-     「長さをそろえる」と「ベロシティをまとめて変える」は、ひらくと「まとめて変える行」が 1 行（仕様書 2 章）。Enter かボタンで matchLength ・ matchVelocity。
-     欄の数は、範囲の外なら近いはしにして決める（B-68）。
-     ドラムのトラックでは、音は楽器の名前、スケールは音階「—」・固定「使えない」（仕様書 3 章、モック R7-Drum）。 -->
+<!-- The content of 「選んだノート」 on the right of the piano roll (the right panel of mock A-PianoRoll, F-WidePR: selected notes, quantize, scale, align length,
+     change velocity together). The heading (「▾ 選んだノート 3」) and the folded vertical heading are drawn by the band part (PianoRoll.svelte). This draws only the open content, filling the parent box.
+     The position, note, length and velocity of the selected notes become an 「入力の枠」 when pressed (the same as the note list; deciding sends setNotesField to all selected).
+     Each change to the quantize settings sends setQuantize (all current settings). 「かける」 (「かけなおす」 after applying) sends quantize,
+     「もとの位置へ戻す」 sends unquantize (the selected notes, or all if none). Scale sends setMusicalScale.
+     「長さをそろえる」 and 「ベロシティをまとめて変える」, when opened, give one 「まとめて変える行」 row (spec 2). Enter or the button sends matchLength / matchVelocity.
+     Numbers in fields out of range are set to the nearest end and decided (B-68).
+     On a drum track, the note is the drum piece name, and the scale is 「—」 with lock 「使えない」 (spec 3, mock R7-Drum). -->
 <script lang="ts">
   import { mapOf, meterAtOf } from "../../time/bars";
   import type { Command, QuantizeAlign, QuantizeSettings, ScaleMode } from "../../bridge";
@@ -38,15 +38,15 @@
 
   const app = $derived(current.state!);
   const pr = $derived(app.pianoRoll);
-  /** 位置は拍子の変更をたどって数える（長さは、その所の拍子の拍で）。 */
+  /** Positions are counted following time signature changes (lengths in beats of the time signature at that place). */
   const meter = $derived(mapOf(app.timeline));
   const take = $derived(shown.take);
-  /** 見せているテイクが Rust の pianoRoll のテイクと同じ（意図を送ってよい）。 */
+  /** The shown take is the same as the take of Rust's pianoRoll (intents may be sent). */
   const live = $derived(take !== null && shown.clip !== null && pr.take === take.id);
   const drums = $derived(rollShowsDrums(app, shown.clip, shown.track));
   const summary = $derived(live ? selectedSummary(take!, shown.clip!, pr.selectedNotes, meter, 64, (k) => keyLabel(k, drums)) : null);
   const count = $derived(summary?.count ?? 0);
-  /** 選んだノートの鍵（同じ名前をまとめて出す。仕様書 3 章 85）。 */
+  /** The keys of the selected notes (the same names grouped; spec 3 (85)). */
   const selectedKeys = $derived(live ? indexesOf(pr.selectedNotes).filter((i) => i < take!.keys.length).map((i) => take!.keys[i]!) : []);
   const selected = $derived(live ? indexesOf(pr.selectedNotes).filter((i) => i < take!.starts.length) : []);
   const quantized = $derived((take?.origin ?? 0) !== 0);
@@ -60,7 +60,7 @@
         : t("inspector.range", { low: summary.velocityLow, high: summary.velocityHigh }),
   );
 
-  /** 欄に見えている文字（使えない値を打ったときの「もとの … のまま」に使う）。 */
+  /** The text seen in the field (used for 「もとの … のまま」 when an unusable value is typed). */
   const fieldText = $derived<Record<FieldName, string>>({
     position: summary ? (count > 1 ? t("inspector.from", { position: summary.position }) : summary.position) : "",
     key: summary ? selectedKeysText(selectedKeys, drums) : "",
@@ -73,7 +73,7 @@
     send({ type: "setMusicalScale", root, mode, lock });
   }
 
-  // ---- 選んだノートの欄の打ちこみ ----
+  // ---- Typing in the selected notes' fields ----
 
   const LABELS: Record<FieldName, string> = {
     position: t("note.position"),
@@ -121,11 +121,11 @@
     if (editing && editSpec) send(rejectCommand(editSpec, fieldText[editing.name]));
   }
 
-  // ---- 長さをそろえる ・ ベロシティをまとめて変える（まとめて変える行） ----
+  // ---- Align length / change velocity together (the change-all row) ----
 
   type Bulk = "length" | "velocity";
   const bulkSpecs = $derived({ length: specOf("length"), velocity: specOf("velocity") });
-  /** 選んだノートがみな同じ値ならその値、ちがえば空。 */
+  /** The value if all selected notes have the same value, otherwise empty. */
   const bulkInitial = (name: Bulk) => {
     const spec = bulkSpecs[name];
     return spec?.current != null ? spec.format(spec.current) : "";
@@ -174,16 +174,16 @@
     ev.stopPropagation();
   }
 
-  // ---- クオンタイズ ----
+  // ---- Quantize ----
 
   function setQuantize(change: Partial<QuantizeSettings>): void {
     const next = { ...q, ...change };
     send({ type: "setQuantize", ...next } satisfies Command);
   }
-  /** つまみの棒を動かしている行（仕様書 2 章「パラメータの行」の「動かしている」）。 */
+  /** The row whose slider is being moved (the "moving" state of spec 2 "Parameter row"). */
   const moving = $state({ strength: false, swing: false });
 
-  // 「かけなおす」の右はしのキー Q（B-73）。横が足りなければ出さない。
+  // The key Q at the right end of 「かけなおす」 (B-73). Not shown if there is not enough width.
   let buttonsRow = $state<HTMLElement>();
   let quantizeKey = $state(true);
   let keyWidth = 0;
@@ -218,7 +218,7 @@
     { value: "startAndEnd", label: t("inspector.alignStartAndEnd") },
   ];
 
-  // ---- 一覧（音階 ・ クオンタイズのグリッド ・ そろえる所） ----
+  // ---- Lists (scale, quantize grid, what to align) ----
 
   type Menu = "scale" | "grid" | "align";
   let open = $state<Menu | null>(null);
@@ -231,7 +231,7 @@
     maxHeight: 0,
   });
 
-  /** 押した行のすぐ下か上（広いほう）にひらく。右はしは行にそろえる。 */
+  /** Opens just below or above the pressed row (whichever has more room). The right edge lines up with the row. */
   function placeMenu(): void {
     const row = open ? menuButtons[open]?.closest(".rw") : null;
     if (!row) return;
@@ -514,7 +514,7 @@
     flex: 1;
     min-width: 0;
   }
-  /* 見出し（モック A-PianoRoll の .hd）。 */
+  /* Heading (.hd in mock A-PianoRoll). */
   .hd {
     width: 100%;
     height: var(--size-row);
@@ -527,7 +527,7 @@
     border-bottom: var(--line-hair) solid var(--color-gray-5);
     white-space: nowrap;
   }
-  /* インスペクタの行（モック A-PianoRoll の .rw。左は字下げ）。 */
+  /* Inspector rows (.rw in mock A-PianoRoll; the left is indented). */
   .rw {
     height: var(--size-row);
     flex-shrink: 0;
@@ -555,7 +555,7 @@
   .off {
     color: var(--color-gray-7);
   }
-  /* まとめて変える行（仕様書 2 章、モック A-PianoRoll）。 */
+  /* The change-all row (spec 2, mock A-PianoRoll). */
   .bulk-row {
     height: var(--mock-inspector-bulk-row);
     flex-shrink: 0;
@@ -571,8 +571,8 @@
     flex-shrink: 0;
     overflow: hidden;
   }
-  /* 入力の枠（仕様書 2 章「入力の枠」: 地 gray.0、枠 gray.6、乗った gray.8、使えない 枠 gray.5 ・ 文字 gray.7、こわれた rec。
-     打っている間は、ほかの入力の枠と同じ gray.10）。 */
+  /* Input box (spec 2 "Input box": background gray.0, border gray.6, hover gray.8, disabled border gray.5 / text gray.7, broken rec.
+     While typing, gray.10 like the other input boxes). */
   .bulk-field {
     box-sizing: border-box;
     width: var(--mock-inspector-bulk-field);
@@ -603,11 +603,11 @@
     border-color: var(--color-rec);
     color: var(--color-rec);
   }
-  /* 三連符の切りかえ（道具の列の「三連符」と同じく、グリッドの右に別の切りかえ）: オフは gray.8、オンは accent。 */
+  /* The triplet toggle (like 「三連符」 in the toolbar, a separate toggle right of the grid): off is gray.8, on is accent. */
   .toggle {
     color: var(--color-gray-8);
   }
-  /* 打っている欄: 入力の枠が行の高さいっぱい、幅は欄の右半分。 */
+  /* The field being typed in: the input box fills the row height, and the width is the right half of the field. */
   .input {
     width: 50%;
     height: 100%;
@@ -617,7 +617,7 @@
     color: var(--color-gray-10);
   }
 
-  /* つまみの棒の行: 乗った（枠 gray.8 ・ 文字 gray.10）、動かしている（行の地 gray.4、左 line.mark の accent）。枠と印は内がわに重ねる。 */
+  /* Slider rows: hover (border gray.8, text gray.10), moving (row background gray.4, a line.mark accent on the left). The border and mark are laid inside. */
   .slider-row:hover {
     box-shadow: inset 0 0 0 var(--line-hair) var(--color-gray-8);
   }
@@ -633,7 +633,7 @@
     color: var(--color-gray-8);
   }
 
-  /* つまみの棒の行のラベル（モック A-PianoRoll: 60）。 */
+  /* The label of slider rows (mock A-PianoRoll: 60). */
   .slider-label {
     width: var(--mock-inspector-slider-label);
     flex-shrink: 0;
@@ -647,7 +647,7 @@
     border-bottom: var(--line-hair) solid var(--color-gray-4);
   }
 
-  /* 重なり: 状態行の「拡大率」の一覧と同じ（ダイアログ 30 より上、用語の説明 1000 より下）。 */
+  /* Stacking: the same as the 「拡大率」 list in the status line (above dialogs at 30, below term tips at 1000). */
   .popup {
     position: fixed;
     z-index: 40;

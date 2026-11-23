@@ -1,8 +1,8 @@
-<!-- 0〜100 % の「なめらかに動く値」（仕様書 2 章「パラメータの行」: 横の棒、線 gray.7、ぬり gray.9、つまみ 6×12 の gray.10。ぬりの太さはモック A-PianoRoll）と、
-     右の値（「75 %」）。押した所へ飛び、押したまま横に動かす。動かしているあいだは画面だけが動き、離したときに onchange を 1 回（値が変わったときだけ）。
-     離したあとは、Rust の値（value）が変わるまで離した所に見せておく（ちらつかないように）。
-     Tab で届き、← → で 10 ずつ、Shift ← → で 1 ずつ（仕様書 4 章「パラメータの中: 値を動かす ・ 細かく動かす」）。押すたびに onchange。
-     ドラッグ中の Esc は、動かす前に戻す（view.svelte.ts の onDragCancel）。 -->
+<!-- A "smoothly moving value" from 0 to 100 % (spec 2 "Parameter row": a horizontal bar, line gray.7, fill gray.9, a 6×12 gray.10 knob; the fill thickness is from mock A-PianoRoll) and
+     the value on the right (「75 %」). It jumps to the pressed place and moves sideways while held. While moving only the screen moves, and onchange is called once on release (only when the value changed).
+     After release, it stays shown at the released place until Rust's value (value) changes (so it does not flicker).
+     Reached with Tab; ← → move by 10, Shift ← → by 1 (spec 4 "In the parameters: move the value / move it finely"). onchange on each press.
+     Esc while dragging goes back to before moving (onDragCancel in view.svelte.ts). -->
 <script lang="ts">
   import { onMount, untrack } from "svelte";
   import { t } from "../../text/ja";
@@ -15,19 +15,19 @@
     label: string;
     test: string;
     onchange: (value: number) => void;
-    /** 動かしはじめた ・ やめた（行の「動かしている」の見た目のため）。 */
+    /** Started or stopped moving (for the row's "moving" look). */
     onmoving?: (moving: boolean) => void;
   }
   let { value, label, test, onchange, onmoving }: Props = $props();
 
-  /** ← → の 1 回ぶん（Shift で細かく）。 */
+  /** One step of ← → (finer with Shift). */
   const KEY_STEP = 10;
   const FINE_STEP = 1;
 
   let bar = $state<HTMLElement>();
   let dragging = $state(false);
   $effect(() => onmoving?.(dragging));
-  /** 動かしている値か、離して Rust の答えを待っている値。 */
+  /** The value being moved, or a released value waiting for Rust's answer. */
   let held = $state<number | null>(null);
   const shown = $derived(held ?? value);
 
@@ -67,7 +67,7 @@
   function onkeydown(ev: KeyboardEvent): void {
     if (ev.key !== "ArrowLeft" && ev.key !== "ArrowRight") return;
     if (ev.ctrlKey || ev.metaKey || ev.altKey || ev.isComposing) return;
-    // ノートを動かす ← → （document のキーの係）に渡さない。
+    // Not passed on to ← → that move notes (the document's key handler).
     ev.preventDefault();
     ev.stopPropagation();
     if (dragging) return;
@@ -132,7 +132,7 @@
 {/if}
 
 <style>
-  /* 値の欄の幅はモック A-PianoRoll（40、右そろえ）。 */
+  /* The value field width is from mock A-PianoRoll (40, right-aligned). */
   .value {
     width: var(--mock-inspector-slider-value);
     flex-shrink: 0;

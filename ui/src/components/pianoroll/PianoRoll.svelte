@@ -1,6 +1,6 @@
-<!-- ピアノロールの帯（モック A-PianoRoll・F-PR720・F-PR150・F-WidePR・F-PRPlay・F-PRRec）。
-     上から道具の列、左に「ノートの一覧」（たたむと縦の見出し）、まん中に目盛と鍵盤の列とノートの場所とベロシティの帯と CC の札の行、
-     右に「選んだノート」（たたむと縦の見出し）。ドラッグ中は、カーソルの左上に「その場の読み値」。 -->
+<!-- The piano roll band (mock A-PianoRoll, F-PR720, F-PR150, F-WidePR, F-PRPlay, F-PRRec).
+     From the top: the toolbar; on the left 「ノートの一覧」 (a vertical heading when folded); in the middle the ruler, the keyboard column, the note area, the velocity lane and the CC tab row;
+     on the right 「選んだノート」 (a vertical heading when folded). While dragging, the 「その場の読み値」 at the top left of the cursor. -->
 <script lang="ts">
   import { onMount } from "svelte";
   import { line, space } from "../../design/tokens";
@@ -31,7 +31,7 @@
   const selectedCount = $derived(G.indexesOf(pr.selectedNotes).length);
   const cc = $derived(G.ccCounts(shown.take));
 
-  // 左右の欄: はじめて出したとき、ノートの場所が 4 小節ぶん（640）を下まわるなら、たたんで始める（仕様書 3 章の帯の表）。
+  // Left and right panels: when first shown, if the note area is less than 4 bars (640), they start folded (the band table in spec 3).
   let bandW = $state(0);
   $effect(() => {
     if (bandW <= 0 || (prPanels.list !== null && prPanels.inspector !== null)) return;
@@ -43,8 +43,8 @@
     prPanels.inspector ??= open;
   });
 
-  // CC の札: 横が足りなければ、名前と数だけにして「そのほかの CC」を出さない（F-PR150）。
-  // ベロシティの帯をたたんでいるときは、左はしに「▸ ベロシティ」（仕様書 3 章の帯の表）。
+  // CC tabs: if there is not enough width, only names and counts, and 「そのほかの CC」 is not shown (F-PR150).
+  // When the velocity lane is folded, 「▸ ベロシティ」 at the left end (the band table in spec 3).
   let ccW = $state(0);
   const ccFull = $derived.by(() => {
     const pad = space["space.3"][0] * 2 + line["line.hair"];
@@ -59,14 +59,14 @@
     return (need * metrics.scale) / 100 <= ccW;
   });
 
-  // CC の札を押すと、その帯をひらく・たたむ（ひらいた順を覚える。古いほうからたたむため）。
+  // Pressing a CC tab opens or folds that lane (the opening order is remembered, so the oldest are folded first).
   const isOpen = (tag: LaneTag) => ccLanes.open.includes(tag);
   function toggleLane(tag: LaneTag): void {
     ccLanes.open = isOpen(tag) ? ccLanes.open.filter((x) => x !== tag) : [...ccLanes.open, tag];
   }
   const mark = (tag: LaneTag) => (isOpen(tag) ? "▾" : "▸");
 
-  // 「そのほかの CC」: テイクにある 1・64 のほかの CC の番号の一覧（ヤチヨさんの決め 2026-11-15。仕様書 2 章「一覧」、押した札のすぐ上にひらく）。
+  // 「そのほかの CC」: the list of CC numbers in the take other than 1 and 64 (the owner's decision. spec 2 "List", opens just above the pressed tab).
   const otherUsable = $derived(cc.others.length > 0);
   let otherMenu = $state(false);
   let otherButton = $state<HTMLButtonElement>();
@@ -114,7 +114,7 @@
     };
   });
 
-  // その場の読み値（仕様書 2 章）: カーソルの左上 6 にはなして出す。帯のはしでは内がわへずらす。
+  // The reading in place (spec 2): shown 6 away to the top left of the cursor. At the band's edges it is moved inward.
   let band = $state<HTMLElement>();
   let readingAt = $state<{ x: number; y: number } | null>(null);
   let readingW = $state(0);
@@ -133,7 +133,7 @@
     return { left: Math.max(0, readingAt.x - off - readingW), top: Math.max(0, readingAt.y - off - readingH) };
   });
 
-  // Delete や Mod A を、最後に押した所（ピアノロールかアレンジ）に向ける。
+  // Delete and Mod A go to the place pressed last (piano roll or arrange).
   onMount(() => {
     const onDown = (ev: PointerEvent) => {
       const target = ev.target as Element | null;
@@ -306,7 +306,7 @@
     flex: 1;
     min-height: 0;
   }
-  /* 「CC の一覧」の見出しは、ノートの一覧の下。ひらくと、その下に一覧（ノートの一覧と高さを分ける）。 */
+  /* The 「CC の一覧」 heading is below the note list. When open, the list is below it (sharing the height with the note list). */
   .cc-list {
     border-bottom: 0;
     border-top: var(--line-hair) solid var(--color-gray-5);
@@ -338,7 +338,7 @@
   .vtab:hover .m-lbl {
     color: var(--color-gray-10);
   }
-  /* 押した（仕様書 2 章: bg gray.2 ・ 枠 gray.8。枠は内がわに描く）。 */
+  /* Pressed (spec 2: bg gray.2, border gray.8. The border is drawn inside). */
   .hd:not(.cc-list):active,
   .vtab:active,
   .cc:not(.unusable):active {

@@ -1,7 +1,7 @@
-// ピアノロールの WebGL の絵（四角の並び）。DOM を知らない。座標は区画の canvas の画面の画素（box は slot の箱）。
-// ノートは仕様書 2 章「ノート」: 高さ 11、左はしに gray.10 の 2px、面はベロシティで gray.8 / 9 / 10、選んだら accent、
-// そろえる前の位置は gray.7 の枠だけ（選んでいるノートの分は accent）、書けない行は gray.0。行の地と線の色はモック A-PianoRoll。
-// ドラッグ中のもとの位置は accent の枠。どちらの枠も、ノートに隠れないよう、ノートを描いたあとに描く（docs/history/design-notes.ja.md B-64）。
+// WebGL pictures of the piano roll (lists of rectangles). Does not know the DOM. Coordinates are screen pixels of the region's canvas (box is the slot's box).
+// Notes follow spec 2 "Note": height 11, a 2px gray.10 at the left end, the face gray.8 / 9 / 10 by velocity, accent when selected,
+// the position before aligning only as a gray.7 border (accent for selected notes), rows that cannot be written gray.0. Row backgrounds and line colors follow mock A-PianoRoll.
+// The original position while dragging is an accent border. Both borders are drawn after the notes so notes do not hide them (docs/history/design-notes.ja.md B-64).
 
 import type { ControlKind, LiveNote, MusicalScale } from "../../bridge";
 import type { ColorName } from "../../design/tokens";
@@ -17,7 +17,7 @@ import type { Drag } from "./drag";
 import { draggedVelocity } from "./drag";
 import { eachNoteIn, keyToY, movedFrom, noteEnd, noteStart, rowColor, rowsShown, velocityColor, type RollGeom, type Shown } from "./geom";
 
-/** 寸法（CSS px、拡大率をかけたあと）。 */
+/** Sizes (CSS px, with the scale applied). */
 export interface RollSizes {
   noteH: number;
   edge: number;
@@ -26,28 +26,28 @@ export interface RollSizes {
   velFull: number;
   velMid: number;
   endMark: number;
-  /** ドラムの四角の、行の高さとの差（part.drum.hit-gap）。 */
+  /** The difference between a drum square and the row height (part.drum.hit-gap). */
   drumGap: number;
 }
 
-/** ノートの場所とベロシティの帯の大きな絵が使う物。変わったら slot の update を呼ぶ。 */
+/** What the large pictures of the note area and the velocity lane use. Call the slot's update when it changes. */
 export interface RollPicture {
   g: RollGeom;
   sizes: RollSizes;
   scale: MusicalScale;
   meter: Meter;
   step: number;
-  /** 拍子の変更のある曲の小節の線（なければ meter の小節がならぶ）。 */
+  /** Bar lines in songs with time signature changes (if not given, bars of meter in a row). */
   map?: TempoMap;
-  /** グリッドが 1 小節（その小節の長さ。拍子の変更で変わる）。 */
+  /** The grid is one bar (the length of that bar; it changes with time signature changes). */
   barStep?: boolean;
-  /** 見せているテイク。録音中で、録っている物を見せるときは null。 */
+  /** The shown take. Null while recording when what is being recorded is shown. */
   shown: Shown | null;
-  /** クオンタイズしたテイクのもとのテイク（同じ base で読む）。 */
+  /** The original take of a quantized take (read with the same base). */
   origin: Shown | null;
-  /** 選んだノートの印（shown の番号）。 */
+  /** Marks of the selected notes (indexes in shown). */
   selected: Uint8Array | null;
-  /** 録っている最中のノート（曲の中の位置）。length が null の物（押している）は、ここでは棒だけ。 */
+  /** Notes being recorded (positions in the song). Those whose length is null (held) are only bars here. */
   live: readonly LiveNote[] | null;
   drag: Drag | null;
   eraseHover: number;
@@ -55,7 +55,7 @@ export interface RollPicture {
 
 const FRAME: ColorName = "color.gray.7";
 
-/** 線の間がこれより狭くなったら、ひとつ粗い線にする（CSS px）。 */
+/** When lines get closer than this, use the next coarser lines (CSS px). */
 const LINE_MIN_PX = 4;
 
 function lineStep(step: number, perBeat: number, perBar: number, ppt: number): number {
@@ -64,7 +64,7 @@ function lineStep(step: number, perBeat: number, perBar: number, ppt: number): n
   return perBar * Math.max(1, Math.ceil(LINE_MIN_PX / (perBar * ppt)));
 }
 
-/** 方眼の線を、小節の頭から数えなおして（拍子の変更のある曲でも、小節の頭が線になる）。kind は 0 小節、1 拍、2 ほか。 */
+/** Grid lines counted again from the start of each bar (so the start of a bar is a line even in songs with time signature changes). kind is 0 bar, 1 beat, 2 other. */
 function eachGridLine(
   p: { meter: Meter; step: number; map?: TempoMap; barStep?: boolean },
   ppt: number,
@@ -73,14 +73,14 @@ function eachGridLine(
   each: (tick: number, kind: 0 | 1 | 2) => void,
 ): void {
   const map = p.map ?? barsMap(p.meter);
-  // グリッドの線が見えるほど広ければ、ノートの吸いつき（拍子の区間の頭から数える）と同じ線。ほかは拍か小節の線。
+  // If wide enough to see grid lines, the same lines as note snapping (counted from the start of the time signature span). Otherwise beat or bar lines.
   if (!p.barStep && p.step * ppt >= LINE_MIN_PX) eachGridTick(map, from, to, p.step, each);
   else eachLine(map, from, to, (perBeat, perBar) => lineStep(p.barStep ? perBar : p.step, perBeat, perBar, ppt), each);
 }
 
 /**
- * ノートの印: 0 ふつう、1 動かしている（もとの所に accent の枠）、2 終わりを動かしている（もとの終わりに線）、3 囲んでいる（accent）、
- * 4 消える（gray.7）、5 始まりを動かしている（もとの始まりに線）。
+ * Note marks: 0 normal, 1 being moved (accent border at the original place), 2 end being moved (a line at the original end), 3 inside a box (accent),
+ * 4 about to be removed (gray.7), 5 start being moved (a line at the original start).
  */
 export function noteMarks(count: number, drag: Drag | null, eraseHover: number): Uint8Array | null {
   if (!drag && eraseHover < 0) return null;
@@ -113,7 +113,7 @@ function frame(out: Batch, x0: number, y0: number, x1: number, y1: number, color
   out.rect(x1 - HAIR, y0, x1, y1, c);
 }
 
-/** ノート 1 つ。x0 と x1 は始まりと終わりの線の位置（画素）。線の 1px をあけて描く。 */
+/** One note. x0 and x1 are the positions of the start and end lines (pixels). Drawn leaving the line's 1px free. */
 export function paintNote(out: Batch, x0: number, x1: number, y: number, h: number, edge: number, face: ColorName): void {
   const a = Math.round(x0) + HAIR;
   const b = Math.max(a + HAIR, Math.round(x1) - HAIR);
@@ -122,7 +122,7 @@ export function paintNote(out: Batch, x0: number, x1: number, y: number, h: numb
   out.rect(e, y, b, y + h, rgb(face));
 }
 
-/** ドラムの四角（仕様書 2 章「ドラムの叩いた所の四角」）: 始まりの線の 1px 右から、幅 hitW、行のまん中に高さ 行 − gap。 */
+/** A drum square (spec 2 "Drum hit square"): from 1px right of the start line, width hitW, height row − gap in the middle of the row. */
 function drumSquare(g: RollGeom, sizes: RollSizes, x0: number, rowTop: number, dpr: number): { x0: number; y0: number; x1: number; y1: number } {
   const rowH = g.rowH * dpr;
   const h = Math.max(HAIR, Math.round(rowH - sizes.drumGap * dpr));
@@ -131,7 +131,7 @@ function drumSquare(g: RollGeom, sizes: RollSizes, x0: number, rowTop: number, d
   return { x0: a, y0, x1: a + Math.max(HAIR, Math.round((g.drum?.hitW ?? 0) * dpr)), y1: y0 + h };
 }
 
-/** ドラムのノートの場所: 行の地（gray.2 と gray.3 を交互に、間に gray.1 の線）、方眼の線、叩いた所の四角。 */
+/** The drum note area: row backgrounds (gray.2 and gray.3 in turns, with gray.1 lines between), grid lines, hit squares. */
 function paintDrumRoll(out: Batch, box: Box, p: RollPicture, marks: Uint8Array | null, dpr: number): void {
   const { g, sizes } = p;
   const d = g.drum!;
@@ -199,7 +199,7 @@ function paintDrumRoll(out: Batch, box: Box, p: RollPicture, marks: Uint8Array |
   }
 }
 
-/** 方眼の縦の線（小節 gray.6、拍 gray.4、ほか gray.3）を、上はしから bottom まで。 */
+/** Vertical grid lines (bar gray.6, beat gray.4, other gray.3), from the top edge to bottom. */
 function gridLines(out: Batch, box: Box, p: RollPicture, X: (tick: number) => number, bottom: number): void {
   const { g } = p;
   const from = g.scrollTick;
@@ -211,7 +211,7 @@ function gridLines(out: Batch, box: Box, p: RollPicture, X: (tick: number) => nu
   });
 }
 
-/** ノートの場所: 行の地、方眼の線、ノート、そろえる前の位置の枠、ドラッグのもとの位置の枠。 */
+/** The note area: row backgrounds, grid lines, notes, the border of the position before aligning, the border of the original drag position. */
 export function paintRoll(out: Batch, box: Box, p: RollPicture, marks: Uint8Array | null, dpr: number): void {
   if (p.g.drum) {
     paintDrumRoll(out, box, p, marks, dpr);
@@ -243,7 +243,7 @@ export function paintRoll(out: Batch, box: Box, p: RollPicture, marks: Uint8Arra
     frame(out, Math.round(x0) + HAIR, y, Math.max(Math.round(x0) + 2 * HAIR, Math.round(x1) - HAIR), y + noteH, color);
   const n = p.shown;
   const sel = p.selected;
-  /** ドラッグで動かしているノート（もとの所に、あとで accent の枠を描く）。 */
+  /** Notes moved by dragging (an accent border is drawn later at the original place). */
   const moving: number[] = [];
 
   if (n) {
@@ -296,7 +296,7 @@ export function paintRoll(out: Batch, box: Box, p: RollPicture, marks: Uint8Arra
   }
 }
 
-/** ベロシティの帯: まん中の線と、ノートごとの棒（上はしに横線）。box は帯の上の線より下。 */
+/** The velocity lane: the middle line, and a bar per note (with a cap line at the top). box is below the lane's top line. */
 export function paintVelocityLane(out: Batch, box: Box, p: RollPicture, dpr: number): void {
   const { g, sizes } = p;
   const ppt = g.ppt * dpr;
@@ -348,7 +348,7 @@ export function paintVelocityLane(out: Batch, box: Box, p: RollPicture, dpr: num
   }
 }
 
-/** 鍵盤の列の、鍵の所（音の名前の欄の右）。白鍵 gray.5、黒鍵 gray.0、光る鍵 accent、下に gray.1 の線。 */
+/** The key part of the keyboard column (right of the note name field). White keys gray.5, black keys gray.0, lit keys accent, a gray.1 line below. */
 export function paintRollKeys(
   out: Batch,
   box: Box,
@@ -360,8 +360,8 @@ export function paintRollKeys(
   const rowH = g.rowH * dpr;
   out.rect(box.x0, box.y0, box.x1, box.y1, rgb("color.gray.1"));
   if (g.drum) {
-    // ドラムの行の名前の地（モック R7-Drum: gray.5、下に gray.1 の線）。名前は HTML。
-    // 鳴っている行と弾いている行は、左に mark の太さの印（仕様書 3 章 85、モック R8-DrumPlay）。
+    // The background of drum row names (mock R7-Drum: gray.5, a gray.1 line below). The names are HTML.
+    // Sounding rows and played rows get a mark-width mark on the left (spec 3 (85), mock R8-DrumPlay).
     const rows = Math.min(g.drum.keys.length - g.drum.top, rowsShown(g) + 1);
     const markW = Math.max(HAIR, Math.round(mark.width * dpr));
     for (let r = 0; r < rows; r++) {
@@ -381,14 +381,14 @@ export function paintRollKeys(
   }
 }
 
-/** 動いている物の面の中身。ノートは、面の箱の左上を (left, top)（ノートの場所の CSS px）として置く。 */
+/** The content of the moving surface. Notes are placed with the surface box's top left as (left, top) (CSS px of the note area). */
 export interface LivePicture {
   g: RollGeom;
   sizes: RollSizes;
-  /** 面の箱の、動かす前の左上（ノートの場所の CSS px） */
+  /** The surface box's top left before moving (CSS px of the note area) */
   left: number;
   top: number;
-  /** 面の箱を動かしている縦の量（CSS px）と、ノートの場所の高さ。ノートは、その下の帯にはみ出さない。 */
+  /** How far the surface box is moved vertically (CSS px), and the height of the note area. Notes do not go into the lane below. */
   ty: number;
   areaH: number;
   /** outline: only a line.hair frame in `face` where the note would be (the chord shadow). */
@@ -422,31 +422,31 @@ export function paintLive(out: Batch, box: Box, p: LivePicture, dpr: number): vo
   }
 }
 
-// ---- CC の帯（モック R3-Lanes） ----
+// ---- CC lanes (mock R3-Lanes) ----
 
-/** CC の帯 1 本の絵が使う物。 */
+/** What the picture of one CC lane uses. */
 export interface LanePicture {
   g: RollGeom;
   meter: Meter;
   step: number;
   map?: TempoMap;
   barStep?: boolean;
-  /** null は「そのほかの CC」の番号をまだえらんでいない帯。 */
+  /** null is a lane whose 「そのほかの CC」 number is not chosen yet. */
   control: ControlKind | null;
   shown: Shown | null;
   lane: LaneBox;
-  /** part.cc.point（CSS px） */
+  /** part.cc.point (CSS px) */
   point: number;
-  /** 選んだ点の印（テイクのコントロールの番号）。 */
+  /** Marks of the selected points (indexes among the take's controls). */
   selected: Uint8Array | null;
-  /** この帯のドラッグ。 */
+  /** This lane's drag. */
   drag: LaneDrag | null;
   eraseHover: number;
 }
 
 const LINE: ColorName = "color.gray.9";
 
-/** 1 本の点の列の、点と点をつなぐ線（画素）。step: オン ・ オフの CC は段（次の点まで値をたもつ）、ほかは点から点へ。 */
+/** The lines joining the points of one row of points (pixels). step: on/off CCs are steps (the value is kept until the next point); others go from point to point. */
 function laneLine(out: Batch, xs: readonly number[], ys: readonly number[], x0: number, x1: number, restY: number, step: boolean): void {
   const c = rgb(LINE);
   const flat = (a: number, b: number, y: number) => out.rect(Math.min(a, b), y, Math.max(a, b) + HAIR, y + HAIR, c);
@@ -468,7 +468,7 @@ function laneLine(out: Batch, xs: readonly number[], ys: readonly number[], x0: 
   flat(px, x1, py);
 }
 
-/** 斜めの線を、同じ高さの所をまとめた 1 画素の四角の列で。 */
+/** A slanted line as a row of 1-pixel rectangles, joining spans of the same height. */
 function sloped(out: Batch, xa: number, ya: number, xb: number, yb: number, c: ReturnType<typeof rgb>): void {
   if (xb <= xa) {
     out.rect(xa, Math.min(ya, yb), xa + HAIR, Math.max(ya, yb) + HAIR, c);
@@ -480,7 +480,7 @@ function sloped(out: Batch, xa: number, ya: number, xb: number, yb: number, c: R
   for (let x = xa + 1; x <= xb; x++) {
     const y = at(x);
     if (y === runY) continue;
-    // 次の高さへは、縦につないで切れ目を作らない。
+    // To the next height, join vertically so there is no gap.
     out.rect(runX, runY, x, runY + HAIR, c);
     out.rect(x, Math.min(runY, y), x + HAIR, Math.max(runY, y) + HAIR, c);
     runX = x;
@@ -496,7 +496,7 @@ function laneSquare(out: Batch, cx: number, cy: number, size: number, color: Col
   else out.rect(x0, y0, x0 + size, y0 + size, rgb(color));
 }
 
-/** 帯の地と線: gray.1 の地、小節の線 gray.4、ほかの線 gray.2、ピッチベンドは 0 の所に gray.5 の線。 */
+/** Lane background and lines: gray.1 background, bar lines gray.4, other lines gray.2, and for pitch bend a gray.5 line at 0. */
 function laneGround(out: Batch, box: Box, p: LanePicture, dpr: number): void {
   const { g } = p;
   out.rect(box.x0, box.y0, box.x1, box.y1, rgb("color.gray.1"));
@@ -511,7 +511,7 @@ function laneGround(out: Batch, box: Box, p: LanePicture, dpr: number): void {
   }
 }
 
-/** 線と点。moving の点は、ドラッグの量だけ動かして描く。 */
+/** Lines and points. Points in moving are drawn moved by the drag amount. */
 function laneDots(out: Batch, box: Box, p: LanePicture, dpr: number, moving: Set<number> | null, face: (i: number) => ColorName): void {
   const n = p.shown;
   const c = p.control;
@@ -520,7 +520,7 @@ function laneDots(out: Batch, box: Box, p: LanePicture, dpr: number, moving: Set
   const all = lanePoints(n.take, c);
   const X = (tick: number) => Math.round(box.x0 + (tick - g.scrollTick) * g.ppt * dpr);
   const Y = (v: number) => Math.round(box.y0 + valueToY(c, p.lane, v) * dpr);
-  // 見えている所の点と、その前後の 1 つずつ（線が、はしの外からつながるように）。
+  // The visible points, and one before and after (so the line joins from beyond the edges).
   const from = g.scrollTick;
   const to = g.scrollTick + g.width / g.ppt;
   let list: { tick: number; value: number; i: number }[];
@@ -550,7 +550,7 @@ function laneDots(out: Batch, box: Box, p: LanePicture, dpr: number, moving: Set
   for (let k = 0; k < list.length; k++) laneSquare(out, xs[k]!, ys[k]!, size, face(list[k]!.i), false);
 }
 
-/** CC の帯の大きな絵。点を動かしている間は、点と線を動く面にまかせ、もとの位置に gray.7 の枠だけを描く。 */
+/** The large picture of a CC lane. While points are moved, points and lines are left to the moving surface, and only a gray.7 border is drawn at the original place. */
 export function paintLane(out: Batch, box: Box, p: LanePicture, dpr: number): void {
   laneGround(out, box, p, dpr);
   const n = p.shown;
@@ -575,7 +575,7 @@ export function paintLane(out: Batch, box: Box, p: LanePicture, dpr: number): vo
   });
 }
 
-/** CC の帯の動く面: 動かしている間の線と点、書く道具で置く前の点（accent の枠）。box は帯 1 本ぶん。 */
+/** The moving surface of a CC lane: lines and points while moving, and the point before the draw tool places it (accent border). box is one lane. */
 export function paintLaneLive(out: Batch, box: Box, p: LanePicture, dpr: number): void {
   const n = p.shown;
   const c = p.control;

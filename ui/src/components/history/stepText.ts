@@ -1,5 +1,5 @@
-// 取り消しの履歴の行と、取り消し ・ やりなおしの状態行の文（仕様書 3 章 Y19、6 章）。Rust は「手の名前の種類」と
-// 「（何を）にうめる値」を送り、ここで文にする。DOM を知らない純粋な関数。
+// The text of the undo history rows and of the undo and redo status line (spec 3 (Y19), spec 6). Rust sends the kind of step name and
+// the values that fill 「（何を）」, and the text is made here. Pure functions that do not know the DOM.
 
 import { EFFECT_PARAMS } from "../../bridge/types";
 import type { EffectName, HistoryRow, LaneName, LibraryView, SongView, StepName, StepPlace, StepWhat, StripName, TrackRef } from "../../bridge";
@@ -12,13 +12,13 @@ import { paramName, valueNumberText, valueText } from "../params/paramRows";
 import { controlName } from "../pianoroll/ccFields";
 import { soundNameText } from "../sounds";
 
-/** 戻りの名前（「A リバーブ」）は、いまの曲から作る。 */
+/** The return name (「A リバーブ」) is made from the current song. */
 export interface StepContext {
   song: SongView;
   library: LibraryView;
 }
 
-/** プラグインが言ってきた名前は、うしろの「の」との間に空白を置く（「Surge XT の」）。 */
+/** A name from a plugin gets a space before the following 「の」 (「Surge XT の」). */
 const spaced = (name: string) => `${name} `;
 const trackLabel = (r: TrackRef) => t("track.label", { number: r.number, name: r.name });
 const effectText = (e: EffectName) => (e.kind === "builtin" ? t(`effect.${e.effect}`) : e.name);
@@ -32,7 +32,7 @@ function stripText(strip: StripName, ctx: StepContext): string {
   return stripName(ctx.song, { kind: "return", bus: strip.bus }, ctx.library);
 }
 
-/** 帯が動かす物の名前（「音量」「コンプレッサーの「しきい値」」）。 */
+/** The name of what the band moves (「音量」「コンプレッサーの「しきい値」」). */
 export function laneNameText(name: LaneName): string {
   switch (name.kind) {
     case "volume":
@@ -52,7 +52,7 @@ export function laneNameText(name: LaneName): string {
   }
 }
 
-/** 手の名前（「ノートを動かす」「コンプレッサーの「しきい値」を変える」）。 */
+/** The step name (「ノートを動かす」「コンプレッサーの「しきい値」を変える」). */
 export function stepNameText(name: StepName): string {
   const text = stepNames[name.kind].text;
   switch (name.kind) {
@@ -69,14 +69,14 @@ export function stepNameText(name: StepName): string {
   }
 }
 
-/** 値が変わった ・ 足した ・ 消した所（「5 小節目 96 → 120」「5 小節目 120」「5 小節目」）。 */
+/** Where a value changed, was added or was removed (「5 小節目 96 → 120」「5 小節目 120」「5 小節目」). */
 function atPlace(place: string, from: string | null, to: string | null): string {
   if (from !== null && to !== null) return t("history.changeAt", { place, from, to });
   const value = to ?? from;
   return value === null ? place : t("history.valueAt", { place, value });
 }
 
-/** 「（何を）」（「3 ノート」「4 パッド ・ −10.5 → −12.0 dB」）。何もない手は null。 */
+/** 「（何を）」 (「3 ノート」「4 パッド ・ −10.5 → −12.0 dB」). Null for a step with nothing. */
 export function stepWhatText(name: StepName, what: StepWhat, ctx: StepContext): string | null {
   switch (what.kind) {
     case "none":
@@ -120,7 +120,7 @@ export function stepWhatText(name: StepName, what: StepWhat, ctx: StepContext): 
     case "send":
       return t("history.send", { strip: trackLabel(what.track), bus: busText(what.bus), from: faderText(what.fromDb), to: faderText(what.toDb) });
     case "param": {
-      // 「−24.0 → −18.0 dB」: 単位は右だけ（仕様書 3 章 92-3）。
+      // 「−24.0 → −18.0 dB」: the unit only on the right (spec 3 (92-3)).
       const spec = name.kind === "setParam" ? EFFECT_PARAMS[name.effect][name.param] : undefined;
       if (!spec || name.kind !== "setParam") return t("history.change", { from: String(what.from), to: String(what.to) });
       return t("history.change", { from: valueNumberText(name.effect, spec, what.from), to: valueText(name.effect, spec, what.to) });
@@ -153,13 +153,13 @@ export function stepWhatText(name: StepName, what: StepWhat, ctx: StepContext): 
       return t("history.soundReplaced", { track: trackLabel(what.track), from: soundNameText(what.from), to: soundNameText(what.to) });
     case "vocalInput":
       return t("history.soundReplaced", { track: trackLabel(what.track), from: t(`vocal.input.${what.from}`), to: t(`vocal.input.${what.to}`) });
-    // 「歌 テイク 1 ・ −3.0 → 0.0 dB」: ミキサーの音量の手と同じ形（仮。仕様書 3 章 92-3 にクリップの音量はない）。
+    // 「歌 テイク 1 ・ −3.0 → 0.0 dB」: the same form as a mixer gain step (provisional; spec 3 (92-3) has no clip gain).
     case "clipGain":
       return t("history.gain", { strip: what.name, from: faderText(what.fromDb), to: faderText(what.toDb) });
   }
 }
 
-/** 行の右の「どこで」（「ピアノロール」「4 パッド」「5 Surge XT ・ プラグインの窓」）。場所を言わない手は null。 */
+/** The 「どこで」 on the right of the row (「ピアノロール」「4 パッド」「5 Surge XT ・ プラグインの窓」). Null for a step that names no place. */
 export function stepPlaceText(place: StepPlace | null, ctx: StepContext): string | null {
   switch (place?.kind) {
     case undefined:
@@ -178,8 +178,8 @@ export function stepPlaceText(place: StepPlace | null, ctx: StepContext): string
 }
 
 /**
- * 行の「（何を）」（仕様書 3 章 94-6）: 行の右の欄にトラックの名前が出る手は、トラックの名前を書かない（音源を入れかえるは「グランドピアノ → オルガン」）。
- * 窓の手は「プラグインの窓」。右の欄がアレンジ ・ ミキサーの手（色、音量、パン、センド、ミュート、歌の入口）は、名前を残す（状態行と同じ）。
+ * The 「（何を）」 of a row (spec 3 (94-6)): a step whose right field shows the track name does not write the track name (replacing the instrument is 「グランドピアノ → オルガン」).
+ * A window step is 「プラグインの窓」. Steps whose right field is the arrange or mixer (color, gain, pan, send, mute, vocal input) keep the name (the same as the status line).
  */
 export function rowWhatText(row: HistoryRow, ctx: StepContext): string | null {
   if (row.name.kind === "pluginWindow") return t("history.pluginWindowWhat");
@@ -188,7 +188,7 @@ export function rowWhatText(row: HistoryRow, ctx: StepContext): string | null {
   return stepWhatText(row.name, row.what, ctx);
 }
 
-/** 行の文（「「ノートを動かす」・ 3 ノート」）。 */
+/** The row text (「「ノートを動かす」・ 3 ノート」). */
 export function historyRowText(row: HistoryRow, ctx: StepContext): string {
   const name = stepNameText(row.name);
   const what = rowWhatText(row, ctx);

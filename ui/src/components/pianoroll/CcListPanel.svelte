@@ -1,8 +1,8 @@
-<!-- ひらいた「CC の一覧」の中身（仕様書 3 章「第 5 版で足した決まり」、モック R5-Lists）。見出し（▾ CC の一覧 17）は帯の部品（PianoRoll.svelte）が描く。
-     列の見出しの行（位置 ・ 値）と、種類ごとの見出し（押すとたたむ）とその種類の点の行（位置の順）。見出しも点も同じ高さの行で、
-     ノートの一覧と同じく、見えている行だけを作り、同じスクロールの棒で縦に送る。
-     行を押すとその点を選ぶ（Shift で足す。selectControls）。欄を 2 回押すか、行で Enter を押すと、その欄が「入力の枠」（ノートの一覧と同じ打ちこみ）。
-     打ちこめるのは位置と値だけ。決めると moveControls を 1 つ。 -->
+<!-- The content of the open 「CC の一覧」 (spec 3 "Rules added in version 5 (after round 3)", mock R5-Lists). The heading (「▾ CC の一覧 17」) is drawn by the band part (PianoRoll.svelte).
+     A row of column headings (position, value), and per kind a heading (pressing folds it) and rows of that kind's points (in position order). Headings and points are rows of the same height;
+     as in the note list, only the visible rows are made, and they scroll vertically with the same scroll bar.
+     Pressing a row selects that point (Shift adds; selectControls). Pressing a field twice, or Enter on a row, turns that field into an 「入力の枠」 (the same typing as the note list).
+     Only position and value can be typed. Deciding sends one moveControls. -->
 <script lang="ts">
   import { mapOf, meterAtOf } from "../../time/bars";
   import { tick, untrack } from "svelte";
@@ -30,7 +30,7 @@
   import { ccList } from "./view.svelte";
 
   const app = $derived(current.state!);
-  /** 位置は拍子の変更をたどって数える（長さは、その所の拍子の拍で）。 */
+  /** Positions are counted following time signature changes (lengths in beats of the time signature at that place). */
   const meter = $derived(mapOf(app.timeline));
   const take = $derived(shown.take);
   const clip = $derived(shown.clip);
@@ -94,11 +94,11 @@
     send({ type: "selectControls", take: take.id, points: [index], mode: e.shiftKey ? "add" : "replace" });
   }
 
-  // ---- 欄の打ちこみ ----
+  // ---- Typing in fields ----
 
   const LABELS: Record<CcFieldName, string> = { position: t("note.position"), value: t("ccList.value") };
 
-  /** at: 一覧の何行目か（= テイクの中の番号）。token: ひらいた枠ごとの番号（前の枠の blur で、次の枠をとじないため）。 */
+  /** at: the row number in the list (= the index in the take). token: a number per opened box (so the blur of the previous box does not close the next one). */
   let editing = $state<{ at: number; name: CcFieldName; draft: string; token: number } | null>(null);
   let tokens = 0;
 
@@ -249,7 +249,7 @@
     background: var(--color-gray-3);
     overflow: hidden;
   }
-  /* 列は位置 76 と値（残り）。どちらも右よせ。 */
+  /* Columns are position 76 and value (the rest). Both right-aligned. */
   .cols {
     display: grid;
     grid-template-columns: var(--mock-notelist-position) minmax(0, 1fr);
@@ -265,7 +265,7 @@
   .cols > .r {
     text-align: right;
   }
-  /* 打っている欄: 入力の枠が欄いっぱい。 */
+  /* The field being typed in: the input box fills the field. */
   .cols > .cell {
     height: 100%;
     padding: 0;
@@ -276,7 +276,7 @@
   .rows {
     position: relative;
   }
-  /* 種類ごとの見出し（R5-Lists）: 地 gray.2、▾ ▸、名前、点の数。 */
+  /* Per-kind heading (R5-Lists): background gray.2, ▾ ▸, name, number of points. */
   .group {
     position: absolute;
     left: 0;
@@ -301,7 +301,7 @@
   .group:active {
     box-shadow: inset 0 0 0 var(--line-hair) var(--color-gray-8);
   }
-  /* 一覧の行（仕様書 2 章）: ノートの一覧と同じ。 */
+  /* List rows (spec 2): the same as the note list. */
   .row {
     position: absolute;
     left: 0;

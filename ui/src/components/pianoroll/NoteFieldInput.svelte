@@ -1,8 +1,8 @@
-<!-- ノートの欄の「入力の枠」（仕様書 2 章、3 章「ノートの一覧」、モック R3-Lanes の「ノートの一覧で値を打ちこむ」）。
-     打っている最中は枠 gray.10、使えない値は「こわれた」（枠と文字 rec）。Enter で決める、Esc でやめる、Tab で次の欄（Shift Tab で前の欄）、
-     ↑ ↓ で 1 ずつ（Shift で 10。音の欄は 12 半音）。数字として読めない物のまま Enter か Tab を押したら onreject（決めない）。
-     範囲の外の数は、近いはしにして決める（docs/history/design-notes.ja.md B-68。clamped に丸めた所）。枠の外を押したら、やめる。
-     打っている文字（draft）は親が持つ（一覧の行が見えなくなって作りなおされても消えないように）。 -->
+<!-- The 「入力の枠」 of a note field (spec 2, spec 3 "Note list", 「ノートの一覧で値を打ちこむ」 in mock R3-Lanes).
+     While typing, the border is gray.10; an unusable value is "broken" (border and text rec). Enter decides, Esc cancels, Tab goes to the next field (Shift Tab to the previous),
+     ↑ ↓ step by 1 (10 with Shift; 12 semitones in the note field). Enter or Tab with something that cannot be read as a number calls onreject (nothing is decided).
+     A number out of range is set to the nearest end and decided (docs/history/design-notes.ja.md B-68; what was rounded goes in clamped). Pressing outside the box cancels.
+     The text being typed (draft) is kept by the parent (so it is not lost when the list row goes out of view and is made again). -->
 <script lang="ts">
   import { onMount } from "svelte";
   import { readField, stepField, type FieldRead, type FieldSpec } from "./noteFields";
@@ -12,9 +12,9 @@
     draft: string;
     label: string;
     test: string;
-    /** 右そろえ（位置 ・ 長さ ・ ベロシティ）。 */
+    /** Right-aligned (position, length, velocity). */
     right?: boolean;
-    /** 決めた。tab: 0 は Enter、1 は Tab、−1 は Shift Tab。clamped: 範囲の外を丸めたなら、その言いかた。 */
+    /** Decided. tab: 0 is Enter, 1 is Tab, −1 is Shift Tab. clamped: how to say what was rounded, if it was out of range. */
     onfinish: (value: number, tab: -1 | 0 | 1, clamped: FieldRead["clamped"]) => void;
     oncancel: () => void;
     onreject: () => void;
@@ -67,7 +67,7 @@
 />
 
 <style>
-  /* 入力の枠（仕様書 2 章: 地 gray.0）。打っている最中の枠 gray.10、内がわ 4 はモック R3-Lanes。高さと幅は置いた所いっぱい。 */
+  /* The input box (spec 2: background gray.0). The border while typing is gray.10; the padding 4 is from mock R3-Lanes. Height and width fill the place it is put. */
   .field {
     box-sizing: border-box;
     width: 100%;

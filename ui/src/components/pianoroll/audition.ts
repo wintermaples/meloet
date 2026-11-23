@@ -1,31 +1,31 @@
-// ピアノロールで音を鳴らす（docs/history/design-notes.ja.md B-62）。DOM を知らない。
-// 鳴らすのは Rust（audition）。どれだけ鳴らすかは画面がはかって、止めるときに空の audition を送る。
-// 鳴らしている鍵は、鍵盤の列で光らせる（Rust は audition の鍵を Event::Note で返さないので、画面が自分で光らせる）。
+// Plays sound from the piano roll (docs/history/design-notes.ja.md B-62). Does not know the DOM.
+// Rust plays it (audition). The screen times how long, and sends an empty audition to stop.
+// The keys being played light up in the keyboard column (Rust does not send audition keys back as Event::Note, so the screen lights them itself).
 
 import type { AppState, Command } from "../../bridge";
 import { TICKS_PER_QUARTER } from "../../time/ticks";
 import { DRAW_VELOCITY } from "./geom";
 
-/** 和音で鳴らすのは 16 個まで。 */
+/** Chords play at most 16 notes. */
 export const MAX_CHORD = 16;
-/** ↑ ↓ で動かしたときに鳴らす長さ（ms）。 */
+/** How long to play when moved with ↑ ↓ (ms). */
 export const NUDGE_MS = 300;
 
-/** 鍵盤の列と書く道具の強さ: ベロシティ固定がオンならその値、ほかは 100（B-66）。 */
+/** The strength for the keyboard column and the draw tool: the fixed velocity value when it is on, otherwise 100 (B-66). */
 export function fixedOr100(state: Pick<AppState, "keyboards">): number {
   const f = state.keyboards.velocityFixed;
   return f.on ? f.value : DRAW_VELOCITY;
 }
 
-/** ノートを押した ・ 動かした ・ ↑ ↓ で鳴らすか。止まっているときだけ（再生中、録音中、カウントイン中は鳴らさない）。 */
+/** Whether to play when a note is pressed, moved, or moved with ↑ ↓. Only when stopped (not while playing, recording or in count-in). */
 export const notesMayAudition = (state: Pick<AppState, "transport">) => state.transport.state === "stopped";
 
-/** ticks（4 分音符 = TICKS_PER_QUARTER）が、テンポ bpm で何 ms か。 */
+/** How many ms ticks (quarter note = TICKS_PER_QUARTER) last at tempo bpm. */
 export function ticksToMs(ticks: number, bpm: number): number {
   return bpm > 0 ? (ticks / TICKS_PER_QUARTER) * (60000 / bpm) : 0;
 }
 
-/** 動かしたノートの和音: 鍵に delta を足し、0〜127 の中の物を、重ならずに低い順で 16 個まで。 */
+/** The chord of the moved notes: add delta to the keys, and take those inside 0 to 127, without repeats, lowest first, up to 16. */
 export function chordOf(keys: Iterable<number>, delta: number): number[] {
   const out = new Set<number>();
   for (const k of keys) {
@@ -45,10 +45,10 @@ const realTimer: Timer = {
   clear: (id) => clearTimeout(id as ReturnType<typeof setTimeout>),
 };
 
-/** いま画面が鳴らしている音。play で入れかえ、stop か時間切れで止める。 */
+/** The sound the screen is playing now. play replaces it; stop or a timeout stops it. */
 export class Auditioner {
   private timer: unknown = null;
-  /** いま鳴らしている鍵（光らせる）。 */
+  /** The keys playing now (lit up). */
   keys: number[] = [];
 
   constructor(
@@ -57,7 +57,7 @@ export class Auditioner {
     private readonly clock: Timer = realTimer,
   ) {}
 
-  /** keys を鳴らす（前の音は Rust が止める）。ms があれば、その時間で止める。 */
+  /** Plays keys (Rust stops the previous sound). If ms is given, stops after that time. */
   play(keys: readonly number[], velocity: number, ms: number | null = null): void {
     this.clearTimer();
     if (keys.length === 0) {
@@ -70,7 +70,7 @@ export class Auditioner {
     if (ms !== null) this.timer = this.clock.set(() => this.stop(), Math.max(0, ms));
   }
 
-  /** 鳴らしていれば止める。 */
+  /** Stops if playing. */
   stop(): void {
     this.clearTimer();
     if (this.keys.length === 0) return;
@@ -87,11 +87,11 @@ export class Auditioner {
 
 type MoveNotes = Extract<Command, { type: "moveNotes" }>;
 
-// ---- ↑ ↓ で動かしたとき（キーの係が pianoRollCommand を呼ぶ。ピアノロールの部品がここに耳を置く） ----
+// ---- When moved with ↑ ↓ (the key handler calls pianoRollCommand; the piano roll part listens here) ----
 
 let nudgeListeners: Array<(command: MoveNotes) => void> = [];
 
-/** ↑ ↓ で、選んだノートを動かす意図を作ったら呼ばれる。返り値の関数で外す。 */
+/** Called when an intent to move the selected notes with ↑ ↓ is made. Remove with the returned function. */
 export function onNudgeKeys(listener: (command: MoveNotes) => void): () => void {
   nudgeListeners.push(listener);
   return () => {

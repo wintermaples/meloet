@@ -1,5 +1,5 @@
-<!-- その場の入力の枠（テンポの点の値、拍子の旗）。ひらいたら打てる形で出る。Enter で決める、Esc と枠の外でやめる、↑ ↓ で 1 ずつ（Shift で 10）。
-     見た目と決まりは再生まわりの数字の枠（NumberField.svelte）と同じ。 -->
+<!-- An input box in place (a tempo point's value, a time signature flag). Opens ready to type. Enter decides, Esc or outside the box cancels, ↑ ↓ step by 1 (10 with Shift).
+     The look and rules are the same as the transport's number box (NumberField.svelte). -->
 <script lang="ts" generics="T">
   import { onMount } from "svelte";
 

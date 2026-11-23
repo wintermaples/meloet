@@ -1,7 +1,7 @@
-// CC の帯（仕様書 3 章の帯の表と「第 3 回のための決まり」の CC の帯、モック R3-Lanes）。DOM を知らない。
-// 点は、テイクのコントロールの番号（tick の順）で呼ぶ。帯ごとに、その種類の点だけを拾う。
-// 書く道具で押すと点がふえる、選ぶ道具で動かす・囲む、消す道具で押す・なぞると消す。離したときに意図を 1 つだけ送る。
-// y は帯の上はしからの CSS px、x はノートの場所と同じ横の座標。
+// CC lanes (the band table in spec 3 and the CC lanes in "Rules for round 3 (piano roll and clips)", mock R3-Lanes). Does not know the DOM.
+// A point is named by its index among the take's controls (in tick order). Each lane picks only the points of its kind.
+// Pressing with the draw tool adds a point; the select tool moves or boxes; the erase tool removes by pressing or tracing. Only one intent is sent on release.
+// y is CSS px from the top edge of the lane; x is the same horizontal coordinate as the note area.
 
 import { CONTROL_CC, CONTROL_PITCH_BEND, type Command, type ControlKind, type IndexRange, type TakeNotes } from "../../bridge";
 import { t } from "../../text/ja";
@@ -17,10 +17,10 @@ export const MODULATION_CC = 1;
 export const CC_MAX = 127;
 export const PITCH_BEND_MIN = -8192;
 export const PITCH_BEND_MAX = 8191;
-/** 帯がひらいても、ノートの場所はこの行の数を下まわらない（仕様書 3 章の帯の表）。 */
+/** Even when lanes open, the note area does not go below this many rows (the band table in spec 3). */
 export const MIN_NOTE_ROWS = 10;
 
-/** その帯が見せるコントロール。「そのほかの CC」で番号をまだえらんでいなければ null。 */
+/** The control the lane shows. Null if the number for 「そのほかの CC」 is not chosen yet. */
 export function laneControl(tag: LaneTag, other: number | null): ControlKind | null {
   switch (tag) {
     case "sustain":
@@ -34,7 +34,7 @@ export function laneControl(tag: LaneTag, other: number | null): ControlKind | n
   }
 }
 
-/** オン ・ オフの CC（MIDI の 64〜69: サステイン、ポルタメント、ソステヌート、ソフト、レガート、ホールド 2）。0 か 127 にだけ止まる。 */
+/** On/off CCs (MIDI 64 to 69: sustain, portamento, sostenuto, soft, legato, hold 2). They only stop at 0 or 127. */
 export const isOnOff = (c: ControlKind) => c.kind === "cc" && c.number >= 64 && c.number <= 69;
 
 export function valueRange(c: ControlKind): { min: number; max: number } {
@@ -43,22 +43,22 @@ export function valueRange(c: ControlKind): { min: number; max: number } {
 
 export const snapOnOff = (v: number) => (v >= CC_MAX / 2 ? CC_MAX : 0);
 
-/** 範囲に止め、オン ・ オフの CC は 0 か 127 に吸いつける。 */
+/** Clamps to the range, and snaps on/off CCs to 0 or 127. */
 export function settle(c: ControlKind, v: number): number {
   const r = valueRange(c);
   const inRange = Math.min(r.max, Math.max(r.min, Math.round(v)));
   return isOnOff(c) ? snapOnOff(inRange) : inRange;
 }
 
-// ---- 値と高さ ----
+// ---- Values and height ----
 
-/** 帯の高さ（CSS px）と、上下のあき（127 と 0、ピッチベンドの両はしの点の中心まで）。 */
+/** The lane height (CSS px) and the space above and below (to the centers of the points at 127 and 0, and at both ends of pitch bend). */
 export interface LaneBox {
   height: number;
   pad: number;
 }
 
-/** 値 → 帯の上はしからの y（CSS px）。ピッチベンドは 0 がまん中。 */
+/** Value → y from the top edge of the lane (CSS px). For pitch bend, 0 is the middle. */
 export function valueToY(c: ControlKind, b: LaneBox, v: number): number {
   if (c.kind === "pitchBend") {
     const mid = b.height / 2;
@@ -67,7 +67,7 @@ export function valueToY(c: ControlKind, b: LaneBox, v: number): number {
   return b.height - b.pad - (v / CC_MAX) * (b.height - 2 * b.pad);
 }
 
-/** y → 値（丸めない、範囲に止めない）。 */
+/** y → value (not rounded, not clamped). */
 export function yToRawValue(c: ControlKind, b: LaneBox, y: number): number {
   if (c.kind === "pitchBend") {
     const mid = b.height / 2;
@@ -78,12 +78,12 @@ export function yToRawValue(c: ControlKind, b: LaneBox, y: number): number {
 
 export const yToValue = (c: ControlKind, b: LaneBox, y: number) => settle(c, yToRawValue(c, b, y));
 
-// ---- 帯の点 ----
+// ---- Lane points ----
 
 const laneMemo = new WeakMap<TakeNotes, Map<string, Uint32Array>>();
 const laneKey = (c: ControlKind) => (c.kind === "cc" ? `cc${c.number}` : "pb");
 
-/** テイクのコントロールのうち、c の種類の物の番号（tick の順）。 */
+/** The indexes of the take's controls of kind c (in tick order). */
 export function lanePoints(take: TakeNotes, c: ControlKind): Uint32Array {
   let byLane = laneMemo.get(take);
   if (!byLane) laneMemo.set(take, (byLane = new Map()));
@@ -103,7 +103,7 @@ export function lanePoints(take: TakeNotes, c: ControlKind): Uint32Array {
 
 export const pointTick = (n: Shown, i: number) => n.base + n.take.controlTicks[i]!;
 
-/** ticks の順の points のうち、tick が from 以上の最初の位置（二分探索）。 */
+/** The first index in points (in tick order) whose tick is from or more (binary search). */
 export function firstPointFrom(n: Shown, points: Uint32Array, from: number): number {
   let lo = 0;
   let hi = points.length;
@@ -115,7 +115,7 @@ export function firstPointFrom(n: Shown, points: Uint32Array, from: number): num
   return lo;
 }
 
-/** (x, y) にいちばん近い点（縦も横も reach 以内）。なければ -1。 */
+/** The point nearest to (x, y) (within reach both vertically and horizontally). -1 if none. */
 export function hitPoint(n: Shown | null, c: ControlKind, g: RollGeom, b: LaneBox, x: number, y: number, reach: number): number {
   if (!n) return -1;
   const points = lanePoints(n.take, c);
@@ -136,7 +136,7 @@ export function hitPoint(n: Shown | null, c: ControlKind, g: RollGeom, b: LaneBo
   return best;
 }
 
-/** 囲んだ枠（どの向きでも）にかかる点。 */
+/** Points touched by the box (in any direction). */
 export function pointsInBox(n: Shown | null, c: ControlKind, g: RollGeom, b: LaneBox, ax: number, ay: number, bx: number, by: number): number[] {
   if (!n) return [];
   const points = lanePoints(n.take, c);
@@ -153,11 +153,11 @@ export function pointsInBox(n: Shown | null, c: ControlKind, g: RollGeom, b: Lan
   return out;
 }
 
-// ---- 帯の高さ ----
+// ---- Lane heights ----
 
 /**
- * ひらいている帯（ひらいた順）のうち、残す物。ノートの場所が minRows 行を下まわるあいだ、古いほうからたたむ。
- * いちばん新しい帯は残す（押したのに、ひらかないことがないように）。notesH はいまのノートの場所の高さ。
+ * Which of the open lanes (in the order opened) to keep. While the note area is below minRows rows, the oldest are folded first.
+ * The newest lane is kept (so pressing it never fails to open it). notesH is the current height of the note area.
  */
 export function fitLanes(open: readonly LaneTag[], notesH: number, laneH: number, rowH: number, minRows = MIN_NOTE_ROWS): LaneTag[] {
   const keep = [...open];
@@ -169,24 +169,24 @@ export function fitLanes(open: readonly LaneTag[], notesH: number, laneH: number
   return keep;
 }
 
-// ---- 文 ----
+// ---- Text ----
 
-/** 「+0512」（ピッチベンド）、「+012」（CC）。 */
+/** 「+0512」 (pitch bend), 「+012」 (CC). */
 export function deltaText(c: ControlKind, d: number): string {
   return c.kind === "pitchBend" ? signed4(d) : `${d < 0 ? "−" : "+"}${pad3(Math.abs(d))}`;
 }
 
-/** 「+0512」（ピッチベンド）、「064」（CC）。入力計と同じ書きかた。 */
+/** 「+0512」 (pitch bend), 「064」 (CC). Written the same way as the input meter. */
 export function valueText(c: ControlKind, v: number): string {
   return c.kind === "pitchBend" ? signed4(v) : pad3(v);
 }
 
-/** オン ・ オフの CC の値: 「踏む（127）」「OFF（0）」。 */
+/** The value of an on/off CC: 「踏む（127）」「OFF（0）」. */
 export function switchText(v: number): string {
   return t("pr.readSwitch", { state: v >= CC_MAX / 2 ? t("pr.switchOn") : t("meter.off"), value: String(v) });
 }
 
-// ---- マウス ----
+// ---- Mouse ----
 
 interface Press {
   x: number;
@@ -205,13 +205,13 @@ export interface LaneInput {
   control(): ControlKind | null;
   geom(): RollGeom;
   box(): LaneBox;
-  /** グリッド 1 つのティック */
+  /** The ticks of one grid step */
   step(): number;
   meter(): Meter;
   tool(): Tool;
-  /** pianoRoll.selectedControls（見せているテイクの物でなければ空） */
+  /** pianoRoll.selectedControls (empty if not from the shown take) */
   selected(): readonly IndexRange[];
-  /** 点をつかめる近さと、押しただけとみなす動き（どちらも space.1） */
+  /** How near a point must be to grab it, and the movement still treated as a press (both space.1) */
   reachPx(): number;
   stillPx(): number;
   send(command: Command): void;
@@ -219,7 +219,7 @@ export interface LaneInput {
 
 export class LaneMouse {
   drag: LaneDrag | null = null;
-  /** 消す道具を乗せている点（-1 はなし） */
+  /** The point the erase tool is over (-1 for none) */
   eraseHover = -1;
 
   constructor(private readonly input: LaneInput) {}
@@ -230,7 +230,7 @@ export class LaneMouse {
     return c ? hitPoint(i.shown(), c, i.geom(), i.box(), x, y, i.reachPx()) : -1;
   }
 
-  /** この帯の点のうち、選んでいる物。 */
+  /** The selected points of this lane. */
   private selectedHere(): Set<number> {
     const n = this.input.shown();
     const c = this.input.control();
@@ -239,12 +239,12 @@ export class LaneMouse {
     return new Set(indexesOf(this.input.selected()).filter((p) => mine.has(p)));
   }
 
-  /** 点に乗っているか。 */
+  /** Whether it is over a point. */
   over(x: number, y: number): boolean {
     return this.hit(x, y) >= 0;
   }
 
-  /** 何も押していないときの、消す道具で乗せている点。変わったら true。 */
+  /** The point the erase tool is over when nothing is pressed. True if it changed. */
   hover(x: number, y: number): boolean {
     const erase = this.input.tool() === "erase" ? this.hit(x, y) : -1;
     const changed = erase !== this.eraseHover;
@@ -296,7 +296,7 @@ export class LaneMouse {
     return Math.max(0, mods.shift ? Math.round(tick) : snapTick(tick, this.input.step()));
   }
 
-  /** 押したまま動かした。見た目が変わったら true。 */
+  /** Moved while held. True if the look changed. */
   move(x: number, y: number, mods: Mods): boolean {
     const d = this.drag;
     const i = this.input;
@@ -334,7 +334,7 @@ export class LaneMouse {
       }
       case "erase": {
         const before = d.hits.size;
-        // 速く動かしても間の点を飛ばさないように、つかめる近さずつ見る。
+        // Check one grab distance at a time, so points in between are not skipped when moving fast.
         const reach = i.reachPx();
         const steps = Math.max(1, Math.ceil(Math.hypot(x - d.x, y - d.y) / reach));
         for (let s = 1; s <= steps; s++) {
@@ -348,7 +348,7 @@ export class LaneMouse {
     }
   }
 
-  /** 離した。送った意図を返す。 */
+  /** Released. Returns the intent that was sent. */
   up(): Command | null {
     const d = this.drag;
     this.drag = null;
@@ -359,14 +359,14 @@ export class LaneMouse {
     return command;
   }
 
-  /** Esc: ドラッグをやめて、動かす前に戻す。やめたら true。 */
+  /** Esc: cancels the drag and goes back to before moving. True if cancelled. */
   cancel(): boolean {
     if (!this.drag) return false;
     this.drag = null;
     return true;
   }
 
-  /** 「その場の読み値」と状態行に出す文。 */
+  /** The text for the 「その場の読み値」 and the status line. */
   reading(): string | null {
     const d = this.drag;
     const n = this.input.shown();
@@ -390,8 +390,8 @@ export class LaneMouse {
 }
 
 /**
- * つかんだ点がグリッドに吸いつくように横へ動かす量と、縦の値の差。曲の頭より前へは出ない。
- * 値は、動かす点がどれも範囲に入るように止める。オン ・ オフの CC は、つかんだ点が 0 か 127 に吸いつく差。
+ * How far to move sideways so the grabbed point snaps to the grid, and the change in value. It does not go before the start of the song.
+ * The value is clamped so all moved points stay in range. For on/off CCs, the change that snaps the grabbed point to 0 or 127.
  */
 export function moveAmount(
   n: Shown,
@@ -426,7 +426,7 @@ export function moveAmount(
   return { ticks: ticks === 0 ? 0 : ticks, value: value === 0 ? 0 : value };
 }
 
-/** 離したときに送る意図。 */
+/** The intent sent on release. */
 export function finishLane(d: LaneDrag, take: number | null, c: ControlKind): Command | null {
   if (take === null) return null;
   switch (d.kind) {
@@ -446,7 +446,7 @@ export function finishLane(d: LaneDrag, take: number | null, c: ControlKind): Co
   }
 }
 
-/** 動かしている間の点の値と位置（ほかの点はそのまま）。 */
+/** The values and positions of points while moving (the other points stay as they are). */
 export function draggedPoint(n: Shown, c: ControlKind, d: LaneDrag | null, moving: Set<number> | null, i: number): { tick: number; value: number } {
   const tick = pointTick(n, i);
   const value = n.take.controlValues[i]!;

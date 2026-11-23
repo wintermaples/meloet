@@ -1,27 +1,27 @@
-// ノートの場所の右クリックの一覧（docs/history/design-notes.ja.md B-60）の中身。DOM を知らない。
-// ノートの上: 切り取り ・ コピー ・ 貼りつけ ・ 複製 ・ 消す ／ クオンタイズ ・ もとの位置へ戻す。
-// 空いた所: 貼りつけ（押した所をグリッドに寄せた位置へ）・ ぜんぶ選ぶ。行の右のキーは帯札と同じ書きかた（Mod は Linux で Ctrl）。
+// The content of the context menu of the note area (docs/history/design-notes.ja.md B-60). Does not know the DOM.
+// On a note: 「切り取り」「コピー」「貼りつけ」「複製」「消す」 / 「クオンタイズ」「もとの位置へ戻す」.
+// On an empty place: 「貼りつけ」 (to the pressed place snapped to the grid), 「ぜんぶ選ぶ」. The keys on the right of rows are written the same way as band tabs (Mod is Ctrl on Linux).
 
 import { t } from "../../text/ja";
 import type { MenuEntry } from "../menu/contextMenu.svelte";
 import type { PianoRollKey } from "./commands";
 
 export interface RollMenuFacts {
-  /** ノートの上を押した。 */
+  /** A note was pressed. */
   onNote: boolean;
-  /** 録音中かカウントイン中（曲を変える操作は受けない）。 */
+  /** Recording or in count-in (operations that change the song are not accepted). */
   busy: boolean;
-  /** 貼りつける物がある。 */
+  /** There is something to paste. */
   clipboard: boolean;
-  /** もとのテイクがある（クオンタイズしたテイク）。 */
+  /** There is an original take (a quantized take). */
   origin: boolean;
-  /** 空いた所の貼りつけの位置（押した所をグリッドに寄せた、曲の中のティック）。 */
+  /** The paste position for an empty place (the pressed place snapped to the grid, a tick in the song). */
   pasteAt: number;
   mac: boolean;
 }
 
 export interface RollMenuActions {
-  /** キーと同じ意図（pianoRollCommand）を送る。 */
+  /** Sends the same intent as the key (pianoRollCommand). */
   key(k: PianoRollKey): void;
   unquantize(): void;
   pasteAt(tick: number): void;

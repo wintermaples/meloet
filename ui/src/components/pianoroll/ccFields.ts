@@ -1,5 +1,5 @@
-// ひらいた「CC の一覧」（仕様書 3 章「第 5 版で足した決まり」、モック R5-Lists）の行と欄の打ちこみ。DOM を知らない。
-// 行は種類ごとの見出しと、その種類のすべての点（tick の順）。打ちこめるのは位置と値。決めると MoveControls を 1 つ。
+// Rows of the open 「CC の一覧」 and typing in its fields (spec 3 "Rules added in version 5 (after round 3)", mock R5-Lists). Does not know the DOM.
+// The rows are a heading for each kind and all points of that kind (in tick order). Position and value can be typed. Deciding sends one MoveControls.
 
 import { CONTROL_PITCH_BEND, type ClipView, type Command, type ControlKind, type TakeNotes } from "../../bridge";
 import { t } from "../../text/ja";
@@ -10,7 +10,7 @@ import { isOnOff, MODULATION_CC, settle, SUSTAIN_CC, switchText, valueRange, val
 import { readNotePositionLoose, type FieldSpec, type LooseValue } from "./noteFields";
 
 export type CcFieldName = "position" | "value";
-/** 左から右への順（Tab の順）。 */
+/** Order from left to right (the Tab order). */
 export const CC_FIELD_ORDER: readonly CcFieldName[] = ["position", "value"];
 
 type Controls = Pick<TakeNotes, "controlTicks" | "controlKinds" | "controlNumbers" | "controlValues">;
@@ -20,7 +20,7 @@ export function controlOf(take: Controls, i: number): ControlKind {
   return take.controlKinds[i] === CONTROL_PITCH_BEND ? { kind: "pitchBend" } : { kind: "cc", number: take.controlNumbers[i]! };
 }
 
-/** 種類の名前（CC の帯と同じ: サステイン、モジュレーション、ピッチベンド、「CC 7」）。 */
+/** The kind name (the same as CC lanes: sustain, modulation, pitch bend, 「CC 7」). */
 export function controlName(c: ControlKind): string {
   if (c.kind === "pitchBend") return t("pr.pitchBend");
   if (c.number === SUSTAIN_CC) return t("pr.sustain");
@@ -28,13 +28,13 @@ export function controlName(c: ControlKind): string {
   return t("pr.ccNumber", { number: String(c.number) });
 }
 
-/** 値（帯の読み値と同じ: 「踏む（127）」「OFF（0）」「+2048」「064」）。 */
+/** The value (the same as the lane's reading: 「踏む（127）」「OFF（0）」「+2048」「064」). */
 export function controlValueText(c: ControlKind, v: number): string {
   return isOnOff(c) ? switchText(v) : valueText(c, v);
 }
 
 export interface CcRow {
-  /** テイクの中の番号。 */
+  /** The index in the take. */
   index: number;
   position: string;
   value: string;
@@ -49,19 +49,19 @@ export function ccRow(take: Controls, clip: Placed, i: number, meter: Bars): CcR
   };
 }
 
-/** 種類ごとのまとまり。points はテイクの中の番号（tick の順）。 */
+/** A group per kind. points are indexes in the take (in tick order). */
 export interface CcGroup {
   key: string;
   name: string;
   points: number[];
 }
 
-/** 種類を見分けるキー（たたんだ状態を覚えるのに使う）。 */
+/** A key that tells kinds apart (used to remember the folded state). */
 export function ccGroupKey(c: ControlKind): string {
   return c.kind === "pitchBend" ? "pitchBend" : `cc${c.number}`;
 }
 
-/** CC の札と同じ順: サステイン、ピッチベンド、モジュレーション、そのほかの CC は番号の順。 */
+/** The same order as the CC tabs: sustain, pitch bend, modulation, then other CCs by number. */
 function groupRank(c: ControlKind): number {
   if (c.kind === "pitchBend") return 1;
   if (c.number === SUSTAIN_CC) return 0;
@@ -69,7 +69,7 @@ function groupRank(c: ControlKind): number {
   return 3 + c.number;
 }
 
-/** テイクにある種類だけのまとまり。 */
+/** Groups only for kinds the take has. */
 export function ccGroups(take: Controls): CcGroup[] {
   const byKey = new Map<string, CcGroup & { rank: number }>();
   for (let i = 0; i < take.controlTicks.length; i++) {
@@ -83,8 +83,8 @@ export function ccGroups(take: Controls): CcGroup[] {
 }
 
 /**
- * 一覧の行のならび。0 以上はテイクの中の番号（点の行）、負は見出し（-1 - まとまりの番号）。たたんだ種類の点は入れない。
- * lineOf は、点の番号 → 何行目か（たたんでいれば -1）。
+ * The order of the list rows. 0 or more is an index in the take (a point row); negative is a heading (-1 - group index). Points of folded kinds are left out.
+ * lineOf is point index → row number (-1 if folded).
  */
 export function ccLines(groups: readonly CcGroup[], folded: readonly string[], count: number): { lines: Int32Array; lineOf: Int32Array } {
   let n = groups.length;
@@ -103,13 +103,13 @@ export function ccLines(groups: readonly CcGroup[], folded: readonly string[], c
   return { lines, lineOf };
 }
 
-/** line の行から dir の向きに、次の点の行のテイクの中の番号（見出しはとばす）。なければ null。 */
+/** From the row line in direction dir, the take index of the next point row (headings are skipped). Null if none. */
 export function neighborPoint(lines: Int32Array, line: number, dir: -1 | 1): number | null {
   for (let l = line + dir; l >= 0 && l < lines.length; l += dir) if (lines[l]! >= 0) return lines[l]!;
   return null;
 }
 
-/** 値。符号（+ − -）と小数も読み、小数は四捨五入。 */
+/** A value. Also reads signs (+ − -) and decimals; decimals are rounded. */
 export function readControlValueLoose(s: string): LooseValue | null {
   const m = s
     .normalize("NFKC")
@@ -122,8 +122,8 @@ export function readControlValueLoose(s: string): LooseValue | null {
 }
 
 /**
- * 点 i の欄 name の打ちこみの決まり。位置はクリップの中（もう外にある点は、その位置より外へは出さない。Rust の MoveControls と同じ）。
- * 値は CC 0〜127、ピッチベンド −8192〜+8191。オン ・ オフの CC は、決めるときに 0 か 127 に吸いつける（`commitControl`）。
+ * Typing rules for field name of point i. Position stays inside the clip (a point already outside does not go further out than its position; the same as MoveControls in Rust).
+ * Value is 0 to 127 for CC, −8192 to +8191 for pitch bend. On/off CCs snap to 0 or 127 when decided (`commitControl`).
  */
 export function controlFieldSpec(name: CcFieldName, take: Controls, clip: Placed, i: number, meter: Bars): FieldSpec | null {
   if (i < 0 || i >= take.controlTicks.length) return null;
@@ -162,7 +162,7 @@ export function controlFieldSpec(name: CcFieldName, take: Controls, clip: Placed
     current: v,
     low: r.min,
     high: r.max,
-    // オン ・ オフの CC は ↑ で 127、↓ で 0。
+    // On/off CCs: ↑ gives 127, ↓ gives 0.
     unit: onOff ? r.max : 1,
     shift: 10,
     range: rangeText(format(r.min), format(r.max)),
@@ -172,7 +172,7 @@ export function controlFieldSpec(name: CcFieldName, take: Controls, clip: Placed
   };
 }
 
-/** 決めた値の意図（MoveControls 1 つ）。変わらなければ null。 */
+/** The intent for the decided value (one MoveControls). Null if nothing changed. */
 export function commitControl(name: CcFieldName, spec: FieldSpec, value: number, take: Controls & { id: number }, i: number): Command | null {
   const v = name === "value" ? settle(controlOf(take, i), value) : value;
   if (v === spec.current) return null;
@@ -182,7 +182,7 @@ export function commitControl(name: CcFieldName, spec: FieldSpec, value: number,
     : { type: "moveControls", take: take.id, points: [i], ticks: 0, value: delta };
 }
 
-/** Tab（back なら Shift Tab）で次にひらく欄。いまの行の外へ出るなら row が ±1。 */
+/** The field to open next with Tab (Shift Tab if back). row is ±1 if it leaves the current row. */
 export function nextCcField(name: CcFieldName, back: boolean): { name: CcFieldName; row: -1 | 0 | 1 } {
   const i = CC_FIELD_ORDER.indexOf(name) + (back ? -1 : 1);
   if (i < 0) return { name: CC_FIELD_ORDER[CC_FIELD_ORDER.length - 1]!, row: -1 };

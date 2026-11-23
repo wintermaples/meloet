@@ -1,15 +1,15 @@
-<!-- ピアノロールのまん中（モック A-PianoRoll）: 目盛、鍵盤の列、ノートの場所、ベロシティの帯。
-     ノートの場所とベロシティの帯は WebGL の 1 枚（pianoRoll）。ノートか見ている範囲が変わったときだけ描く。
-     鍵盤の列は小さな 1 枚（pianoRollKeys）で、押している鍵と鳴っている音で光る。
-     ドラッグ中のノートと、録音中にのびるノートは、それだけを囲む小さな 1 枚（pianoRollLive）。動かすだけなら transform で動かす。
-     pianoRollLive の箱は、ノートの場所の左上から CC の帯の下はしまで（CC の帯のドラッグも同じ 1 枚に入れる）。
-     再生の線、囲む枠、文字は HTML。
-     行の高さは縦の拡大の段（prView.rowPx、docs/history/design-notes.ja.md B-63）。ノートの高さは行 − 1。縦の − ＋ は目盛の左の角。
-     左の鍵盤の列を押すと、押している間だけ鳴らす（B-62。audition.ts）。目盛を押すと再生の位置、ドラッグでループの範囲（B-61）。
-     右クリックは一覧（B-60。描くのは App の ContextMenu）。
-     ドラムのトラックでは、行はキットの 12 の音だけ（鍵の列は楽器の名前、幅 part.drum.keys）、ノートは叩いた所の四角（drums.ts、geom.ts の drum）。
-     ベロシティの帯は「▾ ベロシティ」でたたむ（仕様書 3 章の帯の表。ひらくのは CC の札の行の「▸ ベロシティ」）。たたんだ分はノートの場所へ。
-     たたんでも区画（pianoRoll）の箱はそのままなので、WebGL の文脈は作りなおさない。 -->
+<!-- The middle of the piano roll (mock A-PianoRoll): the ruler, the keyboard column, the note area, the velocity lane.
+     The note area and the velocity lane are one WebGL canvas (pianoRoll), drawn only when the notes or the visible range change.
+     The keyboard column is one small canvas (pianoRollKeys), lit by held keys and sounding notes.
+     Notes being dragged, and notes growing while recording, are one small canvas around only them (pianoRollLive). If they only move, they are moved with transform.
+     The pianoRollLive box goes from the top left of the note area to the bottom edge of the CC lanes (CC lane drags go on the same canvas).
+     The play line, the box for choosing, and text are HTML.
+     The row height is the vertical zoom step (prView.rowPx, docs/history/design-notes.ja.md B-63). The note height is row − 1. The vertical − ＋ is in the corner left of the ruler.
+     Pressing the keyboard column on the left plays only while held (B-62; audition.ts). Pressing the ruler sets the play position; dragging sets the loop range (B-61).
+     Right-click opens a list (B-60; drawn by App's ContextMenu).
+     On a drum track, the rows are only the kit's 12 sounds (the key column shows drum piece names, width part.drum.keys), and notes are hit squares (drums.ts, drum in geom.ts).
+     The velocity lane folds with 「▾ ベロシティ」 (the band table in spec 3; it opens with 「▸ ベロシティ」 in the CC tab row). The folded height goes to the note area.
+     Even when folded, the region (pianoRoll) box stays, so the WebGL context is not made again. -->
 <script lang="ts">
   import { labelsBesideMarkers } from "./rulerMarks";
   import { onDestroy, onMount, untrack } from "svelte";
@@ -68,13 +68,13 @@
   const pr = $derived(app.pianoRoll);
   const transport = $derived(app.transport);
   const meter: Meter = $derived({ num: timeline.meterNum, den: timeline.meterDen });
-  /** テンポと拍子の地図（目盛、方眼、目盛を押したときの吸いつき、ループの範囲）。 */
+  /** The tempo and time signature map (ruler, grid, snapping when the ruler is pressed, loop range). */
   const map = $derived(mapOf(timeline));
   const scale = $derived(metrics.scale);
 
-  /** ドラムの行を見せているか（仕様書 3 章「ドラムのピアノロール」）。 */
+  /** Whether drum rows are shown (spec 3 "Drum piano roll"). */
   const drums = $derived(rollShowsDrums(app, shown.clip, shown.track));
-  /** ドラムの行の鍵（上から）。SF2 のキットは、そのキットが音を持つ鍵だけ。 */
+  /** The keys of the drum rows (from the top). For SF2 kits, only the keys the kit has sounds for. */
   const drumKeys = $derived(
     drumKeysOf(shown.clip ? shown.track : (song.tracks.find((x) => x.id === song.keysTarget) ?? null), drums),
   );
@@ -85,7 +85,7 @@
   const drumRowsPx = $derived(drumRowPx(drumKeys.length, scale));
   const rowH = $derived(drums ? (drumRowsPx * scale) / 100 : rowHeight(scale));
   const sizes: RollSizes = $derived({
-    // 仕様書の size.note と part.note.height の差（行 − 1）を、どの段でも保つ。
+    // Keep the difference between the spec's size.note and part.note.height (row − 1) at every step.
     noteH: rowH - (metrics.px("size.note") - metrics.px("part.note.height")),
     edge: metrics.px("part.note.edge"),
     velBar: metrics.px("mock.pianoroll.vel-bar"),
@@ -108,7 +108,7 @@
 
   const ppt = $derived(pxPerTick(scale));
   const step = $derived(G.gridTicks(pr.grid, meter));
-  /** ドラムの行: いちばん上の行は、見えている行の数で動ける範囲に。四角の幅はグリッドの 1 マス − 2（6 より小さくしない）。 */
+  /** Drum rows: the top row stays inside the range it can move to for the number of visible rows. The square width is one grid cell − 2 (not smaller than 6). */
   const drumGeom: G.DrumGeom | undefined = $derived(
     drums
       ? {
@@ -120,11 +120,11 @@
       : undefined,
   );
   const g: G.RollGeom = $derived({ scrollTick: prView.scrollTick, ppt, topKey: prView.topKey, rowH, width: areaW, height: areaH, drum: drumGeom });
-  /** ドラムには音階がないので、スケール固定を当てない（仕様書 3 章）。 */
+  /** Drums have no scale, so scale lock is not applied (spec 3). */
   const rollScale = $derived(drums ? { ...pr.scale, lock: false } : pr.scale);
 
   const rec = $derived(transport.state === "recording" ? transport.recording : null);
-  /** 録っているクリップ（か、まだクリップのない録音）を見せているときは、テイクの代わりに録っている物を描く。 */
+  /** When the clip being recorded (or a recording with no clip yet) is shown, what is being recorded is drawn instead of the take. */
   const liveMode = $derived(rec !== null && (shown.clip === null || rec.clip === shown.clip.id));
 
   const n = $derived(shownFor(shown.take, shown.clip));
@@ -132,7 +132,7 @@
   const selectedRanges = $derived(n && !liveMode && pr.take === n.take.id ? pr.selectedNotes : []);
   const selFlags = $derived(n ? G.selectionFlags(G.noteCount(n), selectedRanges) : null);
 
-  // ---- 録っている最中のノート ----
+  // ---- Notes being recorded ----
 
   let book = $state.raw<LiveNotesBook | null>(null);
   let stopBook: (() => void) | null = null;
@@ -146,7 +146,7 @@
       stopBook = found.listen(() => (liveVersion += 1));
       book = found;
     } catch {
-      // つながる前。次の状態でもう一度。
+      // Before connecting. Try again with the next state.
     }
   });
   onDestroy(() => stopBook?.());
@@ -158,18 +158,18 @@
   });
   const held = $derived(live ? live.filter((l) => l.length === null) : []);
 
-  // ---- マウス ----
+  // ---- Mouse ----
 
   let dragVersion = $state(0);
   let eraseHover = $state(-1);
-  /** 離して意図を送ったあと、答え（新しいテイク）が来るまで残しておく見た目。 */
+  /** The look kept after release and sending the intent, until the answer (a new take) comes. */
   let pending = $state.raw<Drag | null>(null);
   let pendingReplied = $state(false);
   let lastSent: Promise<unknown> | null = null;
 
-  // ---- 画面が鳴らす音（B-62）: 鍵盤の列、ノートを押す ・ 動かす、↑ ↓、書く道具 ----
+  // ---- Sound the screen plays (B-62): the keyboard column, pressing or moving notes, ↑ ↓, the draw tool ----
 
-  /** 画面が鳴らしている鍵（鍵盤の列で光らせる）。 */
+  /** The keys the screen is playing (lit in the keyboard column). */
   let heard: readonly number[] = [];
   const audition = new Auditioner(
     (c) => void send(c),
@@ -199,7 +199,7 @@
     }),
   );
 
-  // 左の鍵盤の列: 押している間だけ鳴らす。押したまま上下になぞると次の鍵に入れかえる。録音中も鳴らす（テイクには入らない）。
+  // The keyboard column on the left: plays only while held. Sliding up or down while held switches to the next key. It also plays while recording (not put in the take).
   let keyHeld: number | null = null;
   function keyAt(e: PointerEvent): number | null {
     const top = (e.currentTarget as HTMLElement).getBoundingClientRect().top;
@@ -363,7 +363,7 @@
     }
   });
 
-  // ---- ホイール: 縦に送る、Shift で横、Mod で横の拡大、Mod Shift で縦の拡大（カーソルの所を中心に） ----
+  // ---- Wheel: scroll vertically, sideways with Shift, horizontal zoom with Mod, vertical zoom with Mod Shift (centered on the cursor) ----
 
   let wheelRows = 0;
   let wheelZoom = 0;
@@ -380,7 +380,7 @@
     if (modsOf(e).mod && e.shiftKey) {
       e.preventDefault();
       e.stopPropagation();
-      // Shift ＋ ホイールを横の送りに変える環境では、回した量が deltaX に来る。
+      // In environments that turn Shift + wheel into sideways scrolling, the amount comes in deltaX.
       const d = (e.deltaY !== 0 ? e.deltaY : e.deltaX) * unit;
       wheelRowZoom += d;
       const steps = Math.trunc(wheelRowZoom / ZOOM_NOTCH) || (Math.abs(d) >= ZOOM_NOTCH / 2 ? Math.sign(d) : 0);
@@ -417,15 +417,15 @@
     }
   }
 
-  // ---- ひらいたとき: クリップのはじまりまで送り、入る拡大にし、ノートが見える高さに合わせる ----
+  // ---- On open: scroll to the clip's start, zoom so it fits, and set the height so the notes are visible ----
 
   let fitKeysFor: number | null = null;
-  /** クリップのない所で書いた位置（ティック）。その答えでできたクリップは、ひらいたのではないので、見ている範囲をそのままにする（B-52）。 */
+  /** The position (ticks) written where there was no clip. The clip made by that answer was not opened, so the visible range stays as it is (B-52). */
   let madeAt: number | null = null;
   function awaitMadeClip(start: number, sent: Promise<number | null>): void {
     madeAt = start;
     void sent.then((rev) => {
-      // 書けなかった（音階の外など）ときは、もう来ない。
+      // If it could not be written (outside the scale and so on), it will not come.
       if (madeAt === start && (rev === null || current.rev >= rev) && current.state?.arrange.pianoRollClip == null) madeAt = null;
     });
   }
@@ -434,7 +434,7 @@
     const w = areaW;
     const h = areaH;
     const notes = n;
-    // 左右の欄をたたむかどうかが決まってから（ノートの場所の幅が変わるので）。
+    // After it is decided whether to fold the left and right panels (the note area width changes).
     if (!clip || w <= 0 || h <= 0 || prPanels.list === null || prPanels.inspector === null) return;
     untrack(() => {
       if (prView.shownClip !== clip.id) {
@@ -445,7 +445,7 @@
           fitKeysFor = null;
           return;
         }
-        // 欄をたたんだすぐあとは、bind の幅がまだ前の物なので、いまの幅を読む。
+        // Just after folding a panel, the bound width is still the old one, so read the current width.
         const song = current.state?.song;
         const span = G.openSpan(clip, song?.loopOn ? song.loopRange : null);
         prView.quarterPx = G.fitQuarterPx(span.end - span.start, area?.clientWidth || w, scale);
@@ -453,14 +453,14 @@
         fitKeysFor = clip.takeId;
       }
       if (fitKeysFor !== null && notes && notes.take.id === fitKeysFor) {
-        // ドラムの行は、見ている範囲を別に持つ（drumView）。
+        // Drum rows keep their visible range separately (drumView).
         if (!drums) prView.topKey = G.fitTopKey(G.keyRangeOf(notes), G.wholeRows(area?.clientHeight || h, rowH));
         fitKeysFor = null;
       }
     });
   });
 
-  // ---- WebGL: 3 つの面 ----
+  // ---- WebGL: 3 surfaces ----
 
   const handles: Record<"roll" | "vel" | "keys" | "live", { update(s: GlSlot): void } | null> = { roll: null, vel: null, keys: null, live: null };
   let rollPicture: RollPicture | null = null;
@@ -476,8 +476,8 @@
   let keysGeom: G.RollGeom = { scrollTick: 0, ppt: 1, topKey: 60, rowH: 12, width: 0, height: 0 };
 
   /**
-   * ドラムの行の名前の光り（仕様書 3 章 85）: 鳴っている行と弾いている行の名前を accent（録音中は rec）に。左の line.mark は WebGL。
-   * 鍵の列の絵と同じコマで書きかえる（名前は鍵の列の canvas の上にあるので、よごれる四角が増えない）。
+   * Lighting of drum row names (spec 3 (85)): the names of sounding and played rows become accent (rec while recording). The line.mark on the left is WebGL.
+   * Rewritten in the same frame as the key column picture (the names are over the key column canvas, so dirty rectangles do not increase).
    */
   let drumNamesBox = $state<HTMLElement>();
   function markDrumNames(lit: (key: number) => boolean): void {
@@ -520,7 +520,7 @@
   }
   const redraw = (name: "roll" | "vel" | "keys" | "live") => handles[name]?.update(SLOTS[name]);
 
-  /** 大きな面の絵に関係するドラッグの形。動かす・長さを変えるあいだは始めたときから変わらないので、大きな面は描きなおさない。 */
+  /** The shape of the drag that matters for the large surface's picture. While moving or changing length it does not change from the start, so the large surface is not redrawn. */
   const serials = new WeakMap<Drag, number>();
   let serial = 0;
   const rollDragKey = $derived.by(() => {
@@ -578,7 +578,7 @@
     untrack(() => redraw("keys"));
   });
 
-  // 動いている物の面: 置き場所（CSS px）と、動かす量（transform）。
+  // The moving surface: its place (CSS px) and how far it is moved (transform).
   interface LiveBox {
     left: number;
     top: number;
@@ -602,7 +602,7 @@
       if (d.kind === "resize" && d.press.moved) {
         const b = movedBoxOf(d);
         if (!b) return null;
-        // 始まりを動かすときは、左へのびる分まで（ノートの場所の左はしから）。
+        // When moving the start, include the part that grows to the left (from the left edge of the note area).
         const left = d.edge === "start" ? Math.min(0, b.x0) : b.x0;
         const right = d.edge === "start" ? b.x1 : areaW;
         return { left, top: b.y0, width: Math.max(1, right - left), height: b.y1 - b.y0, tx: 0, ty: 0 };
@@ -649,7 +649,7 @@
     return y1 > y0 ? { top: y0, height: y1 - y0 } : null;
   }
 
-  /** ドラッグを始めたときの箱（ノートの場所の CSS px）。 */
+  /** The box at the start of the drag (CSS px of the note area). */
   function movedBoxOf(d: Drag): { x0: number; x1: number; y0: number; y1: number } | null {
     if (!n || (d.kind !== "move" && d.kind !== "resize")) return null;
     let x0 = Infinity;
@@ -660,7 +660,7 @@
       const top = G.keyToY(g, n.take.keys[k]!);
       if (Number.isNaN(top)) continue;
       x0 = Math.min(x0, G.tickToX(g, G.noteStart(n, k)));
-      // ドラムの四角は長さを見せないので、四角の右はしまで。
+      // Drum squares do not show length, so up to the right edge of the square.
       x1 = Math.max(x1, drumGeom ? G.tickToX(g, G.noteStart(n, k)) + drumGeom.hitW + 1 : G.tickToX(g, G.noteEnd(n, k)));
       y0 = Math.min(y0, top);
       y1 = Math.max(y1, top + rowH);
@@ -707,7 +707,7 @@
     untrack(() => redraw("live"));
   });
 
-  // ---- 動く物: 再生の線、ページ送り、鳴っている音、録っているノートの先 ----
+  // ---- Moving things: the play line, page turns, sounding notes, the tip of notes being recorded ----
 
   let playLine = $state<HTMLElement | null>(null);
   let offsetUs: number | null = null;
@@ -777,7 +777,7 @@
   });
   const lineRec = $derived(transport.state === "countIn" || transport.state === "recording");
 
-  // ---- 文字: 目盛と鍵盤の列の音の名前 ----
+  // ---- Text: note names in the ruler and the keyboard column ----
 
   const LABEL_MIN_PX = 40;
   const rulerLabels = $derived.by(() => {
@@ -793,18 +793,18 @@
     });
     return out;
   });
-  /** 目盛のマーカーの名前（仕様書 2 章「ピアノロールの目盛のマーカー」。押せない）。 */
+  /** Marker names on the ruler (spec 2 "Marker on the piano roll ruler"; cannot be pressed). */
   const rulerMarkers = $derived.by(() => {
     if (!(areaW > 0)) return [];
     return timeline.markers
       .map((m) => ({ id: m.id, name: m.name, x: (m.tick - prView.scrollTick) * ppt }))
       .filter((m) => m.x > -areaW && m.x < areaW);
   });
-  /** 名前の幅と拍の数字の幅（CSS px）。名前がかかる拍の数字は出さない（仕様書 3 章、モック R11-Answers92）。 */
+  /** The widths of names and beat numbers (CSS px). Beat numbers covered by a name are not shown (spec 3, mock R11-Answers92). */
   const markerW: Record<number, number> = $state({});
   const labelW: Record<number, number> = $state({});
   const shownLabels = $derived(labelsBesideMarkers(rulerLabels, rulerMarkers, labelW, markerW));
-  /** ドラムの行の名前。このクリップで叩いている行は gray.10、ほかは gray.9（モック R7-Drum。使っていない行も暗くしない）。 */
+  /** Drum row names. Rows hit in this clip are gray.10, others gray.9 (mock R7-Drum; unused rows are not darkened either). */
   const usedKeys = $derived.by(() => {
     const used = new Set<number>();
     if (!drums || !n) return used;
@@ -835,11 +835,11 @@
     return out;
   });
 
-  // ---- 目盛: 押すと再生の位置（グリッドに寄せる。Shift で寄せない）、ドラッグでループの範囲（小節の単位。アレンジの目盛と同じ） ----
+  // ---- Ruler: pressing sets the play position (snapped to the grid; not with Shift), dragging sets the loop range (in bars; the same as the arrange ruler) ----
 
   const rulerView = $derived<AG.View>({ pxPerTick: ppt, scrollX: prView.scrollTick * ppt, width: areaW });
   const songLoop = $derived(song.loopOn ? AG.loopBars(song.loopRange, map) : null);
-  /** ドラッグ中の見た目。Rust の答え（次の差分）が来たら消す。 */
+  /** The look while dragging. Removed when Rust's answer (the next diff) comes. */
   let loopPreview = $state<AG.BarRange | null>(null);
   const shownLoop = $derived(loopPreview ?? songLoop);
   let rulerDrag: { d: AG.RulerDrag; downX: number; left: number } | null = null;
@@ -878,7 +878,7 @@
       command = { type: "setLoop", fromBar: range.from, toBar: range.to };
     }
     const before = current.rev;
-    // 範囲が変わらなければ差分は来ないので、返事の rev で見た目を消す。
+    // If the range did not change no diff comes, so the look is removed by the rev of the reply.
     void send(command).then((rev) => {
       if (rev === before && !rulerDrag) loopPreview = null;
     });
@@ -889,10 +889,10 @@
     loopPreview = null;
     return true;
   }
-  // Esc: ループの範囲のドラッグをやめて、前の範囲に戻す（仕様書 4 章）。
+  // Esc: cancels the loop range drag and goes back to the previous range (spec 4).
   onMount(() => onDragCancel(rulerCancel));
 
-  // ---- 右クリックの一覧（B-60）: ノートの上と、ノートの場所の空いた所 ----
+  // ---- Context menu (B-60): on a note, and on an empty place in the note area ----
 
   function contextMenu(e: MouseEvent): void {
     e.preventDefault();
@@ -902,11 +902,11 @@
     const notes = liveMode ? null : n;
     const p = at(e);
     const hit = G.hitNote(notes, g, p.x, p.y, 0);
-    // 選ばれていないノートなら、それだけを選んでから。
+    // For a note that is not selected, select only it first.
     if (hit && notes && !G.indexesOf(selectedRanges).includes(hit.note)) {
       void send({ type: "selectNotes", take: notes.take.id, notes: [hit.note], mode: "replace" });
     }
-    // 行を押すのは一覧が出たあとなので、そのときの状態で意図を作る。
+    // A row is pressed after the list is shown, so the intent is made from the state at that time.
     const actions: RollMenuActions = {
       key(k) {
         const state = current.state;
@@ -938,7 +938,7 @@
     openContextMenu(e.clientX, e.clientY, entries);
   }
 
-  // ---- 囲む枠 ----
+  // ---- The box for choosing ----
 
   const boxFrame = $derived.by(() => {
     void dragVersion;
@@ -947,7 +947,7 @@
     return { x: Math.min(d.press.x, d.x), y: Math.min(d.press.y, d.y), w: Math.abs(d.x - d.press.x), h: Math.abs(d.y - d.press.y) };
   });
 
-  // ---- 横の棒 ----
+  // ---- The horizontal bar ----
 
   const scrollTotal = $derived(Math.max((scrollMaxTick + areaW / 2 / ppt) * ppt + areaW / 2, prView.scrollTick * ppt + areaW));
 </script>
@@ -1106,7 +1106,7 @@
     flex-direction: column;
     position: relative;
   }
-  /* ドラムの鍵の列は幅 132（仕様書 3 章）。CC の帯の見出しの列も同じ幅。 */
+  /* The drum key column is 132 wide (spec 3). The CC lane heading column has the same width. */
   .roll.drums {
     --pr-keys: var(--part-drum-keys);
   }
@@ -1128,7 +1128,7 @@
     padding: 0 var(--space-1);
     border-right: var(--line-hair) solid var(--color-gray-6);
   }
-  /* 縦の − ＋（モック A-PianoRoll）: 幅 20 ・ 高さ 18 の切りかえ。いちばん小さい ・ 大きい段では「使えない」。 */
+  /* Vertical − ＋ (mock A-PianoRoll): 20 wide, 18 high toggles. 「使えない」 at the smallest and largest steps. */
   .vzoom {
     box-sizing: border-box;
     display: inline-flex;
@@ -1169,7 +1169,7 @@
     background: var(--color-accent);
     pointer-events: none;
   }
-  /* 目盛のマーカー（仕様書 2 章: 名前を gray.8 で、左に gray.8 の line.hair。押せない）。名前は地 gray.3 で拍の数字の上に重ねる（3 章、R11-Answers92）。 */
+  /* Ruler markers (spec 2: the name in gray.8, with a gray.8 line.hair on its left; cannot be pressed). The name is laid over the beat numbers on a gray.3 background (spec 3, R11-Answers92). */
   .ruler-marker {
     position: absolute;
     top: 0;
@@ -1226,7 +1226,7 @@
     flex: 1;
     min-width: 0;
   }
-  /* ドラムの行の名前（モック R7-Drum）: 地 gray.5 は WebGL（key-shapes を列いっぱいに）、名前は HTML でその上に。 */
+  /* Drum row names (mock R7-Drum): the gray.5 background is WebGL (key-shapes across the column), the names are HTML over it. */
   .drums .keys {
     position: relative;
   }
@@ -1294,7 +1294,7 @@
     pointer-events: none;
     z-index: 2;
   }
-  /* クリップがない所の案内（モック F-PREmpty。形は「音が出ました」の箱と同じ）。下のノートの場所を押せるように、押せない箱。 */
+  /* The hint where there is no clip (mock F-PREmpty; the same shape as the 「音が出ました」 box). A box that cannot be pressed, so the note area below can be pressed. */
   .empty-hint {
     position: absolute;
     left: var(--space-6);

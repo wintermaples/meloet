@@ -1,8 +1,8 @@
-<!-- アレンジのひらいたオートメーションの帯の、時間の側（仕様書 2 章「オートメーションの点」、3 章 Y16、モック R10-AutoEdit ・ F6-AutoRec ・ F6-AutoRest）。
-     線と点は WebGL（アレンジの arrangeLanes の区画の 1 枚。区画はふやさない）、読み値と書いている所の枠は HTML。
-     空いている所を押して離すと点を足す（線の上の、押した所の値で。拍の頭に吸いつく）。点を押したまま動かすと、上下で値、横で位置。
-     空いている所から押したまま動かすと囲んでえらぶ。点を 2 回押すか、えらんで Delete で消す（laneKeys.ts）。
-     ドラッグ中は画面だけが先に動き、離したときに意図を 1 つ送る。Esc でやめる（pianoroll/view.svelte.ts の cancelDrag）。 -->
+<!-- The time side of an open automation lane in the arrange (spec 2 "Automation point", spec 3 (Y16), mock R10-AutoEdit, F6-AutoRec, F6-AutoRest).
+     Lines and points are WebGL (one canvas of the arrange's arrangeLanes region; no new region); the reading and the border of the part being written are HTML.
+     Pressing and releasing on an empty place adds a point (with the value on the line at that place, snapped to the start of a beat). Holding a point and moving it changes the value up and down, and the position sideways.
+     Holding and moving from an empty place chooses by a box. A point is removed by pressing it twice, or by choosing it and pressing Delete (laneKeys.ts).
+     While dragging, only the screen moves first, and one intent is sent on release. Esc cancels (cancelDrag in pianoroll/view.svelte.ts). -->
 <script lang="ts">
   import { onMount } from "svelte";
   import type { LaneView, TrackView } from "../../bridge";
@@ -36,7 +36,7 @@
 
   const points = $derived(pointsOf(lane.laneId));
   const pts = $derived(points && points.id === lane.laneId ? A.pointList(points) : []);
-  /** 帯の縦（仕様書 3 章 92-6 ・ 21-B）。届いた点から決めるので、点を外へ動かすと、離して答えが来たときに広げなおす。 */
+  /** The lane's vertical range (spec 3 (92-6, 21-B)). It comes from the points that arrived, so when a point is moved outside, it widens again when the answer comes after release. */
   const range = $derived(A.laneRange(pts, lane.step));
   const dims: A.LaneDims = $derived({
     h: metrics.px("size.lane"),
@@ -45,7 +45,7 @@
     point: metrics.px("part.cc.point"),
     range,
   });
-  /** 右上と右下の「上 −3.0 dB」「下 −9.0 dB」。下〜上のぜんぶを見せている帯と、値の字を画面で出せない帯（プラグイン）は出さない。 */
+  /** 「上 −3.0 dB」「下 −9.0 dB」 at the top right and bottom right. Not shown for a lane that shows the whole range, or one whose value text the screen cannot make (plugins). */
   const ends = $derived.by(() => {
     if (range === A.FULL_RANGE) return null;
     const e = A.rangeEnds(pts, range);
@@ -62,10 +62,10 @@
     return track.slots[sel.insert.slot]?.id === lane.target.insert ? sel.values : null;
   });
 
-  // ---- ドラッグ ----
+  // ---- Dragging ----
 
   let drag = $state.raw<A.PointDrag | null>(null);
-  /** 離して意図を送ったあと、答えが届くまで残す見た目（点がもとの所へちらっと戻らないように）。 */
+  /** The look kept after release and sending the intent, until the answer arrives (so the point does not jump back to the original place for a moment). */
   let pending = $state.raw<{ drag: A.PointDrag; laneId: number; rev: number | null } | null>(null);
   let box = $state.raw<{ x0: number; y0: number; x: number; y: number; moved: boolean; shift: boolean } | null>(null);
   let hovered = $state(-1);
@@ -208,7 +208,7 @@
     return { left: Math.max(0, reading.x - off - readingW), top: reading.y - off - readingH };
   });
 
-  // ---- 書いている所の rec の枠（書きはじめから再生の線まで。線は毎コマ動くので、右はしだけをコマごとに書く） ----
+  // ---- The rec border of the part being written (from the start of writing to the play line. The line moves every frame, so only the right edge is written per frame) ----
 
   const writing = $derived(automation.writing.find((w) => w.lane.track === track.id && JSON.stringify(w.lane.target) === JSON.stringify(lane.target)) ?? null);
   let recFrame = $state<HTMLElement | null>(null);
@@ -265,9 +265,9 @@
 </div>
 
 <style>
-  /* ひらいた帯（size.lane、地 gray.2。モック R10-AutoEdit）。 */
+  /* The open lane (size.lane, background gray.2. Mock R10-AutoEdit). */
   .auto-lane {
-    /* 縦に送った外の帯は、中を描かない ・ レイアウトしない（64 本の曲。高さは決まっている）。 */
+    /* Lanes scrolled out of view are not painted or laid out (songs with 64 tracks. The height is fixed). */
     content-visibility: auto;
     position: relative;
     height: var(--size-lane);
@@ -275,7 +275,7 @@
     border-bottom: var(--line-hair) solid var(--color-gray-5);
     touch-action: none;
   }
-  /* 書きかわっている所（仕様書 3 章 Y16: rec の色の line.hair の枠）。 */
+  /* The part being written over (spec 3 (Y16): a line.hair border in the rec color). */
   .rec-frame {
     position: absolute;
     top: 0;

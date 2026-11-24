@@ -1,6 +1,6 @@
 //! The track numbers of 「番号で」 of a MIDI export, as 「1-3, 5」 (spec 7 A-31).
 //!
-//! Full-width digits are digits; 「、」 and 「，」 are commas; 「－」 「ー」 「‐」 「〜」 「~」 are
+//! Full-width digits are digits; 「、」 and 「，」 are commas; 「－」 「ー」 「‐」 「〜」 「～」 「−」 「~」 are
 //! hyphens. Spaces around commas and hyphens do not count, a space between two digits
 //! cannot be read. Empty parts are passed by, a range written backwards is read forwards,
 //! a number named twice is taken once.
@@ -30,7 +30,7 @@ fn sign(c: char) -> Option<Sign> {
         '0'..='9' => Sign::Digit(c as u8 - b'0'),
         '０'..='９' => Sign::Digit((c as u32 - '０' as u32) as u8),
         ',' | '、' | '，' => Sign::Comma,
-        '-' | '－' | 'ー' | '‐' | '〜' | '~' => Sign::Hyphen,
+        '-' | '－' | 'ー' | '‐' | '〜' | '～' | '−' | '~' => Sign::Hyphen,
         c if c.is_whitespace() => Sign::Space,
         _ => return None,
     })
@@ -137,6 +137,8 @@ mod tests {
         assert_eq!(tracks("１ー２，４", 6), (vec![1, 2, 4], None));
         assert_eq!(tracks("2‐3", 6), (vec![2, 3], None));
         assert_eq!(tracks("2〜3", 6), (vec![2, 3], None));
+        assert_eq!(tracks("2～3", 6), (vec![2, 3], None));
+        assert_eq!(tracks("2−3", 6), (vec![2, 3], None));
         assert_eq!(tracks("2~3", 6), (vec![2, 3], None));
         assert_eq!(tracks("１２", 12), (vec![12], None));
         // Full-width and plain digits in one number.

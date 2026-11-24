@@ -940,7 +940,7 @@ Spec 3, "MIDI export". The owner chose the form (「形」 has 「MIDI」, the r
 | The tracks it takes | 「1 ピアノ ・ 2 ベース ほか 2 本」 (two names at most, as the solo line) | the developers' decision |
 | A number with no track | 「8 番のトラックはありません」 in `color.rec`; 「書き出す」 disabled | the developers' decision |
 | Text that cannot be read | 「番号は「1-3, 5」のように書きます」 in `color.rec`; 「書き出す」 disabled. A range written backwards (「5-3」) is read as 3 to 5. | the developers' decision |
-| How numbers are read | Full-width digits are read as digits; 「、」 and 「，」 as a comma; 「－」 「ー」 「‐」 「〜」 「~」 as a hyphen (people type with the Japanese input on). Spaces around commas and hyphens do not matter; a space between two digits (「1 2」) cannot be read. Empty parts (「1,,2,」) are passed by. A number named twice is taken once. 0 is a number with no track. | the developers' decision |
+| How numbers are read | Full-width digits are read as digits; 「、」 and 「，」 as a comma; 「－」 「ー」 「‐」 「〜」 「～」 「−」 「~」 as a hyphen (people type with the Japanese input on). Spaces around commas and hyphens do not matter; a space between two digits (「1 2」) cannot be read. Empty parts (「1,,2,」) are passed by. A number named twice is taken once. 0 is a number with no track. | the developers' decision |
 | Which missing number is said | The smallest number with no track. The tracks that exist are still listed under it. Text that cannot be read lists none. An empty field is 「入れるトラックがありません」. | the developers' decision |
 | A number that names a vocal track | 「3 ボーカル は声のトラックなので入りません」 in gray; the others are still written | the developers' decision |
 | No track taken | 「入れるトラックがありません」 in `color.rec`; 「書き出す」 disabled (also a song with only vocal tracks) | the developers' decision |

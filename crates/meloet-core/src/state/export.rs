@@ -32,6 +32,7 @@ impl Model {
                     name: t.name.clone(),
                 })
                 .collect(),
+            selected: self.play.song().session.play_target,
         }
     }
 

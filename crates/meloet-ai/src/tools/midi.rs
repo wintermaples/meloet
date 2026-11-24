@@ -3,12 +3,12 @@
 //! core only gets the notes, as one step.
 
 use std::io::{Read, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use meloet_core::ai::{AiAsk, AiNote, AiPlace, AiRefusal, AiSong};
-use meloet_model::{
-    Clip, InstrumentGroup, InstrumentRef, TICKS_PER_QUARTER, TempoMap, Timeline, Track,
-};
+use meloet_core::midi::smf::{self, OutFile, Smf, SmfNote, SmfTrack};
+use meloet_core::midi::{self, midi_file};
+use meloet_model::{ClipId, TICKS_PER_QUARTER, TempoMap};
 use rmcp::model::CallToolResult;
 use rmcp::{
     ErrorData as McpError, handler::server::wrapper::Parameters, schemars, tool, tool_router,
@@ -18,7 +18,6 @@ use serde_json::{Value, json};
 
 use super::notes::notes_line;
 use super::{Tools, at_or_tick, closing, done, failed, path_ok, refusal_text};
-use crate::smf::{self, OutFile, OutNote, OutTrack, Smf, SmfNote, SmfTrack};
 use crate::song::{self, Place};
 use crate::trackref::{TrackRef, id_text};
 
@@ -28,10 +27,6 @@ const MAX_FILE: u64 = 8 << 20;
 pub const MAX_IMPORT_NOTES: usize = 50_000;
 /// Tempo and meter events of a file listed in an answer.
 const MAX_LISTED: usize = 32;
-/// A tempo ramp is written as steps this long (a sixteenth note).
-const RAMP_STEP: u64 = TICKS_PER_QUARTER / 4;
-/// The General MIDI drum channel (10), from 0.
-const DRUM_CHANNEL: u8 = 9;
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 pub struct ImportMidiArgs {
@@ -210,84 +205,12 @@ fn chosen(
     Ok((notes, hanging))
 }
 
-/// A note of a clip as it sounds: where it starts and ends in the song.
-struct Heard {
-    start: u64,
-    end: u64,
-    key: u8,
-    velocity: u8,
-}
-
-/// The notes of a keys clip that start in `from..to`, each ending at the clip's end or at
-/// `to` at the latest, as the clip plays them; and how many were cut at `to`.
-fn heard(clip: &Clip, from: u64, to: u64) -> (Vec<Heard>, u32) {
-    let shown = clip.active_take();
-    let zero = clip.zero(shown);
-    let mut cut = 0;
-    let mut notes = Vec::new();
-    for n in &shown.take.notes {
-        let on = zero + n.start as i64;
-        if on < clip.start as i64 || on >= clip.end as i64 {
-            continue;
-        }
-        let on = on as u64;
-        if on < from || on >= to {
-            continue;
-        }
-        let off = (on + n.length).min(clip.end);
-        if off > to {
-            cut += 1;
-        }
-        notes.push(Heard {
-            start: on,
-            end: off.min(to),
-            key: n.key,
-            velocity: n.velocity,
-        });
-    }
-    (notes, cut)
-}
-
-/// The song's tempo in `from..to` as steps: a tick and the tempo from there. A ramp
-/// becomes a step each sixteenth note, with the tempo of the step's middle.
-fn tempo_steps(timeline: &Timeline, map: &TempoMap, from: u64, to: u64) -> Vec<(u64, f64)> {
-    let mut points = vec![(0, timeline.head_ramp)];
-    points.extend(timeline.tempo_points.iter().map(|p| (p.tick, p.ramp)));
-    let mut steps = Vec::new();
-    for (i, &(start, ramp)) in points.iter().enumerate() {
-        let next = points.get(i + 1).map(|p| p.0);
-        let (a, b) = (start.max(from), next.unwrap_or(u64::MAX).min(to));
-        if a >= b {
-            continue;
-        }
-        if !ramp || next.is_none() {
-            steps.push((a, map.tempo_at(a as f64)));
-            continue;
-        }
-        let mut t = a;
-        while t < b {
-            let end = (start + ((t - start) / RAMP_STEP + 1) * RAMP_STEP).min(b);
-            steps.push((t, map.tempo_at((t + end) as f64 / 2.0)));
-            t = end;
-        }
-    }
-    steps
-}
-
 fn write_file(path: &Path, bytes: &[u8], overwrite: bool) -> std::io::Result<()> {
     if !overwrite {
         let mut file = (std::fs::OpenOptions::new().write(true).create_new(true)).open(path)?;
         return file.write_all(bytes);
     }
-    // Written beside the file and moved over it, so a failed write leaves the old file.
-    let mut beside = path.as_os_str().to_owned();
-    beside.push(format!(".{}.tmp", std::process::id()));
-    let beside = PathBuf::from(beside);
-    let written = std::fs::write(&beside, bytes).and_then(|()| std::fs::rename(&beside, path));
-    if written.is_err() {
-        let _ = std::fs::remove_file(&beside);
-    }
-    written
+    midi::write_beside(path, bytes)
 }
 
 /// What export_midi writes, made from the song as it was read.
@@ -302,16 +225,13 @@ struct Export {
     ramps: bool,
 }
 
-fn is_drums(track: &Track) -> bool {
-    matches!(&track.instrument, InstrumentRef::Builtin(b) if b.group() == InstrumentGroup::Drums)
-}
-
 fn export_of(read: &AiSong, a: &ExportMidiArgs, division: u16) -> Result<Export, CallToolResult> {
     let doc = &read.song.doc;
     let map = TempoMap::new(&doc.timeline);
     let place = |p: &Place| p.tick(&map).map_err(failed);
-    // Each track to write with its number, and the one clip of it when a clip was asked for.
-    let mut chosen: Vec<(usize, &Track, Option<&Clip>)> = Vec::new();
+    // The places of the tracks to write, and the one clip when a clip was asked for.
+    let mut chosen: Vec<usize> = Vec::new();
+    let mut only: Option<ClipId> = None;
     let (from, to) = match a.clip {
         Some(id) => {
             if a.from.is_some() || a.to.is_some() || a.tracks.is_some() {
@@ -320,14 +240,15 @@ fn export_of(read: &AiSong, a: &ExportMidiArgs, division: u16) -> Result<Export,
                 ));
             }
             let found = (doc.tracks.iter().enumerate())
-                .find_map(|(i, t)| t.clips.iter().find(|c| c.id.0 == id).map(|c| (i, t, c)));
-            let Some((i, track, clip)) = found else {
+                .find_map(|(i, t)| t.clips.iter().find(|c| c.id.0 == id).map(|c| (i, c)));
+            let Some((i, clip)) = found else {
                 return Err(failed(refusal_text(&AiRefusal::NoSuchClip(id))));
             };
             if !clip.is_keys() {
                 return Err(failed(refusal_text(&AiRefusal::NotKeys)));
             }
-            chosen.push((i, track, Some(clip)));
+            chosen.push(i);
+            only = Some(clip.id);
             (clip.start, clip.end)
         }
         None => {
@@ -357,95 +278,46 @@ fn export_of(read: &AiSong, a: &ExportMidiArgs, division: u16) -> Result<Export,
                                 "track {n} is a vocal track: it holds audio, not notes"
                             )));
                         }
-                        if !chosen.iter().any(|c| c.0 == n as usize - 1) {
-                            chosen.push((n as usize - 1, track, None));
+                        if !chosen.contains(&(n as usize - 1)) {
+                            chosen.push(n as usize - 1);
                         }
                     }
-                    chosen.sort_by_key(|c| c.0);
+                    chosen.sort_unstable();
                 }
                 None => chosen.extend(
                     (doc.tracks.iter().enumerate())
                         .filter(|(_, t)| !t.kind.is_vocal())
-                        .map(|(i, t)| (i, &**t, None)),
+                        .map(|(i, _)| i),
                 ),
             }
             (from, to)
         }
     };
-    let ticks = |tick: u64| smf::unscaled(tick - from, division);
-    if ticks(to) > smf::MAX_OUT_TICKS {
+    let Ok(made) = midi_file(doc, &chosen, only, from, to, division) else {
         return Err(failed(
             "that range is too long for a MIDI file; write it in parts",
         ));
-    }
-    let mut tracks = Vec::new();
-    let mut listed = Vec::new();
-    let (mut count, mut cut) = (0, 0);
-    for (i, track, only) in chosen {
-        let mut notes = Vec::new();
-        for clip in track.clips.iter().filter(|c| c.is_keys()) {
-            if only.is_some_and(|o| o.id != clip.id) {
-                continue;
-            }
-            let (sounding, cut_here) = heard(clip, from, to);
-            cut += cut_here;
-            notes.extend(sounding.iter().map(|n| {
-                let start = ticks(n.start);
-                OutNote {
-                    start,
-                    length: ticks(n.end).saturating_sub(start).max(1),
-                    key: n.key,
-                    velocity: n.velocity,
-                }
-            }));
-        }
-        let channel = if is_drums(track) { DRUM_CHANNEL } else { 0 };
-        count += notes.len();
-        listed.push(json!({
-            "number": i + 1,
-            "id": id_text(track.id),
-            "name": track.name,
-            "notes": notes.len(),
-            "channel": channel + 1,
-        }));
-        tracks.push(OutTrack {
-            name: track.name.clone(),
-            channel,
-            notes,
-        });
-    }
-    let timeline = &doc.timeline;
-    let mut tempos: Vec<(u64, u32)> = Vec::new();
-    for (tick, bpm) in tempo_steps(timeline, &map, from, to) {
-        let us = (60_000_000.0 / bpm.max(1.0)).round() as u32;
-        if tempos.last().is_none_or(|last| last.1 != us) {
-            tempos.push((ticks(tick), us));
-        }
-    }
-    let head = map.meter_at(from).meter;
-    let mut meters = vec![(0, head.num(), head.den())];
-    for change in &timeline.meter_changes {
-        let tick = map.tick_of_bar(u64::from(change.bar));
-        if tick > from && tick < to {
-            meters.push((ticks(tick), change.meter.num(), change.meter.den()));
-        }
-    }
-    let ramps = timeline.head_ramp || timeline.tempo_points.iter().any(|p| p.ramp);
+    };
+    let tracks = (made.tracks.iter())
+        .map(|w| {
+            let track = &doc.tracks[w.index];
+            json!({
+                "number": w.index + 1,
+                "id": id_text(track.id),
+                "name": track.name,
+                "notes": w.notes,
+                "channel": w.channel + 1,
+            })
+        })
+        .collect();
     Ok(Export {
-        file: OutFile {
-            division,
-            name: doc.name.clone(),
-            tempos,
-            meters,
-            length: ticks(to),
-            tracks,
-        },
+        file: made.file,
         from,
         to,
-        tracks: listed,
-        notes: count,
-        cut,
-        ramps,
+        tracks,
+        notes: made.notes,
+        cut: made.cut,
+        ramps: made.ramps,
     })
 }
 

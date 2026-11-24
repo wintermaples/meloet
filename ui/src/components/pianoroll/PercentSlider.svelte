@@ -159,7 +159,7 @@
     left: 0;
     top: calc((var(--part-param-knob-h) - var(--mock-inspector-slider-fill)) / 2);
     height: var(--mock-inspector-slider-fill);
-    background: var(--color-gray-9);
+    background: var(--color-accent-ink);
   }
   .knob {
     position: absolute;

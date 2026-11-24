@@ -724,7 +724,8 @@ pub enum Command {
         division: u16,
         triplet: bool,
     },
-    /// "スケール固定", "音階" and 「色をつける」 (`highlight`). `root` 0..=11 is C..B.
+    /// "スケール固定" and "音階". `root` 0..=11 is C..B. `highlight` is kept in the promise but the
+    /// screen no longer shows or changes it: it sends back the value it got.
     SetMusicalScale {
         root: u8,
         mode: ScaleMode,
@@ -2276,7 +2277,8 @@ pub struct SongView {
     pub name: String,
     pub undo_count: u32,
     pub redo_count: u32,
-    /// For the piano roll band label: the notes of the shown take of `ArrangeView::piano_roll_clip`.
+    /// The notes of the shown take of `ArrangeView::piano_roll_clip` (the piano roll band label no
+    /// longer shows it; it shows the track name).
     pub note_count: u32,
     pub tracks: Vec<TrackView>,
     /// Return A, then return B.
@@ -2837,9 +2839,9 @@ pub struct Grid {
     pub triplet: bool,
 }
 
-/// `root` 0..=11 is C..B. `lock`: "スケール固定 ・ オン", only keys of the scale can be written.
-/// `highlight`: 「色をつける」 (P1), on in a new song and in a song from before it; with
-/// `lock` off the rows outside the scale are `color.row.out` and can still be written.
+/// `root` 0..=11 is C..B. `lock`: "スケール固定 ・ オン", only keys of the scale can be written, and
+/// the rows outside the scale are `color.row.out`. `highlight`: on in a new song and in a song from
+/// before it; kept in the song and the promise, but no longer shown or changed by the screen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]

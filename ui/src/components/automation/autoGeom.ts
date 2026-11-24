@@ -291,10 +291,10 @@ export function laneRects(v: View, pts: readonly Pt[], step: boolean, d: LaneDim
     const x0 = x - size / 2;
     const y0 = y - size / 2;
     out.push(
-      { x: x0, y: y0, w: size, h: d.hair, color: "color.accent" },
-      { x: x0, y: y0 + size - d.hair, w: size, h: d.hair, color: "color.accent" },
-      { x: x0, y: y0, w: d.hair, h: size, color: "color.accent" },
-      { x: x0 + size - d.hair, y: y0, w: d.hair, h: size, color: "color.accent" },
+      { x: x0, y: y0, w: size, h: d.hair, color: "color.accent.ink" },
+      { x: x0, y: y0 + size - d.hair, w: size, h: d.hair, color: "color.accent.ink" },
+      { x: x0, y: y0, w: d.hair, h: size, color: "color.accent.ink" },
+      { x: x0 + size - d.hair, y: y0, w: d.hair, h: size, color: "color.accent.ink" },
     );
   };
   for (const p of look.from) {
@@ -307,7 +307,7 @@ export function laneRects(v: View, pts: readonly Pt[], step: boolean, d: LaneDim
     const y = ys[i]!;
     const on = look.selected(i);
     if (look.armed && !on) frame(x, y, d.point);
-    else out.push({ x: x - half, y: y - half, w: d.point, h: d.point, color: on ? "color.accent" : "color.gray.10" });
+    else out.push({ x: x - half, y: y - half, w: d.point, h: d.point, color: on ? "color.accent.ink" : "color.gray.10" });
     if (i === look.hovered && !on) frame(x, y, d.point + 2 * d.hair);
   });
   return out;

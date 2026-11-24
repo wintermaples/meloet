@@ -115,10 +115,10 @@
     background: var(--color-gray-0);
   }
   .fader:hover .knob:not(.from) {
-    border-color: var(--color-accent);
+    border-color: var(--color-accent-ink);
   }
   .fader.auto .knob:not(.from) {
-    border-color: var(--color-accent);
+    border-color: var(--color-accent-ink);
   }
   .fader.dragging .knob:not(.from) {
     background: var(--color-gray-10);

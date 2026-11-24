@@ -323,7 +323,7 @@
     cursor: default;
   }
   .tag.selected {
-    border-left-color: var(--color-accent);
+    border-left-color: var(--color-accent-ink);
     background: var(--color-gray-4);
   }
   .from {
@@ -343,7 +343,7 @@
     bottom: 0;
     display: flex;
     align-items: center;
-    border-left: var(--line-mark) solid var(--color-accent);
+    border-left: var(--line-mark) solid var(--color-accent-ink);
   }
   .sizer {
     position: absolute;

@@ -420,7 +420,7 @@
     left: 0;
     right: 0;
     height: var(--line-hair);
-    background: var(--color-accent);
+    background: var(--color-accent-ink);
   }
   .origin-line {
     position: absolute;

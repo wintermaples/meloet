@@ -383,7 +383,7 @@
     right: 0;
     top: 0;
     height: var(--line-mark);
-    background: var(--color-accent);
+    background: var(--color-accent-ink);
     pointer-events: none;
   }
   /* 「▾ ピアノロール」: pressing folds it. States are those of the button in spec 2 (the border is drawn inside). */
@@ -453,8 +453,9 @@
   }
   .m-btn.on,
   .m-btn.on:hover {
-    border-color: var(--color-accent);
-    color: var(--color-accent);
+    border-color: var(--color-accent-ink);
+    background: var(--color-accent);
+    color: var(--color-accent-fg);
   }
   .m-btn.open {
     border-color: var(--color-gray-8);
@@ -463,12 +464,13 @@
   .value {
     color: var(--color-gray-10);
   }
-  .m-btn.on .m-num {
-    color: var(--color-accent);
-  }
-  /* Keys stay gray.8 even when on (the same as the transport). */
+  /* Keys are gray.8; on an accent fill everything takes the fill's text color. */
   .m-btn .key {
     color: var(--color-gray-8);
+  }
+  .m-btn.on .m-num,
+  .m-btn.on .key {
+    color: var(--color-accent-fg);
   }
   /* The ▾ of the draw tool: the same form as the ▾ of the scale lock, right after 「書く」 with one line between. */
   .chord-stub {

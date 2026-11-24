@@ -51,13 +51,13 @@ export type KeyForm = keyof typeof KEY_FORMS;
 export const KEYBOARD = {
   whiteFill: "color.key.meter.white",
   blackFill: "color.key.meter.black",
-  down: "color.accent",
+  down: "color.accent.ink",
   lit: { frame: "color.line.thin", blackFrame: "color.gray.7" },
   dim: { frame: "color.gray.5", blackFrame: "color.line.thin" },
 } as const satisfies Record<string, ColorName | { frame: ColorName; blackFrame: ColorName }>;
 
 /** F-Connect2, the bar beside 「ベロシティ 87」. `max` is the top MIDI velocity. */
-export const VELOCITY = { ground: "color.gray.4", fill: "color.accent", max: 127 } as const;
+export const VELOCITY = { ground: "color.gray.4", fill: "color.accent.ink", max: 127 } as const;
 
 export const METER = {
   ground: "color.meter.ground",
@@ -94,4 +94,4 @@ export const WAVE = {
 } as const satisfies Record<string, ColorName>;
 
 /** A-PianoRoll, the frame of the visible range. */
-export const OVERVIEW = { frame: "color.accent", inset: mock["mock.range-frame.inset"].value } as const;
+export const OVERVIEW = { frame: "color.accent.ink", inset: mock["mock.range-frame.inset"].value } as const;

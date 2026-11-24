@@ -106,7 +106,7 @@
   }
   .tab.open {
     background: var(--color-gray-1);
-    border-top-color: var(--color-accent);
+    border-top-color: var(--color-accent-ink);
   }
   /* Pressed (spec 2: bg gray.2, border gray.8, drawn on the inside). */
   .tab:active,

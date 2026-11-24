@@ -64,7 +64,7 @@
     inset: 0;
     z-index: 40;
     pointer-events: none;
-    border: var(--line-mark) solid var(--color-accent);
+    border: var(--line-mark) solid var(--color-accent-ink);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -77,7 +77,7 @@
     gap: var(--space-2);
     padding: var(--space-4);
     background: var(--color-gray-3);
-    border: var(--line-hair) solid var(--color-accent);
+    border: var(--line-hair) solid var(--color-accent-ink);
   }
   .name {
     font-size: var(--text-l-size);
@@ -118,7 +118,7 @@
   }
   .half.on {
     background: var(--color-gray-4);
-    border-color: var(--color-accent);
+    border-color: var(--color-accent-ink);
     color: var(--color-gray-9);
   }
   /* The name is text.l at 600, the same as the F5-SF2Drop box (the mock is 16 px at 600; text.m has no 600). */

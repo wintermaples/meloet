@@ -236,7 +236,7 @@
   .row.selected,
   .row.moving {
     background: var(--color-gray-4);
-    border-left: var(--line-mark) solid var(--color-accent);
+    border-left: var(--line-mark) solid var(--color-accent-ink);
     padding-left: calc(var(--space-2) - var(--line-mark));
   }
   /* Disabled (the plugin has stopped; spec 2: text gray.7). */
@@ -277,7 +277,7 @@
     left: 0;
     top: calc((var(--part-param-knob-h) - var(--mock-inspector-slider-fill)) / 2);
     height: var(--mock-inspector-slider-fill);
-    background: var(--color-gray-9);
+    background: var(--color-accent-ink);
   }
   .knob {
     position: absolute;
@@ -335,10 +335,10 @@
     height: var(--part-param-step);
   }
   .switch.on {
-    border-color: var(--color-accent);
+    border-color: var(--color-accent-ink);
   }
   .switch.on span {
-    background: var(--color-accent);
+    background: var(--color-accent-ink);
   }
   .value {
     width: var(--part-param-value);

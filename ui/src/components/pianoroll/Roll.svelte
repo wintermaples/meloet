@@ -40,7 +40,7 @@
   import * as G from "./geom";
   import { ghostClips, ghostHidden, ghostShown, ghostTracks, ghostWindow, ghostWindowIndex, shownTrackId } from "./ghosts";
   import { glowFit, glowMaxWidth, glowNext, glowShows, type GlowBox, type GlowSpan } from "./glow";
-  import { noteMarks, paintLive, paintRoll, paintRollKeys, paintVelocityLane, type LivePicture, type RollPicture, type RollSizes } from "./paint";
+  import { noteMarks, paintLive, paintRoll, paintRollKeys, paintVelocityLane, type LivePicture, type NoteLook, type RollPicture, type RollSizes } from "./paint";
   import { rollMenu, type RollMenuActions } from "./rollMenu";
   import { shown } from "./shown.svelte";
   import { originFor, shownFor } from "./shownNotes";
@@ -552,7 +552,7 @@
       paint: (out, box, ctx) => {
         const lit = (k: number) => ctx.isDown(k) || isSounding(k) || heard.includes(k);
         const recording = transport.state === "recording";
-        paintRollKeys(out, box, keysGeom, lit, ctx.dpr, { width: metrics.px("line.mark"), color: recording ? "color.rec" : "color.accent" });
+        paintRollKeys(out, box, keysGeom, lit, ctx.dpr, { width: metrics.px("line.mark"), color: recording ? "color.rec" : "color.accent.ink" });
         if (keysGeom.drum) markDrumNames(lit);
       },
     },
@@ -723,8 +723,8 @@
   }
 
   function liveNotesOf(d: Drag | null): LivePicture["notes"] {
-    const out: { start: number; end: number; key: number; face: ColorName; outline?: boolean }[] = [];
-    const face = (i: number): ColorName => (selFlags && selFlags[i] ? "color.accent" : G.velocityColor(n!.take.velocities[i]!));
+    const out: { start: number; end: number; key: number; face: NoteLook; outline?: boolean }[] = [];
+    const face = (i: number): NoteLook => (selFlags && selFlags[i] ? "selected" : n!.take.velocities[i]!);
     if (d && n && !liveMode) {
       if (d.kind === "move" && d.press.moved) {
         for (const i of d.notes) out.push({ start: G.noteStart(n, i), end: G.noteEnd(n, i), key: n.take.keys[i]!, face: face(i) });
@@ -740,11 +740,11 @@
       }
     }
     if (d && d.kind === "draw") {
-      for (const key of d.keys) out.push({ start: d.start, end: d.start + d.length, key, face: "color.accent" });
+      for (const key of d.keys) out.push({ start: d.start, end: d.start + d.length, key, face: 127 });
       return out;
     }
     if (!d && shadow) {
-      for (const key of shadow.keys) out.push({ start: shadow.start, end: shadow.start + shadow.length, key, face: "color.accent", outline: true });
+      for (const key of shadow.keys) out.push({ start: shadow.start, end: shadow.start + shadow.length, key, face: "color.accent.ink", outline: true });
       return out;
     }
     for (const l of held) out.push({ start: l.start, end: Math.max(l.start, nowTick), key: l.key, face: "color.rec" });
@@ -790,7 +790,7 @@
       track: shown.track,
     }),
   );
-  const glowFace: ColorName = $derived(shown.track ? AG.trackColor(shown.track) : "color.accent");
+  const glowFace: ColorName = $derived(shown.track ? AG.trackColor(shown.track) : "color.accent.ink");
   const glowLimit = $derived(glowMaxWidth(app.workspace.viewportWidth, app.workspace.viewportHeight, areaHeight));
   $effect(() => {
     void [glowOn, g, sizes, glowFace, glowLimit, metrics.dpr];
@@ -1342,7 +1342,7 @@
     position: absolute;
     top: 0;
     height: var(--mock-arrange-loop);
-    background: var(--color-accent);
+    background: var(--color-accent-ink);
     pointer-events: none;
   }
   /* Ruler markers (spec 2: the name in gray.8, with a gray.8 line.hair on its left; cannot be pressed). The name is laid over the beat numbers on a gray.3 background (spec 3, R11-Answers92). */
@@ -1431,7 +1431,7 @@
     color: var(--color-gray-10);
   }
   .drum-names :global(.drum-name.lit) {
-    color: var(--color-accent);
+    color: var(--color-accent-ink);
   }
   .drum-names.rec :global(.drum-name.lit) {
     color: var(--color-rec);
@@ -1474,7 +1474,7 @@
   }
   .box-frame {
     position: absolute;
-    border: var(--line-hair) solid var(--color-accent);
+    border: var(--line-hair) solid var(--color-accent-ink);
     pointer-events: none;
     z-index: 2;
   }
@@ -1505,7 +1505,7 @@
     top: 0;
     bottom: 0;
     width: var(--line-hair);
-    background: var(--color-accent);
+    background: var(--color-accent-ink);
     pointer-events: none;
     z-index: 3;
   }

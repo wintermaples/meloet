@@ -2052,7 +2052,7 @@
     right: 0;
     top: 0;
     height: var(--line-mark);
-    background: var(--color-accent);
+    background: var(--color-accent-ink);
     pointer-events: none;
     z-index: 21;
   }
@@ -2168,7 +2168,7 @@
     position: absolute;
     top: 0;
     height: var(--mock-arrange-loop);
-    background: var(--color-accent);
+    background: var(--color-accent-ink);
   }
   .lanes-wrap {
     flex: 1;
@@ -2272,7 +2272,7 @@
     color: var(--color-gray-10);
   }
   .take-tag.selected {
-    border-color: var(--color-accent);
+    border-color: var(--color-accent-ink);
   }
   .loop-range {
     color: var(--color-gray-9);
@@ -2329,7 +2329,7 @@
     justify-content: center;
     overflow: hidden;
     background: var(--color-gray-4);
-    color: var(--color-accent);
+    color: var(--color-accent-ink);
     line-height: var(--text-s-line-height);
   }
   /* The box of 「くり返す…」: the look of the clip name box, two digits wide. */
@@ -2361,7 +2361,7 @@
   .box-frame {
     position: absolute;
     z-index: 3;
-    border: var(--line-hair) solid var(--color-accent);
+    border: var(--line-hair) solid var(--color-accent-ink);
     pointer-events: none;
   }
   .switcher {
@@ -2372,7 +2372,7 @@
     gap: var(--space-1);
     padding: 0 var(--space-1);
     background: var(--color-gray-4);
-    border: var(--line-hair) solid var(--color-accent);
+    border: var(--line-hair) solid var(--color-accent-ink);
     white-space: nowrap;
     pointer-events: auto;
   }
@@ -2384,7 +2384,7 @@
     width: var(--line-hair);
     z-index: 3;
     pointer-events: none;
-    background: var(--color-accent);
+    background: var(--color-accent-ink);
   }
   .play-line.rec {
     background: var(--color-rec);

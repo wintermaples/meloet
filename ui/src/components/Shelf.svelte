@@ -649,8 +649,8 @@
     align-items: center;
     padding: 0 var(--space-3);
     background: var(--color-gray-1);
-    border-bottom: var(--line-hair) solid var(--color-accent);
-    color: var(--color-accent);
+    border-bottom: var(--line-hair) solid var(--color-accent-ink);
+    color: var(--color-accent-ink);
     white-space: nowrap;
     overflow: hidden;
   }
@@ -731,7 +731,7 @@
   /* While auditioning: background gray.4, an accent line.mark on the left. */
   .row.selected {
     background: var(--color-gray-4);
-    border-left: var(--line-mark) solid var(--color-accent);
+    border-left: var(--line-mark) solid var(--color-accent-ink);
     padding-left: calc(var(--space-2) - var(--line-mark));
   }
   .row.added.selected {
@@ -775,8 +775,9 @@
     color: var(--color-gray-10);
   }
   .sample.playing {
-    border-color: var(--color-accent);
-    color: var(--color-accent);
+    border-color: var(--color-accent-ink);
+    background: var(--color-accent);
+    color: var(--color-accent-fg);
   }
   .icon {
     width: var(--part-button-icon);
@@ -818,7 +819,7 @@
     color: var(--color-gray-10);
   }
   .time {
-    color: var(--color-accent);
+    color: var(--color-accent-ink);
   }
   /* The hint and buttons that open under the chosen row (mock F4-ShelfAudition, F5-PluginAudition, F5-ShelfFx). */
   .box {
@@ -828,7 +829,7 @@
     padding: var(--space-2) var(--space-3);
     background: var(--color-gray-2);
     border-bottom: var(--line-hair) solid var(--color-line-thin);
-    border-left: var(--line-mark) solid var(--color-accent);
+    border-left: var(--line-mark) solid var(--color-accent-ink);
   }
   /* The notice of missing things (spec 2: a gray.8 line.mark on the left, padding 8 / 12). */
   .notice {
@@ -840,7 +841,7 @@
     border-left: var(--line-mark) solid var(--color-gray-8);
   }
   .accent {
-    color: var(--color-accent);
+    color: var(--color-accent-ink);
   }
   .say {
     white-space: normal;

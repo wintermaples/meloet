@@ -529,10 +529,10 @@
     height: var(--part-param-step);
   }
   .switch.on {
-    border-color: var(--color-accent);
+    border-color: var(--color-accent-ink);
   }
   .switch.on span {
-    background: var(--color-accent);
+    background: var(--color-accent-ink);
   }
   /* Render progress (mock F7-Stretch: height 24, 12 left and right, gap 8, the bar accent on gray.4; as thick as the bar in F7-Latency). */
   .rendering {
@@ -553,7 +553,7 @@
   }
   .fill {
     height: 100%;
-    background: var(--color-accent);
+    background: var(--color-accent-ink);
     transform-origin: left;
   }
   .percent {

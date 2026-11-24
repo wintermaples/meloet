@@ -176,7 +176,7 @@
   }
   /* Write is on (spec 2: the button has the 「えらんでいる」 shape, with ● and the text in the rec color). */
   .write.on {
-    border-color: var(--color-accent);
+    border-color: var(--color-accent-ink);
     color: var(--color-rec);
   }
 </style>

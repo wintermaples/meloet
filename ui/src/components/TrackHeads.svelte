@@ -437,7 +437,7 @@
   /* The lifted head (spec 2 "Track reorder mark"): an accent line.hair border. Drawn above the other heads. */
   .track-head.lifted {
     z-index: 2;
-    outline: var(--line-hair) solid var(--color-accent);
+    outline: var(--line-hair) solid var(--color-accent-ink);
     outline-offset: calc(-1 * var(--line-hair));
   }
   /* Where it goes: a horizontal accent line.mark, over the border between heads. */
@@ -463,7 +463,7 @@
     right: 0;
     height: var(--line-mark);
     margin-top: calc(-1 * var(--line-mark) / 2);
-    background: var(--color-accent);
+    background: var(--color-accent-ink);
     pointer-events: none;
     z-index: 3;
   }
@@ -533,7 +533,7 @@
   }
   .instrument.auditioned,
   .instrument.auditioned:hover {
-    color: var(--color-accent);
+    color: var(--color-accent-ink);
   }
   .tog {
     width: var(--part-toggle-size);
@@ -557,13 +557,15 @@
     border-color: var(--color-gray-8);
     color: var(--color-gray-10);
   }
-  /* On (spec 2: border and text accent; only ● uses rec). */
+  /* On (spec 2: an accent face with an accent.ink border; ● keeps its face and uses rec). */
   .tog.live.on {
-    border-color: var(--color-accent);
-    color: var(--color-accent);
+    border-color: var(--color-accent-ink);
+    background: var(--color-accent);
+    color: var(--color-accent-fg);
   }
   .tog.arm.on {
     border-color: var(--color-rec);
+    background: var(--color-gray-1);
     color: var(--color-rec);
   }
   /* Pressed (spec 2: bg gray.2, border gray.8). */
@@ -578,7 +580,7 @@
   .instrument.no-input {
     color: var(--color-gray-8);
   }
-  /* 「モニター」 (mock F7-VocalTrack: height 20; on uses the chosen form = border and text accent). */
+  /* 「モニター」 (mock F7-VocalTrack: height 20; on is the On state of spec 2). */
   .monitor {
     box-sizing: border-box;
     flex-shrink: 0;
@@ -600,8 +602,9 @@
     border-color: var(--color-gray-8);
   }
   .monitor.on {
-    border-color: var(--color-accent);
-    color: var(--color-accent);
+    border-color: var(--color-accent-ink);
+    background: var(--color-accent);
+    color: var(--color-accent-fg);
   }
   /* 「＋ 鍵盤のトラック」 「＋ 歌のトラック」 (mock F7-VocalTrack: text gray.9, the left box 120 wide). Disabled while recording. */
   .adds {

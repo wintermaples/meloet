@@ -444,7 +444,7 @@
   .fill {
     display: block;
     height: 100%;
-    background: var(--color-accent);
+    background: var(--color-accent-ink);
     transform-origin: left;
   }
   .percent {
@@ -585,14 +585,14 @@
     border: var(--line-hair) solid var(--color-gray-8);
   }
   .mark.on {
-    border-color: var(--color-accent);
+    border-color: var(--color-accent-ink);
   }
   .dot {
     width: var(--part-choice-dot);
     height: var(--part-choice-dot);
   }
   .mark.on .dot {
-    background: var(--color-accent);
+    background: var(--color-accent-ink);
   }
   .pick:disabled {
     color: var(--color-gray-7);

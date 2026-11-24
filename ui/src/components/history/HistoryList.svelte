@@ -229,7 +229,7 @@
     color: var(--color-gray-8);
   }
   .row.now {
-    border-left-color: var(--color-accent);
+    border-left-color: var(--color-accent-ink);
     background: var(--color-gray-4);
   }
   .row.lit {
@@ -251,7 +251,7 @@
     text-overflow: ellipsis;
   }
   .here {
-    color: var(--color-accent);
+    color: var(--color-accent-ink);
   }
   .more {
     flex-shrink: 0;

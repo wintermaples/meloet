@@ -205,7 +205,7 @@ describe("the overview's「見えている範囲の枠」", () => {
     });
   const accent = () => {
     const rects = [...slots.values()].flatMap((s) => (s.kind === "rects" ? s.rects : [])) as GlRect[];
-    return rects.filter((r) => r.color === "color.accent");
+    return rects.filter((r) => r.color === "color.accent.ink");
   };
 
   it("with the piano roll closed, the frame fills the overview as before (the overview slot)", () => {

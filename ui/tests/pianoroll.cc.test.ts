@@ -256,7 +256,7 @@ describe("band picture (paintLane)", () => {
     const dots = squares(rects);
     expect(dots.map((r) => [r[0], r[1], colorOf(r)])).toEqual([
       [17, 21, is("color.gray.10")],
-      [77, Math.round(valueToY(PB, LANE, 4096) - 3), is("color.accent")],
+      [77, Math.round(valueToY(PB, LANE, 4096) - 3), is("color.accent.ink")],
     ]);
     expect(rects.some((r) => r[1] === 24 && r[3] === 25 && r[2]! - r[0]! === 696 && colorOf(r) === is("color.gray.5"))).toBe(true);
   });

@@ -645,7 +645,7 @@
     text-decoration: underline;
   }
   .pick.on {
-    color: var(--color-accent);
+    color: var(--color-accent-ink);
   }
   .pick:disabled {
     cursor: default;
@@ -743,7 +743,7 @@
   .slider-row.moving,
   .slider-row.moving:hover {
     background: var(--color-gray-4);
-    box-shadow: inset var(--line-mark) 0 0 0 var(--color-accent);
+    box-shadow: inset var(--line-mark) 0 0 0 var(--color-accent-ink);
   }
   .key {
     color: var(--color-gray-8);

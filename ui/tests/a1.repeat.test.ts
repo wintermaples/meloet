@@ -142,10 +142,10 @@ describe("dragging the handle (arrangeDrag)", () => {
       [256, 128],
     ]);
     expect(out.filter((r) => r.color === "color.gray.7")).toHaveLength(8);
-    expect(out.at(-1)).toEqual({ x: 384 - 2, y: 3, w: 2, h: 57, color: "color.accent" });
+    expect(out.at(-1)).toEqual({ x: 384 - 2, y: 3, w: 2, h: 57, color: "color.accent.ink" });
     const zero: GlRect[] = [];
     G.paintRepeats(zero, view, dims, [a], 2 * BAR, 0, a);
-    expect(zero).toEqual([{ x: 128 - 2, y: 3, w: 2, h: 57, color: "color.accent" }]);
+    expect(zero).toEqual([{ x: 128 - 2, y: 3, w: 2, h: 57, color: "color.accent.ink" }]);
   });
 });
 
@@ -283,7 +283,7 @@ describe("Arrange: the handle with the mouse, and the box", () => {
     const box = target.querySelector<HTMLElement>(".rec-host .drag-clip")!;
     expect([box.style.left, box.style.width, box.style.transform]).toEqual(["0px", `${WIDTH}px`, ""]);
     expect(dragRects().filter((r) => r.color === "color.gray.2").map((r) => r.x)).toEqual([128, 256]);
-    expect(dragRects().some((r) => r.color === "color.accent")).toBe(true);
+    expect(dragRects().some((r) => r.color === "color.accent.ink")).toBe(true);
     // The big face is not drawn again, and the clip keeps its own look (no gray.7 border where it is).
     expect(big()).toBe(before);
     expect(target.querySelector('[data-test="repeat-mark"]')).not.toBeNull();

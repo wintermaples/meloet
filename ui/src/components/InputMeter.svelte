@@ -818,7 +818,7 @@
     white-space: pre;
   }
   .mark.on {
-    background: var(--color-accent);
+    background: var(--color-accent-ink);
     border: 0;
   }
   .keys {
@@ -860,7 +860,7 @@
     color: var(--color-gray-10);
   }
   .value.held {
-    color: var(--color-accent);
+    color: var(--color-accent-ink);
   }
   .value.none {
     color: var(--color-gray-7);
@@ -920,8 +920,9 @@
   .switch.on,
   .switch.on[aria-disabled="true"]:hover,
   .switch.on[aria-disabled="true"]:active {
-    border-color: var(--color-accent);
-    color: var(--color-accent);
+    border-color: var(--color-accent-ink);
+    background: var(--color-accent);
+    color: var(--color-accent-fg);
   }
   /* 「アルペジオ」 and its ▾: one line between them, as the metronome and its ▾ in the transport. */
   .arp {
@@ -967,7 +968,7 @@
     color: var(--color-gray-8);
   }
   .accent {
-    color: var(--color-accent);
+    color: var(--color-accent-ink);
   }
   .target {
     align-items: flex-end;
@@ -989,7 +990,7 @@
     color: var(--color-gray-8);
   }
   .target-value.accent {
-    color: var(--color-accent);
+    color: var(--color-accent-ink);
   }
   /* 「サイン波で代わり」 (spec 3 85: gray.8). */
   .stand-in {

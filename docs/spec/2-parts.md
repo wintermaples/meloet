@@ -2,12 +2,14 @@
 
 Every part shows its states by the same rules. The samples below are real size.
 
+“accent” in this chapter: as text, a line, a border or a small mark (a dot, a point, a 2px mark) it is `color.accent.ink`; as a fill (the face of an on button or toggle, notes and drum squares, pressed keys) it is `color.accent`, with an accent.ink border, frame or mark, and text on it in `color.accent.fg` (user:2026-11-24; spec 1 “Themes”, “Contrast”).
+
 | State | Rule |
 |---|---|
 | Normal | bg gray.4, border gray.6, text gray.9 |
 | Hover | border gray.8, text gray.10 |
 | Pressed | bg gray.2, border gray.8 |
-| On | border and text accent |
+| On | bg accent, border accent.ink, text accent.fg (user:2026-11-24; before: border and text accent) |
 | Disabled | border gray.5, text gray.7, cannot be pressed |
 | Keyboard focus | a 1px gray.10 line, 1px outside |
 | Broken | border and text rec |
@@ -27,7 +29,7 @@ Every part shows its states by the same rules. The samples below are real size.
 | Pan knob | A circle of diameter 24. gray.8 border, 1px gray.10 needle. Only this and the record button are round | normal / hover (border gray.10) / moving (needle accent) / disabled / keyboard |
 | Record button | A circle of diameter 12 inside the button. When stopped, a rec ring; while recording and during count-in, filled with rec | normal / hover / recording / count-in / disabled (no armed track) |
 | Meter | Horizontal 4px; vertical, 2 bars 6px wide. Up to −3 dB (70 % of the length) is meter.ok, above that meter.hot. Scale marks: see “Scale marks of meters and faders” below. The meter in a track head is also 2 horizontal bars of 4px. Background meter.ground. No blur and no gradients | moving / stopped (empty) / clipping (meter.clip 2px at the top end for 2 seconds) |
-| Note | Height 11. A 2px gray.10 at the left end. The face by velocity: gray.8 (up to 69) / gray.9 (70 to 89) / gray.10 (90 and up) | normal / selected (face accent) / original position (during a drag, or 「そろえる前の位置」. Selected notes get an accent border, others a gray.7 border. Both are drawn above the notes) / outside the scale (rows you cannot write in are row.out, with nothing more on them; user:2026-11-24) |
+| Note | Height 11. A 2px gray.10 at the left end. The face is accent, as strong as the velocity: half of it over gray.1 (up to 69) / three quarters (70 to 89) / all of it (90 and up), with a 1px accent.ink frame inside its edge (user:2026-11-24; before: gray.8 / gray.9 / gray.10) | normal / selected (face gray.10, the same accent.ink frame; user:2026-11-24, before: face accent) / original position (during a drag, or 「そろえる前の位置」. Selected notes get an accent border, others a gray.7 border. Both are drawn above the notes) / outside the scale (rows you cannot write in are row.out, with nothing more on them; user:2026-11-24) |
 | Clip | Face gray.4, border gray.6, top edge 2px in the track color | normal / selected (border and top edge accent) / recording (border, top edge and content rec) / moving (gray.7 border at the original place) |
 | Term tip | Width 248, padding 8, background gray.10, text gray.0. No shadow. Shows when the mouse stays still for 0.6 seconds | shown / hidden |
 | Choice mark (in settings) | A 12×12 square border; when chosen, a 6×6 accent inside. Not round | normal / chosen / disabled / keyboard |
@@ -49,7 +51,7 @@ Every part shows its states by the same rules. The samples below are real size.
 | Menu bar | Height 24, background gray.1, a line.thin line below. From the left: 「ファイル」「編集」「表示」「再生」「ノート」「トラック」「ヘルプ」 (text.s, 8 on left and right). The pictures up to version 5 have no 「ヘルプ」, but from version 6 it is at the right end. When pressed, a 「一覧」 (List) opens just below. The open name has background gray.4, text gray.10 | normal / hover / open / keyboard (F10 goes to the first name) |
 | List row: added forms | A row with ▸ children has ▸ at its right end. The children open to the right (the same 「一覧」 (List)). Dividers are 1px line.thin with 4 above and below. Heading rows are 「hd」. Rows that cannot work yet are 「使えない」 (disabled) (name and key text gray.7, cannot be pressed) | same as a list row |
 | Context menu | Opens the 「一覧」 (List) of chapter 2 where pressed. The content is in chapter 3. At the edge of the screen, moved inward | open / closed |
-| Fixed velocity toggle | To the right of the velocity reading in the input meter. Height 20, 4 on left and right, the text 「固定」. On: border and text accent. Never removed at any width | normal / hover / pressed / on / keyboard |
+| Fixed velocity toggle | To the right of the velocity reading in the input meter. Height 20, 4 on left and right, the text 「固定」. On: as the On state above. Never removed at any width | normal / hover / pressed / on / keyboard |
 | Vertical − ＋ | At the top corner of the keyboard column of the piano roll (left of the ruler row). Two 20×18 toggles | same as a button. 「使えない」 (disabled) at the smallest and largest steps |
 | Scale lock ▾ | To the right of the 「スケール固定」 button in the toolbar, with no gap, a ▾ 20 wide (the same shape as the metronome ▾). When pressed, a list of scales | same as a button. When scale lock is on, the ▾ also has the on color |
 | Selected track head | Background gray.4 (the same as the 「選んだ行」 (selected row) of a list). Nothing else changes | normal / selected |

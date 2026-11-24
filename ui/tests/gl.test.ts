@@ -287,7 +287,7 @@ describe("rect lists", () => {
     expect(whites[0]).toEqual([101, 11, 112, 41]);
     expect(whites[1]).toEqual([113, 11, 124, 41]);
     // The pressed white key (C4 = white key 14) and black key (C#4 = line 15) are accent.
-    expect(ofColor(b, "color.accent")).toEqual([
+    expect(ofColor(b, "color.accent.ink")).toEqual([
       [100 + 14 * 12 + 1, 11, 100 + 15 * 12, 41],
       [100 + 15 * 12 - 2, 11, 100 + 15 * 12 + 3, 28],
     ]);
@@ -321,7 +321,7 @@ describe("rect lists", () => {
     expect(b.rectCount).toBe(1 + 29 + 2 * 20);
     expect(ofColor(b, "color.gray.3")[28 - 1]).toEqual([225, 1, 232, 11]);
     // E4 = white key 16, C#4 = line 15.
-    expect(ofColor(b, "color.accent")).toEqual([
+    expect(ofColor(b, "color.accent.ink")).toEqual([
       [16 * 8 + 1, 1, 17 * 8, 11],
       [15 * 8 - 1, 1, 15 * 8 + 2, 6],
     ]);
@@ -353,7 +353,7 @@ describe("rect lists", () => {
     expect(ofColor(b, "color.gray.3")[0]).toEqual([1, 1, 8, 31]);
     expect(ofColor(b, "color.gray.7")[0]).toEqual([8 - 2, 0, 8 + 3, 19]);
     expect(ofColor(b, "color.gray.0")[0]).toEqual([8 - 1, 1, 8 + 2, 18]);
-    expect(ofColor(b, "color.accent")).toEqual([[15 * 8 - 1, 1, 15 * 8 + 2, 18]]);
+    expect(ofColor(b, "color.accent.ink")).toEqual([[15 * 8 - 1, 1, 15 * 8 + 2, 18]]);
   });
   it("black key size: multiply by the scale and round (.5 goes up). Then to screen pixels", () => {
     const at = (form: "full" | "narrow" | "slim") => [100, 125, 150].map((scale) => blackKeyPx(form, scale, 1));
@@ -384,7 +384,7 @@ describe("rect lists", () => {
     const b = batch();
     paintVelocity(b, { x0: 0, y0: 0, x1: 100, y1: 4 }, 87);
     expect(ofColor(b, "color.gray.4")).toEqual([[0, 0, 100, 4]]);
-    expect(ofColor(b, "color.accent")).toEqual([[0, 0, 69, 4]]);
+    expect(ofColor(b, "color.accent.ink")).toEqual([[0, 0, 69, 4]]);
     const none = batch();
     paintVelocity(none, { x0: 0, y0: 0, x1: 100, y1: 4 }, 0);
     expect(none.rectCount).toBe(1);
@@ -481,12 +481,14 @@ describe("rect lists", () => {
     expect(ofColor(b, "color.line.beat")).toEqual([[30, 0, 31, 10]]);
   });
   it("the border gap of the shrunk arrange is the A-PianoRoll mock value", () => {
-    expect(mockHtml("A-PianoRoll")).toContain(`top:${OVERVIEW.inset}px;width:256px;height:37px;border:1px solid ${colors[OVERVIEW.frame]}`);
+    // The mock boards keep the accent of before (spec 1).
+    expect(OVERVIEW.frame).toBe("color.accent.ink");
+    expect(mockHtml("A-PianoRoll")).toContain(`top:${OVERVIEW.inset}px;width:256px;height:37px;border:1px solid #FFB000`);
   });
   it("shrunk arrange: only a 1 px border", () => {
     const b = batch();
     paintOverview(b, { x0: 0, y0: 0, x1: 256, y1: 39 }, 1);
-    expect(ofColor(b, "color.accent")).toEqual([
+    expect(ofColor(b, "color.accent.ink")).toEqual([
       [0, 1, 256, 2],
       [0, 37, 256, 38],
       [0, 1, 1, 38],

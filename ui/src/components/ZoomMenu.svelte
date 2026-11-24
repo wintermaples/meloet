@@ -126,14 +126,14 @@
     border: var(--line-hair) solid var(--color-gray-8);
   }
   .choice.selected {
-    border-color: var(--color-accent);
+    border-color: var(--color-accent-ink);
   }
   .dot {
     width: var(--part-choice-dot);
     height: var(--part-choice-dot);
   }
   .choice.selected .dot {
-    background: var(--color-accent);
+    background: var(--color-accent-ink);
   }
   .rate {
     flex-shrink: 0;

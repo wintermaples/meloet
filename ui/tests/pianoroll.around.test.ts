@@ -161,10 +161,10 @@ describe("the overview's 「見えている範囲の枠」 (spec 3, mock A-Piano
   it("A-PianoRoll: the frame for bars 1 to 5 (4 bars) is x 0 to 256, a 1px accent line leaving 1 above and below", () => {
     const rects = G.rangeFrameRects(view, { start: 0, end: 4 * BAR }, 39, o);
     expect(rects).toEqual([
-      { x: 0, y: 1, w: 256, h: 1, color: "color.accent" },
-      { x: 0, y: 37, w: 256, h: 1, color: "color.accent" },
-      { x: 0, y: 1, w: 1, h: 37, color: "color.accent" },
-      { x: 255, y: 1, w: 1, h: 37, color: "color.accent" },
+      { x: 0, y: 1, w: 256, h: 1, color: "color.accent.ink" },
+      { x: 0, y: 37, w: 256, h: 1, color: "color.accent.ink" },
+      { x: 0, y: 1, w: 1, h: 37, color: "color.accent.ink" },
+      { x: 255, y: 1, w: 1, h: 37, color: "color.accent.ink" },
     ]);
   });
 

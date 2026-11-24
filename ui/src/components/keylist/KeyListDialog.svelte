@@ -127,7 +127,7 @@
     color: var(--color-gray-10);
   }
   .link {
-    color: var(--color-accent);
+    color: var(--color-accent-ink);
   }
   .link:hover {
     text-decoration: underline;

@@ -180,7 +180,7 @@ const ROW_T3 = 24 + 10;
 const ROW_T1 = 24 + 2 * 48 + 10;
 /** The accent parts of the band, as [x, y, w] in px, and the gray.7 lines. */
 const bandRects = () => (drawn.get(band()!) as Extract<GlSlot, { kind: "rects" }>).rects;
-const accent = () => bandRects().filter((r: GlRect) => r.color === "color.accent").map((r) => [r.x, r.y, r.w]);
+const accent = () => bandRects().filter((r: GlRect) => r.color === "color.accent.ink").map((r) => [r.x, r.y, r.w]);
 const frames = () => bandRects().filter((r: GlRect) => r.color === "color.gray.7").length;
 
 describe("the row of the clip's menu", () => {

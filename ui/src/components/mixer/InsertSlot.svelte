@@ -131,7 +131,7 @@
   }
   .slot.selected,
   .slot.selected:hover {
-    border-color: var(--color-accent);
+    border-color: var(--color-accent-ink);
   }
   .slot.missing {
     color: var(--color-gray-8);
@@ -147,7 +147,7 @@
   /* During a reorder drag the slot is lifted with an accent line.hair (spec 2 "Insert reorder mark"). */
   .slot.lifted {
     z-index: 2;
-    outline: var(--line-hair) solid var(--color-accent);
+    outline: var(--line-hair) solid var(--color-accent-ink);
     outline-offset: calc(-1 * var(--line-hair));
   }
   .press {
@@ -189,10 +189,10 @@
     height: var(--part-choice-dot);
   }
   .mark.on {
-    border-color: var(--color-accent);
+    border-color: var(--color-accent-ink);
   }
   .mark.on span {
-    background: var(--color-accent);
+    background: var(--color-accent-ink);
   }
   /* Where it goes in: an accent line.mark horizontal line (as in track reordering). Laid over the gap between slots. */
   .line {
@@ -200,7 +200,7 @@
     left: calc(-1 * var(--line-hair));
     right: calc(-1 * var(--line-hair));
     height: var(--line-mark);
-    background: var(--color-accent);
+    background: var(--color-accent-ink);
     pointer-events: none;
     z-index: 3;
   }

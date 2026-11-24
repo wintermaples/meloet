@@ -51,8 +51,9 @@
   }
   .b.on,
   .b.on:hover {
-    border-color: var(--color-accent);
-    color: var(--color-accent);
+    border-color: var(--color-accent-ink);
+    background: var(--color-accent);
+    color: var(--color-accent-fg);
   }
   .b:disabled {
     border-color: var(--color-gray-5);

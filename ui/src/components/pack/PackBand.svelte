@@ -89,7 +89,7 @@
     align-items: center;
     justify-content: flex-end;
     padding: 0 var(--space-3);
-    border-left: var(--line-mark) solid var(--color-accent);
+    border-left: var(--line-mark) solid var(--color-accent-ink);
     white-space: nowrap;
     overflow: hidden;
   }
@@ -137,7 +137,7 @@
   .fill {
     display: block;
     height: 100%;
-    background: var(--color-accent);
+    background: var(--color-accent-ink);
     transform-origin: left;
   }
   /* In the slim input meter (height 24), buttons are the same height as 「やめる」 in the status line. */

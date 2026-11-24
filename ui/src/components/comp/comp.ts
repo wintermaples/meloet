@@ -77,7 +77,7 @@ export interface TakeBar {
 }
 
 const GROUND: ColorName = "color.gray.5";
-const CHOSEN: ColorName = "color.accent";
+const CHOSEN: ColorName = "color.accent.ink";
 /** The waves on the bars: light on the gray ground, dark on the accent. */
 export const WAVE_PLAIN: ColorName = "color.gray.8";
 export const WAVE_CHOSEN: ColorName = "color.gray.0";

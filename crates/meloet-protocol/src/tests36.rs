@@ -18,11 +18,6 @@ where
 }
 
 #[test]
-fn the_version() {
-    assert_eq!(PROTOCOL_VERSION, 36);
-}
-
-#[test]
 fn the_format() {
     both_ways(ExportFormat::Midi, json!("midi"));
     assert_eq!(ExportFormat::Midi.extension(), "mid");

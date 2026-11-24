@@ -1188,6 +1188,8 @@ struct Shared {
     gate: Gate,
     /// Only inside the gate.
     instance: UnsafeCell<livi::Instance>,
+    /// The instance was given its feature, and it is dropped after the instance.
+    midnam_update: Box<midnam::Update>,
     features: Arc<Features>,
     params: Vec<Param>,
     by_id: HashMap<u32, usize>,
@@ -1230,6 +1232,9 @@ impl Shared {
     ///
     /// # Safety
     /// Nothing else may be in the plugin: inside the gate, or before the audio thread has it.
+    /// Or the plugin asked for it to be read with midnam's update ([`midnam::Update`]): the
+    /// extension's own host (Ardour) reads it then on its window thread while `run` goes on,
+    /// so a plugin that asks is made to be read so.
     unsafe fn midnam(&self) -> Option<String> {
         let interface = (self.extension_data?)(midnam::INTERFACE.as_ptr());
         // SAFETY: the plugin's own pointer for the interface and its own handle; the caller
@@ -1255,11 +1260,19 @@ fn instantiate(
 ) -> Result<(Arc<Shared>, Lv2Processor, Box<Link>), String> {
     let features = world.features(activation.max_frames)?;
     let layout = layout(world, plugin, &features);
+    let midnam_update = midnam::Update::new();
     // SAFETY: running a plugin's code is what this process is for; livi's own conditions (one
     // user of the instance at a time, buffers that outlive each `run`) are kept by the gate
-    // and by `Lv2Processor::process`.
-    let instance = unsafe { plugin.instantiate(features.clone(), activation.sample_rate) }
-        .map_err(|e| format!("instantiate: {e:?}"))?;
+    // and by `Lv2Processor::process`. The midnam feature lives in `Shared`, after the
+    // instance.
+    let instance = unsafe {
+        plugin.instantiate_with_features(
+            features.clone(),
+            activation.sample_rate,
+            &[midnam_update.feature()],
+        )
+    }
+    .map_err(|e| format!("instantiate: {e:?}"))?;
     let counts = instance.port_counts();
     let frames = activation.max_frames;
     let handle = instance.raw().instance().handle().cast::<c_void>();
@@ -1298,6 +1311,7 @@ fn instantiate(
     let shared = Arc::new(Shared {
         gate: Gate::default(),
         instance: UnsafeCell::new(instance),
+        midnam_update,
         params: layout.params,
         by_id,
         by_urid,
@@ -1431,6 +1445,8 @@ fn load_as(
         editor,
         live: says_live(&lv2_world, plugin.raw()),
         outputs: processor.outputs.list(),
+        // Read from the controller once it is made (`crate::control`).
+        key_names: None,
     };
     Ok(Loaded {
         plugin,
@@ -1443,6 +1459,7 @@ fn load_as(
             plugin_uri: key.id().to_string(),
             window,
             key_names,
+            renamed: false,
         }),
         processor: Box::new(processor),
     })
@@ -2134,11 +2151,23 @@ struct Lv2Controller {
     plugin_uri: String,
     /// The window meloet can open, if the plugin has one.
     window: Option<UiFiles>,
-    /// What its midnam names its keys, as of its load or the last state put back.
+    /// What its midnam names its keys, as of its load, the last state put back, or the last
+    /// time it asked for them to be read again.
     key_names: Option<Vec<KeyName>>,
+    /// `key_names` changed since the last [`Controller::poll`].
+    renamed: bool,
 }
 
 impl Lv2Controller {
+    /// The names of a document read now, told with the next poll when they are new.
+    fn rename(&mut self, document: Option<String>) {
+        let names = document.map(|document| midnam::key_names(&document));
+        if names != self.key_names {
+            self.key_names = names;
+            self.renamed = true;
+        }
+    }
+
     /// Tells the window what changed in the plugin since it was last told.
     fn show(&self, ui: &ui::Ui) {
         let (shared, link) = (&self.shared, &self.link);
@@ -2313,7 +2342,7 @@ impl Controller for Lv2Controller {
         // answer.
         self.shared.ask_all.store(true, Relaxed);
         drop(_claim);
-        self.key_names = document.map(|document| midnam::key_names(&document));
+        self.rename(document);
         Ok(())
     }
 
@@ -2433,6 +2462,15 @@ impl Controller for Lv2Controller {
         said.append(&mut self.link.said.borrow_mut());
         if let Some((width, height)) = self.link.asked.take() {
             said.push(Said::Resized(width, height));
+        }
+        if self.shared.midnam_update.take() {
+            // SAFETY: the plugin asked for it (`Shared::midnam`); the audio thread may be in
+            // `run`, and nothing else is in the plugin.
+            let document = unsafe { self.shared.midnam() };
+            self.rename(document);
+        }
+        if std::mem::take(&mut self.renamed) {
+            said.push(Said::KeyNames);
         }
     }
 }
@@ -3659,30 +3697,7 @@ mod output_tests {
         let (kit, map) = tiny_kit(dir);
         let key: PluginKey = "lv2:http://drumgizmo.org/lv2".parse().unwrap();
         let mut loaded = load(&key, bundle, activation(offline)).unwrap();
-        let saved = loaded.controller.save_state().unwrap();
-        // No `patch` parameters: the Turtle starts right after the count.
-        let text = std::str::from_utf8(&saved[8..]).unwrap();
-        let (head, rest) = text.split_once("atom#config> \"\"\"").unwrap();
-        let (_, tail) = rest.split_once("\"\"\"").unwrap();
-        let config = format!(
-            "<config version=\"1.0\">\n\
-             <value name=\"drumkitfile\">{}</value>\n\
-             <value name=\"midimapfile\">{}</value>\n\
-             <value name=\"enable_velocity_modifier\">false</value>\n\
-             <value name=\"enable_velocity_randomiser\">false</value>\n\
-             <value name=\"enable_latency_modifier\">false</value>\n</config>",
-            kit.display(),
-            map.display()
-        );
-        let mut state = STATE_MAGIC.to_vec();
-        state.extend_from_slice(&0u32.to_le_bytes());
-        state.extend_from_slice(
-            format!(
-                "{head}atom#config> \"\"\"{}\"\"\"{tail}",
-                base64(config.as_bytes())
-            )
-            .as_bytes(),
-        );
+        let state = kit_state(&mut loaded, &kit, &map);
         loaded.controller.load_state(&state).unwrap();
 
         let third = [ToPlugin::Midi {
@@ -3708,6 +3723,83 @@ mod output_tests {
             block256(&mut *loaded.processor, &[]);
         }
         Some(loaded)
+    }
+
+    /// A state of DrumGizmo that names the kit `kit` and its MIDI map `map`, made from the
+    /// state of `loaded`.
+    fn kit_state(loaded: &mut Loaded, kit: &Path, map: &Path) -> Vec<u8> {
+        let saved = loaded.controller.save_state().unwrap();
+        // No `patch` parameters: the Turtle starts right after the count.
+        let text = std::str::from_utf8(&saved[8..]).unwrap();
+        let (head, rest) = text.split_once("atom#config> \"\"\"").unwrap();
+        let (_, tail) = rest.split_once("\"\"\"").unwrap();
+        let config = format!(
+            "<config version=\"1.0\">\n\
+             <value name=\"drumkitfile\">{}</value>\n\
+             <value name=\"midimapfile\">{}</value>\n\
+             <value name=\"enable_velocity_modifier\">false</value>\n\
+             <value name=\"enable_velocity_randomiser\">false</value>\n\
+             <value name=\"enable_latency_modifier\">false</value>\n</config>",
+            kit.display(),
+            map.display()
+        );
+        let mut state = STATE_MAGIC.to_vec();
+        state.extend_from_slice(&0u32.to_le_bytes());
+        state.extend_from_slice(
+            format!(
+                "{head}atom#config> \"\"\"{}\"\"\"{tail}",
+                base64(config.as_bytes())
+            )
+            .as_bytes(),
+        );
+        state
+    }
+
+    /// DrumGizmo names no keys while it has no kit. The kit named in a state is read on a
+    /// thread of its own, after the state is put back; then the plugin says from `run` that
+    /// its names changed (midnam's update), and they are read again: the instruments of the
+    /// kit's MIDI map, on their keys.
+    #[test]
+    #[ignore = "needs DrumGizmo (LV2)"]
+    fn drumgizmo_names_the_keys_of_its_kit_once_it_has_read_it() {
+        let bundle = Path::new("/usr/lib/lv2/drumgizmo.lv2");
+        if !bundle.exists() {
+            eprintln!("{bundle:?} is not installed; nothing tested");
+            return;
+        }
+        let dir = std::env::temp_dir().join(format!("meloet-kit-names-{}", std::process::id()));
+        let (kit, map) = tiny_kit(&dir);
+        let key: PluginKey = "lv2:http://drumgizmo.org/lv2".parse().unwrap();
+        let mut loaded = load(&key, bundle, activation(false)).unwrap();
+        assert_eq!(loaded.controller.key_names(), Some(Vec::new()));
+        let state = kit_state(&mut loaded, &kit, &map);
+        loaded.controller.load_state(&state).unwrap();
+        let mut said = Vec::new();
+        loaded.controller.poll(&mut said);
+        assert_eq!(loaded.controller.key_names(), Some(Vec::new()));
+        assert!(!said.contains(&Said::KeyNames), "{said:?}");
+        let mut asked_at = None;
+        for block in 0..2000 {
+            block256(&mut *loaded.processor, &[]);
+            said.clear();
+            loaded.controller.poll(&mut said);
+            if said.contains(&Said::KeyNames) {
+                asked_at = Some(block);
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+        eprintln!("named after block {asked_at:?}");
+        assert!(
+            asked_at.is_some(),
+            "the plugin never said its names changed"
+        );
+        let names: Vec<(u8, String)> = (loaded.controller.key_names().unwrap().into_iter())
+            .map(|n| (n.key, n.name))
+            .collect();
+        let wanted: Vec<(u8, String)> = (1..=4).map(|n| (35 + n, format!("I{n}"))).collect();
+        assert_eq!(names, wanted);
     }
 
     /// DrumGizmo plays each channel of a kit out of its own output; the kit is named in the

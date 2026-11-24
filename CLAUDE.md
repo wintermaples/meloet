@@ -79,10 +79,10 @@ You are not the first one here, and you will not be the last. Leave things so th
 ```
 crates/
   meloet-model     song, track, clip, take, note (pure data), the tempo map (tempo_map.rs), undoable steps (History), the rules that turn recorded events into takes (Recorder), editing notes (notes.rs), quantize (quantize.rs), CC points (controls.rs), moving clips (arrange.rs), sounds and groups (instrument.rs), drum kits (drums.rs), mixer and effect parameters (mixer.rs, effects.rs), whole sections (sections.rs), factory effect presets (presets.rs), the arpeggio setting (arp.rs), the knobs of built-in sounds (knobs.rs), comping (audio/comp.rs), turning keys into audio (audio/bounce.rs)
-  meloet-protocol  the promise between Rust and the screen (version 36; the telemetry binary is version 5). TS types are written out to ui/src/bridge/generated/. Plugin windows and parameter shapes in params.rs, things added later in added.rs, tempo, time signature and markers in timeline.rs
+  meloet-protocol  the promise between Rust and the screen (version 37; the telemetry binary is version 5). TS types are written out to ui/src/bridge/generated/. Plugin windows and parameter shapes in params.rs, things added later in added.rs, tempo, time signature and markers in timeline.rs
   meloet-engine    audio thread priority (priority.rs), the sound flow, the instrument interface (Instrument), track seats, the mixer signal path (mixer.rs), meters, the cpal output, transport (transport.rs), the position reaching the ear (clock.rs), the ring of the master's sound for analysis (analysis.rs), the arpeggio (engine/arp.rs), the knobs of built-in sounds (knobs.rs)
   meloet-sound     sound parts: the sample player (sampler/), SF2 reader (sf2/), 9 effects (effects/), sounds made by calculation (synth/), the phrases of a sample's ▶ (phrases.rs)
-  meloet-plugin    plugin keys and the keys that group them, kinds, the scan record, shared memory and futex, communication with the plugin host (wire.rs, version 8), starting children (launch.rs)
+  meloet-plugin    plugin keys and the keys that group them, kinds, the scan record, shared memory and futex, communication with the plugin host (wire.rs, version 9), starting children (launch.rs)
   meloet-plughost  the plugin host process (host and scan). VST3 and LV2 (formats/), windows (window.rs, X11), the audio thread (rt.rs), the main thread (control.rs)
   meloet-stretch   stretch and pitch (the Signalsmith Stretch C++ headers copied into vendor/ without changes, a C interface and a safe Stretcher, Follower that follows step by step, and render), the pitch detector and the tuning curve of 「音程を寄せる」 (pitch.rs, tune.rs). C++ and unsafe only here
   meloet-midi      ALSA sequencer. Plugging and unplugging keyboards. meloet-vkeys (a virtual keyboard for tests. --name)
@@ -121,6 +121,7 @@ tools/patterns/    the drum patterns of the shelf (drums.json, built in)
 packaging/         the container that builds the deb we ship (Dockerfile. Used by scripts/build-deb.sh); appimage/ for the AppImage trial (scripts/build-appimage.sh)
 licenses/          the license watcher (check.mjs) and copies of the material licenses
 spikes/            test prototypes (do not delete, do not copy)
+vendor/livi/       livi 0.9.0 with one function added (instantiate_with_features, for the LV2 midnam update feature); raise it by hand
 ```
 
 ## Common commands

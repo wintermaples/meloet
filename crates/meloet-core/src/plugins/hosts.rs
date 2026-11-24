@@ -149,6 +149,7 @@ pub struct Loaded {
     pub id: SlotId,
     pub slot: PluginSlot,
     pub watch: Arc<PluginWatch>,
+    /// Its `key_names` are those it gave last, also after the state it was loaded with.
     pub plugin: LoadedPlugin,
 }
 
@@ -259,6 +260,9 @@ pub enum HostNews {
     /// - `ParamsChanged`: any parameter may have another value (the plugin loaded a program
     ///   by itself): [`Hosts::params`] reads them again.
     /// - `LatencyChanged`: the plugin's delay changed outside a block.
+    /// - `KeyNames`: the names the plugin gives its keys changed (a state was put back, or it
+    ///   renamed them by itself); those it gave until then came with its `Loaded`
+    ///   (`LoadedPlugin::key_names`).
     ///
     /// The notices about windows never come this way; they are the news above.
     Notice { slot: SlotId, notice: Notice },
@@ -288,7 +292,6 @@ enum Ask {
     Unload(SlotId, Done<()>),
     State(SlotId, Done<Vec<u8>>),
     SetState(SlotId, Vec<u8>, Done<()>),
-    KeyNames(SlotId, Done<Option<Vec<KeyName>>>),
     Preset(SlotId, PresetAsk, Done<PresetSaid>),
     Params(SlotId, Done<Vec<ParamInfo>>),
     Param(SlotId, u32, Done<(f64, String)>),
@@ -409,13 +412,6 @@ impl Hosts {
     /// is asked for that much later, and so is everything asked after it.
     pub fn set_state(&self, id: SlotId, state: Vec<u8>, done: Done<()>) {
         self.ask(Ask::SetState(id, state, done));
-    }
-
-    /// The names the plugin gives its keys, lowest key first (an LV2 plugin's midnam, read
-    /// when it was loaded and when a state was put back). `None`: it has no way to name them.
-    /// A stopped plugin answers `Gone`.
-    pub fn key_names(&self, id: SlotId, done: Done<Option<Vec<KeyName>>>) {
-        self.ask(Ask::KeyNames(id, done));
     }
 
     /// An ask about the presets of an LV2 plugin. A stopped plugin answers `Gone`.
@@ -557,6 +553,9 @@ struct Proc {
     places: Vec<Option<SlotId>>,
     /// When a state was last put back into one of its plugins.
     state_put: Option<Instant>,
+    /// By place: the names a plugin gave its keys while it was being loaded there, before it
+    /// had its id. They go with its `Loaded`.
+    loading_names: HashMap<u32, Option<Vec<KeyName>>>,
 }
 
 struct Slot {
@@ -665,13 +664,6 @@ impl Run {
                 }
                 done(set);
             }
-            Ask::KeyNames(id, done) => done(
-                self.ask_slot(id, |slot| Request::KeyNames { slot }, &[])
-                    .and_then(|answer| match answer.0 {
-                        Reply::KeyNames { names } => Ok(names),
-                        other => Err(refused(other)),
-                    }),
-            ),
             Ask::Preset(id, ask, done) => done(self.preset(id, ask)),
             Ask::Params(id, done) => done(
                 self.ask_slot(id, |slot| Request::Params { slot }, &[])
@@ -890,8 +882,11 @@ impl Run {
     /// Something a plugin of this process did by itself: remembered where `reload` needs
     /// it, and told.
     fn heard(&mut self, at: usize, notice: Notice) {
-        let place = notice_slot(&notice) as usize;
-        let Some(slot) = self.procs[at].places.get(place).copied().flatten() else {
+        let place = notice_slot(&notice);
+        let Some(slot) = self.procs[at].places.get(place as usize).copied().flatten() else {
+            if let Notice::KeyNames { names, .. } = notice {
+                self.procs[at].loading_names.insert(place, names);
+            }
             return;
         };
         let news = match notice {
@@ -1068,6 +1063,7 @@ impl Run {
             next_request: 1,
             places: vec![None; self.options.geometry.slots as usize],
             state_put: None,
+            loading_names: HashMap::new(),
         });
         let at = self.procs.len() - 1;
         let hello = Request::Hello {
@@ -1104,9 +1100,10 @@ impl Run {
             Some(at) => at,
             None => self.start_proc(&spec.key)?,
         };
-        let proc = &self.procs[at];
+        let proc = &mut self.procs[at];
         let home = proc.id;
         let place = proc.places.iter().position(Option::is_none).unwrap_or(0) as u32;
+        proc.loading_names.remove(&place);
         let loaded = EngineEnd::new(proc.map.clone(), place)
             .map_err(|e| HostError::Start(e.to_string()))
             .and_then(|end| {
@@ -1138,8 +1135,13 @@ impl Run {
                 }
                 Ok(loaded)
             });
+        let later_names =
+            (self.proc_at(home)).and_then(|at| self.procs[at].loading_names.remove(&place));
         match loaded {
-            Ok((end, plugin)) => {
+            Ok((end, mut plugin)) => {
+                if let Some(names) = later_names {
+                    plugin.key_names = names;
+                }
                 let (slot, watch) = if self.offline {
                     PluginSlot::for_export(end, block.clone(), plugin.latency)
                 } else {
@@ -1317,7 +1319,8 @@ fn notice_slot(notice: &Notice) -> u32 {
         | Notice::ParamEnd { slot, .. }
         | Notice::ParamAutomated { slot, .. }
         | Notice::ParamsChanged { slot }
-        | Notice::LatencyChanged { slot, .. } => slot,
+        | Notice::LatencyChanged { slot, .. }
+        | Notice::KeyNames { slot, .. } => slot,
     }
 }
 

@@ -2561,6 +2561,7 @@ impl PluginSide {
                     (slot, said)
                 }
                 Notice::ParamsChanged { .. } => (slot, PluginSaid::ParamsChanged),
+                Notice::KeyNames { names, .. } => (slot, PluginSaid::KeyNames(names)),
                 Notice::ParamAutomated {
                     id, value, text, ..
                 } => {
@@ -2793,9 +2794,14 @@ impl Worker {
                                 EditorKind::None => PluginWindowKind::None,
                             });
                             let sets = PluginSaid::Outputs(loaded.plugin.outputs.clone());
+                            let names = PluginSaid::KeyNames(loaded.plugin.key_names.clone());
                             side.ready.insert(ticket, loaded);
                             self.handle(Input::PluginSaid { ticket, said });
                             self.handle(Input::PluginSaid { ticket, said: sets });
+                            self.handle(Input::PluginSaid {
+                                ticket,
+                                said: names,
+                            });
                             Input::PluginLoaded { ticket }
                         }
                         (Ok(_), None) => Input::PluginUnreadable { ticket },
@@ -3564,13 +3570,6 @@ impl Worker {
                     say(PluginSaid::State { ask, state });
                 };
                 hosts.state(id, Box::new(done));
-            }
-            PluginAsk::KeyNames => {
-                let done = move |names: Result<_, HostError>| match names {
-                    Ok(names) => say(PluginSaid::KeyNames(names)),
-                    Err(e) => eprintln!("meloet: a plugin did not name its keys: {e}"),
-                };
-                hosts.key_names(id, Box::new(done));
             }
             PluginAsk::PutState { state } => {
                 // Answers come in order: the state is asked for once the plugin has taken it.

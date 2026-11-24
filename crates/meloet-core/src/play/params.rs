@@ -881,7 +881,7 @@ impl Play {
                 return self.make_copy(track, states, effects);
             }
             PluginSaid::State { ask, state } => self.state_said(ticket, ask, state, effects),
-            PluginSaid::KeyNames(names) => self.key_names_said(ticket, names),
+            PluginSaid::KeyNames(names) => self.plug_key_names_said(ticket, names),
             PluginSaid::StatePut(put) => self.ai_state_put(ticket, put, effects),
             PluginSaid::TextRead { param, read } => {
                 return self.text_read(ticket, param, read, effects);

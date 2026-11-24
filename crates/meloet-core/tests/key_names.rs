@@ -1,6 +1,7 @@
-//! What each key of a track's sound is (`AiAsk::KeyNames`) through the whole core: plugins in
-//! the real `meloet-plughost` with its fake `drums` bundle (one names its keys, one does not),
-//! and SF2 presets of a little file in meloet's SF2 folder, read off the core thread.
+//! What each key of a track's sound is (`AiAsk::KeyNames`, and the rows of the drum piano roll
+//! of `TrackView`) through the whole core: plugins in the real `meloet-plughost` with its fake
+//! `drums` bundle (one names its keys, one does not) and `slowkit` (it names them later), and
+//! SF2 presets of a little file in meloet's SF2 folder, read off the core thread.
 
 #[allow(dead_code)]
 #[path = "../../meloet-sound/tests/support/sf2.rs"]
@@ -11,13 +12,11 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use meloet_core::ai::{
-    AiAnswer, AiAsk, AiInstrument, AiKeyMap, AiKeyNames, AiKeyNote, AiKeySource, AiRefusal,
-};
+use meloet_core::ai::{AiAnswer, AiAsk, AiInstrument, AiKeyMap, AiKeyNote, AiKeySource, AiRefusal};
 use meloet_core::play::keynames::read_sf2;
 use meloet_core::plugins::PluginOptions;
 use meloet_core::{Core, CoreOptions};
-use meloet_protocol::{AppState, PluginState, SoundView};
+use meloet_protocol::{AppState, Command, PluginState, ScaleMode, SoundView, StatusMessage};
 
 use font::{Font, Inst, KEY_RANGE, Preset, SAMPLE_ID, Smp, flat, range};
 use plughost::{temp_dir, wait_for};
@@ -25,12 +24,15 @@ use plughost::{temp_dir, wait_for};
 const PATIENCE: Duration = Duration::from_secs(60);
 const DRUMS: &str = "lv2:urn:meloet:fake:drums";
 const KIT: &str = "lv2:urn:meloet:fake:kit";
+const SLOW_KIT: &str = "lv2:urn:meloet:fake:slowkit";
 const SF2: &str = "Kit.sf2";
 
 fn options(root: &Path) -> CoreOptions {
-    let bundle = root.join("lv2/drums.lv2");
-    std::fs::create_dir_all(&bundle).unwrap();
-    std::fs::write(bundle.join("plugin.so"), [0u8; 16]).unwrap();
+    for bundle in ["drums", "slowkit"] {
+        let bundle = root.join(format!("lv2/{bundle}.lv2"));
+        std::fs::create_dir_all(&bundle).unwrap();
+        std::fs::write(bundle.join("plugin.so"), [0u8; 16]).unwrap();
+    }
     CoreOptions {
         config_dir: Some(root.join("config")),
         songs_dir: Some(root.join("songs")),
@@ -96,14 +98,19 @@ fn add(core: &Core, instrument: AiInstrument) -> u32 {
     }
 }
 
-/// Asks until the plugin has answered.
 fn names(core: &Core, track: u32) -> AiKeyMap {
-    wait_for(PATIENCE, || match core.ai(AiAsk::KeyNames { track }) {
-        AiAnswer::KeyNames(AiKeyNames::Known(map)) => Some(*map),
-        AiAnswer::KeyNames(AiKeyNames::Waiting) => None,
+    match core.ai(AiAsk::KeyNames { track }) {
+        AiAnswer::KeyNames(map) => *map,
         other => panic!("{other:?}"),
-    })
-    .expect("the plugin names its keys")
+    }
+}
+
+/// The keys the screen is told the track's plugin names.
+fn key_names(state: &AppState, track: u32) -> Vec<(u8, &str)> {
+    let names = state.song.tracks[track as usize - 1].key_names.as_ref();
+    (names.into_iter().flatten())
+        .map(|n| (n.key, n.name.as_str()))
+        .collect()
 }
 
 fn named(map: &AiKeyMap) -> Vec<(u8, Option<&str>, AiKeySource)> {
@@ -118,7 +125,7 @@ fn plugins_and_sf2_presets_name_their_keys() {
     std::fs::create_dir_all(root.join("sf2")).unwrap();
     std::fs::write(root.join("sf2").join(SF2), kit_file()).unwrap();
     let core = Arc::new(Core::start(options(&root)));
-    state_when(&core, "the scan", |s| s.library.plugins.len() == 2);
+    state_when(&core, "the scan", |s| s.library.plugins.len() == 3);
 
     // A plugin that names its keys (LV2 midnam in a real one).
     let drums = add(&core, AiInstrument::Plugin(DRUMS.into()));
@@ -127,9 +134,18 @@ fn plugins_and_sf2_presets_name_their_keys() {
         let view = &s.song.tracks[track as usize - 1].sound;
         matches!(view, SoundView::Plugin(p) if p.state == PluginState::Ready)
     };
-    state_when(&core, "both plugins sound", |s| {
+    let state = state_when(&core, "both plugins sound", |s| {
         ready(s, drums) && ready(s, kit)
     });
+    // The screen has them as the rows of the drum piano roll, top row first.
+    let view = &state.song.tracks[drums as usize - 1];
+    assert_eq!(view.drum_keys, Some(vec![38, 36]));
+    assert_eq!(
+        key_names(&state, drums),
+        [(36, "Fake Kick"), (38, "Fake Snare")]
+    );
+    let view = &state.song.tracks[kit as usize - 1];
+    assert_eq!((&view.drum_keys, &view.key_names), (&None, &None));
     let map = names(&core, drums);
     assert!(map.kit && map.certain);
     assert_eq!(map.source, AiKeySource::Lv2Midnam);
@@ -196,6 +212,99 @@ fn plugins_and_sf2_presets_name_their_keys() {
         AiAnswer::Refused(AiRefusal::NoSuchTrack(99))
     );
     assert_eq!(core.ai_song().unwrap().undo_count, steps);
+    drop(core);
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// A plugin that reads its kit after it was loaded (as DrumGizmo does) names its keys later,
+/// by itself: the rows of the screen and the AI's answer follow.
+#[test]
+fn names_a_plugin_gives_later_reach_the_screen_and_the_ai() {
+    let root = temp_dir("key-names-later");
+    let core = Arc::new(Core::start(options(&root)));
+    state_when(&core, "the scan", |s| s.library.plugins.len() == 3);
+    let slow = add(&core, AiInstrument::Plugin(SLOW_KIT.into()));
+    let at = slow as usize - 1;
+    let state = state_when(&core, "the names", |s| {
+        s.song.tracks[at].key_names.is_some()
+    });
+    assert_eq!(state.song.tracks[at].drum_keys, Some(vec![38, 36]));
+    assert_eq!(
+        key_names(&state, slow),
+        [(36, "Fake Kick"), (38, "Fake Snare")]
+    );
+    let map = wait_for(PATIENCE, || {
+        match core.ai(AiAsk::KeyNames { track: slow }) {
+            AiAnswer::KeyNames(map) => Some(*map),
+            AiAnswer::Refused(AiRefusal::PluginNotLoaded) => None,
+            other => panic!("{other:?}"),
+        }
+    })
+    .expect("the plugin sounds");
+    assert!(map.kit && map.certain);
+    assert_eq!(
+        named(&map),
+        [
+            (36, Some("Fake Kick"), AiKeySource::Lv2Midnam),
+            (38, Some("Fake Snare"), AiKeySource::Lv2Midnam)
+        ]
+    );
+    drop(core);
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// With the scale locked, a key outside it is refused on a melodic track but written on a
+/// plugin that names its keys: the screen shows that track as the drum piano roll.
+#[test]
+fn a_plugin_that_names_its_keys_writes_keys_outside_the_locked_scale() {
+    let root = temp_dir("key-names-scale");
+    let core = Arc::new(Core::start(options(&root)));
+    state_when(&core, "the scan", |s| s.library.plugins.len() == 3);
+    let drums = add(&core, AiInstrument::Plugin(DRUMS.into()));
+    let kit = add(&core, AiInstrument::Plugin(KIT.into()));
+    let state = state_when(&core, "the names", |s| {
+        s.song.tracks[drums as usize - 1].key_names.is_some()
+            && matches!(&s.song.tracks[kit as usize - 1].sound,
+                SoundView::Plugin(p) if p.state == PluginState::Ready)
+    });
+    let id = |track: u32| state.song.tracks[track as usize - 1].id;
+    // C# major: 38 (the snare) is outside it.
+    core.send(Command::SetMusicalScale {
+        root: 1,
+        mode: ScaleMode::Major,
+        lock: true,
+        highlight: true,
+    });
+    let write = |track: u32| {
+        core.send(Command::SelectTrack {
+            track: id(track),
+            from_arm: false,
+        });
+        core.send(Command::AddNote {
+            take: None,
+            start: 0,
+            length: 480,
+            key: 38,
+            velocity: 100,
+        });
+        let state = core.snapshot().state;
+        let clips = state.song.tracks[track as usize - 1].clips.len();
+        (state.status.message, clips)
+    };
+
+    let refused = StatusMessage::OutOfScale {
+        key: 38,
+        root: 1,
+        mode: ScaleMode::Major,
+    };
+    assert_eq!(write(kit), (Some(refused), 0));
+    // With no notice, the status line goes back to what it said before.
+    let (said, clips) = write(drums);
+    assert!(
+        !matches!(said, Some(StatusMessage::OutOfScale { .. })),
+        "{said:?}"
+    );
+    assert_eq!(clips, 1);
     drop(core);
     let _ = std::fs::remove_dir_all(&root);
 }

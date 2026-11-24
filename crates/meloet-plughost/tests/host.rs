@@ -14,8 +14,8 @@ use common::{FAKE, GEOMETRY, Host, Killed, PATIENT_NS, block, exe, note_on, peak
 use meloet_plugin::ipc::futex::monotonic_ns;
 use meloet_plugin::ipc::{EngineEnd, HANG_MS, Mapping, ToPlugin};
 use meloet_plugin::wire::{
-    FromHost, LoadedPlugin, OutputSettings, ParamNow, Reply, Request, ScanOutput, ToHost,
-    WireError, read_frame, write_frame,
+    FromHost, KeyName, LoadedPlugin, Notice, OutputSettings, ParamNow, Reply, Request, ScanOutput,
+    ToHost, WireError, read_frame, write_frame,
 };
 use meloet_plugin::{EditorKind, PluginFormat, PluginKey, launch};
 
@@ -36,6 +36,7 @@ fn a_fake_instrument_sounds_and_takes_parameters_and_state() {
             editor: EditorKind::None,
             live: false,
             outputs: Vec::new(),
+            key_names: None,
         }
     );
     let silence = [0.0f32; 256];
@@ -810,4 +811,48 @@ fn a_host_for_an_export_asks_for_no_priority_and_gives_way() {
     let text = std::fs::read_to_string(&log).unwrap();
     let _ = std::fs::remove_file(&log);
     assert!(!text.contains("priority"), "{text}");
+}
+
+/// The names a plugin gives its keys come with its load and, when they change, by
+/// themselves: a kit read after the load (`slowkit`, as DrumGizmo) is named then. A state put
+/// back that leaves them as they were says nothing.
+#[test]
+fn key_names_come_with_the_load_and_when_they_change() {
+    let names = |pairs: &[(u8, &str)]| {
+        (pairs.iter())
+            .map(|&(key, name)| KeyName {
+                key,
+                name: name.into(),
+            })
+            .collect::<Vec<KeyName>>()
+    };
+    let drums = names(&[(36, "Fake Kick"), (38, "Fake Snare")]);
+    let mut host = Host::start();
+    let (_, sine) = host.load(0, "sine");
+    assert_eq!(sine.key_names, None);
+    let (_, kit) = host.load(1, "drums");
+    assert_eq!(kit.key_names, Some(drums.clone()));
+    let state = host.state(1);
+    let (reply, _) = host.ask_with(Request::SetState { slot: 1 }, &state);
+    assert_eq!(reply, Reply::Ok);
+
+    let started = Instant::now();
+    let (_, slow) = host.load(2, "slowkit");
+    assert_eq!(slow.key_names, Some(Vec::new()));
+    let told = host.wait_for(Duration::from_secs(5), |n| {
+        matches!(n, Notice::KeyNames { .. })
+    });
+    let waited = started.elapsed();
+    assert_eq!(
+        told,
+        Some(Notice::KeyNames {
+            slot: 2,
+            names: Some(drums),
+        })
+    );
+    assert!(waited >= Duration::from_millis(250), "{waited:?}");
+    let keys_told = (host.notices.iter())
+        .filter(|n| matches!(n, Notice::KeyNames { .. }))
+        .count();
+    assert_eq!(keys_told, 1, "{:?}", host.notices);
 }

@@ -88,7 +88,7 @@ The note writes (`write_notes`, `copy_notes`, `import_midi`) answer the write fi
 
 - Arguments: `track` (a keys track: number or id).
 - Answer: `{track, track_id, track_name, sound, kit, source, certain, keys: [{key, note ("C2"), name, source, id? (built-in kits), sounds? (when known)}], range: {low, high, low_note, high_note} | null, notes: [English sentences]}`. `source`: `builtin`, `sf2_sample_name`, `lv2_midnam`, `general_midi_guess` (only the usual layout; `certain: false`) or `none`.
-- Errors: no such track; a vocal track; a plugin that does not answer in 5 s.
+- Errors: no such track; a vocal track; a plugin that is not loaded yet. A plugin's names are those it told meloet last (at its load, and each time they changed since), so the answer comes at once.
 
 ## 9: track ids
 

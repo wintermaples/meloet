@@ -4,6 +4,7 @@
 import { CONTROL_CC, CONTROL_PITCH_BEND, NO_FROM, type Grid, type IndexRange, type MusicalScale, type ScaleMode, type TakeNotes } from "../../bridge";
 import type { ColorName } from "../../design/tokens";
 import { isBlack } from "../../gl/keyboard";
+import type { Drums } from "./drums";
 import { barsMap } from "../../time/bars";
 import { barBeatTick, TICKS_PER_QUARTER, tickText, ticksPerBar, ticksPerBeat, type Bars, type Meter } from "../time";
 import { QUARTER_PX_STEPS } from "./view.svelte";
@@ -38,8 +39,8 @@ export interface DrumGeom {
   top: number;
   /** The square width (CSS px). One grid cell − 2, not smaller than 6. */
   hitW: number;
-  /** The table of row names (a built-in kit or an SF2 kit). */
-  names?: "builtin" | "sf2";
+  /** The table of row names (a built-in kit, an SF2 kit or a plugin's names). */
+  names?: Exclude<Drums, false>;
 }
 
 export const tickToX = (g: RollGeom, tick: number) => (tick - g.scrollTick) * g.ppt;

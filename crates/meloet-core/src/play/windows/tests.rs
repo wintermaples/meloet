@@ -170,7 +170,6 @@ impl FakeHost {
             ),
             _ if !alive => return None,
             PluginAsk::OpenWindow { .. } | PluginAsk::CloseWindow => return None,
-            PluginAsk::KeyNames => PluginSaid::KeyNames(None),
             PluginAsk::Params { ask } => PluginSaid::Params {
                 ask,
                 params: self.params(ticket),

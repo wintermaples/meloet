@@ -50,7 +50,7 @@ fn ask(m: &mut Model, track: u32) -> AiAnswer {
 
 fn known(answer: AiAnswer) -> AiKeyMap {
     match answer {
-        AiAnswer::KeyNames(AiKeyNames::Known(map)) => *map,
+        AiAnswer::KeyNames(map) => *map,
         other => panic!("{other:?}"),
     }
 }
@@ -144,7 +144,11 @@ fn a_plugin_is_named_by_what_it_says_and_guessed_when_it_is_a_drum_that_says_not
             name: "  ".into(),
         },
     ];
-    let map = plugin_keys(plugin_sound(), Some(named), false);
+    let map = plugin_keys(
+        plugin_sound(),
+        &super::super::keys::cleaned(Some(named)),
+        false,
+    );
     assert!(map.kit && map.certain);
     assert_eq!(map.source, AiKeySource::Lv2Midnam);
     let keys: Vec<(u8, Option<&str>)> = (map.keys.iter())
@@ -152,13 +156,13 @@ fn a_plugin_is_named_by_what_it_says_and_guessed_when_it_is_a_drum_that_says_not
         .collect();
     assert_eq!(keys, [(36, Some("Kick Drum")), (38, Some("Snare Center"))]);
 
-    let map = plugin_keys(plugin_sound(), None, true);
+    let map = plugin_keys(plugin_sound(), &[], true);
     assert!(map.kit && !map.certain);
     assert_eq!(map.source, AiKeySource::GeneralMidiGuess);
     assert_eq!(map.keys.len(), 47);
     assert_eq!(map.keys[1].name.as_deref(), Some("キック"));
 
-    let map = plugin_keys(plugin_sound(), Some(Vec::new()), false);
+    let map = plugin_keys(plugin_sound(), &[], false);
     assert!(!map.kit && map.certain && map.keys.is_empty());
     assert_eq!(map.source, AiKeySource::None);
 }

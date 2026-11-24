@@ -23,6 +23,9 @@
 //! - `urn:meloet:fake:live`: as `pass`; it says it cannot run faster than it plays.
 //! - `urn:meloet:fake:drums`: as `sine`; it names two keys ([`DRUM_NAMES`]).
 //! - `urn:meloet:fake:kit`: as `sine`; it names none.
+//! - `urn:meloet:fake:slowkit`: as `sine`; it names no keys (an empty list) until
+//!   [`KIT_READ`] after it was made, then the keys of `drums`, as DrumGizmo names them once
+//!   its kit is read. It says so by itself ([`Said::KeyNames`]).
 //! - `urn:meloet:fake:late`: as `sine`; a state put into it is taken in at the end of its next
 //!   block, after that block's parameter changes, as Surge XT takes one while its blocks run.
 //!   Before its first block it takes one at once.
@@ -36,6 +39,7 @@
 //! - `segv`: one plugin; reading it crashes. `hang`: one plugin; reading it never ends.
 //! - `mixed`: `urn:meloet:fake:a`, `…:b` and `…:c`. Reading `b` crashes; `a` and `c` are read.
 //! - `drums`: `drums` and `kit`, both drum instruments.
+//! - `slowkit`: the drum instrument `slowkit`.
 //! - `outs`: the instrument `outs`.
 
 use std::path::{Path, PathBuf};
@@ -73,6 +77,8 @@ const KNOB_MOVES: u32 = 40;
 const KNOB_END: f64 = 0.9;
 /// The keys `drums` names.
 pub const DRUM_NAMES: [(u8, &str); 2] = [(36, "Fake Kick"), (38, "Fake Snare")];
+/// How long `slowkit` takes to read its kit.
+pub const KIT_READ: std::time::Duration = std::time::Duration::from_millis(300);
 /// The presets of `choices`: URI, label, and its state (level, step, type).
 pub const PRESETS: [(&str, &str, [f64; 3]); 2] = [
     ("urn:meloet:fake:preset:quiet", "Quiet", [0.125, 0.0, 0.0]),
@@ -125,15 +131,14 @@ pub fn make(name: &str, activation: Activation) -> Result<Loaded, String> {
             outputs = outs.outputs.list();
             Box::new(outs)
         }
-        "sine" | "window" | "knob" | "slowwindow" | "drums" | "kit" | "choices" | "late" => {
-            Box::new(Sine {
-                sample_rate: activation.sample_rate,
-                level: level.clone(),
-                key: None,
-                phase: 0.0,
-                late: late.clone(),
-            })
-        }
+        "sine" | "window" | "knob" | "slowwindow" | "drums" | "kit" | "slowkit" | "choices"
+        | "late" => Box::new(Sine {
+            sample_rate: activation.sample_rate,
+            level: level.clone(),
+            key: None,
+            phase: 0.0,
+            late: late.clone(),
+        }),
         "pass" | "notyet" | "live" => Box::new(Pass { fault: None }),
         "slow" => Box::new(Pass {
             fault: Some(Fault::Slow),
@@ -153,7 +158,7 @@ pub fn make(name: &str, activation: Activation) -> Result<Loaded, String> {
     let window = matches!(name, "window" | "knob" | "slowwindow");
     let choices = name == "choices";
     let instrument =
-        matches!(name, "sine" | "drums" | "kit" | "late" | "outs") || window || choices;
+        matches!(name, "sine" | "drums" | "kit" | "slowkit" | "late" | "outs") || window || choices;
     let editor = match name {
         _ if window => EditorKind::X11,
         "notyet" => EditorKind::Unsupported,
@@ -167,6 +172,7 @@ pub fn make(name: &str, activation: Activation) -> Result<Loaded, String> {
             editor,
             live: name == "live",
             outputs,
+            key_names: None,
         },
         controller: Box::new(FakeController {
             level,
@@ -180,7 +186,11 @@ pub fn make(name: &str, activation: Activation) -> Result<Loaded, String> {
             knob: (name == "knob").then_some(0),
             open: false,
             said: Vec::new(),
-            names: name == "drums",
+            names: match name {
+                "drums" => Names::Drums,
+                "slowkit" => Names::Later(std::time::Instant::now() + KIT_READ),
+                _ => Names::None,
+            },
             late,
         }),
         processor,
@@ -447,9 +457,17 @@ struct FakeController {
     knob: Option<u32>,
     open: bool,
     said: Vec<Said>,
-    /// It names its keys.
-    names: bool,
+    names: Names,
     late: Option<Arc<Late>>,
+}
+
+/// The keys a fake names.
+#[derive(Clone, Copy, PartialEq)]
+enum Names {
+    None,
+    Drums,
+    /// None until then, the keys of `drums` after.
+    Later(std::time::Instant),
 }
 
 impl FakeController {
@@ -621,7 +639,11 @@ impl Controller for FakeController {
             key,
             name: name.into(),
         };
-        self.names.then(|| DRUM_NAMES.map(name).to_vec())
+        match self.names {
+            Names::None => None,
+            Names::Drums => Some(DRUM_NAMES.map(name).to_vec()),
+            Names::Later(_) => Some(Vec::new()),
+        }
     }
 
     fn presets(&mut self, bundles: &[PathBuf]) -> Result<Vec<PresetInfo>, String> {
@@ -733,6 +755,12 @@ impl Controller for FakeController {
 
     fn poll(&mut self, said: &mut Vec<Said>) {
         said.append(&mut self.said);
+        if let Names::Later(at) = self.names
+            && std::time::Instant::now() >= at
+        {
+            self.names = Names::Drums;
+            said.push(Said::KeyNames);
+        }
     }
 }
 
@@ -762,6 +790,7 @@ fn contents(stem: &str) -> Option<Vec<(&'static str, PluginKind, Option<Fault>)>
     Some(match stem {
         "found" => vec![("Sine", synth, None), ("Pass", effect, None)],
         "drums" => vec![("Drums", drum, None), ("Kit", drum, None)],
+        "slowkit" => vec![("SlowKit", drum, None)],
         "choices" => vec![("Choices", synth, None)],
         "outs" => vec![("Outs", synth, None)],
         "empty" => vec![],

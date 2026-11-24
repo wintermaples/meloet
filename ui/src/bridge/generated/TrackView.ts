@@ -3,6 +3,7 @@ import type { Arp } from "./Arp";
 import type { ClipView } from "./ClipView";
 import type { InsertView } from "./InsertView";
 import type { LaneView } from "./LaneView";
+import type { PluginKeyName } from "./PluginKeyName";
 import type { SoundView } from "./SoundView";
 import type { StandIn } from "./StandIn";
 import type { TrackKindView } from "./TrackKindView";
@@ -35,10 +36,17 @@ standIn: StandIn | null,
 /**
  * A drum kit of an SF2 file (`GmFamily::DrumKit`): the keys the kit has a sound on, as
  * the rows of the drum piano roll, top row first (spec 3 「SF2 のドラムのキット」). The
- * screen names a row by its key. `None` for every other sound, and while the kit is not
- * read.
+ * screen names a row by its key. A plugin instrument that names keys (`key_names`): those
+ * keys, as rows in the same order. `None` for every other sound, and while the kit is not
+ * read or the plugin has named no key.
  */
 drumKeys: Array<number> | null, 
+/**
+ * The keys the plugin instrument names (LV2 midnam), lowest key first, each with the
+ * plugin's name for it; it may rename them while it runs. `None` for every other sound,
+ * and while the plugin is not loaded or names no key.
+ */
+keyNames: Array<PluginKeyName> | null, 
 /**
  * The fader: `None` is −∞, otherwise −60.0..=6.0.
  */

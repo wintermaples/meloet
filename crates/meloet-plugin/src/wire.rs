@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use crate::key::PluginKey;
 use crate::scan::{EditorKind, PluginInfo};
 
-pub const WIRE_VERSION: u32 = 8;
+pub const WIRE_VERSION: u32 = 9;
 
 /// No message's text is longer than this.
 pub const MAX_TEXT_LEN: usize = 16 << 20;
@@ -63,8 +63,6 @@ pub enum Request {
     GetState { slot: u32 },
     /// Puts back a state taken with `GetState` from the same plugin; it is this frame's blob.
     SetState { slot: u32 },
-    /// The names the plugin gives its keys (LV2 midnam). Answered by `KeyNames`.
-    KeyNames { slot: u32 },
     /// The presets of an LV2 plugin: those its own bundle and the preset bundles `bundles`
     /// (folders; each is read once for the process) say apply to it. Answered by `Presets`.
     Presets { slot: u32, bundles: Vec<PathBuf> },
@@ -157,10 +155,6 @@ pub enum Reply {
     },
     /// The state is the frame's blob.
     State,
-    /// Lowest key first. `None`: the plugin has no way to name its keys.
-    KeyNames {
-        names: Option<Vec<KeyName>>,
-    },
     Presets {
         presets: Vec<PresetInfo>,
     },
@@ -270,6 +264,10 @@ pub struct LoadedPlugin {
     pub live: bool,
     #[serde(default)]
     pub outputs: Vec<OutputSet>,
+    /// The names it gives its keys now, lowest key first; `None` when it has no way to name
+    /// them. A change later is told with `Notice::KeyNames`.
+    #[serde(default)]
+    pub key_names: Option<Vec<KeyName>>,
 }
 
 /// One output set of a loaded plugin, as the plugin's description gives it.
@@ -424,6 +422,13 @@ pub enum Notice {
     /// The plugin says that any of its parameters may have another value now (it loaded a
     /// program by itself; VST3 `kParamValuesChanged`). The values are to be read again.
     ParamsChanged { slot: u32 },
+    /// The names the plugin gives its keys are these from now on, in place of those of
+    /// `LoadedPlugin::key_names` or of the last `KeyNames` (a state was put back, or the
+    /// plugin renamed them by itself, LV2 midnam's update).
+    KeyNames {
+        slot: u32,
+        names: Option<Vec<KeyName>>,
+    },
 }
 
 /// One of the frames the host's `scan` mode writes, in order, until `Done` or `Broken`. A
@@ -709,18 +714,33 @@ mod tests {
                             on: true,
                             pan: 0.0,
                         }],
+                        key_names: Some(vec![KeyName {
+                            key: 36,
+                            name: "Kick".into(),
+                        }]),
                     }
                 }
             }),
             json!({ "kind": "reply", "id": 4, "reply": { "type": "loaded", "plugin": { "latency": 64, "audioInputs": 0, "audioOutputs": 2, "editor": "x11", "live": false,
-                "outputs": [{ "id": "main", "name": "Main", "channels": 2, "on": true, "pan": 0.0 }] } } })
+                "outputs": [{ "id": "main", "name": "Main", "channels": 2, "on": true, "pan": 0.0 }],
+                "keyNames": [{ "key": 36, "name": "Kick" }] } } })
         );
-        // From a host that tells no output sets.
+        // From a host that tells no output sets and no names.
         let plugin: LoadedPlugin = serde_json::from_value(
             json!({ "latency": 0, "audioInputs": 2, "audioOutputs": 2, "editor": "none", "live": false }),
         )
         .unwrap();
         assert!(plugin.outputs.is_empty());
+        assert_eq!(plugin.key_names, None);
+        assert_eq!(
+            from(FromHost::Notice {
+                notice: Notice::KeyNames {
+                    slot: 2,
+                    names: Some(Vec::new()),
+                }
+            }),
+            json!({ "kind": "notice", "notice": { "type": "keyNames", "slot": 2, "names": [] } })
+        );
         assert_eq!(
             from(FromHost::Reply {
                 id: 7,
@@ -837,7 +857,6 @@ mod tests {
             Request::Unload { slot: 1 },
             Request::GetState { slot: 1 },
             Request::SetState { slot: 1 },
-            Request::KeyNames { slot: 1 },
             Request::Presets {
                 slot: 1,
                 bundles: vec!["/usr/lib/lv2/x.lv2presets".into()],
@@ -952,6 +971,17 @@ mod tests {
                 frames: 128,
             },
             Notice::ParamsChanged { slot: 1 },
+            Notice::KeyNames {
+                slot: 1,
+                names: Some(vec![KeyName {
+                    key: 36,
+                    name: "Kick Drum".into(),
+                }]),
+            },
+            Notice::KeyNames {
+                slot: 1,
+                names: None,
+            },
         ];
         for notice in notices {
             let message = FromHost::Notice { notice };
@@ -967,13 +997,6 @@ mod tests {
                 message: "x".into(),
             },
             Reply::State,
-            Reply::KeyNames {
-                names: Some(vec![KeyName {
-                    key: 36,
-                    name: "Kick Drum".into(),
-                }]),
-            },
-            Reply::KeyNames { names: None },
             Reply::Presets {
                 presets: vec![PresetInfo {
                     uri: "urn:x#preset1".into(),

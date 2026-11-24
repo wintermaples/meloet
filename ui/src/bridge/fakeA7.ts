@@ -91,6 +91,7 @@ export function reduceA7(
     sound: { kind: "builtin", instrument: "sine" },
     standIn: null,
     drumKeys: null,
+    keyNames: null,
     slots: [null, null, null, null],
     muted: false,
     soloed: false,

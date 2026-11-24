@@ -131,7 +131,8 @@ fn wait_ready(core: &Core, track: u64) {
 }
 
 /// The real Black Pearl (avldrums.lv2) through the whole of meloet: scanned, put on a track,
-/// asked over its midnam, answered through the socket.
+/// its midnam told to the core with its load, answered through the socket, and given to the
+/// screen as the rows of the drum piano roll.
 #[test]
 #[ignore = "needs avldrums.lv2"]
 fn black_pearl_names_its_drums_through_the_socket() {
@@ -162,6 +163,22 @@ fn black_pearl_names_its_drums_through_the_socket() {
     assert_eq!(named[0].2.as_deref(), Some("Kick Drum"));
     assert_eq!(named[2].2.as_deref(), Some("Snare Center"));
     assert_eq!(named[6].2.as_deref(), Some("Closed Hat"));
+    let state = core.snapshot().state;
+    let view = &state.song.tracks[drums as usize - 1];
+    let names = view.key_names.as_ref().expect("the screen has the names");
+    assert_eq!(names.len(), 26);
+    assert_eq!((names[0].key, names[0].name.as_str()), (36, "Kick Drum"));
+    // The keys General MIDI orders, cymbals on top and the kick last, then the others from
+    // the lowest up.
+    assert_eq!(
+        view.drum_keys.as_deref(),
+        Some(
+            &[
+                49, 57, 55, 52, 51, 59, 53, 46, 44, 42, 50, 48, 47, 45, 43, 41, 39, 38, 40, 37, 36,
+                54, 56, 58, 60, 61
+            ][..]
+        )
+    );
     drop(c);
     drop(core);
     let _ = std::fs::remove_dir_all(&runtime);

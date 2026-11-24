@@ -1,12 +1,72 @@
 //! The names of a plugin's keys, from Ardour's midnam extension
 //! (`http://ardour.org/lv2/midnam#interface`): the plugin gives a MIDINameDocument (MMA MIDNAM
-//! 1.0) as text, and only its note name lists are read here.
+//! 1.0) as text, and only its note name lists are read here. With the host feature
+//! [`UPDATE`] the plugin says, from `run`, that its document changed ([`Update`]).
 
 use std::ffi::{CStr, c_char, c_void};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use meloet_plugin::wire::KeyName;
 
 pub const INTERFACE: &CStr = c"http://ardour.org/lv2/midnam#interface";
+pub const UPDATE: &CStr = c"http://ardour.org/lv2/midnam#update";
+
+/// `LV2_Midnam` of Ardour's `lv2_extensions.h`: the data of the feature [`UPDATE`].
+#[repr(C)]
+struct UpdateData {
+    handle: *mut c_void,
+    update: unsafe extern "C" fn(handle: *mut c_void),
+}
+
+/// The feature [`UPDATE`] of one instance, and what the plugin said through it. It stays where
+/// it is (boxed) for as long as the instance lives.
+pub struct Update {
+    data: UpdateData,
+    feature: lv2_raw::LV2Feature,
+    asked: AtomicBool,
+}
+
+// SAFETY: the pointers point into the box itself (and to a static string); what changes is
+// atomic.
+unsafe impl Send for Update {}
+unsafe impl Sync for Update {}
+
+/// On the plugin's thread, mostly the audio thread inside `run`: only a flag is set.
+unsafe extern "C" fn update(handle: *mut c_void) {
+    // SAFETY: the handle is the `asked` of a living `Update` (`Update::new`).
+    if let Some(asked) = unsafe { handle.cast::<AtomicBool>().as_ref() } {
+        asked.store(true, Ordering::Release);
+    }
+}
+
+impl Update {
+    pub fn new() -> Box<Update> {
+        let mut this = Box::new(Update {
+            data: UpdateData {
+                handle: std::ptr::null_mut(),
+                update,
+            },
+            feature: lv2_raw::LV2Feature {
+                uri: UPDATE.as_ptr(),
+                data: std::ptr::null_mut(),
+            },
+            asked: AtomicBool::new(false),
+        });
+        this.data.handle = (&raw const this.asked).cast_mut().cast();
+        this.feature.data = (&raw mut this.data).cast();
+        this
+    }
+
+    /// What the plugin is given at `instantiate`.
+    pub fn feature(&self) -> &lv2_raw::LV2Feature {
+        &self.feature
+    }
+
+    /// Whether the plugin asked for its document to be read again since the last call.
+    pub fn take(&self) -> bool {
+        self.asked.swap(false, Ordering::Acquire)
+    }
+}
 
 /// No document longer than this is read.
 const MAX_DOCUMENT: usize = 1 << 20;
@@ -257,6 +317,30 @@ pub fn note_names(xml: &str) -> Vec<(u8, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A plugin calls the feature's `update` from `run`, on the audio thread: it sets a flag
+    /// and does nothing else (nothing is allocated or freed in it).
+    #[test]
+    fn the_update_a_plugin_calls_only_sets_a_flag() {
+        let host = Update::new();
+        assert!(!host.take());
+        let feature = host.feature();
+        // SAFETY: a feature's URI is a C string.
+        assert_eq!(unsafe { CStr::from_ptr(feature.uri) }, UPDATE);
+        // As the plugin sees it: an `LV2_Midnam`.
+        // SAFETY: the feature's data is the `UpdateData` of the box.
+        let data = unsafe { &*feature.data.cast::<UpdateData>() };
+        let audio = crate::rtcheck::enter();
+        let before = crate::rtcheck::count();
+        for _ in 0..3 {
+            // SAFETY: the plugin's call with the handle it was given.
+            unsafe { (data.update)(data.handle) };
+        }
+        assert_eq!(crate::rtcheck::count(), before);
+        drop(audio);
+        assert!(host.take());
+        assert!(!host.take());
+    }
 
     /// As avldrums 0.7.3 gives it for Black Pearl (shortened).
     const AVL: &str = r#"<?xml version="1.0" encoding="UTF-8"?>

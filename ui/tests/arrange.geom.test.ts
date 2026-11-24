@@ -46,6 +46,7 @@ const track = (number: number, clips: ReturnType<typeof clip>[], color = number)
   sound: { kind: "builtin", instrument: "sine" },
   standIn: null,
   drumKeys: null,
+  keyNames: null,
   gainDb: 0,
   pan: 0,
   sends: [null, null],

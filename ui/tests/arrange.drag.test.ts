@@ -25,7 +25,7 @@ function clip(id: number, name: string, fromBar: number, toBar: number): ClipVie
   return { id, name, start: (fromBar - 1) * BAR, end: (toBar - 1) * BAR, take: 1, takes: 1, takeId: 100 + id, takeOffset: 0, noteCount: 0, audio: null, comp: [] };
 }
 function track(number: number, clips: ClipView[]): TrackView {
-  return { id: number, number, name: `トラック ${number}`, color: number, instrument: "sine", kind: { kind: "keys" }, sound: { kind: "builtin", instrument: "sine" }, standIn: null, drumKeys: null, gainDb: 0, pan: 0, sends: [null, null], sendDefaults: [null, null], inserts: [null, null, null, null], slots: [null, null, null, null], muted: false, soloed: false, lanes: [], clips, arp: { on: false, shape: "up", rate: "sixteenth", triplet: false, octaves: 1, hold: false } };
+  return { id: number, number, name: `トラック ${number}`, color: number, instrument: "sine", kind: { kind: "keys" }, sound: { kind: "builtin", instrument: "sine" }, standIn: null, drumKeys: null, keyNames: null, gainDb: 0, pan: 0, sends: [null, null], sendDefaults: [null, null], inserts: [null, null, null, null], slots: [null, null, null, null], muted: false, soloed: false, lanes: [], clips, arp: { on: false, shape: "up", rate: "sixteenth", triplet: false, octaves: 1, hold: false } };
 }
 
 // 1 bar is 64 px, row height 64, clips leave 3 above and below in the row (scale 100 %).

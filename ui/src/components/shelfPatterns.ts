@@ -4,7 +4,7 @@
 import { PATTERN_GROUPS, type AppState, type PatternGroup, type PatternView } from "../bridge";
 import { TempoMap } from "../time/tempoMap";
 import { t, type TextKey } from "../text";
-import { trackDrums } from "./pianoroll/drums";
+import { isPluginKit, trackDrums } from "./pianoroll/drums";
 
 export type PatternEntry =
   | { kind: "heading"; id: string; group: PatternGroup; label: string; folded: boolean }
@@ -45,7 +45,9 @@ export function patternModel(patterns: readonly PatternView[], open: Readonly<Re
 export function placeText(app: Pick<AppState, "song" | "timeline" | "transport">): string {
   const bar = new TempoMap(app.timeline).meterAt(app.transport.position).bar + 1;
   const track = app.song.tracks.find((x) => x.id === app.song.playTarget);
-  if (track && track.kind.kind === "keys" && trackDrums(track))
+  const drums = trackDrums(track);
+  // As core: a plugin that names its keys is not a kit a pattern goes on.
+  if (track && track.kind.kind === "keys" && drums && !isPluginKit(drums))
     return t("shelf.placeOn", { track: t("track.label", { number: track.number, name: track.name }), bar });
   // The new track goes right below the selected one.
   const number = track ? track.number + 1 : app.song.tracks.length + 1;

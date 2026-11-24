@@ -79,6 +79,7 @@ import {
   type PluginPlaceView,
   type PluginSlotRef,
   type PluginEffectCategory,
+  type PluginKeyName,
   type PluginState,
   type PluginView,
   type PluginWindowView,
@@ -493,6 +494,7 @@ function settleSong(song: SongView): SongView {
         sound: own ? builtinSound(t.instrument) : t.sound,
         standIn: own && t.standIn !== "packMissing" ? null : t.standIn,
         drumKeys: own ? null : t.drumKeys,
+        keyNames: own ? null : t.keyNames,
       });
     }),
     returns: [strip(song.returns[0]), strip(song.returns[1])],
@@ -565,6 +567,7 @@ export function fakeState(): AppState {
           sound: builtinSound("grandPiano"),
           standIn: null,
           drumKeys: null,
+          keyNames: null,
           gainDb: 0,
           pan: 0,
           sends: newTrackSends("grandPiano"),
@@ -1731,6 +1734,7 @@ function bandSong(s: AppState, tracks = BAND_TRACKS): void {
     sound: builtinSound(t.instrument),
     standIn: null,
     drumKeys: null,
+    keyNames: null,
     gainDb: t.gainDb,
     pan: 0,
     sends: newTrackSends(t.instrument),
@@ -2376,6 +2380,64 @@ SCENES.drumRollSf2 = {
       sound: { kind: "sf2", file: FLUID, bank: 128, program: 0, name: "Standard", family: "drumKit" } satisfies SoundView,
       drumKeys: SF2_KIT_ROWS,
     });
+  },
+};
+
+/** The keys Black Pearl (avldrums 0.7.3) names, as crates/meloet-plughost/tests/real_keynames.rs has them. */
+const BLACK_PEARL_NAMES: PluginKeyName[] = (
+  [
+    [36, "Kick Drum"],
+    [37, "Snare Sidestick"],
+    [38, "Snare Center"],
+    [39, "Hand Clap"],
+    [40, "Snare Edge"],
+    [41, "Floor Tom Center"],
+    [42, "Closed Hat"],
+    [43, "Floor Tom Edge/Alt"],
+    [44, "Pedal Hat"],
+    [45, "Tom Center"],
+    [46, "Semi Hat"],
+    [47, "Tom Edge/Alt"],
+    [48, "Swish Hat"],
+    [49, "Crash 1"],
+    [50, "Crash1 Choked"],
+    [51, "Ride Tip"],
+    [52, "Ride Choked"],
+    [53, "Ride Bell"],
+    [54, "Tambourine"],
+    [55, "Splash"],
+    [56, "Cowbell"],
+    [57, "Crash 2"],
+    [58, "Crash 2 Choked"],
+    [59, "Ride Shank"],
+    [60, "Crash3"],
+    [61, "Maracas"],
+  ] as const
+).map(([key, name]) => ({ key, name }));
+/** The plugin Black Pearl on 「3 ドラム」 of drumRoll; `named`: it has named its keys (the rows as core orders them). */
+function blackPearl(s: FakeState, named: boolean): void {
+  Object.assign(s.song.tracks[2]!, {
+    instrument: "sine",
+    sound: { kind: "plugin", ...pluginView("Black Pearl Drumkit") } satisfies SoundView,
+    keyNames: named ? BLACK_PEARL_NAMES : null,
+    drumKeys: named ? SF2_KIT_ROWS.filter((k) => BLACK_PEARL_NAMES.some((n) => n.key === k)) : null,
+  });
+}
+// Not from a mock (the owner, 2026-11-25): 「3 ドラム」 sounds with the LV2 plugin Black Pearl, which names its keys; the rows
+// are those keys in the order of an SF2 kit, with the plugin's names.
+SCENES.drumRollPlugin = {
+  ...SCENES.drumRoll!,
+  setup(s) {
+    SCENES.drumRoll!.setup(s);
+    blackPearl(s, true);
+  },
+};
+// The same before the plugin has named its keys (DrumGizmo names them after its kit has loaded): the normal piano roll.
+SCENES.drumRollPluginUnnamed = {
+  ...SCENES.drumRoll!,
+  setup(s) {
+    SCENES.drumRoll!.setup(s);
+    blackPearl(s, false);
   },
 };
 
@@ -4523,6 +4585,7 @@ export function reduceRound7(state: AppState, command: Command, memo: FakeVocalM
         sound: builtinSound("sine"),
         standIn: null,
         drumKeys: null,
+        keyNames: null,
         gainDb: 0,
         pan: 0,
         sends: [null, null],
@@ -5085,6 +5148,7 @@ function newKitTrack(tracks: TrackView[], place: number): TrackView {
     sound: builtinSound("studioKit"),
     standIn: null,
     drumKeys: null,
+    keyNames: null,
     gainDb: 0,
     pan: 0,
     sends: newTrackSends("studioKit"),
@@ -5370,6 +5434,7 @@ export function reduceTracks(
           sound: builtinSound(picked),
           standIn: null,
           drumKeys: null,
+          keyNames: null,
           gainDb: 0,
           pan: 0,
           sends: newTrackSends(picked),

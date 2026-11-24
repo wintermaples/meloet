@@ -168,6 +168,8 @@ BOARDS = {
     "missingPlugin": None,
     "drumPlay": "R8-DrumPlay",
     "drumRollSf2": "R7-Drum",
+    "drumRollPlugin": "R7-Drum",
+    "drumRollPluginUnnamed": None,
     # Plugin windows, plugins in the parameters panel, the rest of 86 in the mixer.
     "windowOpen": "F-WindowOpen",
     "paramFew": "F-ParamFew",

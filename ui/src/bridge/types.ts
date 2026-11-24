@@ -78,6 +78,7 @@ export type { PluginEffectCategory } from "./generated/PluginEffectCategory";
 export type { PluginFormat } from "./generated/PluginFormat";
 export type { PluginFormatView } from "./generated/PluginFormatView";
 export type { PluginInstrumentCategory } from "./generated/PluginInstrumentCategory";
+export type { PluginKeyName } from "./generated/PluginKeyName";
 export type { PluginKindView } from "./generated/PluginKindView";
 export type { PluginPlaceView } from "./generated/PluginPlaceView";
 export type { PluginRole } from "./generated/PluginRole";

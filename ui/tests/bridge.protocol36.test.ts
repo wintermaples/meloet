@@ -25,8 +25,8 @@ const taken = (d: ExportDialogView) => d.midiTaken.map((t) => `${t.number} ${t.n
 const vocal = (d: ExportDialogView) => d.midiVocal.map((t) => `${t.number} ${t.name}`);
 
 describe("shape of protocol 36", () => {
-  it("version 36; MIDI is the last format and has no bits; the intents and the problems", () => {
-    expect(PROTOCOL_VERSION).toBe(36);
+  it("version 36 or later; MIDI is the last format and has no bits; the intents and the problems", () => {
+    expect(PROTOCOL_VERSION).toBeGreaterThanOrEqual(36);
     expect(EXPORT_FORMATS.at(-1)).toEqual({ format: "midi", bits: [] });
     const changes: ExportChange[] = [
       { kind: "midiTracks", tracks: "selected" },

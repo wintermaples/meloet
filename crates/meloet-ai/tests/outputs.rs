@@ -117,6 +117,7 @@ impl Meloet for Given {
             instrument_sets: (self.sets.iter())
                 .map(|sets| (TrackId(1), sets.clone().into()))
                 .collect(),
+            plugin_kits: Vec::new(),
         })
     }
 

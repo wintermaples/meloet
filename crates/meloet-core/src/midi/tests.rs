@@ -136,7 +136,7 @@ fn the_whole_song_reads_back_with_its_tempos_meters_and_tracks() {
     let keys: Vec<usize> = [p.piano, p.drums, p.bass, p.empty]
         .map(|id| place(&doc, id))
         .to_vec();
-    let made = midi_file(&doc, &keys, None, 0, 4 * BAR, 1920).unwrap();
+    let made = midi_file(&doc, &keys, &[], None, 0, 4 * BAR, 1920).unwrap();
     assert_eq!((made.notes, made.cut, made.ramps), (4 + 8 + 1, 0, true));
     let channels: Vec<(usize, usize, u8)> = (made.tracks.iter())
         .map(|t| (t.index, t.notes, t.channel))
@@ -217,7 +217,7 @@ fn a_range_takes_the_notes_that_start_in_it_and_cuts_them_at_its_end() {
         place(&doc, p.bass),
     ];
     let (from, to) = (BAR, 2 * BAR + 960);
-    let made = midi_file(&doc, &keys, None, from, to, 1920).unwrap();
+    let made = midi_file(&doc, &keys, &[], None, from, to, 1920).unwrap();
     // The piano's note across bar 2 started before the range; the one at bar 3 is cut.
     assert_eq!((made.notes, made.cut), (1 + 8, 1));
     let read = smf::read(&smf::write(&made.file)).unwrap();
@@ -234,7 +234,7 @@ fn a_range_takes_the_notes_that_start_in_it_and_cuts_them_at_its_end() {
     assert_eq!(read.tracks[3].name.as_deref(), Some("ベース"));
 
     // A range from the middle of 3/4 bars: the meter it starts in.
-    let made = midi_file(&doc, &keys[..1], None, 3 * BAR + 100, 4 * BAR, 1920).unwrap();
+    let made = midi_file(&doc, &keys[..1], &[], None, 3 * BAR + 100, 4 * BAR, 1920).unwrap();
     let read = smf::read(&smf::write(&made.file)).unwrap();
     assert_eq!(read.tracks[0].meters, [(0, 3, 2)]);
     assert_eq!(read.tracks[0].tempos, [(0, 600_000)]);
@@ -246,36 +246,36 @@ fn coarser_ticks_one_clip_and_what_cannot_be_written() {
     let (doc, p) = song();
     let drums = place(&doc, p.drums);
     let clip = doc.tracks[drums].clips[0].id;
-    let made = midi_file(&doc, &[drums], Some(clip), BAR, 2 * BAR, 480).unwrap();
+    let made = midi_file(&doc, &[drums], &[], Some(clip), BAR, 2 * BAR, 480).unwrap();
     let read = smf::read(&smf::write(&made.file)).unwrap();
     assert_eq!(read.division, 480);
     assert_eq!(read.tracks[1].notes[1], smf_note(240, 340, 9, 38, 110));
     assert_eq!(read.tracks[0].length, BAR / 4);
     // Another track's clip is not that one: nothing of it.
     let piano = place(&doc, p.piano);
-    let made = midi_file(&doc, &[piano], Some(clip), 0, 4 * BAR, 1920).unwrap();
+    let made = midi_file(&doc, &[piano], &[], Some(clip), 0, 4 * BAR, 1920).unwrap();
     assert_eq!(made.notes, 0);
 
     // A vocal track holds no notes; a place with no track is passed by.
     let vocals = place(&doc, p.vocals);
-    let made = midi_file(&doc, &[vocals, 99], None, 0, 4 * BAR, 1920).unwrap();
+    let made = midi_file(&doc, &[vocals, 99], &[], None, 0, 4 * BAR, 1920).unwrap();
     assert_eq!(made.tracks.len(), 1);
     assert_eq!(made.file.tracks[0].notes, []);
 
     // An empty range still says its tempo and meter.
-    let made = midi_file(&doc, &[piano], None, 2 * BAR, 2 * BAR, 1920).unwrap();
+    let made = midi_file(&doc, &[piano], &[], None, 2 * BAR, 2 * BAR, 1920).unwrap();
     assert_eq!(made.file.tempos, [(0, 1_000_000)]);
     assert_eq!(made.file.meters, [(0, 4, 4)]);
     assert_eq!((made.file.length, made.notes), (0, 0));
 
     let longest = smf::MAX_OUT_TICKS;
-    assert!(midi_file(&doc, &[piano], None, 0, longest, 1920).is_ok());
+    assert!(midi_file(&doc, &[piano], &[], None, 0, longest, 1920).is_ok());
     assert_eq!(
-        midi_file(&doc, &[piano], None, 0, longest + 1, 1920),
+        midi_file(&doc, &[piano], &[], None, 0, longest + 1, 1920),
         Err(MidiTooLong)
     );
     assert_eq!(
-        midi_file(&doc, &[piano], None, 5, longest + 5, 1920).map(|m| m.file.length),
+        midi_file(&doc, &[piano], &[], None, 5, longest + 5, 1920).map(|m| m.file.length),
         Ok(longest)
     );
 }
@@ -323,7 +323,44 @@ fn an_sf2_drum_kit_is_on_channel_10_and_another_sf2_preset_on_channel_1() {
         doc = recorded(&doc, id, 0, 4 * 1920, vec![note(0, 480, 36, 100)]);
     }
     let tracks: Vec<usize> = ids.iter().map(|&id| place(&doc, id)).collect();
-    let made = midi_file(&doc, &tracks, None, 0, 4 * 1920, 1920).unwrap();
+    let made = midi_file(&doc, &tracks, &[], None, 0, 4 * 1920, 1920).unwrap();
     let channels: Vec<u8> = made.tracks.iter().map(|t| t.channel).collect();
     assert_eq!(channels, vec![DRUM_CHANNEL, 0]);
+}
+
+#[test]
+fn a_plugin_track_named_a_kit_is_on_channel_10_and_another_on_channel_1() {
+    use meloet_model::PluginRef;
+    use std::sync::Arc;
+    let mut doc = Doc::new_default();
+    let mut ids = Vec::new();
+    for (key, name) in [
+        ("lv2:urn:example:drums", "Drums"),
+        ("lv2:urn:example:synth", "Synth"),
+    ] {
+        let plugin = Arc::new(PluginRef::new(key, name, "A Vendor", ""));
+        let instrument = InstrumentRef::Plugin(plugin);
+        let (e, id) = edit::add_track(&doc, None, instrument, Language::Ja).unwrap();
+        doc = e.doc;
+        ids.push(id);
+    }
+    for &id in &ids {
+        doc = recorded(&doc, id, 0, 4 * 1920, vec![note(0, 480, 36, 100)]);
+    }
+    let tracks: Vec<usize> = ids.iter().map(|&id| place(&doc, id)).collect();
+    let channels = |kits: &[TrackId]| {
+        let made = midi_file(&doc, &tracks, kits, None, 0, 4 * 1920, 1920).unwrap();
+        let read = smf::read(&smf::write(&made.file)).unwrap();
+        let written: Vec<u8> = (read.tracks[1..].iter())
+            .map(|t| t.notes[0].channel)
+            .collect();
+        assert_eq!(
+            written,
+            made.tracks.iter().map(|t| t.channel).collect::<Vec<_>>()
+        );
+        written
+    };
+    assert_eq!(channels(&[ids[0]]), vec![DRUM_CHANNEL, 0]);
+    // Not named a kit (its plugin is not loaded, or names no key): channel 1.
+    assert_eq!(channels(&[]), vec![0, 0]);
 }

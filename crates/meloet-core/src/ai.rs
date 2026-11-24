@@ -572,6 +572,9 @@ pub struct AiSong {
     /// The output sets of each track's instrument plugin that is loaded, as its plugin host
     /// said them; a track whose plugin is not loaded (yet) is not here.
     pub instrument_sets: Vec<(TrackId, Arc<[OutputSet]>)>,
+    /// The tracks whose instrument plugin is loaded and names its keys: kits, as the screen
+    /// shows them (`midi::midi_file` writes them on channel 10).
+    pub plugin_kits: Vec<TrackId>,
 }
 
 /// How an ask answered with a ticket is doing.

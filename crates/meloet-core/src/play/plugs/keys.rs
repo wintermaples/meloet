@@ -54,6 +54,15 @@ impl Play {
         let plug = self.plugs.at(Spot::Seat(self.seats.of(track)?))?;
         (plug.plugin.key == p.key).then(|| plug.key_names.clone())?
     }
+
+    /// The tracks whose instrument plugin names its keys now: kits, as the screen shows them
+    /// and as a MIDI export writes them (channel 10).
+    pub(crate) fn plugin_kits(&self) -> Vec<TrackId> {
+        (self.doc().tracks.iter())
+            .filter(|t| self.instrument_key_names(t.id).is_some())
+            .map(|t| t.id)
+            .collect()
+    }
 }
 
 #[cfg(test)]

@@ -12,11 +12,17 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use meloet_core::ai::{AiAnswer, AiAsk, AiInstrument, AiKeyMap, AiKeyNote, AiKeySource, AiRefusal};
+use meloet_core::ai::{
+    AiAnswer, AiAsk, AiInstrument, AiKeyMap, AiKeyNote, AiKeySource, AiNote, AiPlace, AiRefusal,
+};
+use meloet_core::midi;
 use meloet_core::play::keynames::read_sf2;
 use meloet_core::plugins::PluginOptions;
 use meloet_core::{Core, CoreOptions};
-use meloet_protocol::{AppState, Command, PluginState, ScaleMode, SoundView, StatusMessage};
+use meloet_protocol::{
+    AppState, Command, ExportChange, ExportFormat, ExportRunView, PluginState, ScaleMode,
+    SoundView, StatusMessage,
+};
 
 use font::{Font, Inst, KEY_RANGE, Preset, SAMPLE_ID, Smp, flat, range};
 use plughost::{temp_dir, wait_for};
@@ -305,6 +311,96 @@ fn a_plugin_that_names_its_keys_writes_keys_outside_the_locked_scale() {
         "{said:?}"
     );
     assert_eq!(clips, 1);
+    drop(core);
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// A MIDI export writes a plugin that names its keys on channel 10, as a kit, and one that
+/// names none on channel 1: the AI link's way (`AiSong::plugin_kits`) and the dialog's.
+#[test]
+fn a_plugin_that_names_its_keys_is_exported_on_the_drum_channel() {
+    let root = temp_dir("key-names-midi");
+    let core = Arc::new(Core::start(options(&root)));
+    state_when(&core, "the scan", |s| s.library.plugins.len() == 3);
+    let drums = add(&core, AiInstrument::Plugin(DRUMS.into()));
+    let kit = add(&core, AiInstrument::Plugin(KIT.into()));
+    let state = state_when(&core, "the names", |s| {
+        s.song.tracks[drums as usize - 1].key_names.is_some()
+            && matches!(&s.song.tracks[kit as usize - 1].sound,
+                SoundView::Plugin(p) if p.state == PluginState::Ready)
+    });
+    assert!(state.song.tracks[kit as usize - 1].key_names.is_none());
+    for track in [drums, kit] {
+        let put = core.ai(AiAsk::PutNotes {
+            at: AiPlace::Track(track),
+            notes: vec![AiNote {
+                start: 0,
+                length: 480,
+                key: 36,
+                velocity: 100,
+            }],
+        });
+        assert!(
+            matches!(&put, AiAnswer::Done(d) if d.notes.is_some()),
+            "{put:?}"
+        );
+    }
+    let places = [drums as usize - 1, kit as usize - 1];
+    let channel = |file: &midi::smf::Smf, place: usize| {
+        let notes = &file.tracks[place + 1].notes;
+        assert_eq!(notes.len(), 1, "{place}");
+        notes[0].channel
+    };
+
+    // The AI link: the song as read, with the plugin kits.
+    let read = core.ai_song().unwrap();
+    let kits: Vec<_> = (read.song.doc.tracks.iter())
+        .map(|t| read.plugin_kits.contains(&t.id))
+        .collect();
+    assert_eq!((kits[places[0]], kits[places[1]]), (true, false));
+    let all: Vec<usize> = (0..read.song.doc.tracks.len()).collect();
+    let made = midi::midi_file(
+        &read.song.doc,
+        &all,
+        &read.plugin_kits,
+        None,
+        0,
+        1920 * 4,
+        1920,
+    )
+    .unwrap();
+    let file = midi::smf::read(&midi::smf::write(&made.file)).unwrap();
+    assert_eq!(
+        (channel(&file, places[0]), channel(&file, places[1])),
+        (midi::DRUM_CHANNEL, 0)
+    );
+
+    // The dialog: saved first, so the file goes beside the song.
+    let saved = core.ai(AiAsk::SaveAs {
+        folder: root.join("songs"),
+        name: "kits".into(),
+    });
+    assert!(!matches!(saved, AiAnswer::Refused(_)), "{saved:?}");
+    let song = wait_for(PATIENCE, || core.ai_song()?.file).expect("the song saved");
+    core.send(Command::OpenExport);
+    core.send(Command::SetExport {
+        change: ExportChange::Format {
+            format: ExportFormat::Midi,
+        },
+    });
+    core.send(Command::StartExport);
+    let state = state_when(&core, "the export", |s| {
+        matches!(s.export.run, Some(ExportRunView::Done { .. }))
+    });
+    let Some(ExportRunView::Done { file, .. }) = state.export.run else {
+        unreachable!()
+    };
+    let path = song.parent().unwrap().join(file);
+    let file = midi::smf::read(&std::fs::read(&path).unwrap()).unwrap();
+    assert_eq!(
+        (channel(&file, places[0]), channel(&file, places[1])),
+        (midi::DRUM_CHANNEL, 0)
+    );
     drop(core);
     let _ = std::fs::remove_dir_all(&root);
 }

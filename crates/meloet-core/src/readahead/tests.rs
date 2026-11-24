@@ -520,7 +520,10 @@ fn other_audio_for_the_same_clips_comes_in_over_ten_ms_where_the_ring_ends() {
     assert_eq!(missing, 0);
     assert_eq!(out[1_000][0], sample(1, 500));
     assert_eq!(out[1_999][0], sample(1, 1_499));
-    assert_eq!(rig.ahead.stats().splices.load(Relaxed), 2);
+    // The last change may be laid into the old place before the jump is taken; that one
+    // is counted too.
+    let splices = rig.ahead.stats().splices.load(Relaxed);
+    assert!(splices == 2 || splices == 3, "{splices}");
     assert!(!rig.ahead.stats().made_lost.load(Relaxed));
 }
 

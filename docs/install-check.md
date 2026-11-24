@@ -4,14 +4,14 @@ In a container we can only see that the deb installs, removes, and finds all its
 
 **Where**: each of Ubuntu 24.04 and Ubuntu 26.04 (a real PC or a VM). Use a new user who has never installed meloet (no `~/.config/meloet` and so on). In a VM, pass the sound output (headphones or speakers) and the USB keyboard to the VM.
 
-**What to take**: `target/deb/meloet_0.3.0_amd64.deb`.
+**What to take**: `target/deb/meloet_0.4.0_amd64.deb`.
 
 At each step, for anything that did not go as expected, keep a picture of the screen and the text shown in the terminal (step 2 below).
 
 ## 1. Install
 
 ```bash
-sudo apt install ./meloet_0.3.0_amd64.deb
+sudo apt install ./meloet_0.4.0_amd64.deb
 ```
 
 - [ ] It installs together with the parts it depends on, and ends with no errors.

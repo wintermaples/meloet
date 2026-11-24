@@ -2,15 +2,15 @@
 
 meloet is a DAW for people who have just bought a MIDI keyboard. This document guides you from installing meloet, through using it, to removing it (documents for developers are in `docs/development/`). The Japanese version, [README.ja.md](README.ja.md), is the source; this one follows it.
 
-The current version is 0.3.0. It runs on Ubuntu 24.04 and 26.04.
+The current version is 0.4.0. It runs on Ubuntu 24.04 and 26.04.
 
 ## Installing
 
-1. Download `meloet_0.3.0_amd64.deb` from the GitHub Releases page.
+1. Download `meloet_0.4.0_amd64.deb` from the GitHub Releases page.
 2. Open a terminal where the downloaded file is, and type:
 
    ```bash
-   sudo apt install ./meloet_0.3.0_amd64.deb
+   sudo apt install ./meloet_0.4.0_amd64.deb
    ```
 
    Do not forget the `./`. The parts meloet uses (WebKitGTK, ALSA, PipeWire and so on) are installed with it.
@@ -71,7 +71,7 @@ If you forget a key, use Help ▸ Key list. Type "Loop" or "Ctrl" in the box at 
 
 ### Piano roll
 
-- The rows of the notes of a scale can be colored (nine kinds: major, minor, harmonic minor, melodic minor, major pentatonic, minor pentatonic, blues, Dorian, Mixolydian). With scale lock on, you can write only those notes.
+- With scale lock on, the rows of the notes of the scale look lighter and you can write only those notes (nine kinds: major, minor, harmonic minor, melodic minor, major pentatonic, minor pentatonic, blues, Dorian, Mixolydian).
 - Chord progressions (Royal road, Canon, Komuro, Circle, Pop, Sad): listen to one and place it, one chord per bar (with scale lock on).
 - Change the velocity of the selected notes by percent, ramp it, or spread it. "Stretch to next" makes each note last until the next one.
 - See the notes of other tracks faintly ("Show other tracks"). Use it to write along with other parts. Choose the tracks to show with the ▾.

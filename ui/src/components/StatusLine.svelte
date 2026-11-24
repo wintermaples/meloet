@@ -1338,7 +1338,7 @@
     color: var(--color-rec);
   }
   .accent {
-    color: var(--color-accent);
+    color: var(--color-accent-ink);
   }
   .link {
     flex-shrink: 0;
@@ -1370,7 +1370,7 @@
   .fill {
     display: block;
     height: 100%;
-    background: var(--color-accent);
+    background: var(--color-accent-ink);
     transform-origin: left;
   }
   /* The % text is out of flow (the row is not laid out again when the text width changes; same as 22-22). The width is set by a hidden 「99 %」. */

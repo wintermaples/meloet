@@ -138,7 +138,7 @@
     font-weight: var(--text-s-weight-600);
   }
   .save {
-    color: var(--color-accent);
+    color: var(--color-accent-ink);
   }
   .name {
     width: 100%;

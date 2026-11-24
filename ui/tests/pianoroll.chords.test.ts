@@ -245,9 +245,9 @@ describe("shadow picture (paintLive in paint.ts)", () => {
     const out = new Batch();
     const sizes = { noteH: 11, edge: 2, velBar: 3, velCap: 7, velFull: 64, velMid: 36, endMark: 16, drumGap: 8 };
     const box = { x0: 0, y0: 0, x1: 41, y1: 12 };
-    paintLive(out, box, { g: GEOM, sizes, left: 0, top: 0, ty: 0, areaH: 492, notes: [{ start: 0, end: TPQ, key: 72, face: "color.accent", outline: true }] }, 1);
+    paintLive(out, box, { g: GEOM, sizes, left: 0, top: 0, ty: 0, areaH: 492, notes: [{ start: 0, end: TPQ, key: 72, face: "color.accent.ink", outline: true }] }, 1);
     const rects = out.rects();
-    const accent = Array.from(Float32Array.from(rgb("color.accent"))).join(",");
+    const accent = Array.from(Float32Array.from(rgb("color.accent.ink"))).join(",");
     expect(rects.map((r) => [r[0], r[1], r[2], r[3]])).toEqual([
       [1, 0, 39, 1],
       [1, 10, 39, 11],

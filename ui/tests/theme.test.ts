@@ -221,7 +221,7 @@ describe("「表示 ▸ テーマ ▸」", () => {
       const theme = view[at]!;
       expect(view[at - 1]!.label).toBe("拡大率");
       const sub = rows(theme.sub!);
-      expect(sub.map((r) => r.label)).toEqual(["ダーク", "ライト", "ピンク ・ ダーク", "ピンク ・ ライト", "ミント ・ ダーク", "ミント ・ ライト"]);
+      expect(sub.map((r) => r.label)).toEqual(["ダーク", "ライト", "桜 ・ ダーク", "桜 ・ ライト", "ライム ・ ダーク", "ライム ・ ライト"]);
       expect(sub.map((r) => r.label)).toEqual(THEME_IDS.map((id) => t(`theme.${id}`)));
       expect(sub.filter((r) => r.checked).map((r) => r.label)).toEqual([t(`theme.${chosen}`)]);
       expect(sub.every((r) => r.usable && r.checked !== undefined && r.key === undefined)).toBe(true);
@@ -284,7 +284,7 @@ function pageColors(): Map<string, string[]> {
   return out;
 }
 
-describe("the whole screen (?scene=pianoRoll&theme=pinkDark), then 「ミント ・ ライト」", () => {
+describe("the whole screen (?scene=pianoRoll&theme=pinkDark), then 「ライム ・ ライト」", () => {
   let app: ReturnType<typeof mount>;
   let style: HTMLStyleElement;
   let state: () => AppState;

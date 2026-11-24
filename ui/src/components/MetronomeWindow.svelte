@@ -359,8 +359,9 @@
   }
   .m-btn.on,
   .m-btn.on:hover {
-    border-color: var(--color-accent);
-    color: var(--color-accent);
+    border-color: var(--color-accent-ink);
+    background: var(--color-accent);
+    color: var(--color-accent-fg);
   }
   /* The bar of a parameter row (spec 2 "Parameter row"): line gray.7, fill gray.9, a 6×12 gray.10 handle. */
   .slider {
@@ -385,7 +386,7 @@
     top: calc((var(--part-param-knob-h) - var(--mock-inspector-slider-fill)) / 2);
     width: 100%;
     height: var(--mock-inspector-slider-fill);
-    background: var(--color-gray-9);
+    background: var(--color-accent-ink);
     transform-origin: 0 50%;
   }
   .knob {

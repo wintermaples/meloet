@@ -406,7 +406,7 @@
     cursor: default;
   }
   .flag.selected {
-    border-left-color: var(--color-accent);
+    border-left-color: var(--color-accent-ink);
     background: var(--color-gray-4);
   }
   .flag-from {
@@ -425,7 +425,7 @@
     white-space: nowrap;
   }
   .value.selected {
-    color: var(--color-accent);
+    color: var(--color-accent-ink);
   }
   .ramp {
     position: absolute;

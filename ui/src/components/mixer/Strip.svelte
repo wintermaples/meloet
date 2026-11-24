@@ -322,10 +322,10 @@
     min-width: 0;
     height: var(--part-toggle-size);
     padding: 0 var(--space-1);
-    border: var(--line-hair) solid var(--color-accent);
+    border: var(--line-hair) solid var(--color-accent-ink);
     border-radius: var(--radius-1);
     background: var(--color-gray-1);
-    color: var(--color-accent);
+    color: var(--color-accent-ink);
     font: inherit;
     white-space: nowrap;
     overflow: hidden;
@@ -366,7 +366,7 @@
   }
   button.frame.accent,
   button.frame.accent:hover {
-    color: var(--color-accent);
+    color: var(--color-accent-ink);
   }
   button.frame.usable.dim {
     color: var(--color-gray-8);
@@ -506,11 +506,13 @@
     color: var(--color-gray-10);
   }
   .tog.live.on {
-    border-color: var(--color-accent);
-    color: var(--color-accent);
+    border-color: var(--color-accent-ink);
+    background: var(--color-accent);
+    color: var(--color-accent-fg);
   }
   .tog.arm.on {
     border-color: var(--color-rec);
+    background: var(--color-gray-1);
     color: var(--color-rec);
   }
   .tog.live:active {

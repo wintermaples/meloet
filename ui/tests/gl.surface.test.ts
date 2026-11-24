@@ -226,7 +226,7 @@ describe("WebGL surfaces", () => {
       [547, 20, 611, 24],
       [547, 20, 611, 24],
     ]);
-    expect(filled[1]!.slice(4)).toEqual(f32(rgb("color.accent")));
+    expect(filled[1]!.slice(4)).toEqual(f32(rgb("color.accent.ink")));
     engine.destroy();
   });
 
@@ -555,7 +555,7 @@ describe("WebGL surfaces", () => {
     view.setAttribute("data-gl-clip", "");
     // The content is 1000 tall, scrolled up by 120 (from y 30). Rectangles at content y 0, 100, 200, 900.
     const rows = box(new DOMRect(0, 30, 300, 1000), view);
-    slot(rows, { kind: "rects", rects: [0, 100, 200, 900].map((y) => ({ x: 0, y, w: 50, h: 40, color: "color.accent" as const })) });
+    slot(rows, { kind: "rects", rects: [0, 100, 200, 900].map((y) => ({ x: 0, y, w: 50, h: 40, color: "color.accent.ink" as const })) });
     const engine = new Engine();
     frame();
 
@@ -563,7 +563,7 @@ describe("WebGL surfaces", () => {
     expect(c.parentElement).toBe(wrap);
     // The surface fills the section box (from the top band to the bottom of the scrolling box). Content sticking out above the scrolling box does not grow it.
     expect([c.width, c.height, c.style.top]).toEqual([300, 300, "0px"]);
-    const accent = f32(rgb("color.accent")).join();
+    const accent = f32(rgb("color.accent.ink")).join();
     const got = drawn.at(-1)!.rects.filter((r) => r.slice(4).join() === accent).map((r) => r.slice(0, 4));
     // Window y 30 (hidden), 130–170 (cut at the scrolling box top 150), 230–270, 930 (below the box). The surface's top left is y 100.
     expect(got).toEqual([

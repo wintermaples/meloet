@@ -1,5 +1,5 @@
 // WebGL pictures of the piano roll (lists of rectangles). Does not know the DOM. Coordinates are screen pixels of the region's canvas (box is the slot's box).
-// Notes follow spec 2 "Note": height 11, a 2px gray.10 at the left end, the face gray.8 / 9 / 10 by velocity, accent when selected,
+// Notes follow spec 2 "Note": height 11, a 2px gray.10 at the left end, an accent face as strong as the velocity with an accent.ink frame, gray.10 when selected,
 // the position before aligning only as a gray.7 border (accent for selected notes), rows that cannot be written row.out.
 // Rows, keys and the grid lines have colors of their own (spec 1, user:2026-11-23). Bar lines are BAR_LINE wide, the other lines HAIR.
 // The original position while dragging is an accent border. Both borders are drawn after the notes so notes do not hide them (docs/history/design-notes.ja.md B-64).
@@ -7,7 +7,7 @@
 import type { ControlKind, LiveNote, MusicalScale } from "../../bridge";
 import type { ColorName } from "../../design/tokens";
 import type { Batch } from "../../gl/batch";
-import { rgb } from "../../gl/color";
+import { rgb, type Rgb } from "../../gl/color";
 import { isBlack } from "../../gl/keyboard";
 import { BAR_LINE, HAIR, type Box } from "../../gl/paint";
 import { barsMap, eachGridTick, eachLine } from "../../time/bars";
@@ -16,7 +16,7 @@ import type { Meter } from "../time";
 import { draggedPoint, firstPointFrom, isOnOff, lanePoints, pointTick, valueToY, type LaneBox, type LaneDrag } from "./cc";
 import type { Drag } from "./drag";
 import { draggedVelocity } from "./drag";
-import { eachNoteIn, keyToY, movedFrom, noteEnd, noteStart, rowColor, rowsShown, velocityColor, type RollGeom, type Shown } from "./geom";
+import { eachNoteIn, keyToY, movedFrom, noteEnd, noteStart, rowColor, rowsShown, velocityStrength, type RollGeom, type Shown } from "./geom";
 import { paintGhosts, type GhostPicture } from "./ghosts";
 
 /** Sizes (CSS px, with the scale applied). */
@@ -122,13 +122,34 @@ function frame(out: Batch, x0: number, y0: number, x1: number, y1: number, color
   out.rect(x1 - HAIR, y0, x1, y1, c);
 }
 
+/**
+ * How a note or a drum square is painted (spec 2 "Note"): a velocity is an ordinary note (accent, as strong as the velocity,
+ * over gray.1, with an accent.ink frame), "selected" is gray.10 with an accent.ink frame, a color name is a flat face.
+ */
+export type NoteLook = number | "selected" | ColorName;
+
+function lookFill(look: NoteLook): Rgb {
+  if (look === "selected") return rgb("color.gray.10");
+  if (typeof look !== "number") return rgb(look);
+  const t = velocityStrength(look);
+  const a = rgb("color.accent");
+  const b = rgb("color.gray.1");
+  return [b[0] + (a[0] - b[0]) * t, b[1] + (a[1] - b[1]) * t, b[2] + (a[2] - b[2]) * t];
+}
+
+/** A face with, for ordinary and selected notes, a line.hair accent.ink frame inside its edge. */
+function face(out: Batch, x0: number, y0: number, x1: number, y1: number, look: NoteLook): void {
+  out.rect(x0, y0, x1, y1, lookFill(look));
+  if (typeof look === "number" || look === "selected") frame(out, x0, y0, x1, y1, "color.accent.ink");
+}
+
 /** One note. x0 and x1 are the positions of the start and end lines (pixels). Drawn leaving the line's 1px free. */
-export function paintNote(out: Batch, x0: number, x1: number, y: number, h: number, edge: number, face: ColorName): void {
+export function paintNote(out: Batch, x0: number, x1: number, y: number, h: number, edge: number, look: NoteLook): void {
   const a = Math.round(x0) + HAIR;
   const b = Math.max(a + HAIR, Math.round(x1) - HAIR);
   const e = Math.min(b, a + edge);
+  face(out, a, y, b, y + h, look);
   out.rect(a, y, e, y + h, rgb("color.gray.10"));
-  out.rect(e, y, b, y + h, rgb(face));
 }
 
 /** A drum square (spec 2 "Drum hit square"): from 1px right of the start line, width hitW, height row − gap in the middle of the row. */
@@ -177,9 +198,8 @@ function paintDrumRoll(out: Batch, box: Box, p: RollPicture, marks: Uint8Array |
       }
       const q = square(noteStart(n, i), key);
       if (q.y0 > box.y1 || q.y1 < box.y0) return;
-      const face: ColorName =
-        mark === 4 ? FRAME : mark === 3 || (sel && sel[i]) ? "color.accent" : velocityColor(n.take.velocities[i]!);
-      out.rect(q.x0, q.y0, q.x1, q.y1, rgb(face));
+      const look: NoteLook = mark === 4 ? FRAME : mark === 3 || (sel && sel[i]) ? "selected" : n.take.velocities[i]!;
+      face(out, q.x0, q.y0, q.x1, q.y1, look);
     });
   }
   if (n && p.origin) {
@@ -189,13 +209,13 @@ function paintDrumRoll(out: Batch, box: Box, p: RollPicture, marks: Uint8Array |
       if (j < 0 || !shownKey(o.take.keys[j]!)) return;
       const q = square(noteStart(o, j), o.take.keys[j]!);
       if (q.x1 < box.x0 || q.x0 > box.x1) return;
-      frame(out, q.x0, q.y0, q.x1, q.y1, sel && sel[i] ? "color.accent" : FRAME);
+      frame(out, q.x0, q.y0, q.x1, q.y1, sel && sel[i] ? "color.accent.ink" : FRAME);
     });
   }
   if (n) {
     for (const i of moving) {
       const q = square(noteStart(n, i), n.take.keys[i]!);
-      frame(out, q.x0, q.y0, q.x1, q.y1, "color.accent");
+      frame(out, q.x0, q.y0, q.x1, q.y1, "color.accent.ink");
     }
   }
   if (p.live) {
@@ -203,7 +223,7 @@ function paintDrumRoll(out: Batch, box: Box, p: RollPicture, marks: Uint8Array |
       if (l.length === null || !shownKey(l.key)) continue;
       const q = square(l.start, l.key);
       if (q.x1 < box.x0 || q.x0 > box.x1) continue;
-      out.rect(q.x0, q.y0, q.x1, q.y1, rgb(velocityColor(l.velocity)));
+      face(out, q.x0, q.y0, q.x1, q.y1, l.velocity);
     }
   }
 }
@@ -274,9 +294,8 @@ export function paintRoll(out: Batch, box: Box, p: RollPicture, marks: Uint8Arra
         out.rect(x, top, x + HAIR, top + h, rgb(FRAME));
         return;
       }
-      const face: ColorName =
-        mark === 4 ? FRAME : mark === 3 || (sel && sel[i]) ? "color.accent" : velocityColor(n.take.velocities[i]!);
-      paintNote(out, x0, x1, y, noteH, edge, face);
+      const look: NoteLook = mark === 4 ? FRAME : mark === 3 || (sel && sel[i]) ? "selected" : n.take.velocities[i]!;
+      paintNote(out, x0, x1, y, noteH, edge, look);
     });
   }
 
@@ -288,11 +307,11 @@ export function paintRoll(out: Batch, box: Box, p: RollPicture, marks: Uint8Arra
       const x0 = X(noteStart(o, j));
       const x1 = X(noteEnd(o, j));
       if (x1 < box.x0 || x0 > box.x1) return;
-      noteFrame(x0, x1, rowTop(o.take.keys[j]!), sel && sel[i] ? "color.accent" : FRAME);
+      noteFrame(x0, x1, rowTop(o.take.keys[j]!), sel && sel[i] ? "color.accent.ink" : FRAME);
     });
   }
 
-  if (n) for (const i of moving) noteFrame(X(noteStart(n, i)), X(noteEnd(n, i)), rowTop(n.take.keys[i]!), "color.accent");
+  if (n) for (const i of moving) noteFrame(X(noteStart(n, i)), X(noteEnd(n, i)), rowTop(n.take.keys[i]!), "color.accent.ink");
 
   if (p.live) {
     for (const l of p.live) {
@@ -300,7 +319,7 @@ export function paintRoll(out: Batch, box: Box, p: RollPicture, marks: Uint8Arra
       const x0 = X(l.start);
       const x1 = X(l.start + l.length);
       if (x1 < box.x0 || x0 > box.x1) continue;
-      paintNote(out, x0, x1, rowTop(l.key), noteH, edge, velocityColor(l.velocity));
+      paintNote(out, x0, x1, rowTop(l.key), noteH, edge, l.velocity);
     }
   }
 }
@@ -340,7 +359,7 @@ export function paintVelocityLane(out: Batch, box: Box, p: RollPicture, dpr: num
       const s = noteStart(n, i);
       if (s < from || s >= to) return;
       const v = n.take.velocities[i]!;
-      const color: ColorName = sel && sel[i] ? "color.accent" : velocityColor(v);
+      const color: ColorName = sel && sel[i] ? "color.gray.10" : "color.accent.ink";
       if (d && dragged!.has(i)) {
         bar(s, draggedVelocity(v, d.delta), color);
         cap(s, v);
@@ -352,19 +371,19 @@ export function paintVelocityLane(out: Batch, box: Box, p: RollPicture, dpr: num
   if (p.live) {
     for (const l of p.live) {
       if (l.start < from || l.start >= to) continue;
-      bar(l.start, l.velocity, l.length === null ? "color.rec" : velocityColor(l.velocity));
+      bar(l.start, l.velocity, l.length === null ? "color.rec" : "color.accent.ink");
     }
   }
 }
 
-/** The key part of the keyboard column (right of the note name field). White keys key.white, black keys key.black, lit keys accent, a gray.1 line below. */
+/** The key part of the keyboard column (right of the note name field). White keys key.white, black keys key.black, lit keys accent with an accent.ink mark on the left, a gray.1 line below. */
 export function paintRollKeys(
   out: Batch,
   box: Box,
   g: RollGeom,
   lit: (key: number) => boolean,
   dpr: number,
-  mark: { width: number; color: ColorName } = { width: 2, color: "color.accent" },
+  mark: { width: number; color: ColorName } = { width: 2, color: "color.accent.ink" },
 ): void {
   const rowH = g.rowH * dpr;
   out.rect(box.x0, box.y0, box.x1, box.y1, rgb("color.gray.1"));
@@ -381,12 +400,14 @@ export function paintRollKeys(
     return;
   }
   const rows = rowsShown(g) + 1;
+  const markW = Math.max(HAIR, Math.round(mark.width * dpr));
   for (let r = 0; r < rows; r++) {
     const key = g.topKey - r;
     if (key < 0) break;
     const y = box.y0 + r * rowH;
     const color: ColorName = lit(key) ? "color.accent" : isBlack(key) ? "color.key.black" : "color.key.white";
     out.rect(box.x0, y, box.x1, y + rowH - HAIR, rgb(color));
+    if (lit(key)) out.rect(box.x0, y, box.x0 + markW, y + rowH - HAIR, rgb(mark.color));
   }
 }
 
@@ -401,7 +422,7 @@ export interface LivePicture {
   ty: number;
   areaH: number;
   /** outline: only a line.hair frame in `face` where the note would be (the chord shadow). */
-  notes: readonly { start: number; end: number; key: number; face: ColorName; outline?: boolean }[];
+  notes: readonly { start: number; end: number; key: number; face: NoteLook; outline?: boolean }[];
 }
 
 export function paintLive(out: Batch, box: Box, p: LivePicture, dpr: number): void {
@@ -420,11 +441,11 @@ export function paintLive(out: Batch, box: Box, p: LivePicture, dpr: number): vo
     const y = Math.round(oy + top * dpr);
     if (g.drum) {
       const q = drumSquare(g, sizes, x0, y, dpr);
-      if (n.outline) frame(out, q.x0, q.y0, q.x1, q.y1, n.face);
-      else out.rect(q.x0, q.y0, q.x1, q.y1, rgb(n.face));
+      if (n.outline) frame(out, q.x0, q.y0, q.x1, q.y1, "color.accent.ink");
+      else face(out, q.x0, q.y0, q.x1, q.y1, n.face);
     } else if (n.outline) {
       const a = Math.round(x0) + HAIR;
-      frame(out, a, y, Math.max(a + 2 * HAIR, Math.round(x1) - HAIR), y + noteH, n.face);
+      frame(out, a, y, Math.max(a + 2 * HAIR, Math.round(x1) - HAIR), y + noteH, "color.accent.ink");
     } else {
       paintNote(out, x0, x1, y, noteH, edge, n.face);
     }
@@ -579,7 +600,7 @@ export function paintLane(out: Batch, box: Box, p: LanePicture, dpr: number): vo
   const sel = p.selected;
   laneDots(out, box, p, dpr, null, (i) => {
     if (i === p.eraseHover || (erasing && hits!.has(i))) return FRAME;
-    if ((hits && !erasing && hits.has(i)) || (sel && sel[i])) return "color.accent";
+    if ((hits && !erasing && hits.has(i)) || (sel && sel[i])) return "color.accent.ink";
     return "color.gray.10";
   });
 }
@@ -592,11 +613,11 @@ export function paintLaneLive(out: Batch, box: Box, p: LanePicture, dpr: number)
   if (!c || !d) return;
   if (d.kind === "add") {
     const x = box.x0 + (d.tick - p.g.scrollTick) * p.g.ppt * dpr;
-    laneSquare(out, x, box.y0 + valueToY(c, p.lane, d.value) * dpr, Math.round(p.point * dpr), "color.accent", true);
+    laneSquare(out, x, box.y0 + valueToY(c, p.lane, d.value) * dpr, Math.round(p.point * dpr), "color.accent.ink", true);
     return;
   }
   if (d.kind !== "move" || !d.press.moved || !n) return;
   const moving = new Set(d.points);
   const sel = p.selected;
-  laneDots(out, box, p, dpr, moving, (i) => (moving.has(i) || (sel && sel[i]) ? "color.accent" : "color.gray.10"));
+  laneDots(out, box, p, dpr, moving, (i) => (moving.has(i) || (sel && sel[i]) ? "color.accent.ink" : "color.gray.10"));
 }

@@ -119,14 +119,14 @@
     border: var(--line-hair) solid var(--color-gray-8);
   }
   .choice.selected {
-    border-color: var(--color-accent);
+    border-color: var(--color-accent-ink);
   }
   .dot {
     width: var(--part-choice-dot);
     height: var(--part-choice-dot);
   }
   .choice.selected .dot {
-    background: var(--color-accent);
+    background: var(--color-accent-ink);
   }
   /* The text is gray.10, the same as the 「拡大率」 list in the status line (ChoiceMenu, mock F-Zoom). */
   .label {

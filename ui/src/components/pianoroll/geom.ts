@@ -253,9 +253,9 @@ export function rowColor(key: number, s: MusicalScale): ColorName {
   return isBlack(key) ? "color.row.black" : "color.row.white";
 }
 
-/** The note face (spec 2 "Note"): up to 69 gray.8, 70 to 89 gray.9, 90 and up gray.10. */
-export function velocityColor(v: number): ColorName {
-  return v < 70 ? "color.gray.8" : v < 90 ? "color.gray.9" : "color.gray.10";
+/** How much of the accent a note face has (spec 2 "Note"): up to 69 a half, 70 to 89 three quarters, 90 and up all of it. */
+export function velocityStrength(v: number): number {
+  return v < 70 ? 0.5 : v < 90 ? 0.75 : 1;
 }
 
 // ---- How it looks when opened ----

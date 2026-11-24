@@ -179,12 +179,14 @@
   }
   .chord.on,
   .chord.on:hover {
-    border-color: var(--color-accent);
-    color: var(--color-accent);
+    border-color: var(--color-accent-ink);
+    background: var(--color-accent);
+    color: var(--color-accent-fg);
   }
   .m-btn.on {
-    border-color: var(--color-accent);
-    color: var(--color-accent);
+    border-color: var(--color-accent-ink);
+    background: var(--color-accent);
+    color: var(--color-accent-fg);
   }
   /* Stacking: the same as the lists of the 「選んだノート」 panel. */
   .popup {

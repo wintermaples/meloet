@@ -602,8 +602,9 @@
   }
   .m-btn.on,
   .m-btn.on:hover {
-    border-color: var(--color-accent);
-    color: var(--color-accent);
+    border-color: var(--color-accent-ink);
+    background: var(--color-accent);
+    color: var(--color-accent-fg);
   }
   .m-btn.open {
     background: var(--color-gray-4);
@@ -613,9 +614,12 @@
   .value {
     color: var(--color-gray-10);
   }
-  /* Keys stay gray.8 when on and when unusable (same as keys in lists; mock F-Zoom). */
+  /* Keys stay gray.8 when unusable (same as keys in lists; mock F-Zoom); on an accent fill they take its text color. */
   .key {
     color: var(--color-gray-8);
+  }
+  .m-btn.on .key {
+    color: var(--color-accent-fg);
   }
 
   /* The song ▾ (spec 2, mock F-Menus): 28×24. */
@@ -694,8 +698,15 @@
     border: var(--line-hair) solid var(--color-gray-7);
   }
   .box.done {
-    border-color: var(--color-accent);
-    background: var(--color-accent);
+    border-color: var(--color-accent-ink);
+    background: var(--color-accent-ink);
+  }
+  /* Inside the lit count-in button the beats are drawn in the fill's text color. */
+  .m-btn.on .box {
+    border-color: var(--color-accent-fg);
+  }
+  .m-btn.on .box.done {
+    background: var(--color-accent-fg);
   }
 
   .master {

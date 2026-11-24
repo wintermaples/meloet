@@ -298,7 +298,7 @@
   .box-frame {
     position: absolute;
     z-index: 3;
-    border: var(--line-hair) solid var(--color-accent);
+    border: var(--line-hair) solid var(--color-accent-ink);
     pointer-events: none;
   }
   .reading {

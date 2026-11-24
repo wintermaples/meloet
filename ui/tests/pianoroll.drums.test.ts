@@ -275,17 +275,21 @@ describe("picture (paint.ts)", () => {
 
   it("square: width 8 from 1px right of the line (1/16 is 10 − 2), height 28 (36 − 8) centered in the 36 row. Length is not shown", () => {
     const rects = draw(picture());
-    const kick = rects.filter((r) => r[1] === rowY(KICK) + 4 && r[3] === rowY(KICK) + 32);
+    const kick = rects.filter((r) => r[1] === rowY(KICK) + 4 && r[3] === rowY(KICK) + 32 && r[2] - r[0] > 1);
     expect(kick.map((r) => r.slice(0, 4))).toEqual([[1, rowY(KICK) + 4, 9, rowY(KICK) + 32]]);
-    expect(colorOf(kick[0]!)).toBe(is("color.gray.10"));
+    // An ordinary square is accent (velocity 90 and up: all of it) with a 1px accent.ink frame; a selected one is gray.10.
+    expect(colorOf(kick[0]!)).toBe(is("color.accent"));
+    const inKick = (r: number[]) => r[0]! >= 1 && r[2]! <= 9 && r[1]! >= rowY(KICK) + 4 && r[3]! <= rowY(KICK) + 32;
+    const thin = (r: number[]) => r[2]! - r[0]! === 1 || r[3]! - r[1]! === 1;
+    expect(rects.filter((r) => inKick(r) && thin(r) && colorOf(r) === is("color.accent.ink"))).toHaveLength(4);
     const snare = rects.find((r) => r[0] === 41 && r[1] === rowY(SNARE) + 4)!;
     expect(snare[2]).toBe(49);
-    expect(colorOf(snare)).toBe(is("color.accent"));
+    expect(colorOf(snare)).toBe(is("color.gray.10"));
   });
 
   it("notes on keys not in the kit are not drawn", () => {
     const rects = draw(picture());
-    const squares = rects.filter((r) => r[3] - r[1] === 28);
+    const squares = rects.filter((r) => r[3] - r[1] === 28 && r[2] - r[0] > 1);
     expect(squares).toHaveLength(2);
   });
 
@@ -298,7 +302,7 @@ describe("picture (paint.ts)", () => {
     expect(rects.some((x) => x[1] === 12 * 36 && x[2] === 696)).toBe(false);
   });
 
-  it("the fine grid lines (line.grid) are seen on both drum rows in every theme (1.2 : 1, the grid kind); no row.out, even with scale lock on", () => {
+  it("the fine grid lines (line.grid) are seen on both drum rows in every theme (lines are not checked by kind any more, user:2026-11-24); no row.out, even with scale lock on", () => {
     const lum = (hex: string) =>
       hexToRgb(hex)
         .map((c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4))
@@ -306,7 +310,7 @@ describe("picture (paint.ts)", () => {
     const ratio = (a: string, b: string) => (Math.max(lum(a), lum(b)) + 0.05) / (Math.min(lum(a), lum(b)) + 0.05);
     for (const id of THEME_IDS) {
       const p = palettes[id];
-      for (const row of ["color.row.white", "color.row.black"] as const) expect(ratio(p["color.line.grid"], p[row]), `${id} ${row}`).toBeGreaterThanOrEqual(1.2);
+      for (const row of ["color.row.white", "color.row.black"] as const) expect(ratio(p["color.line.grid"], p[row]), `${id} ${row}`).toBeGreaterThanOrEqual(1.1);
     }
     const out = new Batch();
     out.clip(BOX.x0, BOX.y0, BOX.x1, BOX.y1);

@@ -84,8 +84,8 @@ describe("clip picture (spec 2 (Clip), mock Main)", () => {
 
   it("selected: border and top edge accent. Recording: border, top edge and contents rec", () => {
     expect(G.CLIP_SELECTED).toEqual({
-      frame: "color.accent",
-      top: "color.accent",
+      frame: "color.accent.ink",
+      top: "color.accent.ink",
       note: "color.gray.8",
     });
     expect(G.CLIP_RECORDING).toEqual({

@@ -105,8 +105,8 @@ export const CLIP_PLAIN = (track: ColorName): ClipColors => ({
   note: "color.gray.8",
 });
 export const CLIP_SELECTED: ClipColors = {
-  frame: "color.accent",
-  top: "color.accent",
+  frame: "color.accent.ink",
+  top: "color.accent.ink",
   note: "color.gray.8",
 };
 export const CLIP_RECORDING: ClipColors = {
@@ -230,7 +230,7 @@ export function paintRepeats(out: GlRect[], v: View, d: LaneDims, clips: readonl
     }
   }
   const box = clipBox(v, d, handle.row, handle.start, handle.end + count * length);
-  if (box.x1 > 0 && box.x1 - d.mark < v.width) out.push({ x: box.x1 - d.mark, y: box.y0, w: d.mark, h: box.y1 - box.y0, color: "color.accent" });
+  if (box.x1 > 0 && box.x1 - d.mark < v.width) out.push({ x: box.x1 - d.mark, y: box.y0, w: d.mark, h: box.y1 - box.y0, color: "color.accent.ink" });
 }
 
 /**
@@ -481,7 +481,7 @@ export function rangeFrameRects(
   const l = Math.max(x0, 0);
   const r = Math.min(x1, v.width);
   if (r <= l || y1 - y0 < 2 * o.hair) return [];
-  const color: ColorName = "color.accent";
+  const color: ColorName = "color.accent.ink";
   const out: GlRect[] = [
     { x: l, y: y0, w: r - l, h: o.hair, color },
     { x: l, y: y1 - o.hair, w: r - l, h: o.hair, color },

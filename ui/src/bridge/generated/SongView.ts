@@ -13,7 +13,8 @@ export type SongView = {
  */
 serial: number, name: string, undoCount: number, redoCount: number, 
 /**
- * For the piano roll band label: the notes of the shown take of `ArrangeView::piano_roll_clip`.
+ * The notes of the shown take of `ArrangeView::piano_roll_clip` (the piano roll band label no
+ * longer shows it; it shows the track name).
  */
 noteCount: number, tracks: Array<TrackView>, 
 /**

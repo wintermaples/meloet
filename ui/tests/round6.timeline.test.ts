@@ -143,7 +143,7 @@ describe("tempo band shape", () => {
     expect(T.rampSpans(v, pts)).toEqual([{ tick: 4 * BAR, x0: 256, x1: 512 }]);
     const s = T.tempoScale(pts, 48, 12, 1);
     const rects = T.tempoRects(v, pts, s, { hair: 1, point: 6 }, (p) => ({ selected: p.tick === 4 * BAR, hovered: false }), null);
-    expect(rects.filter((r) => r.color === "color.accent")).toEqual([{ x: 253, y: 25, w: 6, h: 6, color: "color.accent" }]);
+    expect(rects.filter((r) => r.color === "color.accent.ink")).toEqual([{ x: 253, y: 25, w: 6, h: 6, color: "color.accent.ink" }]);
     expect(rects.filter((r) => r.color === "color.gray.10")).toHaveLength(3);
   });
 

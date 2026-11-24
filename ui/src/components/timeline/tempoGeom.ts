@@ -162,10 +162,10 @@ export function tempoRects(
     const y0 = y - half - d.hair;
     const w = d.point + 2 * d.hair;
     out.push(
-      { x: x0, y: y0, w, h: d.hair, color: "color.accent" },
-      { x: x0, y: y0 + w - d.hair, w, h: d.hair, color: "color.accent" },
-      { x: x0, y: y0, w: d.hair, h: w, color: "color.accent" },
-      { x: x0 + w - d.hair, y: y0, w: d.hair, h: w, color: "color.accent" },
+      { x: x0, y: y0, w, h: d.hair, color: "color.accent.ink" },
+      { x: x0, y: y0 + w - d.hair, w, h: d.hair, color: "color.accent.ink" },
+      { x: x0, y: y0, w: d.hair, h: w, color: "color.accent.ink" },
+      { x: x0 + w - d.hair, y: y0, w: d.hair, h: w, color: "color.accent.ink" },
     );
   };
   if (from) {
@@ -176,7 +176,7 @@ export function tempoRects(
     const x = tickToX(v, p.tick);
     if (x < -d.point || x > v.width + d.point) return;
     const l = look(p, i);
-    square(x, ys[i]!, l.selected ? "color.accent" : "color.gray.10");
+    square(x, ys[i]!, l.selected ? "color.accent.ink" : "color.gray.10");
     if (l.hovered && !l.selected) frame(x, ys[i]!);
   });
   return out;

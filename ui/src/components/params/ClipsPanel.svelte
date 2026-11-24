@@ -238,10 +238,10 @@
     height: var(--part-param-step);
   }
   .switch.on {
-    border-color: var(--color-accent);
+    border-color: var(--color-accent-ink);
   }
   .switch.on span {
-    background: var(--color-accent);
+    background: var(--color-accent-ink);
   }
   .only-one {
     padding: var(--space-2) var(--space-3);

@@ -225,8 +225,8 @@ describe("values per scale and CSS variables", () => {
 
   it("CSS variable names and values", () => {
     const v = cssVariables(125, 2);
-    expect(v["--color-gray-4"]).toBe("#2F2F2F");
-    expect(v["--color-meter-ok"]).toBe("#4CD964");
+    expect(v["--color-gray-4"]).toBe("#2C2C2C");
+    expect(v["--color-meter-ok"]).toBe("#2BE263");
     expect(v["--space-3"]).toBe("15px");
     expect(v["--size-meter-slim"]).toBe("30px");
     expect(v["--size-meter-name-slim"]).toBe("220px");
@@ -260,7 +260,7 @@ describe("values per scale and CSS variables", () => {
     writeCssVariables(125, 1);
     const st = document.documentElement.style;
     expect(st.getPropertyValue("--space-1")).toBe("5px");
-    expect(st.getPropertyValue("--color-tip-bg")).toBe("#F2F2F2");
+    expect(st.getPropertyValue("--color-tip-bg")).toBe("#F5F5F5");
     expect(st.getPropertyValue("--line-hair")).toBe("1px");
   });
 });

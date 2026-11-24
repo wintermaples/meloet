@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Check the contrast of every theme (WCAG 2 contrast ratio).
 
-usage: python3 -I tools/design/contrast.py [--all] [--theme ID ...]
+usage: python3 -I tools/design/contrast.py [--all] [--low] [--theme ID ...]
 
 Reads the color sets of ui/src/design/themes.ts (the dark set is `colors` of
 ui/src/design/tokens.ts) and the pairs in tools/design/contrast-pairs.json
 (which color is drawn on which, and how much contrast that kind needs).
-Prints the pairs that are under their minimum; with --all, every pair.
+Prints the pairs that are under their minimum; with --all, every pair; with --low, the lowest
+ratio of each kind per theme (the kinds without a minimum too).
 Exit code 1 if any pair of any checked theme is under its minimum.
 Standard library only.
 """
@@ -88,6 +89,7 @@ def expand(pairs: list[dict]) -> list[tuple[str, str, str, str, dict]]:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--all", action="store_true", help="print every pair, not only the failing ones")
+    ap.add_argument("--low", action="store_true", help="print the lowest ratio of each kind per theme")
     ap.add_argument("--theme", action="append", help="check only this theme (may be given more than once)")
     args = ap.parse_args()
 
@@ -111,8 +113,11 @@ def main() -> int:
         bad = 0
         owned = 0
         lines = []
+        low: dict[str, tuple[float, str]] = {}
         for fg, bg, kind, where, exc in pairs:
             r = ratio(p[fg], p[bg])
+            if kind != "note" and (kind not in low or r < low[kind][0]):
+                low[kind] = (r, f"{fg} on {bg}")
             need = kinds[kind]["min"]
             under = need is not None and r < need
             # The owner's exceptions are always printed when they are under, so they stay in sight.
@@ -127,6 +132,10 @@ def main() -> int:
                 lines.append(f"  {mark} {r:5.2f} (>= {need_s} {kind:8}) {fg:>9} {p[fg]} on {bg:<9} {p[bg]}  {where}{why}")
         print(f"{tid}: {len(pairs)} pairs, {bad} under the minimum" + (f", {owned} under it by the owner's decision" if owned else ""))
         print("\n".join(lines)) if lines else None
+        if args.low:
+            for kind in kinds:
+                if kind in low:
+                    print(f"  low  {low[kind][0]:5.2f} {kind:8} {low[kind][1]}")
         bad_total += bad
     return 1 if bad_total else 0
 

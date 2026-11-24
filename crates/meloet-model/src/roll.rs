@@ -95,7 +95,8 @@ pub struct MusicalScale {
     pub mode: ScaleMode,
     /// Only keys of the scale can be written.
     pub lock: bool,
-    /// 「色をつける」: the rows outside the scale are shown apart even while it is not locked.
+    /// Kept in the song file; the screen no longer shows or changes it (the rows outside the
+    /// scale are shown apart only while the scale is locked).
     pub highlight: bool,
 }
 

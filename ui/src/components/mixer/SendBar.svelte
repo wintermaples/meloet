@@ -92,11 +92,11 @@
     background: var(--color-gray-0);
   }
   .bar.auto {
-    outline: var(--line-hair) solid var(--color-accent);
+    outline: var(--line-hair) solid var(--color-accent-ink);
   }
   .fill {
     height: 100%;
-    background: var(--color-gray-9);
+    background: var(--color-accent-ink);
     transform-origin: 0 50%;
   }
   .from {

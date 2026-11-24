@@ -37,7 +37,7 @@
   }
   .fill {
     height: 100%;
-    background: var(--color-accent);
+    background: var(--color-accent-ink);
   }
   .note {
     overflow: hidden;

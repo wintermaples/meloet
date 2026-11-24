@@ -53,7 +53,7 @@ meloet is a music app (a DAW) for people who have just bought their first MIDI k
 - Help ▸ Key list: every key by group, with a filter box. Help ▸ Open the user guide opens the user guide in your browser.
 - Tells you when a new version of meloet is out (once a day at most, only the version is asked; can be turned off in the sound settings).
 - The play, stop and record buttons and the fader of keyboards that send Mackie Control.
-- Six color themes (dark and light, each also in pink and mint).
+- Six color themes (dark and light, each also in sakura and lime).
 - The screen in Japanese or English (View ▸ ことば / Language; at first it follows the PC's language). New songs and tracks get their names in the language they are made in. The user guide is in both: [Japanese](docs/user/README.ja.md), [English](docs/user/README.en.md).
 - An AI link: AI apps such as Claude can read the song, give advice and edit it when asked (see [AI link](#ai-link)).
 

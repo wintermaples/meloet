@@ -86,7 +86,7 @@
   /* The chosen row (spec 2 「選んだ行」: bg gray.4, a line.mark accent on the left). */
   .row.on {
     background: var(--color-gray-4);
-    box-shadow: inset var(--line-mark) 0 0 0 var(--color-accent);
+    box-shadow: inset var(--line-mark) 0 0 0 var(--color-accent-ink);
   }
   .name {
     color: var(--color-gray-8);
@@ -114,8 +114,9 @@
     color: var(--color-gray-10);
   }
   .listen.playing {
-    border-color: var(--color-accent);
-    color: var(--color-accent);
+    border-color: var(--color-accent-ink);
+    background: var(--color-accent);
+    color: var(--color-accent-fg);
   }
   .icon {
     width: var(--part-button-icon);

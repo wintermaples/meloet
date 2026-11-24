@@ -1,7 +1,7 @@
 // Keys and rows in every theme (the owner, user:2026-11-23): white keys and their rows are lighter than black keys and
-// theirs; the dark themes keep the grays they had; rows that cannot be written are row.out alone (user:2026-11-24); the
-// meter colors are the same in every theme, on meter grounds of their own; lines have color names of their own (line.*).
-// In the dark themes only the lines and gray.6 have values of their own.
+// theirs; rows that cannot be written are row.out alone (user:2026-11-24); the meter colors are the same in every theme,
+// on meter grounds of their own; lines have color names of their own (line.*). Sakura and lime share everything but the
+// accent, rec and track colors with dark and light (user:2026-11-24).
 import { afterEach, describe, expect, it } from "vitest";
 import * as G from "../src/components/pianoroll/geom";
 import { paintRoll, paintRollKeys, type RollPicture } from "../src/components/pianoroll/paint";
@@ -35,14 +35,12 @@ describe("the key and row colors", () => {
       "color.key.black": "color.gray.0",
       "color.key.meter.white": "color.gray.3",
       "color.key.meter.black": "color.gray.0",
-      "color.row.white": "color.gray.2",
-      "color.row.black": "color.gray.1",
       "color.row.out": "color.gray.0",
     };
     for (const id of ["dark", "pinkDark", "mintDark"] as ThemeId[]) {
-      for (const name of KEYS) expect(palettes[id][name], `${id} ${name}`).toBe(palettes[id][before[name]!]);
+      for (const name of Object.keys(before) as ColorName[]) expect(palettes[id][name], `${id} ${name}`).toBe(palettes[id][before[name]!]);
     }
-    expect([colors["color.key.white"], colors["color.key.black"], colors["color.key.meter.white"]]).toEqual(["#3C3C3C", "#000000", "#282828"]);
+    expect([colors["color.key.white"], colors["color.key.black"], colors["color.key.meter.white"]]).toEqual(["#383838", "#000000", "#252525"]);
     expect([colors["color.row.white"], colors["color.row.black"], colors["color.row.out"]]).toEqual(["#212121", "#1A1A1A", "#000000"]);
   });
 
@@ -59,8 +57,8 @@ describe("the key and row colors", () => {
 
   it("the meter colors are the same in every theme", () => {
     for (const id of THEME_IDS) {
-      expect(palettes[id]["color.meter.ok"], id).toBe("#4CD964");
-      expect(palettes[id]["color.meter.hot"], id).toBe("#FFD60A");
+      expect(palettes[id]["color.meter.ok"], id).toBe("#2BE263");
+      expect(palettes[id]["color.meter.hot"], id).toBe("#FBDA10");
     }
   });
 });
@@ -69,52 +67,49 @@ const ratio = (a: string, b: string) => (Math.max(lum(a), lum(b)) + 0.05) / (Mat
 const DARK: readonly ThemeId[] = ["dark", "pinkDark", "mintDark"];
 const LIGHT: readonly ThemeId[] = ["light", "pinkLight", "mintLight"];
 
-describe("the dark themes keep their faces (user:2026-11-23)", () => {
-  // The values the older names have in the dark themes. gray.6 (button borders) is left out: it has a value of its own here.
-  const OLD: readonly ColorName[] = [
-    "color.gray.0", "color.gray.1", "color.gray.2", "color.gray.3", "color.gray.4", "color.gray.5", "color.gray.7", "color.gray.8",
-    "color.gray.9", "color.gray.10", "color.accent", "color.rec", "color.meter.ok", "color.meter.hot", "color.track.1", "color.track.2",
-    "color.track.3", "color.track.4", "color.track.5", "color.tip.bg", "color.tip.fg", "color.key.white", "color.key.black",
-    "color.key.meter.white", "color.key.meter.black", "color.row.white", "color.row.black", "color.row.out",
-  ];
-  const KEPT: Record<string, string> = {
-    dark: "#000000 #1A1A1A #212121 #282828 #2F2F2F #3C3C3C #717171 #9A9A9A #D6D6D6 #F2F2F2 #FFB000 #FF6158 #4CD964 #FFD60A #69E4E4 #5ABDF2 #6F8BED #9561C7 #FFD9F1 #F2F2F2 #000000 #3C3C3C #000000 #282828 #000000 #212121 #1A1A1A #000000",
-    pinkDark: "#040404 #1E1C1E #262325 #2E292A #343131 #433D3F #787174 #9F999C #D8D6D7 #F3F2F2 #F9B8CF #FF685F #4CD964 #FFD60A #A8EDEC #92C9EA #8B9FDC #9D80BD #FFE9A6 #F3F2F2 #040404 #433D3F #040404 #2E292A #040404 #262325 #1E1C1E #040404",
-    mintDark: "#040404 #1B1E1C #212624 #272D2B #2D3432 #3B403D #6B7773 #959C99 #D4D7D6 #F2F3F2 #AAEBD1 #FF6A61 #4CD964 #FFD60A #FFE9A6 #92C9EA #8B9FDC #9E81BE #FEF1F9 #F2F3F2 #040404 #3B403D #040404 #272D2B #040404 #212624 #1B1E1C #040404",
-  };
+describe("sakura and lime (user:2026-11-24)", () => {
+  // Only these follow the accent; everything else is that of dark or light.
+  const OWN = (n: string) => n.startsWith("color.accent") || n.startsWith("color.track.") || n === "color.rec" || n === "color.meter.clip";
 
-  it("faces, text, states and keys keep their values; the meter grounds are the grays the meters were on (gray.0, gray.4 for the mic)", () => {
-    const others = ["color.gray.6", "color.meter.clip", "color.meter.ground", "color.meter.ground.mic", "color.meter.peak"];
-    expect(Object.keys(colors).filter((n) => !OLD.includes(n as ColorName) && !n.startsWith("color.line.")).sort()).toEqual(others);
+  it("pinkDark and mintDark have the grounds, text, lines, keys and rows of dark; pinkLight and mintLight those of light", () => {
+    for (const [id, base] of [["pinkDark", "dark"], ["mintDark", "dark"], ["pinkLight", "light"], ["mintLight", "light"]] as [ThemeId, ThemeId][]) {
+      for (const n of Object.keys(colors) as ColorName[]) if (!OWN(n)) expect(palettes[id][n], `${id} ${n}`).toBe(palettes[base][n]);
+    }
+  });
+
+  it("the bright accent is the same in the dark and light theme of a pair; accent.ink reaches text on the grounds", () => {
+    expect(palettes.pinkLight["color.accent"]).toBe(palettes.pinkDark["color.accent"]);
+    expect(palettes.mintLight["color.accent"]).toBe(palettes.mintDark["color.accent"]);
+    for (const id of THEME_IDS) {
+      const p = palettes[id];
+      for (const g of ["color.gray.0", "color.gray.1", "color.gray.2", "color.gray.3", "color.gray.4"] as const) {
+        expect(ratio(p["color.accent.ink"], p[g]), `${id} ${g}`).toBeGreaterThanOrEqual(4.5);
+      }
+      expect(ratio(p["color.accent.fg"], p["color.accent"]), id).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it("the meter grounds are gray.0 and gray.4 in the dark themes; clip and peak are rec and gray.10 there", () => {
     for (const id of DARK) {
       const p = palettes[id];
-      expect(OLD.map((n) => p[n]).join(" "), id).toBe(KEPT[id]);
       expect(p["color.meter.ground"], id).toBe(p["color.gray.0"]);
       expect(p["color.meter.ground.mic"], id).toBe(p["color.gray.4"]);
       expect(p["color.meter.clip"], id).toBe(p["color.rec"]);
       expect(p["color.meter.peak"], id).toBe(p["color.gray.10"]);
     }
+    for (const id of LIGHT) expect(palettes[id]["color.meter.ground"], id).toBe(palettes[id]["color.gray.9"]);
   });
 
-  it("button borders: gray.6 is at most about 2.4 : 1 against gray.4, and the on border (accent) keeps 3 : 1 against it", () => {
-    expect(colors["color.gray.6"]).toBe("#686868");
-    for (const id of DARK) {
-      const p = palettes[id];
-      expect(ratio(p["color.gray.6"], p["color.gray.4"]), id).toBeGreaterThan(1.8);
-      expect(ratio(p["color.gray.6"], p["color.gray.4"]), id).toBeLessThan(2.45);
-      expect(ratio(p["color.accent"], p["color.gray.6"]), id).toBeGreaterThanOrEqual(3);
-    }
-    const light: Record<string, string> = { light: "#A7A7A7", pinkLight: "#B69CA7", mintLight: "#92A9A0" };
-    for (const id of LIGHT) expect(palettes[id]["color.gray.6"], id).toBe(light[id]);
+  it("the on border (accent.ink) keeps 3 : 1 against the off border (gray.6) in every theme", () => {
+    for (const id of THEME_IDS) expect(ratio(palettes[id]["color.accent.ink"], palettes[id]["color.gray.6"]), id).toBeGreaterThanOrEqual(3);
   });
 
-  it("the line names reach their kind on the rows of the piano roll in every theme (bar 3, beat 1.5, grid 1.2)", () => {
+  it("on the rows of the piano roll, bar lines are stronger than beat lines, and beat lines than the fine grid lines, in every theme", () => {
     for (const id of THEME_IDS) {
       const p = palettes[id];
       for (const row of ["color.row.white", "color.row.black", "color.row.out"] as const) {
-        expect(ratio(p["color.line.bar"], p[row]), `${id} ${row}`).toBeGreaterThanOrEqual(3);
-        expect(ratio(p["color.line.beat"], p[row]), `${id} ${row}`).toBeGreaterThanOrEqual(1.5);
-        expect(ratio(p["color.line.grid"], p[row]), `${id} ${row}`).toBeGreaterThanOrEqual(1.2);
+        expect(ratio(p["color.line.bar"], p[row]), `${id} ${row}`).toBeGreaterThan(ratio(p["color.line.beat"], p[row]));
+        expect(ratio(p["color.line.beat"], p[row]), `${id} ${row}`).toBeGreaterThan(ratio(p["color.line.grid"], p[row]));
       }
     }
   });

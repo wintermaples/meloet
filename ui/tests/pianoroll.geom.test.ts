@@ -43,13 +43,8 @@ describe("grid and scales", () => {
     expect(G.writable(64, { ...dBlues, lock: true })).toBe(false);
   });
 
-  it("the note face is gray.8, 9, 10 by velocity", () => {
-    expect([G.velocityColor(69), G.velocityColor(70), G.velocityColor(89), G.velocityColor(90)]).toEqual([
-      "color.gray.8",
-      "color.gray.9",
-      "color.gray.9",
-      "color.gray.10",
-    ]);
+  it("the note face has a half, three quarters or all of the accent by velocity", () => {
+    expect([G.velocityStrength(69), G.velocityStrength(70), G.velocityStrength(89), G.velocityStrength(90)]).toEqual([0.5, 0.75, 0.75, 1]);
   });
 
   it("note names (C4 = 60)", () => {

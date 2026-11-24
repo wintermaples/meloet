@@ -48,8 +48,9 @@
   }
   .automation.on,
   .automation.on:hover {
-    border-color: var(--color-accent);
-    color: var(--color-accent);
+    border-color: var(--color-accent-ink);
+    background: var(--color-accent);
+    color: var(--color-accent-fg);
   }
   .automation svg {
     width: var(--part-button-icon);

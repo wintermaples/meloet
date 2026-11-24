@@ -124,10 +124,12 @@
     background: var(--color-gray-6);
     border-radius: var(--radius-0);
   }
+  /* Hovered: an accent face with an accent.ink border; dragged: accent.ink. */
   .thumb:hover {
-    background: var(--color-gray-8);
+    background: var(--color-accent);
+    box-shadow: inset 0 0 0 var(--line-hair) var(--color-accent-ink);
   }
   .thumb.dragging {
-    background: var(--color-gray-9);
+    background: var(--color-accent-ink);
   }
 </style>

@@ -315,7 +315,7 @@
   }
   .row.selected {
     background: var(--color-gray-4);
-    border-left-color: var(--color-accent);
+    border-left-color: var(--color-accent-ink);
   }
   /* Hover (border gray.8, text gray.10), pressed (bg gray.2, border gray.8). The border is drawn inside the left edge, so it does not
      mix with the line.mark accent on the left of a selected row (docs/history/design-notes.ja.md A-6). */

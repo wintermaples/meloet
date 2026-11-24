@@ -315,7 +315,7 @@
     border-bottom: var(--line-hair) solid var(--color-line-thin);
   }
   .accent {
-    color: var(--color-accent);
+    color: var(--color-accent-ink);
   }
   .vtab {
     width: var(--size-tab-v);

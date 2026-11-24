@@ -85,7 +85,7 @@
   }
   .row.highlighted {
     background: var(--color-gray-4);
-    border-left: var(--line-mark) solid var(--color-accent);
+    border-left: var(--line-mark) solid var(--color-accent-ink);
     padding-left: calc(var(--space-3) - var(--line-mark));
   }
   .pick {
@@ -117,14 +117,14 @@
     border: var(--line-hair) solid var(--color-gray-8);
   }
   .choice.selected {
-    border-color: var(--color-accent);
+    border-color: var(--color-accent-ink);
   }
   .dot {
     width: var(--part-choice-dot);
     height: var(--part-choice-dot);
   }
   .choice.selected .dot {
-    background: var(--color-accent);
+    background: var(--color-accent-ink);
   }
   .ep-name {
     flex-shrink: 0;

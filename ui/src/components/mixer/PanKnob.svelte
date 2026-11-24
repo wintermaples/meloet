@@ -92,7 +92,7 @@
     white-space: nowrap;
   }
   .knob.auto {
-    border-color: var(--color-accent);
+    border-color: var(--color-accent-ink);
   }
   .knob:hover {
     border-color: var(--color-gray-10);
@@ -108,7 +108,7 @@
     transform-origin: 50% 100%;
   }
   .knob.dragging .needle:not(.from) {
-    background: var(--color-accent);
+    background: var(--color-accent-ink);
   }
   .needle.from {
     background: var(--color-gray-7);

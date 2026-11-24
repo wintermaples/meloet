@@ -128,7 +128,7 @@ describe("points in the band", () => {
     const look: A.LaneLook = { resting: false, armed: false, selected: (i) => i === 2, hovered: -1, from: [], flat: null };
     const rects = A.laneRects(v, pts, false, d, look);
     expect(rects.some((r) => r.color === "color.gray.9")).toBe(true);
-    expect(rects.filter((r) => r.w === 6 && r.h === 6).map((r) => r.color)).toEqual(["color.gray.10", "color.gray.10", "color.accent"]);
+    expect(rects.filter((r) => r.w === 6 && r.h === 6).map((r) => r.color)).toEqual(["color.gray.10", "color.gray.10", "color.accent.ink"]);
     expect(A.laneRects(v, pts, false, d, { ...look, resting: true }).some((r) => r.color === "color.gray.9")).toBe(false);
     expect(A.laneRects(v, pts, false, d, { ...look, armed: true, selected: () => false }).some((r) => r.w === 6 && r.h === 6)).toBe(false);
     expect(A.laneRects(v, [], false, d, { ...look, flat: 0.5 })).toHaveLength(1);

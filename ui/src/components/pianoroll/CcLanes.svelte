@@ -373,7 +373,7 @@
   }
   .box-frame {
     position: absolute;
-    border: var(--line-hair) solid var(--color-accent);
+    border: var(--line-hair) solid var(--color-accent-ink);
     pointer-events: none;
     z-index: 2;
   }

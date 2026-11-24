@@ -1,4 +1,4 @@
-// Piano roll painting (paint.ts): notes (a 2px gray.10 left edge, face by velocity, accent when selected), the border of the position before quantize,
+// Piano roll painting (paint.ts): notes (a 2px gray.10 left edge, an accent face as strong as the velocity with an accent.ink frame, gray.10 when selected), the border of the position before quantize,
 // the border of the old position of moving notes, the velocity bars, and lit keys in the key column.
 import { describe, expect, it } from "vitest";
 import { Batch } from "../src/gl/batch";
@@ -13,6 +13,12 @@ const BOX = { x0: 0, y0: 0, x1: 696, y1: 492 };
 const SIZES = { noteH: 11, edge: 2, velBar: 3, velCap: 7, velFull: 64, velMid: 36, endMark: 16, drumGap: 8 };
 const colorOf = (r: number[]) => [r[4], r[5], r[6]].join(",");
 const is = (name: Parameters<typeof rgb>[0]) => Array.from(Float32Array.from(rgb(name))).join(",");
+/** The accent over gray.1, t of the way (the face of an ordinary note). */
+const accentAt = (t: number) => {
+  const a = rgb("color.accent");
+  const b = rgb("color.gray.1");
+  return Array.from(Float32Array.from([0, 1, 2].map((i) => b[i]! + (a[i]! - b[i]!) * t))).join(",");
+};
 
 function picture(over: Partial<RollPicture> = {}): RollPicture {
   const n = G.shownOf(take([[0, TPQ, 60, 60], [TPQ, (3 * TPQ) / 4, 62, 80], [2 * TPQ, TPQ / 2, 64, 100]]), 0);
@@ -40,22 +46,31 @@ function draw(p: RollPicture, marks: Uint8Array | null = null): number[][] {
 }
 
 describe("notes", () => {
-  it("a 2px gray.10 left edge and the face. Leaves the 1px line, height 11", () => {
+  it("the face, a 1px accent.ink frame inside it and a 2px gray.10 left edge on top. Leaves the 1px line, height 11", () => {
     const rects = draw(picture());
     const y = (72 - 60) * 12;
-    const edge = rects.find((r) => r[0] === 1 && r[1] === y && r[3] === y + 11)!;
+    const face = rects.find((r) => r[0] === 1 && r[1] === y && r[3] === y + 11)!;
+    expect(face[2]).toBe(39);
+    // Velocity 60: half of the accent.
+    expect(colorOf(face)).toBe(accentAt(0.5));
+    const frame = rects.filter((r) => colorOf(r) === is("color.accent.ink") && r[0]! >= 1 && r[2]! <= 39 && r[1]! >= y && r[3]! <= y + 11);
+    expect(frame.map((r) => r.slice(0, 4))).toEqual([
+      [1, y, 39, y + 1],
+      [1, y + 10, 39, y + 11],
+      [1, y, 2, y + 11],
+      [38, y, 39, y + 11],
+    ]);
+    const edge = rects.find((r) => r[0] === 1 && r[2] === 3 && r[1] === y)!;
     expect(edge.slice(0, 4)).toEqual([1, y, 3, y + 11]);
     expect(colorOf(edge)).toBe(is("color.gray.10"));
-    const face = rects.find((r) => r[0] === 3 && r[1] === y)!;
-    expect(face[2]).toBe(39);
-    expect(colorOf(face)).toBe(is("color.gray.8"));
+    expect(rects.indexOf(edge)).toBeGreaterThan(rects.indexOf(face));
   });
 
-  it("selected notes are accent, velocity 100 is gray.10", () => {
+  it("selected notes are gray.10, velocity 100 is all of the accent", () => {
     const rects = draw(picture());
     const faceAt = (key: number, x: number) => rects.find((r) => r[0] === x && r[1] === (72 - key) * 12)!;
-    expect(colorOf(faceAt(62, 43))).toBe(is("color.accent"));
-    expect(colorOf(faceAt(64, 83))).toBe(is("color.gray.10"));
+    expect(colorOf(faceAt(62, 41))).toBe(is("color.gray.10"));
+    expect(colorOf(faceAt(64, 81))).toBe(is("color.accent"));
   });
 
   it("rows outside a locked scale row.out, black key rows row.black, white key rows row.white", () => {
@@ -102,7 +117,7 @@ describe("notes", () => {
     expect(gray).toHaveLength(4);
     expect(Math.min(...gray.map((r) => r[0]!))).toBe(4);
     const accentFrames = rects.slice(-4);
-    expect(accentFrames.every((r) => colorOf(r) === is("color.accent"))).toBe(true);
+    expect(accentFrames.every((r) => colorOf(r) === is("color.accent.ink"))).toBe(true);
     expect(Math.min(...accentFrames.map((r) => r[0]!))).toBe(Math.round(((25 * TPQ) / 24) * GEOM.ppt) + 1);
   });
 
@@ -124,7 +139,7 @@ describe("notes", () => {
     expect(rects.filter((r) => r[1] === y && colorOf(r) === is("color.gray.10"))).toEqual([]);
     expect(rects.filter((r) => colorOf(r) === is("color.gray.7"))).toHaveLength(0);
     const frames = rects.slice(-4);
-    expect(frames.every((r) => colorOf(r) === is("color.accent"))).toBe(true);
+    expect(frames.every((r) => colorOf(r) === is("color.accent.ink"))).toBe(true);
     expect(Math.min(...frames.map((r) => r[1]!))).toBe(y);
     // With copy (Alt), the original notes stay
     expect(noteMarks(3, { ...drag, copy: true }, -1)).toEqual(new Uint8Array(3));
@@ -132,7 +147,7 @@ describe("notes", () => {
 
   it("a note under the erase tool is gray.7", () => {
     const rects = draw(picture(), noteMarks(3, null, 2));
-    const face = rects.find((r) => r[0] === 83 && r[1] === (72 - 64) * 12)!;
+    const face = rects.find((r) => r[0] === 81 && r[1] === (72 - 64) * 12)!;
     expect(colorOf(face)).toBe(is("color.gray.7"));
   });
 });
@@ -156,12 +171,14 @@ describe("velocity band and key column", () => {
     expect(grayCap.slice(0, 4)).toEqual([79, 71 - Math.round((100 * 64) / 127), 86, 71 - Math.round((100 * 64) / 127) + 1]);
   });
 
-  it("key column: white keys key.white, black keys key.black, lit keys accent", () => {
+  it("key column: white keys key.white, black keys key.black, lit keys accent with a 2px accent.ink mark on the left", () => {
     const out = new Batch();
     out.clip(0, 0, 55, 492);
     paintRollKeys(out, { x0: 0, y0: 0, x1: 55, y1: 492 }, GEOM, (key) => key === 60, 1);
     const at = (key: number) => out.rects().find((r) => r[1] === (72 - key) * 12 && r[3] === (72 - key) * 12 + 11)!;
     expect(colorOf(at(60))).toBe(is("color.accent"));
+    const mark = out.rects().find((r) => r[1] === (72 - 60) * 12 && r[2] === 2)!;
+    expect(colorOf(mark)).toBe(is("color.accent.ink"));
     expect(colorOf(at(61))).toBe(is("color.key.black"));
     expect(colorOf(at(62))).toBe(is("color.key.white"));
   });

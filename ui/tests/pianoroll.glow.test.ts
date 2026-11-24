@@ -288,8 +288,10 @@ describe("the picture", () => {
     paintLive(lit, { x0: 0, y0: 0, x1: 80, y1: 492 }, { g: GEOM, sizes: SIZES, left, top: 0, ty: 0, areaH: 492, notes: [{ start: TPQ, end: 3 * TPQ, key: 64, face }] }, 1);
     const glowRects = faceOf(lit.rects(), 96).map((r) => [r[0]! + left, r[1], r[2]! + left, r[3], colorOf(r)]);
     const rollRects = faceOf(big.rects(), 96).map((r) => [r[0], r[1], r[2], r[3], colorOf(r)]);
-    expect(glowRects.map((r) => r.slice(0, 4))).toEqual(rollRects.map((r) => r.slice(0, 4)));
-    expect(glowRects.map((r) => r[4])).toEqual([is("color.gray.10"), is(face)]);
+    // The lit note is the face and the edge on top; the note area also draws the 1px accent.ink frame of an ordinary note in between.
+    const ends = (rs: (string | number | undefined)[][]) => [rs[0]!.slice(0, 4), rs[rs.length - 1]!.slice(0, 4)];
+    expect(ends(glowRects)).toEqual(ends(rollRects));
+    expect(glowRects.map((r) => r[4])).toEqual([is(face), is("color.gray.10")]);
     expect(face).toBe("color.track.3");
   });
 });

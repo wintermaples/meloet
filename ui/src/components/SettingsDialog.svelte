@@ -628,14 +628,14 @@
     border: var(--line-hair) solid var(--color-gray-8);
   }
   .mark.on {
-    border-color: var(--color-accent);
+    border-color: var(--color-accent-ink);
   }
   .dot {
     width: var(--part-choice-dot);
     height: var(--part-choice-dot);
   }
   .mark.on .dot {
-    background: var(--color-accent);
+    background: var(--color-accent-ink);
   }
   /* The mock puts an empty cell before the state, so the gap there is two gaps. */
   .port {

@@ -315,7 +315,7 @@
   }
   .row.selected {
     background: var(--color-gray-4);
-    border-left-color: var(--color-accent);
+    border-left-color: var(--color-accent-ink);
   }
   button.row:hover {
     color: var(--color-gray-10);

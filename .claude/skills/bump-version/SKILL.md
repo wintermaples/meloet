@@ -14,7 +14,7 @@ The version is written in many places. Do not edit them by hand: `scripts/bump-v
 - `NOTICE` (line 2) and `ui/src/components/about/generated/licenses.json` (shown in 「meloet について」), rebuilt with `node tools/licenses/inventory.mjs write`.
 - The deb name and the current version in `README.md`, `README.ja.md`, `docs/development/ubuntu.md`, `docs/install-check.md`, `docs/user/README.ja.md` and the versions table of `docs/progress.md`.
 - The app version also reaches the song files (`"app": "meloet X.Y.Z"`) and the sound pack download's user agent through `CARGO_PKG_VERSION`; nothing to edit there.
-- Left as they are on purpose: `docs/history/` (old records), the note on the first shipped version in `docs/architecture.md` 23, examples in docs, and fake data in `ui/tests/`.
+- Left as they are on purpose: `docs/history/` (old records), the release records in `docs/progress.md` (lines starting `Release X.Y.Z (`, which name the deb they built), `docs/development/appimage.md` and the AppImage lines of `docs/progress.md` (records of a trial build), the note on the first shipped version in `docs/architecture.md` 23, examples in docs, and fake data in `ui/tests/`.
 
 ## Steps
 

@@ -1,6 +1,7 @@
 //! The output sets of a plugin through the real `meloet-plughost` binary, with the fake
 //! instrument `outs` (`formats::fake::OUTS`): its sets as `Loaded` tells them, settings from
-//! the first block and later, and the capture of an export's host.
+//! the first block and later, and the capture of an export's host. Also the output buses of
+//! Surge XT (VST3), when it is installed (ignored by default).
 
 mod common;
 
@@ -177,4 +178,84 @@ fn a_host_for_an_export_keeps_the_sound_of_each_set() {
     }
     // Taken: nothing is kept any more.
     assert!(is_error(host.ask(Request::Captured { slot: 0 })));
+}
+
+/// Keeps the sound of `blocks` blocks with `events` in the first; the sets the host answers
+/// with, and how many bytes of sound.
+fn capture(
+    host: &mut Host,
+    engine: &mut EngineEnd,
+    blocks: usize,
+    events: &[meloet_plugin::ipc::ToPlugin],
+) -> (Vec<CapturedSet>, usize) {
+    let frames = 256 * blocks as u64;
+    let request = Request::Capture { slot: 0, frames };
+    assert_eq!(host.ask(request), Reply::Ok);
+    let silence = [0.0f32; 256];
+    for at in 0..blocks {
+        let (left, right) = block(engine, &silence, if at == 0 { events } else { &[] });
+        assert!(left.iter().chain(&right).all(|x| x.is_finite()));
+    }
+    match host.ask_with(Request::Captured { slot: 0 }, &[]) {
+        (Reply::Captured { sets }, blob) => (sets, blob.len()),
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+#[ignore = "needs Surge XT (VST3)"]
+fn the_output_buses_of_a_vst3_instrument_through_the_wire() {
+    let bundle = "/usr/lib/vst3/Surge XT.vst3";
+    if !std::path::Path::new(bundle).exists() {
+        eprintln!("{bundle} is not installed; nothing tested");
+        return;
+    }
+    let mut host = Host::start_as(GEOMETRY, &[], true);
+    let mut engine = EngineEnd::new(host.map.clone(), 0).unwrap();
+    let scene_a = settings(vec![setting("bus1", 0.0, None, Some(true))]);
+    let reply = host.ask(Request::Load {
+        slot: 0,
+        key: "vst3:ABCDEF019182FAEB566D624153675854".parse().unwrap(),
+        bundle: bundle.into(),
+        sample_rate: 48_000,
+        max_frames: GEOMETRY.max_frames,
+        outputs: scene_a.clone(),
+    });
+    let Reply::Loaded { plugin } = reply else {
+        panic!("{reply:?}");
+    };
+    let ids: Vec<&str> = plugin.outputs.iter().map(|s| s.id.as_str()).collect();
+    assert_eq!(ids, ["bus0", "bus1", "bus2"]);
+    let measured =
+        |sets: &[CapturedSet]| -> Vec<String> { sets.iter().map(|set| set.id.clone()).collect() };
+    // Scene A heard from the load: measured with the main bus; scene B is not on.
+    let (sets, bytes) = capture(&mut host, &mut engine, 10, &[note_on(60)]);
+    assert_eq!(measured(&sets), ["bus0", "bus1"]);
+    assert!(sets.iter().all(|set| set.frames == 2560));
+    assert_eq!(bytes, 2 * 2560 * 8);
+
+    // Off: down over 20 ms, then switched off by the host by itself.
+    let off = OutputSettings::default();
+    let request = Request::SetOutputs {
+        slot: 0,
+        outputs: off,
+    };
+    assert_eq!(host.ask(request), Reply::Ok);
+    let silence = [0.0f32; 256];
+    for _ in 0..8 {
+        block(&mut engine, &silence, &[]);
+    }
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    let (sets, _) = capture(&mut host, &mut engine, 4, &[]);
+    assert_eq!(measured(&sets), ["bus0"]);
+
+    // On again, through the wire.
+    let request = Request::SetOutputs {
+        slot: 0,
+        outputs: scene_a,
+    };
+    assert_eq!(host.ask(request), Reply::Ok);
+    let (sets, _) = capture(&mut host, &mut engine, 4, &[note_on(64)]);
+    assert_eq!(measured(&sets), ["bus0", "bus1"]);
+    assert_eq!(host.ask(Request::Unload { slot: 0 }), Reply::Ok);
 }

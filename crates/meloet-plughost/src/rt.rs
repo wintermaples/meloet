@@ -586,6 +586,7 @@ mod tests {
     use meloet_plugin::PluginKey;
     use meloet_plugin::ipc::futex::monotonic_ns;
     use meloet_plugin::ipc::{EngineEnd, Geometry};
+    use meloet_plugin::wire::{OutputSetting, OutputSettings};
 
     use super::*;
     use crate::formats::{Activation, Loaded, fake, lv2, vst3};
@@ -761,7 +762,9 @@ mod tests {
             offline: false,
         };
         let key: PluginKey = key.parse().unwrap();
-        let mut loaded = crate::formats::load(&key, Path::new(bundle), activation).unwrap();
+        let defaults = OutputSettings::default();
+        let mut loaded =
+            crate::formats::load(&key, Path::new(bundle), activation, &defaults).unwrap();
         let params = loaded.controller.params();
         let param = (params.iter())
             .find(|p| p.name == name)
@@ -863,15 +866,31 @@ mod tests {
         }
     }
 
-    fn real(key: &str, bundle: &str) {
+    /// `on`: the output set of this id is heard besides the ones heard by default.
+    fn real(key: &str, bundle: &str, on: Option<&str>) {
         if !Path::new(bundle).exists() {
             eprintln!("{bundle} is not installed; nothing tested");
             return;
         }
         let key: PluginKey = key.parse().unwrap();
-        let loaded = crate::formats::load(&key, Path::new(bundle), ACTIVATION).unwrap();
+        let outputs = OutputSettings {
+            rule: 1,
+            sets: (on.iter())
+                .map(|id| OutputSetting {
+                    id: id.to_string(),
+                    gain_db: -3.0,
+                    pan: Some(0.25),
+                    on: Some(true),
+                })
+                .collect(),
+        };
+        let mut loaded =
+            crate::formats::load(&key, Path::new(bundle), ACTIVATION, &outputs).unwrap();
+        if let Some(sets) = loaded.processor.outputs() {
+            sets.set(&outputs, false);
+        }
         let (counted, loudest) = drive(loaded);
-        assert_eq!(counted, 0, "{key:?}");
+        assert_eq!(counted, 0, "{key:?} {on:?}");
         assert!(loudest > 0.001, "{key:?}: {loudest}");
     }
 
@@ -880,27 +899,36 @@ mod tests {
     fn real_plugins_run_without_meloet_allocating() {
         // One after another on one thread, as a host process's main thread would load them.
         let _ = (vst3::list, lv2::list);
-        real(
-            "vst3:ABCDEF019182FAEB566D624153675854",
-            "/usr/lib/vst3/Surge XT.vst3",
-        );
-        real(
-            "lv2:https://surge-synthesizer.github.io/lv2/surge-xt",
-            "/usr/lib/lv2/Surge XT.lv2",
-        );
+        for on in [None, Some("bus1")] {
+            real(
+                "vst3:ABCDEF019182FAEB566D624153675854",
+                "/usr/lib/vst3/Surge XT.vst3",
+                on,
+            );
+        }
+        for on in [None, Some("audio_out_3")] {
+            real(
+                "lv2:https://surge-synthesizer.github.io/lv2/surge-xt",
+                "/usr/lib/lv2/Surge XT.lv2",
+                on,
+            );
+        }
         real(
             "vst3:647370206B31732020202020756E7363",
             "/usr/lib/vst3/lsp-plugins.vst3",
+            None,
         );
         real(
             "lv2:http://lsp-plug.in/plugins/lv2/compressor_stereo",
             "/usr/lib/lv2/lsp-plugins.lv2",
+            None,
         );
         real(
             "vst3:2046504473616C63504D435A00000000",
             "/usr/lib/vst3/ZamComp.vst3",
+            None,
         );
-        real("lv2:urn:zamaudio:ZamComp", "/usr/lib/lv2/ZamComp.lv2");
+        real("lv2:urn:zamaudio:ZamComp", "/usr/lib/lv2/ZamComp.lv2", None);
         // What the audio thread does for an LV2 plugin's window.
         for (key, bundle) in [
             (

@@ -27,7 +27,7 @@ use std::sync::atomic::{AtomicU8, Ordering::SeqCst};
 use std::time::{Duration, Instant};
 
 use meloet_plugin::ipc::{FromPlugin, ToPlugin, Transport};
-use meloet_plugin::wire::{KeyName, LoadedPlugin, ParamInfo, ParamNow, PresetInfo};
+use meloet_plugin::wire::{KeyName, LoadedPlugin, OutputSettings, ParamInfo, ParamNow, PresetInfo};
 use meloet_plugin::{PluginFormat, PluginKey};
 
 use outputs::Outputs;
@@ -257,6 +257,11 @@ pub trait Controller {
     /// Called on the main thread many times a second and after every request: the plugin's
     /// housekeeping outside its window, and what it did by itself since the last call.
     fn poll(&mut self, said: &mut Vec<Said>);
+    /// The person's settings of the output sets, before the processor's gains take them
+    /// ([`Outputs::set`]): what the format does for them besides (VST3 switches buses on).
+    fn set_outputs(&mut self, _settings: &OutputSettings) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 /// CLOCK_MONOTONIC in microseconds: the clock of meloet's engine, so meloet can place what
@@ -331,14 +336,21 @@ pub struct Loaded {
     pub processor: Box<dyn Processor>,
 }
 
-/// Loads the plugin and makes it ready to run. On the main thread.
-pub fn load(key: &PluginKey, bundle: &Path, activation: Activation) -> Result<Loaded, String> {
+/// Loads the plugin and makes it ready to run. On the main thread. A format that must know
+/// the settings of the output sets before the plugin runs (VST3) reads `outputs`; the
+/// processor's gains are still to be set.
+pub fn load(
+    key: &PluginKey,
+    bundle: &Path,
+    activation: Activation,
+    outputs: &OutputSettings,
+) -> Result<Loaded, String> {
     #[cfg(any(test, feature = "dev-hooks"))]
     if let Some(loaded) = fake::load(key, activation) {
         return loaded;
     }
     match key.format() {
-        PluginFormat::Vst3 => vst3::load(key, bundle, activation),
+        PluginFormat::Vst3 => vst3::load(key, bundle, activation, outputs),
         PluginFormat::Lv2 => lv2::load(key, bundle, activation),
     }
 }

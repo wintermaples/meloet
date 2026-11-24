@@ -268,6 +268,9 @@ pub struct Capture {
     written: usize,
     /// Set after set, `frames` frames each, left and right in turn.
     sound: Box<[f32]>,
+    /// By set: the format could not measure it in a block ([`Outputs::not_measured`]); it is
+    /// left out of the answer.
+    unmeasured: Box<[bool]>,
 }
 
 impl Capture {
@@ -284,28 +287,30 @@ impl Capture {
         }
         let frames = frames as usize;
         let sound = vec![0.0f32; ids.len() * frames * 2].into_boxed_slice();
+        let unmeasured = vec![false; ids.len()].into_boxed_slice();
         Ok(Capture {
             ids,
             frames,
             written: 0,
             sound,
+            unmeasured,
         })
     }
 
-    /// What `Reply::Captured` holds: each set with the frames written, and the blob.
+    /// What `Reply::Captured` holds: each set measured with the frames written, and the blob.
     pub fn reply(&self) -> (Vec<CapturedSet>, Vec<u8>) {
-        let sets = (self.ids.iter())
-            .map(|id| CapturedSet {
-                id: id.clone(),
+        let measured = || (0..self.ids.len()).filter(|&set| !self.unmeasured[set]);
+        let sets = measured()
+            .map(|set| CapturedSet {
+                id: self.ids[set].clone(),
                 frames: self.written as u64,
             })
             .collect();
         let mut blob = Vec::with_capacity(self.ids.len() * self.written * 8);
-        if self.frames > 0 {
-            for set in self.sound.chunks_exact(self.frames * 2) {
-                for sample in &set[..self.written * 2] {
-                    blob.extend_from_slice(&sample.to_le_bytes());
-                }
+        for set in measured() {
+            let from = set * self.frames * 2;
+            for sample in &self.sound[from..from + self.written * 2] {
+                blob.extend_from_slice(&sample.to_le_bytes());
             }
         }
         (sets, blob)
@@ -422,7 +427,7 @@ impl Outputs {
         // Every rule is read as rule 1, the only one so far.
         let frames = if ramp { self.ramp_frames } else { 0 };
         for (info, set) in self.info.iter().zip(self.sets.iter_mut()) {
-            let target = match settings.sets.iter().find(|s| s.id == info.id) {
+            let target = match setting_of(info, settings) {
                 Some(setting) if self.adjustable => gains(info, setting),
                 _ => set.default,
             };
@@ -450,6 +455,19 @@ impl Outputs {
 
     pub fn take_capture(&mut self) -> Option<Capture> {
         self.capture.take()
+    }
+
+    /// The set is neither heard nor about to be: its gains are steady at 0.
+    pub fn silent(&self, set: usize) -> bool {
+        self.sets.get(set).is_some_and(Set::silent)
+    }
+
+    /// The format cannot measure the set in this block: the capture leaves it out. Before
+    /// [`Outputs::mix`] or [`Outputs::missed`] of the block.
+    pub fn not_measured(&mut self, set: usize) {
+        if let Some(seen) = (self.capture.as_mut()).and_then(|c| c.unmeasured.get_mut(set)) {
+            *seen = true;
+        }
     }
 
     /// Mixes the block the plugin made down to `left` and `right`: `out` holds every audio
@@ -523,6 +541,17 @@ fn add(sum: &mut [f32], x: &[f32], gain: f32) {
     for (sum, x) in sum.iter_mut().zip(x) {
         *sum += x * gain;
     }
+}
+
+fn setting_of<'a>(set: &OutputSet, settings: &'a OutputSettings) -> Option<&'a OutputSetting> {
+    settings.sets.iter().find(|setting| setting.id == set.id)
+}
+
+/// Whether the settings have the set heard (of an instrument).
+pub fn is_on(set: &OutputSet, settings: &OutputSettings) -> bool {
+    setting_of(set, settings)
+        .and_then(|setting| setting.on)
+        .unwrap_or(set.on)
 }
 
 /// Left and right gains of a set the person set.
@@ -1015,6 +1044,25 @@ mod tests {
         play(&mut outputs, 4, 1, |_, _| {});
         let second = outputs.take_capture().unwrap();
         assert!(second.sounds().iter().all(|(_, x)| x.len() == 8));
+    }
+
+    #[test]
+    fn a_set_the_format_could_not_measure_is_left_out() {
+        let [_, _, b, _, d] = LEVELS;
+        let mut outputs = outputs();
+        outputs.not_measured(1);
+        outputs.arm(Capture::new(outputs.ids(), 8).unwrap());
+        play(&mut outputs, 4, 1, |_, _| {});
+        outputs.not_measured(2);
+        outputs.missed(4);
+        let sounds = outputs.take_capture().unwrap().sounds();
+        let ids: Vec<&str> = sounds.iter().map(|(id, _)| id.as_str()).collect();
+        assert_eq!(ids, ["a", "b", "d"]);
+        assert_eq!(&sounds[1].1[..2], [b, b]);
+        assert_eq!(&sounds[2].1[..8], [d; 8]);
+        assert_eq!(&sounds[2].1[8..], [0.0; 8]);
+        let (sets, blob) = Capture::new(outputs.ids(), 8).unwrap().reply();
+        assert_eq!((sets.len(), blob.len()), (4, 0));
     }
 
     #[test]

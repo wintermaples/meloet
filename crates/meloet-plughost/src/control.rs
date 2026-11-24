@@ -176,7 +176,7 @@ impl Host {
             max_frames: *max_frames as usize,
             offline: self.offline,
         };
-        let mut loaded = match formats::load(key, bundle, activation) {
+        let mut loaded = match formats::load(key, bundle, activation, outputs) {
             Ok(loaded) => loaded,
             Err(message) => return error(message),
         };
@@ -900,8 +900,10 @@ impl Host {
                 ok()
             }
             Request::SetOutputs { slot, outputs } => {
-                if let Err(answer) = self.controller(slot) {
-                    return answer;
+                match self.controller(slot).map(|c| c.set_outputs(&outputs)) {
+                    Ok(Ok(())) => {}
+                    Ok(Err(message)) => return error(message),
+                    Err(answer) => return answer,
                 }
                 match self.audio.outputs(slot, |sets| sets.set(&outputs, true)) {
                     Ok(_) => ok(),

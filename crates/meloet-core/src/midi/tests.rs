@@ -294,3 +294,36 @@ fn a_file_is_written_beside_and_moved_over_the_old_one() {
     assert!(write_beside(&nowhere, b"x").is_err());
     assert!(!dir.join("nowhere").exists());
 }
+
+#[test]
+fn an_sf2_drum_kit_is_on_channel_10_and_another_sf2_preset_on_channel_1() {
+    use meloet_model::{Kept, Sf2Ref};
+    use std::sync::Arc;
+    let preset = |bank: u16, program: u8, name: &str| {
+        InstrumentRef::Sf2(Arc::new(Sf2Ref {
+            file: "FluidR3_GM.sf2".into(),
+            sha256: "".into(),
+            bank,
+            program,
+            name: name.into(),
+            kept: Kept::NONE,
+        }))
+    };
+    let mut doc = Doc::new_default();
+    let mut ids = Vec::new();
+    for instrument in [
+        preset(128, 0, "Standard"),
+        preset(0, 0, "Yamaha Grand Piano"),
+    ] {
+        let (e, id) = edit::add_track(&doc, None, instrument, Language::Ja).unwrap();
+        doc = e.doc;
+        ids.push(id);
+    }
+    for &id in &ids {
+        doc = recorded(&doc, id, 0, 4 * 1920, vec![note(0, 480, 36, 100)]);
+    }
+    let tracks: Vec<usize> = ids.iter().map(|&id| place(&doc, id)).collect();
+    let made = midi_file(&doc, &tracks, None, 0, 4 * 1920, 1920).unwrap();
+    let channels: Vec<u8> = made.tracks.iter().map(|t| t.channel).collect();
+    assert_eq!(channels, vec![DRUM_CHANNEL, 0]);
+}

@@ -8,7 +8,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 use meloet_model::{
-    Clip, ClipId, Doc, InstrumentGroup, InstrumentRef, TICKS_PER_QUARTER, TempoMap, Timeline, Track,
+    Clip, ClipId, Doc, InstrumentGroup, TICKS_PER_QUARTER, TempoMap, Timeline, Track,
 };
 
 use smf::{OutFile, OutNote, OutTrack};
@@ -162,7 +162,7 @@ pub fn write_beside(path: &Path, bytes: &[u8]) -> io::Result<()> {
 }
 
 fn is_drums(track: &Track) -> bool {
-    matches!(&track.instrument, InstrumentRef::Builtin(b) if b.group() == InstrumentGroup::Drums)
+    track.instrument.group() == InstrumentGroup::Drums
 }
 
 /// A note of a clip as it sounds: where it starts and ends in the song.

@@ -949,3 +949,5 @@ Spec 3, "MIDI export". The owner chose the form (「形」 has 「MIDI」, the r
 | Done, 「トラックごと」 | 「3 つのファイルを書き出しました（MIDI）。」 | the developers' decision |
 | The place at first | As an audio export, with `.mid`; changing 「形」 changes the ending as it does for audio | the developers' reading |
 | A track with no notes in the range | Still written (an empty track), so the numbers of the file's tracks follow the choice | the developers' decision |
+| Which tracks are drums | Built-in drum kits and SF2 drum kits (bank 128, the GM drum family) are written on channel 10; plugins on channel 1. The AI link's `export_midi` writes the same. | user:2026-11-24 |
+| A song with no clip | MIDI can still be written: the first track and empty tracks. | user:2026-11-24 |

@@ -117,7 +117,7 @@ button:focus-visible,
   color: var(--color-gray-10);
   white-space: nowrap;
 }
-/* A number that opens an input box when pressed or double clicked: a dark see-through layer on hover (the owner, 2026-11-25).
+/* A number or name that opens an input box when pressed or double clicked: a dark see-through layer on hover (the owner, 2026-11-25).
    An image layer, so it lies over the part's own background color instead of taking its place. */
 .m-typable:hover {
   --m-typable-layer: color-mix(in srgb, var(--color-gray-0) 30%, transparent);

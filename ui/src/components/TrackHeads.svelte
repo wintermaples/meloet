@@ -248,6 +248,7 @@
           {:else}
             <span
               class="m-name track-name"
+              class:m-typable={!busy}
               role="presentation"
               use:term={"トラック"}
               ondblclick={() => !busy && (trackEdit.renaming = track.id)}>{track.name}</span

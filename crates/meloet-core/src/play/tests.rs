@@ -1130,6 +1130,114 @@ fn deleting_a_take_waits_while_recording_and_counting_in() {
 }
 
 #[test]
+fn deleting_the_other_takes_is_one_step_and_undo_brings_them_all_back() {
+    use meloet_protocol::{StepName, StepPlace, StepWhat};
+    let m = &mut ready();
+    for key in [60, 62, 64] {
+        cmd(m, Command::Locate { tick: 0 });
+        record_once(m, &[(key, 0.0, 100.0)], 400.0);
+    }
+    cmd(m, Command::StepTake { delta: -1 });
+    let ids = |m: &Model| {
+        let c = &m.play().song().doc.tracks[0].clips[0];
+        (
+            c.keys().iter().map(|t| t.take.id.0).collect::<Vec<_>>(),
+            c.active,
+        )
+    };
+    let c = m.view().song.tracks[0].clips[0].clone();
+    let (all, shown) = ids(m);
+    assert_eq!((shown, c.take, c.takes), (1, 2, 3));
+    cmd(
+        m,
+        Command::SelectNotes {
+            take: all[1],
+            notes: vec![0],
+            mode: SelectMode::Replace,
+        },
+    );
+    let before = m.view();
+    assert_eq!(before.arrange.selected_clip, Some(c.id));
+    assert_eq!(before.piano_roll.selected_notes.len(), 1);
+
+    cmd(m, Command::DeleteOtherTakes { clip: c.id });
+    assert_eq!(ids(m), (vec![all[1]], 0), "the shown take is the only one");
+    let v = m.view();
+    let after = v.song.tracks[0].clips[0].clone();
+    assert_eq!((after.take, after.takes, after.take_id), (1, 1, all[1]));
+    assert_eq!(v.song.undo_count, before.song.undo_count + 1);
+    assert_eq!(v.arrange, before.arrange, "the selection stays");
+    assert_eq!(v.piano_roll.take, Some(all[1]));
+    assert_eq!(
+        v.piano_roll.selected_notes,
+        before.piano_roll.selected_notes
+    );
+    assert_eq!(
+        m.play().steps().last(),
+        Some(&StepKind::DeleteOtherTakes {
+            clip: ClipId(c.id),
+            index: 1
+        })
+    );
+    let row = m.history_rows(1, 100).pop().unwrap();
+    assert_eq!(
+        (row.name, row.what, row.place),
+        (
+            StepName::DeleteOtherTakes,
+            StepWhat::Take { number: 2 },
+            Some(StepPlace::Track { track: piano() })
+        )
+    );
+    let after_delete = m.view();
+
+    cmd(m, Command::Undo);
+    assert_eq!(ids(m), (all.clone(), 1));
+    let back = m.view();
+    assert_eq!(back.song.tracks, before.song.tracks);
+    assert_eq!(back.arrange, before.arrange);
+    assert_eq!(back.piano_roll.take, Some(all[1]));
+    for &id in &all {
+        assert!(m.take_notes(id).is_some(), "take {id} is back");
+    }
+
+    cmd(m, Command::Redo);
+    assert_eq!(m.view().song.tracks, after_delete.song.tracks);
+
+    let one = m.view();
+    assert!(ops(&cmd(m, Command::DeleteOtherTakes { clip: c.id })).is_empty());
+    assert!(ops(&cmd(m, Command::DeleteOtherTakes { clip: 999 })).is_empty());
+    assert_eq!(m.view().song, one.song);
+}
+
+#[test]
+fn deleting_the_other_takes_waits_while_recording_and_counting_in() {
+    let m = &mut ready();
+    for key in [60, 62] {
+        cmd(m, Command::Locate { tick: 0 });
+        record_once(m, &[(key, 0.0, 100.0)], 400.0);
+    }
+    let clip = m.view().song.tracks[0].clips[0].id;
+    cmd(m, Command::Locate { tick: 4 * BAR });
+    cmd(m, Command::Record);
+    assert_eq!(m.view().transport.state, TransportState::Recording);
+    let before = m.view().song;
+    assert!(ops(&cmd(m, Command::DeleteOtherTakes { clip })).is_empty());
+    assert_eq!(m.view().song, before);
+
+    let m = &mut ready();
+    for key in [60, 62] {
+        cmd(m, Command::Locate { tick: 0 });
+        record_once(m, &[(key, 0.0, 100.0)], 400.0);
+    }
+    cmd(m, Command::SetCountIn { bars: 1 });
+    cmd(m, Command::Record);
+    assert_eq!(m.view().transport.state, TransportState::CountIn);
+    let before = m.view().song;
+    assert!(ops(&cmd(m, Command::DeleteOtherTakes { clip })).is_empty());
+    assert_eq!(m.view().song, before);
+}
+
+#[test]
 fn undo_waits_while_recording() {
     let m = &mut ready();
     record_once(m, &[(60, 0.0, 100.0)], 400.0);

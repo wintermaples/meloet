@@ -19,6 +19,7 @@ export const STEP_NAME_KINDS: readonly StepName["kind"][] = [
   "record",
   "switchTake",
   "deleteTake",
+  "deleteOtherTakes",
   "moveClips",
   "duplicateClips",
   "cutClips",

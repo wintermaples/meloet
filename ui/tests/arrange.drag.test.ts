@@ -250,6 +250,15 @@ describe("fake Rust answers (reduceClips)", () => {
     expect(reduceClips({ ...s, song: twice.song }, { type: "deleteTake", clip: 3 })).toBeNull();
     expect(reduceClips(s, { type: "deleteTake", clip: 99 })).toBeNull();
   });
+  it("DeleteOtherTakes keeps the shown take as take 1. Does nothing when there is only one take", () => {
+    const s = state();
+    s.song.tracks[0]!.clips[1] = { ...s.song.tracks[0]!.clips[1]!, take: 2, takes: 3 };
+    const kept = reduceClips(s, { type: "deleteOtherTakes", clip: 3 })!;
+    expect(kept.song.tracks[0]!.clips[1]).toMatchObject({ take: 1, takes: 1, takeId: s.song.tracks[0]!.clips[1]!.takeId });
+    expect(kept.arrange).toEqual(s.arrange);
+    expect(reduceClips({ ...s, song: kept.song }, { type: "deleteOtherTakes", clip: 3 })).toBeNull();
+    expect(reduceClips(s, { type: "deleteOtherTakes", clip: 99 })).toBeNull();
+  });
 });
 
 // ---- with Arrange mounted ----

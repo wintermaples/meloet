@@ -77,6 +77,7 @@ pub enum StepName {
     Record,
     SwitchTake,
     DeleteTake,
+    DeleteOtherTakes,
     MoveClips,
     DuplicateClips,
     CutClips,
@@ -251,6 +252,7 @@ impl StepName {
             Record,
             SwitchTake,
             DeleteTake,
+            DeleteOtherTakes,
             MoveClips,
             DuplicateClips,
             CutClips,
@@ -367,6 +369,7 @@ impl StepName {
                 | Record
                 | SwitchTake
                 | DeleteTake
+                | DeleteOtherTakes
                 | MoveClips
                 | DuplicateClips
                 | CutClips

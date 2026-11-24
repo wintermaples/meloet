@@ -213,6 +213,17 @@ impl ClipTakes {
         }
         new
     }
+
+    /// Only the take at `index`, which there must be.
+    pub fn only(&self, index: usize) -> ClipTakes {
+        match self {
+            ClipTakes::Keys(takes) => ClipTakes::Keys(vec![takes[index].clone()]),
+            ClipTakes::Vocal { takes, shape } => ClipTakes::Vocal {
+                takes: vec![takes[index].clone()],
+                shape: *shape,
+            },
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

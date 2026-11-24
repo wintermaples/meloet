@@ -1324,6 +1324,15 @@ impl Play {
         }
     }
 
+    pub fn delete_other_takes(&mut self, clip: u32, effects: &mut Vec<Effect>) {
+        if self.busy() {
+            return;
+        }
+        if let Ok(e) = edit::delete_other_takes(self.doc(), ClipId(clip)) {
+            self.apply(e, effects);
+        }
+    }
+
     fn sel(&self) -> Sel {
         Sel {
             notes: self.note_sel.clone(),

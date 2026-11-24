@@ -2079,6 +2079,7 @@ impl Model {
             Command::DeleteSelected => self.play.delete_selected(effects),
             Command::StepTake { delta } => self.notice = self.play.step_take(delta, effects),
             Command::DeleteTake { clip } => self.play.delete_take(clip, effects),
+            Command::DeleteOtherTakes { clip } => self.play.delete_other_takes(clip, effects),
             Command::AddLane { home, target } => self.play.add_lane(home, target, effects),
             Command::DeleteLane { home, target } => {
                 self.play.delete_lane(home, target, effects);

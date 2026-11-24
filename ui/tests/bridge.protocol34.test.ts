@@ -32,8 +32,8 @@ const muted = (s: AppState) => s.song.tracks.map((t) => t.muted);
 const soloed = (s: AppState) => s.song.tracks.map((t) => t.soloed);
 
 describe("shape of protocol 34", () => {
-  it("version 34; a new song has no mute sets; the numbers of Rust", () => {
-    expect(PROTOCOL_VERSION).toBe(34);
+  it("version 34 or later; a new song has no mute sets; the numbers of Rust", () => {
+    expect(PROTOCOL_VERSION).toBeGreaterThanOrEqual(34);
     expect(fakeState().song.muteSets).toEqual([]);
     expect([MUTE_SETS_MAX, MUTE_SET_NAME_MAX]).toEqual([64, 64]);
     const commands: Command[] = [

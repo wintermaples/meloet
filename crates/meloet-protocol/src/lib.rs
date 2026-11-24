@@ -95,7 +95,7 @@ pub use vocal::{
     VocalRef,
 };
 
-pub const PROTOCOL_VERSION: u32 = 34;
+pub const PROTOCOL_VERSION: u32 = 35;
 
 /// Screen → Rust. Intent only; Rust decides what the state becomes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -614,6 +614,12 @@ pub enum Command {
     /// recording or counting in, or to a clip that is gone, nor (round 12 A8) to a clip with
     /// 「いいとこ取り」 (`ClipView::comp`).
     DeleteTake {
+        clip: u32,
+    },
+    /// "このテイク以外を消す" (the right-click menu of a clip): every take of `clip` but the one
+    /// it shows, as one step; that take becomes the first and only one. Nothing happens when
+    /// "テイクを消す" does nothing.
+    DeleteOtherTakes {
         clip: u32,
     },
     Undo,
@@ -4270,3 +4276,5 @@ mod tests32;
 mod tests33;
 #[cfg(test)]
 mod tests34;
+#[cfg(test)]
+mod tests35;

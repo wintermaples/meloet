@@ -71,7 +71,7 @@ flowchart LR
 
 ## 3. The contract between Rust and the screen (report 7-3)
 
-The contract is **version 34** (`PROTOCOL_VERSION` in `crates/meloet-protocol/src/lib.rs`; the versions of round 12: 25-1 to 25-3 and 25-37).
+The contract is **version 35** (`PROTOCOL_VERSION` in `crates/meloet-protocol/src/lib.rs`; the versions of round 12: 25-1 to 25-3, 25-37 and 25-38).
 
 ### 3-1. Steps
 
@@ -2970,3 +2970,10 @@ The owner answered the open questions (`docs/history/round12-answers-brief.md`).
 - **AI**: `rename_mute_set {name, new_name}` → `AiAsk::RenameMuteSet` (95 tools); it answers `{changed, set, step, undo_steps}`, `changed: false` for the name it has, and a name of another set is an error with its own text (not the save's "give overwrite").
 - **The fake** (`fakeMuteSets.ts`): the four intents by the same rules on sets it keeps on its song (`muteSetsKept`), one history row each; `muteSets` (with `asNow`) is made again after every change of the song. No undo, no lane rested. Scenes: `mixerMuteSets` (three sets), `mixerMuteSetsFull` (64 sets), `historyMuteSets` (the five new rows).
 - **The screen** (`ui/src/components/mixer/muteSets.svelte.ts`, `MuteSetsButton.svelte`, `MuteSetBox.svelte`): `muteSetEntries` makes the list once for both ways in, 「ミュートのセット ▾」 at the head of the mixer band (a context-menu list under it) and 「トラック ▸ ミュートのセット ▸」. The button measures the room the row leaves with a hidden copy of itself and folds away first (it is not there at 1280 × 800 at 125 % with the params panel open). `muteSetBoxResult` is the screen's copy of core's refusals (no name, a name of another set on a rename, 64 sets), so nothing is sent that would do nothing; a save to a name taken is sent with `overwrite: true`. The name box is one in App (as the context menu), placed where the list was; while open it puts what Enter does in the status line (`dragReading`, as the fade-out box). `MenuList` now scrolls a list taller than the window (`ScrollArea`), with the ▸ child list outside the scrolling part (closed on scroll); 64 sets needed it.
+
+### 25-38 「このテイク以外を消す」 (the owner, 2026-11-24; protocol 35)
+
+After many takes and the best one picked, the others go in one step, not one by one (`meloet-model/src/edit.rs` `delete_other_takes`; `meloet-core/src/play.rs`; `ui/src/components/Arrange.svelte`). The song file stays 7 and the recovery file 3: neither holds steps.
+- **The step** (`Command::DeleteOtherTakes { clip }`, `StepKind::DeleteOtherTakes { clip, index }`): the clip keeps only the take it shows (the same `Arc`, never a copy), which becomes take 1. Turned away as 「テイクを消す」 is: a clip of one take, one with 「いいとこ取り」, a clip that is gone, and while counting in or recording (`busy()`); no status line, as 「テイクを消す」 has none. Undo brings every take back with the same one shown; the selection does not change.
+- **The row**: `StepName::DeleteOtherTakes`, 「このテイク以外を消す」 (`builder:2026-11-24`, the developers' name for now) ・ 「テイク N」, N the number the kept take had (`StepWhat::Take`), at the clip's track. 105 kinds.
+- **The screen**: a row of the clip's right-click menu after 「テイクを消す」 (`menu.deleteOtherTakes`, `user:2026-11-24`), usable when 「テイクを消す」 is and disabled with the same reason under a comp; not in the menu bar. The fake keeps the shown take as take 1 (`reduceClips`; `reduceComp` turns it away under a comp).

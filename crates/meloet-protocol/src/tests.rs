@@ -4013,7 +4013,7 @@ fn every_step_name_has_a_kind_of_its_own() {
                 .to_owned()
         })
         .collect();
-    assert_eq!(kinds.len(), 104);
+    assert_eq!(kinds.len(), 105);
     kinds.sort();
     kinds.dedup();
     assert_eq!(kinds.len(), all.len(), "a kind is listed twice");

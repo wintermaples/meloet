@@ -540,6 +540,68 @@ fn deleting_a_take_shows_the_one_before_or_the_next_and_keeps_the_others() {
 }
 
 #[test]
+fn deleting_the_other_takes_keeps_the_shown_one_as_the_first_and_undo_brings_them_back() {
+    let takes = vec![take(0, 2 * Q), take(0, 2 * Q), take(0, 2 * Q)];
+    let (doc, added) = record(&Doc::new_default(), T1, takes, 1);
+    let clip = |doc: &Doc| doc.clip(added.clip).unwrap().1.clone();
+    let before = clip(&doc);
+
+    let e = delete_other_takes(&doc, added.clip).unwrap();
+    assert_eq!(
+        e.step,
+        StepKind::DeleteOtherTakes {
+            clip: added.clip,
+            index: 1
+        }
+    );
+    let after = clip(&e.doc);
+    assert_eq!((after.takes.len(), after.active), (1, 0));
+    assert!(
+        Arc::ptr_eq(&after.keys()[0].take, &before.keys()[1].take),
+        "the same take, not a copy"
+    );
+    assert_eq!(after.keys()[0].offset, before.keys()[1].offset);
+    assert_eq!(
+        (after.start, after.end, &after.name),
+        (before.start, before.end, &before.name)
+    );
+    assert_eq!(e.doc.next_id, doc.next_id);
+    assert_eq!(
+        delete_other_takes(&e.doc, added.clip),
+        Err(EditError::Unchanged),
+        "one take is left"
+    );
+    assert_eq!(
+        delete_other_takes(&doc, ClipId(999)),
+        Err(EditError::NoSuchClip(ClipId(999)))
+    );
+
+    let mut h = crate::History::new();
+    let mut now = doc.clone();
+    h.apply(&mut now, e);
+    assert_eq!(clip(&now), after);
+    assert_eq!(
+        h.undo(&mut now),
+        Some(StepKind::DeleteOtherTakes {
+            clip: added.clip,
+            index: 1
+        })
+    );
+    assert_eq!(clip(&now), before, "every take back, the same one shown");
+    assert!(h.redo(&mut now).is_some());
+    assert_eq!(clip(&now), after);
+}
+
+#[test]
+fn deleting_the_other_takes_of_a_clip_of_one_take_is_no_change() {
+    let (doc, added) = record(&Doc::new_default(), T1, vec![take(0, 2 * Q)], 0);
+    assert_eq!(
+        delete_other_takes(&doc, added.clip),
+        Err(EditError::Unchanged)
+    );
+}
+
+#[test]
 fn adding_a_track_below_another_with_a_name_a_color_and_a_fresh_id() {
     use crate::BuiltinInstrument as B;
     let bass = InstrumentRef::Builtin(B::SynthBass);

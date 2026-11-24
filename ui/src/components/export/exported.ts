@@ -1,5 +1,5 @@
 // What the dialog 「書き出しました」 shows when an export is done (round 12 E9). Pure functions that do not know the DOM.
-// Core holds whether it is open: it is open while `export.run` is `done`, and `closeExport` closes it.
+// Core holds whether it is open: it is open while `export.run` is `done` (not MIDI), and `closeExport` closes it.
 import type { AppState, ExportRunView } from "../../bridge";
 import { t } from "../../text";
 import { dbNumber, SILENT_DB } from "../format";
@@ -7,8 +7,9 @@ import { bitsOf, peakNumber } from "./exportText";
 
 export type ExportedDone = Extract<ExportRunView, { state: "done" }>;
 
-/** The finished run whose dialog is open, or null. */
-export const exportedOpen = (state: AppState): ExportedDone | null => (state.export.run?.state === "done" ? state.export.run : null);
+/** The finished run whose dialog is open, or null. A MIDI export opens none: only the status line tells it (spec 3 "MIDI export"). */
+export const exportedOpen = (state: AppState): ExportedDone | null =>
+  state.export.run?.state === "done" && state.export.run.midiTracks === null ? state.export.run : null;
 
 /** One file for each track has no waveform (core leaves it empty), whatever the count. */
 export const perTrack = (run: ExportedDone): boolean => run.wave.length === 0;

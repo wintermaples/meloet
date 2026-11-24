@@ -103,7 +103,7 @@ describe("fake scenes (mock F7-Export, F7-Exporting, R11-Fit)", () => {
       tracks: 4,
       span: { start: 0, end: 16 * BAR },
       format: "wav",
-      formats: ["wav", "flac", "mp3"],
+      formats: ["wav", "flac", "mp3", "midi"],
       place: "~/音楽/はじめての曲.wav",
       check: { state: "done", peakDb: -0.6, clips: false, over: 0, lufs: -12.5, truePeakDb: -0.5 },
       solo: null,

@@ -72,8 +72,22 @@ describe("the fake's reading of 「1-3, 5」", () => {
     expect(readTrackNumbers("007")).toEqual([[7, 7]]);
   });
 
-  it("anything else cannot be read", () => {
-    for (const text of ["a", "1-", "-3", "1-2-3", "1.5", "1;2", "１", "99999999999"]) expect(readTrackNumbers(text), text).toBeNull();
+  it("what the Japanese input types: full-width digits, 「、」 「，」 as commas, 「－」 「ー」 「‐」 「〜」 「~」 as hyphens", () => {
+    expect(readTrackNumbers("１－３、５")).toEqual([
+      [1, 3],
+      [5, 5],
+    ]);
+    expect(readTrackNumbers("1ー2，3‐4,5〜6, 7~8")).toEqual([
+      [1, 2],
+      [3, 4],
+      [5, 6],
+      [7, 8],
+    ]);
+    expect(readTrackNumbers("１\u3000－\u3000３")).toEqual([[1, 3]]);
+  });
+
+  it("anything else cannot be read; a space between two digits", () => {
+    for (const text of ["a", "1-", "-3", "1-2-3", "1.5", "1;2", "1 2", "1-2 3", "１ ２", "99999999999"]) expect(readTrackNumbers(text), text).toBeNull();
   });
 });
 
@@ -100,6 +114,9 @@ describe("what a choice takes (the fake)", () => {
     expect(numbers("1-x")).toMatchObject({ midiTaken: [], midiProblem: { kind: "unreadable" } });
     expect(numbers("4")).toMatchObject({ midiTaken: [], midiVocal: [{ number: 4 }], midiProblem: { kind: "noTrack" } });
     expect(numbers("").midiProblem).toEqual({ kind: "noTrack" });
+    expect(numbers("1 2")).toMatchObject({ midiTaken: [], midiVocal: [], midiProblem: { kind: "unreadable" } });
+    // Named twice, taken once.
+    expect(numbers("1, 1-2, 2").midiTaken.map((t) => t.number)).toEqual([1, 2]);
   });
 });
 

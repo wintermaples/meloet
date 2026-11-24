@@ -1074,6 +1074,10 @@ ONLY = {
     "latencyFailed": [(1280, 800, 100)],
     "paramsSound": [(1280, 800, 100), (1280, 800, 125)],
     "exportDialog": [(1280, 800, 100), (1280, 800, 125)],
+    # MIDI export (spec 3 "MIDI export"): the smallest window too, where the dialog scrolls inside.
+    "exportMidi": [(1280, 800, 100), (1024, 640, 100)],
+    "exportMidiNumbers": [(1280, 800, 100), (1280, 800, 125), (1024, 640, 100), (1024, 640, 150)],
+    "exportMidiProblem": [(1280, 800, 100)],
     "packAsk": [(1280, 800, 100), (1280, 800, 125)],
     "packGet": [(1280, 800, 100), (1280, 800, 125)],
     "packFailOffline": [(1280, 800, 100), (1280, 800, 125)],

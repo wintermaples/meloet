@@ -100,7 +100,7 @@ describe("fake intents", () => {
     const { now, send } = await opened();
     await send({ type: "openExport" });
     const dialog = (await now()).export.dialog!;
-    expect(dialog.formats).toEqual(["wav", "flac", "mp3"]);
+    expect(dialog.formats).toEqual(["wav", "flac", "mp3", "midi"]);
     expect([dialog.mp3Kbps, dialog.mp3KbpsChoices, dialog.picture, dialog.pictureUsable]).toEqual([192, [128, 192, 256, 320], null, false]);
     await send({ type: "setExport", change: { kind: "format", format: "mp3" } });
     await send({ type: "setExport", change: { kind: "title", title: "別の題名" } });

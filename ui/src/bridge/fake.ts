@@ -3787,8 +3787,7 @@ function fakeExportDialog(song: SongView, over: Partial<ExportDialogView> = {}):
     tracks: song.tracks.length,
     span: { start: 0, end },
     format: "wav",
-    // pass 2: "midi" is listed too (Rust lists it last), once ExportDialog.svelte has a name for it.
-    formats: EXPORT_FORMATS.map((f) => f.format).filter((f) => f !== "midi"),
+    formats: EXPORT_FORMATS.map((f) => f.format),
     place: `~/音楽/${song.name}.wav`,
     check: { state: "done", peakDb: -0.6, clips: false, over: 0, lufs: -12.5, truePeakDb: -0.5 },
     solo: fakeSolo({ song }),

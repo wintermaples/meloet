@@ -4,17 +4,23 @@
 import type { ExportDialogView, ExportMidiProblem, ExportMidiTrack, SongView, TrackView } from "./types";
 
 /**
- * The numbers and ranges of 「1-3, 5」 as [low, high] pairs: split by commas, spaces not counted, a range written
- * backwards (「5-3」) read as 3 to 5, empty parts (「1,」) passed by. null: the text cannot be read.
+ * The numbers and ranges of 「1-3, 5」 as [low, high] pairs (spec 7 A-31 "How numbers are read"): full-width digits are
+ * digits, 「、」 「，」 are commas and 「－」 「ー」 「‐」 「〜」 「~」 hyphens; spaces around them do not count, but a space
+ * between two digits cannot be read; a range written backwards (「5-3」) is read as 3 to 5; empty parts (「1,,2,」) are
+ * passed by. null: the text cannot be read.
  */
 export function readTrackNumbers(text: string): [number, number][] | null {
+  const plain = text
+    .replace(/[０-９]/g, (d) => String.fromCharCode(d.charCodeAt(0) - 0xfee0))
+    .replace(/[、，]/g, ",")
+    .replace(/[－ー‐〜~]/g, "-");
   const ranges: [number, number][] = [];
-  for (const part of text.replace(/\s/g, "").split(",")) {
-    if (part === "") continue;
-    const m = /^(\d+)(?:-(\d+))?$/.exec(part);
-    if (!m) return null;
-    const a = Number(m[1]);
-    const b = m[2] === undefined ? a : Number(m[2]);
+  for (const part of plain.split(",")) {
+    if (part.trim() === "") continue;
+    const ends = part.split("-").map((p) => p.trim());
+    if (ends.length > 2 || ends.some((p) => !/^\d+$/.test(p))) return null;
+    const a = Number(ends[0]);
+    const b = Number(ends[ends.length - 1]);
     if (a > 0xffff_ffff || b > 0xffff_ffff) return null;
     ranges.push(a <= b ? [a, b] : [b, a]);
   }

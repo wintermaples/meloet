@@ -909,6 +909,8 @@ The owner's answers to the open questions are in `docs/history/round12-answers-b
 
 ### Decided on 2026-11-24 (themes)
 
+The owner looked at the pictures and approved these forms as built (user:2026-11-24): the on button as an accent fill with dark text, the selected note as a gray.10 face with an accent frame, the velocity lane of mintLight, the band tab of the piano roll showing the track name, and the spectrum 72 wide.
+
 The owner chose candidate 「B」 of three for all six themes, renamed pink and mint to sakura and lime, asked for the same bright sakura and lime in the light themes, gave up WCAG AA for the minimum of spec 1 “Contrast”, and said yes to the accent on notes and similar places (user:2026-11-24). Below: what the developers chose where the owner did not say.
 
 | Where | Rule | Basis |

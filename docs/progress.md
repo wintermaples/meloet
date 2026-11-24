@@ -410,6 +410,23 @@ The owner's request of 2026-11-23 (`docs/history/round12-spec.ja.html`; it calls
   - Tools: `tools/measure/*` and `shoot_app.py` cannot start an AppImage; there is no tool yet for key → sound of a typed key.
 - D1 and D2: the real GitHub answer and the real app against a test server were not tried; the AppImage was not tried on other distributions, AMD / Intel graphics or X11 sessions, nor with the sound pack download or the first-start chooser.
 
+### After round 12 (2026-11-24): piano roll, top band and themes, from the owner's seven points
+
+On `fea/round12`, after the answers stage. `scripts/check-all.sh` passed at 774eff9. Not tried in the real app (pictures are headless Chrome, 100 % only): `target/r12th-final/index.ja.html`, `target/r12pr-shots/`, `target/r12sp-shots/`.
+
+- The 「色」 button and 「色をつける」 are gone; rows outside the scale are `row.out` exactly when the lock is on. The hatch, its color and its shader program are gone.
+- Bar lines are 2 device px (piano roll, drums, CC lanes, arrange); beat lines got a stronger color.
+- The chord ▾ is lit only with 「書く」 and a chord chosen.
+- The piano roll title and its band tab show the track name only.
+- The spectrum is 72 wide; the position readout keeps room for 3 bar digits (21 px spare at 1280 in Chrome; still hidden at 1024 wide).
+- Six themes remade from candidate 「B」: sakura and lime (ids still `pinkDark` …) share the grays of dark and light; `color.accent` (fill), `color.accent.ink` (text, lines), `color.accent.fg` (text on a fill); notes are filled with the accent, selected notes are gray.10 with an accent frame. The contrast rule is no longer WCAG AA (spec 1 “Contrast”; `contrast.py --low`). The owner approved the forms (spec 7, "Decided on 2026-11-24").
+
+Left open:
+- A beat number of two digits (10/8 …) still widens the position readout; typing a position changes the field's width a little.
+- Spec 2 and 3 show 「1. 1. 000」 (3 tick digits); the app and the glossary use 4.
+- `highlight` stays in the promise and the song file, unused by the screen; `SongView.note_count` may be unused too (not checked). Taking them out means protocol 35.
+- The fake scenes `spectrumBar10` / `spectrumBar100` are used by no test.
+
 ## 7. Notes for Windows and Mac
 
 From the end of round 8 (only what was noticed).

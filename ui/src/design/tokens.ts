@@ -153,6 +153,7 @@ export const part = {
   "part.meter.vertical": p(6, "s2", "Meter", "2 bars 6px wide"),
   "part.meter.clip": p(2, "s2", "Meter", "meter.clip 2px"),
   "part.meter.mic": p(200, "s2", "Input meter band (split left and right)", "a 200 meter"),
+  "part.spectrum.width": p(72, "s3", null, "The bars are 72 wide"),
   "part.note.height": p(11, "s2", "Note", "Height 11"),
   "part.note.edge": p(2, "s2", "Note", "2px gray.10"),
   "part.tip.width": p(248, "s2", "Term tip", "Width 248"),

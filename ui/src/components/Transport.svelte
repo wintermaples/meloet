@@ -1,7 +1,7 @@
 <!-- The transport band (the top band of mock Main, F-Empty, F-Connect3, F-Connect4, F-ArrangeRec; the ▾ from F-Menus, F-PR150). -->
 <script lang="ts">
   import { onMount, untrack } from "svelte";
-  import { clockOffsetUs, SPECTRUM_BANDS, type Command } from "../bridge";
+  import { clockOffsetUs, type Command } from "../bridge";
   import { platformOf } from "../keys/keys";
   import { glRegion, glSlot, type GlSlot } from "../gl/slot";
   import { menuOpened } from "../lib/menu";
@@ -151,6 +151,8 @@
     return () => cancelAnimationFrame(raf);
   });
   const position = $derived(positionText(tick, map));
+  // The position keeps the width of a 3-digit bar, so the row does not move as the bar number grows.
+  const positionChars = $derived(position.replace(/^\d{1,3}/, "000").length);
   const clock = $derived(clockText(map.secondsAt(Math.max(0, tick))));
   // Tempo and time signature are the values at the playhead (spec 3 Y17; inside a gradual change, the value at that moment).
   const tempoShown = $derived(tempoText(Math.round(map.tempoAt(Math.max(0, tick)) * 100) / 100));
@@ -430,6 +432,7 @@
         reject={rejectPosition}
         label={t("transport.position")}
         chars={10}
+        minChars={positionChars}
         test="transport-position"
       />
     </div>
@@ -513,7 +516,7 @@
 
   <div class="master" class:narrow={!parts.positionLabels} use:glSlot={COVER}>
     {#if spectrumShown}
-      <div class="spectrum" style:--bands={SPECTRUM_BANDS} aria-hidden="true" data-test="transport-spectrum" use:glSlot={SPECTRUM}></div>
+      <div class="spectrum" aria-hidden="true" data-test="transport-spectrum" use:glSlot={SPECTRUM}></div>
     {/if}
     <div class="master-col">
       <div class="master-head">
@@ -538,9 +541,9 @@
     <span class="m-btn counting" data-part="countInCounting">{@render countingIn()}</span>
     <span class="m-btn" data-part="overdub">{t("transport.overdub")}</span>
     <span class="m-btn" data-part="keepPlayed">{t("transport.keepPlayed")}</span>
-    <span class="spectrum" style:--bands={SPECTRUM_BANDS} data-part="spectrum"></span>
+    <span class="spectrum" data-part="spectrum"></span>
     <span class="m-lbl" data-part="label-0">{t("transport.position")}</span>
-    <span class="m-readout" data-part="readout-0">{position}</span>
+    <span class="m-readout" data-part="readout-0" style:min-width="{positionChars}ch">{position}</span>
     <span class="m-lbl" data-part="label-1">{t("transport.time")}</span>
     <span class="m-readout" data-part="readout-1">{clock}</span>
     {#each KEYS as k, i (i)}<span class="m-num" data-part="key-{i}">{k}</span>{/each}
@@ -712,9 +715,9 @@
   .master.narrow .master-col {
     width: var(--mock-transport-master-narrow);
   }
-  /* E7: 24 bars of part.meter.horizontal (96 at 100 %), as tall as the master's box. */
+  /* E7: 24 bars in part.spectrum.width, as tall as the master's box. */
   .spectrum {
-    width: calc(var(--part-meter-horizontal) * var(--bands));
+    width: var(--part-spectrum-width);
     flex-shrink: 0;
   }
   .master-head {

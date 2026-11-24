@@ -16,11 +16,13 @@
     label: string;
     /** Number of characters in the box (monospace). */
     chars: number;
+    /** The reading is at least this many characters wide (monospace), so it does not move as it grows. */
+    minChars?: number;
     test: string;
     /** Shows the reading in text.s (when the input meter is slim). */
     small?: boolean;
   }
-  let { value, parse, step, commit, reject, label, chars, test, small = false }: Props = $props();
+  let { value, parse, step, commit, reject, label, chars, minChars, test, small = false }: Props = $props();
 
   let editing = $state(false);
   let draft = $state("");
@@ -84,7 +86,14 @@
     {onkeydown}
   />
 {:else}
-  <button class="m-plain m-readout shown" class:small aria-label={label} data-test={test} bind:this={shown} onclick={open}
+  <button
+    class="m-plain m-readout shown"
+    class:small
+    style:min-width={minChars === undefined ? undefined : `${minChars}ch`}
+    aria-label={label}
+    data-test={test}
+    bind:this={shown}
+    onclick={open}
     >{value}</button
   >
 {/if}

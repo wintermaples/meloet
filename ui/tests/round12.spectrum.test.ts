@@ -69,6 +69,16 @@ describe("the bars as painted", () => {
     expect(b.rects()).toHaveLength(1 + 23);
   });
 
+  it("in part.spectrum.width (72 at 100 %) every bar is 2 px with one device pixel of ground after it", () => {
+    expect(metrics.px("part.spectrum.width")).toBe(72);
+    const b = new Batch();
+    b.clip(0, 0, 1000, 1000);
+    paintSpectrum(b, { x0: 0, y0: 0, x1: 72, y1: 28 }, new Uint8Array(24).fill(255));
+    const bars = b.rects().slice(1);
+    expect(bars).toHaveLength(24);
+    bars.forEach((r, i) => expect(r.slice(0, 4)).toEqual([3 * i, 0, 3 * i + 2, 28]));
+  });
+
   it("silence is the ground alone", () => {
     const b = new Batch();
     b.clip(0, 0, 1000, 1000);
@@ -117,8 +127,16 @@ describe("the bars in the top band", () => {
     expect(el.nextElementSibling!.classList.contains("master-col")).toBe(true);
     expect(el.nextElementSibling!.textContent).toContain(t("transport.master"));
     expect(el.dataset.glSlot).toBe("spectrum");
-    expect(el.style.getPropertyValue("--bands")).toBe("24");
     expect(el.closest("[data-gl-region]")?.getAttribute("data-gl-region")).toBe("masterMeter");
+  });
+
+  it("the position keeps the width of a 3-digit bar (on screen and in the ruler that measures the row)", () => {
+    widths(1920);
+    show(Transport, fakeState());
+    const shown = target.querySelector<HTMLElement>('[data-test="transport-position"]')!;
+    expect(shown.textContent).toBe("1. 1. 0000");
+    expect(shown.style.minWidth).toBe("12ch");
+    expect(target.querySelector<HTMLElement>('[data-part="readout-0"]')!.style.minWidth).toBe("12ch");
   });
 
   it("off in 「表示」: no bars", () => {
@@ -137,7 +155,7 @@ describe("the bars in the top band", () => {
   it("not enough room: no bars, and the rest is as with them off", () => {
     for (const room of [0, 200, 300, 400, 600]) {
       vi.restoreAllMocks();
-      widths(room, (part) => (part === "spectrum" ? 96 : 40));
+      widths(room, (part) => (part === "spectrum" ? 72 : 40));
       const off = fakeState();
       off.workspace.spectrum = false;
       show(Transport, off);

@@ -67,11 +67,11 @@ meloet は、はじめて MIDI 鍵盤を買った人のための音楽アプリ�
 
 ### インストール
 
-1. [Releases のページ](https://github.com/wintermaples/meloet/releases)から `meloet_0.4.1_amd64.deb` を取ります。まだ deb が置かれていないときは、自分で作れます（[deb を作る](docs/development/ubuntu.md#build-the-deb)、英語）。
+1. [Releases のページ](https://github.com/wintermaples/meloet/releases)から `meloet_0.5.0_amd64.deb` を取ります。まだ deb が置かれていないときは、自分で作れます（[deb を作る](docs/development/ubuntu.md#build-the-deb)、英語）。
 2. 端末をひらき、取ったファイルのある場所で、次を打ちます。
 
    ```bash
-   sudo apt install ./meloet_0.4.1_amd64.deb
+   sudo apt install ./meloet_0.5.0_amd64.deb
    ```
 
    `./` を忘れないでください。meloet が使う部品（WebKitGTK、ALSA、PipeWire など）も、いっしょに入ります。

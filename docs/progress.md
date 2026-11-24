@@ -433,6 +433,15 @@ Release 0.4.1 (2026-11-24; the owner's order): two changes on `main`. `fix/take-
 
 Release 0.5.0 (2026-11-24; the owner's order): `fea/midi-export` merged into `main`: MIDI export from the export dialog (「形」 ▸ 「MIDI」, 「入れるトラック」 ぜんぶ / 選んでいるトラック / 番号で; spec 3 "MIDI export", 7-readings A-31, architecture 25-39; protocol 36). The standard MIDI file reader and writer and the song → MIDI part moved from `meloet-ai` to `meloet-core/src/midi.rs`, shared with the AI link's `export_midi`; SF2 drum kits are now on channel 10 there too. Checked in the real app with `tools/measure/remote.py` (one file and per-track files read back: notes, tempos, meters, channels as in the song). `scripts/check-all.sh --release` passed (Rust 2305 passed, screen 3949 passed). `MELOET_DOCKER_SG=1 scripts/build-deb.sh` built `target/deb/meloet_0.5.0_amd64.deb` from the commit `Version 0.5.0`: 21 507 244 bytes (20.51 MiB), sha256 `781daeec60280312167e008f2b1d57849ec370177b4af0a6b7285121871db97e`; control ASCII only; the three binaries, the MIME XML, the .desktop and the icons are in it; no development hook names in the binaries. `main` pushed, tag `v0.5.0`, GitHub release 「meloet 0.5.0」 with the deb. Not checked in the real app: a loop range, muted tracks, a place that cannot be written, pressing 「フォルダをひらく」 (covered by tests only).
 
+### Plugins with more than two outputs (2026-11-24, `fix/plugin-multi-out`)
+
+From a user's report: DrumGizmo with DRSKit was 16 dB too quiet and sounded far away, because only the first two of its 16 outputs (the room microphones) reached the mix. Now every output of such an LV2 instrument is summed into the track (architecture 20-15; the rule is the lead's, narrower than the request's "all outputs" so that Surge XT and LSP multisampler keep their sound). The song file, the wire and the protocol did not change. Tests: `output_tests` in `crates/meloet-plughost/src/formats/lv2.rs` (three of them `--ignored`, with DrumGizmo and a kit the test writes, avldrums Black Pearl Multi, Surge XT, LSP).
+
+Left open:
+- Not tried with a real DrumGizmo kit (none on this PC); the user checks with DRSKit. Many close microphones at gain 1 may be loud.
+- Stage 2, waiting for the owner's answer: level, pan and mute per output (or per pair), saved in the song and undoable, readable and writable from the AI link; this also covers the outputs that are not heard today (extra LV2 groups, VST3 buses past the first) and Yoshimi-Multi.
+- `PluginInfo.audio_outputs` is read by no shipped code (tests only); it now says 1 or 2 (how the fold ends), never the count of ports.
+
 ## 7. Notes for Windows and Mac
 
 From the end of round 8 (only what was noticed).

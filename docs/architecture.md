@@ -927,6 +927,15 @@ Research: `docs/history/research/plugin-formats.md`, `plugin-ipc.md`, `sf2-playb
 
 ---
 
+### 20-15. Plugins with more than two audio outputs (`crates/meloet-plughost/src/formats/lv2.rs`)
+
+- **The plugin host folds the outputs down to the stereo pair** (`heard_outputs`, `fold`); the wire, the engine and the export still carry two channels, so playing, export and `measure_mix` run the same code.
+- **Which LV2 outputs are heard**: never a side chain. An effect: the first two ports of the first port's group. An instrument whose first output is in a group: that whole group (Surge XT's first group is the full mix, its other groups repeat the scenes; LSP multisampler's direct outputs likewise). An instrument whose first output is in no group names no main sound (DrumGizmo's 16 microphone channels, avldrums "Multi"): every output is heard, except those of a group that are `lv2:connectionOptional`. **Why not simply all**: no field of LV2 says whether an extra output adds to the main one or repeats it.
+- **Where**: one output goes to both sides, two go left and right (copied as they are). More than two: by `lv2:designation` `pg:left` / `pg:right`, else by the last word of the port's name (`l`, `left`, `r`, `right`), else to both sides at gain 1. No pan law and no scaling by the count.
+- **Known wrong case**: Yoshimi-Multi (34 ungrouped outputs, "Main" and 16 "Track" pairs) is heard twice for a part the person sends to both its track and main (not tried; with Yoshimi's defaults the track outputs are silent).
+- **VST3** is unchanged: only the first bus is active, and a plugin sends its full mix there while the others are off.
+- Settings per output (level, pan, mute) are not made; see `docs/progress.md`.
+
 ## 21. Tempo map, markers, automation and the undo history band (round 6)
 
 Research: `docs/history/research/automation-vst3.md`, `automation-lv2.md`, `tempo-and-automation.md`. What shows on the screen but is not in the spec is listed in `docs/history/design-notes.ja.md` (A-19, B-92).

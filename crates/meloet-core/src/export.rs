@@ -22,10 +22,14 @@ pub(crate) mod job;
 #[cfg(test)]
 mod kit_tests;
 pub(crate) mod loudness;
+pub(crate) mod midi;
+#[cfg(test)]
+mod midi_tests;
 #[cfg(test)]
 mod mp3_gate_tests;
 #[cfg(test)]
 mod mp3_tests;
+mod numbers;
 pub(crate) mod render;
 pub mod sink;
 pub mod tags;
@@ -38,10 +42,11 @@ use std::sync::Arc;
 use meloet_model::{Doc, TickRange, TrackId};
 use meloet_protocol::{
     Command, EXPORT_MP3_DEFAULT_KBPS, EXPORT_MP3_KBPS, EXPORT_MP3_SAMPLE_RATES, ExportChange,
-    ExportCheck, ExportDialogView, ExportFailure, ExportFormat, ExportLoudness, ExportRange,
-    ExportRunView, ExportSolo, ExportStoppedPlugin, ExportTail, ExportView, PluginSlotRef,
-    RecordFormat, StatusMessage, TickSpan, TrackRef,
+    ExportCheck, ExportDialogView, ExportFailure, ExportFormat, ExportLoudness, ExportMidiTracks,
+    ExportRange, ExportRunView, ExportSolo, ExportStoppedPlugin, ExportTail, ExportView,
+    PluginSlotRef, RecordFormat, StatusMessage, TickSpan, TrackRef,
 };
+use midi::MidiOut;
 
 use crate::ai::{AiAnalysis, AiBandLayout};
 use crate::plugins::shown_path;
@@ -71,6 +76,9 @@ pub enum ExportAsk {
     /// F2 「絵」 「えらぶ…」: the PC's open window for a png or a jpg, starting in `folder`.
     /// Answer with [`ExportNews::PicturePicked`], the file read with [`tags::read_picture`].
     PickPicture { folder: Option<PathBuf> },
+    /// 「書き出す」 under MIDI: write the files at once with [`midi::write`], and answer
+    /// with what it gives back.
+    WriteMidi { job: u64, files: Vec<MidiOut> },
 }
 
 /// One rendering, at the rate the audio runs at, as 32 bit floats.
@@ -195,6 +203,8 @@ pub struct Scene<'a> {
     pub stopped_plugins: Vec<ExportStoppedPlugin>,
     /// The soloed tracks, in the order of the tracks (spec 3, 42-C). Not in what is written.
     pub soloed: Vec<TrackRef>,
+    /// The selected track (`Session::play_target`): 「選んでいるトラック」 of MIDI.
+    pub selected: Option<TrackId>,
 }
 
 impl Scene<'_> {
@@ -257,7 +267,9 @@ struct Job {
 
 #[derive(Debug)]
 struct Dialog {
-    /// `None`: there is nothing to render (an empty song).
+    /// `Play::serial` of the song it was opened for.
+    serial: u32,
+    /// `None`: there is nothing to render (an empty song, or MIDI, which renders nothing).
     job: Option<Job>,
     picking: bool,
     /// F2: the window for 「絵」 is shown.
@@ -266,7 +278,16 @@ struct Dialog {
 
 #[derive(Debug)]
 enum Run {
-    Going { job: Job, target: ExportTarget },
+    Going {
+        job: Job,
+        target: ExportTarget,
+    },
+    /// MIDI files being written ([`ExportAsk::WriteMidi`]), and what the run says once
+    /// they are.
+    Writing {
+        id: u64,
+        done: ExportRunView,
+    },
     Ended(ExportRunView, Option<PathBuf>),
 }
 
@@ -299,6 +320,9 @@ pub struct Exporting {
     /// Chosen with 「えらぶ…」: the folder, and the file's name without its ending.
     folder: Option<PathBuf>,
     name: Option<String>,
+    /// 「入れるトラック」 of MIDI, and the text of its number field as last sent.
+    midi_tracks: ExportMidiTracks,
+    midi_numbers: String,
     dialog: Option<Dialog>,
     run: Option<Run>,
     last_job: u64,
@@ -330,6 +354,8 @@ impl Exporting {
             loudness: ExportLoudness::AsIs,
             folder: None,
             name: None,
+            midi_tracks: ExportMidiTracks::All,
+            midi_numbers: String::new(),
             dialog: None,
             run: None,
             last_job: 0,
@@ -341,7 +367,7 @@ impl Exporting {
     }
 
     pub fn running(&self) -> bool {
-        matches!(self.run, Some(Run::Going { .. }))
+        matches!(self.run, Some(Run::Going { .. } | Run::Writing { .. }))
     }
 
     /// Before a command is done: a run that has ended is shown until the person does the
@@ -380,12 +406,18 @@ impl Exporting {
                     if self.range == ExportRange::Loop && scene.loop_span().is_none() {
                         self.range = ExportRange::Song;
                     }
+                    if self.midi_tracks == ExportMidiTracks::Selected
+                        && !self.midi_taken(scene).selected_usable
+                    {
+                        self.midi_tracks = ExportMidiTracks::All;
+                    }
                     if self.info_serial != Some(scene.serial) {
                         self.info_serial = Some(scene.serial);
                         self.title = None;
                         self.picture = None;
                     }
                     self.dialog = Some(Dialog {
+                        serial: scene.serial,
                         job: None,
                         picking: false,
                         picking_picture: false,
@@ -461,7 +493,7 @@ impl Exporting {
                     let of_song = scene.song_path.and_then(Path::parent);
                     of_song.map(Path::to_path_buf).or(self.dirs.home.clone())
                 });
-                let usable = self.format != ExportFormat::Wav;
+                let usable = self.picture_usable();
                 if let Some(dialog) = self.dialog.as_mut().filter(|d| !d.picking_picture)
                     && usable
                 {
@@ -474,7 +506,7 @@ impl Exporting {
                 let usable = match range {
                     ExportRange::Song => true,
                     ExportRange::Loop => scene.loop_span().is_some(),
-                    ExportRange::Tracks => scene.tracks() > 0,
+                    ExportRange::Tracks => self.tracks(scene) > 0,
                 };
                 if usable {
                     self.range = range;
@@ -482,8 +514,9 @@ impl Exporting {
             }
             ExportChange::Format { format } => {
                 self.format = format;
-                // mp3 has no bits: the ones chosen stay for the other formats.
-                if format != ExportFormat::Mp3 && !format.bits_choices().contains(&self.bits) {
+                // mp3 and MIDI have no bits: the ones chosen stay for the other formats.
+                let bits = format.bits_choices();
+                if !bits.is_empty() && !bits.contains(&self.bits) {
                     self.bits = RecordFormat::default();
                 }
             }
@@ -506,11 +539,21 @@ impl Exporting {
                     self.loudness = loudness;
                 }
             }
+            ExportChange::MidiTracks { tracks } => {
+                if tracks != ExportMidiTracks::Selected || self.midi_taken(scene).selected_usable {
+                    self.midi_tracks = tracks;
+                }
+            }
+            ExportChange::MidiNumbers { text } => self.midi_numbers = text,
         }
     }
 
     fn start(&mut self, scene: &Scene, asks: &mut Vec<ExportAsk>) {
         if !self.can_export(scene) {
+            return;
+        }
+        if self.format == ExportFormat::Midi {
+            self.start_midi(scene, asks);
             return;
         }
         let job = self.dialog.as_ref().and_then(|d| d.job.as_ref());
@@ -524,10 +567,7 @@ impl Exporting {
             info: SongInfo {
                 title: self.title(scene).to_owned(),
                 artist: self.artist.clone(),
-                picture: self
-                    .picture
-                    .clone()
-                    .filter(|_| self.format != ExportFormat::Wav),
+                picture: self.picture.clone().filter(|_| self.picture_usable()),
             },
         };
         let Some(job) = self.dialog.take().and_then(|d| d.job) else {
@@ -540,15 +580,54 @@ impl Exporting {
         self.run = Some(Run::Going { job, target });
     }
 
+    /// MIDI is not rendered: the files are made here, written at once, and the run is
+    /// `Done` with no dialog 「書き出しました」.
+    fn start_midi(&mut self, scene: &Scene, asks: &mut Vec<ExportAsk>) {
+        self.close(asks);
+        let taken = self.midi_taken(scene).places;
+        let span = self.span(scene);
+        let path = self.place(scene);
+        let per_track = self.range == ExportRange::Tracks;
+        let Ok(files) = midi::files(scene.doc, &taken, span, &path, per_track) else {
+            let reason = ExportFailure::CannotWrite;
+            self.run = Some(Run::Ended(ExportRunView::Failed { reason }, None));
+            return;
+        };
+        let name = |p: &Path| p.file_name().map(|n| n.to_string_lossy().into_owned());
+        let done = ExportRunView::Done {
+            file: (files.first())
+                .and_then(|f| name(&f.path))
+                .unwrap_or_default(),
+            files: files.len() as u32,
+            place: shown_path(&path, self.dirs.home.as_deref()),
+            length_s: midi::length_s(scene.doc, span),
+            sample_rate: self.sample_rate(scene),
+            bits: self.bits,
+            wave: Vec::new(),
+            lufs: None,
+            true_peak_db: None,
+            mp3_kbps: None,
+            midi_tracks: Some(taken.len() as u32),
+        };
+        self.last_job += 1;
+        let id = self.last_job;
+        asks.push(ExportAsk::WriteMidi { job: id, files });
+        self.run = Some(Run::Writing { id, done });
+    }
+
     /// After anything that happened: the job of the open dialog is the one for what the
     /// dialog says now, and a dialog whose song is gone closes.
     pub fn settle(&mut self, scene: &Scene, asks: &mut Vec<ExportAsk>) {
-        let wanted = self.asked(scene);
-        let had = (self.dialog.as_ref()).and_then(|d| Some(&d.job.as_ref()?.asked));
-        if had.is_some_and(|a| a.serial != scene.serial) {
+        if self
+            .dialog
+            .as_ref()
+            .is_some_and(|d| d.serial != scene.serial)
+        {
             self.close(asks);
             return;
         }
+        let wanted = self.asked(scene);
+        let had = (self.dialog.as_ref()).and_then(|d| Some(&d.job.as_ref()?.asked));
         if had == wanted.as_ref() {
             return;
         }
@@ -673,6 +752,11 @@ impl Exporting {
                     job.must_be_realtime = true;
                 }
             }
+            ExportNews::Finished { job, files, .. } if matches!(&self.run, Some(Run::Writing { id, .. }) if *id == job) => {
+                if let Some(Run::Writing { done, .. }) = self.run.take() {
+                    self.run = Some(Run::Ended(done, files.into_iter().next()));
+                }
+            }
             ExportNews::Finished { job, files, wave } => {
                 let Some(Run::Going { job: going, target }) = &self.run else {
                     return;
@@ -702,13 +786,19 @@ impl Exporting {
                     wave,
                     lufs,
                     true_peak_db,
+                    midi_tracks: None,
                 };
                 let shown = files.into_iter().next();
                 self.run = Some(Run::Ended(view, shown));
             }
             ExportNews::Measured { .. } => {}
             ExportNews::Failed { job, reason } => {
-                if matches!(&self.run, Some(Run::Going { job: going, .. }) if going.id == job) {
+                let ours = match &self.run {
+                    Some(Run::Going { job: going, .. }) => going.id == job,
+                    Some(Run::Writing { id, .. }) => *id == job,
+                    _ => false,
+                };
+                if ours {
                     self.run = Some(Run::Ended(ExportRunView::Failed { reason }, None));
                 } else if let Some(job) = self.job_mut(job) {
                     job.failed = Some(reason);
@@ -733,11 +823,13 @@ impl Exporting {
         }
     }
 
-    /// What the job of the dialog is to render; `None`: nothing.
+    /// What the job of the dialog is to render; `None`: nothing, as under MIDI, where
+    /// nothing is measured.
     fn asked(&self, scene: &Scene) -> Option<Asked> {
         let span = self.span(scene);
         let per_track = self.range == ExportRange::Tracks;
-        (span.end > span.start && !(per_track && scene.tracks() == 0)).then_some(Asked {
+        let midi = self.format == ExportFormat::Midi;
+        (!midi && span.end > span.start && !(per_track && scene.tracks() == 0)).then_some(Asked {
             serial: scene.serial,
             span,
             per_track,
@@ -750,7 +842,7 @@ impl Exporting {
         let rate = self.sample_rate.unwrap_or(scene.sample_rate);
         match self.format {
             ExportFormat::Mp3 => mp3_rate(rate),
-            ExportFormat::Wav | ExportFormat::Flac => rate,
+            ExportFormat::Wav | ExportFormat::Flac | ExportFormat::Midi => rate,
         }
     }
 
@@ -849,7 +941,31 @@ impl Exporting {
         }
     }
 
+    /// F2: a wav and a MIDI file hold no picture.
+    fn picture_usable(&self) -> bool {
+        matches!(self.format, ExportFormat::Flac | ExportFormat::Mp3)
+    }
+
+    /// 「入れるトラック」 as it takes the song now.
+    fn midi_taken(&self, scene: &Scene) -> midi::Taken {
+        midi::taken(self.midi_tracks, &self.midi_numbers, scene)
+    }
+
+    /// How many files 「トラックごと」 writes: under MIDI the tracks 「入れるトラック」
+    /// takes.
+    fn tracks(&self, scene: &Scene) -> u32 {
+        match self.format {
+            ExportFormat::Midi => self.midi_taken(scene).places.len() as u32,
+            _ => scene.tracks(),
+        }
+    }
+
     fn can_export(&self, scene: &Scene) -> bool {
+        if self.format == ExportFormat::Midi {
+            return self.midi_taken(scene).problem.is_none()
+                && self.folder_for(scene).is_some()
+                && !scene.busy;
+        }
         let job = self.dialog.as_ref().and_then(|d| d.job.as_ref());
         job.is_some_and(|j| j.counted && j.failed.is_none())
             && self.folder_for(scene).is_some()
@@ -859,6 +975,8 @@ impl Exporting {
     pub fn view(&self, scene: &Scene) -> ExportView {
         let dialog = self.dialog.as_ref().map(|dialog| {
             let job = dialog.job.as_ref();
+            let taken = self.midi_taken(scene);
+            let midi = self.format == ExportFormat::Midi;
             let forced = job.is_some_and(|j| j.must_be_realtime);
             let mut place = shown_path(&self.place(scene), self.dirs.home.as_deref());
             if self.range == ExportRange::Tracks && !place.ends_with('/') {
@@ -867,7 +985,7 @@ impl Exporting {
             ExportDialogView {
                 range: self.range,
                 loop_range: scene.loop_span(),
-                tracks: scene.tracks(),
+                tracks: self.tracks(scene),
                 span: self.span(scene),
                 format: self.format,
                 formats: ExportFormat::ALL.to_vec(),
@@ -888,7 +1006,7 @@ impl Exporting {
                 title: self.title(scene).to_owned(),
                 artist: self.artist.clone(),
                 picture: self.picture.as_ref().map(|p| p.name.clone()),
-                picture_usable: self.format != ExportFormat::Wav,
+                picture_usable: self.picture_usable(),
                 tail: self.tail,
                 realtime: self.realtime || forced,
                 realtime_forced: forced,
@@ -897,6 +1015,12 @@ impl Exporting {
                 can_match: self.can_match(job),
                 loudness_result: (job.filter(|j| j.done && self.can_match(Some(j))))
                     .and_then(|j| loudness::match_gain(j.lufs, j.true_peak_db)),
+                midi_tracks: self.midi_tracks,
+                midi_numbers: self.midi_numbers.clone(),
+                midi_selected_usable: taken.selected_usable,
+                midi_taken: midi::listed(scene.doc, &taken.places),
+                midi_vocal: midi::listed(scene.doc, &taken.vocal),
+                midi_problem: taken.problem.filter(|_| midi),
             }
         });
         let run = self.run.as_ref().map(|run| match run {
@@ -910,6 +1034,26 @@ impl Exporting {
                 realtime: job.asked.realtime || job.must_be_realtime,
                 realtime_forced: job.must_be_realtime,
                 length_s: job.length_s,
+            },
+            Run::Writing { done, .. } => match done {
+                ExportRunView::Done {
+                    file,
+                    files,
+                    length_s,
+                    ..
+                } => ExportRunView::Running {
+                    percent: 0,
+                    file: if *files == 1 {
+                        file.clone()
+                    } else {
+                        String::new()
+                    },
+                    remaining_s: None,
+                    realtime: false,
+                    realtime_forced: false,
+                    length_s: *length_s,
+                },
+                other => other.clone(),
             },
             Run::Ended(view, _) => view.clone(),
         });

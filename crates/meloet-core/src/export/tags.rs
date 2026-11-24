@@ -96,24 +96,16 @@ fn tag_failed(e: impl std::fmt::Display) -> io::Error {
     io::Error::other(format!("song information: {e}"))
 }
 
-/// The tag of `info` for a file of `format`.
-fn tag_of(format: ExportFormat, info: &SongInfo) -> Tag {
-    let mut tag = Tag::new(match format {
-        ExportFormat::Mp3 => TagType::Id3v2,
-        ExportFormat::Flac => TagType::VorbisComments,
-        ExportFormat::Wav => TagType::RiffInfo,
-    });
+/// The tag of `info` as `kind`; a RIFF INFO list (a wav) holds no picture.
+fn tag_of(kind: TagType, info: &SongInfo) -> Tag {
+    let mut tag = Tag::new(kind);
     if !info.title.trim().is_empty() {
         tag.set_title(info.title.clone());
     }
     if !info.artist.trim().is_empty() {
         tag.set_artist(info.artist.clone());
     }
-    if let Some(picture) = info
-        .picture
-        .as_ref()
-        .filter(|_| format != ExportFormat::Wav)
-    {
+    if let Some(picture) = info.picture.as_ref().filter(|_| kind != TagType::RiffInfo) {
         let mime = match picture.kind {
             PictureKind::Png => MimeType::Png,
             PictureKind::Jpeg => MimeType::Jpeg,
@@ -134,14 +126,19 @@ pub fn write(path: &Path, format: ExportFormat, info: &SongInfo) -> io::Result<(
     if info.is_empty() {
         return Ok(());
     }
-    let tag = tag_of(format, info);
-    match format {
-        ExportFormat::Wav => append_riff_info(path, &tag),
-        ExportFormat::Mp3 | ExportFormat::Flac => {
-            (tag.save_to_path(path, WriteOptions::default())).map_err(tag_failed)?;
-            std::fs::File::open(path)?.sync_all()
-        }
+    let kind = match format {
+        ExportFormat::Mp3 => TagType::Id3v2,
+        ExportFormat::Flac => TagType::VorbisComments,
+        ExportFormat::Wav => TagType::RiffInfo,
+        // A MIDI file has no tag: the song's name is in its first track.
+        ExportFormat::Midi => return Ok(()),
+    };
+    let tag = tag_of(kind, info);
+    if kind == TagType::RiffInfo {
+        return append_riff_info(path, &tag);
     }
+    (tag.save_to_path(path, WriteOptions::default())).map_err(tag_failed)?;
+    std::fs::File::open(path)?.sync_all()
 }
 
 /// A RIFF INFO list after the data of a wav as `crate::audiofiles::wav::wav_head` writes it,

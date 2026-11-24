@@ -269,3 +269,7 @@ export {
 // of a batch of the AI link.
 export type { MuteSetView } from "./generated/MuteSetView";
 export { MUTE_SET_NAME_MAX, MUTE_SETS_MAX } from "./generated/muteSets";
+// Protocol 36 (the owner, 2026-11-24): MIDI export from the dialog 「書き出し」.
+export type { ExportMidiProblem } from "./generated/ExportMidiProblem";
+export type { ExportMidiTrack } from "./generated/ExportMidiTrack";
+export type { ExportMidiTracks } from "./generated/ExportMidiTracks";

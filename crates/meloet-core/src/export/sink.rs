@@ -65,6 +65,7 @@ pub fn create(path: &Path, spec: SinkSpec) -> io::Result<Box<dyn AudioSink>> {
         ExportFormat::Wav => Box::new(WavSink::create(path, spec)?),
         ExportFormat::Flac => Box::new(FlacSink::create(path, spec)?),
         ExportFormat::Mp3 => Box::new(Mp3Sink::create(path, spec)?),
+        ExportFormat::Midi => return Err(invalid("a MIDI file is not written as audio")),
     })
 }
 

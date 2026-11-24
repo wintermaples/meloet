@@ -1,6 +1,6 @@
 // Text of the export dialog and the progress in the status line (spec 3 34-B, spec 6; mock F7-Export, F7-Exporting, F-Export; docs/history/design-notes.ja.md B-94-69 to 75).
 // Pure functions that do not know the DOM.
-import { EXPORT_MATCH_LUFS, EXPORT_MATCH_TRUE_PEAK_DB, EXPORT_TAIL_MAX_S, RECORD_FORMATS, type ExportCheck, type ExportDialogView, type ExportFailure, type ExportLoudnessResult, type ExportRunView, type ExportSolo, type RecordFormat } from "../../bridge";
+import { EXPORT_MATCH_LUFS, EXPORT_MATCH_TRUE_PEAK_DB, EXPORT_TAIL_MAX_S, RECORD_FORMATS, type ExportCheck, type ExportDialogView, type ExportFailure, type ExportLoudnessResult, type ExportMidiProblem, type ExportMidiTrack, type ExportRunView, type ExportSolo, type RecordFormat } from "../../bridge";
 import { t, type TextKey } from "../../text";
 import { dbNumber, SILENT_DB, textParts, type TextPart } from "../format";
 import { barBeatTick, positionText, type Bars } from "../time";
@@ -39,7 +39,7 @@ export function rangeLabel(range: ExportDialogView["range"], d: ExportDialogView
 export function spanText(d: ExportDialogView, bars: Bars): string {
   if (d.range === "tracks") return t("export.spanTracks", { count: d.tracks });
   const span = { start: positionText(d.span.start, bars), end: positionText(d.span.end, bars) };
-  const tail = d.tail === "untilSilent";
+  const tail = d.tail === "untilSilent" && d.format !== "midi";
   if (d.range === "loop") return t(tail ? "export.spanLoop" : "export.spanLoopNoTail", span);
   return t(tail ? "export.spanSong" : "export.spanSongNoTail", span);
 }
@@ -143,6 +143,31 @@ export function soloText(solo: ExportSolo | null): string | null {
   return t("export.solo", { track: solo.others > 0 ? t("export.soloMore", { track: first, count: solo.others }) : first });
 }
 
+const trackLabel = (track: ExportMidiTrack): string => t("track.label", { number: track.number, name: track.name });
+
+/** The tracks 「入れるトラック」 takes: 「1 ピアノ ・ 2 ベース ほか 2 本」 (two names at most, as the solo line). null when none. */
+export function midiTakenText(taken: readonly ExportMidiTrack[]): string | null {
+  const [first, second] = taken;
+  if (!first) return null;
+  const names = second ? t("export.midiTakenTwo", { first: trackLabel(first), second: trackLabel(second) }) : trackLabel(first);
+  return taken.length > 2 ? t("export.soloMore", { track: names, count: taken.length - 2 }) : names;
+}
+
+/** 「3 ボーカル は声のトラックなので入りません」, one line for each vocal track the numbers name. */
+export const midiVocalLines = (vocal: readonly ExportMidiTrack[]): string[] => vocal.map((track) => t("export.midiVocal", { track: trackLabel(track) }));
+
+/** Why 「入れるトラック」 cannot be written (shown in rec). */
+export function midiProblemText(problem: ExportMidiProblem): string {
+  switch (problem.kind) {
+    case "noSuchTrack":
+      return t("export.midiNoSuchTrack", { number: problem.number });
+    case "unreadable":
+      return t("export.midiUnreadable");
+    case "noTrack":
+      return t("export.midiNoTrack");
+  }
+}
+
 /** When it clips, 「このまま書き出す」 (spec 6 "Export would clip"). */
 export const clips = (check: ExportCheck): boolean => (check.state === "done" || check.state === "counting") && check.clips;
 
@@ -169,7 +194,11 @@ export function runShown(run: ExportRunView): RunShown {
       return {
         kind: "message",
         parts:
-          run.files > 1
+          run.midiTracks !== null
+            ? run.files > 1
+              ? textParts("msg.exportedMidiFiles", { count: run.files })
+              : textParts("msg.exportedMidi", { file: run.file, tracks: run.midiTracks })
+            : run.files > 1
             ? textParts("msg.exported", { path: run.place })
             : run.mp3Kbps !== null
               ? textParts("msg.exportedFileMp3", { file: run.file, length: lengthText(run.lengthS), rate: run.sampleRate, kbps: run.mp3Kbps })

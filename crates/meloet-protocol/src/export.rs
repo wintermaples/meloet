@@ -1,6 +1,7 @@
 //! Writing the song out as an audio file (protocol 26; spec 3 「書き出し（34-B）」 and
 //! 「書き出している間」, spec 2 「書き出しの進み」; mocks F7-Export, F7-Exporting, R11-Fit;
-//! docs/architecture.md 22-11, 22-14, 22-20).
+//! docs/architecture.md 22-11, 22-14, 22-20), or as a MIDI file (protocol 36; spec 3
+//! "MIDI export", spec 7 A-31).
 
 use serde::{Deserialize, Serialize};
 
@@ -48,7 +49,8 @@ pub struct ExportDialogView {
     pub range: ExportRange,
     /// What 「ループ 5〜9」 would write; `None`: the song has no loop, the choice is unusable.
     pub loop_range: Option<TickSpan>,
-    /// How many files 「トラックごと」 would write; 0: the choice is unusable.
+    /// How many files 「トラックごと」 would write; 0: the choice is unusable. Under
+    /// `ExportFormat::Midi` the length of `midi_taken` (「トラックごと ・ 3 つのファイル」).
     pub tracks: u32,
     /// What `range` writes, before the tail: "曲ぜんぶ ・ 1. 1. 0000 〜 17. 1. 0000 と、音が
     /// 消えるまで". The whole song ends where its last clip ends.
@@ -80,7 +82,8 @@ pub struct ExportDialogView {
     pub realtime: bool,
     /// A plugin of the song says it cannot run faster than it plays: `realtime` stays on.
     pub realtime_forced: bool,
-    /// 「書き出す」 can be pressed.
+    /// 「書き出す」 can be pressed. Under `ExportFormat::Midi` the check is not waited for
+    /// (nothing is measured), and it is false while `midi_problem` is `Some`.
     pub can_export: bool,
     /// F1 「音の大きさ」. Kept as long as the format is.
     pub loudness: ExportLoudness,
@@ -103,8 +106,29 @@ pub struct ExportDialogView {
     pub artist: String,
     /// F2 「絵」: the name of the picture chosen (without its folder); Rust keeps the path.
     pub picture: Option<String>,
-    /// F2 the row 「絵」 can be used: not for wav, which holds no picture.
+    /// F2 the row 「絵」 can be used: not for wav, which holds no picture, nor for MIDI.
     pub picture_usable: bool,
+    /// 「入れるトラック」, shown only under `ExportFormat::Midi`. Kept while meloet runs.
+    pub midi_tracks: ExportMidiTracks,
+    /// The text of the number field of 「番号で」 as Rust holds it: what was sent last
+    /// (`ExportChange::MidiNumbers`). Empty: the field shows 「1-3, 5」 in gray as the hint.
+    /// Kept while meloet runs, whatever `midi_tracks` is.
+    pub midi_numbers: String,
+    /// 「選んでいるトラック」 can be chosen: the selected track (`SongView::play_target`) is a
+    /// keys track.
+    pub midi_selected_usable: bool,
+    /// The tracks `midi_tracks` takes, in the order of the tracks: 「1 ピアノ ・ 2 ベース
+    /// ほか 2 本」 (two names at most). Never a vocal track. For `Numbers` also while
+    /// `midi_problem` is `NoSuchTrack` (the numbers that name keys tracks); empty while it is
+    /// `Unreadable`.
+    pub midi_taken: Vec<ExportMidiTrack>,
+    /// Only for `ExportMidiTracks::Numbers`: the vocal tracks the numbers name, in the order
+    /// of the tracks. Each says in gray 「3 ボーカル は声のトラックなので入りません」; the
+    /// others are still written.
+    pub midi_vocal: Vec<ExportMidiTrack>,
+    /// Why the choice of 「入れるトラック」 cannot be written, in `color.rec`. While `Some`,
+    /// `can_export` is false. Only under `ExportFormat::Midi`.
+    pub midi_problem: Option<ExportMidiProblem>,
 }
 
 /// F1 「音の大きさ」.
@@ -158,10 +182,20 @@ pub enum ExportFormat {
     /// `EXPORT_MP3_SAMPLE_RATES`. Not in `ExportDialogView::formats` while this meloet
     /// cannot write it.
     Mp3,
+    /// Protocol 36 「MIDI」: a standard MIDI file of the keys tracks
+    /// (`ExportDialogView::midi_tracks`), not audio. Always in `ExportDialogView::formats`,
+    /// last. Nothing is measured, and the rows only for audio are not shown: 「音の大きさ」,
+    /// 「書き出す前のたしかめ」, 「くわしく」 and 「曲の情報」.
+    Midi,
 }
 
 impl ExportFormat {
-    pub const ALL: [ExportFormat; 3] = [ExportFormat::Wav, ExportFormat::Flac, ExportFormat::Mp3];
+    pub const ALL: [ExportFormat; 4] = [
+        ExportFormat::Wav,
+        ExportFormat::Flac,
+        ExportFormat::Mp3,
+        ExportFormat::Midi,
+    ];
 
     /// The ending of the file's name.
     pub fn extension(self) -> &'static str {
@@ -169,17 +203,65 @@ impl ExportFormat {
             ExportFormat::Wav => "wav",
             ExportFormat::Flac => "flac",
             ExportFormat::Mp3 => "mp3",
+            ExportFormat::Midi => "mid",
         }
     }
 
-    /// Empty for mp3: it has a bitrate instead.
+    /// Empty for mp3, which has a bitrate instead, and for MIDI.
     pub fn bits_choices(self) -> &'static [RecordFormat] {
         match self {
             ExportFormat::Wav => &RecordFormat::ALL,
             ExportFormat::Flac => &[RecordFormat::Bits16, RecordFormat::Bits24],
-            ExportFormat::Mp3 => &[],
+            ExportFormat::Mp3 | ExportFormat::Midi => &[],
         }
     }
+}
+
+/// 「入れるトラック」 of a MIDI export. Vocal tracks hold no notes and are never in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub enum ExportMidiTracks {
+    /// 「ぜんぶ」: every keys track; vocal tracks are passed by without a word.
+    #[default]
+    All,
+    /// 「選んでいるトラック」: the one selected track, while it is a keys track
+    /// (`ExportDialogView::midi_selected_usable`).
+    Selected,
+    /// 「番号で」: the tracks `ExportDialogView::midi_numbers` names, as 「1-3, 5」: numbers
+    /// and ranges split by commas, spaces not counted; a range written backwards (「5-3」) is
+    /// read as 3 to 5.
+    Numbers,
+}
+
+/// A track a MIDI export takes, or one of `ExportDialogView::midi_vocal`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct ExportMidiTrack {
+    /// From 1, as the track heads show it (`TrackView::number`).
+    pub number: u32,
+    pub name: String,
+}
+
+/// Why 「入れるトラック」 cannot be written (spec 7 A-31), in `color.rec`; 「書き出す」 is
+/// disabled.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum ExportMidiProblem {
+    /// 「8 番のトラックはありません」: the smallest number the text names that is no
+    /// track's.
+    NoSuchTrack { number: u32 },
+    /// 「番号は「1-3, 5」のように書きます」: the text cannot be read as numbers.
+    Unreadable,
+    /// 「入れるトラックがありません」: the choice takes no track (also a song with only
+    /// vocal tracks, and an empty number field).
+    NoTrack,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -302,7 +384,9 @@ pub enum ExportRunView {
     },
     /// "はじめての曲.wav を書き出しました（3:02 ・ 48000 Hz ・ 24 ビット）。" and "書き出し
     /// ました: ~/ミュージック/はじめての曲/はじめての曲.wav", with 「フォルダをひらく」
-    /// (`Command::ShowExported`).
+    /// (`Command::ShowExported`). A MIDI export (`midi_tracks` is `Some`) says
+    /// "はじめての曲.mid を書き出しました（MIDI ・ 3 トラック）。" and opens no dialog
+    /// 「書き出しました」; its `sample_rate` and `bits` are the dialog's and are not shown.
     Done {
         /// The file written; of several, the first.
         file: String,
@@ -310,20 +394,26 @@ pub enum ExportRunView {
         files: u32,
         /// The file as it is shown, with its folder; for several files their folder.
         place: String,
-        /// How long the written audio is, the tail counted.
+        /// How long the written audio is, the tail counted. For MIDI the range's length.
         length_s: u32,
         sample_rate: u32,
         bits: RecordFormat,
         /// E9 the dialog 「書き出しました」: the file's waveform as `EXPORT_WAVE_BARS` bars, each
         /// the largest absolute sample of its part, 0..=255. Empty for 「トラックごと」
-        /// (`ExportRange::Tracks`), however many files that wrote (one track too).
+        /// (`ExportRange::Tracks`), however many files that wrote (one track too), and for
+        /// MIDI.
         wave: Vec<u8>,
         /// E9 the loudness and the true peak of the file as written (after F1's gain).
-        /// `None` for several files, and for silence.
+        /// `None` for several files, for silence, and for MIDI.
         lufs: Option<f32>,
         true_peak_db: Option<f32>,
         /// F2: an mp3 was written at this bitrate (E9 shows it in place of `bits`).
         mp3_kbps: Option<u16>,
+        /// Protocol 36: MIDI was written, this many of the song's tracks (the first track of
+        /// the tempos and the meters not counted). Of one file the tracks in it:
+        /// "（MIDI ・ 3 トラック）"; of 「トラックごと」 one in each file, as many as `files`:
+        /// "3 つのファイルを書き出しました（MIDI）。" `None`: audio.
+        midi_tracks: Option<u32>,
     },
     /// "書き出しをやめました。途中までのファイルは消しました。"
     Cancelled,
@@ -345,7 +435,7 @@ pub enum ExportChange {
         range: ExportRange,
     },
     /// The ending of the name in 「保存する所」 follows; bits the new format cannot hold
-    /// become 24.
+    /// become 24 (mp3 and MIDI have none, and keep the ones chosen for the others).
     Format {
         format: ExportFormat,
     },
@@ -391,4 +481,14 @@ pub enum ExportChange {
     ChoosePicture,
     /// F2: no picture.
     RemovePicture,
+    /// Protocol 36 「入れるトラック」. `Selected` while not
+    /// `ExportDialogView::midi_selected_usable` does nothing.
+    MidiTracks {
+        tracks: ExportMidiTracks,
+    },
+    /// Protocol 36: the number field of 「番号で」 as typed, sent when the field is left or
+    /// Enter is pressed. Kept whatever `ExportDialogView::midi_tracks` is.
+    MidiNumbers {
+        text: String,
+    },
 }

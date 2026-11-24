@@ -271,7 +271,7 @@ describe("checking before export (spec 3 (41-A, 42-C), mocks F8-ExportCheck / F8
 
   it("mp3 is in the format list (A-23, C-11)", () => {
     show(ExportDialog, scene("exportCheck"));
-    expect(qa('[data-test^="export-format-"]').map(text)).toEqual(["wav", "flac", "mp3"]);
+    expect(qa('[data-test^="export-format-"]').map(text)).toEqual(["wav", "flac", "mp3", "MIDI"]);
   });
 });
 

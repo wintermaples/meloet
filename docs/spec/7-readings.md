@@ -927,3 +927,27 @@ The owner chose candidate 「B」 of three for all six themes, renamed pink and 
 | Where | Rule | Basis |
 |---|---|---|
 | The take switch tag with no room above | Spec 2 puts the switch tag just above the chosen clip. When there is no room above it inside the lanes (the first track row, or a row scrolled to the top edge), the tag shows right below the clip instead, so it is not hidden under the rows above the lanes (the owner reported it could not be seen on track 1). | the developers' reading (user:2026-11-24) |
+
+## A-31 MIDI export (the owner's request of 2026-11-24)
+
+Spec 3, "MIDI export". The owner chose the form (「形」 has 「MIDI」, the row 「入れるトラック」), what 「選んでいるトラック」 means, that muted tracks are in, and that only the status line tells when it is done. The texts below are the developers'.
+
+| Where | Text or rule | Basis |
+|---|---|---|
+| 「形」 | 「MIDI」 | user:2026-11-24 |
+| The row | 「入れるトラック」: 「ぜんぶ」, 「選んでいるトラック」, 「番号で」 | user:2026-11-24 |
+| The number field, empty | 「1-3, 5」 in gray as the hint | the developers' decision |
+| The tracks it takes | 「1 ピアノ ・ 2 ベース ほか 2 本」 (two names at most, as the solo line) | the developers' decision |
+| A number with no track | 「8 番のトラックはありません」 in `color.rec`; 「書き出す」 disabled | the developers' decision |
+| Text that cannot be read | 「番号は「1-3, 5」のように書きます」 in `color.rec`; 「書き出す」 disabled. A range written backwards (「5-3」) is read as 3 to 5. | the developers' decision |
+| How numbers are read | Full-width digits are read as digits; 「、」 and 「，」 as a comma; 「－」 「ー」 「‐」 「〜」 「～」 「−」 「~」 as a hyphen (people type with the Japanese input on). Spaces around commas and hyphens do not matter; a space between two digits (「1 2」) cannot be read. Empty parts (「1,,2,」) are passed by. A number named twice is taken once. 0 is a number with no track. | the developers' decision |
+| Which missing number is said | The smallest number with no track. The tracks that exist are still listed under it. Text that cannot be read lists none. An empty field is 「入れるトラックがありません」. | the developers' decision |
+| A number that names a vocal track | 「3 ボーカル は声のトラックなので入りません」 in gray; the others are still written | the developers' decision |
+| No track taken | 「入れるトラックがありません」 in `color.rec`; 「書き出す」 disabled (also a song with only vocal tracks) | the developers' decision |
+| 「範囲」 under 「MIDI」 | 「トラックごと ・ 3 つのファイル」 counts the tracks 「入れるトラック」 takes | the developers' reading |
+| Done, one file | 「はじめての曲.mid を書き出しました（MIDI ・ 3 トラック）。」 | the developers' decision |
+| Done, 「トラックごと」 | 「3 つのファイルを書き出しました（MIDI）。」 | the developers' decision |
+| The place at first | As an audio export, with `.mid`; changing 「形」 changes the ending as it does for audio | the developers' reading |
+| A track with no notes in the range | Still written (an empty track), so the numbers of the file's tracks follow the choice | the developers' decision |
+| Which tracks are drums | Built-in drum kits and SF2 drum kits (bank 128, the GM drum family) are written on channel 10; plugins on channel 1. The AI link's `export_midi` writes the same. | user:2026-11-24 |
+| A song with no clip | MIDI can still be written: the first track and empty tracks. | user:2026-11-24 |

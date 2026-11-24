@@ -130,6 +130,10 @@ impl Worker {
                 let asked = self.ask_shell(ShellRequest::PickExportPicture { folder });
                 (!asked).then_some(Input::Export(ExportNews::PicturePicked(None)))
             }
+            // A few small files, here and now: the run is done before the screen hears of it.
+            ExportAsk::WriteMidi { job, files } => {
+                Some(Input::Export(crate::export::midi::write(job, &files)))
+            }
         }
     }
 

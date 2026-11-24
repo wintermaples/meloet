@@ -60,8 +60,9 @@ pub use export::{
     EXPORT_MATCH_LUFS, EXPORT_MATCH_QUIETEST_LUFS, EXPORT_MATCH_TRUE_PEAK_DB,
     EXPORT_MP3_DEFAULT_KBPS, EXPORT_MP3_KBPS, EXPORT_MP3_SAMPLE_RATES, EXPORT_PICTURE_MAX_BYTES,
     EXPORT_TAIL_MAX_S, EXPORT_WAVE_BARS, ExportChange, ExportCheck, ExportDialogView,
-    ExportFailure, ExportFormat, ExportLoudness, ExportLoudnessResult, ExportRange, ExportRunView,
-    ExportSolo, ExportStoppedPlugin, ExportTail, ExportView,
+    ExportFailure, ExportFormat, ExportLoudness, ExportLoudnessResult, ExportMidiProblem,
+    ExportMidiTrack, ExportMidiTracks, ExportRange, ExportRunView, ExportSolo, ExportStoppedPlugin,
+    ExportTail, ExportView,
 };
 pub use history::{HistoryRow, HistoryView, MeterValue, StepName, StepPlace, StepWhat, StripName};
 pub use knobs::{SOUND_KNOB_DEFAULTS, SoundKnob, SoundKnobsView};
@@ -95,7 +96,7 @@ pub use vocal::{
     VocalRef,
 };
 
-pub const PROTOCOL_VERSION: u32 = 35;
+pub const PROTOCOL_VERSION: u32 = 36;
 
 /// Screen → Rust. Intent only; Rust decides what the state becomes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -4278,3 +4279,5 @@ mod tests33;
 mod tests34;
 #[cfg(test)]
 mod tests35;
+#[cfg(test)]
+mod tests36;

@@ -45,21 +45,29 @@ files: number,
  */
 place: string, 
 /**
- * How long the written audio is, the tail counted.
+ * How long the written audio is, the tail counted. For MIDI the range's length.
  */
 lengthS: number, sampleRate: number, bits: RecordFormat, 
 /**
  * E9 the dialog 「書き出しました」: the file's waveform as `EXPORT_WAVE_BARS` bars, each
  * the largest absolute sample of its part, 0..=255. Empty for 「トラックごと」
- * (`ExportRange::Tracks`), however many files that wrote (one track too).
+ * (`ExportRange::Tracks`), however many files that wrote (one track too), and for
+ * MIDI.
  */
 wave: Array<number>, 
 /**
  * E9 the loudness and the true peak of the file as written (after F1's gain).
- * `None` for several files, and for silence.
+ * `None` for several files, for silence, and for MIDI.
  */
 lufs: number | null, truePeakDb: number | null, 
 /**
  * F2: an mp3 was written at this bitrate (E9 shows it in place of `bits`).
  */
-mp3Kbps: number | null, } | { "state": "cancelled" } | { "state": "failed", reason: ExportFailure, };
+mp3Kbps: number | null, 
+/**
+ * Protocol 36: MIDI was written, this many of the song's tracks (the first track of
+ * the tempos and the meters not counted). Of one file the tracks in it:
+ * "（MIDI ・ 3 トラック）"; of 「トラックごと」 one in each file, as many as `files`:
+ * "3 つのファイルを書き出しました（MIDI）。" `None`: audio.
+ */
+midiTracks: number | null, } | { "state": "cancelled" } | { "state": "failed", reason: ExportFailure, };

@@ -18,11 +18,6 @@ where
 }
 
 #[test]
-fn the_version() {
-    assert_eq!(PROTOCOL_VERSION, 35);
-}
-
-#[test]
 fn the_command() {
     both_ways(
         Command::DeleteOtherTakes { clip: 4 },

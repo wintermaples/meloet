@@ -73,13 +73,13 @@ describe("text parts (B-94-75)", () => {
 });
 
 describe("export dialog (mock F7-Export, spec 3 (34-B))", () => {
-  it("F7-Export: 3 ranges, formats wav, flac and mp3, where to save, the check, folded 「くわしく」, cancel and export", () => {
+  it("F7-Export: 3 ranges, formats wav, flac, mp3 and MIDI, where to save, the check, folded 「くわしく」, cancel and export", () => {
     show(ExportDialog, scene("exportDialog"));
     expect(text(q(".head"))).toBe("書き出し 閉じるEsc");
     expect(qa('[data-test^="export-range-"]').map(text)).toEqual(["曲ぜんぶ", "ループ 5〜9", "トラックごと"]);
     expect(q('[data-test="export-range-song"]')!.classList.contains("on")).toBe(true);
     expect(text(q('[data-test="export-span"]'))).toBe("曲ぜんぶ ・ 1. 1. 0000 〜 17. 1. 0000 と、音が消えるまで");
-    expect(qa('[data-test^="export-format-"]').map(text)).toEqual(["wav", "flac", "mp3"]);
+    expect(qa('[data-test^="export-format-"]').map(text)).toEqual(["wav", "flac", "mp3", "MIDI"]);
     expect(text(q('[data-test="export-place"]'))).toBe("~/音楽/はじめての曲.wav");
     // the spec 6 text 「書き出しの前」 (not the mock's 「音割れなし」).
     expect(qa('[data-test="export-check-line"]').map(text)).toEqual([
@@ -378,7 +378,7 @@ describe("status line (spec 2 (Export progress), spec 6, mock F7-Export, F7-Expo
     expect(app.sent).toEqual([{ type: "showExported" }]);
     unmount(mounted!);
     const s = scene("exportDone");
-    s.export.run = { state: "done", file: "ピアノ.wav", files: 4, place: "~/ミュージック/はじめての曲/", lengthS: 40, sampleRate: 48000, bits: "bits24", wave: [], lufs: null, truePeakDb: null, mp3Kbps: null };
+    s.export.run = { state: "done", file: "ピアノ.wav", files: 4, place: "~/ミュージック/はじめての曲/", lengthS: 40, sampleRate: 48000, bits: "bits24", wave: [], lufs: null, truePeakDb: null, mp3Kbps: null, midiTracks: null };
     show(StatusLine, s);
     expect(text(q(".status .message"))).toBe("書き出しました: ~/ミュージック/はじめての曲/");
   });

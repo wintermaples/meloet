@@ -3,7 +3,7 @@
      The content is a copy of Rust's export.dialog; the screen only sends intents.
      When it does not fit the window, the heading and the bottom buttons stay and the inside scrolls (R11-Fit). -->
 <script lang="ts">
-  import type { ExportChange, ExportDialogView, ExportFormat, ExportLoudness, ExportRange, ExportTail } from "../../bridge";
+  import type { ExportChange, ExportDialogView, ExportFormat, ExportLoudness, ExportMidiTracks, ExportRange, ExportTail } from "../../bridge";
   import { movableDialog } from "../../lib/dialogMove";
   import ScrollArea from "../../lib/ScrollArea.svelte";
   import { current, send } from "../../state/app.svelte";
@@ -14,10 +14,28 @@
   import { openContextMenu, type MenuEntry } from "../menu/contextMenu.svelte";
   import { stripName } from "../mixer/stripName";
   import { cutHead } from "./cutHead";
-  import { bitsOf, checkLines, clips, detailsSummary, loudnessTarget, rangeLabel, soloText, spanText, tailText } from "./exportText";
+  import {
+    bitsOf,
+    checkLines,
+    clips,
+    detailsSummary,
+    loudnessTarget,
+    midiProblemText,
+    midiTakenText,
+    midiVocalLines,
+    rangeLabel,
+    soloText,
+    spanText,
+    tailText,
+  } from "./exportText";
 
   const RANGES: ExportRange[] = ["song", "loop", "tracks"];
-  const FORMAT_NAMES: Record<ExportFormat, TextKey> = { wav: "export.formatWav", flac: "export.formatFlac", mp3: "export.formatMp3" };
+  const FORMAT_NAMES: Record<ExportFormat, TextKey> = { wav: "export.formatWav", flac: "export.formatFlac", mp3: "export.formatMp3", midi: "export.formatMidi" };
+  const MIDI_TRACKS: [ExportMidiTracks, TextKey][] = [
+    ["all", "export.midiAll"],
+    ["selected", "export.midiSelected"],
+    ["numbers", "export.midiNumbers"],
+  ];
   const LOUDNESS_NAMES: [ExportLoudness, TextKey][] = [
     ["asIs", "export.loudnessAsIs"],
     ["match", "export.loudnessMatch"],
@@ -51,6 +69,9 @@
   );
 
   const solo = $derived(dialog ? soloText(dialog.solo) : null);
+  const midi = $derived(dialog?.format === "midi");
+  /** Nothing is measured for MIDI, so it never clips. */
+  const clipping = $derived(dialog !== null && !midi && clips(dialog.check));
 
   /** Pressing ▾ opens a list under it (the same form as the advanced sound settings). */
   function choose(e: MouseEvent, entries: MenuEntry[]): void {
@@ -94,15 +115,18 @@
       run: () => set({ kind: "tail", tail }),
     }));
 
-  // 「題名」 and 「作者」 (round 12 F2): what is typed stays on the screen and is sent once, when the box is left or Enter is pressed. Esc puts back what Rust has.
-  let drafts = $state<{ title: string | null; artist: string | null }>({ title: null, artist: null });
-  function commitText(field: "title" | "artist"): void {
+  // 「題名」, 「作者」 (round 12 F2) and the numbers of 「番号で」: what is typed stays on the screen and is sent once, when the box is left or Enter is pressed. Esc puts back what Rust has.
+  type TextField = "title" | "artist" | "midiNumbers";
+  let drafts = $state<Record<TextField, string | null>>({ title: null, artist: null, midiNumbers: null });
+  function commitText(field: TextField): void {
     const typed = drafts[field];
     drafts[field] = null;
     if (typed === null || !dialog || typed === dialog[field]) return;
-    set(field === "title" ? { kind: "title", title: typed } : { kind: "artist", artist: typed });
+    set(
+      field === "title" ? { kind: "title", title: typed } : field === "artist" ? { kind: "artist", artist: typed } : { kind: "midiNumbers", text: typed },
+    );
   }
-  function textKey(e: KeyboardEvent, field: "title" | "artist"): void {
+  function textKey(e: KeyboardEvent, field: TextField): void {
     if (e.isComposing) return;
     if (e.key !== "Enter" && e.key !== "Escape") return;
     e.preventDefault();
@@ -150,23 +174,62 @@
           </div>
         </section>
 
-        <!-- 「音の大きさ」 (round 12 F1): 「公開先に合わせる」 cannot be chosen for 「トラックごと」 nor for a song near silence. -->
-        <section data-test="export-loudness">
-          <span class="label">{t("export.loudness")}</span>
-          <div class="line">
+        {#if midi}
+          <!-- 「入れるトラック」 (spec 3 "MIDI export", spec 7 A-31). -->
+          <section data-test="export-midi">
+            <span class="label">{t("export.midiTracks")}</span>
             <div class="choices">
-              {#each LOUDNESS_NAMES as [l, name] (l)}
+              {#each MIDI_TRACKS as [choice, name] (choice)}
                 <Button
-                  test="export-loudness-{l}"
-                  on={dialog.loudness === l}
-                  disabled={l === "match" && !dialog.canMatch}
-                  onclick={() => set({ kind: "loudness", loudness: l })}>{t(name)}</Button
+                  test="export-midi-{choice}"
+                  on={dialog.midiTracks === choice}
+                  disabled={choice === "selected" && !dialog.midiSelectedUsable}
+                  onclick={() => set({ kind: "midiTracks", tracks: choice })}>{t(name)}</Button
                 >
               {/each}
             </div>
-            <span class="mono" data-test="export-loudness-target">{loudnessTarget()}</span>
-          </div>
-        </section>
+            {#if dialog.midiTracks === "numbers"}
+              <input
+                class="text numbers"
+                type="text"
+                aria-label={t("export.midiNumbers")}
+                placeholder={t("export.midiNumbersHint")}
+                data-test="export-midi-text"
+                value={drafts.midiNumbers ?? dialog.midiNumbers}
+                oninput={(e) => (drafts.midiNumbers = e.currentTarget.value)}
+                onkeydown={(e) => textKey(e, "midiNumbers")}
+                onblur={() => commitText("midiNumbers")}
+              />
+            {/if}
+            {#if midiTakenText(dialog.midiTaken)}
+              <span class="label wrap" data-test="export-midi-taken">{midiTakenText(dialog.midiTaken)}</span>
+            {/if}
+            {#each midiVocalLines(dialog.midiVocal) as line, i (i)}
+              <span class="label wrap" data-test="export-midi-vocal">{line}</span>
+            {/each}
+            {#if dialog.midiProblem}
+              <span class="rec wrap" data-test="export-midi-problem">{midiProblemText(dialog.midiProblem)}</span>
+            {/if}
+          </section>
+        {:else}
+          <!-- 「音の大きさ」 (round 12 F1): 「公開先に合わせる」 cannot be chosen for 「トラックごと」 nor for a song near silence. -->
+          <section data-test="export-loudness">
+            <span class="label">{t("export.loudness")}</span>
+            <div class="line">
+              <div class="choices">
+                {#each LOUDNESS_NAMES as [l, name] (l)}
+                  <Button
+                    test="export-loudness-{l}"
+                    on={dialog.loudness === l}
+                    disabled={l === "match" && !dialog.canMatch}
+                    onclick={() => set({ kind: "loudness", loudness: l })}>{t(name)}</Button
+                  >
+                {/each}
+              </div>
+              <span class="mono" data-test="export-loudness-target">{loudnessTarget()}</span>
+            </div>
+          </section>
+        {/if}
 
         <section>
           <span class="label">{t("export.place")}</span>
@@ -178,126 +241,128 @@
           </div>
         </section>
 
-        <section data-test="export-check">
-          <span class="label">{t("export.check")}</span>
-          {#each checkLines(dialog.check, dialog) as line, i (i)}
-            {#if line.kind === "counting"}
-              <!-- 「たしかめています ・ 160 の棒 ・ 38 %」 (mock F8-ExportCheck). The % text is in a box outside the flow, with its width set by the text 「100 %」. -->
-              <span class="counting" data-test="export-check-line">
-                <span class="label">{t("export.checkChecking")}</span>
-                <span class="bar"><span class="fill" style:transform="scaleX({Math.min(1, Math.max(0, line.percent / 100))})"></span></span>
-                <span class="mono strong percent" data-size={t("export.runningPercent", { percent: 100 })} data-test="export-check-percent"
-                  ><span class="in">{t("export.runningPercent", { percent: line.percent })}</span></span
-                >
-              </span>
-            {:else}
-              <span class={line.tone === "rec" ? "rec wrap" : line.tone === "hint" ? "label wrap" : "label"} data-test="export-check-line">
-                {#each line.parts as part, j (j)}{#if part.hole !== null}<span
-                      class="mono"
-                      class:strong={line.tone === "plain"}
-                      class:rec={line.tone === "over"}
-                      class:apart={j > 0 && !line.parts[j - 1]!.text.endsWith(" ")}>{part.text}</span
-                    >{:else}{part.text}{/if}{/each}
-              </span>
-            {/if}
-          {/each}
-          {#if stopped}
-            <span class="stopped" data-test="export-stopped">
-              <span class="label">{t("export.stoppedPlugins")}</span>
-              <span class="rec">{stopped}</span>
-              <span class="label">{t("export.stoppedSkipped")}</span>
-            </span>
-          {:else}
-            <span class="label" data-test="export-stopped">{t("export.noStoppedPlugins")}</span>
-          {/if}
-          {#if solo}
-            <span class="label wrap" data-test="export-solo">{solo}</span>
-          {/if}
-        </section>
-
-        <button
-          type="button"
-          class="adv"
-          aria-expanded={dialog.advancedOpen}
-          data-test="export-details"
-          onclick={() => set({ kind: "advancedOpen", open: !dialog.advancedOpen })}
-        >
-          <span class="label">{dialog.advancedOpen ? "▾" : "▸"}</span>
-          <span class="strong grow">{t("button.details")}</span>
-          {#if !dialog.advancedOpen}<span class="label" data-test="export-details-summary">{detailsSummary(dialog)}</span>{/if}
-        </button>
-        {#if dialog.advancedOpen}
-          <div class="adv-body" data-test="export-adv">
-            <div class="row">
-              <span class="strong name">{t("export.sampleRate")}</span>
-              {@render dropdown(t("settings.rateHz", { rate: dialog.sampleRate }), "export-rate", (e) => choose(e, rateRows(dialog)))}
-            </div>
-            {#if dialog.format === "mp3"}
-              <div class="row">
-                <span class="strong name">{t("export.bitrate")}</span>
-                {@render dropdown(t("export.kbps", { kbps: dialog.mp3Kbps }), "export-kbps", (e) => choose(e, kbpsRows(dialog)))}
-              </div>
-            {:else}
-              <div class="row">
-                <span class="strong name">{t("export.bits")}</span>
-                {@render dropdown(t("settings.bits", { bits: bitsOf(dialog.bits) }), "export-bits", (e) => choose(e, bitsRows(dialog)))}
-              </div>
-            {/if}
-            <div class="row">
-              <span class="strong name">{t("export.tail")}</span>
-              {@render dropdown(tailText(dialog.tail), "export-tail", (e) => choose(e, tailRows(dialog)))}
-            </div>
-            <div class="row">
-              <button
-                type="button"
-                class="pick"
-                role="checkbox"
-                aria-checked={dialog.realtime}
-                disabled={dialog.realtimeForced}
-                data-test="export-realtime"
-                onclick={() => set({ kind: "realtime", on: !dialog.realtime })}
-              >
-                <span class="mark" class:on={dialog.realtime}><span class="dot"></span></span>
-                <span>{t("export.realtime")}</span>
-              </button>
-            </div>
-            <!-- 「曲の情報」 (round 12 F2): a wav holds no picture, so its row is there but cannot be used. -->
-            <div class="sub label" data-test="export-song-info">{t("export.songInfo")}</div>
-            {#each TEXT_FIELDS as [field, name] (field)}
-              <div class="row">
-                <span class="strong name">{t(name)}</span>
-                <input
-                  class="text"
-                  type="text"
-                  aria-label={t(name)}
-                  data-test="export-{field}"
-                  value={drafts[field] ?? dialog[field]}
-                  oninput={(e) => (drafts[field] = e.currentTarget.value)}
-                  onkeydown={(e) => textKey(e, field)}
-                  onblur={() => commitText(field)}
-                />
-              </div>
-            {/each}
-            <div class="row" class:off={!dialog.pictureUsable} data-test="export-picture-row">
-              <span class="strong name">{t("export.picture")}</span>
-              <span class="grow picture" class:label={dialog.picture === null} data-test="export-picture">{dialog.picture ?? t("export.noPicture")}</span>
-              {#if dialog.picture !== null}
-                <Button test="export-remove-picture" disabled={!dialog.pictureUsable} onclick={() => set({ kind: "removePicture" })}
-                  >{t("export.removePicture")}</Button
-                >
+        {#if !midi}
+          <section data-test="export-check">
+            <span class="label">{t("export.check")}</span>
+            {#each checkLines(dialog.check, dialog) as line, i (i)}
+              {#if line.kind === "counting"}
+                <!-- 「たしかめています ・ 160 の棒 ・ 38 %」 (mock F8-ExportCheck). The % text is in a box outside the flow, with its width set by the text 「100 %」. -->
+                <span class="counting" data-test="export-check-line">
+                  <span class="label">{t("export.checkChecking")}</span>
+                  <span class="bar"><span class="fill" style:transform="scaleX({Math.min(1, Math.max(0, line.percent / 100))})"></span></span>
+                  <span class="mono strong percent" data-size={t("export.runningPercent", { percent: 100 })} data-test="export-check-percent"
+                    ><span class="in">{t("export.runningPercent", { percent: line.percent })}</span></span
+                  >
+                </span>
+              {:else}
+                <span class={line.tone === "rec" ? "rec wrap" : line.tone === "hint" ? "label wrap" : "label"} data-test="export-check-line">
+                  {#each line.parts as part, j (j)}{#if part.hole !== null}<span
+                        class="mono"
+                        class:strong={line.tone === "plain"}
+                        class:rec={line.tone === "over"}
+                        class:apart={j > 0 && !line.parts[j - 1]!.text.endsWith(" ")}>{part.text}</span
+                      >{:else}{part.text}{/if}{/each}
+                </span>
               {/if}
-              <Button test="export-choose-picture" disabled={!dialog.pictureUsable} onclick={() => set({ kind: "choosePicture" })}
-                >{t("export.choosePicture")}</Button
-              >
+            {/each}
+            {#if stopped}
+              <span class="stopped" data-test="export-stopped">
+                <span class="label">{t("export.stoppedPlugins")}</span>
+                <span class="rec">{stopped}</span>
+                <span class="label">{t("export.stoppedSkipped")}</span>
+              </span>
+            {:else}
+              <span class="label" data-test="export-stopped">{t("export.noStoppedPlugins")}</span>
+            {/if}
+            {#if solo}
+              <span class="label wrap" data-test="export-solo">{solo}</span>
+            {/if}
+          </section>
+
+          <button
+            type="button"
+            class="adv"
+            aria-expanded={dialog.advancedOpen}
+            data-test="export-details"
+            onclick={() => set({ kind: "advancedOpen", open: !dialog.advancedOpen })}
+          >
+            <span class="label">{dialog.advancedOpen ? "▾" : "▸"}</span>
+            <span class="strong grow">{t("button.details")}</span>
+            {#if !dialog.advancedOpen}<span class="label" data-test="export-details-summary">{detailsSummary(dialog)}</span>{/if}
+          </button>
+          {#if dialog.advancedOpen}
+            <div class="adv-body" data-test="export-adv">
+              <div class="row">
+                <span class="strong name">{t("export.sampleRate")}</span>
+                {@render dropdown(t("settings.rateHz", { rate: dialog.sampleRate }), "export-rate", (e) => choose(e, rateRows(dialog)))}
+              </div>
+              {#if dialog.format === "mp3"}
+                <div class="row">
+                  <span class="strong name">{t("export.bitrate")}</span>
+                  {@render dropdown(t("export.kbps", { kbps: dialog.mp3Kbps }), "export-kbps", (e) => choose(e, kbpsRows(dialog)))}
+                </div>
+              {:else}
+                <div class="row">
+                  <span class="strong name">{t("export.bits")}</span>
+                  {@render dropdown(t("settings.bits", { bits: bitsOf(dialog.bits) }), "export-bits", (e) => choose(e, bitsRows(dialog)))}
+                </div>
+              {/if}
+              <div class="row">
+                <span class="strong name">{t("export.tail")}</span>
+                {@render dropdown(tailText(dialog.tail), "export-tail", (e) => choose(e, tailRows(dialog)))}
+              </div>
+              <div class="row">
+                <button
+                  type="button"
+                  class="pick"
+                  role="checkbox"
+                  aria-checked={dialog.realtime}
+                  disabled={dialog.realtimeForced}
+                  data-test="export-realtime"
+                  onclick={() => set({ kind: "realtime", on: !dialog.realtime })}
+                >
+                  <span class="mark" class:on={dialog.realtime}><span class="dot"></span></span>
+                  <span>{t("export.realtime")}</span>
+                </button>
+              </div>
+              <!-- 「曲の情報」 (round 12 F2): a wav holds no picture, so its row is there but cannot be used. -->
+              <div class="sub label" data-test="export-song-info">{t("export.songInfo")}</div>
+              {#each TEXT_FIELDS as [field, name] (field)}
+                <div class="row">
+                  <span class="strong name">{t(name)}</span>
+                  <input
+                    class="text"
+                    type="text"
+                    aria-label={t(name)}
+                    data-test="export-{field}"
+                    value={drafts[field] ?? dialog[field]}
+                    oninput={(e) => (drafts[field] = e.currentTarget.value)}
+                    onkeydown={(e) => textKey(e, field)}
+                    onblur={() => commitText(field)}
+                  />
+                </div>
+              {/each}
+              <div class="row" class:off={!dialog.pictureUsable} data-test="export-picture-row">
+                <span class="strong name">{t("export.picture")}</span>
+                <span class="grow picture" class:label={dialog.picture === null} data-test="export-picture">{dialog.picture ?? t("export.noPicture")}</span>
+                {#if dialog.picture !== null}
+                  <Button test="export-remove-picture" disabled={!dialog.pictureUsable} onclick={() => set({ kind: "removePicture" })}
+                    >{t("export.removePicture")}</Button
+                  >
+                {/if}
+                <Button test="export-choose-picture" disabled={!dialog.pictureUsable} onclick={() => set({ kind: "choosePicture" })}
+                  >{t("export.choosePicture")}</Button
+                >
+              </div>
             </div>
-          </div>
+          {/if}
         {/if}
       </ScrollArea>
 
       <div class="foot">
         <Button test="export-cancel" onclick={close}>{t("button.cancel")}<span class="mono label">{t("key.esc")}</span></Button>
-        <Button primary={!clips(dialog.check)} test="export-start" disabled={!dialog.canExport} onclick={start}
-          >{clips(dialog.check) ? t("button.exportAnyway") : t("export.start")}<span class="mono label">{t("key.enter")}</span></Button
+        <Button primary={!clipping} test="export-start" disabled={!dialog.canExport} onclick={start}
+          >{clipping ? t("button.exportAnyway") : t("export.start")}<span class="mono label">{t("key.enter")}</span></Button
         >
       </div>
     </div>
@@ -528,6 +593,12 @@
     color: var(--color-gray-10);
     font: inherit;
     outline: none;
+  }
+  .numbers {
+    flex: none;
+  }
+  .numbers::placeholder {
+    color: var(--color-gray-7);
   }
   .text:focus {
     border-color: var(--color-gray-8);

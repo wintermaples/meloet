@@ -2941,6 +2941,21 @@ export const texts = {
     rate: "48000",
     kbps: "192",
   }),
+  // MIDI export (spec 3 "MIDI export", spec 7 A-31).
+  "export.formatMidi": e("MIDI", "user:2026-11-24"),
+  "export.midiTracks": e("入れるトラック", "user:2026-11-24"),
+  "export.midiAll": e("ぜんぶ", "user:2026-11-24"),
+  "export.midiSelected": e("選んでいるトラック", "user:2026-11-24"),
+  "export.midiNumbers": e("番号で", "user:2026-11-24"),
+  "export.midiNumbersHint": e("1-3, 5", "builder:2026-11-24"),
+  // Two names of 「1 ピアノ ・ 2 ベース ほか 2 本」; the rest is export.soloMore.
+  "export.midiTakenTwo": e("{first} ・ {second}", "builder:2026-11-24", { first: "1 ピアノ", second: "2 ベース" }),
+  "export.midiVocal": e("{track} は声のトラックなので入りません", "builder:2026-11-24", { track: "3 ボーカル" }),
+  "export.midiNoSuchTrack": e("{number} 番のトラックはありません", "builder:2026-11-24", { number: "8" }),
+  "export.midiUnreadable": e("番号は「1-3, 5」のように書きます", "builder:2026-11-24"),
+  "export.midiNoTrack": e("入れるトラックがありません", "builder:2026-11-24"),
+  "msg.exportedMidi": e("{file} を書き出しました（MIDI ・ {tracks} トラック）。", "builder:2026-11-24", { file: "はじめての曲.mid", tracks: "3" }),
+  "msg.exportedMidiFiles": e("{count} つのファイルを書き出しました（MIDI）。", "builder:2026-11-24", { count: "3" }),
   // The dialog 「書き出しました」 when an export ends (round 12 E9). 「フォルダをひらく」 and 「閉じる」 are button.openFolder and button.close.
   "exported.title": e("書き出しました", "user:2026-11-23"),
   "exported.files": e("{count} つのファイル", "user:2026-11-23", { count: "5" }),

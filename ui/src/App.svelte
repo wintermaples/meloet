@@ -13,6 +13,7 @@
   import BandRow from "./components/BandRow.svelte";
   import ExportDialog from "./components/export/ExportDialog.svelte";
   import ExportedDialog from "./components/export/ExportedDialog.svelte";
+  import { exportedOpen } from "./components/export/exported";
   import FileDropNotice from "./components/FileDropNotice.svelte";
   import InputMeter from "./components/InputMeter.svelte";
   import LatencyDialog from "./components/LatencyDialog.svelte";
@@ -109,9 +110,10 @@
       <ExportDialog />
     </div>
   {/if}
-  {#if state.export.run?.state === "done"}
+  {#if exportedOpen(state)}
+    {@const run = exportedOpen(state)!}
     <div class="dialog">
-      <ExportedDialog run={state.export.run} />
+      <ExportedDialog {run} />
     </div>
   {/if}
   {#if about.open}

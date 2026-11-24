@@ -422,6 +422,7 @@ fn an_export_runs_in_the_status_line_and_ends() {
             wave: vec![7; EXPORT_WAVE_BARS],
             lufs: None,
             true_peak_db: None,
+            midi_tracks: None,
         }),
     };
     assert_eq!(export(&m), done);

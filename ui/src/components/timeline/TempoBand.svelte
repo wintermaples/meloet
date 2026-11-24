@@ -278,6 +278,7 @@
           <span
             class="m-num flag"
             class:selected={isSelected({ kind: "meterChange", bar: f.bar })}
+            class:m-typable={!busy}
             role="presentation"
             style:left="{f.x}px"
             onpointerdown={(e) => flagDown(e, f)}
@@ -329,6 +330,7 @@
         <span
           class="m-num value"
           class:selected={on}
+          class:m-typable={!busy}
           role="presentation"
           style:left="{l.x}px"
           style:top="{l.y}px"

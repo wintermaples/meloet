@@ -89,6 +89,7 @@
 <span
   bind:this={node}
   class="drag"
+  class:m-typable={!disabled}
   role="slider"
   tabindex="-1"
   aria-label={label}

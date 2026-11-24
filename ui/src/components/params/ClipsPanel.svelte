@@ -80,7 +80,7 @@
 {#snippet pitchPart(field: "semitones" | "cents")}
   {@const v = field === "semitones" ? sel.semitones : sel.cents}
   {#if v === null}
-    <span role="presentation" data-test="clips-value-{field}" ondblclick={() => startTyping(field)}>{dash}</span>
+    <span class:m-typable={!busy} role="presentation" data-test="clips-value-{field}" ondblclick={() => startTyping(field)}>{dash}</span>
   {:else if field === "semitones"}
     <StretchNumber
       value={v}
@@ -131,7 +131,7 @@
           oncancel={() => (typing = null)}
         />
       {:else}
-        <span class="m-num m-hi value" role="presentation" data-test="clips-value-gainDb" ondblclick={() => startTyping("gainDb")}>{gainText(sel.gainDb)}</span>
+        <span class="m-num m-hi value" class:m-typable={!busy} role="presentation" data-test="clips-value-gainDb" ondblclick={() => startTyping("gainDb")}>{gainText(sel.gainDb)}</span>
       {/if}
     </div>
     {@render switchRow("follow", t("clipParams.follow"), sel.follow)}
@@ -148,7 +148,7 @@
         />
       {:else if sel.semitones === null && sel.cents === null}
         <!-- Both semitones and cents differ: only 「—」 (mock F8-MultiClip). Pressing twice types the semitones. -->
-        <span class="m-num m-hi value" role="presentation" data-test="clips-value-pitch" ondblclick={() => startTyping("semitones")}>{dash}</span>
+        <span class="m-num m-hi value" class:m-typable={!busy} role="presentation" data-test="clips-value-pitch" ondblclick={() => startTyping("semitones")}>{dash}</span>
       {:else}
         <span class="m-num m-hi value" data-test="clips-value-pitch"
           >{#each textParts("clipParams.pitchValue", { semitones: "", cents: "" }) as part, i (i)}{#if part.hole === "semitones" || part.hole === "cents"}{@render pitchPart(

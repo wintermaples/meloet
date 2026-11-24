@@ -126,7 +126,7 @@
 {#if typing}
   <span class="value"><ValueField initial={String(shown)} {label} onsubmit={submit} oncancel={() => (typing = false)} /></span>
 {:else}
-  <span class="m-num m-hi value" role="presentation" data-test="{test}-value" ondblclick={() => (typing = !dragging)}
+  <span class="m-num m-hi value" class:m-typable={!dragging} role="presentation" data-test="{test}-value" ondblclick={() => (typing = !dragging)}
     >{t("inspector.percent", { value: shown })}</span
   >
 {/if}

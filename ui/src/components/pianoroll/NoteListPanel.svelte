@@ -186,9 +186,9 @@
 
 {#snippet cell(row: Row, name: FieldName)}
   {#if name === "key" && row.named}
-    <span class="m-hi name" data-field={name} use:tipWhenCut>{row.key}</span>
+    <span class="m-hi name m-typable" data-field={name} use:tipWhenCut>{row.key}</span>
   {:else}
-    <span class:r={name !== "key"} class:m-hi={name === "key" || name === "velocity"} data-field={name}>{row[name]}</span>
+    <span class="m-typable" class:r={name !== "key"} class:m-hi={name === "key" || name === "velocity"} data-field={name}>{row[name]}</span>
   {/if}
 {/snippet}
 

@@ -264,6 +264,7 @@
       <span
         class="tag"
         class:selected={selectedId === m.id || drag?.id === m.id}
+        class:m-typable={!busy}
         role="presentation"
         style:left="{m.x}px"
         onpointerdown={(e) => down(e, m)}

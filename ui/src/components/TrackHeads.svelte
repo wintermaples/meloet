@@ -248,6 +248,7 @@
           {:else}
             <span
               class="m-name track-name"
+              class:m-typable={!busy}
               role="presentation"
               use:term={"トラック"}
               ondblclick={() => !busy && (trackEdit.renaming = track.id)}>{track.name}</span
@@ -360,7 +361,7 @@
                 oncancel={() => (typingGain = null)}
               />
             {:else}
-              <span class="m-num" role="presentation" data-test="track-gain" use:term={"dB"} ondblclick={() => (typingGain = track.id)}
+              <span class="m-num m-typable" role="presentation" data-test="track-gain" use:term={"dB"} ondblclick={() => (typingGain = track.id)}
                 >{track.gainDb === null ? t("common.dbSilent") : t("common.db", { value: dbNumber(track.gainDb) })}</span
               >
             {/if}

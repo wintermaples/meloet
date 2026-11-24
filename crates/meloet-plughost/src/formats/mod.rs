@@ -116,6 +116,9 @@ pub enum Said {
     Resized(u32, u32),
     /// The plugin closed its window by itself.
     Closed,
+    /// [`Controller::key_names`] gives other names than before: a state was put back, or the
+    /// plugin renamed its keys by itself.
+    KeyNames,
 }
 
 /// A plugin's window, just put into the X11 window it was given.
@@ -216,8 +219,9 @@ pub trait Controller {
     fn set_param(&mut self, id: u32, value: f64);
     fn save_state(&mut self) -> Result<Vec<u8>, String>;
     fn load_state(&mut self, state: &[u8]) -> Result<(), String>;
-    /// The names the plugin gives its keys, lowest key first; `None` when it has no way to
-    /// name them. Must not reach into a plugin that may be running.
+    /// The names the plugin gives its keys as last read, lowest key first; `None` when it has
+    /// no way to name them. Read at load and when they may have changed, never here: this must
+    /// not reach into a plugin that may be running.
     fn key_names(&mut self) -> Option<Vec<KeyName>> {
         None
     }

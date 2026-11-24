@@ -206,12 +206,10 @@ impl Model {
                 Ok(params) => AiAnswer::Params(params),
                 Err(refused) => AiAnswer::Refused(refused),
             },
-            AiAsk::KeyNames { track } => {
-                match self.play.ai_key_names(track, &self.catalog, effects) {
-                    Ok(names) => AiAnswer::KeyNames(names),
-                    Err(refused) => AiAnswer::Refused(refused),
-                }
-            }
+            AiAsk::KeyNames { track } => match self.play.ai_key_names(track, &self.catalog) {
+                Ok(map) => AiAnswer::KeyNames(Box::new(map)),
+                Err(refused) => AiAnswer::Refused(refused),
+            },
             AiAsk::PluginState { place } => match self.play.ai_plugin_state(place, effects) {
                 Ok(state) => AiAnswer::State(state),
                 Err(refused) => AiAnswer::Refused(refused),

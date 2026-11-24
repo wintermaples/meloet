@@ -1,13 +1,12 @@
 //! What each key of a track's sound is, for the AI link: meloet's own kits by the rows of the
 //! drum piano roll, an SF2 preset by the samples its zones play, a plugin by what it says of
-//! its keys (LV2 midnam), and, for something that looks like a drum kit and says nothing, the
-//! usual General MIDI layout as a guess.
+//! its keys (LV2 midnam, kept as `play::plugs::keys` has it), and, for something that looks
+//! like a drum kit and says nothing, the usual General MIDI layout as a guess.
 //!
 //! The rules answer from the song, the catalog and what plugins said; the core thread then
 //! adds what the samples in memory tell ([`heard`]); the SF2 file is read off the core thread
 //! ([`read_sf2`]). Each of these steps leaves a whole answer.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use meloet_model::drums::DrumPiece;
@@ -19,15 +18,11 @@ use meloet_sound::sampler::SampleBank;
 use meloet_sound::sf2::Sf2File;
 
 use super::Play;
-use crate::ai::{AiAnswer, AiKey, AiKeyMap, AiKeyNames, AiKeyNote, AiKeySource, AiRefusal};
+use crate::ai::{AiAnswer, AiKey, AiKeyMap, AiKeyNote, AiKeySource, AiRefusal};
 use crate::catalog::Catalog;
 use crate::instruments::{Samples, sampled};
 use crate::sf2store::Sf2Store;
 use crate::sounds::Library;
-use crate::state::{Effect, PluginAsk};
-
-/// How long a plugin asked for the names of its keys is waited for before it is asked again.
-const ASK_AGAIN_US: u64 = 2_000_000;
 
 /// The names of the rows of meloet's own kits as the drum piano roll shows them
 /// (`ui/src/text/ja.ts`, `drum.*`), by the model's id of the drum.
@@ -100,15 +95,6 @@ const GM_NAMES: [&str; 47] = [
     "トライアングル",
 ];
 
-/// The names of their keys that plugins were asked for.
-#[derive(Debug, Default)]
-pub(super) struct KeyAsks {
-    /// What they said, by the ticket of their load, until the AI link takes it.
-    said: HashMap<u64, Option<Vec<KeyName>>>,
-    /// The plugins asked, and when (`now_us`).
-    asked: Vec<(u64, u64)>,
-}
-
 fn gm_name(key: u8) -> Option<&'static str> {
     GM_NAMES
         .get(usize::from(key.checked_sub(GM_FIRST)?))
@@ -167,14 +153,12 @@ fn guess(map: &mut AiKeyMap, sounding: Option<&[u8]>) {
 }
 
 impl Play {
-    /// What each key of the sound of track `track` (a number from 1) is. A plugin is asked
-    /// first: until it answers, [`AiKeyNames::Waiting`].
+    /// What each key of the sound of track `track` (a number from 1) is.
     pub(crate) fn ai_key_names(
-        &mut self,
+        &self,
         track: u32,
         catalog: &Catalog,
-        effects: &mut Vec<Effect>,
-    ) -> Result<AiKeyNames, AiRefusal> {
+    ) -> Result<AiKeyMap, AiRefusal> {
         let t = (track.checked_sub(1))
             .and_then(|i| self.doc().tracks.get(i as usize))
             .ok_or(AiRefusal::NoSuchTrack(track))?;
@@ -186,46 +170,22 @@ impl Play {
             InstrumentRef::Builtin(b) => self.builtin_keys(*b),
             InstrumentRef::Sf2(preset) => sf2_keys(preset, catalog),
             InstrumentRef::Plugin(plugin) => {
-                let ticket = self.key_plugin_ticket(PluginPlace::Instrument(id))?;
-                let Some(names) = self.key_asks.said.remove(&ticket) else {
-                    self.ask_key_names(ticket, effects);
-                    return Ok(AiKeyNames::Waiting);
-                };
+                self.key_plugin_sounds(PluginPlace::Instrument(id))?;
                 let drums = (catalog.plugin(&plugin.key))
                     .is_some_and(|found| found.phrase == InstrumentGroup::Drums);
-                plugin_keys(sound.clone(), names, drums)
+                let names = self.instrument_key_names(id);
+                plugin_keys(sound.clone(), names.as_deref().unwrap_or_default(), drums)
             }
         };
-        Ok(AiKeyNames::Known(Box::new(map)))
+        Ok(map)
     }
 
-    /// The ticket of the plugin at `place`, when it is loaded and sounds.
-    fn key_plugin_ticket(&self, place: PluginPlace) -> Result<u64, AiRefusal> {
+    /// Whether the plugin at `place` is loaded and sounds.
+    fn key_plugin_sounds(&self, place: PluginPlace) -> Result<(), AiRefusal> {
         self.doc().plugin(place).ok_or(AiRefusal::NoSuchPlugin)?;
-        (self.plugin_tickets().into_iter())
-            .find(|(p, _)| *p == place)
-            .map(|(_, ticket)| ticket)
+        (self.plugin_tickets().iter().any(|(p, _)| *p == place))
+            .then_some(())
             .ok_or(AiRefusal::PluginNotLoaded)
-    }
-
-    fn ask_key_names(&mut self, ticket: u64, effects: &mut Vec<Effect>) {
-        let now = self.now_us;
-        let asked = &mut self.key_asks.asked;
-        asked.retain(|(_, at)| now.saturating_sub(*at) < ASK_AGAIN_US);
-        if !asked.iter().any(|(t, _)| *t == ticket) {
-            asked.push((ticket, now));
-            let ask = PluginAsk::KeyNames;
-            effects.push(Effect::AskPlugin { ticket, ask });
-        }
-    }
-
-    /// The answer to [`PluginAsk::KeyNames`]; kept only when it was asked for.
-    pub(super) fn key_names_said(&mut self, ticket: u64, names: Option<Vec<KeyName>>) {
-        let asks = &mut self.key_asks;
-        if asks.asked.iter().any(|(t, _)| *t == ticket) {
-            asks.asked.retain(|(t, _)| *t != ticket);
-            asks.said.insert(ticket, names);
-        }
     }
 
     fn builtin_keys(&self, b: BuiltinInstrument) -> AiKeyMap {
@@ -281,20 +241,16 @@ fn sf2_keys(preset: &Arc<Sf2Ref>, catalog: &Catalog) -> AiKeyMap {
     map
 }
 
-/// A plugin that names keys is taken as a kit (its keys are different sounds); one that
-/// names none is a kit when it was scanned as a drum instrument, and is then guessed.
-fn plugin_keys(sound: InstrumentRef, names: Option<Vec<KeyName>>, drums: bool) -> AiKeyMap {
-    let mut names: Vec<KeyName> = (names.unwrap_or_default().into_iter())
-        .filter(|n| n.key <= 127 && !n.name.trim().is_empty())
-        .collect();
-    names.sort_by_key(|n| n.key);
-    names.dedup_by_key(|n| n.key);
+/// A plugin that names keys (`names`, as `plugs::keys::cleaned` leaves them) is taken as a
+/// kit (its keys are different sounds); one that names none is a kit when it was scanned as a
+/// drum instrument, and is then guessed.
+fn plugin_keys(sound: InstrumentRef, names: &[KeyName], drums: bool) -> AiKeyMap {
     let mut map = map_of(sound, drums || !names.is_empty());
     if !names.is_empty() {
-        map.keys = (names.into_iter())
+        map.keys = (names.iter())
             .map(|n| AiKey {
                 key: n.key,
-                name: Some(n.name.trim().to_owned()),
+                name: Some(n.name.clone()),
                 id: None,
                 sounds: None,
                 source: AiKeySource::Lv2Midnam,
@@ -310,7 +266,7 @@ fn plugin_keys(sound: InstrumentRef, names: Option<Vec<KeyName>>, drums: bool) -
 /// On the core thread, after the rules answered: the keys the samples in memory sound on,
 /// and where the SF2 file is whose zones name the keys. Other answers pass as they are.
 pub(crate) fn heard(answer: AiAnswer, sounds: &Library, sf2: &Sf2Store) -> AiAnswer {
-    let AiAnswer::KeyNames(AiKeyNames::Known(mut map)) = answer else {
+    let AiAnswer::KeyNames(mut map) = answer else {
         return answer;
     };
     match &map.sound {
@@ -322,7 +278,7 @@ pub(crate) fn heard(answer: AiAnswer, sounds: &Library, sf2: &Sf2Store) -> AiAns
         InstrumentRef::Sf2(preset) => map.sf2_path = sf2.path_of(&preset.file),
         InstrumentRef::Plugin(_) => {}
     }
-    AiAnswer::KeyNames(AiKeyNames::Known(map))
+    AiAnswer::KeyNames(map)
 }
 
 /// What a bank sounds on: its range, and for a kit which of its keys sound.

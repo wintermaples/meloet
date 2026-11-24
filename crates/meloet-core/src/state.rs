@@ -37,10 +37,10 @@ use meloet_protocol::{
     EffectRef, EndpointView, FileDropView, Friendly, Hint, HistoryRow, InstrumentKind,
     KeyboardView, KeyboardsView, LayoutView, LibraryView, LinkKind, LiveNotes, LiveNotesSnapshot,
     LowerBandView, MeterSize, MissingRef, MissingView, OutputsView, ParamTable, ParamValues,
-    PluginRole, PluginWindowKind, QuantizeSettings, RecordFormat, RecoveryCause, ScanView,
-    SettingsDialogView, ShelfMode, ShelfView, SongFile, SongView, SoundRef, StandIn, StatusMessage,
-    StatusView, Theme, TrackKindView, TrackView, Unusable, UpdatesView, VelocityFixed,
-    WorkspaceView,
+    PluginKeyName, PluginRole, PluginWindowKind, QuantizeSettings, RecordFormat, RecoveryCause,
+    ScanView, SettingsDialogView, ShelfMode, ShelfView, SongFile, SongView, SoundRef, StandIn,
+    StatusMessage, StatusView, Theme, TrackKindView, TrackView, Unusable, UpdatesView,
+    VelocityFixed, WorkspaceView,
 };
 
 use crate::added;
@@ -54,7 +54,7 @@ use crate::layout::{self, Bands, BottomBand, FoldWhy, SidePanel, WindowSize};
 use crate::play::mixer::gain_view;
 use crate::play::{
     ClipGains, Cut, EngineOp, Heard, HeardRun, HeldNow, OpenInput, Play, Played, PlugState,
-    RecordReport, VocalFileAsk,
+    RecordReport, VocalFileAsk, keys,
 };
 use crate::plugins::{Plugins, ScanJob, ScanNews};
 use crate::settings::{SCALES, Settings, SoundSettings};
@@ -383,7 +383,8 @@ pub enum PluginSaid {
         ask: StateAsk,
         state: Option<Arc<[u8]>>,
     },
-    /// The answer to [`PluginAsk::KeyNames`], lowest key first. `None`: it names no keys.
+    /// The names it gives its keys, lowest key first, as it said when it was loaded and
+    /// each time they changed since. `None`: it has no way to name them.
     KeyNames(Option<Vec<KeyName>>),
     /// The answer to [`PluginAsk::PutState`]: it took the state, and this is its state now
     /// (as it says it); or it refused the state, or its process is gone (it stopped while
@@ -439,8 +440,6 @@ pub enum PluginAsk {
     SetParam { param: u32, value: f64 },
     /// Its whole state. Answer with [`PluginSaid::State`].
     State(StateAsk),
-    /// The names it gives its keys. Answer with [`PluginSaid::KeyNames`].
-    KeyNames,
     /// Give it this whole state, then ask for its state. Answer with
     /// [`PluginSaid::StatePut`].
     PutState { state: Arc<[u8]> },
@@ -3402,44 +3401,57 @@ fn song_view(
             .tracks
             .iter()
             .enumerate()
-            .map(|(i, t)| TrackView {
-                id: t.id.0,
-                number: i as u32 + 1,
-                name: t.name.clone(),
-                color: t.color.get(),
-                kind: match t.kind {
-                    TrackKind::Keys => TrackKindView::Keys,
-                    TrackKind::Vocal { input } => TrackKindView::Vocal {
-                        input: vocal_input_view(input),
-                        input_ready: input_channels.is_some_and(|n| input.fits(n)),
-                        armed: song.session.armed_vocals.contains(&t.id),
-                        monitor: song.session.monitored.contains(&t.id),
+            .map(|(i, t)| {
+                let key_names = play.instrument_key_names(t.id);
+                TrackView {
+                    id: t.id.0,
+                    number: i as u32 + 1,
+                    name: t.name.clone(),
+                    color: t.color.get(),
+                    kind: match t.kind {
+                        TrackKind::Keys => TrackKindView::Keys,
+                        TrackKind::Vocal { input } => TrackKindView::Vocal {
+                            input: vocal_input_view(input),
+                            input_ready: input_channels.is_some_and(|n| input.fits(n)),
+                            armed: song.session.armed_vocals.contains(&t.id),
+                            monitor: song.session.monitored.contains(&t.id),
+                        },
                     },
-                },
-                sound: added::sound_view(
-                    &t.instrument,
-                    play.plugin_state(PluginPlace::Instrument(t.id)),
-                ),
-                stand_in: added::stand_in(&t.instrument, library, &sounds).or_else(|| {
-                    (play.plugin_failed(PluginPlace::Instrument(t.id)))
-                        .then_some(StandIn::PluginUnreadable)
-                }),
-                drum_keys: match &t.instrument {
-                    InstrumentRef::Sf2(s) if s.family() == GmFamily::DrumKit => catalog
-                        .sf2_preset(&s.file, s.bank, s.program)
-                        .map(|(_, preset)| gm_kit_rows(&preset.keys)),
-                    _ => None,
-                },
-                gain_db: gain_view(t.channel.gain),
-                pan: t.channel.pan.get(),
-                sends: t.sends.map(gain_view),
-                send_defaults: meloet_model::mixer::new_track_sends(&t.instrument).map(gain_view),
-                slots: play.slots_of(StripId::Track(t.id), &t.channel.inserts),
-                muted: t.muted,
-                soloed: play.is_soloed(t.id),
-                lanes: play.lanes_of(t.id),
-                clips: play.clips_of(t.id),
-                arp: crate::play::wave3::arp_view(&t.arp),
+                    sound: added::sound_view(
+                        &t.instrument,
+                        play.plugin_state(PluginPlace::Instrument(t.id)),
+                    ),
+                    stand_in: added::stand_in(&t.instrument, library, &sounds).or_else(|| {
+                        (play.plugin_failed(PluginPlace::Instrument(t.id)))
+                            .then_some(StandIn::PluginUnreadable)
+                    }),
+                    drum_keys: match &t.instrument {
+                        InstrumentRef::Sf2(s) if s.family() == GmFamily::DrumKit => catalog
+                            .sf2_preset(&s.file, s.bank, s.program)
+                            .map(|(_, preset)| gm_kit_rows(&preset.keys)),
+                        InstrumentRef::Plugin(_) => key_names.as_deref().map(keys::drum_rows),
+                        _ => None,
+                    },
+                    key_names: key_names.map(|names| {
+                        (names.iter())
+                            .map(|n| PluginKeyName {
+                                key: n.key,
+                                name: n.name.clone(),
+                            })
+                            .collect()
+                    }),
+                    gain_db: gain_view(t.channel.gain),
+                    pan: t.channel.pan.get(),
+                    sends: t.sends.map(gain_view),
+                    send_defaults: meloet_model::mixer::new_track_sends(&t.instrument)
+                        .map(gain_view),
+                    slots: play.slots_of(StripId::Track(t.id), &t.channel.inserts),
+                    muted: t.muted,
+                    soloed: play.is_soloed(t.id),
+                    lanes: play.lanes_of(t.id),
+                    clips: play.clips_of(t.id),
+                    arp: crate::play::wave3::arp_view(&t.arp),
+                }
             })
             .collect(),
         returns: play.returns_view(),

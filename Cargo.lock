@@ -2296,8 +2296,6 @@ checksum = "47d9d19d1d6efa0109d2f65ff4c85cddd50bd572e5a00127ab10987290bcefae"
 [[package]]
 name = "livi"
 version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ad88d10d0e990bd50b4b87681f7d56ed5bb1f508f829469a6409cb44760bbb74"
 dependencies = [
  "lilv",
  "log",

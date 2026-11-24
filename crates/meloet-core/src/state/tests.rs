@@ -191,6 +191,7 @@ fn a_new_song() {
             // This model was told of no sound pack.
             stand_in: Some(StandIn::PackMissing),
             drum_keys: None,
+            key_names: None,
             gain_db: Some(0.0),
             pan: 0,
             sends: [Some(-15.0), None],

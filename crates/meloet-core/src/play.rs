@@ -557,7 +557,6 @@ pub struct Play {
     plugs: Plugs,
     wins: Windows,
     panel: Panel,
-    key_asks: keynames::KeyAsks,
     tl: timeline::Tl,
     auto: automation::Auto,
     autosync: autosync::AutoSync,
@@ -590,7 +589,6 @@ impl Play {
             wins: Windows::default(),
             autosync: autosync::AutoSync::default(),
             panel: Panel::default(),
-            key_asks: keynames::KeyAsks::default(),
             tl: timeline::Tl::default(),
             auto: automation::Auto::default(),
             song,
@@ -2967,6 +2965,7 @@ pub use mixer::{Preview, Selecting};
 use mixsync::MixTold;
 use params::Panel;
 use plugs::Plugs;
+pub(crate) use plugs::keys;
 pub use plugs::{PlugState, Spot};
 use seats::Seats;
 pub use seats::{AUDITION_SEAT, MAX_TRACKS};

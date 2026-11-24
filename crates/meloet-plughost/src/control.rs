@@ -192,13 +192,11 @@ impl Host {
             return error(message);
         }
         self.moved[slot as usize] = Some(moved);
-        self.slots[slot as usize] = Some(loaded.controller);
-        (
-            Reply::Loaded {
-                plugin: loaded.plugin,
-            },
-            Vec::new(),
-        )
+        let mut plugin = loaded.plugin;
+        let mut controller = loaded.controller;
+        plugin.key_names = controller.key_names();
+        self.slots[slot as usize] = Some(controller);
+        (Reply::Loaded { plugin }, Vec::new())
     }
 
     fn top(&self, slot: u32) -> Option<&Top> {
@@ -572,6 +570,11 @@ impl Host {
                         self.resized(slot, (width, height));
                     }
                     Said::Closed => self.closed(slot),
+                    Said::KeyNames => {
+                        let names =
+                            (self.slots[slot as usize].as_mut()).and_then(|c| c.key_names());
+                        self.notices.push(Notice::KeyNames { slot, names });
+                    }
                 }
             }
         }
@@ -748,15 +751,6 @@ impl Host {
                     Err(answer) => answer,
                 }
             }
-            Request::KeyNames { slot } => match self.controller(slot) {
-                Ok(controller) => (
-                    Reply::KeyNames {
-                        names: controller.key_names(),
-                    },
-                    Vec::new(),
-                ),
-                Err(answer) => answer,
-            },
             Request::Presets { slot, bundles } => {
                 match self.controller(slot).map(|c| c.presets(&bundles)) {
                     Ok(Ok(presets)) => (Reply::Presets { presets }, Vec::new()),
@@ -982,7 +976,6 @@ fn slot_of(request: &Request) -> Option<u32> {
         | Request::Unload { slot }
         | Request::GetState { slot }
         | Request::SetState { slot }
-        | Request::KeyNames { slot }
         | Request::Presets { slot, .. }
         | Request::PresetState { slot, .. }
         | Request::SavePreset { slot, .. }

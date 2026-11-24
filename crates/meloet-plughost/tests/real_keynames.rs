@@ -1,6 +1,7 @@
 //! The names real plugins of this PC give their keys: avldrums' kits through LV2 midnam, and
-//! Surge XT, which names none. Ignored by default; a test whose plugin is not installed says
-//! so and passes. No window is opened.
+//! Surge XT, which names none. They come with the load (`LoadedPlugin::key_names`) and, when
+//! they change, by themselves (`Notice::KeyNames`). Ignored by default; a test whose plugin is
+//! not installed says so and passes. No window is opened.
 
 mod common;
 
@@ -8,7 +9,7 @@ use std::path::Path;
 
 use common::Host;
 use meloet_plugin::PluginKey;
-use meloet_plugin::wire::{KeyName, Reply, Request};
+use meloet_plugin::wire::{KeyName, Notice, Reply, Request};
 
 const BLACK_PEARL: (&str, &str) = (
     "lv2:http://gareus.org/oss/lv2/avldrums#BlackPearl",
@@ -66,16 +67,20 @@ fn installed(plugin: (&str, &str)) -> bool {
     there
 }
 
-fn load(host: &mut Host, slot: u32, plugin: (&str, &str)) {
+/// Loads the plugin: the names it gives its keys.
+fn load(host: &mut Host, slot: u32, plugin: (&str, &str)) -> Option<Vec<KeyName>> {
     let key: PluginKey = plugin.0.parse().unwrap();
-    host.load_plugin(slot, &key, plugin.1).unwrap();
+    host.load_plugin(slot, &key, plugin.1).unwrap().1.key_names
 }
 
-fn key_names(host: &mut Host, slot: u32) -> Option<Vec<KeyName>> {
-    match host.ask(Request::KeyNames { slot }) {
-        Reply::KeyNames { names } => names,
-        other => panic!("{other:?}"),
-    }
+/// The names told of a slot since the host was started.
+fn told(host: &Host, of: u32) -> Vec<Option<Vec<KeyName>>> {
+    (host.notices.iter())
+        .filter_map(|notice| match notice {
+            Notice::KeyNames { slot, names } if *slot == of => Some(names.clone()),
+            _ => None,
+        })
+        .collect()
 }
 
 fn pairs(names: &[KeyName]) -> Vec<(u8, &str)> {
@@ -89,26 +94,26 @@ fn avldrums_kits_name_their_drums_and_keep_the_names_with_their_state() {
         return;
     }
     let mut host = Host::start();
-    load(&mut host, 0, BLACK_PEARL);
-    let names = key_names(&mut host, 0).expect("Black Pearl has midnam");
+    let names = load(&mut host, 0, BLACK_PEARL).expect("Black Pearl has midnam");
     for name in &names {
         eprintln!("Black Pearl {} {}", name.key, name.name);
     }
     assert_eq!(pairs(&names), BLACK_PEARL_NAMES);
 
-    // A state put back reads the names again: the same kit, the same names.
+    // A state put back reads the names again: the same kit, the same names, so nothing is
+    // told.
     let state = host.state(0);
     let (reply, _) = host.ask_with(Request::SetState { slot: 0 }, &state);
     assert_eq!(reply, Reply::Ok);
-    assert_eq!(key_names(&mut host, 0), Some(names));
 
-    load(&mut host, 1, BUSKMAN);
-    let names = key_names(&mut host, 1).expect("Buskman's Holiday has midnam");
+    let names = load(&mut host, 1, BUSKMAN).expect("Buskman's Holiday has midnam");
     let names = pairs(&names);
     assert_eq!(names.len(), 21);
     assert_eq!(names[0], (35, "Stick Click"));
     assert_eq!(names[1], (36, "Cajon Thump"));
     assert_eq!(names[20], (55, "Bell Tree Up"));
+    host.ask(Request::GetState { slot: 1 });
+    assert!(told(&host, 0).is_empty(), "{:?}", told(&host, 0));
 }
 
 #[test]
@@ -117,8 +122,23 @@ fn surge_xt_names_no_keys() {
     let mut host = Host::start();
     for (slot, plugin) in [(0, SURGE_LV2), (1, SURGE_VST3)] {
         if installed(plugin) {
-            load(&mut host, slot, plugin);
-            assert_eq!(key_names(&mut host, slot), None, "{}", plugin.0);
+            assert_eq!(load(&mut host, slot, plugin), None, "{}", plugin.0);
         }
     }
+}
+
+/// setBfree's organ has midnam, for its programmes and controllers only: no note list, so it
+/// names no keys (and is no drum kit to the piano roll).
+#[test]
+#[ignore = "needs setBfree (b_synth, LV2)"]
+fn setbfree_names_no_keys() {
+    const B_SYNTH: (&str, &str) = (
+        "lv2:http://gareus.org/oss/lv2/b_synth",
+        "/usr/lib/lv2/b_synth",
+    );
+    if !installed(B_SYNTH) {
+        return;
+    }
+    let mut host = Host::start();
+    assert_eq!(load(&mut host, 0, B_SYNTH), Some(Vec::new()));
 }

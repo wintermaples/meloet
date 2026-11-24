@@ -96,7 +96,7 @@ pub use vocal::{
     VocalRef,
 };
 
-pub const PROTOCOL_VERSION: u32 = 36;
+pub const PROTOCOL_VERSION: u32 = 37;
 
 /// Screen → Rust. Intent only; Rust decides what the state becomes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -2352,9 +2352,14 @@ pub struct TrackView {
     pub stand_in: Option<StandIn>,
     /// A drum kit of an SF2 file (`GmFamily::DrumKit`): the keys the kit has a sound on, as
     /// the rows of the drum piano roll, top row first (spec 3 「SF2 のドラムのキット」). The
-    /// screen names a row by its key. `None` for every other sound, and while the kit is not
-    /// read.
+    /// screen names a row by its key. A plugin instrument that names keys (`key_names`): those
+    /// keys, as rows in the same order. `None` for every other sound, and while the kit is not
+    /// read or the plugin has named no key.
     pub drum_keys: Option<Vec<u8>>,
+    /// The keys the plugin instrument names (LV2 midnam), lowest key first, each with the
+    /// plugin's name for it; it may rename them while it runs. `None` for every other sound,
+    /// and while the plugin is not loaded or names no key.
+    pub key_names: Option<Vec<PluginKeyName>>,
     /// The fader: `None` is −∞, otherwise −60.0..=6.0.
     pub gain_db: Option<f32>,
     /// -100 (all left) to 100 (all right), 0 the middle.
@@ -2379,6 +2384,16 @@ pub struct TrackView {
     pub clips: Vec<ClipView>,
     /// Round 12 E2 「アルペジオ」 (`Command::SetArp`). Off for a vocal track.
     pub arp: Arp,
+}
+
+/// A key a plugin instrument names: a drum kit's "Kick Drum" on 36.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct PluginKeyName {
+    /// 0..=127.
+    pub key: u8,
+    pub name: String,
 }
 
 /// A return strip. It has no sends, no instrument and no clips; its S and ● are unusable.
@@ -4281,3 +4296,5 @@ mod tests34;
 mod tests35;
 #[cfg(test)]
 mod tests36;
+#[cfg(test)]
+mod tests37;

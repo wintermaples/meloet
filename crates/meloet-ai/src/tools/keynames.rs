@@ -1,8 +1,6 @@
 //! Which key of a track's sound is which drum (`get_key_names`).
 
-use std::time::{Duration, Instant};
-
-use meloet_core::ai::{AiAnswer, AiAsk, AiKey, AiKeyMap, AiKeyNames, AiKeyNote, AiKeySource};
+use meloet_core::ai::{AiAnswer, AiAsk, AiKey, AiKeyMap, AiKeyNote, AiKeySource};
 use meloet_core::play::keynames::read_sf2;
 use rmcp::model::CallToolResult;
 use rmcp::{
@@ -14,9 +12,6 @@ use serde_json::{Value, json};
 use super::{Tools, closing, done, failed, refusal_text};
 use crate::song::{key_name, sound_name};
 use crate::trackref::{TrackRef, id_text};
-
-/// How long a plugin is given to name its keys.
-const PLUGIN_WAIT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 pub struct KeyNamesArgs {
@@ -113,21 +108,10 @@ impl Tools {
         let read = check!(self.read().await);
         let (number, track) = check!(args.track.find(&read).map_err(failed));
         let track = track.clone();
-        let until = Instant::now() + PLUGIN_WAIT;
-        let mut map = loop {
-            match check!(self.answer(AiAsk::KeyNames { track: number }).await) {
-                AiAnswer::KeyNames(AiKeyNames::Known(map)) => break *map,
-                AiAnswer::KeyNames(AiKeyNames::Waiting) if Instant::now() < until => {}
-                AiAnswer::KeyNames(AiKeyNames::Waiting) => {
-                    return Ok(failed(format!(
-                        "the plugin did not name its keys within {} s",
-                        PLUGIN_WAIT.as_secs()
-                    )));
-                }
-                AiAnswer::Refused(r) => return Ok(failed(refusal_text(&r))),
-                _ => return Ok(closing()),
-            }
-            tokio::time::sleep(Duration::from_millis(50)).await;
+        let mut map = match check!(self.answer(AiAsk::KeyNames { track: number }).await) {
+            AiAnswer::KeyNames(map) => *map,
+            AiAnswer::Refused(r) => return Ok(failed(refusal_text(&r))),
+            _ => return Ok(closing()),
         };
         if map.sf2_path.is_some() {
             map = match tokio::task::spawn_blocking(move || {

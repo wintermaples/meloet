@@ -666,6 +666,8 @@ pub fn load(
         // VST3 has no word for it.
         live: false,
         outputs: list,
+        // Read from the controller once it is made (`crate::control`).
+        key_names: None,
     };
     let processor = Vst3Processor {
         instance: instance.clone(),

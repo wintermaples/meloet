@@ -112,6 +112,7 @@ pub(super) fn sample_state() -> AppState {
                 },
                 stand_in: None,
                 drum_keys: None,
+                key_names: None,
                 gain_db: Some(-3.0),
                 pan: -20,
                 sends: [Some(-15.0), None],
@@ -1514,6 +1515,7 @@ fn state_json_is_camel_case_and_round_trips() {
     );
     assert_eq!(track["standIn"], json!(null));
     assert_eq!(track["drumKeys"], json!(null));
+    assert_eq!(track["keyNames"], json!(null));
     let slot = |id: u32, effect: &str| json!({"id": id, "effect": {"kind": "builtin", "effect": effect}, "bypassed": false});
     assert_eq!(
         v["state"]["song"]["returns"],

@@ -612,14 +612,6 @@ pub enum AiParams {
     Listed(Vec<AiParam>),
 }
 
-/// What the keys of a track's sound are.
-#[derive(Debug, Clone, PartialEq)]
-pub enum AiKeyNames {
-    /// The plugin was asked; ask again in a moment.
-    Waiting,
-    Known(Box<AiKeyMap>),
-}
-
 /// Where the name of a key comes from, best first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AiKeySource {
@@ -791,7 +783,8 @@ pub struct AiDone {
 pub enum AiAnswer {
     Done(Box<AiDone>),
     Params(AiParams),
-    KeyNames(AiKeyNames),
+    /// What the keys of a track's sound are.
+    KeyNames(Box<AiKeyMap>),
     State(AiState),
     Preset(PresetSaid),
     Refused(AiRefusal),

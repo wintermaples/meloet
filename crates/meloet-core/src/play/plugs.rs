@@ -15,6 +15,7 @@ use meloet_model::{
     InstrumentGroup, InstrumentRef, PluginChange, PluginOutputs, PluginPlace, PluginRef, StripId,
     TrackId,
 };
+use meloet_plugin::wire::KeyName;
 use meloet_protocol::{InsertRef, PluginSlotRef, PluginState, PluginWindowKind, StatusMessage};
 
 use super::mixer::{strip_id, strip_ref};
@@ -28,6 +29,7 @@ use crate::state::{Effect, PluginAsk, StateAsk};
 
 mod aistate;
 mod copies;
+pub(crate) mod keys;
 
 pub(super) use copies::CopyStates;
 
@@ -93,6 +95,9 @@ pub(super) struct Plug {
     /// The settings of its output sets its plugin host was last told, or is told with the
     /// load on its way.
     told: PluginOutputs,
+    /// The keys it names, as its plugin host said last ([`keys::cleaned`]); `None` while it
+    /// has said nothing or names no key.
+    key_names: Option<Arc<[KeyName]>>,
 }
 
 impl Plug {
@@ -412,6 +417,7 @@ impl Play {
             puts: 0,
             sets: None,
             told: outputs.clone(),
+            key_names: None,
         });
         effects.push(Effect::LoadPlugin {
             ticket,

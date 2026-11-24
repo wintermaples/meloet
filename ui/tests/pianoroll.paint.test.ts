@@ -10,7 +10,7 @@ import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 import { GEOM, take } from "./pianoroll-fixture";
 
 const BOX = { x0: 0, y0: 0, x1: 696, y1: 492 };
-const SIZES = { noteH: 11, edge: 2, velBar: 3, velCap: 7, velFull: 64, velMid: 36, endMark: 16, drumGap: 8, hatch: 12 };
+const SIZES = { noteH: 11, edge: 2, velBar: 3, velCap: 7, velFull: 64, velMid: 36, endMark: 16, drumGap: 8 };
 const colorOf = (r: number[]) => [r[4], r[5], r[6]].join(",");
 const is = (name: Parameters<typeof rgb>[0]) => Array.from(Float32Array.from(rgb(name))).join(",");
 
@@ -58,24 +58,24 @@ describe("notes", () => {
     expect(colorOf(faceAt(64, 83))).toBe(is("color.gray.10"));
   });
 
-  it("rows outside a locked or highlighted scale row.out, black key rows row.black, white key rows row.white", () => {
+  it("rows outside a locked scale row.out, black key rows row.black, white key rows row.white", () => {
     const rowAt = (key: number, p: RollPicture) =>
       draw(p).find((r) => r[0] === 0 && r[1] === (72 - key) * 12 && r[2] === 696 && r[3] === (72 - key) * 12 + 11)!;
     const plain = { root: 0, mode: "major", lock: false, highlight: false } as const;
     expect(colorOf(rowAt(61, picture({ scale: plain })))).toBe(is("color.row.black"));
     expect(colorOf(rowAt(60, picture({ scale: plain })))).toBe(is("color.row.white"));
-    expect(colorOf(rowAt(61, picture()))).toBe(is("color.row.out"));
+    expect(colorOf(rowAt(61, picture()))).toBe(is("color.row.black"));
     expect(colorOf(rowAt(60, picture()))).toBe(is("color.row.white"));
     expect(colorOf(rowAt(61, picture({ scale: { root: 0, mode: "major", lock: true, highlight: true } })))).toBe(is("color.row.out"));
   });
 
-  it("bar lines line.bar, beat lines line.beat, grid lines line.grid", () => {
+  it("bar lines line.bar 2 pixels wide (the extra one to the right), beat lines line.beat and grid lines line.grid 1 wide", () => {
     const rects = draw(picture());
-    const line = (x: number) => rects.find((r) => r[0] === x && r[2] === x + 1 && r[1] === 0 && r[3] === 492)!;
-    expect(colorOf(line(0))).toBe(is("color.line.bar"));
+    const line = (x: number, w = 1) => rects.find((r) => r[0] === x && r[2] === x + w && r[1] === 0 && r[3] === 492)!;
+    expect(colorOf(line(0, 2))).toBe(is("color.line.bar"));
     expect(colorOf(line(40))).toBe(is("color.line.beat"));
     expect(colorOf(line(10))).toBe(is("color.line.grid"));
-    expect(colorOf(line(160))).toBe(is("color.line.bar"));
+    expect(colorOf(line(160, 2))).toBe(is("color.line.bar"));
   });
 
   it("a quantized take shows a gray.7 border at the old position only for notes that moved. Drawn after (on top of) the notes (B-64)", () => {

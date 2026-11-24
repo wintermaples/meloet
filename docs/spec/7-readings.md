@@ -506,6 +506,8 @@ The rules are in spec 3, "Rules added in round 12"; how each is built is archite
 
 ### P1 Scale highlight and nine scales
 
+The switch 「色をつける」 and its rows below were taken away on 2026-11-24 (see "Decided on 2026-11-24 (piano roll, top band)" at the end).
+
 | Where | Rule | Basis |
 |---|---|---|
 | The toolbar toggle | The text says 「色」 (the mock shows 「色をつける」; the text wins); its screen-reader name is 「色をつける」. It sits right after the scale ▾ (the toolbar has no separate 「固定」 button; the lock is the 「スケール固定 …」 button). | the request's text |
@@ -891,3 +893,14 @@ The owner's answers to the open questions are in `docs/history/round12-answers-b
 | The N of 「まとめて変える（N 個）」 (B-98-37) | N is the number of operations that changed the song; a batch with one change keeps that step's own name. | the developers' decision, chosen by the owner (user:2026-11-24) |
 | Pages that cannot be reached (B-98-38) | Rules, wording and scenes only for pages narrower than 1024 or lower than 640 are removed, each after a check at 1024×640 (what went and what stays: "Pages that cannot be reached" above). | the lead's proposal, chosen by the owner (user:2026-11-24) |
 | The arpeggio on drum tracks | 「再生 ▸ アルペジオ」 and the input meter's button work on drum tracks too (neither the button nor core ever refused them). | decided by the owner as it is (user:2026-11-24) |
+
+### Decided on 2026-11-24 (piano roll, top band)
+
+| Where | Rule | Basis |
+|---|---|---|
+| Scale colors | The rows outside the scale are `color.row.out` exactly while scale lock is on. The toolbar's 「色」 and the right panel's 「色をつける」 row are gone, on drum tracks too, with their wording (`pr.scaleHighlight`, `inspector.highlight`). The song file and the promise keep `highlight` (no new versions); the screen no longer reads it and sends back the value it got. The mock of P1 (docs/history/round12-spec.ja.html) still shows the switch. | user:2026-11-24 |
+| Rows that cannot be written | No diagonal lines: `color.row.out` alone. `color.row.hatch` and `part.row.hatch` are gone from every theme, and so is the hatch program of the WebGL renderer (nothing else drew hatches). | user:2026-11-24 |
+| Bar lines | Two screen dots wide (two `line.hair`; the second dot to the right of where the one-dot line was) in the piano roll note area, the drum rows, the CC lanes and the arrange; beat and fine grid lines stay one dot. The velocity lane has no grid lines. The colors are unchanged. A note or drum square that starts on a bar line covers the line's second dot (they start one dot right of the line, as before). The mocks draw every line 1 px. | user:2026-11-24 |
+| The chord ▾ | The ▾ right of 「書く」 has the on color only while the draw tool is chosen and a chord shape is chosen (the request wrote 「置く」; the tool is 「書く」 on the screen). The chord name stays on 「書く」 with every tool. | user:2026-11-24 |
+| The text right of 「ピアノロール」 | Only the track name (「ピアノ」, without its number). On the toolbar it replaces 「1 ピアノ ・ イントロ ・ 小節 1–4 ・ ノート 23（選択 3）」 (A-PianoRoll), 「… ・ 録音中 ・ ノート 22」 (F-PRRec) and 「1 ピアノ ・ クリップなし」 (spec 3, F-PREmpty); where nothing is shown before (recording where there is no clip) nothing is shown. Wording gone: `pr.clip`, `pr.clipSelected`, `pr.clipRecording`, `pr.noClip`. The rule that hides the text when the row is narrow (after the tool keys) stays. | user:2026-11-24 |
+| The piano roll's band tab | 「ノート 23」 (Main, F-Empty …) becomes the same track name (the folded band's head): the track of the clip the piano roll shows, else the track of 「弾くと鳴る先」, else nothing. Wording gone: `band.noteCount`. | user:2026-11-24; which track is the developers' reading (the same as the toolbar) |

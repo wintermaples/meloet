@@ -16,6 +16,8 @@ export interface Box {
   y1: number;
 }
 export const HAIR = 1;
+/** Bar lines are two hair lines wide (user:2026-11-24). */
+export const BAR_LINE = 2 * HAIR;
 
 /** A small size at the app's scale (spec 1: multiply, round, .5 goes up), in device pixels. */
 function smallPx(px: number, scale: number, dpr: number): number {
@@ -172,7 +174,7 @@ export function paintArrangeGrid(out: Batch, box: Box, firstBarX: number, barPx:
   for (let k = first; ; k++) {
     const x = x0 + Math.round(firstBarX + k * step);
     if (x >= x1) break;
-    out.rect(x, y0, x + HAIR, y1, k % n === 0 ? bar : beat);
+    out.rect(x, y0, x + (k % n === 0 ? BAR_LINE : HAIR), y1, k % n === 0 ? bar : beat);
   }
 }
 
@@ -184,7 +186,7 @@ export function paintGridLines(out: Batch, box: Box, lines: readonly GridLine[],
   for (const l of lines) {
     const x = x0 + Math.round(l.x * dpr);
     if (x < x0 || x >= x1) continue;
-    out.rect(x, y0, x + HAIR, y1, l.bar ? bar : beat);
+    out.rect(x, y0, x + (l.bar ? BAR_LINE : HAIR), y1, l.bar ? bar : beat);
   }
 }
 

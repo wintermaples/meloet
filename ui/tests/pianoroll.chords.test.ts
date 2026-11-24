@@ -243,7 +243,7 @@ describe("drawing chords with the draw tool (drag.ts)", () => {
 describe("shadow picture (paintLive in paint.ts)", () => {
   it("where it will be written, only a 1px accent border the same size as a note (inside not filled)", () => {
     const out = new Batch();
-    const sizes = { noteH: 11, edge: 2, velBar: 3, velCap: 7, velFull: 64, velMid: 36, endMark: 16, drumGap: 8, hatch: 12 };
+    const sizes = { noteH: 11, edge: 2, velBar: 3, velCap: 7, velFull: 64, velMid: 36, endMark: 16, drumGap: 8 };
     const box = { x0: 0, y0: 0, x1: 41, y1: 12 };
     paintLive(out, box, { g: GEOM, sizes, left: 0, top: 0, ty: 0, areaH: 492, notes: [{ start: 0, end: TPQ, key: 72, face: "color.accent", outline: true }] }, 1);
     const rects = out.rects();
@@ -298,7 +298,7 @@ describe("the ▾ in the toolbar and the row of chords of the key (mount)", () =
     return { s, where: { clip, track, take: tk } };
   }
 
-  it("▾ gives the 「和音の形」 list. Choosing one switches to the draw tool, 「書く メジャー 2」, and ▾ is accent. The shape stays when the tool changes", () => {
+  it("▾ gives the 「和音の形」 list. Choosing one switches to the draw tool, 「書く メジャー 2」, and ▾ is accent only with the draw tool. The shape stays when the tool changes", () => {
     show(Toolbar, keysScene(false), noClip);
     q("[data-test=pr-chord-menu]")!.click();
     flushSync();
@@ -313,9 +313,18 @@ describe("the ▾ in the toolbar and the row of chords of the key (mount)", () =
     expect(prView.tool).toBe("draw");
     expect(text(q("[data-test=pr-tool-draw]"))).toBe("書くメジャー2");
     expect(q("[data-test=pr-chord-menu]")!.classList.contains("on")).toBe(true);
+    const lit = () => q("[data-test=pr-chord-menu]")!.classList.contains("on");
     q("[data-test=pr-tool-select]")!.click();
     flushSync();
     expect(chordPick.pick).toEqual({ kind: "shape", shape: "major" });
+    expect(lit()).toBe(false);
+    q("[data-test=pr-tool-erase]")!.click();
+    flushSync();
+    expect(lit()).toBe(false);
+    q("[data-test=pr-tool-draw]")!.click();
+    flushSync();
+    expect(lit()).toBe(true);
+    expect(text(q("[data-test=pr-tool-draw]"))).toBe("書くメジャー2");
     expect(app.sent).toEqual([]);
   });
 

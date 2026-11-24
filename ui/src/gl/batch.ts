@@ -3,8 +3,6 @@ import { WAVE_TEX_MAX_PEAKS, type WaveSource } from "./wave";
 
 /** Floats per rectangle: 6 corners of (x, y, r, g, b). */
 export const FLOATS_PER_RECT = 30;
-/** Floats per hatch: at, x0, y0, x1, y1, pitch, shift, r, g, b (`at` as for a wave). */
-export const FLOATS_PER_HATCH = 10;
 
 function corner(d: Float32Array, i: number, x: number, y: number, r: number, g: number, b: number): number {
   d[i] = x;
@@ -76,10 +74,6 @@ export class Batch {
   length = 0;
   /** In the order they are drawn, each after the rectangles put before it. */
   waves: PlacedWave[] = [];
-  /** Hatches (FLOATS_PER_HATCH each), drawn like waves after the rectangles put before them. */
-  hatchData = new Float32Array(FLOATS_PER_HATCH * 32);
-  /** Floats of hatchData in use. */
-  hatchLength = 0;
   private cx0 = 0;
   private cy0 = 0;
   private cx1 = 0;
@@ -87,7 +81,6 @@ export class Batch {
 
   reset(): void {
     this.length = 0;
-    this.hatchLength = 0;
     if (this.waves.length > 0) this.waves = [];
   }
 
@@ -140,47 +133,12 @@ export class Batch {
     this.waves.push({ ...q, x0, y0, x1, y1, end, at: this.length, fresh });
   }
 
-  /**
-   * Thin lines rising to the right ("/"), `pitch` pixels apart along a pixel row: inside the rectangle, through the
-   * pixels (x, y) where x + y − ox − oy is a multiple of pitch, with smooth edges (hatchCover in renderer.ts).
-   * (ox, oy) ties the pattern to what it lies on, so it moves with it. Cut to the clip box, as a rectangle is.
-   */
-  hatch(x0: number, y0: number, x1: number, y1: number, color: Rgb, pitch: number, ox: number, oy: number): void {
-    x0 = Math.max(Math.round(x0), this.cx0);
-    y0 = Math.max(Math.round(y0), this.cy0);
-    x1 = Math.min(Math.round(x1), this.cx1);
-    y1 = Math.min(Math.round(y1), this.cy1);
-    if (x1 <= x0 || y1 <= y0) return;
-    const p = Math.max(2, Math.round(pitch));
-    // The shader tests (x + y + shift) % p with whole numbers that are never below 0.
-    const shift = (((-(Math.round(ox) + Math.round(oy))) % p) + p) % p;
-    if (this.hatchLength + FLOATS_PER_HATCH > this.hatchData.length) {
-      const bigger = new Float32Array(this.hatchData.length * 2);
-      bigger.set(this.hatchData);
-      this.hatchData = bigger;
-    }
-    const d = this.hatchData;
-    const i = this.hatchLength;
-    d[i] = this.length;
-    d[i + 1] = x0;
-    d[i + 2] = y0;
-    d[i + 3] = x1;
-    d[i + 4] = y1;
-    d[i + 5] = p;
-    d[i + 6] = shift;
-    d[i + 7] = color[0];
-    d[i + 8] = color[1];
-    d[i + 9] = color[2];
-    this.hatchLength = i + FLOATS_PER_HATCH;
-  }
-
   get rectCount(): number {
     return this.length / FLOATS_PER_RECT;
   }
 
   sameAs(other: Batch): boolean {
-    if (this.length !== other.length || this.waves.length !== other.waves.length || this.hatchLength !== other.hatchLength) return false;
-    for (let i = 0; i < this.hatchLength; i++) if (this.hatchData[i] !== other.hatchData[i]) return false;
+    if (this.length !== other.length || this.waves.length !== other.waves.length) return false;
     for (let i = 0; i < this.waves.length; i++) {
       const a = this.waves[i]!;
       const b = other.waves[i]!;
@@ -198,13 +156,6 @@ export class Batch {
       const d = this.data;
       out.push([d[i]!, d[i + 1]!, d[i + 25]!, d[i + 26]!, d[i + 2]!, d[i + 3]!, d[i + 4]!]);
     }
-    return out;
-  }
-
-  /** For tests: [at, x0, y0, x1, y1, pitch, shift, r, g, b] per hatch. */
-  hatches(): number[][] {
-    const out: number[][] = [];
-    for (let i = 0; i < this.hatchLength; i += FLOATS_PER_HATCH) out.push(Array.from(this.hatchData.subarray(i, i + FLOATS_PER_HATCH)));
     return out;
   }
 }

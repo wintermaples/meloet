@@ -70,8 +70,8 @@
   });
   const keysFull = $derived(summary ? selectedKeysFull(selectedKeys, drums) : null);
 
-  function setScale(root: number, mode: ScaleMode, lock: boolean, highlight = pr.scale.highlight): void {
-    send({ type: "setMusicalScale", root, mode, lock, highlight });
+  function setScale(root: number, mode: ScaleMode, lock: boolean): void {
+    send({ type: "setMusicalScale", root, mode, lock, highlight: pr.scale.highlight });
   }
 
   // ---- Typing in the selected notes' fields ----
@@ -519,10 +519,6 @@
         <span class="m-lbl grow" use:term={"スケール固定"}>{t("inspector.lock")}</span>
         <span class="m-lbl" data-test="inspector-lock">{t("inspector.lockUnusable")}</span>
       </div>
-      <div class="rw">
-        <span class="m-lbl grow">{t("inspector.highlight")}</span>
-        <span class="m-lbl" data-test="inspector-highlight">{t("inspector.lockUnusable")}</span>
-      </div>
     {:else}
       <div class="rw">
         <span class="m-lbl grow">{t("inspector.musicalScale")}</span>
@@ -543,17 +539,6 @@
           aria-pressed={pr.scale.lock}
           data-test="inspector-lock"
           onclick={() => setScale(pr.scale.root, pr.scale.mode, !pr.scale.lock)}>{t(pr.scale.lock ? "inspector.on" : "inspector.off")}</button
-        >
-      </div>
-      <div class="rw">
-        <span class="m-lbl grow">{t("inspector.highlight")}</span>
-        <button
-          class="m-plain m-num m-hi pick"
-          class:on={pr.scale.highlight}
-          aria-pressed={pr.scale.highlight}
-          data-test="inspector-highlight"
-          onclick={() => setScale(pr.scale.root, pr.scale.mode, pr.scale.lock, !pr.scale.highlight)}
-          >{t(pr.scale.highlight ? "inspector.on" : "inspector.off")}</button
         >
       </div>
     {/if}

@@ -78,7 +78,6 @@
     {"fg": "track.4", "bg": ["row.white", "row.black", "row.out"], "kind": "ui", "where": "Lit notes of track color 4 (as track.1)"},
     {"fg": "track.5", "bg": ["row.white", "row.black", "row.out"], "kind": "ui", "where": "Lit notes of track color 5 (as track.1)"},
     {"fg": "track.1", "bg": ["gray.8", "gray.9", "gray.10", "accent"], "kind": "note", "where": "Lit notes against the other notes and selected notes: told apart by hue (the keyboard column and the status line say which sound too)"},
-    {"fg": "row.hatch", "bg": ["row.out"], "kind": "ui", "where": "The diagonal lines on rows that cannot be written while scale lock is on (spec 2 “Note”; the owner asked for exactly 3:1, user:2026-11-23)"},
     {"fg": "gray.7", "bg": ["row.out"], "kind": "ui", "where": "The original position frame and 「そろえる前の位置」 on rows that cannot be written"},
     {"fg": "gray.7", "bg": ["row.white", "row.black"], "kind": "ui", "where": "The original position frame and 「そろえる前の位置」 on the piano roll rows, notes under the erase tool"},
     {"fg": "line.bar", "bg": ["row.white", "row.black", "row.out"], "kind": "ui", "where": "Bar lines of the piano roll (drum rows row.white and row.black)"},

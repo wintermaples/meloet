@@ -1,11 +1,11 @@
 <!-- The piano roll toolbar (the top row of the band in mock A-PianoRoll, F-PRPlay, F-PRRec).
-     「▾ ピアノロール」 (pressing folds it; B-74), the clip text, the take switch tag, the tools (select, draw, erase, with keys at the right end), horizontal − ＋ (the same shape as R3-Arrange),
-     grid (a list), triplet, scale lock and the scale ▾ (B-65), and 「色」 (「色をつける」, round 12 P1). On a drum track, scale lock, ▾ and 「色」 are 「使えない」 (spec 3, spec 6). If there is not enough width, the tool keys and then the clip text are hidden (F-PR150, B-73).
-     Right of the clip text, 「ほかのトラックも見る ▾」 (round 12 P2; 「使えない」 on a drum track); its label is hidden first, leaving the ▾.
+     「▾ ピアノロール」 (pressing folds it; B-74), the track name, the take switch tag, the tools (select, draw, erase, with keys at the right end), horizontal − ＋ (the same shape as R3-Arrange),
+     grid (a list), triplet, scale lock and the scale ▾ (B-65). On a drum track, scale lock and ▾ are 「使えない」 (spec 3, spec 6). If there is not enough width, the tool keys and then the track name are hidden (F-PR150, B-73).
+     Right of the track name, 「ほかのトラックも見る ▾」 (round 12 P2; 「使えない」 on a drum track); its label is hidden first, leaving the ▾.
      When keys go to the piano roll, an accent line on the top edge (B-72). -->
 <script lang="ts">
   import { onMount, untrack } from "svelte";
-  import { liveNotes, type Command, type ScaleMode } from "../../bridge";
+  import type { Command, ScaleMode } from "../../bridge";
   import { menuOpened } from "../../lib/menu";
   import { term, tip } from "../../lib/tip.svelte";
   import { current, send } from "../../state/app.svelte";
@@ -25,7 +25,6 @@
 
   const app = $derived(current.state!);
   const pr = $derived(app.pianoRoll);
-  const meter = $derived({ num: app.timeline.meterNum, den: app.timeline.meterDen });
   const clip = $derived(shown.clip);
   const track = $derived(shown.track);
   const rec = $derived(
@@ -33,40 +32,16 @@
       ? app.transport.recording
       : null,
   );
-  const selectedCount = $derived(G.indexesOf(pr.selectedNotes).length);
   const drums = $derived(rollShowsDrums(app, clip, track));
 
-  // While recording, the note count is the number of notes being recorded (F-PRRec 「録音中 ・ ノート 22」).
-  let liveCount = $state(0);
-  $effect(() => {
-    const r = rec;
-    if (!r) return;
-    let book: ReturnType<typeof liveNotes>;
-    try {
-      book = liveNotes();
-    } catch {
-      return;
-    }
-    const count = () => (liveCount = book.notesOf(r.id, current.telemetry?.position?.lap ?? r.lap).length);
-    untrack(count);
-    return book.listen(count);
+  // The name of the track the piano roll shows (user:2026-11-24). Where there is no clip (spec 3): the track of 「弾くと鳴る先」.
+  const info = $derived.by((): string | null => {
+    if (clip) return track?.name ?? null;
+    if (app.transport.recording !== null) return null;
+    return app.song.tracks.find((x) => x.id === app.song.keysTarget)?.name ?? null;
   });
 
-  const info = $derived.by((): { key: TextKey; values: Record<string, string | number> } | null => {
-    if (!clip || !track) {
-      // Where there is no clip (spec 3): the track of 「弾くと鳴る先」.
-      const target = app.song.tracks.find((x) => x.id === app.song.keysTarget);
-      return !clip && target && app.transport.recording === null ? { key: "pr.noClip", values: { number: target.number, track: target.name } } : null;
-    }
-    const base = { number: track.number, track: track.name, clip: clip.name, count: clip.noteCount };
-    if (rec) return { key: "pr.clipRecording", values: { ...base, count: liveCount } };
-    const bars = G.barsText(clip.start, clip.end, meter);
-    if (selectedCount > 0) return { key: "pr.clipSelected", values: { ...base, bars, selected: selectedCount } };
-    return { key: "pr.clip", values: { ...base, bars } };
-  });
-  const MONO = new Set(["number", "bars", "count"]);
-
-  // If there is not enough width, the tool keys and then the clip text are not shown. The clip text width can be measured with scrollWidth even when not shown.
+  // If there is not enough width, the tool keys and then the track name are not shown. Its width can be measured with scrollWidth even when not shown.
   // The key width is measured with a hidden copy (ruler).
   let row = $state<HTMLElement>();
   let ruler = $state<HTMLElement>();
@@ -125,8 +100,6 @@
   }
   const toggleTriplet = () => send({ type: "setGrid", division: pr.grid.division, triplet: !pr.grid.triplet });
   const toggleLock = () => send({ type: "setMusicalScale", root: pr.scale.root, mode: pr.scale.mode, lock: !pr.scale.lock, highlight: pr.scale.highlight } satisfies Command);
-  const toggleHighlight = () =>
-    send({ type: "setMusicalScale", root: pr.scale.root, mode: pr.scale.mode, lock: pr.scale.lock, highlight: !pr.scale.highlight } satisfies Command);
   const zoom = (steps: number) => zoomBy(steps, metrics.scale);
 
   // The chord of the draw tool: its name on the draw button, and the list 「和音の形」 (not on drums).
@@ -245,15 +218,7 @@
     <span class="m-name" use:term={"ピアノロール"}>{t("band.pianoRoll")}</span>
   </button>
   {#if info}
-    <span class="m-lbl info" class:cut={!infoFits} bind:this={infoNode} data-test="pr-info">
-      {#each textParts(info.key, info.values) as part, i (i)}
-        {#if part.hole === "selected"}<span class="m-num selected">{part.text}</span
-          >{:else if part.hole && MONO.has(part.hole)}<span class="m-num">{part.text}</span>{:else if part.hole}{part.text}{:else}{@render termed(
-            part.text,
-            "ノート",
-          )}{/if}
-      {/each}
-    </span>
+    <span class="m-lbl info" class:cut={!infoFits} bind:this={infoNode} data-test="pr-info">{info}</span>
   {/if}
   {#if takeTag}
     <div class="take" data-test="pr-take">
@@ -307,7 +272,7 @@
         {:else}
           <button
             class="m-btn chord-stub"
-            class:on={drawChord !== null}
+            class:on={prView.tool === "draw" && drawChord !== null}
             class:open={menu === "chord"}
             aria-haspopup="menu"
             aria-expanded={menu === "chord"}
@@ -345,7 +310,6 @@
       {t("pr.scaleLock")} <span class="m-num">{scaleText}</span>
     </button>
     <button class="m-btn scale-stub" aria-disabled="true" aria-label={t("inspector.musicalScale")} data-test="pr-scale-menu">▾</button>
-    <button class="m-btn" aria-disabled="true" use:tip={t("msg.drumsNoScaleLock")} data-test="pr-scale-highlight">{t("pr.scaleHighlight")}</button>
   {:else}
     <button class="m-btn" class:on={pr.scale.lock} aria-pressed={pr.scale.lock} use:term={"スケール固定"} onclick={toggleLock} data-test="pr-scale-lock">
       {t("pr.scaleLock")} <span class="m-num">{scaleText}</span>
@@ -360,14 +324,6 @@
       bind:this={scaleButton}
       onclick={() => toggleMenu("scale")}
       data-test="pr-scale-menu">▾</button
-    >
-    <button
-      class="m-btn"
-      class:on={pr.scale.highlight}
-      aria-pressed={pr.scale.highlight}
-      aria-label={t("inspector.highlight")}
-      onclick={toggleHighlight}
-      data-test="pr-scale-highlight">{t("pr.scaleHighlight")}</button
     >
   {/if}
   <div class="ruler" aria-hidden="true" bind:this={ruler}>
@@ -455,9 +411,6 @@
   }
   .info.cut {
     visibility: hidden;
-  }
-  .selected {
-    color: var(--color-accent);
   }
   .take {
     flex-shrink: 0;

@@ -249,7 +249,7 @@ describe("the box of the lit notes", () => {
 });
 
 describe("the picture", () => {
-  const SIZES = { noteH: 11, edge: 2, velBar: 3, velCap: 7, velFull: 64, velMid: 36, endMark: 16, drumGap: 8, hatch: 12 };
+  const SIZES = { noteH: 11, edge: 2, velBar: 3, velCap: 7, velFull: 64, velMid: 36, endMark: 16, drumGap: 8 };
   const shown = G.shownOf(
     take([
       [TPQ, 2 * TPQ, 64, 100],

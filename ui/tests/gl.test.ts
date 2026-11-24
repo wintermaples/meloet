@@ -8,7 +8,7 @@ import { HeldKeys, isBlack, keyboardLayout } from "../src/gl/keyboard";
 import { dbToLength, fall, peakToDb } from "../src/gl/level";
 import { Levels, MASTER_CHANNEL, RETURN_A_CHANNEL, RETURN_B_CHANNEL, trackChannel } from "../src/gl/levels";
 import { KeyToScreen, REPORT_NAME } from "../src/gl/measure";
-import { blackKeyPx, clipMarkPx, paintArrangeGrid, paintKeyboard, paintMeter, paintOverview, paintVelocity } from "../src/gl/paint";
+import { blackKeyPx, clipMarkPx, paintArrangeGrid, paintGridLines, paintKeyboard, paintMeter, paintOverview, paintVelocity } from "../src/gl/paint";
 import { glRegion, glSlot, watchSlots } from "../src/gl/slot";
 import type { Telemetry } from "../src/bridge";
 import { cellText, headers, rows, sectionText, specDocument, tableAfterH3 } from "./design-sources";
@@ -441,15 +441,15 @@ describe("rect lists", () => {
     paintMeter(b, { x0: 0, y0: 0, x1: 132, y1: 12 }, 4, 2, silent, silent);
     expect(b.rectCount).toBe(2);
   });
-  it("bar lines alone (line.beat, Main): from firstBarX every barPx. Only inside the box. Fractions snap to pixels", () => {
+  it("bar lines alone (line.beat, Main): from firstBarX every barPx, 2 pixels wide. Only inside the box. Fractions snap to pixels", () => {
     const b = batch();
     b.clip(100, 0, 300, 50);
     paintArrangeGrid(b, { x0: 100, y0: 0, x1: 300, y1: 50 }, 0, 64);
     expect(ofColor(b, "color.line.beat")).toEqual([
-      [100, 0, 101, 50],
-      [164, 0, 165, 50],
-      [228, 0, 229, 50],
-      [292, 0, 293, 50],
+      [100, 0, 102, 50],
+      [164, 0, 166, 50],
+      [228, 0, 230, 50],
+      [292, 0, 294, 50],
     ]);
     const scrolled = batch();
     paintArrangeGrid(scrolled, { x0: 0, y0: 0, x1: 100, y1: 10 }, -70.5, 40.25);
@@ -469,6 +469,16 @@ describe("rect lists", () => {
     paintArrangeGrid(scrolled, { x0: 0, y0: 0, x1: 100, y1: 10 }, -150, 120, 6);
     expect(ofColor(scrolled, "color.line.bar").map((r) => r[0])).toEqual([90]);
     expect(ofColor(scrolled, "color.line.beat").map((r) => r[0])).toEqual([10, 30, 50, 70]);
+  });
+  it("lines at given places (the arrange lanes): bar lines 2 pixels wide, beat lines 1 (user:2026-11-24)", () => {
+    const b = batch();
+    b.clip(0, 0, 300, 10);
+    paintGridLines(b, { x0: 0, y0: 0, x1: 300, y1: 10 }, [{ x: 0, bar: true }, { x: 20, bar: false }, { x: 80, bar: true }], true, 1.5);
+    expect(ofColor(b, "color.line.bar")).toEqual([
+      [0, 0, 2, 10],
+      [120, 0, 122, 10],
+    ]);
+    expect(ofColor(b, "color.line.beat")).toEqual([[30, 0, 31, 10]]);
   });
   it("the border gap of the shrunk arrange is the A-PianoRoll mock value", () => {
     expect(mockHtml("A-PianoRoll")).toContain(`top:${OVERVIEW.inset}px;width:256px;height:37px;border:1px solid ${colors[OVERVIEW.frame]}`);

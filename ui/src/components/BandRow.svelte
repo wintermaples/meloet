@@ -14,17 +14,23 @@
 
   const app = $derived(current.state!);
   const lower = $derived(app.workspace.layout.lower.map((l) => l.band));
+  /** The name of the track the piano roll shows, as on its open head (Toolbar.svelte; user:2026-11-24). */
+  const rollTrack = $derived.by(() => {
+    const clip = app.arrange.pianoRollClip;
+    if (clip !== null) return app.song.tracks.find((x) => x.clips.some((c) => c.id === clip))?.name ?? "";
+    if (app.transport.recording !== null) return "";
+    return app.song.tracks.find((x) => x.id === app.song.keysTarget)?.name ?? "";
+  });
 
   const tabs: Tab[] = $derived([
     { band: "arrange", name: t("band.arrange"), count: t("band.trackCount", { count: app.song.tracks.length }), key: t("key.arrange"), open: lower.length === 0, term: "アレンジ" },
     {
       band: "pianoRoll",
       name: t("band.pianoRoll"),
-      count: t("band.noteCount", { count: app.song.noteCount }),
+      count: rollTrack,
       key: t("key.pianoRoll"),
       open: lower.includes("pianoRoll"),
       term: "ピアノロール",
-      countTerm: "ノート",
     },
     // The master fader value. It stays at 0.0 dB for now (docs/history/progress.ja.md).
     {
@@ -61,7 +67,7 @@
     <button class="m-plain tab m-focus-in" class:open={tab.open} onclick={() => press(tab)} data-band={tab.band}>
       <span class={tab.open ? "m-hi" : "m-lbl"}>{tab.open ? "▾" : "▸"}</span>
       {#if tab.term}<span class="m-name" use:term={tab.term}>{tab.name}</span>{:else}<span class="m-name">{tab.name}</span>{/if}
-      {#if shown[i]}
+      {#if shown[i] && tab.count}
         <span class="m-lbl"
           >{#if tab.countTerm}{#each termParts(tab.count, tab.countTerm) as piece, j (j)}{#if piece.term}<span use:term={tab.countTerm!}
                   >{piece.text}</span

@@ -59,10 +59,10 @@ const settle = async () => {
 };
 
 describe("toolbar", () => {
-  it("clip text (mock A-PianoRoll). The selected count is accent", () => {
+  it("right of the title, only the track name (user:2026-11-24), also with notes selected", () => {
     show(scene());
-    expect(text(q("[data-test=pr-info]"))).toBe("1 ピアノ ・ イントロ ・ 小節 1–4 ・ ノート 23（選択 3）");
-    expect(text(q("[data-test=pr-info] .selected"))).toBe("3");
+    expect(text(q("[data-test=pr-info]"))).toBe("ピアノ");
+    expect(q("[data-test=pr-info]")!.children).toHaveLength(0);
     expect(q("[data-test=pr-take]")).toBeNull();
   });
 
@@ -117,11 +117,10 @@ describe("toolbar", () => {
 });
 
 describe("where there is no clip (mock F-PREmpty, spec 3 and 6)", () => {
-  it("the toolbar is「1 ピアノ ・ クリップなし」(the number is Mono). Two hint sentences at the top left of the note area (「2」is Mono)", async () => {
+  it("the toolbar has the name of the track of 「弾くと鳴る先」 (user:2026-11-24). Two hint sentences at the top left of the note area (「2」is Mono)", async () => {
     show(fakeScene("pianoRollEmpty")!.state);
     await settle();
-    expect(text(q("[data-test=pr-info]"))).toBe("1 ピアノ ・ クリップなし");
-    expect(text(q("[data-test=pr-info] .m-num"))).toBe("1");
+    expect(text(q("[data-test=pr-info]"))).toBe("ピアノ");
     const hint = q("[data-test=pr-empty-hint]")!;
     expect(hint.closest(".area")).not.toBeNull();
     expect([...hint.children].map(text)).toEqual([
@@ -131,7 +130,7 @@ describe("where there is no clip (mock F-PREmpty, spec 3 and 6)", () => {
     expect(text(hint.querySelector(".m-num"))).toBe("2");
   });
 
-  it("when the draw tool makes a clip, the hint goes and the toolbar shows the clip text", async () => {
+  it("when the draw tool makes a clip, the hint goes and the toolbar still shows the track name", async () => {
     const s = fakeScene("pianoRollEmpty")!.state;
     show(s);
     await settle();
@@ -140,7 +139,7 @@ describe("where there is no clip (mock F-PREmpty, spec 3 and 6)", () => {
     app.setState({ ...s, song: { ...s.song, tracks: made.song.tracks }, arrange: made.arrange });
     await settle();
     expect(q("[data-test=pr-empty-hint]")).toBeNull();
-    expect(text(q("[data-test=pr-info]"))).toContain("1 ピアノ ・ イントロ");
+    expect(text(q("[data-test=pr-info]"))).toBe("ピアノ");
   });
 
   it("no hint when there is a clip", async () => {

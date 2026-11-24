@@ -1,6 +1,6 @@
 # 1 List of values
 
-Colors are called by name. The grays are 11 steps in which R, G and B are the same number; no other gray is used (the pink and mint themes tint them; see “Themes”). The keys and rows of the keyboards and the piano roll have names of their own (`color.key.*`, `color.row.*`): in the dark themes they are grays of the 11 steps, in the light themes some of them lie between the steps (user:2026-11-23). Lines (`color.line.*`), the diagonal lines on rows that cannot be written (`color.row.hatch`) and the grounds of meters (`color.meter.ground`, `color.meter.ground.mic`) have names of their own too (user:2026-11-23): the lines and the diagonal lines lie between the steps, at the weakest value that reaches their contrast (see “Contrast”). Color is painted only on small places that have a meaning; large areas stay gray.
+Colors are called by name. The grays are 11 steps in which R, G and B are the same number; no other gray is used (the pink and mint themes tint them; see “Themes”). The keys and rows of the keyboards and the piano roll have names of their own (`color.key.*`, `color.row.*`): in the dark themes they are grays of the 11 steps, in the light themes some of them lie between the steps (user:2026-11-23). Lines (`color.line.*`) and the grounds of meters (`color.meter.ground`, `color.meter.ground.mic`) have names of their own too (user:2026-11-23): the lines lie between the steps, at the weakest value that reaches their contrast (see “Contrast”). Color is painted only on small places that have a meaning; large areas stay gray.
 
 ## Colors
 
@@ -37,8 +37,7 @@ Colors are called by name. The grays are 11 steps in which R, G and B are the sa
 |  | `color.key.meter.black` | `#000000` | 0 | Black keys of the keyboard picture |
 |  | `color.row.white` | `#212121` | 33 | White-key rows of the piano roll. Drum rows, in turns with row.black |
 |  | `color.row.black` | `#1A1A1A` | 26 | Black-key rows of the piano roll. Drum rows, in turns with row.white |
-|  | `color.row.out` | `#000000` | 0 | Rows that cannot be written while scale lock is on, with row.hatch diagonal lines (chapter 2, “Note”) |
-|  | `color.row.hatch` | `#5A5A5A` | 90 | The diagonal lines on rows that cannot be written (12 apart, with smooth edges; user:2026-11-23) |
+|  | `color.row.out` | `#000000` | 0 | Rows that cannot be written while scale lock is on, with nothing more drawn on them (chapter 2, “Note”; user:2026-11-24) |
 |  | `color.line.bar` | `#6B6B6B` | 107 | Bar lines (piano roll, drum rows, CC lanes; the arrange when beat lines are shown too) |
 |  | `color.line.beat` | `#3E3E3E` | 62 | Beat lines; the bar lines of the arrange when they are shown alone |
 |  | `color.line.grid` | `#2F2F2F` | 47 | Fine grid lines (1/16 and finer), on the drum rows too |
@@ -49,7 +48,7 @@ The values above are the 「ダーク」 (dark) theme. gray.0 to gray.7, rec and
 
 The key and row names were added for the keyboards and the piano roll rows (user:2026-11-23, the owner's request: in the light themes the black keys and their rows had become the lightest). In the dark theme they have the values of the grays those places used before: key.white gray.5, key.black gray.0, key.meter.white gray.3, key.meter.black gray.0, row.white gray.2, row.black gray.1, row.out gray.0. The drum rows were gray.2 and gray.3 in turns, and the thin grid lines (gray.3) could not be seen on every second row; they now take row.white and row.black in turns.
 
-The line, hatch and meter ground names were added (user:2026-11-23, the owner's choice 「B plan 2」: names only for lines, so that each theme gives lines their own strength without changing the faces). Before, the lines used grays: bar lines gray.6, beat lines gray.4, fine grid lines gray.3 (in the CC lanes bar lines gray.4 and other lines gray.2; in the arrange, bar lines alone gray.4), thin dividers gray.5, lines between rows gray.4, the diagonal lines gray.7, the meter grounds gray.0 and gray.4. gray.6 was `#4A4A4A`; the button borders were made a little stronger (user:2026-11-23). The usable M, S, ● toggles had a gray.6 border when off; it is gray.5 now, so that the on border keeps its 3:1 (see “Contrast”).
+The line and meter ground names were added (user:2026-11-23, the owner's choice 「B plan 2」: names only for lines, so that each theme gives lines their own strength without changing the faces). Before, the lines used grays: bar lines gray.6, beat lines gray.4, fine grid lines gray.3 (in the CC lanes bar lines gray.4 and other lines gray.2; in the arrange, bar lines alone gray.4), thin dividers gray.5, lines between rows gray.4, the meter grounds gray.0 and gray.4. gray.6 was `#4A4A4A`; the button borders were made a little stronger (user:2026-11-23). The usable M, S, ● toggles had a gray.6 border when off; it is gray.5 now, so that the on border keeps its 3:1 (see “Contrast”).
 
 ## Themes
 
@@ -61,7 +60,7 @@ There are 6 themes (user:2026-11-23): 「ダーク」 `dark`, 「ライト」 `l
 - `color.tip.bg` is gray.10 and `color.tip.fg` is gray.0 in every theme, so the term tip is always the opposite of the screen.
 - `color.meter.ok` and `color.meter.hot` are the same in every theme (user:2026-11-23: in the light themes the darker hot looked too brown). In the light themes the meters lie on a dark ground: `color.meter.ground` and `color.meter.ground.mic` are gray.9 of the theme there (user:2026-11-23). In the dark themes they are gray.0 and gray.4, as the meters had. The marks on those grounds have names of their own too (user:2026-11-23): `color.meter.clip` (the clip mark) and `color.meter.peak` (the peak line of the mic meter) are rec and gray.10 of the theme in the dark themes, and the dark values of rec and gray.10 in the light themes.
 - Keys and rows (user:2026-11-23): in every theme a white key is lighter than a black key and a white-key row lighter than a black-key row, as on a real keyboard, and the rows that cannot be written are the darkest rows. The dark themes keep the grays these places had. In the light themes the white keys and the white-key rows are gray.0, the black keys gray.6 (the darkest gray on which a pressed key, in accent, still has 3:1), the black-key rows lie between gray.0 and gray.1, and the rows that cannot be written are gray.2 (so the beat and sub-beat lines are still seen on them).
-- Lines (user:2026-11-23): each theme gives every `color.line.*` name the weakest value, with the theme's tint, that reaches its contrast against every ground it is drawn on (see “Contrast”). `color.row.hatch` is the darkest such value that reaches 3:1 against row.out in the dark themes, and gray.7 in the light themes.
+- Lines (user:2026-11-23): each theme gives every `color.line.*` name the weakest value, with the theme's tint, that reaches its contrast against every ground it is drawn on (see “Contrast”).
 - gray.6 (user:2026-11-23): about 2.4:1 against gray.4 in the dark themes, but never so strong that accent (the on border) has less than 3:1 against it. In the light themes gray.6 is at the limit the other way: the lightest value at which it still has 1.5:1 against gray.4, and the accents are dark enough to keep 3:1 against it.
 - Values are in `ui/src/design/themes.ts`; `dark` is `colors` of `ui/src/design/tokens.ts`.
 
@@ -100,7 +99,6 @@ There are 6 themes (user:2026-11-23): 「ダーク」 `dark`, 「ライト」 `l
 | `color.row.white` | `#212121` | `#FFFFFF` | `#262325` | `#FBF9F9` | `#212624` | `#F8FAF9` |
 | `color.row.black` | `#1A1A1A` | `#F6F6F6` | `#1E1C1E` | `#F4EEF0` | `#1B1E1C` | `#EDF1F0` |
 | `color.row.out` | `#000000` | `#E1E1E1` | `#040404` | `#E3D8DD` | `#040404` | `#D4DEDA` |
-| `color.row.hatch` | `#5A5A5A` | `#7A7A7A` | `#605A5C` | `#817179` | `#555D5A` | `#697A75` |
 | `color.line.bar` | `#6B6B6B` | `#808080` | `#736C6F` | `#87777F` | `#66716D` | `#6F807B` |
 | `color.line.beat` | `#3E3E3E` | `#B9B9B9` | `#453F41` | `#C4ADB7` | `#3E4340` | `#A5B8B1` |
 | `color.line.grid` | `#2F2F2F` | `#CECECE` | `#343131` | `#D5C4CB` | `#2D3432` | `#BECCC7` |
@@ -114,7 +112,7 @@ Every theme must meet WCAG 2 AA. Contrast is the WCAG 2 contrast ratio of the tw
 | Kind | Minimum | Pairs |
 |---|---|---|
 | text | 4.5 | Text on its ground (WCAG SC 1.4.3). gray.8, gray.9, gray.10, accent and rec on gray.0 to gray.4; gray.9 and gray.10 on gray.5; tip.fg on tip.bg |
-| ui | 3 | A mark, a meaningful line or border, or an on mark, against the color next to it (WCAG SC 1.4.11). Notes and the original position frame on the rows, bar lines (line.bar), the lines on rows that cannot be written (row.hatch), play head, record ring, track colors, meter colors on the meter grounds, keyboard focus line |
+| ui | 3 | A mark, a meaningful line or border, or an on mark, against the color next to it (WCAG SC 1.4.11). Notes and the original position frame on the rows, bar lines (line.bar), play head, record ring, track colors, meter colors on the meter grounds, keyboard focus line |
 | state | 3 | The on color against the off color of the same mark, where only color shows the change: accent against gray.6 (button border), accent and rec against gray.5 (M, S, ● toggles; their off border is gray.5, and the usable ones are told from the disabled ones by the text, gray.8 against gray.7), gray.10 against gray.7 (star, plugged-in mark), accent against the white and black keys (a pressed key) |
 | disabled | 2 | Text of 「使えない」 (disabled) parts. WCAG asks for no ratio here; they must still be readable |
 | line | 1.5 | Lines that show structure but are not the only way to tell it: beat lines (line.beat), thin dividers and borders (line.thin), strong dividers, button, clip and box borders (gray.6) |
@@ -125,7 +123,7 @@ Every theme must meet WCAG 2 AA. Contrast is the WCAG 2 contrast ratio of the tw
 - Text sizes are all under the WCAG large size (18.66 px bold, 24 px), so all text uses 4.5.
 - Where the words or a border also change (「オン」 and 「オフ」, the border of an on button), the on and off text colors need no ratio between them. Accent and rec, and accent and the track colors, are told apart by hue.
 - The drum row name that sounds (accent) or is being recorded (rec) on the gray.5 name column is counted as a mark (3), not as text: the same name is shown in gray.9 or gray.10 just before.
-- Scale lock: 3:1 between the rows cannot be reached by values alone without making the whole work area light. The values give 1.2 or more, and the rows outside the scale also get thin diagonal lines in row.hatch, 3:1 or more against row.out in every theme, so they can be told apart without seeing the difference in color (user:2026-11-23). In the dark themes row.hatch is just 3:1, so that the diagonal lines are not stronger than the bar lines (user:2026-11-23).
+- Scale lock: 3:1 between the rows cannot be reached by values alone without making the whole work area light. The values give 1.2 or more. The rows outside the scale get nothing more on them (the thin diagonal lines they had were removed, user:2026-11-24); the cursor and the status line still say that they cannot be written (chapter 3).
 - Lines (user:2026-11-23): line.bar is a ui line (3), line.beat and line.thin are line (1.5), line.grid and line.row are grid (1.2), each against every ground it is drawn on (the rows of the piano roll and the drum rows, gray.1 and gray.2 under the arrange and the CC lanes, gray.0 to gray.4 under dividers, gray.1 and gray.3 under rows).
 - Meters (user:2026-11-23): meter.ok and meter.hot keep their dark values in the light themes, and the dark meter grounds there (meter.ground, meter.ground.mic) give them 3:1. The clip mark (meter.clip) and the peak line of the mic meter (meter.peak) take the dark values of rec and gray.10 in the light themes, so they have 3:1 on those grounds too.
 
@@ -184,7 +182,7 @@ The spaces and sizes in the tables below are built only from multiples of 4. At 
 
 | Name | Value | Rule |
 |---|---|---|
-| `line.hair` | 1 | Dividers, borders, grid, play position. At every scale it stays one screen dot (physical 1px) and never gets thicker |
+| `line.hair` | 1 | Dividers, borders, grid, play position. At every scale it stays one screen dot (physical 1px) and never gets thicker. Bar lines are two line.hair side by side (2 screen dots at every scale; the second dot on the right) in the piano roll, the drum rows, the CC lanes and the arrange; beat and fine grid lines stay one (user:2026-11-24) |
 | `line.mark` | 2 | Left of a selected row, top edge of an open band tab, top edge of a clip. 2 at 125 % |
 | `line.track` | 4 | Track color strip. 5 at 125 % |
 | `radius.0` | 0 | Panels, bands, rows, clips, notes, meters |

@@ -247,9 +247,9 @@ export function noteName(key: number): string {
   return `${NOTE_NAMES[((key % 12) + 12) % 12]}${Math.floor(key / 12) - 1}`;
 }
 
-/** Row background: white keys row.white, black keys row.black, rows outside the scale row.out while the scale is locked or 「色をつける」 is on. */
+/** Row background: white keys row.white, black keys row.black, rows outside the scale row.out while the scale is locked. */
 export function rowColor(key: number, s: MusicalScale): ColorName {
-  if ((s.lock || s.highlight) && !inScale(key, s)) return "color.row.out";
+  if (s.lock && !inScale(key, s)) return "color.row.out";
   return isBlack(key) ? "color.row.black" : "color.row.white";
 }
 

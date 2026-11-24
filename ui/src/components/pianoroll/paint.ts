@@ -1,7 +1,7 @@
 // WebGL pictures of the piano roll (lists of rectangles). Does not know the DOM. Coordinates are screen pixels of the region's canvas (box is the slot's box).
 // Notes follow spec 2 "Note": height 11, a 2px gray.10 at the left end, the face gray.8 / 9 / 10 by velocity, accent when selected,
-// the position before aligning only as a gray.7 border (accent for selected notes), rows that cannot be written row.out with row.hatch diagonal lines.
-// Rows, keys, the hatch and the grid lines have colors of their own (spec 1, user:2026-11-23).
+// the position before aligning only as a gray.7 border (accent for selected notes), rows that cannot be written row.out.
+// Rows, keys and the grid lines have colors of their own (spec 1, user:2026-11-23). Bar lines are BAR_LINE wide, the other lines HAIR.
 // The original position while dragging is an accent border. Both borders are drawn after the notes so notes do not hide them (docs/history/design-notes.ja.md B-64).
 
 import type { ControlKind, LiveNote, MusicalScale } from "../../bridge";
@@ -9,14 +9,14 @@ import type { ColorName } from "../../design/tokens";
 import type { Batch } from "../../gl/batch";
 import { rgb } from "../../gl/color";
 import { isBlack } from "../../gl/keyboard";
-import { HAIR, type Box } from "../../gl/paint";
+import { BAR_LINE, HAIR, type Box } from "../../gl/paint";
 import { barsMap, eachGridTick, eachLine } from "../../time/bars";
 import type { TempoMap } from "../../time/tempoMap";
 import type { Meter } from "../time";
 import { draggedPoint, firstPointFrom, isOnOff, lanePoints, pointTick, valueToY, type LaneBox, type LaneDrag } from "./cc";
 import type { Drag } from "./drag";
 import { draggedVelocity } from "./drag";
-import { eachNoteIn, keyToY, movedFrom, noteEnd, noteStart, rowColor, rowsShown, velocityColor, writable, type RollGeom, type Shown } from "./geom";
+import { eachNoteIn, keyToY, movedFrom, noteEnd, noteStart, rowColor, rowsShown, velocityColor, type RollGeom, type Shown } from "./geom";
 import { paintGhosts, type GhostPicture } from "./ghosts";
 
 /** Sizes (CSS px, with the scale applied). */
@@ -30,8 +30,6 @@ export interface RollSizes {
   endMark: number;
   /** The difference between a drum square and the row height (part.drum.hit-gap). */
   drumGap: number;
-  /** How far apart the lines on rows that cannot be written are, along the row (part.row.hatch). */
-  hatch: number;
 }
 
 /** What the large pictures of the note area and the velocity lane use. Call the slot's update when it changes. */
@@ -60,11 +58,11 @@ export interface RollPicture {
 }
 
 const FRAME: ColorName = "color.gray.7";
-/** The lines on rows that cannot be written: exactly 3:1 against row.out (spec 1, user:2026-11-23). */
-const HATCH: ColorName = "color.row.hatch";
 
 /** The grid lines by kind: 0 bar, 1 beat, 2 other. */
 const GRID = ["color.line.bar", "color.line.beat", "color.line.grid"] as const satisfies readonly ColorName[];
+/** The width of the grid lines by kind (device pixels): the left pixel is on the line's place, the rest to its right. */
+const GRID_W = [BAR_LINE, HAIR, HAIR] as const;
 
 /** When lines get closer than this, use the next coarser lines (CSS px). */
 const LINE_MIN_PX = 4;
@@ -217,7 +215,7 @@ function gridLines(out: Batch, box: Box, p: RollPicture, X: (tick: number) => nu
   const to = g.scrollTick + g.width / g.ppt;
   eachGridLine(p, g.ppt, from, to, (tick, kind) => {
     const x = Math.round(X(tick));
-    out.rect(x, box.y0, x + HAIR, bottom, rgb(GRID[kind]));
+    out.rect(x, box.y0, x + GRID_W[kind], bottom, rgb(GRID[kind]));
   });
 }
 
@@ -242,18 +240,6 @@ export function paintRoll(out: Batch, box: Box, p: RollPicture, marks: Uint8Arra
     if (key < 0) break;
     const y = Y(key);
     out.rect(box.x0, y, box.x1, y + rowH - HAIR, rgb(rowColor(key, p.scale)));
-  }
-  // After all the rows, so the hatches are drawn together (one program change), under the lines and notes.
-  if (p.scale.lock) {
-    const pitch = Math.round(sizes.hatch * dpr);
-    const originX = Math.round(X(0));
-    for (let r = 0; r < rows; r++) {
-      const key = g.topKey - r;
-      if (key < 0) break;
-      if (writable(key, p.scale)) continue;
-      const y = Y(key);
-      out.hatch(box.x0, y, box.x1, y + rowH - HAIR, rgb(HATCH), pitch, originX, Math.round(y));
-    }
   }
 
   const from = g.scrollTick;
@@ -526,7 +512,7 @@ function laneGround(out: Batch, box: Box, p: LanePicture, dpr: number): void {
   const to = g.scrollTick + g.width / g.ppt;
   eachGridLine(p, g.ppt, g.scrollTick, to, (tick, kind) => {
     const x = Math.round(box.x0 + (tick - g.scrollTick) * g.ppt * dpr);
-    out.rect(x, box.y0, x + HAIR, box.y1, rgb(GRID[kind]));
+    out.rect(x, box.y0, x + GRID_W[kind], box.y1, rgb(GRID[kind]));
   });
   if (p.control?.kind === "pitchBend") {
     const y = Math.round(box.y0 + valueToY(p.control, p.lane, 0) * dpr);

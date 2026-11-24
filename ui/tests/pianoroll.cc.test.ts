@@ -261,6 +261,14 @@ describe("band picture (paintLane)", () => {
     expect(rects.some((r) => r[1] === 24 && r[3] === 25 && r[2]! - r[0]! === 696 && colorOf(r) === is("color.gray.5"))).toBe(true);
   });
 
+  it("the grid lines of the note area: bar lines line.bar 2 pixels wide, beat lines line.beat 1 wide (user:2026-11-24)", () => {
+    const rects = draw(picture());
+    const line = (x: number) => rects.find((r) => r[0] === x && r[1] === 0 && r[3] === 48 && r[2]! - r[0]! < 10)!;
+    expect([line(0)[2], colorOf(line(0))]).toEqual([2, is("color.line.bar")]);
+    expect([line(160)[2], colorOf(line(160))]).toEqual([162, is("color.line.bar")]);
+    expect([line(40)[2], colorOf(line(40))]).toEqual([41, is("color.line.beat")]);
+  });
+
   it("the point under the erase tool is gray.7", () => {
     const dots = squares(draw(picture({ eraseHover: 1 })));
     expect(colorOf(dots[0]!)).toBe(is("color.gray.7"));

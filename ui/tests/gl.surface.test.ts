@@ -688,7 +688,7 @@ describe("WebGL surfaces", () => {
     const rects = drawn.at(-1)!.rects;
     // The bar line (x = 0) first, the clip after. The clip box starts at (180, 165).
     expect(rects.map((r) => r.slice(0, 4))).toEqual([
-      [0, 0, 1, 300],
+      [0, 0, 2, 300],
       [30, 15, 180, 75],
       [45, 20, 53, 23],
     ]);

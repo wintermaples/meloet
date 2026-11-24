@@ -1761,16 +1761,8 @@ function shelfSong(s: AppState, shelf: Partial<ShelfView>): void {
 }
 
 // R7-Arrange6: the ● of 「2 ベース」 was pressed, so it is the selected track now.
-// Round 12 P1: A-PianoRoll in D blues, 「色をつける」 on with scale lock off (rows outside in row.out, no hatching), and the same locked.
-SCENES.scaleHighlight = {
-  setup(s) {
-    pianoRollSong(s);
-    s.pianoRoll.scale = { root: 2, mode: "blues", lock: false, highlight: true };
-  },
-  bands: ["pianoRoll"],
-  meters: QUIET,
-};
-SCENES.scaleHighlightLocked = {
+// Round 12 P1: A-PianoRoll in D blues with scale lock on (rows outside in row.out).
+SCENES.scaleLocked = {
   setup(s) {
     pianoRollSong(s);
     s.pianoRoll.scale = { root: 2, mode: "blues", lock: true, highlight: true };
@@ -4084,16 +4076,19 @@ SCENES.tooLoudLimiter = tooLoudScene(true);
 SCENES.tooLoudOver = tooLoudScene(false);
 // ---- round 12 E7: the bars of the master's sound left of 「マスター」 while the band plays (the mock of the spec), and with
 // 「表示 ▸ 音の動きを見せる」 off. The bars are the scene's master as a song would sound (`fakeSpectrum`).
-const spectrumScene = (on: boolean): SceneDef => ({
+const spectrumScene = (on: boolean, at = "9.1.000"): SceneDef => ({
   setup(s) {
     bandSong(s);
     s.transport.state = "playing";
     s.workspace.spectrum = on;
   },
-  meters: { ...QUIET, loadPermille: 140, master: [dbfs(-6.2), dbfs(-7)], position: playingAt("9.1.000") },
+  meters: { ...QUIET, loadPermille: 140, master: [dbfs(-6.2), dbfs(-7)], position: playingAt(at) },
 });
 SCENES.spectrum = spectrumScene(true);
 SCENES.spectrumOff = spectrumScene(false);
+// The same at bars 10 and 100, where the position readout is one and two characters longer.
+SCENES.spectrumBar10 = spectrumScene(true, "10.1.000");
+SCENES.spectrumBar100 = spectrumScene(true, "100.1.000");
 // ---- round 12 M3: 「仕上げのメーター」 right of the master strip while the band plays (the numbers of the spec's picture); with
 // 「モノで聞く」 on; and stopped with nothing heard yet (「−∞」).
 const finishScene = (how: "playing" | "mono" | "silent"): SceneDef => ({

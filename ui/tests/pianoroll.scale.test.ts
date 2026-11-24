@@ -1,4 +1,4 @@
-// Round 12 P1: the 9 kinds of scale and 「色をつける」. The screen's table against Rust's, the row colors and the hatch,
+// Round 12 P1: the 9 kinds of scale. The screen's table against Rust's, the row colors (only with scale lock, user:2026-11-24),
 // the chords of the key (5- and 6-note scales list their parent's), names, and the toolbar and right panel.
 import { flushSync, mount, unmount, type Component } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -79,7 +79,7 @@ describe("chords of the key", () => {
 
 // ---- the note area ----
 
-const SIZES = { noteH: 11, edge: 2, velBar: 3, velCap: 7, velFull: 64, velMid: 36, endMark: 16, drumGap: 8, hatch: 12 };
+const SIZES = { noteH: 11, edge: 2, velBar: 3, velCap: 7, velFull: 64, velMid: 36, endMark: 16, drumGap: 8 };
 const BOX = { x0: 0, y0: 0, x1: 696, y1: 492 };
 const f32 = (hex: string) => hexToRgb(hex).map(Math.fround).join();
 
@@ -110,33 +110,27 @@ const rowColors = (out: Batch) =>
     .slice(1, 1 + G.rowsShown(GEOM))
     .map((r) => r.slice(4, 7).join());
 
-describe("「色をつける」 in the note area", () => {
+describe("the scale's colors in the note area (only with scale lock; user:2026-11-24)", () => {
   const D_BLUES = { root: 2, mode: "blues", lock: false, highlight: true } as const;
   const keys = Array.from({ length: G.rowsShown(GEOM) }, (_, r) => GEOM.topKey - r);
+  const plain = keys.map((k) => f32(colors[isBlack(k) ? "color.row.black" : "color.row.white"]));
 
-  it("on with lock off: rows outside in row.out, no hatch", () => {
-    const out = draw(D_BLUES);
-    expect(out.hatches()).toEqual([]);
+  it("lock on: rows outside in row.out, nothing more on them", () => {
+    const out = draw({ ...D_BLUES, lock: true });
     expect(rowColors(out)).toEqual(
       keys.map((k) => f32(colors[G.inScale(k, D_BLUES) ? (isBlack(k) ? "color.row.black" : "color.row.white") : "color.row.out"])),
     );
+    expect(rowColors(draw({ ...D_BLUES, lock: true, highlight: false }))).toEqual(rowColors(out));
   });
 
-  it("lock on: the same rows, hatched", () => {
-    const out = draw({ ...D_BLUES, lock: true });
-    expect(rowColors(out)).toEqual(rowColors(draw(D_BLUES)));
-    expect(out.hatches().length).toBe(keys.filter((k) => !G.inScale(k, D_BLUES)).length);
+  it("lock off: only white and black rows, whatever highlight says", () => {
+    expect(rowColors(draw(D_BLUES))).toEqual(plain);
+    expect(rowColors(draw({ ...D_BLUES, highlight: false }))).toEqual(plain);
   });
 
-  it("both off: only white and black rows, as lock off was before", () => {
-    const out = draw({ ...D_BLUES, highlight: false });
-    expect(out.hatches()).toEqual([]);
-    expect(rowColors(out)).toEqual(keys.map((k) => f32(colors[isBlack(k) ? "color.row.black" : "color.row.white"])));
-  });
-
-  it("the scenes 「色づけだけ」 and 「固定あり」", () => {
-    expect(fakeScene("scaleHighlight")!.state.pianoRoll.scale).toEqual(D_BLUES);
-    expect(fakeScene("scaleHighlightLocked")!.state.pianoRoll.scale).toEqual({ ...D_BLUES, lock: true });
+  it("the scene with the lock on", () => {
+    expect(fakeScene("scaleLocked")!.state.pianoRoll.scale).toEqual({ ...D_BLUES, lock: true });
+    expect(fakeScene("scaleHighlight")).toBeNull();
   });
 });
 
@@ -168,26 +162,15 @@ function show(component: Component, scale: MusicalScale): AppState {
   return s;
 }
 
-describe("the toolbar's 「色」", () => {
-  it("right of the scale ▾, on while highlight is on; pressing sends only highlight flipped", () => {
+describe("the toolbar's scale lock and ▾", () => {
+  it("no 「色」 button (user:2026-11-24); scale lock sends highlight back as it came", () => {
     show(Toolbar, { root: 2, mode: "blues", lock: false, highlight: true });
-    const button = q("[data-test=pr-scale-highlight]")!;
-    expect(text(button)).toBe("色");
-    expect(button.previousElementSibling?.getAttribute("data-test")).toBe("pr-scale-menu");
-    expect(button.getAttribute("aria-pressed")).toBe("true");
-    expect(button.classList.contains("on")).toBe(true);
+    expect(q("[data-test=pr-scale-highlight]")).toBeNull();
     expect(text(q("[data-test=pr-scale-lock]"))).toBe("スケール固定 D ブルース");
-    button.click();
+    expect(q("[data-test=pr-scale-menu]")!.nextElementSibling?.classList.contains("ruler")).toBe(true);
+    q("[data-test=pr-scale-lock]")!.click();
     flushSync();
-    expect(app.sent).toEqual([{ type: "setMusicalScale", root: 2, mode: "blues", lock: false, highlight: false }]);
-  });
-
-  it("off: not pressed; turning it on keeps the lock", () => {
-    show(Toolbar, { root: 0, mode: "dorian", lock: true, highlight: false });
-    const button = q("[data-test=pr-scale-highlight]")!;
-    expect(button.getAttribute("aria-pressed")).toBe("false");
-    button.click();
-    expect(app.sent).toEqual([{ type: "setMusicalScale", root: 0, mode: "dorian", lock: true, highlight: true }]);
+    expect(app.sent).toEqual([{ type: "setMusicalScale", root: 2, mode: "blues", lock: true, highlight: true }]);
   });
 
   it("the ▾ lists the 9 kinds; choosing one turns the lock on and keeps highlight", () => {
@@ -203,20 +186,18 @@ describe("the toolbar's 「色」", () => {
   });
 });
 
-describe("the right panel's 「色をつける」", () => {
-  it("a row 「色をつける オン／オフ」 under 「固定」; pressing flips only highlight", () => {
+describe("the right panel's 「スケール」", () => {
+  it("no 「色をつける」 row (user:2026-11-24); 「固定」 sends highlight back as it came", () => {
     show(NoteInspector, { root: 9, mode: "minorPentatonic", lock: true, highlight: true });
-    const button = q("[data-test=inspector-highlight]")!;
-    expect(text(button.parentElement)).toBe("色をつける オン");
+    expect(q("[data-test=inspector-highlight]")).toBeNull();
     expect(text(q("[data-test=inspector-scale]"))).toBe("A マイナーペンタトニック");
-    button.click();
+    q("[data-test=inspector-lock]")!.click();
     flushSync();
-    expect(app.sent).toEqual([{ type: "setMusicalScale", root: 9, mode: "minorPentatonic", lock: true, highlight: false }]);
+    expect(app.sent).toEqual([{ type: "setMusicalScale", root: 9, mode: "minorPentatonic", lock: false, highlight: true }]);
   });
 
-  it("off reads 「オフ」; choosing a kind here keeps the lock and highlight", () => {
+  it("choosing a kind here keeps the lock and highlight", () => {
     show(NoteInspector, { root: 0, mode: "major", lock: false, highlight: false });
-    expect(text(q("[data-test=inspector-highlight]"))).toBe("オフ");
     q("[data-test=inspector-scale]")!.click();
     flushSync();
     const rows = [...document.querySelector<HTMLElement>("[data-test=scale-menu]")!.querySelectorAll<HTMLButtonElement>("button")];

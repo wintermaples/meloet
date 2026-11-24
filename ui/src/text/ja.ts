@@ -1645,7 +1645,6 @@ export const texts = {
   "band.arrange": e("アレンジ", "mock:Main"),
   "band.trackCount": e("トラック {count}", "mock:Main", { count: "5" }),
   "band.pianoRoll": e("ピアノロール", "mock:Main"),
-  "band.noteCount": e("ノート {count}", "mock:Main", { count: "23" }),
   "band.mixer": e("ミキサー", "mock:Main"),
   "band.masterDb": e("マスター {db}", "mock:Main", { db: "0.0 dB" }),
   "band.history": e("取り消しの履歴", "mock:Main"),
@@ -1818,7 +1817,6 @@ export const texts = {
   "inspector.scale": e("スケール", "mock:A-PianoRoll"),
   "inspector.musicalScale": e("音階", "mock:A-PianoRoll"),
   "inspector.lock": e("固定", "mock:A-PianoRoll"),
-  "inspector.highlight": e("色をつける", "user:2026-11-23"),
   "inspector.on": e("オン", "mock:A-PianoRoll"),
   "inspector.off": s6("Note outside the scale (reading)", "オフ", undefined, "quoted"),
   "inspector.sameLength": e("長さをそろえる", "mock:A-PianoRoll"),
@@ -1891,33 +1889,7 @@ export const texts = {
     { key: "D#", scale: "C メジャー" },
   ),
   // The piano roll band: toolbar, headings of the left and right panels, velocity and CC tags, the live reading.
-  "pr.clip": e(
-    "{number} {track} ・ {clip} ・ 小節 {bars} ・ ノート {count}",
-    "mock:F-PRPlay",
-    { number: "1", track: "ピアノ", clip: "Aメロ", bars: "1–4", count: "23" },
-  ),
-  "pr.clipSelected": e(
-    "{number} {track} ・ {clip} ・ 小節 {bars} ・ ノート {count}（選択 {selected}）",
-    "mock:A-PianoRoll",
-    {
-      number: "1",
-      track: "ピアノ",
-      clip: "イントロ",
-      bars: "1–4",
-      count: "23",
-      selected: "3",
-    },
-  ),
-  "pr.clipRecording": e(
-    "{number} {track} ・ {clip} ・ 録音中 ・ ノート {count}",
-    "mock:F-PRRec",
-    { number: "1", track: "ピアノ", clip: "Aメロ", count: "22" },
-  ),
   "pr.recordingDot": e("●", "mock:F-PRRec"),
-  "pr.noClip": e("{number} {track} ・ クリップなし", "spec:3", {
-    number: "1",
-    track: "ピアノ",
-  }),
   // The hint where there is no clip (top left of the note area). {key} is the key of the draw tool (key.toolDraw).
   "pr.emptyTitle": s6(
     "Piano roll where there is no clip",
@@ -1936,7 +1908,6 @@ export const texts = {
   "pr.toolErase": e("消す", "mock:A-PianoRoll"),
   "pr.grid": e("グリッド", "mock:A-PianoRoll"),
   "pr.scaleLock": e("スケール固定", "mock:A-PianoRoll"),
-  "pr.scaleHighlight": e("色", "user:2026-11-23"),
   // Chord help: the words of docs/design/proposals/P10-ChordStamp and P10-ChordTable (option A), as the mocks have them.
   "pr.chordShapes": e("和音の形", "user:2026-11-23"),
   "pr.chordRootC": e("根音が C のとき", "user:2026-11-23"),

@@ -277,16 +277,21 @@ describe("strength and swing bars are reached with Tab and move with ← → (sp
 });
 
 describe("term tips (spec 5)", () => {
-  it("band tabs: the names arrange, piano roll and mixer, and「ノート」in the piano roll count", () => {
+  it("band tabs: the names arrange, piano roll and mixer; the piano roll tab has the track name, with no term (user:2026-11-24)", () => {
     // jsdom has no width, so give a width that fits the count.
     vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1280);
-    show(BandRow, app.stateWith(() => {}));
+    const s = app.stateWith(() => {});
+    show(BandRow, s);
     const name = (band: string) => q(`[data-band="${band}"] .m-name`)!;
     expect(termAt(name("arrange"))).toBe("アレンジ");
     expect(termAt(name("pianoRoll"))).toBe("ピアノロール");
     expect(termAt(name("mixer"))).toBe("ミキサー");
-    const note = [...q('[data-band="pianoRoll"]')!.querySelectorAll("span")].find((s) => s.textContent === "ノート")!;
-    expect(termAt(note)).toBe("ノート");
+    const clip = s.arrange.pianoRollClip;
+    const track = clip !== null ? s.song.tracks.find((x) => x.clips.some((c) => c.id === clip)) : s.song.tracks.find((x) => x.id === s.song.keysTarget);
+    const tab = q('[data-band="pianoRoll"]')!;
+    expect(track).toBeDefined();
+    expect([...tab.querySelectorAll(".m-lbl")].map((x) => x.textContent)).toContain(track!.name);
+    expect(tab.textContent).not.toContain("ノート");
   });
 
   it("piano roll: heading,「ノート」in the left and right panels, velocity, CC tags", () => {

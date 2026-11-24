@@ -117,6 +117,10 @@ button:focus-visible,
   color: var(--color-gray-10);
   white-space: nowrap;
 }
+/* A number that opens an input box when pressed or double clicked: a dark see-through layer on hover (the owner, 2026-11-25). */
+.m-typable:hover {
+  background: color-mix(in srgb, var(--color-gray-0) 30%, transparent);
+}
 .m-spacer {
   flex: 1;
   min-width: 0;

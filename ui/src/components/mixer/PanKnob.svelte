@@ -54,7 +54,7 @@
   {#if c.typing}
     <ValueField initial={panText(c.shown)} label={t("mixer.pan")} onsubmit={(text) => c.submit(text)} oncancel={c.stopTyping} />
   {:else}
-    <span class="m-num live"><span class="in" role="presentation" data-test="mixer-pan-text" ondblclick={c.startTyping}>{panText(c.shown)}</span></span>
+    <span class="m-num live"><span class="in m-typable" role="presentation" data-test="mixer-pan-text" ondblclick={c.startTyping}>{panText(c.shown)}</span></span>
   {/if}
 </div>
 

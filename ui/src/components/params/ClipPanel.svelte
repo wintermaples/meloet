@@ -204,7 +204,7 @@
   {#if typing === field}
     <ValueField initial={shown} {label} onsubmit={(text) => submit(field, text)} oncancel={() => (typing = null)} />
   {:else}
-    <span class="m-num m-hi value" role="presentation" data-test="clip-value-{field}" ondblclick={() => startTyping(field)}>{shown}</span>
+    <span class="m-num m-hi value" class:m-typable={!busy} role="presentation" data-test="clip-value-{field}" ondblclick={() => startTyping(field)}>{shown}</span>
   {/if}
 {/snippet}
 
@@ -291,6 +291,7 @@
             <!-- 「前 0.0480 ・ 後 0.0000」. Pressing the first number twice types the fade-in, the second the fade-out. -->
             <span class="m-num m-hi value" data-test="clip-value-fade"
               >{#each textParts("clipParams.fadeValue", { fadeIn: shown.fadeIn, fadeOut: shown.fadeOut }) as part, i (i)}{#if part.hole === "fadeIn" || part.hole === "fadeOut"}{@const edge = part.hole}<span
+                    class:m-typable={!busy}
                     role="presentation"
                     data-test="clip-value-{edge}"
                     ondblclick={() => startTyping(edge)}>{part.text}</span
@@ -319,7 +320,7 @@
             {#if stretch.sourceBpm === null}
               <Button test="clip-find-tempo" disabled={busy} onclick={() => send({ type: "findSourceTempo", clip: clip.id })}>{t("clipParams.findTempo")}</Button>
             {/if}
-            <span class="m-num m-hi value" role="presentation" data-test="clip-value-sourceBpm" ondblclick={() => startTyping("sourceBpm")}
+            <span class="m-num m-hi value" class:m-typable={!busy} role="presentation" data-test="clip-value-sourceBpm" ondblclick={() => startTyping("sourceBpm")}
               >{bpmText(stretch.sourceBpm)}</span
             >
           {/if}

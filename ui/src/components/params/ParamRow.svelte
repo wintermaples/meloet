@@ -266,7 +266,7 @@
   {/if}
   {#if !typing}
     <span class="m-num m-hi value live"
-      ><span class="in" role="presentation" data-test="param-value" ondblclick={startTyping}>{text(shown)}</span></span
+      ><span class="in" class:m-typable={spec.shape === "continuous" && !disabled} role="presentation" data-test="param-value" ondblclick={startTyping}>{text(shown)}</span></span
     >
   {/if}
   <AutoMark {...mark} />

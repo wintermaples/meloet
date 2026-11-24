@@ -214,7 +214,7 @@
     </div>
   {/if}
   {#if !typing}
-    <span class="m-num m-hi value" role="presentation" data-test="param-value" ondblclick={startTyping}>{text}</span>
+    <span class="m-num m-hi value" class:m-typable={usable && kind.kind === "smooth"} role="presentation" data-test="param-value" ondblclick={startTyping}>{text}</span>
   {/if}
   <AutoMark on={automated} usable={markUsable} {add} />
 </div>

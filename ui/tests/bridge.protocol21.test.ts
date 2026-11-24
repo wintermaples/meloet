@@ -118,7 +118,6 @@ describe("step names (spec 3 (Y19))", () => {
       clearComp: "いいとこ取りを外す",
       cutClips: "クリップを切り取る",
       cutNotes: "ノートを切り取る",
-      deleteOtherTakes: "このテイク以外を消す",
       importAudio: "音のファイルを入れる",
       setClipFade: "フェードを変える",
       setClipFollow: "のび縮みを変える",

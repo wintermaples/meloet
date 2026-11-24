@@ -166,7 +166,7 @@ In the "Basis" column: "spec 3" is chapter 3 of this spec; "mock Main" is a mock
 | Selecting by pressing a heading | Selected on release (moving more than space.1 is reordering, and does not select) | to keep it apart from the reorder drag |
 | Reorder line | At the border nearest to the middle of the head being moved. Not shown at the borders around itself (where nothing moves). The line is only inside the head column. The lifted head moves only up and down (mock R6-Tracks is a little to the right) | the developers' reading |
 | Mark of 「録音待機」 in the right-click menu | The right-click selects that track before opening, so it is on, in the form after selecting | spec 3 (right-clicking something not selected selects only it first) |
-| Dividers of the 「トラック」 menu | 「ミュート」「ソロ」「録音待機」 / 「次のテイク」「前のテイク」「テイクを消す」 / 「鍵盤のトラックを足す…」 to 「下へ動かす」 / 「トラックを消す」 | the order of spec 3, with dividers added |
+| Dividers of the 「トラック」 menu | 「ミュート」「ソロ」「録音待機」 / 「次のテイク」「前のテイク」「テイクを消す」「このテイク以外を消す」 / 「鍵盤のトラックを足す…」 to 「下へ動かす」 / 「トラックを消す」 | the order of spec 3, with dividers added |
 | Place of 「ヘルプ」 | Just to the right of 「トラック」 (not pushed to the right end of the window) | mock R7-Arrange6 |
 | Keys going to the shelf | They go there when the shelf opens, when its mode changes, and when the shelf is pressed. They leave when another place is pressed. Not while a dialog is open. No mark (accent line) is drawn (「キーが向く帯の印」 of spec 2 is only for the arrange and the piano roll) | the developers' reading |
 | P | If the shelf is folded, it opens as `newTrack` (the shelf for a new track). If it is open, the usual band rule (to the front if it is behind; folds if it is in front). The mode does not change | spec 3 |

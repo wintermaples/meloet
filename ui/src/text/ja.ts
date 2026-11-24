@@ -3012,7 +3012,7 @@ export const stepNames: Readonly<Record<StepName["kind"], Entry>> = {
   record: e("録音", "spec:3"),
   switchTake: e("テイクを切りかえる", "spec:3"),
   deleteTake: e("テイクを消す", "spec:3"),
-  deleteOtherTakes: e("このテイク以外を消す", "builder:2026-11-24"),
+  deleteOtherTakes: e("このテイク以外を消す", "user:2026-11-24"),
   moveClips: e("クリップを動かす", "spec:3"),
   duplicateClips: e("クリップを複製する", "spec:3"),
   cutClips: e("クリップを切り取る", "builder:2026-11-21"),

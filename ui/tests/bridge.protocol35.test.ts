@@ -19,7 +19,7 @@ describe("shape of protocol 35", () => {
 
   it("the step name and the menu row, in Japanese and in English", () => {
     expect(STEP_NAME_KINDS).toContain("deleteOtherTakes");
-    expect(stepNames.deleteOtherTakes).toMatchObject({ text: "このテイク以外を消す", source: "builder:2026-11-24" });
+    expect(stepNames.deleteOtherTakes).toMatchObject({ text: "このテイク以外を消す", source: "user:2026-11-24" });
     expect(texts["menu.deleteOtherTakes"]).toMatchObject({ text: "このテイク以外を消す", source: "user:2026-11-24" });
     const row: HistoryRow = { index: 3, step: 7, name: { kind: "deleteOtherTakes" }, what: { kind: "take", number: 2 }, place: null };
     const ctx = fakeScene("compTakes")!.state;

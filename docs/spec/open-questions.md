@@ -7,7 +7,3 @@ The numbers are the B numbers of [`docs/history/design-notes.ja.md`](../history/
 ## B-98: round 12 (the owner's request of 2026-11-23)
 
 The readings behind these are in [chapter 7](7-readings.md), A-29; how each is built is architecture chapter 25. The owner answered every item on 2026-11-24 (the listening questions after hearing the files); what was decided is in the spec body. Below are only the parts not decided yet or not yet built.
-
-## B-99: after 0.4.0 (the owner's request of 2026-11-24)
-
-- **The step name of 「このテイク以外を消す」.** The clip menu row 「このテイク以外を消す」 (user:2026-11-24) deletes every take of the clip but the shown one, as one step. Its step name in the history is the same words, 「このテイク以外を消す」 (the developers' provisional name, builder:2026-11-24), with 「テイク N」 (the kept take) after it. It sends no status line message, the same as 「テイクを消す」. It is only in the clip's right-click menu, not in 「トラック」 of the menu bar. Is this right?

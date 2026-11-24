@@ -10,12 +10,15 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use meloet_engine::{Effect, Instrument, PluginBlock, PluginWatch};
-use meloet_model::PluginPlace;
+use meloet_model::{PluginOutputs, PluginPlace};
 use meloet_plugin::PluginKey;
 
 use meloet_engine::{PluginEffect, PluginInstrument};
 
-use super::hosts::{HostError, HostOptions, Hosts, LoadSpec, StartState, wait};
+use super::hosts::{
+    CapturedSound, HostError, HostOptions, Hosts, LoadSpec, OutputSet, SlotId, StartState,
+    output_settings, wait,
+};
 
 /// One plugin of the song, as the export is to load it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -27,6 +30,8 @@ pub struct ExportPlugin {
     pub bundle: PathBuf,
     /// Everything the plugin says of itself; empty: as it starts.
     pub state: Vec<u8>,
+    /// The settings of its output sets, as the song has them.
+    pub outputs: PluginOutputs,
 }
 
 /// What the export wants of its plugin processes.
@@ -53,6 +58,8 @@ pub struct ExportSeats {
     pub realtime: bool,
     /// What tells that a plugin answered no more.
     pub watches: Vec<(PluginPlace, Arc<PluginWatch>)>,
+    /// Each plugin's place in the processes, and the output sets it said it has.
+    slots: Vec<(PluginPlace, SlotId, Vec<OutputSet>)>,
     /// The processes. Last, so that the seats still here go first.
     hosts: Option<Hosts>,
 }
@@ -65,8 +72,35 @@ impl ExportSeats {
             effects: Vec::new(),
             realtime: false,
             watches: Vec::new(),
+            slots: Vec::new(),
             hosts: None,
         }
+    }
+
+    /// The output sets the plugin at `place` said it has; `None` when no plugin is there.
+    pub fn output_sets(&self, place: PluginPlace) -> Option<&[OutputSet]> {
+        (self.slots.iter())
+            .find(|(p, _, _)| *p == place)
+            .map(|(_, _, sets)| &sets[..])
+    }
+
+    fn slot_of(&self, place: PluginPlace) -> Result<(&Hosts, SlotId), HostError> {
+        let hosts = self.hosts.as_ref().ok_or(HostError::UnknownSlot)?;
+        let slot = (self.slots.iter()).find(|(p, _, _)| *p == place);
+        Ok((hosts, slot.ok_or(HostError::UnknownSlot)?.1))
+    }
+
+    /// From the next block on, the plugin at `place` keeps the sound of each of its output
+    /// sets alone for `frames` frames ([`Hosts::capture`]). Waits for the answer.
+    pub fn capture(&self, place: PluginPlace, frames: u64) -> Result<(), HostError> {
+        let (hosts, id) = self.slot_of(place)?;
+        wait(|done| hosts.capture(id, frames, done))
+    }
+
+    /// What [`ExportSeats::capture`] kept. Waits for the answer.
+    pub fn captured(&self, place: PluginPlace) -> Result<Vec<CapturedSound>, HostError> {
+        let (hosts, id) = self.slot_of(place)?;
+        wait(|done| hosts.captured(id, done))
     }
 
     /// The process ids of the export's plugin processes that run now.
@@ -119,6 +153,8 @@ pub enum ExportPluginError {
 ///   the export's thread starts: what the playing plugin says its state is now
 ///   (`Hosts::state`, as saving the song asks it), and for one that does not answer what
 ///   the `Doc` holds (`PluginRef::state`).
+/// - **Output sets**: an instrument takes `ExportPlugin::outputs` from its first block, the
+///   settings the `Doc` has (docs/architecture.md 20-15); an insert the default.
 pub fn export_seats(
     options: &HostOptions,
     want: ExportWant,
@@ -137,11 +173,16 @@ pub fn export_seats(
             key,
             bundle,
             state,
+            outputs,
         } = plugin;
         let spec = LoadSpec {
             key,
             bundle,
             sample_rate: want.sample_rate,
+            outputs: match place {
+                PluginPlace::Instrument(_) => output_settings(&outputs),
+                PluginPlace::Insert(..) => output_settings(&PluginOutputs::default()),
+            },
         };
         let state = if state.is_empty() {
             StartState::Fresh
@@ -156,6 +197,7 @@ pub fn export_seats(
         )?;
         seats.realtime |= loaded.plugin.live;
         seats.watches.push((place, loaded.watch));
+        (seats.slots).push((place, loaded.id, loaded.plugin.outputs));
         match place {
             PluginPlace::Instrument(_) => {
                 let instrument = Box::new(PluginInstrument(loaded.slot));
@@ -218,6 +260,7 @@ mod tests {
                 .unwrap(),
             bundle: PathBuf::from("/usr/lib/lv2/Surge XT.lv2"),
             state: Vec::new(),
+            outputs: PluginOutputs::default(),
         };
         let block = Arc::new(PluginBlock::default());
         assert!(matches!(

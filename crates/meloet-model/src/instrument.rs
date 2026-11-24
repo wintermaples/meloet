@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use crate::Language;
+use crate::mixer::{Gain, Pan};
 
 /// What a track sounds with.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -74,6 +75,8 @@ pub struct PluginRef {
     pub path: Arc<str>,
     /// Everything the plugin said of itself when last asked. Empty: as the plugin starts.
     pub state: Arc<[u8]>,
+    /// Only of an instrument; an insert's is always the default.
+    pub outputs: PluginOutputs,
     pub kept: Kept,
 }
 
@@ -86,6 +89,7 @@ impl PluginRef {
             vendor: vendor.into(),
             path: path.into(),
             state: Arc::from([]),
+            outputs: PluginOutputs::default(),
             kept: Kept::NONE,
         }
     }
@@ -95,6 +99,115 @@ impl PluginRef {
         PluginRef {
             state,
             ..self.clone()
+        }
+    }
+
+    /// The same plugin with other settings of its output sets.
+    pub fn with_outputs(&self, outputs: PluginOutputs) -> PluginRef {
+        PluginRef {
+            outputs,
+            ..self.clone()
+        }
+    }
+}
+
+/// What the person set for one output set of a plugin instrument (docs/architecture.md 20-15).
+/// `None`: what the default rule of the plugin host says.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OutputSetting {
+    /// As the plugin host names the set.
+    pub id: Arc<str>,
+    /// −60.00 to +6.00 dB; never −∞ (`on` silences a set). [`OutputSetting::clamped`] keeps it
+    /// so.
+    pub gain: Gain,
+    pub pan: Option<Pan>,
+    pub on: Option<bool>,
+}
+
+impl OutputSetting {
+    /// At the defaults.
+    pub fn new(id: &str) -> OutputSetting {
+        OutputSetting {
+            id: id.into(),
+            gain: Gain::UNITY,
+            pan: None,
+            on: None,
+        }
+    }
+
+    pub fn is_default(&self) -> bool {
+        self.gain == Gain::UNITY && self.pan.is_none() && self.on.is_none()
+    }
+
+    /// The same with −∞ as −60 dB.
+    pub fn clamped(self) -> OutputSetting {
+        OutputSetting {
+            gain: output_gain(self.gain),
+            ..self
+        }
+    }
+}
+
+/// −∞ is −60 dB: the lowest level an output set has.
+fn output_gain(gain: Gain) -> Gain {
+    match gain.db() {
+        Some(_) => gain,
+        None => Gain::from_db(Gain::MIN_DB),
+    }
+}
+
+/// The settings of the output sets of a plugin instrument. Made with [`PluginOutputs::new`] or
+/// [`PluginOutputs::with`], it keeps no entry at the defaults and one entry at most for each
+/// id, in the order of the ids, so two tables that mean the same are equal.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PluginOutputs {
+    /// The default rule the sets follow. A rule this meloet does not know is kept as read.
+    pub rule: u32,
+    pub sets: Arc<[OutputSetting]>,
+}
+
+impl PluginOutputs {
+    /// The rule of a plugin put in by this meloet.
+    pub const DEFAULT_RULE: u32 = 1;
+
+    /// Of each id the first entry is kept, with −∞ as −60 dB, and only when it is not at the
+    /// defaults.
+    pub fn new(rule: u32, sets: impl IntoIterator<Item = OutputSetting>) -> PluginOutputs {
+        let mut sets: Vec<OutputSetting> = (sets.into_iter()).map(OutputSetting::clamped).collect();
+        sets.sort_by(|a, b| a.id.cmp(&b.id));
+        sets.dedup_by(|later, first| later.id == first.id);
+        sets.retain(|set| !set.is_default());
+        PluginOutputs {
+            rule,
+            sets: sets.into(),
+        }
+    }
+
+    pub fn is_default(&self) -> bool {
+        *self == PluginOutputs::default()
+    }
+
+    pub fn get(&self, id: &str) -> Option<&OutputSetting> {
+        self.sets.iter().find(|set| &*set.id == id)
+    }
+
+    /// The table with `setting` in place of the entry of its id; with no entry for it when it
+    /// is at the defaults.
+    pub fn with(&self, setting: OutputSetting) -> PluginOutputs {
+        let mut sets: Vec<OutputSetting> = (self.sets.iter())
+            .filter(|set| set.id != setting.id)
+            .cloned()
+            .collect();
+        sets.push(setting);
+        PluginOutputs::new(self.rule, sets)
+    }
+}
+
+impl Default for PluginOutputs {
+    fn default() -> PluginOutputs {
+        PluginOutputs {
+            rule: PluginOutputs::DEFAULT_RULE,
+            sets: Arc::from([]),
         }
     }
 }

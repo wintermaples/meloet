@@ -1471,6 +1471,189 @@ fn a_step_on_a_plugin_and_its_undo_are_saved_as_the_song_is() {
     assert_eq!(encode(&undone), encode(&song));
 }
 
+/// `added_song` with output sets of Surge XT set under `rule`: out1 on, out3 lower, to the
+/// left and off.
+fn with_outputs(rule: u32) -> Song {
+    use meloet_model::OutputSetting;
+    let mut song = added_song();
+    let InstrumentRef::Plugin(surge) = &song.doc.tracks[1].instrument else {
+        panic!("{:?}", song.doc.tracks[1].instrument);
+    };
+    let outputs = PluginOutputs::new(
+        rule,
+        [
+            OutputSetting {
+                id: "out3".into(),
+                gain: Gain::from_db(-3.0),
+                pan: Some(Pan::new(-50)),
+                on: Some(false),
+            },
+            OutputSetting {
+                on: Some(true),
+                ..OutputSetting::new("out1")
+            },
+        ],
+    );
+    let instrument = InstrumentRef::Plugin(Arc::new(surge.with_outputs(outputs)));
+    Arc::make_mut(&mut song.doc.tracks[1]).instrument = instrument;
+    song
+}
+
+fn outputs_of_track(song: &Song, index: usize) -> PluginOutputs {
+    match &song.doc.tracks[index].instrument {
+        InstrumentRef::Plugin(plugin) => plugin.outputs.clone(),
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn output_settings_of_a_plugin_instrument_come_back() {
+    let song = with_outputs(1);
+    let bytes = encode(&song);
+    let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(v["version"], 7);
+    assert_eq!(
+        v["song"]["tracks"][1]["instrument"]["outputs"],
+        serde_json::json!({"sets": [{"id": "out1", "on": true},
+                                    {"id": "out3", "gainDb": -3.0, "pan": -0.5, "on": false}]}),
+        "rule 1, 0 dB and what the rule decides are left out"
+    );
+    let back = decode(&bytes).unwrap();
+    assert_eq!(back, song);
+    assert_eq!(encode(&back), bytes, "and are written the same again");
+
+    // A rule this meloet does not know is kept with its sets, and alone.
+    let song = with_outputs(2);
+    let v: serde_json::Value = serde_json::from_slice(&encode(&song)).unwrap();
+    assert_eq!(v["song"]["tracks"][1]["instrument"]["outputs"]["rule"], 2);
+    assert_eq!(decode(&encode(&song)).unwrap(), song);
+    let mut v = v;
+    v["song"]["tracks"][1]["instrument"]["outputs"] = serde_json::json!({"rule": 9});
+    let song = read_json(&v);
+    assert_eq!(outputs_of_track(&song, 1), PluginOutputs::new(9, []));
+    let again: serde_json::Value = serde_json::from_slice(&encode(&song)).unwrap();
+    assert_eq!(
+        again["song"]["tracks"][1]["instrument"]["outputs"],
+        serde_json::json!({"rule": 9})
+    );
+}
+
+#[test]
+fn a_song_without_output_settings_is_written_as_before_and_reads_with_the_defaults() {
+    let song = added_song();
+    let bytes = encode(&song);
+    assert!(!String::from_utf8_lossy(&bytes).contains("outputs"));
+    let back = decode(&bytes).unwrap();
+    assert_eq!(back, song);
+    assert!(outputs_of_track(&back, 1).is_default());
+
+    // Set, then reset by a step: the same bytes as never set.
+    let track = song.doc.tracks[1].id;
+    let lower = meloet_model::OutputChange {
+        gain: Some(Gain::from_db(-6.0)),
+        ..Default::default()
+    };
+    let reset = meloet_model::OutputChange {
+        reset: true,
+        ..Default::default()
+    };
+    let set = meloet_model::edit::set_plugin_output(&song.doc, track, "out2", lower).unwrap();
+    let doc = meloet_model::edit::set_plugin_output(&set.doc, track, "out2", reset).unwrap();
+    let undone = Song {
+        doc: doc.doc,
+        session: song.session.clone(),
+    };
+    assert_eq!(encode(&undone), bytes);
+
+    // A song of version 6 has none.
+    let mut v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    v["version"] = 6.into();
+    let back = read_json(&v);
+    assert_eq!(back.doc.tracks, song.doc.tracks);
+    assert!(outputs_of_track(&back, 1).is_default());
+}
+
+#[test]
+fn output_settings_that_cannot_be_read_are_the_default() {
+    use meloet_model::OutputSetting;
+    use serde_json::json;
+    let good: serde_json::Value = serde_json::from_slice(&encode(&with_outputs(1))).unwrap();
+    for outputs in [
+        json!("loud"),
+        json!(3),
+        json!(null),
+        json!({"rule": -1}),
+        json!({"rule": 1.5}),
+        json!({"sets": "out3"}),
+        json!({"sets": [{"gainDb": -3.0}]}),
+        json!({"sets": [{"id": 3}]}),
+        json!({"sets": [{"id": "out3", "gainDb": null}]}),
+        json!({"sets": [{"id": "out3", "on": "no"}]}),
+    ] {
+        let mut v = good.clone();
+        v["song"]["tracks"][1]["instrument"]["outputs"] = outputs.clone();
+        let song = read_json(&v);
+        assert!(outputs_of_track(&song, 1).is_default(), "{outputs}");
+        let InstrumentRef::Plugin(surge) = &song.doc.tracks[1].instrument else {
+            panic!("{outputs}");
+        };
+        assert_eq!(&*surge.key, SURGE, "the plugin itself is kept");
+        let again: serde_json::Value = serde_json::from_slice(&encode(&song)).unwrap();
+        assert_eq!(
+            again["song"]["tracks"][1]["instrument"].get("outputs"),
+            None,
+            "{outputs}"
+        );
+    }
+
+    // Values out of range are brought into range; an entry at the defaults and a second one
+    // of an id are left out.
+    let mut v = good.clone();
+    v["song"]["tracks"][1]["instrument"]["outputs"] = json!({"sets": [
+        {"id": "out2", "gainDb": -100.0, "pan": -0.333},
+        {"id": "out1", "gainDb": 20.0, "pan": 3.0},
+        {"id": "out3"},
+        {"id": "out1", "on": false}]});
+    let song = read_json(&v);
+    assert_eq!(
+        *outputs_of_track(&song, 1).sets,
+        [
+            OutputSetting {
+                id: "out1".into(),
+                gain: Gain::from_db(Gain::MAX_DB),
+                pan: Some(Pan::new(100)),
+                on: None,
+            },
+            OutputSetting {
+                id: "out2".into(),
+                gain: Gain::from_db(Gain::MIN_DB),
+                pan: Some(Pan::new(-33)),
+                on: None,
+            },
+        ]
+    );
+}
+
+#[test]
+fn an_insert_writes_no_output_settings_and_keeps_them_as_an_unknown_field() {
+    let mut v: serde_json::Value = serde_json::from_slice(&encode(&added_song())).unwrap();
+    let outputs = serde_json::json!({"sets": [{"id": "out3", "on": false}]});
+    v["song"]["tracks"][0]["inserts"][3]["plugin"]["outputs"] = outputs.clone();
+    let song = read_json(&v);
+    let passed = song.doc.tracks[0].channel.inserts[3].as_ref().unwrap();
+    let plugin = passed.plugin_ref().unwrap();
+    assert!(plugin.outputs.is_default());
+    assert!(plugin.kept.text().unwrap().contains("out3"));
+    let again: serde_json::Value = serde_json::from_slice(&encode(&song)).unwrap();
+    assert_eq!(
+        again["song"]["tracks"][0]["inserts"][3]["plugin"]["outputs"],
+        outputs
+    );
+    let master = &again["song"]["mixer"]["master"]["inserts"][2]["plugin"];
+    assert_eq!(master["key"], SURGE);
+    assert_eq!(master.get("outputs"), None);
+}
+
 // ---- tempo points, meter changes, markers, the loop's range in the song ----
 
 #[test]

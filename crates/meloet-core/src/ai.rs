@@ -9,11 +9,11 @@ use std::sync::Arc;
 use meloet_model::effects::EffectKind;
 use meloet_model::{
     AutoPoint, AutoTarget, BuiltinInstrument, ClipEdge, InstrumentRef, Note, NoteField,
-    PluginPlace, PluginRef, QuantizeSettings, Song, StripId, TickRange,
+    OutputChange, PluginPlace, PluginRef, QuantizeSettings, Song, StripId, TickRange, TrackId,
 };
 use meloet_protocol::{Command, ExportFormat, HistoryRow, LibraryView, RecordFormat};
 
-pub use crate::plugins::hosts::{PresetAsk, PresetInfo, PresetSaid};
+pub use crate::plugins::hosts::{OutputSet, PresetAsk, PresetInfo, PresetSaid};
 
 /// Called on the core thread with the switch 「AI とつなぐ」, once when it is set and again
 /// whenever the switch changes. Must not wait.
@@ -353,6 +353,14 @@ pub enum AiAsk {
         track: Option<u32>,
         tick: u64,
     },
+    /// The level, the pan or the on/off of one output set of the plugin that is the
+    /// instrument of track `track` (id) (docs/architecture.md 20-15). Any id while the plugin
+    /// is not loaded; once it is, one of its sets or one the song keeps a setting of.
+    SetPluginOutput {
+        track: u32,
+        output: String,
+        change: OutputChange,
+    },
 }
 
 /// The screen's intents an AI may send through [`AiAsk::Screen`]: each changes the song as
@@ -511,6 +519,7 @@ impl AiAsk {
             AiAsk::DeleteMuteSet { .. } => "delete the mute set",
             AiAsk::RenameMuteSet { .. } => "rename the mute set",
             AiAsk::ImportAudio { .. } => "import audio",
+            AiAsk::SetPluginOutput { .. } => "set the plugin's output",
             AiAsk::WriteNotes { .. } => "write notes",
             AiAsk::DeleteNotes { .. } => "delete notes",
             AiAsk::CreateClip { .. } => "create a clip",
@@ -560,6 +569,9 @@ pub struct AiSong {
     pub sample_rate: u32,
     /// How the asks answered with a ticket ended, the newest last (a few are kept).
     pub outcomes: Vec<(u64, AiOutcome)>,
+    /// The output sets of each track's instrument plugin that is loaded, as its plugin host
+    /// said them; a track whose plugin is not loaded (yet) is not here.
+    pub instrument_sets: Vec<(TrackId, Arc<[OutputSet]>)>,
 }
 
 /// How an ask answered with a ticket is doing.
@@ -864,6 +876,18 @@ pub enum AiRefusal {
     /// The file is there and `overwrite` was not given.
     Exists(PathBuf),
     NothingToRender,
+    /// The loaded plugin has no output set `asked`, and the song keeps no setting of it;
+    /// these are its sets.
+    NoSuchOutput {
+        asked: String,
+        ids: Vec<String>,
+    },
+    /// The range is longer than the plugin host can keep of `sets` output sets: at most
+    /// `longest_s` seconds.
+    CaptureTooLong {
+        sets: u32,
+        longest_s: f64,
+    },
 }
 
 /// A range to render and measure, through the export's own engine.
@@ -899,6 +923,39 @@ pub struct AiAnalysisAsk {
     /// Where sections begin, in ticks inside the range, rising; the range's start begins the
     /// first. Empty: no sections.
     pub cuts: Vec<u64>,
+}
+
+/// Each output set of the instrument plugin of a track, alone, over a range: rendered
+/// through the export's own engine.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AiOutputsMeasure {
+    pub span: TickRange,
+    /// The track's number from 1.
+    pub track: u32,
+}
+
+/// One output set as [`AiOutputsMeasure`] measured it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AiOutputLevel {
+    /// As the plugin of the export said it.
+    pub set: OutputSet,
+    /// `None`: the plugin host kept nothing of it.
+    pub levels: Option<PassLevels>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AiOutputLevels {
+    pub sample_rate: u32,
+    /// The track's number and name when the measuring began.
+    pub track: (u32, String),
+    /// The sets the plugin of the export said it has, in its order.
+    pub sets: Vec<AiOutputLevel>,
+}
+
+/// The longest range in seconds the plugin host keeps the sound of `sets` output sets of,
+/// at `rate`.
+pub fn capture_longest_s(sets: usize, rate: u32) -> f64 {
+    crate::plugins::hosts::capture_frames_max(sets) as f64 / f64::from(rate.max(1))
 }
 
 /// What to render into files, through the export's own engine.

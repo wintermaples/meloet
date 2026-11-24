@@ -6,8 +6,9 @@ use std::sync::Arc;
 use crate::arp::Arp;
 use crate::automation::{AutoTarget, Lane, LaneId};
 use crate::history::StepKind;
+use crate::instrument::OutputSetting;
 use crate::knobs::SoundKnobs;
-use crate::mixer::{self, Channel, InsertId};
+use crate::mixer::{self, Channel, Gain, InsertId, Pan};
 use crate::song::{
     Clip, ClipId, ClipTake, ClipTakes, ControlPoint, ControlValue, Doc, Note, Take, TakeId, Track,
 };
@@ -449,6 +450,62 @@ pub fn set_arp(doc: &Doc, track: TrackId, arp: Arp) -> Result<Edit, EditError> {
     })
 }
 
+/// What [`set_plugin_output`] changes of one output set. A field left `None` stays as it is;
+/// `Some(None)` is back to what the rule says.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct OutputChange {
+    /// −∞ is taken as −60 dB.
+    pub gain: Option<Gain>,
+    pub pan: Option<Option<Pan>>,
+    pub on: Option<Option<bool>>,
+    /// Everything back to the defaults first; the other fields then apply.
+    pub reset: bool,
+}
+
+/// One output set of the plugin that is the track's instrument (docs/architecture.md 20-15).
+/// `NoSuchPlugin` when the instrument is not a plugin. The set need not be one the plugin
+/// has now: the song keeps what it was told.
+pub fn set_plugin_output(
+    doc: &Doc,
+    track: TrackId,
+    id: &str,
+    change: OutputChange,
+) -> Result<Edit, EditError> {
+    let ti = track_index(doc, track)?;
+    let t = &doc.tracks[ti];
+    let InstrumentRef::Plugin(plugin) = &t.instrument else {
+        return Err(EditError::NoSuchPlugin);
+    };
+    let mut setting = match plugin.outputs.get(id) {
+        Some(setting) if !change.reset => setting.clone(),
+        _ => OutputSetting::new(id),
+    };
+    if let Some(gain) = change.gain {
+        setting.gain = gain;
+    }
+    if let Some(pan) = change.pan {
+        setting.pan = pan;
+    }
+    if let Some(on) = change.on {
+        setting.on = on;
+    }
+    let outputs = plugin.outputs.with(setting);
+    if outputs == plugin.outputs {
+        return Err(EditError::Unchanged);
+    }
+    Ok(Edit {
+        doc: with_track(
+            doc,
+            ti,
+            Track {
+                instrument: InstrumentRef::Plugin(Arc::new(plugin.with_outputs(outputs))),
+                ..Track::clone(t)
+            },
+        ),
+        step: StepKind::SetPluginOutput { track },
+    })
+}
+
 /// The track goes with its clips. The last track can go too: a song may have none. `next_id`
 /// goes past the track's id, so that [`add_track`] never gives it to another track.
 pub fn delete_track(doc: &Doc, track: TrackId) -> Result<Edit, EditError> {
@@ -791,3 +848,6 @@ mod tests;
 
 #[cfg(test)]
 mod duplicate_tests;
+
+#[cfg(test)]
+mod output_tests;

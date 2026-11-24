@@ -1103,6 +1103,34 @@ impl Play {
         Ok(AiWrote::default())
     }
 
+    /// One output set of the track's instrument plugin. While the plugin is not loaded any id
+    /// goes; once it is, one of its sets or one the song keeps a setting of (to change or
+    /// reset what was kept for a set it no longer has).
+    pub(crate) fn ai_set_plugin_output(
+        &mut self,
+        track: TrackId,
+        id: &str,
+        change: meloet_model::OutputChange,
+        effects: &mut Vec<Effect>,
+    ) -> Result<AiWrote, AiRefusal> {
+        let t = (self.doc().track(track)).ok_or(AiRefusal::NoSuchTrack(track.0))?;
+        let InstrumentRef::Plugin(plugin) = &t.instrument else {
+            return Err(AiRefusal::NoSuchPlugin);
+        };
+        if let Some(sets) = self.instrument_sets(track)
+            && !sets.iter().any(|s| s.id == id)
+            && plugin.outputs.get(id).is_none()
+        {
+            return Err(AiRefusal::NoSuchOutput {
+                asked: id.to_owned(),
+                ids: sets.iter().map(|s| s.id.clone()).collect(),
+            });
+        }
+        let e = edit::set_plugin_output(self.doc(), track, id, change).map_err(refusal)?;
+        self.apply(e, effects);
+        Ok(AiWrote::default())
+    }
+
     pub(crate) fn ai_add_track(
         &mut self,
         instrument: meloet_model::InstrumentRef,

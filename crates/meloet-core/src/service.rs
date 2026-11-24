@@ -24,8 +24,8 @@ use meloet_model::mixer::set_plugin_state;
 use meloet_model::playback::{PlayEvent, PlayKind};
 use meloet_model::record::{HeldControls, RecEventKind};
 use meloet_model::{
-    BuiltinInstrument, ControlValue, InstrumentGroup, InstrumentRef, PluginChange, PluginPlace,
-    Song,
+    BuiltinInstrument, ControlValue, InstrumentGroup, InstrumentRef, PluginChange, PluginOutputs,
+    PluginPlace, Song,
 };
 use meloet_plugin::wire::Notice;
 use meloet_plugin::{PluginKey, ScanCache};
@@ -37,7 +37,8 @@ use meloet_sound::phrases::{self, PhrasePlayer};
 use meloet_sound::sampler::{LoadError, SampleBank};
 
 use crate::ai::{
-    AiAnswer, AiAsk, AiLevels, AiMeasure, AiRefusal, AiRender, AiRendered, AiSong, AiSwitch,
+    AiAnswer, AiAsk, AiLevels, AiMeasure, AiOutputLevels, AiOutputsMeasure, AiRefusal, AiRender,
+    AiRendered, AiSong, AiSwitch,
 };
 use crate::analysis::{Analysis, Readings};
 use crate::audiofiles::keeper::AudioNews;
@@ -57,7 +58,7 @@ use crate::play::{
 };
 use crate::plugins::hosts::{
     DEFAULT_GEOMETRY, EditorKind, HostError, HostNews, HostOptions, Hosts, LoadSpec, Loaded,
-    ParamNow, PresetAsk, PresetSaid, SlotId, StartState,
+    ParamNow, PresetAsk, PresetSaid, SlotId, StartState, output_settings,
 };
 use crate::plugins::housed::{HousedEffect, HousedInstrument, Which};
 use crate::plugins::scanner::Scanner;
@@ -343,6 +344,12 @@ enum Msg {
     /// The AI link measures: the job's id or why not, then its news on `news`.
     AiMeasure {
         ask: AiMeasure,
+        news: Sender<ExportNews>,
+        reply: Sender<Result<AiJob, AiRefusal>>,
+    },
+    /// The AI link measures the output sets of a plugin, as `AiMeasure` goes.
+    AiMeasureOutputs {
+        ask: AiOutputsMeasure,
         news: Sender<ExportNews>,
         reply: Sender<Result<AiJob, AiRefusal>>,
     },
@@ -1050,6 +1057,49 @@ impl Core {
                         tracks: tracks.map(|((n, name, _), p)| (n, name, p)).collect(),
                         muted,
                         analysis,
+                    });
+                }
+                Ok(ExportNews::Failed { reason, .. }) => {
+                    return Err(AiRefusal::ExportFailed(format!("{reason:?}")));
+                }
+                Ok(_) | Err(RecvTimeoutError::Timeout) => {}
+                Err(RecvTimeoutError::Disconnected) => return Err(AiRefusal::Closing),
+            }
+        }
+    }
+
+    /// Renders the track of `ask` alone through the export's engine and measures each output
+    /// set of its instrument plugin alone, on the caller's thread. As [`Core::ai_measure`]
+    /// for `progress` and `cancelled`.
+    pub fn ai_measure_outputs(
+        &self,
+        ask: AiOutputsMeasure,
+        progress: &mut dyn FnMut(u8),
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<AiOutputLevels, AiRefusal> {
+        let (news_tx, news) = mpsc::channel();
+        let (reply, answer) = mpsc::channel();
+        let msg = Msg::AiMeasureOutputs {
+            ask,
+            news: news_tx,
+            reply,
+        };
+        self.tx.send(msg).map_err(|_| AiRefusal::Closing)?;
+        let job = answer.recv().map_err(|_| AiRefusal::Closing)??;
+        loop {
+            if cancelled() {
+                let _ = self.tx.send(Msg::AiDrop(job.id));
+                return Err(AiRefusal::Cannot("it was cancelled".into()));
+            }
+            match news.recv_timeout(Duration::from_millis(100)) {
+                Ok(ExportNews::Counted { percent, .. }) => progress(percent),
+                Ok(ExportNews::Measured { captured, .. }) => {
+                    let sets = captured.ok_or(AiRefusal::Closing)??;
+                    let (number, name, _) = job.tracks.into_iter().next().unwrap_or_default();
+                    return Ok(AiOutputLevels {
+                        sample_rate: job.sample_rate,
+                        track: (number, name),
+                        sets,
                     });
                 }
                 Ok(ExportNews::Failed { reason, .. }) => {
@@ -2742,8 +2792,10 @@ impl Worker {
                                 EditorKind::Unsupported => PluginWindowKind::NotYet,
                                 EditorKind::None => PluginWindowKind::None,
                             });
+                            let sets = PluginSaid::Outputs(loaded.plugin.outputs.clone());
                             side.ready.insert(ticket, loaded);
                             self.handle(Input::PluginSaid { ticket, said });
+                            self.handle(Input::PluginSaid { ticket, said: sets });
                             Input::PluginLoaded { ticket }
                         }
                         (Ok(_), None) => Input::PluginUnreadable { ticket },
@@ -2821,6 +2873,9 @@ impl Worker {
                 Ok(Msg::AiMeasure { ask, news, reply }) => {
                     let _ = reply.send(self.ai_measure(&ask, news));
                 }
+                Ok(Msg::AiMeasureOutputs { ask, news, reply }) => {
+                    let _ = reply.send(self.ai_measure_outputs(&ask, news));
+                }
                 Ok(Msg::AiRender { ask, news, reply }) => {
                     let _ = reply.send(self.ai_render(&ask, news));
                 }
@@ -2891,6 +2946,28 @@ impl Worker {
             id,
             sample_rate,
             tracks,
+        })
+    }
+
+    fn ai_measure_outputs(
+        &mut self,
+        ask: &AiOutputsMeasure,
+        news: Sender<ExportNews>,
+    ) -> Result<AiJob, AiRefusal> {
+        if self.ai_jobs() > 0 {
+            return Err(AiRefusal::Measuring);
+        }
+        self.ai_jobs += 1;
+        let id = export::AI_JOBS + self.ai_jobs;
+        let (job, track) = self.model.ai_outputs_job(ask, id)?;
+        let sample_rate = job.sample_rate;
+        if let Some(input) = self.export_render(Box::new(job), Some(news)) {
+            self.handle(input);
+        }
+        Ok(AiJob {
+            id,
+            sample_rate,
+            tracks: vec![track],
         })
     }
 
@@ -3245,8 +3322,10 @@ impl Worker {
                         bundle,
                         state,
                         sample_rate,
+                        outputs,
                     } => {
-                        if !self.load_plugin(ticket, &key, bundle, state, sample_rate) {
+                        let spec = (bundle, sample_rate, &outputs);
+                        if !self.load_plugin(ticket, &key, spec, state) {
                             inputs.push_back(Input::PluginUnreadable { ticket });
                         }
                     }
@@ -3266,6 +3345,14 @@ impl Worker {
                             && let Some((id, _)) = side.ids.get(&ticket)
                         {
                             side.hosts.set_state(*id, state.to_vec(), Box::new(|_| {}));
+                        }
+                    }
+                    Effect::SetPluginOutputs { ticket, outputs } => {
+                        if let Some(side) = &self.plugins
+                            && let Some((id, _)) = side.ids.get(&ticket)
+                        {
+                            let outputs = output_settings(&outputs);
+                            side.hosts.set_outputs(*id, outputs, Box::new(|_| {}));
                         }
                     }
                     Effect::ReloadPlugin { ticket } => {
@@ -3545,14 +3632,14 @@ impl Worker {
         side.hosts.preset(id, ask, Box::new(done));
     }
 
-    /// [`Effect::LoadPlugin`]. Returns whether the load was asked for.
+    /// [`Effect::LoadPlugin`]: its bundle, its sample rate and the settings of its output
+    /// sets in `spec`. Returns whether the load was asked for.
     fn load_plugin(
         &self,
         ticket: u64,
         key: &str,
-        bundle: PathBuf,
+        (bundle, sample_rate, outputs): (PathBuf, u32, &PluginOutputs),
         state: PlugState,
-        sample_rate: u32,
     ) -> bool {
         let (Some(side), Ok(key)) = (&self.plugins, key.parse::<PluginKey>()) else {
             return false;
@@ -3569,6 +3656,7 @@ impl Worker {
             key,
             bundle,
             sample_rate,
+            outputs: output_settings(outputs),
         };
         let block = self.audio.handle.plugin_block().clone();
         (side.hosts).load_with(spec, start, block, self.loaded_sink(ticket));

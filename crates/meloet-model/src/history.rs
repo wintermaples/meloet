@@ -555,6 +555,11 @@ pub enum StepKind {
     SetClipTune {
         clip: ClipId,
     },
+    /// The level, the pan or the on/off of one output set of the plugin that is the track's
+    /// instrument (docs/architecture.md 20-15).
+    SetPluginOutput {
+        track: TrackId,
+    },
 }
 
 #[derive(Debug, Clone)]

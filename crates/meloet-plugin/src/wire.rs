@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use crate::key::PluginKey;
 use crate::scan::{EditorKind, PluginInfo};
 
-pub const WIRE_VERSION: u32 = 7;
+pub const WIRE_VERSION: u32 = 8;
 
 /// No message's text is longer than this.
 pub const MAX_TEXT_LEN: usize = 16 << 20;
@@ -47,12 +47,14 @@ pub enum Request {
     Hello { version: u32 },
     /// Loads a plugin into a slot of the shared memory and makes it ready to run. The engine's
     /// end of the slot exists already. Answered by `Loaded` once the audio thread runs it.
+    /// `outputs` holds from the first block on, with no ramp.
     Load {
         slot: u32,
         key: PluginKey,
         bundle: PathBuf,
         sample_rate: u32,
         max_frames: u32,
+        outputs: OutputSettings,
     },
     /// Takes the plugin out of the slot (closing its window). After the `Ok` the host does not
     /// touch the slot any more.
@@ -108,6 +110,14 @@ pub enum Request {
     /// what meloet's automation does to the plugin's parameters is told with
     /// `ParamAutomated`. Answered by `Ok`.
     Watch { slot: u32, on: bool },
+    /// The whole table of the output sets' settings, in place of the one before. The values
+    /// move there over 20 ms. Answered by `Ok`.
+    SetOutputs { slot: u32, outputs: OutputSettings },
+    /// Only in a host for an export (`Reply::Hello::offline`): from the next block on, the host
+    /// keeps the sound of each output set of the plugin for `frames` frames. Answered by `Ok`.
+    Capture { slot: u32, frames: u64 },
+    /// What `Capture` kept. Answered by `Captured`.
+    Captured { slot: u32 },
     /// Unloads everything and ends the process.
     Quit,
 }
@@ -171,6 +181,20 @@ pub enum Reply {
     Editor {
         open: EditorOpen,
     },
+    /// The blob holds, for each set in this order, its `frames` frames as `f32` little
+    /// endian, left and right in turn: the set alone as heard at 0 dB where the rule puts it,
+    /// before its own level, pan and on/off.
+    Captured {
+        sets: Vec<CapturedSet>,
+    },
+}
+
+/// One output set's part of `Reply::Captured`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CapturedSet {
+    pub id: String,
+    pub frames: u64,
 }
 
 /// A parameter's value now.
@@ -233,7 +257,7 @@ pub enum EditorOpen {
 }
 
 /// What meloet needs to know about a plugin it just loaded.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LoadedPlugin {
     /// Its delay in frames at the sample rate it was loaded for (20-8).
@@ -244,6 +268,51 @@ pub struct LoadedPlugin {
     pub editor: EditorKind,
     /// It says it cannot run faster than it plays (LV2 `lv2:isLive`).
     pub live: bool,
+    #[serde(default)]
+    pub outputs: Vec<OutputSet>,
+}
+
+/// One output set of a loaded plugin, as the plugin's description gives it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutputSet {
+    pub id: String,
+    pub name: String,
+    /// 1 or 2.
+    pub channels: u8,
+    /// Heard by the default rule.
+    pub on: bool,
+    /// Where the default rule puts it: -1 all left ..= 1 all right.
+    pub pan: f32,
+}
+
+/// What the person set for one output set. `None`: what the rule says.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutputSetting {
+    pub id: String,
+    pub gain_db: f32,
+    pub pan: Option<f32>,
+    pub on: Option<bool>,
+}
+
+/// The settings of a plugin's output sets. A set not in `sets` is at 0 dB, where the rule
+/// puts it, and on or off as the rule says.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutputSettings {
+    /// The default rule; 1 is the only one so far.
+    pub rule: u32,
+    pub sets: Vec<OutputSetting>,
+}
+
+impl Default for OutputSettings {
+    fn default() -> OutputSettings {
+        OutputSettings {
+            rule: 1,
+            sets: Vec::new(),
+        }
+    }
 }
 
 /// One parameter (spec 3: 「パラメータの行」). Values are 0..=1 at this boundary.
@@ -483,6 +552,7 @@ mod tests {
                 bundle: "/usr/lib/lv2/ZamComp.lv2".into(),
                 sample_rate: 48_000,
                 max_frames: 1024,
+                outputs: OutputSettings::default(),
             },
         };
         let set = ToHost {
@@ -565,10 +635,48 @@ mod tests {
                 key: PluginKey::vst3("647370206B31732020202020756E7363").unwrap(),
                 bundle: "/usr/lib/vst3/lsp-plugins.vst3".into(),
                 sample_rate: 48_000,
-                max_frames: 256
+                max_frames: 256,
+                outputs: OutputSettings::default(),
             }),
             json!({ "id": 1, "request": { "type": "load", "slot": 0, "key": "vst3:647370206B31732020202020756E7363",
-                "bundle": "/usr/lib/vst3/lsp-plugins.vst3", "sampleRate": 48000, "maxFrames": 256 } })
+                "bundle": "/usr/lib/vst3/lsp-plugins.vst3", "sampleRate": 48000, "maxFrames": 256,
+                "outputs": { "rule": 1, "sets": [] } } })
+        );
+        assert_eq!(
+            to(Request::SetOutputs {
+                slot: 2,
+                outputs: OutputSettings {
+                    rule: 1,
+                    sets: vec![
+                        OutputSetting {
+                            id: "out3".into(),
+                            gain_db: -3.0,
+                            pan: Some(-0.5),
+                            on: Some(false),
+                        },
+                        OutputSetting {
+                            id: "out4".into(),
+                            gain_db: 1.5,
+                            pan: None,
+                            on: None,
+                        },
+                    ],
+                },
+            }),
+            json!({ "id": 1, "request": { "type": "setOutputs", "slot": 2, "outputs": { "rule": 1, "sets": [
+                { "id": "out3", "gainDb": -3.0, "pan": -0.5, "on": false },
+                { "id": "out4", "gainDb": 1.5, "pan": null, "on": null } ] } } })
+        );
+        assert_eq!(
+            to(Request::Capture {
+                slot: 2,
+                frames: 48_000
+            }),
+            json!({ "id": 1, "request": { "type": "capture", "slot": 2, "frames": 48000 } })
+        );
+        assert_eq!(
+            to(Request::Captured { slot: 2 }),
+            json!({ "id": 1, "request": { "type": "captured", "slot": 2 } })
         );
         assert_eq!(
             to(Request::SetParam {
@@ -594,10 +702,36 @@ mod tests {
                         audio_outputs: 2,
                         editor: EditorKind::X11,
                         live: false,
+                        outputs: vec![OutputSet {
+                            id: "main".into(),
+                            name: "Main".into(),
+                            channels: 2,
+                            on: true,
+                            pan: 0.0,
+                        }],
                     }
                 }
             }),
-            json!({ "kind": "reply", "id": 4, "reply": { "type": "loaded", "plugin": { "latency": 64, "audioInputs": 0, "audioOutputs": 2, "editor": "x11", "live": false } } })
+            json!({ "kind": "reply", "id": 4, "reply": { "type": "loaded", "plugin": { "latency": 64, "audioInputs": 0, "audioOutputs": 2, "editor": "x11", "live": false,
+                "outputs": [{ "id": "main", "name": "Main", "channels": 2, "on": true, "pan": 0.0 }] } } })
+        );
+        // From a host that tells no output sets.
+        let plugin: LoadedPlugin = serde_json::from_value(
+            json!({ "latency": 0, "audioInputs": 2, "audioOutputs": 2, "editor": "none", "live": false }),
+        )
+        .unwrap();
+        assert!(plugin.outputs.is_empty());
+        assert_eq!(
+            from(FromHost::Reply {
+                id: 7,
+                reply: Reply::Captured {
+                    sets: vec![CapturedSet {
+                        id: "out3".into(),
+                        frames: 256
+                    }]
+                }
+            }),
+            json!({ "kind": "reply", "id": 7, "reply": { "type": "captured", "sets": [{ "id": "out3", "frames": 256 }] } })
         );
         assert_eq!(
             from(FromHost::Reply {
@@ -684,6 +818,22 @@ mod tests {
             Request::Hello {
                 version: WIRE_VERSION,
             },
+            Request::Load {
+                slot: 1,
+                key: "lv2:urn:x".parse().unwrap(),
+                bundle: "/usr/lib/lv2/x.lv2".into(),
+                sample_rate: 44_100,
+                max_frames: 512,
+                outputs: OutputSettings {
+                    rule: 1,
+                    sets: vec![OutputSetting {
+                        id: "out3".into(),
+                        gain_db: 0.0,
+                        pan: None,
+                        on: Some(true),
+                    }],
+                },
+            },
             Request::Unload { slot: 1 },
             Request::GetState { slot: 1 },
             Request::SetState { slot: 1 },
@@ -721,6 +871,23 @@ mod tests {
             },
             Request::CloseEditor { slot: 1 },
             Request::Watch { slot: 1, on: true },
+            Request::SetOutputs {
+                slot: 1,
+                outputs: OutputSettings {
+                    rule: 2,
+                    sets: vec![OutputSetting {
+                        id: "out3".into(),
+                        gain_db: -60.0,
+                        pan: Some(1.0),
+                        on: None,
+                    }],
+                },
+            },
+            Request::Capture {
+                slot: 1,
+                frames: 1 << 20,
+            },
+            Request::Captured { slot: 1 },
             Request::Quit,
         ];
         for request in requests {
@@ -837,6 +1004,18 @@ mod tests {
             Reply::Read { read: None },
             Reply::Editor {
                 open: EditorOpen::Opening,
+            },
+            Reply::Captured {
+                sets: vec![
+                    CapturedSet {
+                        id: "out1".into(),
+                        frames: 4096,
+                    },
+                    CapturedSet {
+                        id: "out3".into(),
+                        frames: 4096,
+                    },
+                ],
             },
         ];
         for reply in replies {

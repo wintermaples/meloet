@@ -48,10 +48,12 @@ pub use meloet_plugin::EditorKind;
 use meloet_plugin::PluginKey;
 use meloet_plugin::ipc::{EngineEnd, Geometry, Mapping};
 use meloet_plugin::launch::{self, PidFd};
-pub use meloet_plugin::wire::{EditorOpen, KeyName, ParamNow, ParamShape, PresetInfo, TextValue};
+pub use meloet_plugin::wire::{
+    EditorOpen, KeyName, OutputSet, OutputSettings, ParamNow, ParamShape, PresetInfo, TextValue,
+};
 use meloet_plugin::wire::{
-    FromHost, LoadedPlugin, Notice, ParamInfo, Reply, Request, ToHost, WIRE_VERSION, read_frame,
-    write_frame,
+    FromHost, LoadedPlugin, MAX_BLOB_LEN, Notice, OutputSetting as WireSetting, ParamInfo, Reply,
+    Request, ToHost, WIRE_VERSION, read_frame, write_frame,
 };
 
 /// How often the processes are looked at. A plugin that stopped is told at most this long
@@ -90,11 +92,45 @@ pub struct HostOptions {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SlotId(pub u64);
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct LoadSpec {
     pub key: PluginKey,
     pub bundle: PathBuf,
     pub sample_rate: u32,
+    /// The settings of its output sets from the first block on (docs/architecture.md 20-15).
+    pub outputs: OutputSettings,
+}
+
+/// The settings of a plugin's output sets as the plugin host takes them: the level in dB
+/// (−∞ as −60), the pan from −1 to 1.
+pub fn output_settings(outputs: &meloet_model::PluginOutputs) -> OutputSettings {
+    OutputSettings {
+        rule: outputs.rule,
+        sets: (outputs.sets.iter())
+            .map(|set| WireSetting {
+                id: set.id.to_string(),
+                gain_db: set.gain.db().unwrap_or(meloet_model::Gain::MIN_DB) as f32,
+                pan: set.pan.map(|pan| f32::from(pan.get()) / 100.0),
+                on: set.on,
+            })
+            .collect(),
+    }
+}
+
+/// Bytes of the sound `capture` keeps of one stereo frame of one set.
+const CAPTURED_FRAME: u64 = 8;
+
+/// The most frames [`Hosts::capture`] can keep of a plugin with `sets` output sets.
+pub fn capture_frames_max(sets: usize) -> u64 {
+    MAX_BLOB_LEN as u64 / (sets.max(1) as u64 * CAPTURED_FRAME)
+}
+
+/// The sound of one output set that [`Hosts::captured`] gives: stereo frames, left and right
+/// in turn.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CapturedSound {
+    pub id: String,
+    pub samples: Vec<f32>,
 }
 
 /// The state a plugin has when its load is answered.
@@ -262,6 +298,9 @@ enum Ask {
     OpenWindow(SlotId, String, Done<EditorOpen>),
     CloseWindow(SlotId, Done<()>),
     Watch(SlotId, bool),
+    SetOutputs(SlotId, OutputSettings, Done<()>),
+    Capture(SlotId, u64, Done<()>),
+    Captured(SlotId, Done<Vec<CapturedSound>>),
     Processes(Done<Vec<ProcessInfo>>),
 }
 
@@ -465,6 +504,25 @@ impl Hosts {
     /// (docs/architecture.md 21-8). Remembered over `reload`; a stopped plugin tells nothing.
     pub fn watch(&self, id: SlotId, on: bool) {
         self.ask(Ask::Watch(id, on));
+    }
+
+    /// The whole table of the settings of the plugin's output sets, in place of the one
+    /// before; the values move there over 20 ms. Remembered for `reload`, also while the
+    /// plugin is stopped (which then answers `Gone`).
+    pub fn set_outputs(&self, id: SlotId, outputs: OutputSettings, done: Done<()>) {
+        self.ask(Ask::SetOutputs(id, outputs, done));
+    }
+
+    /// Only for the `Hosts` of an export: from the next block on, the plugin keeps the sound
+    /// of each of its output sets alone for `frames` frames (docs/architecture.md 20-15).
+    pub fn capture(&self, id: SlotId, frames: u64, done: Done<()>) {
+        self.ask(Ask::Capture(id, frames, done));
+    }
+
+    /// What `capture` kept, set by set in the plugin's order. A set the plugin could not
+    /// keep is not in it.
+    pub fn captured(&self, id: SlotId, done: Done<Vec<CapturedSound>>) {
+        self.ask(Ask::Captured(id, done));
     }
 
     /// The processes that run now.
@@ -699,6 +757,19 @@ impl Run {
                     let _ = self.ask_slot(id, |slot| Request::Watch { slot, on }, &[]);
                 }
             }
+            Ask::SetOutputs(id, outputs, done) => {
+                let Some(slot) = self.slots.get_mut(&id) else {
+                    return done(Err(HostError::UnknownSlot));
+                };
+                slot.spec.outputs = outputs.clone();
+                let request = |slot| Request::SetOutputs { slot, outputs };
+                done(self.ask_slot(id, request, &[]).and_then(ok));
+            }
+            Ask::Capture(id, frames, done) => {
+                let request = |slot| Request::Capture { slot, frames };
+                done(self.ask_slot(id, request, &[]).and_then(ok));
+            }
+            Ask::Captured(id, done) => done(self.captured(id)),
             Ask::Processes(done) => done(Ok(self
                 .procs
                 .iter()
@@ -895,6 +966,39 @@ impl Run {
         self.request(at, request(place), blob, ANSWER_WAIT)
     }
 
+    /// `Request::Captured`, with the blob cut into the sound of each set.
+    fn captured(&mut self, id: SlotId) -> Result<Vec<CapturedSound>, HostError> {
+        let slot = self.slots.get(&id).ok_or(HostError::UnknownSlot)?;
+        let (proc, place) = slot.home.ok_or(HostError::Gone)?;
+        let at = self.proc_at(proc).ok_or(HostError::Gone)?;
+        let request = Request::Captured { slot: place };
+        let (sets, blob) = match self.request(at, request, &[], LOAD_WAIT)? {
+            (Reply::Captured { sets }, blob) => (sets, blob),
+            (other, _) => return Err(refused(other)),
+        };
+        let bytes: u64 = sets.iter().map(|s| s.frames * CAPTURED_FRAME).sum();
+        if bytes != blob.len() as u64 {
+            return Err(HostError::Refused(format!(
+                "the captured sound is {} bytes, not the {bytes} its sets say",
+                blob.len()
+            )));
+        }
+        let mut rest = &blob[..];
+        Ok((sets.into_iter())
+            .map(|set| {
+                let (this, after) = rest.split_at((set.frames * CAPTURED_FRAME) as usize);
+                rest = after;
+                let samples = (this.as_chunks::<4>().0.iter())
+                    .map(|b| f32::from_le_bytes(*b))
+                    .collect();
+                CapturedSound {
+                    id: set.id,
+                    samples,
+                }
+            })
+            .collect())
+    }
+
     fn preset(&mut self, id: SlotId, ask: PresetAsk) -> Result<PresetSaid, HostError> {
         let slot = self.slots.get(&id).ok_or(HostError::UnknownSlot)?;
         let (proc, slot) = slot.home.ok_or(HostError::Gone)?;
@@ -1012,6 +1116,7 @@ impl Run {
                     bundle: spec.bundle.clone(),
                     sample_rate: spec.sample_rate,
                     max_frames: self.options.geometry.max_frames,
+                    outputs: spec.outputs.clone(),
                 };
                 match self.request(at, load, &[], LOAD_WAIT)?.0 {
                     Reply::Loaded { plugin } => Ok((end, plugin)),
@@ -1213,5 +1318,102 @@ fn notice_slot(notice: &Notice) -> u32 {
         | Notice::ParamAutomated { slot, .. }
         | Notice::ParamsChanged { slot }
         | Notice::LatencyChanged { slot, .. } => slot,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn settings(gain_db: f32) -> OutputSettings {
+        OutputSettings {
+            rule: 1,
+            sets: vec![WireSetting {
+                id: "out3".into(),
+                gain_db,
+                pan: Some(-0.5),
+                on: Some(false),
+            }],
+        }
+    }
+
+    #[test]
+    fn the_settings_of_a_stopped_plugin_are_kept_for_its_reload() {
+        let mut run = Run {
+            options: HostOptions {
+                exe: "/nowhere/meloet-plughost".into(),
+                env: Vec::new(),
+                geometry: DEFAULT_GEOMETRY,
+            },
+            offline: false,
+            news: Box::new(|_| {}),
+            procs: Vec::new(),
+            slots: HashMap::new(),
+            next: 2,
+        };
+        let spec = LoadSpec {
+            key: "lv2:urn:meloet:fake:sine".parse().unwrap(),
+            bundle: "/nowhere/fake.lv2".into(),
+            sample_rate: 48_000,
+            outputs: settings(-3.0),
+        };
+        let id = SlotId(1);
+        let slot = Slot {
+            spec,
+            home: None,
+            watch: Arc::default(),
+            state: None,
+            params: BTreeMap::new(),
+            watched: false,
+        };
+        run.slots.insert(id, slot);
+        let (tx, rx) = mpsc::channel();
+        let done = Box::new(move |answer| {
+            let _ = tx.send(answer);
+        });
+        run.answer(Ask::SetOutputs(id, settings(-12.0), done));
+        assert_eq!(rx.recv().unwrap(), Err(HostError::Gone));
+        // `reload` loads with the spec, and `place` sends its settings in `Request::Load`.
+        assert_eq!(run.slots[&id].spec.outputs, settings(-12.0));
+    }
+
+    #[test]
+    fn the_settings_go_to_the_plugin_host_in_its_units() {
+        use meloet_model::{Gain, OutputSetting, Pan, PluginOutputs};
+        let outputs = PluginOutputs::new(
+            1,
+            [
+                OutputSetting {
+                    id: "b".into(),
+                    gain: Gain::from_db(-6.5),
+                    pan: Some(Pan::new(-100)),
+                    on: None,
+                },
+                OutputSetting {
+                    id: "a".into(),
+                    gain: Gain::SILENT,
+                    pan: None,
+                    on: Some(false),
+                },
+            ],
+        );
+        let wire = output_settings(&outputs);
+        assert_eq!(wire.rule, 1);
+        let shown: Vec<(&str, f32, Option<f32>, Option<bool>)> = (wire.sets.iter())
+            .map(|s| (s.id.as_str(), s.gain_db, s.pan, s.on))
+            .collect();
+        assert_eq!(
+            shown,
+            [
+                ("a", -60.0, None, Some(false)),
+                ("b", -6.5, Some(-1.0), None)
+            ]
+        );
+        assert_eq!(
+            output_settings(&PluginOutputs::default()),
+            OutputSettings::default()
+        );
+        // 256 MiB of stereo f32 frames: 4 sets for 174.76 s at 48 kHz.
+        assert_eq!(capture_frames_max(4), 8_388_608);
     }
 }

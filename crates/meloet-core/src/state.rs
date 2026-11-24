@@ -31,7 +31,7 @@ use meloet_model::{
     TrackKind, VocalInput,
 };
 use meloet_plugin::ScanCache;
-use meloet_plugin::wire::{KeyName, ParamInfo, ParamNow, TextValue};
+use meloet_plugin::wire::{KeyName, OutputSet, ParamInfo, ParamNow, TextValue};
 use meloet_protocol::{
     AppState, ArrangeView, AudioView, Availability, Band, ChooserView, ChosenState, Command,
     EffectRef, EndpointView, FileDropView, Friendly, Hint, HistoryRow, InstrumentKind,
@@ -347,6 +347,9 @@ pub enum PluginSaid {
     /// What window it has, as the plugin itself says once it is loaded. Comes before its
     /// [`Input::PluginLoaded`].
     Editor(PluginWindowKind),
+    /// The output sets it has, as its plugin host says once it is loaded
+    /// (docs/architecture.md 20-15). Comes before its [`Input::PluginLoaded`].
+    Outputs(Vec<OutputSet>),
     /// The window asked for with [`PluginAsk::OpenWindow`] is on the screen.
     WindowOpened {
         width: u32,
@@ -579,6 +582,8 @@ pub enum Effect {
         bundle: PathBuf,
         state: PlugState,
         sample_rate: u32,
+        /// The settings of its output sets from its first block on.
+        outputs: meloet_model::PluginOutputs,
     },
     /// The plugin loaded under `ticket` is not put into the engine after all: let go of it.
     DropPlugin {
@@ -588,6 +593,12 @@ pub enum Effect {
     SetPluginState {
         ticket: u64,
         state: Arc<[u8]>,
+    },
+    /// The settings of the output sets of the plugin loaded under `ticket` are these from
+    /// now on (docs/architecture.md 20-15).
+    SetPluginOutputs {
+        ticket: u64,
+        outputs: meloet_model::PluginOutputs,
     },
     /// Start a new process for the stopped plugin loaded under `ticket`, with the state
     /// remembered for it. Answer as for [`Effect::LoadPlugin`], with the same ticket.

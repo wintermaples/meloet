@@ -12,7 +12,8 @@ use std::sync::Arc;
 
 use meloet_model::mixer::{moved_slot, set_plugin_state};
 use meloet_model::{
-    InstrumentGroup, InstrumentRef, PluginChange, PluginPlace, PluginRef, StripId, TrackId,
+    InstrumentGroup, InstrumentRef, PluginChange, PluginOutputs, PluginPlace, PluginRef, StripId,
+    TrackId,
 };
 use meloet_protocol::{InsertRef, PluginSlotRef, PluginState, PluginWindowKind, StatusMessage};
 
@@ -22,6 +23,7 @@ use super::shelf::Mode;
 use super::sounds::Sample;
 use super::{EngineOp, Play, StripSeat};
 use crate::added::sound_ref;
+use crate::plugins::hosts::OutputSet;
 use crate::state::{Effect, PluginAsk, StateAsk};
 
 mod aistate;
@@ -86,12 +88,40 @@ pub(super) struct Plug {
     base_asked: bool,
     /// How many states were put back into it.
     pub puts: u32,
+    /// The output sets it has, as its plugin host said when it was loaded.
+    sets: Option<Arc<[OutputSet]>>,
+    /// The settings of its output sets its plugin host was last told, or is told with the
+    /// load on its way.
+    told: PluginOutputs,
 }
 
 impl Plug {
     /// It sounds: its window can be opened and its parameters moved.
     pub fn sounds(&self) -> bool {
         self.phase == Phase::Ready && self.placed
+    }
+
+    /// Its plugin host is told the settings of its output sets when they are not the ones
+    /// it was told last. One that is loading is told when its load answers.
+    fn tell_outputs(&mut self, effects: &mut Vec<Effect>) {
+        let wanted = wanted_outputs(self.spot, &self.plugin);
+        if self.told == wanted || matches!(self.phase, Phase::Loading | Phase::Failed) {
+            return;
+        }
+        self.told = wanted.clone();
+        effects.push(Effect::SetPluginOutputs {
+            ticket: self.ticket,
+            outputs: wanted,
+        });
+    }
+}
+
+/// The settings of the output sets a plugin at `spot` has: only a track's instrument has
+/// any other than the default (docs/architecture.md 20-15).
+fn wanted_outputs(spot: Spot, plugin: &PluginRef) -> PluginOutputs {
+    match spot {
+        Spot::Seat(_) => plugin.outputs.clone(),
+        Spot::Trial(_) | Spot::Insert(..) | Spot::Sample => PluginOutputs::default(),
     }
 }
 
@@ -187,6 +217,30 @@ impl Play {
         if let Some(plug) = self.plugs.of_mut(ticket) {
             plug.window = Some(window);
         }
+    }
+
+    /// `PluginSaid::Outputs`.
+    pub(super) fn plug_outputs_said(&mut self, ticket: u64, sets: Vec<OutputSet>) {
+        if let Some(plug) = self.plugs.of_mut(ticket) {
+            plug.sets = Some(sets.into());
+        }
+    }
+
+    /// The output sets of the plugin that is the track's instrument, as its plugin host
+    /// said when it was loaded; `None` while it is not loaded (yet).
+    pub(crate) fn instrument_sets(&self, track: TrackId) -> Option<Arc<[OutputSet]>> {
+        let InstrumentRef::Plugin(p) = &self.doc().track(track)?.instrument else {
+            return None;
+        };
+        let plug = self.plugs.at(Spot::Seat(self.seats.of(track)?))?;
+        (plug.plugin.key == p.key).then(|| plug.sets.clone())?
+    }
+
+    /// [`Play::instrument_sets`] of every track whose instrument plugin is loaded.
+    pub(crate) fn all_instrument_sets(&self) -> Vec<(TrackId, Arc<[OutputSet]>)> {
+        (self.doc().tracks.iter())
+            .filter_map(|t| Some((t.id, self.instrument_sets(t.id)?)))
+            .collect()
     }
 
     /// Whether meloet opens the plugin's window.
@@ -321,6 +375,7 @@ impl Play {
         {
             if have.plugin.state == plugin.state {
                 have.plugin = plugin.clone();
+                have.tell_outputs(effects);
                 return Want::Kept;
             }
             let state = match plugin.state.is_empty() {
@@ -332,6 +387,7 @@ impl Play {
                 have.puts += 1;
                 let ticket = have.ticket;
                 effects.push(Effect::SetPluginState { ticket, state });
+                have.tell_outputs(effects);
                 self.table_stale(ticket);
                 self.visit_overtaken(ticket, effects);
                 self.lanes_anew(spot, effects);
@@ -343,6 +399,7 @@ impl Play {
             return Want::Missing;
         };
         let ticket = self.plugs.ticket();
+        let outputs = wanted_outputs(spot, plugin);
         self.plugs.list.push(Plug {
             spot,
             ticket,
@@ -353,6 +410,8 @@ impl Play {
             base: None,
             base_asked: false,
             puts: 0,
+            sets: None,
+            told: outputs.clone(),
         });
         effects.push(Effect::LoadPlugin {
             ticket,
@@ -364,6 +423,7 @@ impl Play {
                 None => PlugState::Bytes(plugin.state.clone()),
             },
             sample_rate: self.plugs.rate,
+            outputs,
         });
         Want::Loading
     }
@@ -472,6 +532,8 @@ impl Play {
             return;
         };
         plug.phase = Phase::Ready;
+        // Settings changed while it was loading.
+        plug.tell_outputs(effects);
         // A process started again answers no ask the old one was sent.
         plug.base_asked = plug.base.is_some();
         plugs.stopped.retain(|t| *t != ticket);
@@ -609,12 +671,14 @@ impl Play {
             let plug = &mut plugs.list[at];
             plug.ticket = ticket;
             plug.phase = Phase::Loading;
+            plug.told = wanted_outputs(old.spot, &old.plugin);
             effects.push(Effect::LoadPlugin {
                 ticket,
                 key: old.plugin.key.clone(),
                 bundle,
                 state,
                 sample_rate: plugs.rate,
+                outputs: plug.told.clone(),
             });
         }
     }
@@ -823,5 +887,7 @@ impl Play {
     }
 }
 
+#[cfg(test)]
+mod output_tests;
 #[cfg(test)]
 pub(super) mod tests;

@@ -9,7 +9,8 @@ use std::sync::{Arc, Mutex};
 use meloet_ai::{AiLink, CoreLink, Meloet};
 use meloet_core::Core;
 use meloet_core::ai::{
-    AiAnswer, AiAsk, AiBusy, AiLevels, AiMeasure, AiRefusal, AiRender, AiRendered, AiSong,
+    AiAnswer, AiAsk, AiBusy, AiLevels, AiMeasure, AiOutputLevels, AiOutputsMeasure, AiRefusal,
+    AiRender, AiRendered, AiSong,
 };
 use meloet_protocol::AiPort;
 use serde_json::{Value, json};
@@ -252,6 +253,7 @@ impl Meloet for Recording {
             unsaved: false,
             sample_rate: 48_000,
             outcomes: Vec::new(),
+            instrument_sets: Vec::new(),
         })
     }
 
@@ -265,6 +267,15 @@ impl Meloet for Recording {
         _: &mut dyn FnMut(u8),
         _: &dyn Fn() -> bool,
     ) -> Result<AiLevels, AiRefusal> {
+        Err(AiRefusal::Busy(AiBusy::Recording))
+    }
+
+    fn measure_outputs(
+        &self,
+        _: AiOutputsMeasure,
+        _: &mut dyn FnMut(u8),
+        _: &dyn Fn() -> bool,
+    ) -> Result<AiOutputLevels, AiRefusal> {
         Err(AiRefusal::Busy(AiBusy::Recording))
     }
 
@@ -1016,6 +1027,7 @@ fn every_tool_says_what_it_is() {
         "save_song",
         "export_song",
         "move_notes",
+        "set_plugin_output",
     ] {
         assert_eq!(named(n)["annotations"]["destructiveHint"], false, "{n}");
     }
@@ -1028,6 +1040,7 @@ fn every_tool_says_what_it_is() {
         "render_audio",
         "get_clip_audio",
         "get_plugin_params",
+        "measure_plugin_outputs",
     ] {
         assert_eq!(named(n)["annotations"]["readOnlyHint"], true, "{n}");
     }

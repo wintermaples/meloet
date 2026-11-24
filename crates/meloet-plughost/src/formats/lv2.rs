@@ -46,6 +46,7 @@ use meloet_plugin::{
     EditorKind, InstrumentCategory, PluginInfo, PluginKey, PluginKind, PluginRole,
 };
 
+use super::outputs::{Outputs, Ports, SetShape, Side};
 use super::{
     Activation, Candidate, Controller, GATE_WAIT, Gate, Loaded, Opened, ProcessBlock, Processor,
     Read, Said, leading_number,
@@ -60,6 +61,7 @@ const UI: &str = "http://lv2plug.in/ns/extensions/ui#";
 const RDFS: &str = "http://www.w3.org/2000/01/rdf-schema#";
 const RDF_TYPE: &str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
 const MIDI_EVENT: &str = "http://lv2plug.in/ns/ext/midi#MidiEvent";
+const PG: &str = "http://lv2plug.in/ns/ext/port-groups#";
 const GROUP: &str = "http://lv2plug.in/ns/ext/port-groups#group";
 const MINIMUM_SIZE: &str = "http://lv2plug.in/ns/ext/resize-port#minimumSize";
 const NOT_ON_GUI: &str = "http://lv2plug.in/ns/ext/port-props#notOnGUI";
@@ -423,10 +425,14 @@ struct Layout {
     atom_in_bytes: Vec<usize>,
     atom_out_bytes: Vec<usize>,
     latency_port: Option<PortIndex>,
-    /// Among the audio inputs and among the audio outputs: the one or two that carry the
-    /// plugin's main sound (left, right).
+    /// Among the audio inputs: the one or two that take the plugin's main sound (left,
+    /// right).
     main_in: Vec<usize>,
-    main_out: Vec<usize>,
+    /// Among the audio outputs: the ones that are heard ([`heard_outputs`]).
+    heard_out: Vec<(usize, Side)>,
+    /// The audio outputs in sets ([`output_sets`]).
+    output_sets: Vec<SetShape>,
+    instrument: bool,
     /// The port numbers of the atom inputs, of the atom outputs and of the control outputs,
     /// each in the order livi has them.
     atom_in_ports: Vec<u32>,
@@ -436,33 +442,192 @@ struct Layout {
     symbols: HashMap<CString, u32>,
 }
 
-/// Which of the audio ports of one direction are the main ones: not a side chain, in the same
-/// group as the first such port, and two at most.
-fn main_ports(world: &World, plugin: &livi::Plugin, direction: PortType) -> Vec<usize> {
+/// What the description says of one audio port, as much as decides whether it is heard and
+/// where.
+#[derive(Debug, Clone, Default)]
+struct AudioPort {
+    group: Option<String>,
+    /// The group's own `lv2:name` (or `rdfs:label`).
+    group_name: Option<String>,
+    /// Also a port the description does not have: never heard.
+    side_chain: bool,
+    /// `lv2:connectionOptional`.
+    optional: bool,
+    /// `lv2:designation pg:left` or `pg:right`.
+    designated: Option<Side>,
+    name: String,
+    symbol: String,
+}
+
+fn audio_ports(world: &World, plugin: &livi::Plugin, direction: PortType) -> Vec<AudioPort> {
     let raw = plugin.raw();
     let side_chain = world.uri(&format!("{LV2}isSideChain"));
-    let group_of = |port: &lilv::port::Port| world.get(&port.node(), GROUP);
-    let mut first_group = None;
-    let mut main = Vec::new();
-    for (at, port) in plugin.ports_with_type(direction).enumerate() {
-        let Some(port) = raw.port_by_index(port.index.0) else {
-            continue;
-        };
-        let group = group_of(&port);
-        let aside = port.has_property(&side_chain)
-            || group
-                .as_ref()
-                .is_some_and(|g| world.get(g, SIDE_CHAIN_OF).is_some());
-        if aside {
-            continue;
+    let optional = world.uri(&format!("{LV2}connectionOptional"));
+    let designation = world.uri(&format!("{LV2}designation"));
+    let (left, right) = (format!("{PG}left"), format!("{PG}right"));
+    (plugin.ports_with_type(direction))
+        .map(|port| {
+            let Some(lilv_port) = raw.port_by_index(port.index.0) else {
+                return AudioPort {
+                    side_chain: true,
+                    ..AudioPort::default()
+                };
+            };
+            let group = world.get(&lilv_port.node(), GROUP);
+            let side_chain = lilv_port.has_property(&side_chain)
+                || (group.as_ref()).is_some_and(|g| world.get(g, SIDE_CHAIN_OF).is_some());
+            let designated = lilv_port.get(&designation).and_then(|d| match d.as_uri() {
+                Some(uri) if uri == left => Some(Side::Left),
+                Some(uri) if uri == right => Some(Side::Right),
+                _ => None,
+            });
+            let group_name = group.as_ref().and_then(|group| {
+                (world.text(group, &format!("{LV2}name")))
+                    .or_else(|| world.text(group, &format!("{RDFS}label")))
+                    .filter(|name| !name.is_empty())
+            });
+            AudioPort {
+                group: group.and_then(|g| g.as_uri().map(str::to_owned)),
+                group_name,
+                side_chain,
+                optional: lilv_port.has_property(&optional),
+                designated,
+                name: port.name,
+                symbol: port.symbol,
+            }
+        })
+        .collect()
+}
+
+/// The ports in the group of the first port that is not a side chain ("no group" is a group
+/// too), in port order: where the plugin's main sound is.
+fn main_group(ports: &[AudioPort]) -> Vec<usize> {
+    let Some(first) = ports.iter().find(|port| !port.side_chain) else {
+        return Vec::new();
+    };
+    (ports.iter().enumerate())
+        .filter(|(_, port)| !port.side_chain && port.group == first.group)
+        .map(|(at, _)| at)
+        .collect()
+}
+
+/// Which audio outputs are heard, in port order, and where each goes.
+///
+/// The main group ([`main_group`]), of an effect its first two only. An instrument whose
+/// first output is in no group names no main sound (DrumGizmo, avldrums' "Multi" kits): every
+/// output that is not a side chain is heard, except those of a group that are
+/// `lv2:connectionOptional`.
+///
+/// One output goes to both sides, two to left and right. Of more, each goes by its
+/// designation, else by the last word of its name ("Cymbals L", "out_right"), else to both.
+fn heard_outputs(ports: &[AudioPort], instrument: bool) -> Vec<(usize, Side)> {
+    let no_main = (ports.iter().find(|port| !port.side_chain)).is_some_and(|p| p.group.is_none());
+    let heard: Vec<usize> = if instrument && no_main {
+        (ports.iter().enumerate())
+            .filter(|(_, port)| !port.side_chain && (port.group.is_none() || !port.optional))
+            .map(|(at, _)| at)
+            .collect()
+    } else {
+        let mut main = main_group(ports);
+        if !instrument {
+            main.truncate(2);
         }
-        let group = group.and_then(|g| g.as_uri().map(str::to_owned));
-        let first = first_group.get_or_insert_with(|| group.clone());
-        if *first == group && main.len() < 2 {
-            main.push(at);
+        main
+    };
+    match heard[..] {
+        [only] => vec![(only, Side::Both)],
+        [left, right] => vec![(left, Side::Left), (right, Side::Right)],
+        _ => (heard.iter()).map(|&at| (at, side(&ports[at]))).collect(),
+    }
+}
+
+fn side(port: &AudioPort) -> Side {
+    if let Some(side) = port.designated {
+        return side;
+    }
+    let last = (port.name)
+        .rsplit(|c: char| !c.is_alphanumeric())
+        .find(|word| !word.is_empty());
+    let is = |word: &str, names: [&str; 2]| names.iter().any(|n| word.eq_ignore_ascii_case(n));
+    match last {
+        Some(word) if is(word, ["l", "left"]) => Side::Left,
+        Some(word) if is(word, ["r", "right"]) => Side::Right,
+        _ => Side::Both,
+    }
+}
+
+/// The audio outputs in sets, in port order (docs/architecture.md 20-15). Every output that is
+/// not a side chain is in one set.
+///
+/// The two outputs of a group are one stereo set (left: the one designated `pg:left`, else
+/// the first); so are the two outputs of a plugin that has only those, in no group. Every
+/// other output is a set of its own. A set is heard by default as `heard` ([`heard_outputs`])
+/// says; a pair that would not be heard so (one of the two heard, or the two on other sides
+/// than left and right) is two sets of one.
+fn output_sets(ports: &[AudioPort], heard: &[(usize, Side)]) -> Vec<SetShape> {
+    let ours: Vec<usize> = (ports.iter().enumerate())
+        .filter(|(_, port)| !port.side_chain)
+        .map(|(at, _)| at)
+        .collect();
+    let heard_at = |at: usize| heard.iter().find(|(p, _)| *p == at).map(|&(_, side)| side);
+    let pair = |a: usize, b: usize| {
+        let b_is_left = ports[b].designated == Some(Side::Left);
+        let (left, right) = if b_is_left && ports[a].designated != Some(Side::Left) {
+            (b, a)
+        } else {
+            (a, b)
+        };
+        match (heard_at(left), heard_at(right)) {
+            (None, None) | (Some(Side::Left), Some(Side::Right)) => Some((left, right)),
+            _ => None,
+        }
+    };
+    let mut pairs = Vec::new();
+    match ours[..] {
+        [a, b] if ports[a].group.is_none() && ports[b].group.is_none() => pairs.extend(pair(a, b)),
+        _ => {
+            let mut groups: Vec<&str> = Vec::new();
+            for &at in &ours {
+                if let Some(group) = ports[at].group.as_deref()
+                    && !groups.contains(&group)
+                {
+                    groups.push(group);
+                }
+            }
+            for group in groups {
+                let members: Vec<usize> = (ours.iter().copied())
+                    .filter(|&at| ports[at].group.as_deref() == Some(group))
+                    .collect();
+                if let [a, b] = members[..] {
+                    pairs.extend(pair(a, b));
+                }
+            }
         }
     }
-    main
+    let mut sets = Vec::new();
+    for &(left, right) in &pairs {
+        sets.push(SetShape {
+            id: ports[left].symbol.clone(),
+            name: (ports[left].group_name.clone()).unwrap_or_else(|| ports[left].name.clone()),
+            ports: Ports::Stereo { left, right },
+            on: heard_at(left).is_some(),
+            pan: 0.0,
+        });
+    }
+    for &at in &ours {
+        if pairs.iter().any(|&(l, r)| at == l || at == r) {
+            continue;
+        }
+        sets.push(SetShape {
+            id: ports[at].symbol.clone(),
+            name: ports[at].name.clone(),
+            ports: Ports::Mono(at),
+            on: heard_at(at).is_some(),
+            pan: heard_at(at).unwrap_or_else(|| side(&ports[at])).pan(),
+        });
+    }
+    sets.sort_by_key(|set| set.ports.first());
+    sets
 }
 
 fn layout(world: &World, plugin: &livi::Plugin, features: &Features) -> Layout {
@@ -643,6 +808,11 @@ fn layout(world: &World, plugin: &livi::Plugin, features: &Features) -> Layout {
                 .map_or(ATOM_BYTES, |p| bytes(&p))
         })
         .collect();
+    let mut main_in = main_group(&audio_ports(world, plugin, PortType::AudioInput));
+    main_in.truncate(2);
+    let instrument = plugin_kind(world, plugin).role() == PluginRole::Instrument;
+    let outputs = audio_ports(world, plugin, PortType::AudioOutput);
+    let heard_out = heard_outputs(&outputs, instrument);
     Layout {
         params,
         midi_in,
@@ -654,8 +824,10 @@ fn layout(world: &World, plugin: &livi::Plugin, features: &Features) -> Layout {
         atom_in_bytes,
         atom_out_bytes,
         latency_port: raw.latency_port_index().map(PortIndex),
-        main_in: main_ports(world, plugin, PortType::AudioInput),
-        main_out: main_ports(world, plugin, PortType::AudioOutput),
+        main_in,
+        output_sets: output_sets(&outputs, &heard_out),
+        heard_out,
+        instrument,
         atom_in_ports: numbers(PortType::AtomSequenceInput),
         atom_out_ports: numbers(PortType::AtomSequenceOutput),
         control_out_ports: numbers(PortType::ControlOutput),
@@ -740,6 +912,32 @@ fn window(world: &World, raw: &lilv::plugin::Plugin) -> (EditorKind, Option<UiFi
     (kind, None)
 }
 
+/// By the plugin's classes; an effect that hears MIDI and has audio outputs but no audio
+/// inputs is an instrument.
+fn plugin_kind(world: &World, plugin: &livi::Plugin) -> PluginKind {
+    let raw = plugin.raw();
+    let classes: Vec<String> = raw
+        .value(&world.uri(RDF_TYPE))
+        .iter()
+        .filter_map(|class| class.as_uri().map(str::to_owned))
+        .collect();
+    let counts = *plugin.port_counts();
+    let midi = world.uri(MIDI_EVENT);
+    let hears_midi = plugin
+        .ports_with_type(PortType::AtomSequenceInput)
+        .filter_map(|port| raw.port_by_index(port.index.0))
+        .any(|port| port.supports_event(&midi));
+    let kind = PluginKind::from_lv2(&classes);
+    if kind.role() == PluginRole::Effect
+        && hears_midi
+        && counts.audio_inputs == 0
+        && counts.audio_outputs > 0
+    {
+        return PluginKind::Instrument(InstrumentCategory::Other);
+    }
+    kind
+}
+
 /// Reads one plugin of [`list`]; `Err` when that plugin cannot be read. The plugin is made
 /// and run for one block, so that one that cannot even do that is found here and not in a
 /// song.
@@ -750,25 +948,7 @@ pub fn probe(bundle: &Path, id: &str) -> Result<PluginInfo, String> {
         .plugin_by_uri(id)
         .ok_or_else(|| format!("no plugin {id} in the bundle"))?;
     let raw = plugin.raw();
-    let classes: Vec<String> = raw
-        .value(&lv2_world.uri(RDF_TYPE))
-        .iter()
-        .filter_map(|class| class.as_uri().map(str::to_owned))
-        .collect();
-    let counts = *plugin.port_counts();
-    let midi = lv2_world.uri(MIDI_EVENT);
-    let hears_midi = plugin
-        .ports_with_type(PortType::AtomSequenceInput)
-        .filter_map(|port| raw.port_by_index(port.index.0))
-        .any(|port| port.supports_event(&midi));
-    let mut kind = PluginKind::from_lv2(&classes);
-    if kind.role() == PluginRole::Effect
-        && hears_midi
-        && counts.audio_inputs == 0
-        && counts.audio_outputs > 0
-    {
-        kind = PluginKind::Instrument(InstrumentCategory::Other);
-    }
+    let kind = plugin_kind(&lv2_world, &plugin);
     let (editor, _) = window(&lv2_world, raw);
     let whole = |predicate: &str| {
         raw.value(&lv2_world.uri(&format!("{LV2}{predicate}")))
@@ -800,7 +980,7 @@ pub fn probe(bundle: &Path, id: &str) -> Result<PluginInfo, String> {
     };
     let (_shared, mut processor, _link) = instantiate(&lv2_world, &plugin, activation)?;
     info.audio_inputs = processor.main_in.len() as u32;
-    info.audio_outputs = processor.main_out.len() as u32;
+    info.audio_outputs = processor.channels_out();
     let silence = [0.0f32; 256];
     let (mut left, mut right) = ([0.0f32; 256], [0.0f32; 256]);
     let mut sink = super::EventSink::with_capacity(16);
@@ -1159,7 +1339,12 @@ fn instantiate(
         offline: activation.offline,
         latency_port: layout.latency_port,
         main_in: layout.main_in,
-        main_out: layout.main_out,
+        outputs: Outputs::new(
+            layout.output_sets,
+            layout.heard_out,
+            layout.instrument,
+            activation.sample_rate,
+        ),
         audio_inputs: counts.audio_inputs,
         cv_inputs: counts.cv_inputs,
         max_frames: frames,
@@ -1242,9 +1427,10 @@ fn load_as(
     let plugin = LoadedPlugin {
         latency: 0,
         audio_inputs: processor.main_in.len() as u32,
-        audio_outputs: processor.main_out.len() as u32,
+        audio_outputs: processor.channels_out(),
         editor,
         live: says_live(&lv2_world, plugin.raw()),
+        outputs: processor.outputs.list(),
     };
     Ok(Loaded {
         plugin,
@@ -1278,7 +1464,7 @@ struct Lv2Processor {
     offline: bool,
     latency_port: Option<PortIndex>,
     main_in: Vec<usize>,
-    main_out: Vec<usize>,
+    outputs: Outputs,
     audio_inputs: usize,
     cv_inputs: usize,
     max_frames: usize,
@@ -1311,6 +1497,12 @@ struct Lv2Processor {
 }
 
 impl Lv2Processor {
+    /// The channels of the main output as meloet takes it: 1, one output heard on both
+    /// sides; 2, a left and a right, folded from more outputs when more are heard.
+    fn channels_out(&self) -> u32 {
+        self.outputs.heard().len().min(2) as u32
+    }
+
     fn midi(&mut self, frame: u32, data: &[u8; 3]) {
         if let Some(port) = self.midi_in {
             let _ =
@@ -1522,6 +1714,7 @@ impl Processor for Lv2Processor {
             for (output, input) in block.outputs.iter_mut().zip(block.inputs) {
                 output.copy_from_slice(input);
             }
+            self.outputs.missed(frames);
             return;
         }
         // SAFETY: inside the gate nothing else touches the instance.
@@ -1711,17 +1904,14 @@ impl Processor for Lv2Processor {
             shared.set_value(param, value);
         }
 
-        let channel = |at: usize| &self.out[at * self.max_frames..][..frames];
-        match (ran, self.main_out.first(), self.main_out.get(1)) {
-            (true, Some(&left), right) => {
-                block.outputs[0].copy_from_slice(channel(left));
-                block.outputs[1].copy_from_slice(channel(*right.unwrap_or(&left)));
+        if ran && !self.outputs.heard().is_empty() {
+            let [left, right] = &mut block.outputs;
+            self.outputs.mix(&self.out, self.max_frames, left, right);
+        } else {
+            for (output, input) in block.outputs.iter_mut().zip(block.inputs) {
+                output.copy_from_slice(input);
             }
-            _ => {
-                for (output, input) in block.outputs.iter_mut().zip(block.inputs) {
-                    output.copy_from_slice(input);
-                }
-            }
+            self.outputs.missed(frames);
         }
         if ran
             && let Some(frames) = self.latency_port.and_then(|p| instance.control_output(p))
@@ -1736,10 +1926,15 @@ impl Processor for Lv2Processor {
 
     fn reset(&mut self) {
         self.quiet = true;
+        self.outputs.snap();
     }
 
     fn latency(&self) -> u32 {
         self.shared.latency.load(Relaxed)
+    }
+
+    fn outputs(&mut self) -> Option<&mut Outputs> {
+        Some(&mut self.outputs)
     }
 }
 
@@ -2510,5 +2705,1235 @@ mod piece_tests {
             let port = instance.control_input(processor.freewheel_ports[0]);
             assert_eq!(port, Some(if offline { 1.0 } else { 0.0 }), "{offline}");
         }
+    }
+}
+
+#[cfg(test)]
+mod output_tests {
+    use std::path::Path;
+
+    use super::Side::{Both, Left, Right};
+    use super::*;
+    use meloet_plugin::wire::{OutputSet, OutputSetting, OutputSettings};
+
+    use crate::formats::outputs::{Capture, fold, heard_by_default};
+    use crate::formats::{EventSink, ProcessBlock};
+
+    fn port(name: &str) -> AudioPort {
+        AudioPort {
+            name: name.to_string(),
+            symbol: name.to_lowercase().replace(' ', "_"),
+            ..AudioPort::default()
+        }
+    }
+
+    fn in_group(name: &str, group: &str, designated: Option<Side>) -> AudioPort {
+        AudioPort {
+            group: Some(format!("urn:test#{group}")),
+            group_name: Some(group.to_string()),
+            designated,
+            ..port(name)
+        }
+    }
+
+    fn optional(port: AudioPort) -> AudioPort {
+        AudioPort {
+            optional: true,
+            ..port
+        }
+    }
+
+    fn side_chain(port: AudioPort) -> AudioPort {
+        AudioPort {
+            side_chain: true,
+            ..port
+        }
+    }
+
+    #[test]
+    fn every_output_of_a_kit_that_names_no_main_output_is_heard() {
+        // DrumGizmo: sixteen outputs, in no group, with no designation.
+        let drumgizmo: Vec<AudioPort> = (1..=16).map(|n| port(&format!("Out{n}"))).collect();
+        let all: Vec<(usize, Side)> = (0..16).map(|at| (at, Both)).collect();
+        assert_eq!(heard_outputs(&drumgizmo, true), all);
+
+        // avldrums' Black Pearl Multi: five drums alone, then two groups of a pair.
+        let mut multi = ["Kick", "Snare", "HiHat", "Tom", "Floor Tom"]
+            .map(port)
+            .to_vec();
+        multi.extend([
+            in_group("Cymbals L", "Cymbals", Some(Left)),
+            in_group("Cymbals R", "Cymbals", Some(Right)),
+            in_group("Percussions L", "Percussions", Some(Left)),
+            in_group("Percussions R", "Percussions", Some(Right)),
+        ]);
+        assert_eq!(
+            heard_outputs(&multi, true),
+            [
+                (0, Both),
+                (1, Both),
+                (2, Both),
+                (3, Both),
+                (4, Both),
+                (5, Left),
+                (6, Right),
+                (7, Left),
+                (8, Right),
+            ]
+        );
+    }
+
+    #[test]
+    fn an_instrument_with_a_main_group_is_heard_from_that_group_only() {
+        // Surge XT: groups 2 and 3 are copies of the scenes, and optional.
+        let surge = [
+            in_group("Audio Out 1", "output_group_1", Some(Left)),
+            in_group("Audio Out 2", "output_group_1", Some(Right)),
+            optional(in_group("Audio Out 3", "output_group_2", Some(Left))),
+            optional(in_group("Audio Out 4", "output_group_2", Some(Right))),
+            optional(in_group("Audio Out 5", "output_group_3", Some(Left))),
+            optional(in_group("Audio Out 6", "output_group_3", Some(Right))),
+        ];
+        assert_eq!(heard_outputs(&surge, true), [(0, Left), (1, Right)]);
+
+        // LSP Multisampler x12 DO: the stereo output first, then twelve direct outputs of a
+        // group each, none optional.
+        let mut lsp = vec![
+            in_group("Output L", "stereo_out", Some(Left)),
+            in_group("Output R", "stereo_out", Some(Right)),
+        ];
+        for n in 0..12 {
+            let group = format!("direct_out_{n}");
+            lsp.push(in_group(
+                &format!("Direct output left {n}"),
+                &group,
+                Some(Left),
+            ));
+            lsp.push(in_group(
+                &format!("Direct output right {n}"),
+                &group,
+                Some(Right),
+            ));
+        }
+        assert_eq!(heard_outputs(&lsp, true), [(0, Left), (1, Right)]);
+
+        // A main group of more than two is heard whole.
+        let three = [
+            in_group("Front L", "main", Some(Left)),
+            in_group("Front R", "main", Some(Right)),
+            in_group("Centre", "main", None),
+            in_group("Aux L", "aux", Some(Left)),
+        ];
+        assert_eq!(
+            heard_outputs(&three, true),
+            [(0, Left), (1, Right), (2, Both)]
+        );
+    }
+
+    #[test]
+    fn one_or_two_outputs_are_heard_as_they_always_were() {
+        for instrument in [true, false] {
+            assert_eq!(heard_outputs(&[port("Out")], instrument), [(0, Both)]);
+            let pair = [port("Out 1"), port("Out 2")];
+            assert_eq!(heard_outputs(&pair, instrument), [(0, Left), (1, Right)]);
+            // Neither names nor designations turn a pair round.
+            let turned = [
+                in_group("Right", "main", Some(Right)),
+                in_group("Left", "main", Some(Left)),
+            ];
+            assert_eq!(heard_outputs(&turned, instrument), [(0, Left), (1, Right)]);
+            assert_eq!(heard_outputs(&[], instrument), []);
+        }
+    }
+
+    #[test]
+    fn an_effect_is_heard_from_its_first_two_outputs_only() {
+        let six: Vec<AudioPort> = (1..=6).map(|n| port(&format!("Out{n}"))).collect();
+        assert_eq!(heard_outputs(&six, false), [(0, Left), (1, Right)]);
+        let grouped = [
+            in_group("A", "main", None),
+            in_group("B", "main", None),
+            in_group("C", "main", None),
+        ];
+        assert_eq!(heard_outputs(&grouped, false), [(0, Left), (1, Right)]);
+    }
+
+    #[test]
+    fn a_side_chain_output_is_never_heard() {
+        let ports = [
+            side_chain(port("Key")),
+            port("Out1"),
+            side_chain(port("Key 2")),
+            port("Out2"),
+            port("Out3"),
+        ];
+        assert_eq!(
+            heard_outputs(&ports, true),
+            [(1, Both), (3, Both), (4, Both)]
+        );
+        assert_eq!(heard_outputs(&ports, false), [(1, Left), (3, Right)]);
+        assert_eq!(heard_outputs(&[side_chain(port("Key"))], true), []);
+    }
+
+    #[test]
+    fn an_instrument_with_no_main_output_leaves_out_only_optional_groups() {
+        let ports = [
+            port("Out1"),
+            optional(port("Out2")),
+            optional(in_group("Extra L", "extra", Some(Left))),
+            in_group("Room L", "room", Some(Left)),
+            in_group("Room R", "room", Some(Right)),
+        ];
+        assert_eq!(
+            heard_outputs(&ports, true),
+            [(0, Both), (1, Both), (3, Left), (4, Right)]
+        );
+    }
+
+    #[test]
+    fn past_two_outputs_the_last_word_of_a_name_says_the_side() {
+        let names = [
+            "Out L",
+            "out_right",
+            "OUT-r",
+            "Left",
+            "l",
+            "Mid",
+            "OutL",
+            "Left 1",
+            "",
+        ];
+        let ports = names.map(port);
+        let sides: Vec<Side> = (heard_outputs(&ports, true).into_iter())
+            .map(|(_, side)| side)
+            .collect();
+        assert_eq!(
+            sides,
+            [Left, Right, Right, Left, Left, Both, Both, Both, Both]
+        );
+        // A designation comes before the name.
+        let ports = [
+            AudioPort {
+                designated: Some(Right),
+                ..port("Out L")
+            },
+            port("Out L"),
+            port("Out 3"),
+        ];
+        assert_eq!(
+            heard_outputs(&ports, true),
+            [(0, Right), (1, Left), (2, Both)]
+        );
+    }
+
+    /// The sets of `ports` as (id, name, ports, on, pan), after checking that by default they
+    /// are heard as stage 1 heard them.
+    fn sets_of(ports: &[AudioPort], instrument: bool) -> Vec<(String, String, Ports, bool, f32)> {
+        let heard = heard_outputs(ports, instrument);
+        let sets = output_sets(ports, &heard);
+        assert_eq!(heard_by_default(&sets), heard);
+        let mut seen: Vec<usize> = Vec::new();
+        for set in &sets {
+            match set.ports {
+                Ports::Mono(at) => seen.push(at),
+                Ports::Stereo { left, right } => seen.extend([left, right]),
+            }
+        }
+        seen.sort();
+        let ours: Vec<usize> = (0..ports.len())
+            .filter(|&at| !ports[at].side_chain)
+            .collect();
+        assert_eq!(
+            seen, ours,
+            "every output that is not a side chain in one set"
+        );
+        (sets.into_iter())
+            .map(|set| (set.id, set.name, set.ports, set.on, set.pan))
+            .collect()
+    }
+
+    fn stereo(left: usize, right: usize) -> Ports {
+        Ports::Stereo { left, right }
+    }
+
+    fn mono_sets(ids: &[&str], on: bool, pan: f32) -> Vec<(String, String, Ports, bool, f32)> {
+        (ids.iter().enumerate())
+            .map(|(at, id)| {
+                let name = id.to_string();
+                (
+                    id.to_lowercase().replace(' ', "_"),
+                    name,
+                    Ports::Mono(at),
+                    on,
+                    pan,
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_outputs_of_known_plugins_are_in_sets() {
+        // DrumGizmo: sixteen sets of one, all heard in the middle.
+        let names: Vec<String> = (1..=16).map(|n| format!("Out{n}")).collect();
+        let drumgizmo: Vec<AudioPort> = names.iter().map(|name| port(name)).collect();
+        let names: Vec<&str> = names.iter().map(String::as_str).collect();
+        assert_eq!(sets_of(&drumgizmo, true), mono_sets(&names, true, 0.0));
+
+        // avldrums' Black Pearl Multi: five drums alone and two pairs.
+        let mut multi = ["Kick", "Snare", "HiHat", "Tom", "Floor Tom"]
+            .map(port)
+            .to_vec();
+        multi.extend([
+            in_group("Cymbals L", "Cymbals", Some(Left)),
+            in_group("Cymbals R", "Cymbals", Some(Right)),
+            in_group("Percussions L", "Percussions", Some(Left)),
+            in_group("Percussions R", "Percussions", Some(Right)),
+        ]);
+        let mut want = mono_sets(&["Kick", "Snare", "HiHat", "Tom", "Floor Tom"], true, 0.0);
+        want.push((
+            "cymbals_l".into(),
+            "Cymbals".into(),
+            stereo(5, 6),
+            true,
+            0.0,
+        ));
+        want.push((
+            "percussions_l".into(),
+            "Percussions".into(),
+            stereo(7, 8),
+            true,
+            0.0,
+        ));
+        assert_eq!(sets_of(&multi, true), want);
+
+        // Surge XT: the main pair heard, the scenes' pairs not.
+        let surge = [
+            in_group("Audio Out 1", "Output", Some(Left)),
+            in_group("Audio Out 2", "Output", Some(Right)),
+            optional(in_group("Audio Out 3", "Scene A", Some(Left))),
+            optional(in_group("Audio Out 4", "Scene A", Some(Right))),
+            optional(in_group("Audio Out 5", "Scene B", Some(Left))),
+            optional(in_group("Audio Out 6", "Scene B", Some(Right))),
+        ];
+        let pair = |id: &str, name: &str, left, on| {
+            (
+                id.to_string(),
+                name.to_string(),
+                stereo(left, left + 1),
+                on,
+                0.0,
+            )
+        };
+        assert_eq!(
+            sets_of(&surge, true),
+            [
+                pair("audio_out_1", "Output", 0, true),
+                pair("audio_out_3", "Scene A", 2, false),
+                pair("audio_out_5", "Scene B", 4, false),
+            ]
+        );
+    }
+
+    #[test]
+    fn one_or_two_outputs_are_one_set() {
+        for instrument in [true, false] {
+            assert_eq!(
+                sets_of(&[port("Out")], instrument),
+                mono_sets(&["Out"], true, 0.0)
+            );
+            let pair = [port("Out 1"), port("Out 2")];
+            assert_eq!(
+                sets_of(&pair, instrument),
+                [("out_1".into(), "Out 1".into(), stereo(0, 1), true, 0.0)]
+            );
+            let grouped = [
+                in_group("Out L", "Main", Some(Left)),
+                in_group("Out R", "Main", Some(Right)),
+            ];
+            assert_eq!(
+                sets_of(&grouped, instrument),
+                [("out_l".into(), "Main".into(), stereo(0, 1), true, 0.0)]
+            );
+            assert_eq!(sets_of(&[], instrument), []);
+        }
+    }
+
+    #[test]
+    fn a_pair_that_stage_1_does_not_hear_as_a_pair_is_two_sets_of_one() {
+        // The two outputs turned round: stage 1 heard the first on the left.
+        let turned = [
+            in_group("Right", "Main", Some(Right)),
+            in_group("Left", "Main", Some(Left)),
+        ];
+        let mut want = mono_sets(&["Right", "Left"], true, 0.0);
+        (want[0].4, want[1].4) = (-1.0, 1.0);
+        assert_eq!(sets_of(&turned, true), want);
+        // One of the pair heard, the other not (optional in a group).
+        let half = [
+            port("Out1"),
+            optional(in_group("Extra L", "Extra", Some(Left))),
+            in_group("Extra R", "Extra", Some(Right)),
+        ];
+        let got = sets_of(&half, true);
+        assert_eq!(got.len(), 3);
+        assert_eq!(
+            (got[1].2, got[1].3, got[1].4),
+            (Ports::Mono(1), false, -1.0)
+        );
+        assert_eq!((got[2].2, got[2].3, got[2].4), (Ports::Mono(2), true, 1.0));
+        // A pair heard on both sides each, past two outputs.
+        let both = [
+            port("Out1"),
+            in_group("A", "Room", None),
+            in_group("B", "Room", None),
+        ];
+        assert_eq!(
+            sets_of(&both, true),
+            mono_sets(&["Out1", "A", "B"], true, 0.0)
+        );
+        // Of an effect, a pair past the first two, not heard.
+        let effect = [
+            in_group("In L", "Main", Some(Left)),
+            in_group("In R", "Main", Some(Right)),
+            in_group("Send L", "Send", Some(Left)),
+            in_group("Send R", "Send", Some(Right)),
+        ];
+        let got = sets_of(&effect, false);
+        assert_eq!(
+            got[0],
+            ("in_l".into(), "Main".into(), stereo(0, 1), true, 0.0)
+        );
+        assert_eq!(
+            got[1],
+            ("send_l".into(), "Send".into(), stereo(2, 3), false, 0.0)
+        );
+    }
+
+    #[test]
+    fn outputs_past_a_pair_are_sets_of_one() {
+        // An effect with six outputs and no groups: the first two heard, left and right.
+        let six: Vec<AudioPort> = ["Out 1", "Out 2", "Out L", "Out R", "Out 5", "Out 6"]
+            .map(port)
+            .to_vec();
+        let got = sets_of(&six, false);
+        let placed: Vec<(bool, f32)> = got.iter().map(|set| (set.3, set.4)).collect();
+        assert_eq!(
+            placed,
+            [
+                (true, -1.0),
+                (true, 1.0),
+                (false, -1.0),
+                (false, 1.0),
+                (false, 0.0),
+                (false, 0.0)
+            ]
+        );
+        // A group of three: three sets.
+        let three = [
+            in_group("Front L", "main", Some(Left)),
+            in_group("Front R", "main", Some(Right)),
+            in_group("Centre", "main", None),
+        ];
+        let got = sets_of(&three, true);
+        let placed: Vec<(Ports, f32)> = got.iter().map(|set| (set.2, set.4)).collect();
+        assert_eq!(
+            placed,
+            [
+                (Ports::Mono(0), -1.0),
+                (Ports::Mono(1), 1.0),
+                (Ports::Mono(2), 0.0)
+            ]
+        );
+        // Side chains are in no set.
+        let ports = [
+            side_chain(port("Key")),
+            port("Out1"),
+            side_chain(port("Key 2")),
+            port("Out2"),
+        ];
+        let got = sets_of(&ports, true);
+        assert_eq!(
+            got,
+            [("out1".into(), "Out1".into(), stereo(1, 3), true, 0.0)]
+        );
+    }
+
+    /// Each output eight frames long, all of it `value`.
+    fn outputs(values: &[f32]) -> Vec<f32> {
+        values.iter().flat_map(|&value| [value; 8]).collect()
+    }
+
+    #[test]
+    fn outputs_past_the_second_are_in_the_stereo_pair() {
+        let out = outputs(&[1.0, 2.0, 4.0, 8.0, 16.0]);
+        let heard = [(0, Both), (1, Left), (2, Right), (3, Both), (4, Left)];
+        let (mut left, mut right) = ([f32::NAN; 5], [f32::NAN; 5]);
+        fold(&heard, &out, 8, &mut left, &mut right);
+        assert_eq!(left, [1.0 + 2.0 + 8.0 + 16.0; 5]);
+        assert_eq!(right, [1.0 + 4.0 + 8.0; 5]);
+    }
+
+    #[test]
+    fn one_or_two_outputs_are_copied_bit_for_bit() {
+        let a = [
+            -0.0f32,
+            1.0e-40,
+            f32::from_bits(0x7fc0_1234),
+            f32::INFINITY,
+            0.25,
+        ];
+        let b = [
+            1.0e-42f32,
+            -0.0,
+            -1.0,
+            f32::from_bits(0xffc0_0001),
+            f32::NEG_INFINITY,
+        ];
+        let mut out = vec![9.0f32; 16];
+        out[..5].copy_from_slice(&a);
+        out[8..13].copy_from_slice(&b);
+        let bits = |x: &[f32]| x.iter().map(|x| x.to_bits()).collect::<Vec<u32>>();
+        let (mut left, mut right) = ([0.0f32; 5], [0.0f32; 5]);
+        fold(&[(0, Left), (1, Right)], &out, 8, &mut left, &mut right);
+        assert_eq!((bits(&left), bits(&right)), (bits(&a), bits(&b)));
+        fold(&[(1, Both)], &out, 8, &mut left, &mut right);
+        assert_eq!((bits(&left), bits(&right)), (bits(&b), bits(&b)));
+    }
+
+    #[test]
+    fn what_is_not_a_number_does_not_reach_the_pair() {
+        let mut out = outputs(&[1.0, 2.0, 4.0]);
+        out[8 + 1] = f32::NAN;
+        out[16 + 3] = f32::INFINITY;
+        let heard = [(0, Both), (1, Left), (2, Both)];
+        let (mut left, mut right) = ([0.0f32; 5], [0.0f32; 5]);
+        fold(&heard, &out, 8, &mut left, &mut right);
+        assert_eq!(left, [7.0, 0.0, 7.0, 0.0, 7.0]);
+        assert_eq!(right, [5.0, 5.0, 5.0, 0.0, 5.0]);
+    }
+
+    fn activation(offline: bool) -> Activation {
+        Activation {
+            sample_rate: 48_000.0,
+            max_frames: 256,
+            offline,
+        }
+    }
+
+    /// The outputs a real plugin is heard from when it is loaded, and the channels it says
+    /// it has; `None` when it is not installed.
+    fn heard_of(bundle: &str, uri: &str) -> Option<(Vec<(usize, Side)>, u32)> {
+        let bundle = Path::new(bundle);
+        if !bundle.exists() {
+            eprintln!("{bundle:?} is not installed; nothing tested");
+            return None;
+        }
+        let lv2_world = world(bundle).unwrap();
+        let plugin = lv2_world.world.plugin_by_uri(uri).unwrap();
+        let (_shared, processor, _link) =
+            instantiate(&lv2_world, &plugin, activation(false)).unwrap();
+        Some((processor.outputs.heard().to_vec(), processor.channels_out()))
+    }
+
+    #[test]
+    #[ignore = "needs DrumGizmo, avldrums, Surge XT and LSP (LV2)"]
+    fn real_plugins_are_heard_from_the_outputs_their_descriptions_name() {
+        if let Some(got) = heard_of("/usr/lib/lv2/drumgizmo.lv2", "http://drumgizmo.org/lv2") {
+            let all: Vec<(usize, Side)> = (0..16).map(|at| (at, Both)).collect();
+            assert_eq!(got, (all, 2));
+        }
+        if let Some((heard, channels)) = heard_of(
+            "/usr/lib/lv2/avldrums.lv2",
+            "http://gareus.org/oss/lv2/avldrums#BlackPearlMulti",
+        ) {
+            let sides: Vec<Side> = heard.iter().map(|&(_, side)| side).collect();
+            assert_eq!(
+                sides,
+                [Both, Both, Both, Both, Both, Left, Right, Left, Right]
+            );
+            assert_eq!(channels, 2);
+        }
+        let pair = Some((vec![(0, Left), (1, Right)], 2));
+        let surge = heard_of(
+            "/usr/lib/lv2/Surge XT.lv2",
+            "https://surge-synthesizer.github.io/lv2/surge-xt",
+        );
+        assert!(surge.is_none() || surge == pair, "{surge:?}");
+        let lsp = heard_of(
+            "/usr/lib/lv2/lsp-plugins.lv2",
+            "http://lsp-plug.in/plugins/lv2/multisampler_x12_do",
+        );
+        assert!(lsp.is_none() || lsp == pair, "{lsp:?}");
+    }
+
+    /// Black Pearl Multi plays its cymbals out of outputs 6 and 7 and its percussion out of 8
+    /// and 9, and loads its kit through its worker. Plays `keys` once, its output sets set as
+    /// `settings` say: the energy of its first two outputs, the stereo pair (left and right in
+    /// turn), and each set as captured.
+    fn play_black_pearl(
+        offline: bool,
+        keys: &[u8],
+        settings: &OutputSettings,
+    ) -> Option<(f64, Vec<f32>, Capture)> {
+        let bundle = Path::new("/usr/lib/lv2/avldrums.lv2");
+        if !bundle.exists() {
+            eprintln!("{bundle:?} is not installed; nothing tested");
+            return None;
+        }
+        let lv2_world = world(bundle).unwrap();
+        let plugin = (lv2_world.world)
+            .plugin_by_uri("http://gareus.org/oss/lv2/avldrums#BlackPearlMulti")
+            .unwrap();
+        let (shared, mut processor, _link) =
+            instantiate(&lv2_world, &plugin, activation(offline)).unwrap();
+        processor.outputs.set(settings, false);
+        let on: Vec<ToPlugin> = (keys.iter())
+            .map(|&key| ToPlugin::Midi {
+                frame: 0,
+                data: [0x99, key, 100],
+            })
+            .collect();
+        const WARM: usize = 8;
+        const BLOCKS: usize = 200;
+        let silence = [0.0f32; 256];
+        let mut sink = EventSink::with_capacity(16);
+        let (mut first_two, mut pair) = (0.0f64, Vec::new());
+        let before = rtcheck::count();
+        for block in 0..WARM + BLOCKS {
+            if block == WARM {
+                let capture = Capture::new(processor.outputs.ids(), 256 * BLOCKS as u64);
+                processor.outputs.arm(capture.unwrap());
+            }
+            let (mut left, mut right) = ([0.0f32; 256], [0.0f32; 256]);
+            {
+                let _audio = rtcheck::enter();
+                processor.process(&mut ProcessBlock {
+                    inputs: [&silence, &silence],
+                    outputs: [&mut left, &mut right],
+                    events: if block == WARM { &on } else { &[] },
+                    transport: &Transport::default(),
+                    sink: &mut sink,
+                });
+            }
+            if !offline {
+                // What the worker's own thread does ten times a second, here between blocks,
+                // so that the kit is there by the same block in both ways.
+                shared.features.worker_manager().run_workers();
+            }
+            if block >= WARM {
+                first_two += energy(&processor.out[..512]);
+                pair.extend(left.iter().zip(&right).flat_map(|(&l, &r)| [l, r]));
+            }
+        }
+        assert_eq!(rtcheck::count(), before, "allocated on the audio thread");
+        let capture = processor.outputs.take_capture().unwrap();
+        Some((first_two, pair, capture))
+    }
+
+    fn energy(samples: &[f32]) -> f64 {
+        (samples.iter()).map(|&x| f64::from(x) * f64::from(x)).sum()
+    }
+
+    #[test]
+    #[ignore = "needs avldrums (LV2)"]
+    fn every_output_of_a_kit_is_heard_alike_as_it_plays_and_in_an_export() {
+        let defaults = OutputSettings::default();
+        // Crash 1 alone: nothing of it comes out of the first two outputs (kick and snare).
+        let Some((first_two, pair, _)) = play_black_pearl(false, &[49], &defaults) else {
+            return;
+        };
+        eprintln!(
+            "crash: first two outputs {first_two:e}, the pair {:e}",
+            energy(&pair)
+        );
+        assert_eq!(first_two, 0.0);
+        assert!(energy(&pair) > 1.0, "{}", energy(&pair));
+
+        // Kick, snare, closed hat, crash and tambourine.
+        let keys = [36, 38, 42, 49, 54];
+        let (first_two, playing, _) = play_black_pearl(false, &keys, &defaults).unwrap();
+        let (_, export, _) = play_black_pearl(true, &keys, &defaults).unwrap();
+        eprintln!(
+            "kit: first two outputs {first_two:e}, the pair {:e}",
+            energy(&playing)
+        );
+        assert!(energy(&playing) > 2.0 * first_two);
+        let bits = |x: &[f32]| x.iter().map(|x| x.to_bits()).collect::<Vec<u32>>();
+        assert!(bits(&playing) == bits(&export), "playing and export differ");
+    }
+
+    fn setting(id: &str, gain_db: f32, pan: Option<f32>, on: Option<bool>) -> OutputSetting {
+        OutputSetting {
+            id: id.into(),
+            gain_db,
+            pan,
+            on,
+        }
+    }
+
+    fn settings(sets: Vec<OutputSetting>) -> OutputSettings {
+        OutputSettings { rule: 1, sets }
+    }
+
+    /// Only the set `id` on, at 0 dB where the rule puts it.
+    fn only(id: &str, ids: &[String]) -> OutputSettings {
+        let off = |other: &String| setting(other, 0.0, None, Some(other == id));
+        settings(ids.iter().map(off).collect())
+    }
+
+    /// The largest difference between `a` and `b + c`, frame by frame.
+    fn off_by(a: &[f32], b: &[f32], c: &[f32]) -> f32 {
+        assert_eq!((a.len(), b.len()), (c.len(), c.len()));
+        (a.iter().zip(b).zip(c)).fold(0.0, |most, ((a, b), c)| most.max((a - (b + c)).abs()))
+    }
+
+    /// What the sets the default rule hears give together.
+    fn heard_sets(sounds: &[(String, Vec<f32>)], on: &[OutputSet], but: Option<&str>) -> Vec<f32> {
+        let mut sum = vec![0.0f32; sounds[0].1.len()];
+        for ((id, sound), set) in sounds.iter().zip(on) {
+            if set.on && Some(id.as_str()) != but {
+                for (sum, x) in sum.iter_mut().zip(sound) {
+                    *sum += x;
+                }
+            }
+        }
+        sum
+    }
+
+    /// The sets of a plugin by its description, as `LoadedPlugin::outputs` tells them.
+    fn sets_of_plugin(bundle: &str, uri: &str) -> Option<Vec<OutputSet>> {
+        let bundle = Path::new(bundle);
+        if !bundle.exists() {
+            eprintln!("{bundle:?} is not installed; nothing tested");
+            return None;
+        }
+        let key: PluginKey = format!("lv2:{uri}").parse().unwrap();
+        let loaded = load(&key, bundle, activation(false)).unwrap();
+        let sets = loaded.plugin.outputs;
+        eprintln!("{uri}:");
+        for set in &sets {
+            eprintln!(
+                "  {:?} {:?} channels {} on {} pan {}",
+                set.id, set.name, set.channels, set.on, set.pan
+            );
+        }
+        Some(sets)
+    }
+
+    #[test]
+    #[ignore = "needs DrumGizmo, avldrums, Surge XT and LSP (LV2)"]
+    fn real_plugins_tell_their_output_sets() {
+        if let Some(sets) = sets_of_plugin("/usr/lib/lv2/drumgizmo.lv2", "http://drumgizmo.org/lv2")
+        {
+            assert_eq!(sets.len(), 16);
+            assert!(sets.iter().all(|s| s.channels == 1 && s.on && s.pan == 0.0));
+        }
+        if let Some(sets) = sets_of_plugin(
+            "/usr/lib/lv2/avldrums.lv2",
+            "http://gareus.org/oss/lv2/avldrums#BlackPearlMulti",
+        ) {
+            let ids: Vec<&str> = sets.iter().map(|s| s.id.as_str()).collect();
+            assert_eq!(
+                ids,
+                ["out1", "out2", "out3", "out4", "out5", "out6", "out8"]
+            );
+            assert!(sets.iter().all(|s| s.on && s.pan == 0.0));
+        }
+        if let Some(sets) = sets_of_plugin(
+            "/usr/lib/lv2/Surge XT.lv2",
+            "https://surge-synthesizer.github.io/lv2/surge-xt",
+        ) {
+            let set = |id: &str, name: &str, on| OutputSet {
+                id: id.into(),
+                name: name.into(),
+                channels: 2,
+                on,
+                pan: 0.0,
+            };
+            assert_eq!(
+                sets,
+                [
+                    set("audio_out_1", "Output", true),
+                    set("audio_out_3", "Scene A", false),
+                    set("audio_out_5", "Scene B", false),
+                ]
+            );
+        }
+        if let Some(sets) = sets_of_plugin(
+            "/usr/lib/lv2/lsp-plugins.lv2",
+            "http://lsp-plug.in/plugins/lv2/multisampler_x12_do",
+        ) {
+            assert_eq!(sets.len(), 13);
+            assert!(sets.iter().all(|s| s.channels == 2 && s.pan == 0.0));
+            assert!(sets[0].on && sets[1..].iter().all(|s| !s.on));
+        }
+    }
+
+    #[test]
+    #[ignore = "needs avldrums (LV2)"]
+    fn a_set_of_a_kit_switched_off_takes_out_its_own_sound_only() {
+        let keys = [36, 38, 42, 49, 54];
+        let Some((_, all_on, captured)) = play_black_pearl(false, &keys, &Default::default())
+        else {
+            return;
+        };
+        let sounds = captured.sounds();
+        let key: PluginKey = "lv2:http://gareus.org/oss/lv2/avldrums#BlackPearlMulti"
+            .parse()
+            .unwrap();
+        let loaded = load(
+            &key,
+            Path::new("/usr/lib/lv2/avldrums.lv2"),
+            activation(false),
+        );
+        let sets = loaded.unwrap().plugin.outputs;
+        // The pair as it always was is every set heard, each as captured.
+        let none = vec![0.0f32; all_on.len()];
+        assert!(off_by(&all_on, &heard_sets(&sounds, &sets, None), &none) < 1e-6);
+        // The snare alone, and the cymbals (a pair).
+        for id in ["out2", "out6"] {
+            let off = settings(vec![setting(id, 0.0, None, Some(false))]);
+            let (_, without, again) = play_black_pearl(false, &keys, &off).unwrap();
+            assert_eq!(again.sounds(), sounds, "the plugin played otherwise");
+            let own = &sounds.iter().find(|(set, _)| set == id).unwrap().1;
+            let others = heard_sets(&sounds, &sets, Some(id));
+            let most = off_by(&all_on, &without, own);
+            eprintln!(
+                "{id}: own sound {:e}, all on − one off − own: {most:e}, the others: {:e}",
+                energy(own),
+                off_by(&without, &others, &none)
+            );
+            assert!(energy(own) > 0.1, "{id}: {}", energy(own));
+            assert!(most < 1e-6, "{id}: {most}");
+            assert!(off_by(&without, &others, &none) < 1e-6, "{id}");
+        }
+    }
+
+    #[test]
+    #[ignore = "needs avldrums (LV2)"]
+    fn a_set_heard_alone_is_its_capture_and_an_export_sounds_the_same() {
+        let keys = [36, 38, 42, 49, 54];
+        let Some((_, _, captured)) = play_black_pearl(false, &keys, &Default::default()) else {
+            return;
+        };
+        let ids: Vec<String> = captured.sounds().into_iter().map(|(id, _)| id).collect();
+        for id in ["out2", "out6", "out8"] {
+            let (_, alone, captured) = play_black_pearl(false, &keys, &only(id, &ids)).unwrap();
+            let own = &captured
+                .sounds()
+                .into_iter()
+                .find(|(set, _)| set == id)
+                .unwrap()
+                .1;
+            assert!(energy(own) > 0.0, "{id}");
+            // Equal as numbers: the bits differ at most in the sign of a zero.
+            assert!(alone == *own, "{id}");
+        }
+        let changed = settings(vec![
+            setting("out1", -6.0, Some(0.5), None),
+            setting("out6", 3.0, Some(-0.25), None),
+            setting("out8", 0.0, None, Some(false)),
+        ]);
+        let (_, playing, _) = play_black_pearl(false, &keys, &changed).unwrap();
+        let (_, export, _) = play_black_pearl(true, &keys, &changed).unwrap();
+        let (_, before, _) = play_black_pearl(false, &keys, &Default::default()).unwrap();
+        let bits = |x: &[f32]| x.iter().map(|x| x.to_bits()).collect::<Vec<u32>>();
+        assert!(bits(&playing) == bits(&export), "playing and export differ");
+        assert!(
+            bits(&playing) != bits(&before),
+            "the settings changed nothing"
+        );
+    }
+
+    fn base64(bytes: &[u8]) -> String {
+        const DIGITS: &[u8; 64] =
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        let mut text = String::new();
+        for three in bytes.chunks(3) {
+            let n = (u32::from(three[0]) << 16)
+                | (u32::from(*three.get(1).unwrap_or(&0)) << 8)
+                | u32::from(*three.get(2).unwrap_or(&0));
+            for at in 0..4 {
+                if at <= three.len() {
+                    text.push(DIGITS[(n >> (18 - 6 * at) & 63) as usize] as char);
+                } else {
+                    text.push('=');
+                }
+            }
+        }
+        text
+    }
+
+    /// A kit of four channels, instrument `n` alone on channel `n` and played by key 35 + `n`,
+    /// each a short tone of its own: its drumkit file and its MIDI map.
+    fn tiny_kit(dir: &Path) -> (PathBuf, PathBuf) {
+        std::fs::create_dir_all(dir).unwrap();
+        let (mut channels, mut instruments, mut keys) =
+            (String::new(), String::new(), String::new());
+        for n in 1..=4 {
+            let frames = 4800u32;
+            let mut wav = Vec::new();
+            wav.extend_from_slice(b"RIFF");
+            wav.extend_from_slice(&(36 + frames * 2).to_le_bytes());
+            wav.extend_from_slice(b"WAVEfmt ");
+            for (value, bytes) in [
+                (16u32, 4),
+                (1, 2),
+                (1, 2),
+                (48_000, 4),
+                (96_000, 4),
+                (2, 2),
+                (16, 2),
+            ] {
+                wav.extend_from_slice(&value.to_le_bytes()[..bytes]);
+            }
+            wav.extend_from_slice(b"data");
+            wav.extend_from_slice(&(frames * 2).to_le_bytes());
+            for i in 0..frames {
+                let phase = std::f32::consts::TAU * 200.0 * n as f32 * i as f32 / 48_000.0;
+                let sample = (phase.sin() * 16_000.0 * (1.0 - i as f32 / frames as f32)) as i16;
+                wav.extend_from_slice(&sample.to_le_bytes());
+            }
+            std::fs::write(dir.join(format!("i{n}.wav")), wav).unwrap();
+            std::fs::write(
+                dir.join(format!("i{n}.xml")),
+                format!(
+                    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+                     <instrument version=\"2.0\" name=\"I{n}\"><samples>\
+                     <sample name=\"s{n}\" power=\"1\">\
+                     <audiofile channel=\"Ch{n}\" file=\"i{n}.wav\" filechannel=\"1\"/>\
+                     </sample></samples></instrument>\n"
+                ),
+            )
+            .unwrap();
+            channels += &format!("<channel name=\"Ch{n}\"/>");
+            instruments += &format!(
+                "<instrument name=\"I{n}\" file=\"i{n}.xml\">\
+                 <channelmap in=\"Ch{n}\" out=\"Ch{n}\" main=\"true\"/></instrument>"
+            );
+            keys += &format!("<map note=\"{}\" instr=\"I{n}\"/>", 35 + n);
+        }
+        let kit = dir.join("drumkit.xml");
+        std::fs::write(
+            &kit,
+            format!(
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+                 <drumkit name=\"Tiny\" version=\"2.0\" samplerate=\"48000\">\
+                 <channels>{channels}</channels><instruments>{instruments}</instruments>\
+                 </drumkit>\n"
+            ),
+        )
+        .unwrap();
+        let map = dir.join("midimap.xml");
+        std::fs::write(
+            &map,
+            format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<midimap>{keys}</midimap>\n"),
+        )
+        .unwrap();
+        (kit, map)
+    }
+
+    /// One block of 256 frames with `events`: left and right.
+    fn block256(processor: &mut dyn Processor, events: &[ToPlugin]) -> ([f32; 256], [f32; 256]) {
+        let silence = [0.0f32; 256];
+        let mut sink = EventSink::with_capacity(16);
+        let (mut left, mut right) = ([0.0f32; 256], [0.0f32; 256]);
+        processor.process(&mut ProcessBlock {
+            inputs: [&silence, &silence],
+            outputs: [&mut left, &mut right],
+            events,
+            transport: &Transport::default(),
+            sink: &mut sink,
+        });
+        (left, right)
+    }
+
+    /// DrumGizmo with the tiny kit of `dir` ([`tiny_kit`]), loaded and heard, and silent
+    /// again; nothing of its playing is left to chance. `None` when it is not installed.
+    fn drumgizmo(dir: &Path, offline: bool) -> Option<Loaded> {
+        let bundle = Path::new("/usr/lib/lv2/drumgizmo.lv2");
+        if !bundle.exists() {
+            eprintln!("{bundle:?} is not installed; nothing tested");
+            return None;
+        }
+        let (kit, map) = tiny_kit(dir);
+        let key: PluginKey = "lv2:http://drumgizmo.org/lv2".parse().unwrap();
+        let mut loaded = load(&key, bundle, activation(offline)).unwrap();
+        let saved = loaded.controller.save_state().unwrap();
+        // No `patch` parameters: the Turtle starts right after the count.
+        let text = std::str::from_utf8(&saved[8..]).unwrap();
+        let (head, rest) = text.split_once("atom#config> \"\"\"").unwrap();
+        let (_, tail) = rest.split_once("\"\"\"").unwrap();
+        let config = format!(
+            "<config version=\"1.0\">\n\
+             <value name=\"drumkitfile\">{}</value>\n\
+             <value name=\"midimapfile\">{}</value>\n\
+             <value name=\"enable_velocity_modifier\">false</value>\n\
+             <value name=\"enable_velocity_randomiser\">false</value>\n\
+             <value name=\"enable_latency_modifier\">false</value>\n</config>",
+            kit.display(),
+            map.display()
+        );
+        let mut state = STATE_MAGIC.to_vec();
+        state.extend_from_slice(&0u32.to_le_bytes());
+        state.extend_from_slice(
+            format!(
+                "{head}atom#config> \"\"\"{}\"\"\"{tail}",
+                base64(config.as_bytes())
+            )
+            .as_bytes(),
+        );
+        loaded.controller.load_state(&state).unwrap();
+
+        let third = [ToPlugin::Midi {
+            frame: 0,
+            data: [0x90, 38, 127],
+        }];
+        let mut loudest = 0.0f32;
+        // A key on the third channel every 50 blocks, until the kit has loaded and it is
+        // heard; ten seconds at most.
+        for block in 0..2000 {
+            let events: &[ToPlugin] = if block % 50 == 0 { &third } else { &[] };
+            let (left, right) = block256(&mut *loaded.processor, events);
+            loudest = (left.iter().chain(&right)).fold(loudest, |m, x| m.max(x.abs()));
+            if loudest > 0.01 {
+                eprintln!("heard at block {block}: {loudest}");
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert!(loudest > 0.01, "{loudest}");
+        // Each tone of the kit is a tenth of a second long.
+        for _ in 0..40 {
+            block256(&mut *loaded.processor, &[]);
+        }
+        Some(loaded)
+    }
+
+    /// DrumGizmo plays each channel of a kit out of its own output; the kit is named in the
+    /// state, and loads on a thread of its own.
+    #[test]
+    #[ignore = "needs DrumGizmo (LV2)"]
+    fn the_third_channel_of_a_drumgizmo_kit_is_heard() {
+        let dir = std::env::temp_dir().join(format!("meloet-kit-{}", std::process::id()));
+        let loaded = drumgizmo(&dir, false);
+        let _ = std::fs::remove_dir_all(&dir);
+        drop(loaded);
+    }
+
+    /// The four keys of the tiny kit at once, then silence: `BLOCKS` blocks, with each set
+    /// captured. The pair (left and right in turn) and the capture.
+    fn hit_tiny_kit(loaded: &mut Loaded, settings: &OutputSettings) -> (Vec<f32>, Capture) {
+        const BLOCKS: usize = 30;
+        let keys: Vec<ToPlugin> = (36..=39)
+            .map(|key| ToPlugin::Midi {
+                frame: 0,
+                data: [0x90, key, 127],
+            })
+            .collect();
+        let outputs = loaded.processor.outputs().unwrap();
+        outputs.set(settings, false);
+        let ids = outputs.ids();
+        outputs.arm(Capture::new(ids, 256 * BLOCKS as u64).unwrap());
+        let mut pair = Vec::new();
+        for block in 0..BLOCKS {
+            let events: &[ToPlugin] = if block == 0 { &keys } else { &[] };
+            let (left, right) = block256(&mut *loaded.processor, events);
+            pair.extend(left.iter().zip(&right).flat_map(|(&l, &r)| [l, r]));
+        }
+        let capture = loaded.processor.outputs().unwrap().take_capture().unwrap();
+        (pair, capture)
+    }
+
+    #[test]
+    #[ignore = "needs DrumGizmo (LV2)"]
+    fn a_set_of_drumgizmo_switched_off_takes_out_its_own_sound_only() {
+        let dir = std::env::temp_dir().join(format!("meloet-kit-sets-{}", std::process::id()));
+        let Some(mut loaded) = drumgizmo(&dir, false) else {
+            return;
+        };
+        let sets = loaded.plugin.outputs.clone();
+        let ids: Vec<String> = sets.iter().map(|set| set.id.clone()).collect();
+        let (all_on, captured) = hit_tiny_kit(&mut loaded, &OutputSettings::default());
+        let sounds = captured.sounds();
+        let none = vec![0.0f32; all_on.len()];
+        assert!(off_by(&all_on, &heard_sets(&sounds, &sets, None), &none) < 1e-6);
+        let off = settings(vec![setting("out3", 0.0, None, Some(false))]);
+        let (without, again) = hit_tiny_kit(&mut loaded, &off);
+        let alone = only("out2", &ids);
+        let (second_alone, by_itself) = hit_tiny_kit(&mut loaded, &alone);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(again.sounds(), sounds, "the plugin played otherwise");
+        let own = |sounds: &[(String, Vec<f32>)], id: &str| {
+            (sounds.iter().find(|(set, _)| set == id).unwrap().1).clone()
+        };
+        let most = off_by(&all_on, &without, &own(&sounds, "out3"));
+        let others = off_by(&without, &heard_sets(&sounds, &sets, Some("out3")), &none);
+        eprintln!(
+            "out3: own sound {:e}, all on − one off − own: {most:e}, the others: {others:e}",
+            energy(&own(&sounds, "out3"))
+        );
+        assert!(energy(&own(&sounds, "out3")) > 1.0);
+        assert!(most < 1e-6 && others < 1e-6);
+        // A set heard alone at 0 dB where the rule puts it is what was captured of it.
+        let second = own(&by_itself.sounds(), "out2");
+        assert!(energy(&second) > 1.0);
+        assert!(second_alone == second);
+    }
+
+    #[test]
+    #[ignore = "needs DrumGizmo (LV2)"]
+    fn drumgizmo_sounds_the_same_as_it_plays_and_in_an_export() {
+        let changed = settings(vec![
+            setting("out1", -6.0, Some(-0.5), None),
+            setting("out2", 0.0, None, Some(false)),
+            setting("out4", 4.0, Some(0.75), None),
+        ]);
+        let mut pairs = Vec::new();
+        for offline in [false, true] {
+            let dir =
+                std::env::temp_dir().join(format!("meloet-kit-{offline}-{}", std::process::id()));
+            let Some(mut loaded) = drumgizmo(&dir, offline) else {
+                return;
+            };
+            pairs.push(hit_tiny_kit(&mut loaded, &changed).0);
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+        assert!(energy(&pairs[0]) > 1.0);
+        let bits = |x: &[f32]| x.iter().map(|x| x.to_bits()).collect::<Vec<u32>>();
+        assert!(
+            bits(&pairs[0]) == bits(&pairs[1]),
+            "playing and export differ"
+        );
+    }
+
+    #[test]
+    #[ignore = "needs Surge XT (LV2)"]
+    fn a_scene_of_surge_xt_switched_on_is_heard_too() {
+        let bundle = Path::new("/usr/lib/lv2/Surge XT.lv2");
+        if !bundle.exists() {
+            eprintln!("{bundle:?} is not installed; nothing tested");
+            return;
+        }
+        let key: PluginKey = "lv2:https://surge-synthesizer.github.io/lv2/surge-xt"
+            .parse()
+            .unwrap();
+        let mut loaded = load(&key, bundle, activation(false)).unwrap();
+        let sets = loaded.plugin.outputs.clone();
+        const BLOCKS: usize = 40;
+        let outputs = loaded.processor.outputs().unwrap();
+        outputs.set(
+            &settings(vec![setting("audio_out_3", 0.0, None, Some(true))]),
+            false,
+        );
+        outputs.arm(Capture::new(outputs.ids(), 256 * BLOCKS as u64).unwrap());
+        let note = [ToPlugin::Midi {
+            frame: 0,
+            data: [0x90, 60, 100],
+        }];
+        let mut pair = Vec::new();
+        for block in 0..BLOCKS {
+            let events: &[ToPlugin] = if block == 0 { &note } else { &[] };
+            let (left, right) = block256(&mut *loaded.processor, events);
+            pair.extend(left.iter().zip(&right).flat_map(|(&l, &r)| [l, r]));
+        }
+        let sounds = (loaded.processor.outputs().unwrap().take_capture())
+            .unwrap()
+            .sounds();
+        let main = &sounds[0].1;
+        let scene = &sounds[1].1;
+        eprintln!(
+            "Surge XT: main {:e}, scene A {:e}, scene B {:e}, the pair {:e}",
+            energy(main),
+            energy(scene),
+            energy(&sounds[2].1),
+            energy(&pair)
+        );
+        assert_eq!(sets.len(), 3);
+        assert!(energy(main) > 1.0 && energy(scene) > 1.0);
+        // The pair is the main output and scene A.
+        assert!(off_by(&pair, main, scene) < 1e-6);
+        assert!(off_by(&pair, main, &vec![0.0; main.len()]) > 0.01);
+    }
+
+    /// Every LV2 plugin of this PC that meloet can run: by default its sets are heard as stage
+    /// 1 heard its outputs, each output in one set.
+    #[test]
+    #[ignore = "reads every LV2 bundle of this PC"]
+    fn the_sets_of_every_installed_plugin_are_heard_by_default_as_before() {
+        let mut dirs = vec![
+            PathBuf::from("/usr/lib/lv2"),
+            PathBuf::from("/usr/local/lib/lv2"),
+        ];
+        if let Some(home) = std::env::var_os("HOME") {
+            dirs.push(Path::new(&home).join(".lv2"));
+        }
+        let (mut plugins, mut with_sets, mut apart) = (0, 0, Vec::new());
+        for dir in dirs {
+            let Ok(entries) = std::fs::read_dir(&dir) else {
+                continue;
+            };
+            let mut bundles: Vec<PathBuf> = entries.flatten().map(|e| e.path()).collect();
+            bundles.sort();
+            for bundle in bundles {
+                if !bundle.join("manifest.ttl").is_file() {
+                    continue;
+                }
+                let lv2_world = World {
+                    world: livi::World::with_load_bundle(&bundle_uri(&bundle).unwrap()),
+                    features: RefCell::new(HashMap::new()),
+                    preset_bundles: RefCell::new(HashSet::new()),
+                };
+                for plugin in lv2_world.world.iter_plugins() {
+                    let ports = audio_ports(&lv2_world, &plugin, PortType::AudioOutput);
+                    let instrument =
+                        plugin_kind(&lv2_world, &plugin).role() == PluginRole::Instrument;
+                    let heard = heard_outputs(&ports, instrument);
+                    let sets = output_sets(&ports, &heard);
+                    assert_eq!(heard_by_default(&sets), heard, "{}", plugin.uri());
+                    let mut seen: Vec<usize> = (sets.iter())
+                        .flat_map(|set| match set.ports {
+                            Ports::Mono(at) => vec![at],
+                            Ports::Stereo { left, right } => vec![left, right],
+                        })
+                        .collect();
+                    seen.sort();
+                    let ours: Vec<usize> = (0..ports.len())
+                        .filter(|&at| !ports[at].side_chain)
+                        .collect();
+                    assert_eq!(seen, ours, "{}", plugin.uri());
+                    let mut ids: Vec<&str> = sets.iter().map(|set| set.id.as_str()).collect();
+                    ids.sort();
+                    ids.dedup();
+                    assert_eq!(ids.len(), sets.len(), "{}", plugin.uri());
+                    // Groups of two that became two sets of one.
+                    let mut groups: Vec<&str> = ours
+                        .iter()
+                        .filter_map(|&at| ports[at].group.as_deref())
+                        .collect();
+                    groups.sort();
+                    let twos = (groups.chunk_by(|a, b| a == b))
+                        .filter(|group| group.len() == 2)
+                        .count();
+                    let paired = (sets.iter())
+                        .filter(|set| {
+                            matches!(set.ports, Ports::Stereo { left, .. } if ports[left].group.is_some())
+                        })
+                        .count();
+                    if paired < twos {
+                        apart.push(plugin.uri());
+                    }
+                    plugins += 1;
+                    if sets.len() > 1 {
+                        with_sets += 1;
+                    }
+                }
+            }
+        }
+        eprintln!(
+            "{plugins} plugins, {with_sets} of them with more than one set; \
+             a pair as two sets of one: {apart:?}"
+        );
+        assert!(plugins > 0);
     }
 }

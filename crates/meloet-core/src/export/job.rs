@@ -24,7 +24,7 @@ use super::tags;
 use super::told::{KnownPlugins, Told};
 use super::wave::WaveBars;
 use super::{ExportJob, ExportNews, ExportTarget};
-use crate::ai::PassLevels;
+use crate::ai::{AiOutputLevel, AiRefusal, PassLevels, capture_longest_s};
 use crate::audiofiles::resample::Resample;
 use crate::audiofiles::wav::{CacheWav, WavPcm};
 use crate::audiofiles::{AudioStore, Playable};
@@ -35,7 +35,7 @@ use crate::pcm::PcmFile;
 use crate::plugins::export::{
     ExportPlugin, ExportPluginError, ExportSeats, ExportWant, export_seats,
 };
-use crate::plugins::hosts::{HostError, HostOptions};
+use crate::plugins::hosts::{HostError, HostOptions, capture_frames_max};
 
 /// 「書き出す前のたしかめ」 hears how far the job is this often at most.
 const TELL_EVERY: Duration = Duration::from_millis(250);
@@ -139,6 +139,9 @@ enum Ended {
     /// Given up; nothing is said.
     Dropped,
     Failed(ExportFailure),
+    /// The output sets of [`crate::export::Measuring::capture`] cannot be kept: the job
+    /// answers that, with nothing measured.
+    Refused(AiRefusal),
 }
 
 impl From<io::Error> for Ended {
@@ -157,12 +160,21 @@ fn run(
     let id = setup.job.id;
     let work = setup.work.clone();
     let mut made = Vec::new();
-    if let Err(Ended::Failed(reason)) = go(setup, targets, stop, tell, &mut made) {
-        tell(ExportNews::Failed { job: id, reason });
-        // What is already where the person wanted it is not left there half done.
-        for file in made {
-            let _ = fs::remove_file(file);
+    match go(setup, targets, stop, tell, &mut made) {
+        Err(Ended::Failed(reason)) => {
+            tell(ExportNews::Failed { job: id, reason });
+            // What is already where the person wanted it is not left there half done.
+            for file in made {
+                let _ = fs::remove_file(file);
+            }
         }
+        Err(Ended::Refused(refusal)) => tell(ExportNews::Measured {
+            job: id,
+            passes: Vec::new(),
+            analysis: None,
+            captured: Some(Err(refusal)),
+        }),
+        Ok(()) | Err(Ended::Dropped) => {}
     }
     let _ = fs::remove_dir_all(work);
 }
@@ -193,7 +205,8 @@ fn go(
         fs::set_permissions(&setup.work, fs::Permissions::from_mode(0o700))?;
     }
     let mut target = None;
-    let mut rendered = render(&setup, targets, stop, tell, &mut target)?;
+    let mut captured = None;
+    let mut rendered = render(&setup, targets, stop, tell, &mut target, &mut captured)?;
     if let Some(measure) = &job.measure {
         let heard: Vec<Heard> = (rendered.iter_mut())
             .map(|r| r.heard.take().unwrap_or_default())
@@ -214,6 +227,7 @@ fn go(
             job: job.id,
             passes: rendered.iter().map(|r| r.levels).collect(),
             analysis,
+            captured,
         });
         return Ok(());
     }
@@ -298,13 +312,15 @@ pub(crate) fn free_name(track: &str, ending: &str, taken: &[String]) -> String {
     name
 }
 
-/// Renders the job into the work place. A target that comes meanwhile is kept in `target`.
+/// Renders the job into the work place. A target that comes meanwhile is kept in `target`,
+/// what [`crate::export::Measuring::capture`] measured in `captured`.
 fn render(
     setup: &Setup,
     targets: &Receiver<ExportTarget>,
     stop: &AtomicBool,
     tell: &dyn Fn(ExportNews),
     target: &mut Option<ExportTarget>,
+    captured: &mut Option<Result<Vec<AiOutputLevel>, AiRefusal>>,
 ) -> Result<Vec<Rendered>, Ended> {
     let job = &setup.job;
     let doc: &Doc = &job.doc;
@@ -349,7 +365,10 @@ fn render(
         (Some(measure), _) => {
             let alone = (measure.alone.iter()).filter_map(|id| doc.track(*id));
             let alone = alone.map(|t| Some((t.id, t.name.clone())));
-            std::iter::once(None).chain(alone).collect()
+            match measure.capture {
+                Some(_) => alone.collect(),
+                None => std::iter::once(None).chain(alone).collect(),
+            }
         }
         (None, true) => each_track.collect(),
         (None, false) => vec![None],
@@ -377,6 +396,7 @@ fn render(
         loudness: (None, None),
     };
     let realtime = job.realtime || seats.realtime;
+    let capture = job.measure.as_ref().and_then(|m| m.capture);
     let mut rendered = Vec::new();
     let result: Result<(), Ended> = (|| {
         for (i, pass) in passes.into_iter().enumerate() {
@@ -407,6 +427,14 @@ fn render(
             };
             watch.pass = i as u64;
             let path = setup.work.join(format!("pass-{i}.wav"));
+            engine.play_from(job.span.start(), i > 0);
+            let capturing = (pass.as_ref())
+                .map(|(track, _)| *track)
+                .filter(|track| capture == Some(*track))
+                .map(PluginPlace::Instrument);
+            if let Some(place) = capturing {
+                start_capture(&engine, &seats, place, job)?;
+            }
             let mut each = |written: u64, taker: &Taker| -> Result<(), Ended> {
                 if stop.load(Relaxed) {
                     return Err(Ended::Dropped);
@@ -424,15 +452,12 @@ fn render(
                 Ok(())
             };
             let listening = Listening { listen, true_peak };
-            let (levels, heard, true_peak_db) = render_pass(
-                &mut engine,
-                job,
-                &path,
-                i > 0,
-                realtime,
-                &mut each,
-                listening,
-            )?;
+            let (levels, heard, true_peak_db) =
+                render_pass(&mut engine, job, &path, realtime, &mut each, listening)?;
+            if let Some(place) = capturing {
+                let range = range_frames(&engine, job.span);
+                *captured = Some(output_levels(&seats, place, job.sample_rate, range));
+            }
             watch.over_before = watch.over;
             watch.longest = watch.longest.max(levels.frames);
             if loud {
@@ -462,6 +487,78 @@ fn render(
     result?;
     watch.done(tell);
     Ok(rendered)
+}
+
+/// Asks the instrument plugin at `place` to keep the sound of each of its output sets from
+/// the next block on, for as long as the pass renders: the range, and the head the master's
+/// inserts delay the rest by.
+fn start_capture(
+    engine: &ExportEngine,
+    seats: &ExportSeats,
+    place: PluginPlace,
+    job: &ExportJob,
+) -> Result<(), Ended> {
+    let head = engine.master_latency() as u64;
+    let frames = range_frames(engine, job.span) + head;
+    let sets = (seats.output_sets(place)).ok_or(Ended::Refused(AiRefusal::PluginNotLoaded))?;
+    if frames > capture_frames_max(sets.len()) {
+        let rate = f64::from(job.sample_rate.max(1));
+        let longest_s = capture_longest_s(sets.len(), job.sample_rate) - head as f64 / rate;
+        return Err(Ended::Refused(AiRefusal::CaptureTooLong {
+            sets: sets.len() as u32,
+            longest_s: longest_s.max(0.0),
+        }));
+    }
+    seats.capture(place, frames).map_err(|e| {
+        Ended::Refused(AiRefusal::Cannot(format!(
+            "the plugin host could not keep the sound of the outputs ({e})"
+        )))
+    })
+}
+
+/// The levels of each output set the plugin at `place` said it has, over the first `range`
+/// frames of what it kept; none for a set it kept nothing of. The track plays its plugin
+/// early by what its effects delay it by: with such effects, what is measured is a stretch
+/// that much later than the range.
+fn output_levels(
+    seats: &ExportSeats,
+    place: PluginPlace,
+    rate: u32,
+    range: u64,
+) -> Result<Vec<AiOutputLevel>, AiRefusal> {
+    let sounds = seats.captured(place).map_err(|e| {
+        AiRefusal::Cannot(format!(
+            "the plugin host did not give the sound of the outputs ({e})"
+        ))
+    })?;
+    Ok((seats.output_sets(place).unwrap_or_default().iter())
+        .map(|set| AiOutputLevel {
+            set: set.clone(),
+            levels: (sounds.iter())
+                .find(|s| s.id == set.id)
+                .map(|s| set_levels(&s.samples, rate, range)),
+        })
+        .collect())
+}
+
+/// The levels of interleaved stereo `samples` over their first `range` frames, measured as
+/// a pass of the range is.
+fn set_levels(samples: &[f32], rate: u32, range: u64) -> PassLevels {
+    let samples = &samples[..samples.len().min(range as usize * 2)];
+    let mut places = OverPlaces::new(rate);
+    places.feed(samples);
+    let mut listen = Listener::new(rate, None, &[]);
+    listen.feed(samples);
+    let heard = listen.finish();
+    let squares: f64 = samples.iter().map(|s| f64::from(*s) * f64::from(*s)).sum();
+    PassLevels {
+        peak: peak_of(samples),
+        rms: (squares / samples.len().max(1) as f64).sqrt() as f32,
+        over: places.count,
+        frames: (samples.len() / 2) as u64,
+        lufs: heard.lufs,
+        lufs_short_max: heard.lufs_short_max,
+    }
 }
 
 /// How many frames the range has: from where the engine starts to play to the first frame
@@ -704,21 +801,20 @@ impl Taker {
     }
 }
 
-/// Plays the range once and writes it to `path`. `each` is called after every block with
-/// the frames of the range written so far and what the file holds so far.
+/// Plays the range once, from where `play_from` put the engine, and writes it to `path`.
+/// `each` is called after every block with the frames of the range written so far and what
+/// the file holds so far.
 /// Returns the frames of the file and what was in them, what `listen` heard of the range,
 /// and the true peak of the file.
 fn render_pass(
     engine: &mut ExportEngine,
     job: &ExportJob,
     path: &Path,
-    anew: bool,
     realtime: bool,
     each: &mut dyn FnMut(u64, &Taker) -> Result<(), Ended>,
     listening: Listening,
 ) -> Result<(PassLevels, Option<Heard>, Option<f32>), Ended> {
     let range = range_frames(engine, job.span);
-    engine.play_from(job.span.start(), anew);
     let mut taker = Taker {
         out: CacheWav::create(path, job.sample_rate, 2)?,
         head_left: engine.master_latency() as u64,
@@ -887,6 +983,7 @@ fn load_plugins(engine: &ExportEngine, told: &Told, setup: &Setup) -> Result<Exp
             key,
             bundle: p.bundle.clone(),
             state,
+            outputs: p.outputs.clone(),
         });
     }
     let want = ExportWant {

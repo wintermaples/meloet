@@ -114,6 +114,10 @@ pub struct Measuring {
     pub compare: Vec<usize>,
     /// Ticks inside the span where sections after the first begin, rising.
     pub cuts: Vec<u64>,
+    /// Only the tracks of `alone` are rendered, not the mix; while this one is, its
+    /// instrument plugin keeps the sound of each of its output sets alone, and their levels
+    /// are answered too (docs/architecture.md 20-15).
+    pub capture: Option<TrackId>,
 }
 
 /// Where a rendered job goes, and as what.
@@ -185,6 +189,9 @@ pub enum ExportNews {
         passes: Vec<crate::ai::PassLevels>,
         /// With bands or sections asked for.
         analysis: Option<Box<AiAnalysis>>,
+        /// With [`Measuring::capture`]: the levels of each output set, or why there are
+        /// none. When the capture could not begin, nothing is rendered and `passes` is empty.
+        captured: Option<Result<Vec<crate::ai::AiOutputLevel>, crate::ai::AiRefusal>>,
     },
 }
 

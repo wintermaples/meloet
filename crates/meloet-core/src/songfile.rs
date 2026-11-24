@@ -16,10 +16,10 @@ use meloet_model::{
     AudioId, AudioShape, AudioSource, AudioTake, AutoPoint, AutoTarget, BuiltinInstrument, Bus,
     Channel, Clip, ClipGain, ClipId, ClipTake, ClipTakes, ControlPoint, ControlValue, Doc, Gain,
     Grid, Insert, InsertId, Inserts, InstrumentRef, Kept, Lane, LaneId, MAX_TICK, Marker, MarkerId,
-    Meter, MeterChange, MusicalScale, Note, OriginIndex, Pan, PluginRef, QuantizeAlign,
-    QuantizeSettings, Return, RollSettings, ScaleMode, Session, Sf2Ref, Song, SourceTempo, Take,
-    TakeId, TakeOrigin, Tempo, TempoPoint, TickRange, Timeline, Track, TrackColor, TrackId,
-    TrackKind, VocalInput, mixer, mute_sets,
+    Meter, MeterChange, MusicalScale, Note, OriginIndex, Pan, PluginOutputs, PluginRef,
+    QuantizeAlign, QuantizeSettings, Return, RollSettings, ScaleMode, Session, Sf2Ref, Song,
+    SourceTempo, Take, TakeId, TakeOrigin, Tempo, TempoPoint, TickRange, Timeline, Track,
+    TrackColor, TrackId, TrackKind, VocalInput, mixer, mute_sets,
 };
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer, Serialize};
@@ -359,8 +359,8 @@ type Fields = serde_json::Map<String, serde_json::Value>;
 /// One of
 /// - `{"kind": "builtin", "name": "grandPiano"}`.
 /// - `{"kind": "plugin", "key": "vst3:…", "name": "Surge XT", "vendor": "Surge Synth Team",
-///   "path": "/usr/lib/vst3/Surge XT.vst3", "state": "<base64>"}`. `path` and `state` are
-///   left out when empty.
+///   "path": "/usr/lib/vst3/Surge XT.vst3", "state": "<base64>", "outputs": {…}}`. `path`
+///   and `state` are left out when empty, `outputs` (`outputs.rs`) at its default.
 /// - `{"kind": "sf2", "file": "FluidR3_GM.sf2", "sha256": "<hex>", "bank": 0, "program": 27,
 ///   "name": "Clean Guitar"}`.
 #[derive(Serialize, Deserialize)]
@@ -847,6 +847,7 @@ fn plugin_of(mut fields: Fields) -> Option<PluginRef> {
         vendor: vendor.into(),
         path: path.into(),
         state: state.into(),
+        outputs: PluginOutputs::default(),
         kept: kept_of(fields),
     })
 }
@@ -885,7 +886,13 @@ fn instrument_file(instrument: &InstrumentRef) -> InstrumentFile {
             fields.insert("name".into(), text(b.name()));
             (KIND_BUILTIN, fields)
         }
-        InstrumentRef::Plugin(plugin) => (KIND_PLUGIN, plugin_fields(plugin)),
+        InstrumentRef::Plugin(plugin) => {
+            let mut fields = plugin_fields(plugin);
+            if let Some(outputs) = outputs::outputs_file(&plugin.outputs) {
+                fields.insert(outputs::FIELD.into(), outputs);
+            }
+            (KIND_PLUGIN, fields)
+        }
         InstrumentRef::Sf2(sf2) => (KIND_SF2, sf2_fields(sf2)),
     };
     fields.insert("kind".into(), text(kind));
@@ -902,7 +909,10 @@ fn instrument_of(file: InstrumentFile) -> InstrumentRef {
         Some(KIND_BUILTIN) => take_text(&mut fields, "name")
             .and_then(|name| BuiltinInstrument::from_name(&name))
             .map(InstrumentRef::Builtin),
-        Some(KIND_PLUGIN) => plugin_of(fields).map(|p| InstrumentRef::Plugin(Arc::new(p))),
+        Some(KIND_PLUGIN) => {
+            let outputs = outputs::outputs_of(fields.remove(outputs::FIELD));
+            plugin_of(fields).map(|p| InstrumentRef::Plugin(Arc::new(PluginRef { outputs, ..p })))
+        }
         Some(KIND_SF2) => sf2_of(fields).map(|s| InstrumentRef::Sf2(Arc::new(s))),
         _ => None,
     };
@@ -2070,6 +2080,7 @@ fn sync_dir(_: &Path) -> io::Result<()> {
     Ok(())
 }
 
+mod outputs;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

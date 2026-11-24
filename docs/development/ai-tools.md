@@ -1,6 +1,6 @@
 # The AI link's tools
 
-The MCP tools of `meloet-ai` (94 after round 11; 95 with `rename_mute_set`, round 12), and for each tool added or changed in round 11 its arguments and its answer. Taken from the code (`crates/meloet-ai/src/tools.rs`, `crates/meloet-ai/src/tools/*.rs`): the argument structs and the `json!` answers. How they are built: [architecture 24-12, 24-14 and 24-16](../architecture.md). The schema each tool sends (`tools/list`) is the full truth; this page is a map.
+The MCP tools of `meloet-ai` (94 after round 11; 95 with `rename_mute_set`, round 12; 97 with `set_plugin_output` and `measure_plugin_outputs`), and for each tool added or changed in round 11 its arguments and its answer. Taken from the code (`crates/meloet-ai/src/tools.rs`, `crates/meloet-ai/src/tools/*.rs`): the argument structs and the `json!` answers. How they are built: [architecture 24-12, 24-14 and 24-16](../architecture.md). The schema each tool sends (`tools/list`) is the full truth; this page is a map.
 
 ## How every tool answers
 
@@ -186,6 +186,63 @@ All take the plugin place and refuse a plugin that is not Surge XT. Writes read 
 
 - Arguments: the plugin place; `params`: 1–64 of `{param, value | text}` (as `set_param`). All are checked first; one bad one sets nothing.
 - Answer for a plugin: `{plugin, changed, in_song, step, undo_steps, params: [{id, name, asked, value, text, before, changed}], unchanged: [names]}`; for a built-in effect: `{effect, changed, in_song: true, step, undo_steps, params}`. One step.
+
+## Output sets of a plugin instrument (architecture 20-15)
+
+An instrument plugin with more outputs than one stereo pair (a drum kit with an output for each drum) has **output sets**: a mono output or a stereo pair each, with an `id` given by the plugin host. Each set has a volume, a pan and an on/off switch. The song keeps them by the set's id (also for a set the plugin does not have now, so a kit loaded later finds its settings again), each change is one undo step, and they are not automatable. Pans are in the unit of the strips' pan: −100 (all left) to 100 (all right), a position for a mono set and a balance for a stereo pair.
+
+### `get_mixer` (changed; read only)
+
+A track whose instrument is a plugin gains:
+
+| Field | What |
+|---|---|
+| `outputs` | The loaded plugin's sets in its order: `{id, name, channels (1 or 2), on, volume_db, pan, default: {on, pan}}`, each with the value in force (the song's setting, else the default). `null` while the plugin is not loaded (yet); `[]` is a plugin with no sets. |
+| `output_settings_without_output` | Settings the song keeps of sets the loaded plugin does not have (kept, not used): `{id, on, volume_db, pan}`, `null` where the default decides. While `outputs` is `null`, every setting the song keeps. Left out when empty. |
+
+Other tracks get neither field. Nothing else in the answer changed.
+
+### `set_plugin_output` (new; not destructive, idempotent)
+
+- Arguments: `track` (number or id; its instrument must be a plugin); `output` (the set's id, 1–256 characters); at least one of `volume_db` (−60 to 6; there is no −∞: give `on: false` to silence a set), `pan` (−100 to 100), `on`, `reset` (true: back to the defaults first, then the other fields apply).
+- One call is one undo step; it may be inside `batch`. The history row is 「{plugin}の「{set}」を変える」 (`step.name.kind` `setPluginParam`, `param` the set's name when the plugin said its sets, else its id).
+- `on: false` takes the set out of the mix; for VST3 it switches the bus off, and the plugin may then send that sound to its main output.
+- While the plugin is not loaded any id is taken. Once it is loaded, the id must be one of its sets or one the song keeps a setting of (to change or reset that setting).
+- Answer: `{changed, step, undo_steps, track, track_id, track_name, output}`; `output` is the set as one entry of `get_mixer`'s `outputs` (`name`, `channels` and `default` are `null` while the plugin has not said its sets). As it is already: `changed: false`, no step, the values in force.
+- Errors: the track's instrument is no plugin ("track 2 "Piano" has no instrument plugin; …"); the loaded plugin has no such set ("the plugin has no output "e"; its outputs are a, b, c, d"); arguments out of range.
+- Automation tools cannot name a set (`add_lane` and `write_automation` take no such target).
+
+Example: three drums of a kit as one undo step.
+
+```json
+{ "name": "batch", "arguments": { "operations": [
+  { "tool": "set_plugin_output", "arguments": { "track": "id:5", "output": "out1", "volume_db": -3 } },
+  { "tool": "set_plugin_output", "arguments": { "track": "id:5", "output": "out2", "pan": -30 } },
+  { "tool": "set_plugin_output", "arguments": { "track": "id:5", "output": "out6", "on": false } }
+] } }
+```
+
+### `measure_plugin_outputs` (new; read only)
+
+- Arguments: `track` (number or id; its instrument must be a plugin), `from_bar`, `to_bar` (as `measure_mix`, at most 600 s).
+- Renders that track alone through the export's own engine (its mute and solo ignored), once, while the plugin keeps the sound of each set alone; each is measured as `measure_mix` measures. The values are **before the set's own volume, pan and on/off** (a set that is off is measured too) **and before the track's effects and fader**: each set alone at 0 dB where the plugin's default puts it.
+- Answer: `{from_bar, to_bar, sample_rate, track: {number, id, name}, measured: "each output alone at 0 dB in its default position, before its own volume, pan and on/off and before the track's effects and fader", outputs: [...]}`; each output is the `get_mixer` entry (the settings in force now) plus `peak_dbfs`, `rms_dbfs`, `lufs`, `short_term_max_lufs`, `over_0db_places`, `seconds`; these are all `null` for a set the plugin kept nothing of.
+- Errors: no instrument plugin; the plugin is not on this PC or stopped; the range is longer than the plugin host can keep for that many sets (256 MiB: about 174 s for 4 sets at 48 kHz) — the error says the longest number of seconds; busy, another measurement running, or cancelled as `measure_mix`.
+
+Example:
+
+```json
+{ "name": "measure_plugin_outputs", "arguments": { "track": "id:5", "from_bar": 1, "to_bar": 9 } }
+```
+
+```json
+{ "from_bar": 1, "to_bar": 9, "sample_rate": 48000,
+  "track": { "number": 2, "id": "id:5", "name": "Drums" },
+  "measured": "each output alone at 0 dB in its default position, before its own volume, pan and on/off and before the track's effects and fader",
+  "outputs": [ { "id": "out1", "name": "Kick", "channels": 1, "on": true, "volume_db": 0.0, "pan": 0,
+    "default": { "on": true, "pan": 0 }, "peak_dbfs": -4.1, "rms_dbfs": -19.6, "lufs": -18.2,
+    "short_term_max_lufs": -16.9, "over_0db_places": 0, "seconds": 20.0 } ] }
+```
 
 ## Tools changed only by the common rules
 

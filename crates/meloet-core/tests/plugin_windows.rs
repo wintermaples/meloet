@@ -47,6 +47,7 @@ impl Side {
             key: PluginKey::lv2(&format!("urn:meloet:fake:{fake}")).unwrap(),
             bundle: "/nowhere/fake.lv2".into(),
             sample_rate: 48_000,
+            outputs: Default::default(),
         };
         let block = self.parts.handle.plugin_block().clone();
         wait(|done| self.hosts.load(spec, block, done)).unwrap()

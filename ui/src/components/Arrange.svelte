@@ -767,7 +767,9 @@
       if (clip.takes < 2) return null;
       const box = G.clipBox(view, dims, row, clip.start, clip.end);
       if (box.x1 < 0 || box.x0 > view.width) return null;
-      return { x: Math.max(box.x0, 0), y: box.y0 - switchH, take: clip.take, takes: clip.takes };
+      // With no room above inside the lanes (the first row, or a row scrolled to the top), right below the clip.
+      const above = box.y0 - switchH;
+      return { x: Math.max(box.x0, 0), y: above >= shownY ? above : box.y1, take: clip.take, takes: clip.takes };
     }
     return null;
   });

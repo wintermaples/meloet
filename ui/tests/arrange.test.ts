@@ -118,11 +118,11 @@ describe("clip name and tabs (spec 2 (Take mark and switch), mock F-Takes)", () 
     expect(q(".take-square")).not.toBeNull();
   });
 
-  it("the switch tab is just above the selected clip. ◂ ▸ send stepTake", () => {
+  it("the switch tab is right below a clip of the first row (no room above). ◂ ▸ send stepTake", () => {
     show(takes());
     const sw = q(".switcher")!;
     expect(text(sw)).toBe("◂ テイク 2 / 3 ▸ T");
-    expect([sw.style.left, sw.style.top, sw.style.height]).toEqual(["256px", "-21px", "24px"]);
+    expect([sw.style.left, sw.style.top, sw.style.height]).toEqual(["256px", "60px", "24px"]);
     expect(qa(".switcher .m-num").map(text)).toEqual(["2", "3", "T"]);
     pointer(sw, "pointerdown", 260, -10);
     expect(app.sent).toEqual([]);
@@ -132,6 +132,20 @@ describe("clip name and tabs (spec 2 (Take mark and switch), mock F-Takes)", () 
       { type: "stepTake", delta: -1 },
       { type: "stepTake", delta: 1 },
     ]);
+  });
+
+  it("the switch tab is just above a clip of a lower row", () => {
+    show(
+      app.stateWith((s) => {
+        const base = s.song.tracks[0]!;
+        s.song.tracks = [
+          { ...base, clips: [] },
+          { ...base, id: 2, number: 2, name: "ベース", color: 2, clips: [clip(3, "Aメロ", 5, 9, 2, 3)] },
+        ];
+        s.arrange = arrangeOf(3);
+      }),
+    );
+    expect(q(".switcher")!.style.top).toBe("43px");
   });
 
   it("no switch tab for a clip with 1 take, or when nothing is selected", () => {

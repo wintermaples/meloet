@@ -212,6 +212,8 @@ pub struct Scene<'a> {
     pub soloed: Vec<TrackRef>,
     /// The selected track (`Session::play_target`): 「選んでいるトラック」 of MIDI.
     pub selected: Option<TrackId>,
+    /// `Play::plugin_kits`: written on channel 10 by a MIDI export.
+    pub plugin_kits: Vec<TrackId>,
 }
 
 impl Scene<'_> {
@@ -595,7 +597,14 @@ impl Exporting {
         let span = self.span(scene);
         let path = self.place(scene);
         let per_track = self.range == ExportRange::Tracks;
-        let Ok(files) = midi::files(scene.doc, &taken, span, &path, per_track) else {
+        let Ok(files) = midi::files(
+            scene.doc,
+            &taken,
+            &scene.plugin_kits,
+            span,
+            &path,
+            per_track,
+        ) else {
             let reason = ExportFailure::CannotWrite;
             self.run = Some(Run::Ended(ExportRunView::Failed { reason }, None));
             return;

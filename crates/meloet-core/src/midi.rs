@@ -8,7 +8,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 use meloet_model::{
-    Clip, ClipId, Doc, InstrumentGroup, TICKS_PER_QUARTER, TempoMap, Timeline, Track,
+    Clip, ClipId, Doc, InstrumentGroup, TICKS_PER_QUARTER, TempoMap, Timeline, Track, TrackId,
 };
 
 use smf::{OutFile, OutNote, OutTrack};
@@ -37,7 +37,7 @@ pub struct MidiTrackWritten {
     /// The track's place in `Doc::tracks`.
     pub index: usize,
     pub notes: usize,
-    /// 0 to 15: [`DRUM_CHANNEL`] for a drum kit, else 0.
+    /// 0 to 15: [`DRUM_CHANNEL`] for a drum kit (built-in, SF2 or a plugin kit), else 0.
     pub channel: u8,
 }
 
@@ -51,11 +51,14 @@ pub struct MidiTooLong;
 /// each sixteenth note) and the meters. Notes are written as they sound: those of the
 /// shown take of each keys clip that start in the range, ending at their clip's end or at
 /// `to` at the latest. With `only_clip` only that clip's notes. A track with no notes there
-/// is still written, empty. Drum kits are on channel 10, the others on channel 1. Mute and
-/// solo do not matter.
+/// is still written, empty. Drum kits are on channel 10, the others on channel 1: a kit is
+/// a track whose sound is in the drum group (built-in and SF2 kits), or one of `kits` (the
+/// plugin instruments that name their keys, `Play::plugin_kits`; a plugin that is not
+/// loaded names none, so it is not a kit, as on the screen). Mute and solo do not matter.
 pub fn midi_file(
     doc: &Doc,
     tracks: &[usize],
+    kits: &[TrackId],
     only_clip: Option<ClipId>,
     from: u64,
     to: u64,
@@ -91,7 +94,11 @@ pub fn midi_file(
                 }
             }));
         }
-        let channel = if is_drums(track) { DRUM_CHANNEL } else { 0 };
+        let channel = if is_drums(track) || kits.contains(&track.id) {
+            DRUM_CHANNEL
+        } else {
+            0
+        };
         count += notes.len();
         written.push(MidiTrackWritten {
             index,

@@ -254,6 +254,7 @@ impl Meloet for Recording {
             sample_rate: 48_000,
             outcomes: Vec::new(),
             instrument_sets: Vec::new(),
+            plugin_kits: Vec::new(),
         })
     }
 

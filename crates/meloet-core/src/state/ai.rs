@@ -192,6 +192,7 @@ impl Model {
             sample_rate: self.export_scene().sample_rate,
             outcomes: self.ai.outcomes.iter().cloned().collect(),
             instrument_sets: self.play.all_instrument_sets(),
+            plugin_kits: self.play.plugin_kits(),
         }
     }
 

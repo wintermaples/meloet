@@ -64,7 +64,7 @@ The note writes (`write_notes`, `copy_notes`, `import_midi`) answer the write fi
 ### `export_midi` (new; not destructive, idempotent)
 
 - Arguments: `clip` (a keys clip), or `from` / `to` (places) and `tracks` (numbers or ids; default every keys track), or nothing for the whole song; `path` (absolute `.mid` in a folder that is there; default a file in the private temporary folder, deleted after an hour); `overwrite`; `ticks_per_quarter` 480, 960 or 1920 (default 1920, meloet's own ticks, so no note moves).
-- Answer: `{file, bytes, format: 1, ticks_per_quarter, origin, end, notes, notes_cut_at_range_end, tracks: [{number, id, name, notes, channel}], tempo_events, meter_events, tempo_ramps_as_steps}`. Drum kits are on channel 10, other tracks on 1.
+- Answer: `{file, bytes, format: 1, ticks_per_quarter, origin, end, notes, notes_cut_at_range_end, tracks: [{number, id, name, notes, channel}], tempo_events, meter_events, tempo_ramps_as_steps}`. Drum kits are on channel 10 (built-in and SF2 kits, and a loaded plugin instrument that names its keys), other tracks on 1.
 
 ## 6 and 7: measuring
 

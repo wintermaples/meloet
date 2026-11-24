@@ -66,8 +66,8 @@ pub struct ImportMidiArgs {
 pub struct ExportMidiArgs {
     /// A keys clip's id: the file holds that clip. Give this, or `from` and `to`, or
     /// nothing for the whole song. Notes end where their clip or the range ends; drum kits
-    /// go on channel 10, other tracks on channel 1; a tempo ramp becomes a step each
-    /// sixteenth note.
+    /// (and a loaded plugin instrument that names its keys) go on channel 10, other tracks
+    /// on channel 1; a tempo ramp becomes a step each sixteenth note.
     #[serde(default)]
     #[schemars(range(min = 1))]
     pub clip: Option<u32>,
@@ -293,7 +293,7 @@ fn export_of(read: &AiSong, a: &ExportMidiArgs, division: u16) -> Result<Export,
             (from, to)
         }
     };
-    let Ok(made) = midi_file(doc, &chosen, only, from, to, division) else {
+    let Ok(made) = midi_file(doc, &chosen, &read.plugin_kits, only, from, to, division) else {
         return Err(failed(
             "that range is too long for a MIDI file; write it in parts",
         ));
@@ -524,5 +524,59 @@ impl Tools {
             path.display()
         );
         Ok(done(format!("{line}\n{value}"), value))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use meloet_model::{InstrumentRef, PluginRef, Song, Track, TrackId};
+
+    use super::*;
+
+    /// Two tracks of the same plugin; the core said the first one's plugin names its keys.
+    fn read() -> AiSong {
+        let mut song = Song::new_default();
+        let first = Track::clone(&song.doc.tracks[0]);
+        let plugin = PluginRef::new("lv2:urn:example:kit", "Kit", "Maker", "");
+        let kit = Track {
+            instrument: InstrumentRef::Plugin(Arc::new(plugin)),
+            ..first
+        };
+        song.doc.tracks[0] = Arc::new(kit.clone());
+        song.doc.tracks.push(Arc::new(Track {
+            id: TrackId(kit.id.0 + 1),
+            ..kit.clone()
+        }));
+        AiSong {
+            song,
+            undo_count: 0,
+            busy: None,
+            library: Default::default(),
+            file: None,
+            recent: Vec::new(),
+            songs_dir: None,
+            unsaved: false,
+            sample_rate: 48_000,
+            outcomes: Vec::new(),
+            instrument_sets: Vec::new(),
+            plugin_kits: vec![kit.id],
+        }
+    }
+
+    #[test]
+    fn a_plugin_that_names_its_keys_is_written_on_channel_10() {
+        let args: ExportMidiArgs =
+            serde_json::from_value(json!({ "from": "1.1.0", "to": "2.1.0" })).unwrap();
+        let Ok(export) = export_of(&read(), &args, 1920) else {
+            panic!("refused");
+        };
+        let channels: Vec<_> = (export.tracks.iter())
+            .map(|t| t["channel"].as_u64().unwrap())
+            .collect();
+        assert_eq!(channels, [10, 1]);
+        let written: Vec<_> = (export.file.tracks.iter()).map(|t| t.channel).collect();
+        assert_eq!(written, [midi::DRUM_CHANNEL, 0]);
     }
 }

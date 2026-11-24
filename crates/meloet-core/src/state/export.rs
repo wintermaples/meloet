@@ -33,6 +33,7 @@ impl Model {
                 })
                 .collect(),
             selected: self.play.song().session.play_target,
+            plugin_kits: self.play.plugin_kits(),
         }
     }
 

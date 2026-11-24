@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-use meloet_model::{Doc, TICKS_PER_QUARTER, TempoMap};
+use meloet_model::{Doc, TICKS_PER_QUARTER, TempoMap, TrackId};
 use meloet_protocol::{
     ExportFailure, ExportMidiProblem, ExportMidiTrack, ExportMidiTracks, TickSpan,
 };
@@ -75,17 +75,19 @@ pub struct MidiOut {
 
 /// The files of a MIDI export of `span`, at 1920 ticks a quarter note: one at `place` with
 /// every track of `places`; with `per_track` one in the folder `place` for each of them,
-/// named as its track, with the first track of the tempos and the meters.
+/// named as its track, with the first track of the tempos and the meters. `kits` as in
+/// [`midi::midi_file`].
 pub(crate) fn files(
     doc: &Doc,
     places: &[usize],
+    kits: &[TrackId],
     span: TickSpan,
     place: &Path,
     per_track: bool,
 ) -> Result<Vec<MidiOut>, MidiTooLong> {
     let division = TICKS_PER_QUARTER as u16;
     let bytes = |places: &[usize]| {
-        let made = midi::midi_file(doc, places, None, span.start, span.end, division)?;
+        let made = midi::midi_file(doc, places, kits, None, span.start, span.end, division)?;
         Ok(midi::smf::write(&made.file))
     };
     if !per_track {

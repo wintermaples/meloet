@@ -107,9 +107,10 @@
     line-height: var(--text-s-line-height);
     font-weight: var(--text-s-weight-400);
   }
-  /* Hover (spec 2: border gray.8, text gray.10). The border is drawn on the outside so the reading size does not change. */
+  /* Hover (spec 2: border gray.8, text gray.10, plus a dark see-through layer). The border is drawn on the outside so the reading size does not change. */
   .shown:hover {
     box-shadow: 0 0 0 var(--line-hair) var(--color-gray-8);
+    background: color-mix(in srgb, var(--color-gray-0) 30%, transparent);
   }
   /* Input box: height 24, bg gray.0, corner 1. While typing, border gray.8, the same as pressed. */
   .field {

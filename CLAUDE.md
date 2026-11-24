@@ -121,6 +121,7 @@ tools/patterns/    the drum patterns of the shelf (drums.json, built in)
 packaging/         the container that builds the deb we ship (Dockerfile. Used by scripts/build-deb.sh); appimage/ for the AppImage trial (scripts/build-appimage.sh)
 licenses/          the license watcher (check.mjs) and copies of the material licenses
 spikes/            test prototypes (do not delete, do not copy)
+vendor/livi/       livi 0.9.0 with one function added (instantiate_with_features, for the LV2 midnam update feature); raise it by hand
 ```
 
 ## Common commands

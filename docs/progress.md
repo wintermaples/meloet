@@ -297,9 +297,8 @@ The owner's completion conditions are tests: requirements 1 and 2 in `crates/mel
   - Not checked through the real app and the `meloet-mcp` bridge; 44.1 and 96 kHz only in unit tests.
 - Key names
   - VST3 `getProgramPitchName` is not built (no VST3 drum plugin that uses it on this PC).
-  - The midnam update feature is not offered; with several name lists, no choice by patch or channel.
+  - With several midnam name lists, no choice by patch or channel.
   - Built-in kit keys from a loaded bank are checked only by unit tests (no pack in the tests).
-  - Answers a tool gave up on stay until the next ask (as `ai_lists`).
   - Idea: the SF2 reading thread could make the key names with the bank (no second open, names always match the sound).
 - Mute sets and recent songs
   - Nothing on the screen (B-97-3; the recent songs came in round 12, A5); no rename tool (B-97-5).

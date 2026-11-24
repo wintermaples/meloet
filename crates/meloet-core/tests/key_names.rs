@@ -20,8 +20,8 @@ use meloet_core::play::keynames::read_sf2;
 use meloet_core::plugins::PluginOptions;
 use meloet_core::{Core, CoreOptions};
 use meloet_protocol::{
-    AppState, Command, ExportChange, ExportFormat, ExportRunView, PluginState, ScaleMode,
-    SoundView, StatusMessage,
+    AppState, Command, ExportChange, ExportFormat, ExportRunView, InstrumentKind, PluginState,
+    ScaleMode, ShelfMode, SoundView, StatusMessage,
 };
 
 use font::{Font, Inst, KEY_RANGE, Preset, SAMPLE_ID, Smp, flat, range};
@@ -400,6 +400,58 @@ fn a_plugin_that_names_its_keys_is_exported_on_the_drum_channel() {
     assert_eq!(
         (channel(&file, places[0]), channel(&file, places[1])),
         (midi::DRUM_CHANNEL, 0)
+    );
+    drop(core);
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// 「ここに置く」 of a drum pattern puts it on a selected plugin that names its keys, as on a
+/// drum track; on one that names none it makes a studio kit track, as before.
+#[test]
+fn a_pattern_goes_on_a_plugin_that_names_its_keys() {
+    let root = temp_dir("key-names-pattern");
+    let core = Arc::new(Core::start(options(&root)));
+    state_when(&core, "the scan", |s| s.library.plugins.len() == 3);
+    let drums = add(&core, AiInstrument::Plugin(DRUMS.into()));
+    let kit = add(&core, AiInstrument::Plugin(KIT.into()));
+    let state = state_when(&core, "the names", |s| {
+        s.song.tracks[drums as usize - 1].key_names.is_some()
+            && matches!(&s.song.tracks[kit as usize - 1].sound,
+                SoundView::Plugin(p) if p.state == PluginState::Ready)
+    });
+    let id = |track: u32| state.song.tracks[track as usize - 1].id;
+    let tracks = state.song.tracks.len();
+    core.send(Command::OpenShelf {
+        mode: ShelfMode::NewTrack,
+    });
+    let place = |track: u32| {
+        core.send(Command::SelectTrack {
+            track: id(track),
+            from_arm: false,
+        });
+        core.send(Command::PlacePattern {
+            id: "eightBeat".into(),
+        });
+        core.snapshot().state
+    };
+
+    let state = place(drums);
+    assert_eq!(state.song.tracks.len(), tracks, "no new track");
+    let on = &state.song.tracks[drums as usize - 1];
+    assert_eq!(on.id, id(drums));
+    assert_eq!(on.clips.len(), 1);
+    assert_eq!(on.clips[0].start, 0);
+
+    let state = place(kit);
+    assert_eq!(state.song.tracks.len(), tracks + 1, "a studio kit track");
+    assert!(state.song.tracks[kit as usize - 1].clips.is_empty());
+    let made = &state.song.tracks[kit as usize];
+    assert_eq!(made.clips.len(), 1);
+    assert_eq!(
+        made.sound,
+        SoundView::Builtin {
+            instrument: InstrumentKind::StudioKit
+        }
     );
     drop(core);
     let _ = std::fs::remove_dir_all(&root);

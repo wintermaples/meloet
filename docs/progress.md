@@ -298,7 +298,7 @@ The owner's completion conditions are tests: requirements 1 and 2 in `crates/mel
 - Key names
   - VST3 `getProgramPitchName` is not built (no VST3 drum plugin that uses it on this PC).
   - With several midnam name lists, no choice by patch or channel.
-  - A plugin that names its keys gets the drum roll and no scale lock (2026-11-25; MIDI export puts it on channel 10), but a shelf drum pattern still makes a new studio kit (`play/patterns.rs`; the screen's `placeText` follows that). Not tried in the real app with the real DrumGizmo or Black Pearl.
+  - A plugin that names its keys gets the drum roll and no scale lock (2026-11-25; MIDI export puts it on channel 10, and a shelf drum pattern goes on it when it is selected; the pattern's ▶ still plays with the studio kit, as the sample cannot play a plugin). Not tried in the real app with the real DrumGizmo or Black Pearl.
   - Built-in kit keys from a loaded bank are checked only by unit tests (no pack in the tests).
   - Idea: the SF2 reading thread could make the key names with the bank (no second open, names always match the sound).
 - Mute sets and recent songs

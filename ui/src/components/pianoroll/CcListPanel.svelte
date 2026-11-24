@@ -168,7 +168,7 @@
 </script>
 
 {#snippet cell(row: CcRow, name: CcFieldName)}
-  <span class="r" class:m-hi={name === "value"} data-field={name}>{row[name]}</span>
+  <span class="r m-typable" class:m-hi={name === "value"} data-field={name}>{row[name]}</span>
 {/snippet}
 
 {#snippet input(name: CcFieldName)}

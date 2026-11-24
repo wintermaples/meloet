@@ -270,7 +270,7 @@
     {#if typing}
       <span class="value"><ValueField initial={String(Math.round(shown))} label={t("metronome.volume")} unit="dB" onsubmit={submit} oncancel={() => (typing = false)} /></span>
     {:else}
-      <span class="m-num m-hi value" role="presentation" data-test="metronome-volume-value" ondblclick={startTyping}>{clickDbText(shown)}</span>
+      <span class="m-num m-hi value m-typable" role="presentation" data-test="metronome-volume-value" ondblclick={startTyping}>{clickDbText(shown)}</span>
     {/if}
   </div>
   <div class="row">

@@ -312,7 +312,7 @@
                     />
                   </span>
                 {:else}
-                  <span class="mono strong" role="presentation" data-test="latency-used" ondblclick={() => (typingLatency = true)}>{latencyText}</span>
+                  <span class="mono strong m-typable" role="presentation" data-test="latency-used" ondblclick={() => (typingLatency = true)}>{latencyText}</span>
                 {/if}
                 <Button test="settings-measure" onclick={() => send({ type: "openLatencyMeasure" })}>{t("button.measureLatency")}</Button>
                 <Button test="settings-manual" on={typingLatency} onclick={() => (typingLatency = true)}>{t("button.manualLatency")}</Button>

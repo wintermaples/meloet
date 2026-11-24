@@ -5,7 +5,6 @@
 mod port;
 mod presets;
 mod scratch;
-mod smf;
 mod song;
 pub mod surge;
 mod tools;

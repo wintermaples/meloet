@@ -44,8 +44,12 @@ node tools/licenses/inventory.mjs write
 
 # 4. The docs that name the deb or the current version.
 esc_old="${old//./\\.}"
-sed -i "s/meloet_${esc_old}_amd64\.deb/meloet_${new}_amd64.deb/g" README.md README.ja.md docs/development/ubuntu.md docs/install-check.md docs/user/README.ja.md docs/user/README.en.md docs/progress.md
-sed -i "s/meloet_${esc_old}_amd64\.AppImage/meloet_${new}_amd64.AppImage/g" README.md README.ja.md docs/development/appimage.md docs/user/README.ja.md docs/progress.md
+# The records of past releases in docs/progress.md ("Release X.Y.Z (…") name the deb they built
+# and stay as written; docs/development/appimage.md and the AppImage lines of docs/progress.md
+# are records of a trial build, also left as they are.
+sed -i "s/meloet_${esc_old}_amd64\.deb/meloet_${new}_amd64.deb/g" README.md README.ja.md docs/development/ubuntu.md docs/install-check.md docs/user/README.ja.md docs/user/README.en.md
+sed -i "/^Release [0-9]/!s/meloet_${esc_old}_amd64\.deb/meloet_${new}_amd64.deb/g" docs/progress.md
+sed -i "s/meloet_${esc_old}_amd64\.AppImage/meloet_${new}_amd64.AppImage/g" README.md README.ja.md docs/user/README.ja.md
 sed -i "s/いまの版は ${esc_old} です/いまの版は ${new} です/" docs/user/README.ja.md
 sed -i "s/The current version is ${esc_old}\./The current version is ${new}./" docs/user/README.en.md
 sed -i "s/^| App | ${esc_old} /| App | ${new} /" docs/progress.md
@@ -62,9 +66,13 @@ check() {
 for toml in crates/*/Cargo.toml; do check "$toml" "^version = \"$old\"$"; done
 check NOTICE "^Version $old\."
 check ui/src/components/about/generated/licenses.json "\"meloet\": {\"version\":\"$old\""
-for doc in README.md README.ja.md docs/development/ubuntu.md docs/development/appimage.md docs/install-check.md docs/user/README.ja.md docs/user/README.en.md docs/progress.md; do
+for doc in README.md README.ja.md docs/development/ubuntu.md docs/install-check.md docs/user/README.ja.md docs/user/README.en.md; do
   check "$doc" "meloet_${old}_amd64"
 done
+if grep -n "meloet_${old}_amd64\.deb" docs/progress.md | grep -v ":Release [0-9]"; then
+  echo "  ^ still $old in docs/progress.md" >&2
+  left=1
+fi
 check docs/user/README.ja.md "いまの版は $old"
 check docs/user/README.en.md "The current version is $old\."
 check docs/progress.md "^| App | $old "
@@ -78,4 +86,5 @@ if [[ "$left" != 0 ]]; then
 fi
 
 echo "== every place says $new. Review with: git diff --stat"
-echo "   Old records in docs/history/ and the first-version note in docs/architecture.md are left as they were."
+echo "   Old records (docs/history/, the release records in docs/progress.md, docs/development/appimage.md)"
+echo "   and the first-version note in docs/architecture.md are left as they were."

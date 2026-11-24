@@ -216,10 +216,10 @@ describe("the row of the clip's menu", () => {
     expect([row("menu.comp").usable, row("menu.comp").hint]).toEqual([false, t("comp.needsTakes")]);
   });
 
-  it("a clip with a comp keeps its takes: 「テイクを消す」「逆にする」「ノーマライズ」 are disabled, with the reason", () => {
+  it("a clip with a comp keeps its takes: 「テイクを消す」「このテイク以外を消す」「逆にする」「ノーマライズ」 are disabled, with the reason", () => {
     show(Arrange, song(pieces([0, T1], [BAR, T3])));
     rightClick(20, 64 + 30);
-    for (const label of ["menu.deleteTake", "menu.reverse", "menu.normalize"]) {
+    for (const label of ["menu.deleteTake", "menu.deleteOtherTakes", "menu.reverse", "menu.normalize"]) {
       expect([label, row(label).usable, row(label).hint]).toEqual([label, false, t("comp.notWhileComp")]);
     }
     // Another take can still be shown: that takes the comp away (Rust, one step).
@@ -228,6 +228,7 @@ describe("the row of the clip's menu", () => {
     show(Arrange, song());
     rightClick(20, 64 + 30);
     expect([row("menu.deleteTake").usable, row("menu.reverse").usable, row("menu.deleteTake").hint]).toEqual([true, true, undefined]);
+    expect([row("menu.deleteOtherTakes").usable, row("menu.deleteOtherTakes").hint]).toEqual([true, undefined]);
   });
 
   it("the head side has the heading and the takes' names; ▾ closes the band", () => {
@@ -423,6 +424,7 @@ describe("the fake (one step each, Rust's rules)", () => {
       { type: "setComp", clip: COMP_CLIP, span, pieces: [] },
       { type: "clearComp", clip: 999 },
       { type: "deleteTake", clip: COMP_CLIP },
+      { type: "deleteOtherTakes", clip: COMP_CLIP },
       { type: "reverseClips", clips: [COMP_CLIP] },
       { type: "normalizeClips", clips: [COMP_CLIP] },
     ];

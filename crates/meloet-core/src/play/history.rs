@@ -425,6 +425,13 @@ pub(crate) fn step_text(row: &StepRow) -> (StepName, StepWhat, Option<StepPlace>
             },
             a.clip_track(clip),
         ),
+        StepKind::DeleteOtherTakes { clip, index } => (
+            StepName::DeleteOtherTakes,
+            StepWhat::Take {
+                number: count(index + 1),
+            },
+            a.clip_track(clip),
+        ),
         StepKind::DeleteClips { count: n, cut } => (
             if cut {
                 StepName::CutClips

@@ -7,7 +7,7 @@ use crate::audio::{
     AudioId, AudioShape, AudioSource, AudioTake, SourceTempo, TrackKind, VocalInput,
     vocal_track_name,
 };
-use crate::edit::{delete_take, duplicate_track, switch_take};
+use crate::edit::{delete_other_takes, delete_take, duplicate_track, switch_take};
 use crate::sections::delete_section;
 use crate::song::{ClipTake, ClipTakes, Song, TakeId};
 use crate::{History, TICKS_PER_QUARTER, TrackId, played_frames, remove_audio};
@@ -300,6 +300,11 @@ fn takes_and_the_comp() {
     assert_eq!((c.active, c.comp.len()), (0, 0));
     assert_eq!(delete_take(&doc, CLIP).err(), Some(EditError::Unchanged));
     assert!(delete_take(&song(), CLIP).is_ok());
+    assert_eq!(
+        delete_other_takes(&doc, CLIP).err(),
+        Some(EditError::Unchanged)
+    );
+    assert!(delete_other_takes(&song(), CLIP).is_ok());
     assert_eq!(played_frames(&doc, CLIP), None);
     assert!(played_frames(&song(), CLIP).is_some());
 

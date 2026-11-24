@@ -216,9 +216,11 @@ fn takes_cuts_and_lengths_with_a_comp() {
     set(m, WHOLE, &THREE);
     cmd(m, Command::SelectClip { clip: Some(CLIP) });
 
-    // 「テイクを消す」 does nothing; neither do 「逆にする」 and 「ノーマライズ」.
+    // 「テイクを消す」 and 「このテイク以外を消す」 do nothing; neither do 「逆にする」 and
+    // 「ノーマライズ」.
     let before = (doc(m), steps(m));
     cmd(m, Command::DeleteTake { clip: CLIP });
+    cmd(m, Command::DeleteOtherTakes { clip: CLIP });
     let asked = cmd(m, Command::ReverseClips { clips: vec![CLIP] });
     assert!(asked.is_empty(), "{asked:?}");
     let asked = cmd(m, Command::NormalizeClips { clips: vec![CLIP] });

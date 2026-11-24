@@ -162,6 +162,7 @@ describe("arrange right click (spec 3)", () => {
       "menu.nextTake",
       "menu.prevTake",
       "menu.deleteTake",
+      "menu.deleteOtherTakes",
       "menu.comp",
       "-",
       "menu.reverse",

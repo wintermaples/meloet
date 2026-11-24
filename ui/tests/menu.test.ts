@@ -125,6 +125,7 @@ describe("menu contents (B-59)", () => {
       "次のテイク T",
       "前のテイク Shift T",
       "テイクを消す",
+      "このテイク以外を消す",
       "鍵盤のトラックを足す…",
       "歌のトラックを足す",
       "名前を変える F2",
@@ -219,6 +220,17 @@ describe("menu contents (B-59)", () => {
     expect(row(topMenus(one, depsOf(one, []), "other")[5]!.entries, "テイクを消す").usable).toBe(false);
     const none = withClip((s) => (s.arrange = { selectedClips: [], selectedClip: null, pianoRollClip: null, clipboardClips: 0, tallTrack: null }));
     expect(row(topMenus(none, depsOf(none, []), "other")[5]!.entries, "テイクを消す").usable).toBe(false);
+  });
+
+  it("delete other takes: DeleteOtherTakes of the chosen clip. Disabled with 1 take", () => {
+    const sent: Command[] = [];
+    const s = withClip();
+    const del = row(topMenus(s, depsOf(s, sent), "other")[5]!.entries, "このテイク以外を消す");
+    expect(del.usable).toBe(true);
+    del.run!();
+    expect(sent).toEqual([{ type: "deleteOtherTakes", clip: 5 }]);
+    const one = withClip((s) => (s.song.tracks[0]!.clips = [{ ...CLIP, takes: 1 }]));
+    expect(row(topMenus(one, depsOf(one, []), "other")[5]!.entries, "このテイク以外を消す").usable).toBe(false);
   });
 
   it("usable when stopped. With no step to undo, 「取り消す」 is disabled", () => {

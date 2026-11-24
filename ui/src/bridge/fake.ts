@@ -4715,6 +4715,7 @@ const CLIP_COMMANDS: Command["type"][] = [
   "duplicateClips",
   "trimClip",
   "deleteTake",
+  "deleteOtherTakes",
   "deleteSelected",
   "copyClips",
   "cutClips",
@@ -4862,6 +4863,16 @@ export function reduceClips(
       if (!clip || clip.takes < 2) return null;
       clip.takes -= 1;
       clip.take = Math.max(1, clip.take - 1);
+      return done();
+    }
+    case "deleteOtherTakes": {
+      // The shown take stays, as take 1.
+      const clip = clipOf(command.clip);
+      if (!clip || clip.takes < 2) return null;
+      const shown = clip.audio?.takes[clip.take - 1];
+      if (clip.audio && shown) clip.audio.takes = [shown];
+      clip.takes = 1;
+      clip.take = 1;
       return done();
     }
     case "deleteSelected": {

@@ -367,12 +367,13 @@ describe("context menu (B-60)", () => {
       "menu.nextTake",
       "menu.prevTake",
       "menu.deleteTake",
+      "menu.deleteOtherTakes",
       "-",
       "menu.bounceClips",
     ]);
-    expect(rows().map((r) => r.key)).toEqual(["E", "Ctrl X", "Ctrl C", "Ctrl V", "Ctrl D", "Ctrl R", "Delete", undefined, "Ctrl J", "F2", "T", "Shift T", undefined, undefined]);
+    expect(rows().map((r) => r.key)).toEqual(["E", "Ctrl X", "Ctrl C", "Ctrl V", "Ctrl D", "Ctrl R", "Delete", undefined, "Ctrl J", "F2", "T", "Shift T", undefined, undefined, undefined]);
     // Join needs 2 or more selected (the right click selected only 41 again).
-    expect(rows().map((r) => r.usable)).toEqual([true, true, true, true, true, true, true, true, false, true, false, false, false, true]);
+    expect(rows().map((r) => r.usable)).toEqual([true, true, true, true, true, true, true, true, false, true, false, false, false, false, true]);
   });
 
   it("the clip rows act on the selection at the time of the press. A selected clip is not selected again", () => {
@@ -393,6 +394,7 @@ describe("context menu (B-60)", () => {
       { type: "stepTake", delta: 1 },
       { type: "stepTake", delta: -1 },
       { type: "deleteTake", clip: 3 },
+      { type: "deleteOtherTakes", clip: 3 },
       // 「音のクリップにする」 (A7; clips of two tracks: disabled, and Rust does nothing with them).
       { type: "bounceToAudio", clips: [3, 41] },
     ]);
@@ -403,7 +405,7 @@ describe("context menu (B-60)", () => {
     s.transport.state = "recording";
     show(s);
     ctx(q(".lanes")!, 300, 30);
-    expect(rows().map((r) => r.usable)).toEqual([true, false, true, false, false, false, false, false, false, false, false, false, false, false]);
+    expect(rows().map((r) => r.usable)).toEqual([true, false, true, false, false, false, false, false, false, false, false, false, false, false, false]);
   });
 
   it("empty place: paste. The pressed place snaps to the grid (1 bar); not with Shift", () => {

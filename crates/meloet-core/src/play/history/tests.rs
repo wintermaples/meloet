@@ -37,6 +37,7 @@ fn every_step_kind() -> Vec<StepKind> {
             to: 1,
         },
         DeleteTake { clip, index: 0 },
+        DeleteOtherTakes { clip, index: 1 },
         DeleteClips { count, cut: false },
         DeleteClips { count, cut: true },
         Tempo {
@@ -265,6 +266,7 @@ fn every_step_kind() -> Vec<StepKind> {
             Record { .. }
             | SwitchTake { .. }
             | DeleteTake { .. }
+            | DeleteOtherTakes { .. }
             | DeleteClips { .. }
             | Tempo { .. }
             | Meter { .. }

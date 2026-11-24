@@ -57,7 +57,7 @@ describe("step names (spec 3 (Y19))", () => {
   const filled = (e: Entry) => fill(e.text, e.example ?? {});
 
   it("every kind in the protocol has a name, and no name is outside the protocol (fails if even one step has no name)", () => {
-    expect(STEP_NAME_KINDS.length).toBe(104);
+    expect(STEP_NAME_KINDS.length).toBe(105);
     expect(names.map(([kind]) => kind).sort()).toEqual([...STEP_NAME_KINDS].sort());
     for (const [kind, e] of names) {
       expect(e.text.trim(), kind).not.toBe("");

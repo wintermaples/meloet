@@ -19,11 +19,6 @@ where
 }
 
 #[test]
-fn the_version() {
-    assert_eq!(PROTOCOL_VERSION, 34);
-}
-
-#[test]
 fn the_commands_of_mute_sets() {
     both_ways(
         Command::SaveMuteSet {
@@ -89,7 +84,6 @@ fn the_new_step_names() {
         (StepName::every_kind().iter()).any(|n| matches!(n, StepName::Batch { .. })),
         "batch"
     );
-    assert_eq!(StepName::every_kind().len(), 104);
 }
 
 #[test]

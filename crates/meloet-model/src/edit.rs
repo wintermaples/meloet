@@ -296,6 +296,35 @@ pub fn delete_take(doc: &Doc, clip: ClipId) -> Result<Edit, EditError> {
     })
 }
 
+/// Removes every take of `clip` but the one it shows, which becomes the first. Turned away as
+/// [`delete_take`] is: a clip of one take, and one with 「いいとこ取り」.
+pub fn delete_other_takes(doc: &Doc, clip: ClipId) -> Result<Edit, EditError> {
+    let (ti, ci) = clip_index(doc, clip)?;
+    let track = &doc.tracks[ti];
+    let old = &track.clips[ci];
+    if old.takes.len() < 2 || !old.comp.is_empty() {
+        return Err(EditError::Unchanged);
+    }
+    let index = old.active;
+    let mut clips = track.clips.clone();
+    clips[ci] = Arc::new(Clip {
+        takes: old.takes.only(index),
+        active: 0,
+        ..Clip::clone(old)
+    });
+    Ok(Edit {
+        doc: with_track(
+            doc,
+            ti,
+            Track {
+                clips,
+                ..Track::clone(track)
+            },
+        ),
+        step: StepKind::DeleteOtherTakes { clip, index },
+    })
+}
+
 /// Removes the clips, all or none. `cut`: for Mod X.
 pub fn delete_clips(doc: &Doc, ids: &[ClipId], cut: bool) -> Result<Edit, EditError> {
     if ids.is_empty() {

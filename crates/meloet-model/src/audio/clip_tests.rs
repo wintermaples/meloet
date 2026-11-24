@@ -3,7 +3,9 @@ use std::sync::Arc;
 
 use super::*;
 use crate::arrange::{ClipEdge, move_clips, trim_clip};
-use crate::edit::{EditError, NewTake, add_recording, delete_take, switch_take};
+use crate::edit::{
+    EditError, NewTake, add_recording, delete_other_takes, delete_take, switch_take,
+};
 use crate::notes::{WriteAt, clipboard, write_note};
 use crate::playback::track_events;
 use crate::song::{Clip, ClipId, ClipTake, ClipTakes, Note, Song, Track};
@@ -127,6 +129,13 @@ fn a_vocal_clip_moves_trims_and_switches_as_a_keys_clip() {
     let deleted = delete_take(doc, ClipId(10)).unwrap().doc;
     let (_, clip) = deleted.clip(ClipId(10)).unwrap();
     assert_eq!((clip.takes.len(), clip.active_take_id()), (1, TakeId(12)));
+    let kept = delete_other_takes(doc, ClipId(10)).unwrap().doc;
+    let (_, clip) = kept.clip(ClipId(10)).unwrap();
+    assert_eq!(
+        (clip.takes.len(), clip.active, clip.active_take_id()),
+        (1, 0, TakeId(13))
+    );
+    assert_eq!(clip.takes.shape(), Some(&AudioShape::RECORDED));
 
     let moved = move_clips(doc, &[ClipId(10)], BAR as i64, 0, false).unwrap();
     let (_, clip) = moved.edit.doc.clip(ClipId(10)).unwrap();

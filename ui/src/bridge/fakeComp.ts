@@ -53,18 +53,19 @@ export function fakeShowTake(clip: ClipView, number: number, files: ReadonlyMap<
 }
 
 /**
- * `setComp`, `clearComp`, and on a vocal clip that has its takes listed: `stepTake` (the comp goes in the same step)
- * and `deleteTake` (nothing while there is a comp). `null`: not one of these.
+ * `setComp`, `clearComp`, and on a vocal clip that has its takes listed: `stepTake` (the comp goes in the same step),
+ * `deleteTake` and `deleteOtherTakes` (nothing while there is a comp). `null`: not one of these.
  */
 export function reduceComp(state: FakeState, command: Command, files: ReadonlyMap<number, FakeAudio>): Change[] | null {
-  if (command.type !== "setComp" && command.type !== "clearComp" && command.type !== "stepTake" && command.type !== "deleteTake") return null;
+  const deleting = command.type === "deleteTake" || command.type === "deleteOtherTakes";
+  if (command.type !== "setComp" && command.type !== "clearComp" && command.type !== "stepTake" && !deleting) return null;
   const id = command.type === "stepTake" ? state.arrange.selectedClip : command.clip;
   const found = state.song.tracks.flatMap((t) => t.clips).find((c) => c.id === id);
   const listed = (found?.audio?.takes.length ?? 0) >= 2;
   if (command.type === "stepTake" && !listed) return null;
-  if (command.type === "deleteTake" && !(found && found.comp.length > 0)) return null;
+  if (deleting && !(found && found.comp.length > 0)) return null;
   const busy = state.transport.state === "countIn" || state.transport.state === "recording";
-  if (busy || !found || command.type === "deleteTake") return [];
+  if (busy || !found || deleting) return [];
 
   const song = structuredClone(state.song);
   const clip = song.tracks.flatMap((t) => t.clips).find((c) => c.id === id)!;

@@ -835,6 +835,7 @@ impl Play {
     ) -> Option<StatusMessage> {
         match said {
             PluginSaid::Editor(window) => self.plug_window_said(ticket, window),
+            PluginSaid::Outputs(sets) => self.plug_outputs_said(ticket, sets),
             PluginSaid::WindowOpened {
                 width,
                 height,

@@ -9,7 +9,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use meloet_core::ai::{
-    AiAnswer, AiAsk, AiLevels, AiMeasure, AiRefusal, AiRender, AiRendered, AiSong,
+    AiAnswer, AiAsk, AiLevels, AiMeasure, AiOutputLevels, AiOutputsMeasure, AiRefusal, AiRender,
+    AiRendered, AiSong,
 };
 use meloet_protocol::AiPort;
 use rmcp::handler::server::tool::ToolCallContext;
@@ -128,6 +129,15 @@ impl Meloet for InBatch {
         _: &mut dyn FnMut(u8),
         _: &dyn Fn() -> bool,
     ) -> Result<AiLevels, AiRefusal> {
+        Err(AiRefusal::NotInBatch)
+    }
+
+    fn measure_outputs(
+        &self,
+        _: AiOutputsMeasure,
+        _: &mut dyn FnMut(u8),
+        _: &dyn Fn() -> bool,
+    ) -> Result<AiOutputLevels, AiRefusal> {
         Err(AiRefusal::NotInBatch)
     }
 

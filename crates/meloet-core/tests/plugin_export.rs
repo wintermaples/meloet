@@ -11,12 +11,14 @@ use std::time::{Duration, Instant};
 use meloet_core::plugins::export::{
     ExportPlugin, ExportPluginError, ExportSeats, ExportWant, export_seats,
 };
-use meloet_core::plugins::hosts::{DEFAULT_GEOMETRY, HostOptions, Hosts, LoadSpec, wait};
+use meloet_core::plugins::hosts::{
+    DEFAULT_GEOMETRY, HostOptions, Hosts, LoadSpec, capture_frames_max, wait,
+};
 use meloet_engine::{
     Effect, EffectContext, Instrument, InstrumentEvent, PluginBlock, PluginEffect,
     PluginInstrument, monotonic_us,
 };
-use meloet_model::{PluginPlace, StripId, TrackId};
+use meloet_model::{OutputSetting, PluginOutputs, PluginPlace, StripId, TrackId};
 use meloet_plugin::PluginKey;
 use meloet_plugin::ipc::HANG_MS;
 
@@ -26,6 +28,9 @@ const RATE: u32 = 48_000;
 const FRAMES: usize = 256;
 const CTX: EffectContext = EffectContext { tempo_bpm: 120.0 };
 const TRACK: PluginPlace = PluginPlace::Instrument(TrackId(1));
+/// The fake instrument with four output sets of the plugin host: "a" a stereo pair, "b"
+/// mono in the middle, "c" mono on the left, all three on, and "d" mono and off.
+const FOUR_OUTPUTS: &str = "outputs";
 
 fn insert(slot: usize) -> PluginPlace {
     PluginPlace::Insert(StripId::Track(TrackId(1)), slot)
@@ -50,6 +55,7 @@ fn plugin(place: PluginPlace, fake: &str, state: Vec<u8>) -> ExportPlugin {
         key: key(fake),
         bundle: "/nowhere/fake.lv2".into(),
         state,
+        outputs: Default::default(),
     }
 }
 
@@ -135,6 +141,7 @@ fn an_export_has_offline_processes_of_its_own_and_they_end_with_the_seats() {
             key: key(fake),
             bundle: "/nowhere/fake.lv2".into(),
             sample_rate: RATE,
+            outputs: Default::default(),
         };
         wait(|done| playing.load(spec, block.clone(), done)).unwrap()
     };
@@ -207,6 +214,48 @@ fn an_export_has_offline_processes_of_its_own_and_they_end_with_the_seats() {
     drop((playing_sine, online));
     drop(playing);
     assert!(gone(&playing_pids));
+}
+
+#[test]
+#[ignore = "needs the plugin host's fake instrument with four output sets (the other half of \
+            the output sets work); FOUR_OUTPUTS names it"]
+fn an_export_keeps_the_sound_of_each_output_set_alone() {
+    let mut four = plugin(TRACK, FOUR_OUTPUTS, Vec::new());
+    let a_off = OutputSetting {
+        on: Some(false),
+        ..OutputSetting::new("a")
+    };
+    four.outputs = PluginOutputs::new(1, [a_off]);
+    let mut seats = seats(vec![four]).unwrap();
+    let ids: Vec<String> = (seats.output_sets(TRACK).unwrap().iter())
+        .map(|s| s.id.clone())
+        .collect();
+    assert_eq!(ids, ["a", "b", "c", "d"]);
+    let too_long = capture_frames_max(ids.len()) + 1;
+    assert!(seats.capture(TRACK, too_long).is_err());
+
+    let mut instrument = take(&mut seats.instruments, TRACK);
+    let blocks = 8;
+    seats.capture(TRACK, (blocks * FRAMES) as u64).unwrap();
+    let left = render(&mut *instrument, &mut [], blocks);
+    let captured = seats.captured(TRACK).unwrap();
+    let got: Vec<&str> = captured.iter().map(|c| c.id.as_str()).collect();
+    assert_eq!(got, ["a", "b", "c", "d"], "a set that is off is kept too");
+    for sound in &captured {
+        assert_eq!(sound.samples.len(), blocks * FRAMES * 2, "{}", sound.id);
+        assert!(
+            sound.samples.iter().any(|s| s.abs() > 1e-3),
+            "{} is silent",
+            sound.id
+        );
+    }
+    // What is heard is the sets the settings and the rule leave on (b and c), as kept.
+    let (b, c) = (&captured[1].samples, &captured[2].samples);
+    for (i, heard) in left.iter().enumerate() {
+        let kept = b[i * 2] + c[i * 2];
+        assert!((heard - kept).abs() < 1e-4, "frame {i}: {heard} and {kept}");
+    }
+    drop(instrument);
 }
 
 #[test]
@@ -395,6 +444,7 @@ fn real(place: PluginPlace, plugin: (&str, &str), state: Vec<u8>) -> ExportPlugi
         key: plugin.0.parse().unwrap(),
         bundle: plugin.1.into(),
         state,
+        outputs: Default::default(),
     }
 }
 
@@ -425,6 +475,7 @@ fn real_plugins_export_fast_while_the_playing_one_sounds() {
         key: SURGE_VST3.0.parse().unwrap(),
         bundle: SURGE_VST3.1.into(),
         sample_rate: RATE,
+        outputs: Default::default(),
     };
     let surge = wait(|done| playing.load(spec, block.clone(), done)).unwrap();
     // A state of its own: much quieter than a Surge XT just made.

@@ -10,7 +10,7 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use meloet_model::{Doc, PluginPlace, Song, TrackId};
+use meloet_model::{Doc, PluginOutputs, PluginPlace, Song, TrackId};
 use meloet_protocol::{PluginSlotRef, PluginWindowKind};
 
 use crate::play::{EngineOp, Play, PlugState};
@@ -30,6 +30,8 @@ pub struct ToldPlugin {
     pub bundle: PathBuf,
     /// As the `Doc` has it; empty: as the plugin starts.
     pub state: Arc<[u8]>,
+    /// The settings of its output sets, as the `Doc` has them.
+    pub outputs: PluginOutputs,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -85,8 +87,9 @@ impl Told {
                     key,
                     bundle,
                     state,
+                    outputs,
                     ..
-                } => loads.push((ticket, key, bundle, state)),
+                } => loads.push((ticket, key, bundle, state, outputs)),
                 _ => {}
             }
         }
@@ -97,7 +100,7 @@ impl Told {
         let places = play.plugin_tickets();
         let skipped: Vec<PluginPlace> = skip.iter().map(|s| Play::slot_place(*s)).collect();
         let plugins: Vec<ToldPlugin> = (loads.into_iter())
-            .filter_map(|(ticket, key, bundle, state)| {
+            .filter_map(|(ticket, key, bundle, state, outputs)| {
                 let place = places.iter().find(|(_, t)| *t == ticket)?.0;
                 let name = doc.plugin(place).map(|p| p.name.clone())?;
                 (!skipped.contains(&place)).then_some(ToldPlugin {
@@ -110,6 +113,7 @@ impl Told {
                         PlugState::Bytes(state) => state,
                         PlugState::Fresh | PlugState::Of(_) => Arc::from([]),
                     },
+                    outputs,
                 })
             })
             .collect();

@@ -127,6 +127,7 @@ pub(super) fn mixer(read: &AiSong) -> Value {
                 true => Value::Null,
                 false => json!(song::sound_name(&t.instrument)),
             };
+            super::outputs::add_track_outputs(read, t, &mut v);
             v
         })
         .collect();
@@ -292,8 +293,8 @@ fn effect_of(text: &str) -> AiEffect {
 #[tool_router(router = mixer_router, vis = "pub(super)")]
 impl Tools {
     /// Every strip of the mixer: the tracks (volume dB, pan, mute, solo, sends A and B, the
-    /// instrument), returns A and B, and the master; their insert effects with bypass and
-    /// parameter values.
+    /// instrument, an instrument plugin's outputs), returns A and B, and the master; their
+    /// insert effects with bypass and parameter values.
     #[tool(annotations(title = "Get mixer", read_only_hint = true, open_world_hint = false))]
     async fn get_mixer(&self) -> Result<CallToolResult, McpError> {
         check!(self.allowed());

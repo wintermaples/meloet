@@ -130,6 +130,16 @@ impl Around<'_> {
             .unwrap_or_default()
     }
 
+    /// The id of the output set whose settings differ between the two `Doc`s.
+    fn output_changed(&self, track: TrackId) -> Option<String> {
+        let place = PluginPlace::Instrument(track);
+        let (before, after) = (self.before.plugin(place)?, self.after.plugin(place)?);
+        let (before, after) = (&before.outputs, &after.outputs);
+        (before.sets.iter().chain(after.sets.iter()))
+            .find(|set| before.get(&set.id) != after.get(&set.id))
+            .map(|set| set.id.to_string())
+    }
+
     fn effect(doc: &Doc, strip: StripId, slot: usize) -> Option<EffectName> {
         doc.insert(strip, slot).map(effect_name)
     }
@@ -1189,7 +1199,7 @@ pub(crate) fn step_text(row: &StepRow) -> (StepName, StepWhat, Option<StepPlace>
         StepKind::SetPluginOutput { track } => (
             StepName::SetPluginParam {
                 plugin: a.plugin_name(PluginPlace::Instrument(track)),
-                param: None,
+                param: a.output_changed(track),
             },
             StepWhat::None,
             on_track(track),
@@ -1256,8 +1266,23 @@ impl Play {
     fn history_row(&self, index: usize) -> Option<HistoryRow> {
         let row = self.history.row(self.doc(), index.checked_sub(1)?)?;
         let (mut name, mut what, place) = step_text(&row);
-        if let StepName::SetPluginParam { param, .. } = &mut name {
-            *param = self.step_notes.param_names.get(&row.number).cloned();
+        match (&mut name, row.kind) {
+            (StepName::SetPluginParam { param, .. }, StepKind::SetPluginParam { .. }) => {
+                *param = self.step_notes.param_names.get(&row.number).cloned();
+            }
+            // The plugin host's name for the set, when the plugin there said its sets.
+            (
+                StepName::SetPluginParam {
+                    param: Some(id), ..
+                },
+                StepKind::SetPluginOutput { track },
+            ) => {
+                let sets = self.instrument_sets(track);
+                if let Some(set) = sets.iter().flat_map(|s| s.iter()).find(|s| s.id == *id) {
+                    id.clone_from(&set.name);
+                }
+            }
+            _ => {}
         }
         // The plugin's name for the parameter is in neither `Doc`.
         if let StepWhat::Lane { target, .. } = &mut what

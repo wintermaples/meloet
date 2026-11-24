@@ -54,6 +54,7 @@ fn load(hosts: &Hosts, parts: &EngineParts, fake: &str) -> Loaded {
         key: PluginKey::lv2(&format!("urn:meloet:fake:{fake}")).unwrap(),
         bundle: "/nowhere/fake.lv2".into(),
         sample_rate: RATE,
+        outputs: Default::default(),
     };
     let block = parts.handle.plugin_block().clone();
     wait(|done| hosts.load(spec, block, done)).unwrap()

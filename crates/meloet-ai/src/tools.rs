@@ -20,6 +20,7 @@ mod keynames;
 mod midi;
 mod mixer;
 mod notes;
+mod outputs;
 mod params;
 mod plugstate;
 mod presets;
@@ -91,13 +92,13 @@ move_track, create_clip, rename_clip, delete_clips, move_clips, duplicate_clips,
 join_clips, switch_take, set_clip, set_clip_stretch, import_audio); sounds (list_sounds, \
 list_instruments, set_instrument, get_key_names, list_presets, load_preset, save_preset); mixer \
 (get_mixer, set_volume, set_pan, set_send, set_mute, set_solo, save_mute_set, list_mute_sets, \
-recall_mute_set, delete_mute_set, rename_mute_set); effects (list_effects, insert_effect, replace_effect, \
+recall_mute_set, delete_mute_set, rename_mute_set, set_plugin_output); effects (list_effects, insert_effect, replace_effect, \
 remove_effect, move_effect, bypass_effect); plugins (get_plugin_params, get_param_choices, \
 set_param, set_params, get_plugin_state, set_plugin_state, set_plugin_state_text); Surge XT \
 (surge_list_modulations, surge_get_patch_params, surge_set_modulation, \
 surge_remove_modulation, surge_set_patch_params); automation (get_automation, add_lane, \
 delete_lane, write_automation, move_automation, delete_automation); listening (measure_mix, \
-analyze_bands, render_audio, render_note, get_clip_audio).\n\
+analyze_bands, measure_plugin_outputs, render_audio, render_note, get_clip_audio).\n\
 Each change is one undo step in meloet; undo takes back the last one, whoever made it. \
 batch makes many changes ONE step, all or nothing. \"No change\" (changed: false) is a \
 success. Nothing changes while meloet records or exports. Ask before changes not asked for, \
@@ -407,6 +408,18 @@ pub fn refusal_text(r: &AiRefusal) -> String {
             path.display()
         ),
         AiRefusal::NothingToRender => "there is nothing to render".into(),
+        AiRefusal::NoSuchOutput { asked, ids } => match ids.is_empty() {
+            true => format!("the plugin has no output \"{asked}\"; it lists no outputs"),
+            false => format!(
+                "the plugin has no output \"{asked}\"; its outputs are {}",
+                ids.join(", ")
+            ),
+        },
+        AiRefusal::CaptureTooLong { sets, longest_s } => format!(
+            "that range is too long to keep the sound of each of the plugin's {sets} outputs: \
+             measure a shorter range, at most {} seconds",
+            longest_s.floor()
+        ),
     }
 }
 
@@ -482,6 +495,7 @@ impl Tools {
             tool_router: Self::tool_router()
                 + Self::batch_router()
                 + Self::mixer_router()
+                + Self::outputs_router()
                 + Self::plugstate_router()
                 + Self::presets_router()
                 + Self::surge_router()

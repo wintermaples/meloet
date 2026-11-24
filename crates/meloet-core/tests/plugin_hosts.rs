@@ -17,6 +17,7 @@ use meloet_engine::{
 };
 use meloet_plugin::PluginKey;
 use meloet_plugin::ipc::HANG_MS;
+use meloet_plugin::wire::{OutputSetting, OutputSettings};
 
 use plughost::{alive, wait_for};
 
@@ -103,12 +104,36 @@ fn key(fake: &str) -> PluginKey {
     PluginKey::lv2(&format!("urn:meloet:fake:{fake}")).unwrap()
 }
 
+/// The fake instrument with four output sets of the plugin host: "a" a stereo pair, "b"
+/// mono in the middle, "c" mono on the left, all three on, and "d" mono and off.
+const FOUR_OUTPUTS: &str = "outputs";
+
+/// Each of `ids` switched off.
+fn all_off(ids: &[&str]) -> OutputSettings {
+    OutputSettings {
+        rule: 1,
+        sets: (ids.iter())
+            .map(|id| OutputSetting {
+                id: (*id).into(),
+                gain_db: 0.0,
+                pan: None,
+                on: Some(false),
+            })
+            .collect(),
+    }
+}
+
 impl Side {
     fn load(&self, rig: &Rig, fake: &str) -> Loaded {
+        self.load_with(rig, fake, OutputSettings::default())
+    }
+
+    fn load_with(&self, rig: &Rig, fake: &str, outputs: OutputSettings) -> Loaded {
         let spec = LoadSpec {
             key: key(fake),
             bundle: "/nowhere/fake.lv2".into(),
             sample_rate: RATE,
+            outputs,
         };
         let block = rig.parts.handle.plugin_block().clone();
         wait(|done| self.hosts.load(spec, block, done)).unwrap()
@@ -364,6 +389,59 @@ fn the_engine_does_not_wait_for_a_process_known_to_have_ended() {
     assert_eq!(watch.unanswered(), unanswered, "no answer was waited for");
     assert_eq!(watch.waited_ns(), waited);
     eprintln!("the first block after the process ended took {took:?}");
+}
+
+#[test]
+fn the_settings_of_the_output_sets_go_with_the_load_and_after_it() {
+    let mut rig = Rig::new(LONG);
+    let side = side();
+    // A set the plugin does not have is passed over.
+    let sine = side.load_with(&rig, "sine", all_off(&["nothing-here"]));
+    let id = sine.id;
+    rig.instrument(0, sine);
+    rig.keys(0, &[69]);
+    rig.block();
+    assert!(near(rig.block(), 0.5), "the sine at its level");
+    let set = wait(|done| (side.hosts).set_outputs(id, all_off(&["nothing-here"]), done));
+    assert_eq!(set, Ok(()));
+    rig.block();
+    assert!(near(rig.block(), 0.5));
+    // Only the processes of an export keep the sound of the sets.
+    assert!(wait(|done| side.hosts.capture(id, 256, done)).is_err());
+}
+
+#[test]
+#[ignore = "needs the plugin host's fake instrument with four output sets (the other half of \
+            the output sets work); FOUR_OUTPUTS names it"]
+fn a_stopped_plugin_comes_back_with_the_settings_of_its_outputs() {
+    let mut rig = Rig::new(LONG);
+    let side = side();
+    let silent = all_off(&["a", "b", "c"]);
+    let four = side.load_with(&rig, FOUR_OUTPUTS, silent.clone());
+    let id = four.id;
+    assert_eq!(four.plugin.outputs.len(), 4, "{:?}", four.plugin.outputs);
+    rig.instrument(0, four);
+    rig.keys(0, &[69]);
+    rig.block();
+    assert_eq!(rig.block(), 0.0, "every set is off from the first block");
+
+    wait(|done| side.hosts.set_outputs(id, OutputSettings::default(), done)).unwrap();
+    rig.block();
+    assert!(rig.block() > 0.01, "the sets the rule hears sound");
+    wait(|done| side.hosts.set_outputs(id, silent, done)).unwrap();
+    rig.block();
+    assert_eq!(rig.block(), 0.0);
+
+    let old = side.pids();
+    kill(old[0]);
+    side.stopped();
+    let again = side.reload(&rig, id).unwrap();
+    rig.instrument(0, again);
+    rig.send(EngineCommand::AuditionOff);
+    rig.block();
+    rig.keys(0, &[69]);
+    rig.block();
+    assert_eq!(rig.block(), 0.0, "the settings came back with it");
 }
 
 #[test]

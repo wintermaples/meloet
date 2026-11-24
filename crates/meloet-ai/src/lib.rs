@@ -18,7 +18,8 @@ use std::time::Duration;
 
 use meloet_core::Core;
 use meloet_core::ai::{
-    AiAnswer, AiAsk, AiLevels, AiMeasure, AiRefusal, AiRender, AiRendered, AiSong,
+    AiAnswer, AiAsk, AiLevels, AiMeasure, AiOutputLevels, AiOutputsMeasure, AiRefusal, AiRender,
+    AiRendered, AiSong,
 };
 use meloet_protocol::AiPort;
 use rmcp::ServiceExt;
@@ -48,6 +49,13 @@ pub trait Meloet: Send + Sync + 'static {
         progress: &mut dyn FnMut(u8),
         cancelled: &dyn Fn() -> bool,
     ) -> Result<AiLevels, AiRefusal>;
+    /// Measures each output set of a track's instrument plugin alone, as `measure` goes.
+    fn measure_outputs(
+        &self,
+        ask: AiOutputsMeasure,
+        progress: &mut dyn FnMut(u8),
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<AiOutputLevels, AiRefusal>;
     /// Renders into files, as `measure` goes.
     fn render(
         &self,
@@ -82,6 +90,16 @@ impl Meloet for CoreLink {
     ) -> Result<AiLevels, AiRefusal> {
         let core = self.0.upgrade().ok_or(AiRefusal::Closing)?;
         core.ai_measure(ask, progress, cancelled)
+    }
+
+    fn measure_outputs(
+        &self,
+        ask: AiOutputsMeasure,
+        progress: &mut dyn FnMut(u8),
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<AiOutputLevels, AiRefusal> {
+        let core = self.0.upgrade().ok_or(AiRefusal::Closing)?;
+        core.ai_measure_outputs(ask, progress, cancelled)
     }
 
     fn render(

@@ -182,6 +182,7 @@ mod tests {
             unsaved: false,
             sample_rate: 48_000,
             outcomes: Vec::new(),
+            instrument_sets: Vec::new(),
         }
     }
 

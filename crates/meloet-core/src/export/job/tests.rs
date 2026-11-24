@@ -640,6 +640,7 @@ fn measuring(alone: Vec<TrackId>, ignore_mute: bool) -> Measuring {
         bands: None,
         compare: Vec::new(),
         cuts: Vec::new(),
+        capture: None,
     }
 }
 
@@ -684,6 +685,7 @@ fn a_job_that_measures_bands_and_sections_answers_for_every_rendering() {
         bands: Some(AiBandLayout::Octave),
         compare: vec![0, 2],
         cuts: vec![BAR, 3 * BAR],
+        capture: None,
     });
     let (passes, analysis) = measured(&place.start(place.setup(job)));
     let analysis = analysis.expect("bands were asked for");

@@ -13,8 +13,9 @@ use meloet_protocol::{AiLinkView, AiPort, SoundRef, StatusMessage};
 
 use super::{Effect, Input, Model, PluginSaid, StateAsk};
 use crate::ai::{
-    AiAnswer, AiAsk, AiBusy, AiDone, AiEffect, AiInstrument, AiMeasure, AiOutcome, AiRefusal,
-    AiRender, AiRenderWhat, AiSong, batchable, screen_allowed, screen_no_step,
+    AiAnswer, AiAsk, AiBusy, AiDone, AiEffect, AiInstrument, AiMeasure, AiOutcome,
+    AiOutputsMeasure, AiRefusal, AiRender, AiRenderWhat, AiSong, batchable, capture_longest_s,
+    screen_allowed, screen_no_step,
 };
 use crate::export::{ExportJob, ExportTarget, Measuring};
 use crate::play::ai::{AiMark, AiPoints, AiPut, AiWrote};
@@ -74,6 +75,7 @@ fn answers_only(said: &PluginSaid) -> bool {
     matches!(
         said,
         PluginSaid::Editor(_)
+            | PluginSaid::Outputs(_)
             | PluginSaid::Param(_)
             | PluginSaid::ParamsChanged
             | PluginSaid::Params { .. }
@@ -189,6 +191,7 @@ impl Model {
             unsaved: self.play.has_unsaved_changes(),
             sample_rate: self.export_scene().sample_rate,
             outcomes: self.ai.outcomes.iter().cloned().collect(),
+            instrument_sets: self.play.all_instrument_sets(),
         }
     }
 
@@ -698,6 +701,11 @@ impl Model {
                 no_step = true;
                 self.play.ai_rename_mute_set(&name, &to, effects)?
             }
+            AiAsk::SetPluginOutput {
+                track,
+                output,
+                change,
+            } => (self.play).ai_set_plugin_output(TrackId(track), &output, change, effects)?,
             AiAsk::ImportAudio { path, track, tick } => {
                 if let Some(track) = track {
                     let t = (self.play.song().doc.track(TrackId(track)))
@@ -845,9 +853,72 @@ impl Model {
                 bands: analysis.map(|a| a.bands),
                 compare,
                 cuts,
+                capture: None,
             }),
         };
         Ok((job, named))
+    }
+
+    /// A job of the export that renders the track of `ask` alone and measures each output
+    /// set of its instrument plugin, with this id; and the track's number, name and mute.
+    pub fn ai_outputs_job(
+        &self,
+        ask: &AiOutputsMeasure,
+        id: u64,
+    ) -> Result<(ExportJob, AloneTrack), AiRefusal> {
+        self.ai_render_free()?;
+        let (doc, mut named) = self.ai_tracks(Some(&[ask.track]))?;
+        let (Some(track), Some((number, name))) = (doc.tracks.first(), named.pop()) else {
+            return Err(AiRefusal::NoSuchTrack(ask.track));
+        };
+        let InstrumentRef::Plugin(plugin) = &track.instrument else {
+            return Err(AiRefusal::NoSuchPlugin);
+        };
+        let place = meloet_model::PluginPlace::Instrument(track.id);
+        match self.play.plugin_state(place) {
+            meloet_protocol::PluginState::Missing => {
+                return Err(AiRefusal::Cannot(format!(
+                    "this PC does not have the plugin \"{}\"",
+                    plugin.name
+                )));
+            }
+            meloet_protocol::PluginState::Stopped => return Err(AiRefusal::PluginNotLoaded),
+            meloet_protocol::PluginState::Loading | meloet_protocol::PluginState::Ready => {}
+        }
+        let scene = self.export_scene();
+        // The plugin host checks this too; with the sets known it is said before rendering.
+        if let Some(sets) = self.play.instrument_sets(track.id) {
+            let map = meloet_model::TempoMap::new(&doc.timeline);
+            let seconds =
+                map.seconds_at(ask.span.end() as f64) - map.seconds_at(ask.span.start() as f64);
+            let longest_s = capture_longest_s(sets.len(), scene.sample_rate);
+            if seconds > longest_s {
+                return Err(AiRefusal::CaptureTooLong {
+                    sets: sets.len() as u32,
+                    longest_s,
+                });
+            }
+        }
+        let alone = (number, name, track.muted);
+        let job = ExportJob {
+            id,
+            measure: Some(Measuring {
+                alone: vec![track.id],
+                ignore_mute: true,
+                bands: None,
+                compare: Vec::new(),
+                cuts: Vec::new(),
+                capture: Some(track.id),
+            }),
+            doc: Arc::new(doc),
+            span: ask.span,
+            per_track: true,
+            tail: ExportTail::Off,
+            realtime: false,
+            skip: scene.stopped_plugins.iter().map(|p| p.slot).collect(),
+            sample_rate: scene.sample_rate,
+        };
+        Ok((job, alone))
     }
 
     /// A job of the export that renders `ask` into files, with this id, and where they go.

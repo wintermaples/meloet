@@ -260,6 +260,7 @@ fn every_step_kind() -> Vec<StepKind> {
         SetComp { clip },
         ClearComp { clip },
         SetClipTune { clip },
+        SetPluginOutput { track },
     ];
     for kind in &all {
         match kind {
@@ -374,7 +375,8 @@ fn every_step_kind() -> Vec<StepKind> {
             | AddFadeOut { .. }
             | SetComp { .. }
             | ClearComp { .. }
-            | SetClipTune { .. } => {}
+            | SetClipTune { .. }
+            | SetPluginOutput { .. } => {}
         }
     }
     all

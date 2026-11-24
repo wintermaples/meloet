@@ -134,6 +134,7 @@ pub fn make(name: &str, activation: Activation) -> Result<Loaded, String> {
             audio_outputs: 2,
             editor,
             live: name == "live",
+            outputs: Vec::new(),
         },
         controller: Box::new(FakeController {
             level,

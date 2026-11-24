@@ -14,8 +14,8 @@ use common::{FAKE, GEOMETRY, Host, Killed, PATIENT_NS, block, exe, note_on, peak
 use meloet_plugin::ipc::futex::monotonic_ns;
 use meloet_plugin::ipc::{EngineEnd, HANG_MS, Mapping, ToPlugin};
 use meloet_plugin::wire::{
-    FromHost, LoadedPlugin, ParamNow, Reply, Request, ScanOutput, ToHost, WireError, read_frame,
-    write_frame,
+    FromHost, LoadedPlugin, OutputSettings, ParamNow, Reply, Request, ScanOutput, ToHost,
+    WireError, read_frame, write_frame,
 };
 use meloet_plugin::{EditorKind, PluginFormat, PluginKey, launch};
 
@@ -35,6 +35,7 @@ fn a_fake_instrument_sounds_and_takes_parameters_and_state() {
             audio_outputs: 2,
             editor: EditorKind::None,
             live: false,
+            outputs: Vec::new(),
         }
     );
     let silence = [0.0f32; 256];
@@ -199,6 +200,7 @@ fn two_slots_run_side_by_side_and_a_slot_is_used_again() {
         bundle: "/x".into(),
         sample_rate: 48_000,
         max_frames: 256,
+        outputs: OutputSettings::default(),
     };
     assert!(matches!(host.ask(again), Reply::Error { .. }));
     assert_eq!(host.ask(Request::Unload { slot: 3 }), Reply::Ok);
@@ -319,6 +321,7 @@ fn requests_that_cannot_be_done_are_answered_with_an_error() {
         bundle: "/x".into(),
         sample_rate: 48_000,
         max_frames,
+        outputs: OutputSettings::default(),
     };
     for request in [
         load(0, "lv2:urn:meloet:fake:nothing", 256),

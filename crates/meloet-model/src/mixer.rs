@@ -125,6 +125,9 @@ impl Default for Gain {
     }
 }
 
+// Never NaN: every way to make a `Gain` turns NaN into −∞. Not `Hash`: −0.0 equals 0.0.
+impl Eq for Gain {}
+
 /// −100 (all left) to 100 (all right); 0 is the middle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
 pub struct Pan(i8);

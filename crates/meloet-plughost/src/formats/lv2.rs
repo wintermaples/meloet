@@ -1382,6 +1382,7 @@ fn load_as(
         audio_outputs: processor.channels_out(),
         editor,
         live: says_live(&lv2_world, plugin.raw()),
+        outputs: Vec::new(),
     };
     Ok(Loaded {
         plugin,

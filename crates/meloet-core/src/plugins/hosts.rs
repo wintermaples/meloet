@@ -50,8 +50,8 @@ use meloet_plugin::ipc::{EngineEnd, Geometry, Mapping};
 use meloet_plugin::launch::{self, PidFd};
 pub use meloet_plugin::wire::{EditorOpen, KeyName, ParamNow, ParamShape, PresetInfo, TextValue};
 use meloet_plugin::wire::{
-    FromHost, LoadedPlugin, Notice, ParamInfo, Reply, Request, ToHost, WIRE_VERSION, read_frame,
-    write_frame,
+    FromHost, LoadedPlugin, Notice, OutputSettings, ParamInfo, Reply, Request, ToHost,
+    WIRE_VERSION, read_frame, write_frame,
 };
 
 /// How often the processes are looked at. A plugin that stopped is told at most this long
@@ -1012,6 +1012,7 @@ impl Run {
                     bundle: spec.bundle.clone(),
                     sample_rate: spec.sample_rate,
                     max_frames: self.options.geometry.max_frames,
+                    outputs: OutputSettings::default(),
                 };
                 match self.request(at, load, &[], LOAD_WAIT)?.0 {
                     Reply::Loaded { plugin } => Ok((end, plugin)),

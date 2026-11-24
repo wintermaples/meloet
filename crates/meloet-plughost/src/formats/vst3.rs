@@ -542,6 +542,7 @@ pub fn load(key: &PluginKey, bundle: &Path, activation: Activation) -> Result<Lo
         editor: instance.editor(),
         // VST3 has no word for it.
         live: false,
+        outputs: Vec::new(),
     };
     let processor = Vst3Processor {
         instance: instance.clone(),

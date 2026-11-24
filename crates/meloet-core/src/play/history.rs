@@ -1186,6 +1186,14 @@ pub(crate) fn step_text(row: &StepRow) -> (StepName, StepWhat, Option<StepPlace>
             named(a.after.clip(clip).map(|(_, c)| c.name.clone())),
             a.clip_track(clip),
         ),
+        StepKind::SetPluginOutput { track } => (
+            StepName::SetPluginParam {
+                plugin: a.plugin_name(PluginPlace::Instrument(track)),
+                param: None,
+            },
+            StepWhat::None,
+            on_track(track),
+        ),
     }
 }
 

@@ -894,6 +894,11 @@ impl Host {
                 }
                 ok()
             }
+            Request::SetOutputs { slot, .. } => match self.controller(slot) {
+                Ok(_) => ok(),
+                Err(answer) => answer,
+            },
+            Request::Capture { .. } | Request::Captured { .. } => error("not made yet"),
             Request::Quit => ok(),
         }
     }
@@ -943,7 +948,10 @@ fn slot_of(request: &Request) -> Option<u32> {
         | Request::ReadText { slot, .. }
         | Request::OpenEditor { slot, .. }
         | Request::CloseEditor { slot }
-        | Request::Watch { slot, .. } => Some(slot),
+        | Request::Watch { slot, .. }
+        | Request::SetOutputs { slot, .. }
+        | Request::Capture { slot, .. }
+        | Request::Captured { slot } => Some(slot),
         Request::Hello { .. } | Request::Quit => None,
     }
 }

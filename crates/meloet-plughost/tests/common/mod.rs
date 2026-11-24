@@ -14,7 +14,8 @@ use std::time::{Duration, Instant};
 use meloet_plugin::ipc::futex::monotonic_ns;
 use meloet_plugin::ipc::{EngineEnd, Geometry, Mapping, ToPlugin};
 use meloet_plugin::wire::{
-    FromHost, LoadedPlugin, Notice, Reply, Request, ToHost, WIRE_VERSION, read_frame, write_frame,
+    FromHost, LoadedPlugin, Notice, OutputSettings, Reply, Request, ToHost, WIRE_VERSION,
+    read_frame, write_frame,
 };
 use meloet_plugin::{PluginKey, launch};
 
@@ -169,6 +170,7 @@ impl Host {
             bundle: bundle.into(),
             sample_rate: 48_000,
             max_frames: geometry.max_frames,
+            outputs: OutputSettings::default(),
         });
         match reply {
             Reply::Loaded { plugin } => Ok((engine, plugin)),

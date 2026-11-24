@@ -55,11 +55,11 @@ pub use audio::{
 };
 pub use automation::{AutoPoint, AutoTarget, Lane, LaneHome, LaneId};
 pub use chunked::ChunkedVec;
-pub use edit::{Edit, EditError, MAX_TICK, NewTake, RecordingAdded};
+pub use edit::{Edit, EditError, MAX_TICK, NewTake, OutputChange, RecordingAdded};
 pub use history::{History, StepKind, StepRow};
 pub use instrument::{
-    BuiltinInstrument, GmFamily, InstrumentGroup, InstrumentRef, Kept, PluginRef, SF2_DRUM_BANK,
-    Sf2Ref,
+    BuiltinInstrument, GmFamily, InstrumentGroup, InstrumentRef, Kept, OutputSetting,
+    PluginOutputs, PluginRef, SF2_DRUM_BANK, Sf2Ref,
 };
 pub use knobs::{SOUND_KNOB_DEFAULTS, SoundKnob, SoundKnobs, knob_usable};
 pub use mixer::{

@@ -67,11 +67,11 @@ meloet is a music app (a DAW) for people who have just bought their first MIDI k
 
 ### Install
 
-1. Download `meloet_0.5.0_amd64.deb` from the [Releases page](https://github.com/wintermaples/meloet/releases). If there is no deb there yet, you can build one yourself ([Build the deb](docs/development/ubuntu.md#build-the-deb)).
+1. Download `meloet_0.6.0_amd64.deb` from the [Releases page](https://github.com/wintermaples/meloet/releases). If there is no deb there yet, you can build one yourself ([Build the deb](docs/development/ubuntu.md#build-the-deb)).
 2. Open a terminal where the file is, and type:
 
    ```bash
-   sudo apt install ./meloet_0.5.0_amd64.deb
+   sudo apt install ./meloet_0.6.0_amd64.deb
    ```
 
    Do not forget `./`. The parts meloet needs (WebKitGTK, ALSA, PipeWire, …) are installed with it.

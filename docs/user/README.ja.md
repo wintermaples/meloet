@@ -2,15 +2,15 @@
 
 meloet は、MIDI 鍵盤を買ったばかりの人のための DAW です。この書類は、meloet を入れて、つかって、消すまでの案内です（作る人向けの書類は `docs/development/` にあります）。
 
-いまの版は 0.5.0 です。Ubuntu 24.04 と 26.04 で動きます。
+いまの版は 0.6.0 です。Ubuntu 24.04 と 26.04 で動きます。
 
 ## 入れかた
 
-1. GitHub の Release のページから、`meloet_0.5.0_amd64.deb` を取ります。
+1. GitHub の Release のページから、`meloet_0.6.0_amd64.deb` を取ります。
 2. 端末をひらき、取ったファイルのある場所で、次を打ちます。
 
    ```bash
-   sudo apt install ./meloet_0.5.0_amd64.deb
+   sudo apt install ./meloet_0.6.0_amd64.deb
    ```
 
    `./` を忘れないでください。meloet が使う部品（WebKitGTK、ALSA、PipeWire など）も、いっしょに入ります。

@@ -16,6 +16,7 @@
 #[cfg(any(test, feature = "dev-hooks"))]
 pub mod fake;
 pub mod lv2;
+pub mod outputs;
 pub mod vst3;
 
 /// What plugins asked the main thread to watch and to call. Only VST3 has such a thing.
@@ -28,6 +29,8 @@ use std::time::{Duration, Instant};
 use meloet_plugin::ipc::{FromPlugin, ToPlugin, Transport};
 use meloet_plugin::wire::{KeyName, LoadedPlugin, ParamInfo, ParamNow, PresetInfo};
 use meloet_plugin::{PluginFormat, PluginKey};
+
+use outputs::Outputs;
 
 /// What a plugin is made ready for.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -188,6 +191,11 @@ pub trait Processor: Send {
     /// it changes.
     fn latency(&self) -> u32 {
         0
+    }
+    /// Its output sets, which the main thread changes while no block runs at the plugin;
+    /// `None` when the format makes none.
+    fn outputs(&mut self) -> Option<&mut Outputs> {
+        None
     }
 }
 

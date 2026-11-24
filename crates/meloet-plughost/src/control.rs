@@ -24,6 +24,7 @@ use meloet_plugin::wire::{
     ToHost, WIRE_VERSION, WireError, read_frame, write_frame,
 };
 
+use crate::formats::outputs::Capture;
 use crate::formats::{self, Activation, Controller, Said, half_width, past_the_end, runloop};
 use crate::rt::{self, Moved, SlotRun};
 use crate::window::{Display, FocusAt, WindowEvent};
@@ -155,6 +156,7 @@ impl Host {
             bundle,
             sample_rate,
             max_frames,
+            outputs,
             ..
         } = request
         else {
@@ -174,10 +176,13 @@ impl Host {
             max_frames: *max_frames as usize,
             offline: self.offline,
         };
-        let loaded = match formats::load(key, bundle, activation) {
+        let mut loaded = match formats::load(key, bundle, activation) {
             Ok(loaded) => loaded,
             Err(message) => return error(message),
         };
+        if let Some(sets) = loaded.processor.outputs() {
+            sets.set(outputs, false);
+        }
         let end = match PluginEnd::new(self.map.clone(), slot) {
             Ok(end) => end,
             Err(e) => return error(e.to_string()),
@@ -894,11 +899,49 @@ impl Host {
                 }
                 ok()
             }
-            Request::SetOutputs { slot, .. } => match self.controller(slot) {
-                Ok(_) => ok(),
-                Err(answer) => answer,
-            },
-            Request::Capture { .. } | Request::Captured { .. } => error("not made yet"),
+            Request::SetOutputs { slot, outputs } => {
+                if let Err(answer) = self.controller(slot) {
+                    return answer;
+                }
+                match self.audio.outputs(slot, |sets| sets.set(&outputs, true)) {
+                    Ok(_) => ok(),
+                    Err(message) => error(message),
+                }
+            }
+            Request::Capture { slot, frames } => {
+                if let Err(answer) = self.controller(slot) {
+                    return answer;
+                }
+                if !self.offline {
+                    return error("only a host for an export keeps the sound of output sets");
+                }
+                let capture = match self.audio.outputs(slot, |sets| sets.ids()) {
+                    Ok(Some(ids)) => match Capture::new(ids, frames) {
+                        Ok(capture) => capture,
+                        Err(message) => return error(message),
+                    },
+                    Ok(None) => return error("this plugin has no output sets"),
+                    Err(message) => return error(message),
+                };
+                // The capture kept before is dropped here, not at the seat.
+                match self.audio.outputs(slot, |sets| sets.arm(capture)) {
+                    Ok(_) => ok(),
+                    Err(message) => error(message),
+                }
+            }
+            Request::Captured { slot } => {
+                if let Err(answer) = self.controller(slot) {
+                    return answer;
+                }
+                match self.audio.outputs(slot, |sets| sets.take_capture()) {
+                    Ok(Some(Some(capture))) => {
+                        let (sets, blob) = capture.reply();
+                        (Reply::Captured { sets }, blob)
+                    }
+                    Ok(_) => error("no capture was asked for"),
+                    Err(message) => error(message),
+                }
+            }
             Request::Quit => ok(),
         }
     }

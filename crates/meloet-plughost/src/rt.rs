@@ -26,6 +26,7 @@ use std::time::{Duration, Instant};
 use meloet_plugin::ipc::futex::monotonic_ns;
 use meloet_plugin::ipc::{Bell, FromPlugin, Mapping, PluginEnd, ToPlugin, block_flags};
 
+use crate::formats::outputs::Outputs;
 use crate::formats::{EventSink, ProcessBlock, Processor};
 use crate::rtcheck;
 
@@ -395,6 +396,24 @@ impl Handle {
             run.touch(id, on);
         }
         Ok(())
+    }
+
+    /// Does `change` to the output sets of the slot's plugin while no block runs at it; `None`
+    /// when the slot is empty or its plugin makes no sets.
+    pub fn outputs<T>(
+        &mut self,
+        slot: u32,
+        change: impl FnOnce(&mut Outputs) -> T,
+    ) -> Result<Option<T>, String> {
+        let done = {
+            let mut seat = self.seat(slot)?;
+            (seat.run().as_mut())
+                .and_then(|run| run.processor.outputs())
+                .map(change)
+        };
+        // A block asked for while the main thread was at the seat was passed over.
+        self.bell.ring();
+        Ok(done)
     }
 
     /// Drops the parameter changes of `set_param` that no block has taken yet. Before a state
@@ -837,7 +856,7 @@ mod tests {
 
     #[test]
     fn the_fake_plugins_run_without_allocating() {
-        for name in ["sine", "pass"] {
+        for name in ["sine", "pass", "outs"] {
             let (counted, loudest) = drive(fake::make(name, ACTIVATION).unwrap());
             assert_eq!(counted, 0, "{name}");
             assert!(loudest > 0.1, "{name}: {loudest}");

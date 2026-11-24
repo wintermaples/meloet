@@ -26,6 +26,9 @@
 //! - `urn:meloet:fake:late`: as `sine`; a state put into it is taken in at the end of its next
 //!   block, after that block's parameter changes, as Surge XT takes one while its blocks run.
 //!   Before its first block it takes one at once.
+//! - `urn:meloet:fake:outs`: an instrument with five audio outputs in four output sets
+//!   ([`OUTS`]), and no parameters. While any key is held each output gives its own constant
+//!   in every sample, else 0. By default the pair is left 0.34375, right 0.15625.
 //!
 //! To scan (by the bundle's file name without its ending):
 //! - `found`: two plugins. `empty`: none. `broken`: a bundle that cannot be read.
@@ -33,6 +36,7 @@
 //! - `segv`: one plugin; reading it crashes. `hang`: one plugin; reading it never ends.
 //! - `mixed`: `urn:meloet:fake:a`, `…:b` and `…:c`. Reading `b` crashes; `a` and `c` are read.
 //! - `drums`: `drums` and `kit`, both drum instruments.
+//! - `outs`: the instrument `outs`.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -46,6 +50,7 @@ use meloet_plugin::{
     EditorKind, EffectCategory, InstrumentCategory, PluginFormat, PluginInfo, PluginKey, PluginKind,
 };
 
+use super::outputs::{Outputs, Ports, SetShape, Side};
 use super::{
     Activation, Candidate, Controller, Loaded, Opened, ProcessBlock, Processor, Read, Said,
     leading_number,
@@ -77,6 +82,26 @@ pub const PRESET_BANK: &str = "Fake Bank";
 /// A preset of `choices` written into a bundle is a file of this ending holding its state;
 /// the bundle's manifest says it applies to `choices`.
 const PRESET_ENDING: &str = "fakepreset";
+/// The output sets of `outs`, in port order: id, name, the constants of its outputs (of a
+/// stereo set left, then right), heard by default, and its pan by default.
+///
+/// - `a`: outputs 0 and 1, 1/16 and 1/8; heard, left and right.
+/// - `b`: output 2, 1/32; heard in the middle (on both sides).
+/// - `c`: output 3, 1/4; heard on the left only.
+/// - `d`: output 4, 1/2; not heard by default, in the middle when switched on.
+pub const OUTS: [(&str, &str, &[f32], bool, f32); 4] = [
+    ("a", "Fake Pair", &[0.0625, 0.125], true, 0.0),
+    ("b", "Fake Middle", &[0.03125], true, 0.0),
+    ("c", "Fake Left", &[0.25], true, -1.0),
+    ("d", "Fake Spare", &[0.5], false, 0.0),
+];
+/// The outputs of `outs` heard by default and where, as [`OUTS`] says.
+const OUTS_HEARD: [(usize, Side); 4] = [
+    (0, Side::Left),
+    (1, Side::Right),
+    (2, Side::Both),
+    (3, Side::Left),
+];
 
 fn enabled() -> bool {
     std::env::var_os(ENV).is_some_and(|v| !v.is_empty())
@@ -93,7 +118,13 @@ pub fn load(key: &PluginKey, activation: Activation) -> Option<Result<Loaded, St
 pub fn make(name: &str, activation: Activation) -> Result<Loaded, String> {
     let level = Arc::new(AtomicU64::new(DEFAULT_LEVEL.to_bits()));
     let late = (name == "late").then(|| Arc::new(Late::default()));
+    let mut outputs = Vec::new();
     let processor: Box<dyn Processor> = match name {
+        "outs" => {
+            let outs = Outs::new(activation);
+            outputs = outs.outputs.list();
+            Box::new(outs)
+        }
         "sine" | "window" | "knob" | "slowwindow" | "drums" | "kit" | "choices" | "late" => {
             Box::new(Sine {
                 sample_rate: activation.sample_rate,
@@ -121,7 +152,8 @@ pub fn make(name: &str, activation: Activation) -> Result<Loaded, String> {
     };
     let window = matches!(name, "window" | "knob" | "slowwindow");
     let choices = name == "choices";
-    let instrument = matches!(name, "sine" | "drums" | "kit" | "late") || window || choices;
+    let instrument =
+        matches!(name, "sine" | "drums" | "kit" | "late" | "outs") || window || choices;
     let editor = match name {
         _ if window => EditorKind::X11,
         "notyet" => EditorKind::Unsupported,
@@ -134,11 +166,11 @@ pub fn make(name: &str, activation: Activation) -> Result<Loaded, String> {
             audio_outputs: 2,
             editor,
             live: name == "live",
-            outputs: Vec::new(),
+            outputs,
         },
         controller: Box::new(FakeController {
             level,
-            has_level: instrument || name == "gain",
+            has_level: (instrument && name != "outs") || name == "gain",
             window,
             choices,
             mode: 0.0,
@@ -258,16 +290,21 @@ struct Late {
     level: AtomicU64,
 }
 
+/// The key held after a MIDI message, when `key` was held before it.
+fn held(key: Option<u8>, data: [u8; 3]) -> Option<u8> {
+    match (data[0] & 0xf0, data[1], data[2]) {
+        (0x90, key, velocity) if velocity > 0 => Some(key),
+        (0x90 | 0x80, off, _) if key == Some(off) => None,
+        // All sound off, all notes off.
+        (0xb0, 120 | 123, _) => None,
+        _ => key,
+    }
+}
+
 impl Sine {
     fn take(&mut self, event: &ToPlugin) {
         match *event {
-            ToPlugin::Midi { data, .. } => match (data[0] & 0xf0, data[1], data[2]) {
-                (0x90, key, velocity) if velocity > 0 => self.key = Some(key),
-                (0x90 | 0x80, key, _) if self.key == Some(key) => self.key = None,
-                // All sound off, all notes off.
-                (0xb0, 120 | 123, _) => self.key = None,
-                _ => {}
-            },
+            ToPlugin::Midi { data, .. } => self.key = held(self.key, data),
             ToPlugin::Param {
                 id: LEVEL, value, ..
             } => self.level.store(value.to_bits(), Relaxed),
@@ -306,6 +343,91 @@ impl Processor for Sine {
     fn reset(&mut self) {
         self.key = None;
         self.phase = 0.0;
+    }
+}
+
+/// `outs`: each output its constant of [`OUTS`] while a key is held.
+struct Outs {
+    /// By output.
+    levels: Vec<f32>,
+    key: Option<u8>,
+    max_frames: usize,
+    /// Every output, `max_frames` each.
+    out: Box<[f32]>,
+    outputs: Outputs,
+}
+
+/// The constant of each output of `outs`, and its sets.
+fn outs_sets() -> (Vec<f32>, Vec<SetShape>) {
+    let mut levels = Vec::new();
+    let mut sets = Vec::new();
+    for (id, name, constants, on, pan) in OUTS {
+        let at = levels.len();
+        levels.extend_from_slice(constants);
+        sets.push(SetShape {
+            id: id.into(),
+            name: name.into(),
+            ports: match constants.len() {
+                1 => Ports::Mono(at),
+                _ => Ports::Stereo {
+                    left: at,
+                    right: at + 1,
+                },
+            },
+            on,
+            pan,
+        });
+    }
+    (levels, sets)
+}
+
+impl Outs {
+    fn new(activation: Activation) -> Outs {
+        let (levels, sets) = outs_sets();
+        let outputs = Outputs::new(sets, OUTS_HEARD.to_vec(), true, activation.sample_rate);
+        Outs {
+            out: vec![0.0; levels.len() * activation.max_frames].into_boxed_slice(),
+            levels,
+            key: None,
+            max_frames: activation.max_frames,
+            outputs,
+        }
+    }
+}
+
+impl Processor for Outs {
+    fn process(&mut self, block: &mut ProcessBlock<'_>) {
+        let frames = block.outputs[0].len();
+        if frames > self.max_frames {
+            for output in &mut block.outputs {
+                output.fill(0.0);
+            }
+            self.outputs.missed(frames);
+            return;
+        }
+        let mut events = block.events.iter().peekable();
+        for frame in 0..frames {
+            while let Some(event) = events.next_if(|e| e.frame() as usize <= frame) {
+                if let ToPlugin::Midi { data, .. } = *event {
+                    self.key = held(self.key, data);
+                }
+            }
+            for (output, &level) in self.levels.iter().enumerate() {
+                let sample = if self.key.is_some() { level } else { 0.0 };
+                self.out[output * self.max_frames + frame] = sample;
+            }
+        }
+        let [left, right] = &mut block.outputs;
+        self.outputs.mix(&self.out, self.max_frames, left, right);
+    }
+
+    fn reset(&mut self) {
+        self.key = None;
+        self.outputs.snap();
+    }
+
+    fn outputs(&mut self) -> Option<&mut Outputs> {
+        Some(&mut self.outputs)
     }
 }
 
@@ -641,6 +763,7 @@ fn contents(stem: &str) -> Option<Vec<(&'static str, PluginKind, Option<Fault>)>
         "found" => vec![("Sine", synth, None), ("Pass", effect, None)],
         "drums" => vec![("Drums", drum, None), ("Kit", drum, None)],
         "choices" => vec![("Choices", synth, None)],
+        "outs" => vec![("Outs", synth, None)],
         "empty" => vec![],
         "segv" => vec![("Segv", effect, Some(Fault::Crash))],
         "hang" => vec![("Hang", effect, Some(Fault::Hang))],
@@ -693,4 +816,58 @@ pub fn probe(bundle: &Path, id: &str) -> Option<Result<PluginInfo, String>> {
         Some((name, kind, None)) => Ok(info(name, kind)),
         None => Err(format!("no fake plugin {id} in {stem}")),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use meloet_plugin::ipc::Transport;
+
+    use super::*;
+    use crate::formats::EventSink;
+    use crate::formats::outputs::heard_by_default;
+
+    #[test]
+    fn outs_is_heard_by_default_as_its_doc_says() {
+        let (levels, sets) = outs_sets();
+        assert_eq!(heard_by_default(&sets), OUTS_HEARD);
+        assert_eq!(levels.len(), 5);
+        let activation = Activation {
+            sample_rate: 48_000.0,
+            max_frames: 64,
+            offline: false,
+        };
+        let mut loaded = make("outs", activation).unwrap();
+        let ids: Vec<&str> = loaded
+            .plugin
+            .outputs
+            .iter()
+            .map(|s| s.id.as_str())
+            .collect();
+        assert_eq!(ids, ["a", "b", "c", "d"]);
+        assert!(loaded.controller.params().is_empty());
+        let silence = [0.0f32; 64];
+        let mut sink = EventSink::with_capacity(4);
+        let mut pair = |events: &[ToPlugin]| {
+            let (mut left, mut right) = ([9.0f32; 64], [9.0f32; 64]);
+            loaded.processor.process(&mut ProcessBlock {
+                inputs: [&silence, &silence],
+                outputs: [&mut left, &mut right],
+                events,
+                transport: &Transport::default(),
+                sink: &mut sink,
+            });
+            (left[63], right[63])
+        };
+        assert_eq!(pair(&[]), (0.0, 0.0));
+        let on = ToPlugin::Midi {
+            frame: 0,
+            data: [0x90, 60, 100],
+        };
+        assert_eq!(pair(&[on]), (0.34375, 0.15625));
+        let off = ToPlugin::Midi {
+            frame: 0,
+            data: [0x80, 60, 0],
+        };
+        assert_eq!(pair(&[off]), (0.0, 0.0));
+    }
 }

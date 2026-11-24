@@ -11,8 +11,8 @@ import { stepNames, texts } from "../src/text/ja";
 afterEach(() => useLanguage("ja"));
 
 describe("shape of protocol 35", () => {
-  it("version 35; the intent names the clip", () => {
-    expect(PROTOCOL_VERSION).toBe(35);
+  it("version 35 or later; the intent names the clip", () => {
+    expect(PROTOCOL_VERSION).toBeGreaterThanOrEqual(35);
     const command: Command = { type: "deleteOtherTakes", clip: 4 };
     expect(command).toEqual({ type: "deleteOtherTakes", clip: 4 });
   });

@@ -19,6 +19,7 @@ import { reduceUpdates } from "./fakeUpdates";
 import { FakeTypedKeys, typedOn } from "./fakeTyped";
 import { CLICK_VOLUME_MAX_DB, CLICK_VOLUME_MIN_DB, REPEAT_COUNT_MAX } from "./types";
 import { fakeLoudnessOf } from "./fakeLoudness";
+import { fakeMidiTaken } from "./fakeMidi";
 import { reduceA7 } from "./fakeA7";
 import { reduceA9 } from "./fakeA9";
 import { fakeCompWindow, fakeTakes, reduceComp } from "./fakeComp";
@@ -56,6 +57,7 @@ import {
   type EndpointView,
   type Event,
   type ExportDialogView,
+  type ExportFormat,
   type ExportRunView,
   type PackFailure,
   type HistoryRow,
@@ -3774,7 +3776,8 @@ SCENES.stretchRamp = {
 
 /**
  * The dialog of F7-Export for the song of the band: the check is done, nothing clips, no plugin has stopped.
- * 「音の大きさ」 (round 12 F1) follows the check and the range as Rust has it; `over` gives only the choice.
+ * 「音の大きさ」 (round 12 F1) follows the check and the range as Rust has it; `over` gives only the choice. So does
+ * 「入れるトラック」 of MIDI (protocol 36): what it takes follows the song and `midiTracks`, `midiNumbers`.
  */
 function fakeExportDialog(song: SongView, over: Partial<ExportDialogView> = {}): ExportDialogView {
   const end = Math.max(0, ...song.tracks.flatMap((t) => t.clips.map((c) => c.end)));
@@ -3784,7 +3787,8 @@ function fakeExportDialog(song: SongView, over: Partial<ExportDialogView> = {}):
     tracks: song.tracks.length,
     span: { start: 0, end },
     format: "wav",
-    formats: EXPORT_FORMATS.map((f) => f.format),
+    // pass 2: "midi" is listed too (Rust lists it last), once ExportDialog.svelte has a name for it.
+    formats: EXPORT_FORMATS.map((f) => f.format).filter((f) => f !== "midi"),
     place: `~/音楽/${song.name}.wav`,
     check: { state: "done", peakDb: -0.6, clips: false, over: 0, lufs: -12.5, truePeakDb: -0.5 },
     solo: fakeSolo({ song }),
@@ -3807,10 +3811,25 @@ function fakeExportDialog(song: SongView, over: Partial<ExportDialogView> = {}):
     loudness: "asIs",
     canMatch: false,
     loudnessResult: null,
+    midiTracks: "all",
+    midiNumbers: "",
+    midiSelectedUsable: false,
+    midiTaken: [],
+    midiVocal: [],
+    midiProblem: null,
     ...over,
   };
-  // Round 12 F2: a wav holds no picture.
-  return { ...d, pictureUsable: d.format !== "wav", ...fakeLoudnessOf(d.check, d.range, d.loudness) };
+  // Round 12 F2: a wav holds no picture, nor does a MIDI file.
+  return { ...d, pictureUsable: holdsPicture(d.format), ...fakeLoudnessOf(d.check, d.range, d.loudness), ...fakeMidiOf(song, d) };
+}
+
+const holdsPicture = (format: ExportFormat): boolean => format === "flac" || format === "mp3";
+const extensionOf = (format: ExportFormat): string => (format === "midi" ? "mid" : format);
+
+/** What follows the song and 「入れるトラック」; under MIDI also `tracks` (what 「トラックごと」 writes) and `canExport`. */
+function fakeMidiOf(song: SongView, d: ExportDialogView): Partial<ExportDialogView> {
+  const taken = fakeMidiTaken(song, d.midiTracks, d.midiNumbers);
+  return d.format === "midi" ? { ...taken, tracks: taken.midiTaken.length, canExport: taken.midiProblem === null } : taken;
 }
 
 const exportDialogScene = (over: Partial<ExportDialogView> = {}): SceneDef => ({
@@ -3884,6 +3903,43 @@ SCENES.exportMp3 = exportDialogScene({
   picture: "表紙.png",
 });
 
+// ---- MIDI export (protocol 36; spec 3 "MIDI export", spec 7 A-31) ----
+
+/** The band's 「1 ピアノ」 to 「3 ドラム」, the vocal track 「4 歌」, then 「5 パッド」; 「1 ピアノ」 selected. */
+function midiSong(s: AppState): void {
+  bandSong(s, BAND_TRACKS.slice(0, 4));
+  const pad = s.song.tracks[3]!;
+  s.song.tracks.splice(3, 0, {
+    ...pad,
+    id: VOCAL_TRACK_ID,
+    name: "歌",
+    color: 1,
+    kind: { kind: "vocal", input: "mono1", inputReady: true, armed: false, monitor: false },
+    instrument: "sine",
+    sound: builtinSound("sine"),
+    gainDb: 0,
+    sends: [null, null],
+    sendDefaults: [null, null],
+    clips: [],
+  });
+  s.song.tracks.forEach((t, i) => (t.number = i + 1));
+  s.song.name = "はじめての曲";
+}
+const midiDialogScene = (over: Partial<ExportDialogView>): SceneDef => ({
+  setup(s) {
+    midiSong(s);
+    s.export.dialog = fakeExportDialog(s.song, { format: "midi", place: "~/音楽/はじめての曲.mid", bitsChoices: [], ...over });
+  },
+  after: (s) => (s.status.message = { id: "exportDialogOpen" }),
+  meters: QUIET,
+});
+// 「ぜんぶ」: 「1 ピアノ ・ 2 ベース ほか 2 本」; 「4 歌」 is passed by without a word.
+SCENES.exportMidi = midiDialogScene({});
+// 「番号で」 「1-2, 4」: two tracks, and 「4 歌 は声のトラックなので入りません」 in gray.
+SCENES.exportMidiNumbers = midiDialogScene({ midiTracks: "numbers", midiNumbers: "1-2, 4" });
+// 「番号で」 「1-3, 9」: 「9 番のトラックはありません」 in color.rec, and 「書き出す」 is disabled.
+SCENES.exportMidiProblem = midiDialogScene({ midiTracks: "numbers", midiNumbers: "1-3, 9" });
+
 /** The song of F7-Exporting: the band, "5 Surge XT" and 「6 歌」 with one clip; saved, the keys on 「1 ピアノ」. */
 function exportingSong(s: AppState, run: ExportRunView): void {
   vocalSong(s, { armed: false, monitor: false, selected: false });
@@ -3927,6 +3983,7 @@ SCENES.exportDone = exportingScene({
   wave: fakeExportWave(),
   lufs: -14.0,
   truePeakDb: -1.0,
+  midiTracks: null,
 });
 // 「トラックごと」: 「5 つのファイル」, no waveform, no loudness, 「PC のプレーヤーで聞く」 off.
 SCENES.exportDoneTracks = exportingScene({
@@ -3941,6 +3998,7 @@ SCENES.exportDoneTracks = exportingScene({
   wave: [],
   lufs: null,
   truePeakDb: null,
+  midiTracks: null,
 });
 // An mp3 (round 12 F2): 「3 分 2 秒 ・ 48000 Hz ・ 192 kbps」.
 SCENES.exportDoneMp3 = exportingScene({
@@ -3955,6 +4013,37 @@ SCENES.exportDoneMp3 = exportingScene({
   wave: fakeExportWave(),
   lufs: -14.0,
   truePeakDb: -1.0,
+  midiTracks: null,
+});
+// MIDI (protocol 36): 「はじめての曲.mid を書き出しました（MIDI ・ 3 トラック）。」 in the status line; no dialog 「書き出しました」.
+SCENES.exportDoneMidi = exportingScene({
+  state: "done",
+  file: "はじめての曲.mid",
+  files: 1,
+  place: "~/ミュージック/はじめての曲/はじめての曲.mid",
+  lengthS: 182,
+  sampleRate: 48000,
+  mp3Kbps: null,
+  bits: "bits24",
+  wave: [],
+  lufs: null,
+  truePeakDb: null,
+  midiTracks: 3,
+});
+// MIDI 「トラックごと」: 「3 つのファイルを書き出しました（MIDI）。」
+SCENES.exportDoneMidiTracks = exportingScene({
+  state: "done",
+  file: "ピアノ.mid",
+  files: 3,
+  place: "~/ミュージック/はじめての曲/",
+  lengthS: 182,
+  sampleRate: 48000,
+  mp3Kbps: null,
+  bits: "bits24",
+  wave: [],
+  lufs: null,
+  truePeakDb: null,
+  midiTracks: 3,
 });
 // Spec 6 「書き出しをやめた」.
 SCENES.exportCancelled = exportingScene({ state: "cancelled" });
@@ -4192,14 +4281,24 @@ export function reduceExport(state: AppState, command: Command): Change[] | null
         if (d.check.state === "done" || d.check.state === "counting") d.check = { ...d.check, lufs: measured.lufs, truePeakDb: measured.truePeakDb };
         Object.assign(d, fakeLoudnessOf(d.check, d.range, d.loudness));
       } else if (c.kind === "format") {
+        // Back from MIDI: 「トラックごと」 counts every track again, and 「書き出す」 waits for the check.
+        if (d.format === "midi" && c.format !== "midi") {
+          d.tracks = state.song.tracks.length;
+          d.canExport = (d.check.state === "done" || d.check.state === "counting") && state.song.tracks.some((t) => t.clips.length > 0);
+        }
         d.format = c.format;
         d.bitsChoices = [...EXPORT_FORMATS.find((f) => f.format === c.format)!.bits];
-        // Round 12 F2: mp3 has no bits (the ones chosen stay) and is written at 44100 or 48000 Hz (EXPORT_MP3_SAMPLE_RATES of Rust).
-        if (c.format !== "mp3" && !d.bitsChoices.includes(d.bits)) d.bits = "bits24";
+        // Round 12 F2: mp3 (and MIDI) have no bits (the ones chosen stay); mp3 is written at 44100 or 48000 Hz
+        // (EXPORT_MP3_SAMPLE_RATES of Rust).
+        if (d.bitsChoices.length > 0 && !d.bitsChoices.includes(d.bits)) d.bits = "bits24";
         d.sampleRateChoices = c.format === "mp3" ? [44100, 48000] : [44100, 48000, 88200, 96000];
         if (!d.sampleRateChoices.includes(d.sampleRate)) d.sampleRate = d.sampleRate % 11025 === 0 ? 44100 : 48000;
-        d.pictureUsable = c.format !== "wav";
-      } else if (c.kind === "mp3Kbps") d.mp3Kbps = d.mp3KbpsChoices.includes(c.kbps) ? c.kbps : d.mp3Kbps;
+        d.pictureUsable = holdsPicture(c.format);
+      } else if (c.kind === "midiTracks") {
+        if (c.tracks === "selected" && !d.midiSelectedUsable) return [];
+        d.midiTracks = c.tracks;
+      } else if (c.kind === "midiNumbers") d.midiNumbers = c.text;
+      else if (c.kind === "mp3Kbps") d.mp3Kbps = d.mp3KbpsChoices.includes(c.kbps) ? c.kbps : d.mp3Kbps;
       else if (c.kind === "title") d.title = c.title;
       else if (c.kind === "artist") d.artist = c.artist;
       else if (c.kind === "removePicture") d.picture = null;
@@ -4213,7 +4312,8 @@ export function reduceExport(state: AppState, command: Command): Change[] | null
         if (c.loudness === "asIs" || d.canMatch) d.loudness = c.loudness;
       }
       const folder = d.place.slice(0, d.place.lastIndexOf("/") + 1);
-      d.place = d.range === "tracks" ? folder : `${folder}${state.song.name}.${d.format}`;
+      d.place = d.range === "tracks" ? folder : `${folder}${state.song.name}.${extensionOf(d.format)}`;
+      Object.assign(d, fakeMidiOf(state.song, d));
       break;
     }
     case "chooseExportPlace":
@@ -4223,6 +4323,28 @@ export function reduceExport(state: AppState, command: Command): Change[] | null
     case "startExport": {
       const d = view.dialog;
       if (!d?.canExport) return [];
+      if (d.format === "midi") {
+        // Writing MIDI takes no time: the run is done at once, and no dialog 「書き出しました」 is meant to open.
+        const map = new TempoMap(state.timeline);
+        const perTrack = d.range === "tracks";
+        view.run = {
+          state: "done",
+          file: perTrack ? `${d.midiTaken[0]!.name}.mid` : d.place.slice(d.place.lastIndexOf("/") + 1),
+          files: perTrack ? d.midiTaken.length : 1,
+          place: d.place,
+          lengthS: Math.round(map.secondsAt(d.span.end) - map.secondsAt(d.span.start)),
+          sampleRate: d.sampleRate,
+          bits: d.bits,
+          wave: [],
+          lufs: null,
+          truePeakDb: null,
+          mp3Kbps: null,
+          midiTracks: d.midiTaken.length,
+        };
+        view.dialog = null;
+        message = null;
+        break;
+      }
       const percent = d.check.state === "counting" ? d.check.percent : 99;
       view.run = { state: "running", percent, file: d.place.slice(d.place.lastIndexOf("/") + 1), remainingS: null, realtime: d.realtime, realtimeForced: d.realtimeForced, lengthS: 0 };
       view.dialog = null;

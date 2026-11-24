@@ -23,6 +23,8 @@ pub(crate) mod job;
 mod kit_tests;
 pub(crate) mod loudness;
 #[cfg(test)]
+mod midi_tests;
+#[cfg(test)]
 mod mp3_gate_tests;
 #[cfg(test)]
 mod mp3_tests;
@@ -38,9 +40,9 @@ use std::sync::Arc;
 use meloet_model::{Doc, TickRange, TrackId};
 use meloet_protocol::{
     Command, EXPORT_MP3_DEFAULT_KBPS, EXPORT_MP3_KBPS, EXPORT_MP3_SAMPLE_RATES, ExportChange,
-    ExportCheck, ExportDialogView, ExportFailure, ExportFormat, ExportLoudness, ExportRange,
-    ExportRunView, ExportSolo, ExportStoppedPlugin, ExportTail, ExportView, PluginSlotRef,
-    RecordFormat, StatusMessage, TickSpan, TrackRef,
+    ExportCheck, ExportDialogView, ExportFailure, ExportFormat, ExportLoudness, ExportMidiTracks,
+    ExportRange, ExportRunView, ExportSolo, ExportStoppedPlugin, ExportTail, ExportView,
+    PluginSlotRef, RecordFormat, StatusMessage, TickSpan, TrackRef,
 };
 
 use crate::ai::{AiAnalysis, AiBandLayout};
@@ -299,6 +301,9 @@ pub struct Exporting {
     /// Chosen with 「えらぶ…」: the folder, and the file's name without its ending.
     folder: Option<PathBuf>,
     name: Option<String>,
+    /// 「入れるトラック」 of MIDI, and the text of its number field as last sent.
+    midi_tracks: ExportMidiTracks,
+    midi_numbers: String,
     dialog: Option<Dialog>,
     run: Option<Run>,
     last_job: u64,
@@ -330,6 +335,8 @@ impl Exporting {
             loudness: ExportLoudness::AsIs,
             folder: None,
             name: None,
+            midi_tracks: ExportMidiTracks::All,
+            midi_numbers: String::new(),
             dialog: None,
             run: None,
             last_job: 0,
@@ -461,7 +468,7 @@ impl Exporting {
                     let of_song = scene.song_path.and_then(Path::parent);
                     of_song.map(Path::to_path_buf).or(self.dirs.home.clone())
                 });
-                let usable = self.format != ExportFormat::Wav;
+                let usable = self.picture_usable();
                 if let Some(dialog) = self.dialog.as_mut().filter(|d| !d.picking_picture)
                     && usable
                 {
@@ -474,6 +481,7 @@ impl Exporting {
                 let usable = match range {
                     ExportRange::Song => true,
                     ExportRange::Loop => scene.loop_span().is_some(),
+                    // pass 2: under MIDI, while `midi_taken` is not empty.
                     ExportRange::Tracks => scene.tracks() > 0,
                 };
                 if usable {
@@ -482,8 +490,9 @@ impl Exporting {
             }
             ExportChange::Format { format } => {
                 self.format = format;
-                // mp3 has no bits: the ones chosen stay for the other formats.
-                if format != ExportFormat::Mp3 && !format.bits_choices().contains(&self.bits) {
+                // mp3 and MIDI have no bits: the ones chosen stay for the other formats.
+                let bits = format.bits_choices();
+                if !bits.is_empty() && !bits.contains(&self.bits) {
                     self.bits = RecordFormat::default();
                 }
             }
@@ -506,10 +515,15 @@ impl Exporting {
                     self.loudness = loudness;
                 }
             }
+            // pass 2: `Selected` while the selected track is not a keys track does nothing.
+            ExportChange::MidiTracks { tracks } => self.midi_tracks = tracks,
+            ExportChange::MidiNumbers { text } => self.midi_numbers = text,
         }
     }
 
     fn start(&mut self, scene: &Scene, asks: &mut Vec<ExportAsk>) {
+        // pass 2: MIDI is written here at once through the shared writer, and the run ends
+        // `Done` with `midi_tracks`.
         if !self.can_export(scene) {
             return;
         }
@@ -524,10 +538,7 @@ impl Exporting {
             info: SongInfo {
                 title: self.title(scene).to_owned(),
                 artist: self.artist.clone(),
-                picture: self
-                    .picture
-                    .clone()
-                    .filter(|_| self.format != ExportFormat::Wav),
+                picture: self.picture.clone().filter(|_| self.picture_usable()),
             },
         };
         let Some(job) = self.dialog.take().and_then(|d| d.job) else {
@@ -702,6 +713,8 @@ impl Exporting {
                     wave,
                     lufs,
                     true_peak_db,
+                    // pass 2: `Some` with the tracks written when the export was MIDI.
+                    midi_tracks: None,
                 };
                 let shown = files.into_iter().next();
                 self.run = Some(Run::Ended(view, shown));
@@ -734,6 +747,7 @@ impl Exporting {
     }
 
     /// What the job of the dialog is to render; `None`: nothing.
+    // pass 2: nothing to render under MIDI.
     fn asked(&self, scene: &Scene) -> Option<Asked> {
         let span = self.span(scene);
         let per_track = self.range == ExportRange::Tracks;
@@ -750,7 +764,7 @@ impl Exporting {
         let rate = self.sample_rate.unwrap_or(scene.sample_rate);
         match self.format {
             ExportFormat::Mp3 => mp3_rate(rate),
-            ExportFormat::Wav | ExportFormat::Flac => rate,
+            ExportFormat::Wav | ExportFormat::Flac | ExportFormat::Midi => rate,
         }
     }
 
@@ -849,7 +863,17 @@ impl Exporting {
         }
     }
 
+    /// F2: a wav and a MIDI file hold no picture.
+    fn picture_usable(&self) -> bool {
+        matches!(self.format, ExportFormat::Flac | ExportFormat::Mp3)
+    }
+
     fn can_export(&self, scene: &Scene) -> bool {
+        // pass 2: MIDI is written without the job (nothing is measured), unless
+        // `midi_problem`; until then it cannot be started.
+        if self.format == ExportFormat::Midi {
+            return false;
+        }
         let job = self.dialog.as_ref().and_then(|d| d.job.as_ref());
         job.is_some_and(|j| j.counted && j.failed.is_none())
             && self.folder_for(scene).is_some()
@@ -867,6 +891,7 @@ impl Exporting {
             ExportDialogView {
                 range: self.range,
                 loop_range: scene.loop_span(),
+                // pass 2: under MIDI the number of `midi_taken`.
                 tracks: scene.tracks(),
                 span: self.span(scene),
                 format: self.format,
@@ -888,7 +913,7 @@ impl Exporting {
                 title: self.title(scene).to_owned(),
                 artist: self.artist.clone(),
                 picture: self.picture.as_ref().map(|p| p.name.clone()),
-                picture_usable: self.format != ExportFormat::Wav,
+                picture_usable: self.picture_usable(),
                 tail: self.tail,
                 realtime: self.realtime || forced,
                 realtime_forced: forced,
@@ -897,6 +922,13 @@ impl Exporting {
                 can_match: self.can_match(job),
                 loudness_result: (job.filter(|j| j.done && self.can_match(Some(j))))
                     .and_then(|j| loudness::match_gain(j.lufs, j.true_peak_db)),
+                midi_tracks: self.midi_tracks,
+                midi_numbers: self.midi_numbers.clone(),
+                // pass 2: what `midi_tracks` takes of the song, and its problem.
+                midi_selected_usable: false,
+                midi_taken: Vec::new(),
+                midi_vocal: Vec::new(),
+                midi_problem: None,
             }
         });
         let run = self.run.as_ref().map(|run| match run {

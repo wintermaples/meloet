@@ -312,6 +312,12 @@ BOARDS = {
     "exportPictureUnreadable": None,
     "exportMp3": None,
     "exportDoneMp3": None,
+    # MIDI export (protocol 36; the spec has no mock).
+    "exportMidi": None,
+    "exportMidiNumbers": None,
+    "exportMidiProblem": None,
+    "exportDoneMidi": None,
+    "exportDoneMidiTracks": None,
     # Two or more clips, the check before export.
     "multiClip": "F8-MultiClip",
     "exportCheck": "F8-ExportCheck",

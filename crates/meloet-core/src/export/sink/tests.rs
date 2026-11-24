@@ -219,7 +219,11 @@ fn what_a_format_does_not_take_is_refused_and_a_file_given_up_is_gone() {
         assert!(create(&path, wrong).is_err());
         assert!(!path.exists());
     }
-    for format in ExportFormat::ALL {
+    assert!(create(&path, spec(ExportFormat::Midi, RecordFormat::Bits16)).is_err());
+    for format in ExportFormat::ALL
+        .into_iter()
+        .filter(|f| *f != ExportFormat::Midi)
+    {
         let mut sink = create(&path, spec(format, RecordFormat::Bits16)).unwrap();
         sink.write(&[0.1; 64]).unwrap();
         assert!(path.exists());

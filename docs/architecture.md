@@ -71,7 +71,7 @@ flowchart LR
 
 ## 3. The contract between Rust and the screen (report 7-3)
 
-The contract is **version 35** (`PROTOCOL_VERSION` in `crates/meloet-protocol/src/lib.rs`; the versions of round 12: 25-1 to 25-3, 25-37 and 25-38).
+The contract is **version 36** (`PROTOCOL_VERSION` in `crates/meloet-protocol/src/lib.rs`; the versions of round 12: 25-1 to 25-3, 25-37 to 25-39).
 
 ### 3-1. Steps
 
@@ -2977,3 +2977,10 @@ After many takes and the best one picked, the others go in one step, not one by 
 - **The step** (`Command::DeleteOtherTakes { clip }`, `StepKind::DeleteOtherTakes { clip, index }`): the clip keeps only the take it shows (the same `Arc`, never a copy), which becomes take 1. Turned away as 「テイクを消す」 is: a clip of one take, one with 「いいとこ取り」, a clip that is gone, and while counting in or recording (`busy()`); no status line, as 「テイクを消す」 has none. Undo brings every take back with the same one shown; the selection does not change.
 - **The row**: `StepName::DeleteOtherTakes`, 「このテイク以外を消す」 (`builder:2026-11-24`, the developers' name for now) ・ 「テイク N」, N the number the kept take had (`StepWhat::Take`), at the clip's track. 105 kinds.
 - **The screen**: a row of the clip's right-click menu after 「テイクを消す」 (`menu.deleteOtherTakes`, `user:2026-11-24`), usable when 「テイクを消す」 is and disabled with the same reason under a comp; not in the menu bar. The fake keeps the shown take as take 1 (`reduceClips`; `reduceComp` turns it away under a comp).
+
+### 25-39 MIDI export from the dialog 「書き出し」 (the owner, 2026-11-24; protocol 36)
+
+Spec 3 "MIDI export", spec 7 A-31. The first pass is only the shape (`meloet-protocol/src/export.rs`, `tests36.rs`; `ui/src/bridge/fakeMidi.ts`); core keeps the two new choices, and the places still to fill are marked `// pass 2:` in `meloet-core/src/export.rs`. The song file stays 7: nothing of it is a step.
+- **The shape**: `ExportFormat::Midi` (`"midi"`, ending `.mid`, no bits) is last in `ExportFormat::ALL` and always in `ExportDialogView::formats`. `ExportDialogView` has `midi_tracks` (`ExportMidiTracks`: `all`, `selected`, `numbers`), `midi_numbers` (the field's text as last sent), `midi_selected_usable`, `midi_taken` and `midi_vocal` (`ExportMidiTrack {number, name}`, in the order of the tracks) and `midi_problem` (`ExportMidiProblem`: `noSuchTrack {number}`, the smallest number with no track; `unreadable`; `noTrack`, also for an empty field). Under MIDI `tracks` counts `midi_taken`, and `can_export` waits for no check. `ExportChange::MidiTracks` and `MidiNumbers` are the intents; `ExportRunView::Done::midi_tracks` is `Some(n)` for MIDI (the song's tracks written; with 「トラックごと」 as many as `files`), with `wave` empty and no loudness.
+- **The audio paths refuse MIDI**: `sink::create` gives an error and `tags::write` writes nothing for it; the AI link's audio export keeps its own wav / flac choice.
+- **The fake**: `fakeMidiTaken` reads 「1-3, 5」 (commas, ranges either way, spaces not counted, empty parts passed by) and follows the song; 「書き出す」 under MIDI ends `done` at once. Until the screen names the format, the fake leaves `"midi"` out of `formats`. Scenes: `exportMidi`, `exportMidiNumbers`, `exportMidiProblem`, `exportDoneMidi`, `exportDoneMidiTracks`.

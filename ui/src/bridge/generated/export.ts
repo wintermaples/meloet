@@ -6,4 +6,4 @@ import type { RecordFormat } from "./RecordFormat";
 export const EXPORT_TAIL_MAX_S = 10;
 
 /** The formats meloet writes, in the order of the dialog, and the bits each holds. */
-export const EXPORT_FORMATS: readonly { readonly format: ExportFormat; readonly bits: readonly RecordFormat[] }[] = [{"bits":["bits16","bits24","bits32"],"format":"wav"},{"bits":["bits16","bits24"],"format":"flac"},{"bits":[],"format":"mp3"}];
+export const EXPORT_FORMATS: readonly { readonly format: ExportFormat; readonly bits: readonly RecordFormat[] }[] = [{"bits":["bits16","bits24","bits32"],"format":"wav"},{"bits":["bits16","bits24"],"format":"flac"},{"bits":[],"format":"mp3"},{"bits":[],"format":"midi"}];

@@ -3,6 +3,9 @@ import type { ExportCheck } from "./ExportCheck";
 import type { ExportFormat } from "./ExportFormat";
 import type { ExportLoudness } from "./ExportLoudness";
 import type { ExportLoudnessResult } from "./ExportLoudnessResult";
+import type { ExportMidiProblem } from "./ExportMidiProblem";
+import type { ExportMidiTrack } from "./ExportMidiTrack";
+import type { ExportMidiTracks } from "./ExportMidiTracks";
 import type { ExportRange } from "./ExportRange";
 import type { ExportSolo } from "./ExportSolo";
 import type { ExportStoppedPlugin } from "./ExportStoppedPlugin";
@@ -16,7 +19,8 @@ export type ExportDialogView = { range: ExportRange,
  */
 loopRange: TickSpan | null, 
 /**
- * How many files 「トラックごと」 would write; 0: the choice is unusable.
+ * How many files 「トラックごと」 would write; 0: the choice is unusable. Under
+ * `ExportFormat::Midi` the length of `midi_taken` (「トラックごと ・ 3 つのファイル」).
  */
 tracks: number, 
 /**
@@ -62,7 +66,8 @@ realtime: boolean,
  */
 realtimeForced: boolean, 
 /**
- * 「書き出す」 can be pressed.
+ * 「書き出す」 can be pressed. Under `ExportFormat::Midi` the check is not waited for
+ * (nothing is measured), and it is false while `midi_problem` is `Some`.
  */
 canExport: boolean, 
 /**
@@ -103,6 +108,39 @@ artist: string,
  */
 picture: string | null, 
 /**
- * F2 the row 「絵」 can be used: not for wav, which holds no picture.
+ * F2 the row 「絵」 can be used: not for wav, which holds no picture, nor for MIDI.
  */
-pictureUsable: boolean, };
+pictureUsable: boolean, 
+/**
+ * 「入れるトラック」, shown only under `ExportFormat::Midi`. Kept while meloet runs.
+ */
+midiTracks: ExportMidiTracks, 
+/**
+ * The text of the number field of 「番号で」 as Rust holds it: what was sent last
+ * (`ExportChange::MidiNumbers`). Empty: the field shows 「1-3, 5」 in gray as the hint.
+ * Kept while meloet runs, whatever `midi_tracks` is.
+ */
+midiNumbers: string, 
+/**
+ * 「選んでいるトラック」 can be chosen: the selected track (`SongView::play_target`) is a
+ * keys track.
+ */
+midiSelectedUsable: boolean, 
+/**
+ * The tracks `midi_tracks` takes, in the order of the tracks: 「1 ピアノ ・ 2 ベース
+ * ほか 2 本」 (two names at most). Never a vocal track. For `Numbers` also while
+ * `midi_problem` is `NoSuchTrack` (the numbers that name keys tracks); empty while it is
+ * `Unreadable`.
+ */
+midiTaken: Array<ExportMidiTrack>, 
+/**
+ * Only for `ExportMidiTracks::Numbers`: the vocal tracks the numbers name, in the order
+ * of the tracks. Each says in gray 「3 ボーカル は声のトラックなので入りません」; the
+ * others are still written.
+ */
+midiVocal: Array<ExportMidiTrack>, 
+/**
+ * Why the choice of 「入れるトラック」 cannot be written, in `color.rec`. While `Some`,
+ * `can_export` is false. Only under `ExportFormat::Midi`.
+ */
+midiProblem: ExportMidiProblem | null, };

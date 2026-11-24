@@ -66,12 +66,21 @@ fn dialog() -> ExportDialogView {
         artist: String::new(),
         picture: None,
         picture_usable: false,
+        midi_tracks: ExportMidiTracks::All,
+        midi_numbers: String::new(),
+        midi_selected_usable: true,
+        midi_taken: Vec::new(),
+        midi_vocal: Vec::new(),
+        midi_problem: None,
     }
 }
 
 #[test]
 fn the_formats() {
-    assert_eq!(to_json(&ExportFormat::ALL), json!(["wav", "flac", "mp3"]));
+    assert_eq!(
+        to_json(&ExportFormat::ALL),
+        json!(["wav", "flac", "mp3", "midi"])
+    );
     assert_eq!(ExportFormat::Flac.extension(), "flac");
     // 32 bits are floats, which a flac file does not hold.
     assert_eq!(
@@ -123,6 +132,12 @@ fn the_dialog_json_shape() {
             "artist": "",
             "picture": null,
             "pictureUsable": false,
+            "midiTracks": "all",
+            "midiNumbers": "",
+            "midiSelectedUsable": true,
+            "midiTaken": [],
+            "midiVocal": [],
+            "midiProblem": null,
         }, "run": null}),
     );
     both_ways(ExportView::default(), json!({"dialog": null, "run": null}));
@@ -241,11 +256,12 @@ fn the_run_json_shape() {
             lufs: Some(-14.0),
             true_peak_db: Some(-1.0),
             mp3_kbps: None,
+            midi_tracks: None,
         },
         json!({"state": "done", "file": "はじめての曲.wav", "files": 1,
                "place": "~/ミュージック/はじめての曲/はじめての曲.wav", "lengthS": 182,
                "sampleRate": 48_000, "bits": "bits24", "wave": [0, 128, 255],
-               "lufs": -14.0, "truePeakDb": -1.0, "mp3Kbps": null}),
+               "lufs": -14.0, "truePeakDb": -1.0, "mp3Kbps": null, "midiTracks": null}),
     );
     both_ways(ExportRunView::Cancelled, json!({"state": "cancelled"}));
     both_ways(

@@ -31,12 +31,13 @@ function after(state: FakeState, ...commands: Command[]): FakeState {
 const set = (change: ExportChange): Command => ({ type: "setExport", change });
 
 describe("shape of protocol 26", () => {
-  it("version 26. Formats are wav, flac and mp3 (mp3 has no bits). 32 bit is wav only. The tail is at most 10 seconds", () => {
+  it("version 26. Formats are wav, flac, mp3 and midi (mp3 and midi have no bits). 32 bit is wav only. The tail is at most 10 seconds", () => {
     expect(PROTOCOL_VERSION).toBeGreaterThanOrEqual(26);
     expect(EXPORT_FORMATS).toEqual([
       { format: "wav", bits: ["bits16", "bits24", "bits32"] },
       { format: "flac", bits: ["bits16", "bits24"] },
       { format: "mp3", bits: [] },
+      { format: "midi", bits: [] },
     ]);
     expect(EXPORT_TAIL_MAX_S).toBe(10);
   });
@@ -82,7 +83,7 @@ describe("shape of protocol 26", () => {
     expect(checks.map((c) => c.state)).toEqual(["waiting", "counting", "done", "failed"]);
     const runs: ExportRunView[] = [
       { state: "running", percent: 46, file: "はじめての曲.wav", remainingS: 40, realtime: false, realtimeForced: false, lengthS: 182 },
-      { state: "done", file: "はじめての曲.wav", files: 1, place: "~/音楽/はじめての曲.wav", lengthS: 182, sampleRate: 48000, bits: "bits24", wave: [], lufs: null, truePeakDb: null, mp3Kbps: null },
+      { state: "done", file: "はじめての曲.wav", files: 1, place: "~/音楽/はじめての曲.wav", lengthS: 182, sampleRate: 48000, bits: "bits24", wave: [], lufs: null, truePeakDb: null, mp3Kbps: null, midiTracks: null },
       { state: "cancelled" },
       { state: "failed", reason: { kind: "cannotWrite" } },
     ];
@@ -125,6 +126,17 @@ describe("fake scenes (mock F7-Export, F7-Exporting, R11-Fit)", () => {
       loudness: "asIs",
       canMatch: true,
       loudnessResult: { gainDb: -1.5, limited: false, lufs: -14 },
+      midiTracks: "all",
+      midiNumbers: "",
+      midiSelectedUsable: true,
+      midiTaken: [
+        { number: 1, name: "ピアノ" },
+        { number: 2, name: "ベース" },
+        { number: 3, name: "ドラム" },
+        { number: 4, name: "パッド" },
+      ],
+      midiVocal: [],
+      midiProblem: null,
     });
     expect(s.status.message).toEqual({ id: "exportDialogOpen" });
     expect([s.song.name, s.song.file, s.song.undoCount]).toEqual(["はじめての曲", "saved", 14]);
@@ -172,6 +184,7 @@ describe("fake scenes (mock F7-Export, F7-Exporting, R11-Fit)", () => {
       wave: fakeExportWave(),
       lufs: -14.0,
       truePeakDb: -1.0,
+      midiTracks: null,
     });
     expect(scene("exportCancelled").export.run).toEqual({ state: "cancelled" });
     expect(scene("exportFailed").export.run).toEqual({ state: "failed", reason: { kind: "cannotWrite" } });

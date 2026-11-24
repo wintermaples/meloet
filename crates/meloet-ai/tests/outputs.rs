@@ -29,7 +29,7 @@ use serde_json::{Value, json};
 
 /// The fake instrument of the plugin host with four output sets: "a" a stereo pair, "b"
 /// mono in the middle, "c" mono on the left, all three on, and "d" mono and off.
-const FOUR_OUTPUTS: &str = "lv2:urn:meloet:fake:outputs";
+const FOUR_OUTPUTS: &str = "lv2:urn:meloet:fake:outs";
 
 const KIT: &str = "lv2:urn:meloet:test:kit";
 
@@ -545,7 +545,7 @@ fn notes(c: &mut Client, track: u64, bars: u64) {
 /// What the end-to-end tests check of a plugin whose outputs have sound: each is measured,
 /// one switched off takes out of the track what it gave and leaves the others as they were,
 /// undo brings it back, and a saved song opens with the setting.
-fn switching_one_off(c: &mut Client, core: &Core, track: u64, runtime: &Path) {
+fn switching_one_off(c: &mut Client, core: &Core, track: u64, runtime: &Path, in_phase: bool) {
     let to_bar = 2;
     let sets = set_powers(c, track, to_bar);
     println!("each output alone: {sets:?}");
@@ -572,10 +572,11 @@ fn switching_one_off(c: &mut Client, core: &Core, track: u64, runtime: &Path) {
     assert_eq!(answer["output"]["on"], false);
     let without = track_power(c, track, to_bar);
     println!("the track: {whole} with {off_id}, {without} without it ({off_power} alone)");
-    // Sets add up where they do not cancel: loosely, what the set gave is gone.
+    // The powers of sets add up where their sounds are not alike: loosely, what the set
+    // gave is gone. Sets in phase (the fake's constants) add by amplitude instead.
     assert!(without < whole, "{without} < {whole}");
     assert!(
-        (whole - without - off_power).abs() < 0.5 * off_power.max(whole - without),
+        in_phase || (whole - without - off_power).abs() < 0.5 * off_power.max(whole - without),
         "{whole} - {without} is near {off_power}"
     );
     // The other sets are measured as they were: before their own on/off.
@@ -627,7 +628,7 @@ fn switching_one_off(c: &mut Client, core: &Core, track: u64, runtime: &Path) {
             the output sets work); FOUR_OUTPUTS names it"]
 fn the_fake_instrument_with_four_outputs_through_the_socket() {
     let lv2 = scratch("outputs-fake-lv2");
-    let bundle = lv2.join("found.lv2");
+    let bundle = lv2.join("outs.lv2");
     std::fs::create_dir_all(&bundle).unwrap();
     std::fs::write(bundle.join("plugin.so"), [0u8; 16]).unwrap();
     let (core, mut c, runtime) = plugged("outputs-fake", vec![lv2], true);
@@ -668,7 +669,7 @@ fn the_fake_instrument_with_four_outputs_through_the_socket() {
     let sets = set_powers(&mut c, track, 2);
     assert_eq!(sets.len(), 4);
     assert!(sets.iter().all(|(_, p)| *p > 0.0), "{sets:?}");
-    switching_one_off(&mut c, &core, track, &runtime);
+    switching_one_off(&mut c, &core, track, &runtime, true);
     drop(c);
     drop(core);
     let _ = std::fs::remove_dir_all(&runtime);
@@ -713,7 +714,7 @@ fn black_pearl_multi_measures_and_switches_its_outputs() {
         "{channels:?}"
     );
     notes(&mut c, track, 2);
-    switching_one_off(&mut c, &core, track, &runtime);
+    switching_one_off(&mut c, &core, track, &runtime, false);
     drop(c);
     drop(core);
     let _ = std::fs::remove_dir_all(&runtime);

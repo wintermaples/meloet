@@ -106,7 +106,7 @@ fn key(fake: &str) -> PluginKey {
 
 /// The fake instrument with four output sets of the plugin host: "a" a stereo pair, "b"
 /// mono in the middle, "c" mono on the left, all three on, and "d" mono and off.
-const FOUR_OUTPUTS: &str = "outputs";
+const FOUR_OUTPUTS: &str = "outs";
 
 /// Each of `ids` switched off.
 fn all_off(ids: &[&str]) -> OutputSettings {

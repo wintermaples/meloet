@@ -2450,9 +2450,11 @@ impl Play {
             WriteAt::Clip(clip) => self.doc().clip(clip).map(|(t, _)| t),
             WriteAt::Track(track) => self.doc().track(track),
         };
-        // A drum kit has no scale: every key is one of its instruments.
-
-        let drums = track?.instrument.group() == InstrumentGroup::Drums;
+        // A drum kit has no scale: every key is one of its instruments. A plugin that names its
+        // keys is shown as a kit, so it is one here too.
+        let track = track?;
+        let drums = track.instrument.group() == InstrumentGroup::Drums
+            || self.instrument_key_names(track.id).is_some();
         if scale.lock && !drums && !scale.contains(note.key) {
             return Some(StatusMessage::OutOfScale {
                 key: note.key,

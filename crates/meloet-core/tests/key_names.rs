@@ -16,7 +16,7 @@ use meloet_core::ai::{AiAnswer, AiAsk, AiInstrument, AiKeyMap, AiKeyNote, AiKeyS
 use meloet_core::play::keynames::read_sf2;
 use meloet_core::plugins::PluginOptions;
 use meloet_core::{Core, CoreOptions};
-use meloet_protocol::{AppState, PluginState, SoundView};
+use meloet_protocol::{AppState, Command, PluginState, ScaleMode, SoundView, StatusMessage};
 
 use font::{Font, Inst, KEY_RANGE, Preset, SAMPLE_ID, Smp, flat, range};
 use plughost::{temp_dir, wait_for};
@@ -249,6 +249,62 @@ fn names_a_plugin_gives_later_reach_the_screen_and_the_ai() {
             (38, Some("Fake Snare"), AiKeySource::Lv2Midnam)
         ]
     );
+    drop(core);
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// With the scale locked, a key outside it is refused on a melodic track but written on a
+/// plugin that names its keys: the screen shows that track as the drum piano roll.
+#[test]
+fn a_plugin_that_names_its_keys_writes_keys_outside_the_locked_scale() {
+    let root = temp_dir("key-names-scale");
+    let core = Arc::new(Core::start(options(&root)));
+    state_when(&core, "the scan", |s| s.library.plugins.len() == 3);
+    let drums = add(&core, AiInstrument::Plugin(DRUMS.into()));
+    let kit = add(&core, AiInstrument::Plugin(KIT.into()));
+    let state = state_when(&core, "the names", |s| {
+        s.song.tracks[drums as usize - 1].key_names.is_some()
+            && matches!(&s.song.tracks[kit as usize - 1].sound,
+                SoundView::Plugin(p) if p.state == PluginState::Ready)
+    });
+    let id = |track: u32| state.song.tracks[track as usize - 1].id;
+    // C# major: 38 (the snare) is outside it.
+    core.send(Command::SetMusicalScale {
+        root: 1,
+        mode: ScaleMode::Major,
+        lock: true,
+        highlight: true,
+    });
+    let write = |track: u32| {
+        core.send(Command::SelectTrack {
+            track: id(track),
+            from_arm: false,
+        });
+        core.send(Command::AddNote {
+            take: None,
+            start: 0,
+            length: 480,
+            key: 38,
+            velocity: 100,
+        });
+        let state = core.snapshot().state;
+        let clips = state.song.tracks[track as usize - 1].clips.len();
+        (state.status.message, clips)
+    };
+
+    let refused = StatusMessage::OutOfScale {
+        key: 38,
+        root: 1,
+        mode: ScaleMode::Major,
+    };
+    assert_eq!(write(kit), (Some(refused), 0));
+    // With no notice, the status line goes back to what it said before.
+    let (said, clips) = write(drums);
+    assert!(
+        !matches!(said, Some(StatusMessage::OutOfScale { .. })),
+        "{said:?}"
+    );
+    assert_eq!(clips, 1);
     drop(core);
     let _ = std::fs::remove_dir_all(&root);
 }

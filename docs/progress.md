@@ -439,7 +439,15 @@ From a user's report: DrumGizmo with DRSKit was 16 dB too quiet and sounded far 
 
 Left open:
 - Not tried with a real DrumGizmo kit (none on this PC); the user checks with DRSKit. Many close microphones at gain 1 may be loud.
-- Stage 2, waiting for the owner's answer: level, pan and mute per output (or per pair), saved in the song and undoable, readable and writable from the AI link; this also covers the outputs that are not heard today (extra LV2 groups, VST3 buses past the first) and Yoshimi-Multi.
+- Checked by the user with DRSKit after stage 1: about 22 dB louder at the same fader, the close microphones arrive.
+
+Stage 2 (same branch, the user's second request): each output set of a plugin instrument has a level, a pan and an on/off switch, saved in the song, one undoable step per change, for LV2 and VST3 (architecture 20-16). No screen: the AI link has `get_mixer` (new fields), `set_plugin_output` and `measure_plugin_outputs` (97 tools; `development/ai-tools.md`). Wire 8; the song file stays 7; no protocol change. Three decisions of the lead: settings are tied to the LV2 port symbol or `bus<index>`; the default rule has a number in the song; mute and "heard" are one switch `on`.
+
+Left open after stage 2:
+- Not tried: a real DrumGizmo kit with settings (the user checks); a VST3 instrument other than Surge XT; a plugin whose latency changes when a bus is switched; the short silence while a VST3 bus is switched, on the real audio thread.
+- No screen for the settings, and the history band shows them with the text of a plugin parameter.
+- `measure_plugin_outputs` holds the capture in memory, so 16 sets allow about 43 s at 48 kHz in one call.
+- Yoshimi-Multi's track outputs are on by default (20-15); they can now be switched off.
 - `PluginInfo.audio_outputs` is read by no shipped code (tests only); it now says 1 or 2 (how the fold ends), never the count of ports.
 
 ## 7. Notes for Windows and Mac

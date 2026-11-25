@@ -3275,7 +3275,9 @@ impl Model {
             });
         }
         // Over the recording, which goes on without the vocals.
-        if let Some(m @ StatusMessage::VocalsNotRecorded { .. }) = &self.notice {
+        if let Some(m @ (StatusMessage::VocalsNotRecorded { .. } | StatusMessage::NoInput)) =
+            &self.notice
+        {
             return Some(m.clone());
         }
         if let Some(m) = self.play.moving_status() {

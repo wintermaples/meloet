@@ -2375,6 +2375,7 @@ export const texts = {
     track: "6 歌",
     position: "5. 1. 0000",
   }),
+  "msg.audioSkipped": e("{skipped} 個は読めませんでした。", "builder:2026-11-25", { skipped: "2" }),
   "clip.loading": s6("Loading an audio file", "読みこんでいます {percent} %", { percent: "40" }),
   "msg.audioUnreadable": s6("File that cannot be read", "「{file}」は読めません（読めるのは wav ・ mp3 ・ flac ・ ogg）。", { file: "声.aac" }),
   "msg.audioDragging": s6(

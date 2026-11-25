@@ -620,3 +620,91 @@ fn a_comp_has_no_click_at_its_seams_and_is_exported_as_it_plays() {
     let played = playing.play(0, frames);
     assert_eq!(first_difference(&heard, &played), None);
 }
+
+#[test]
+fn audio_made_from_a_file_that_was_found_with_other_contents_is_made_again() {
+    let place = Place::new("export-found-other");
+    let (doc, _) = song();
+    place.files_of(&doc);
+    let mut playing = Playing::new(&place);
+    playing.open(&doc, 2);
+    let plans: Vec<MadePlan> = (playing.audio.clips.iter())
+        .flat_map(|c| c.plans.iter().cloned())
+        .collect();
+    let plan = plans.first().expect("a stretched clip").clone();
+    let path = place.store.made_path(&plan.key).unwrap();
+    let source = (doc.audio.iter()).find(|s| s.uid == plan.uid).unwrap();
+    // 「さがす…」 takes a file of the same name with other contents (`keeper::found`).
+    let found = |value: f32| {
+        let work = place.store.work_dir().unwrap();
+        let mut wav =
+            crate::audiofiles::wav::CacheWav::create(&work.join(&source.file), RATE, 1).unwrap();
+        wav.write(&vec![value; source.frames as usize]).unwrap();
+        wav.finish().unwrap();
+        place.store.drop_cache(&plan.uid);
+        place.store.file_arrived();
+    };
+    let made_again = |playing: &mut Playing| {
+        let until = Instant::now() + Duration::from_secs(120);
+        let mut out = [0.0f32; 2 * BLOCK];
+        while !playing.audio.made.contains(&plan.key) {
+            assert!(Instant::now() < until, "the audio was not made again");
+            while let Ok(news) = playing.news.try_recv() {
+                if let MadeNews::Ready(keys) = news {
+                    playing.audio.made_ready(keys);
+                    playing.audio.want_made();
+                }
+            }
+            playing.block(&mut out);
+            std::thread::sleep(Duration::from_millis(2));
+        }
+    };
+
+    // Played: the read-ahead thread has the made file open.
+    let span = (plan.start, plan.end);
+    let frames = frames_of(&doc, span.0, span.1);
+    playing.play(span.0, frames);
+    playing.quiet();
+
+    let before = std::fs::read(&path).unwrap();
+    found(0.25);
+    playing.audio.want_made();
+    for p in plans.iter().filter(|p| p.uid == plan.uid) {
+        assert!(!playing.audio.made.contains(&p.key));
+    }
+    assert!(
+        !path.exists(),
+        "the audio made from the old contents is gone"
+    );
+    made_again(&mut playing);
+    assert_ne!(std::fs::read(&path).unwrap(), before);
+    // What plays is the audio made again, as the export has it.
+    playing.play(span.0, frames);
+    playing.quiet();
+    let heard = playing.play(span.0, frames);
+    playing.quiet();
+    let run = place.start(place.setup(place.job(1, &doc, span, ExportTail::Off)));
+    run.rendered();
+    assert_eq!(first_difference(&run.pass(0), &heard), None);
+
+    // Found while no stream runs (`Audio::close` lets go of the plans): let go of when the
+    // next stream has them, before the maker is asked.
+    playing.audio.by_hand = None;
+    for entry in playing.audio.clips.iter_mut() {
+        entry.plans.clear();
+    }
+    playing.audio.plans_changed = true;
+    playing.audio.want_made();
+    let before = std::fs::read(&path).unwrap();
+    found(-0.5);
+    playing.audio.want_made();
+    playing.audio.open_by_hand(RATE);
+    playing.audio.resend_clips();
+    playing.audio.want_made();
+    assert!(
+        !path.exists(),
+        "the audio made from the old contents is gone"
+    );
+    made_again(&mut playing);
+    assert_ne!(std::fs::read(&path).unwrap(), before);
+}

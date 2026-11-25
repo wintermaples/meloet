@@ -142,6 +142,36 @@ fn a_file_left_half_written_is_mended() {
     let _ = fs::remove_dir_all(dir);
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn after_a_write_fails_nothing_more_goes_into_the_file() {
+    let dir = scratch("failed");
+    let path = dir.join("歌 8.wav");
+    let samples = wave(1_000, 1);
+    let mut wav = WavFile::create(&path, RATE, 1, RecordFormat::Bits24).unwrap();
+    wav.write(&samples[..600]).unwrap();
+    // The disk is full: a write stops part way, two bytes of a frame in.
+    let full = File::options().write(true).open("/dev/full").unwrap();
+    let mut disk = std::mem::replace(&mut wav.file, full);
+    assert!(wav.write(&samples[600..700]).is_err());
+    disk.write_all(&[1, 2]).unwrap();
+    // Room again: the blocks after are not written out of step.
+    wav.file = disk;
+    assert!(wav.write(&samples[700..]).is_err());
+    assert!(wav.write_silence(10).is_err());
+    assert_eq!(wav.frames(), 600);
+    assert_eq!(wav.finish().unwrap(), 600);
+
+    assert_eq!(fs::metadata(&path).unwrap().len(), 44 + 600 * 3);
+    let (_, channels, read) = decode(&path);
+    assert_eq!((channels, read.len()), (1, 600));
+    let worst = (read.iter().zip(&samples))
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0f32, f32::max);
+    assert!(worst <= 1.0 / 8_388_607.0, "off by {worst}");
+    let _ = fs::remove_dir_all(dir);
+}
+
 #[test]
 fn the_file_name_is_the_track_and_the_id() {
     assert_eq!(file_name("歌", 12), "歌 12.wav");

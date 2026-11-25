@@ -344,6 +344,30 @@ fn a_stretched_clip_is_made_after_a_while_and_its_clicks_are_where_the_song_has_
 }
 
 #[test]
+fn what_was_made_while_a_file_was_found_with_other_contents_is_not_kept() {
+    let mut rig = Rig::new("found-meanwhile");
+    let uid = rig.file(1, &clicks(4).0);
+    let up = plan(uid, 7, &steady(12_000), None, (0, BAR / 2), 2.0);
+    let path = rig.store.made_path(&up.key).unwrap();
+    let cancel = AtomicBool::new(false);
+    // 「さがす…」 takes a file with other contents while the audio is made.
+    let store = rig.store.clone();
+    let mut found = false;
+    let mut wrote = || {
+        if !std::mem::replace(&mut found, true) {
+            store.drop_cache(&[2; 16]);
+        }
+    };
+    let made = render_plan(&rig.store, &up, &path, &mut wrote, &mut |_| {}, &cancel);
+    assert!(matches!(made, Ok(Rendered::Cancelled)));
+    assert!(rig.files(CACHE_MADE).is_empty());
+    // Made again: kept.
+    let made = render_plan(&rig.store, &up, &path, &mut || {}, &mut |_| {}, &cancel);
+    assert!(matches!(made, Ok(Rendered::Made)));
+    assert!(path.is_file());
+}
+
+#[test]
 fn what_is_in_the_cache_is_not_made_again() {
     let mut rig = Rig::new("again");
     let uid = rig.file(1, &clicks(4).0);

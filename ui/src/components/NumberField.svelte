@@ -21,8 +21,10 @@
     test: string;
     /** Shows the reading in text.s (when the input meter is slim). */
     small?: boolean;
+    /** The number cannot be typed now (the core takes no value): pressing does nothing, and it does not look typable. */
+    disabled?: boolean;
   }
-  let { value, parse, step, commit, reject, label, chars, minChars, test, small = false }: Props = $props();
+  let { value, parse, step, commit, reject, label, chars, minChars, test, small = false, disabled = false }: Props = $props();
 
   let editing = $state(false);
   let draft = $state("");
@@ -31,6 +33,7 @@
   const broken = $derived(editing && parse(draft) === null);
 
   async function open(): Promise<void> {
+    if (disabled) return;
     draft = value;
     editing = true;
     await tick();
@@ -87,8 +90,10 @@
   />
 {:else}
   <button
-    class="m-plain m-readout m-typable shown"
+    class="m-plain m-readout shown"
+    class:m-typable={!disabled}
     class:small
+    aria-disabled={disabled || undefined}
     style:min-width={minChars === undefined ? undefined : `${minChars}ch`}
     aria-label={label}
     data-test={test}
@@ -102,13 +107,16 @@
   .shown {
     color: var(--color-gray-10);
   }
+  .shown[aria-disabled="true"] {
+    cursor: default;
+  }
   .shown.small {
     font-size: var(--text-s-size);
     line-height: var(--text-s-line-height);
     font-weight: var(--text-s-weight-400);
   }
   /* Hover (spec 2: border gray.8, text gray.10; the dark layer is m-typable). The border is drawn on the outside so the reading size does not change. */
-  .shown:hover {
+  .shown:not([aria-disabled="true"]):hover {
     box-shadow: 0 0 0 var(--line-hair) var(--color-gray-8);
   }
   /* Input box: height 24, bg gray.0, corner 1. While typing, border gray.8, the same as pressed. */

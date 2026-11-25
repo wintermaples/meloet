@@ -3,18 +3,18 @@
      Lines and points are WebGL (one canvas of the arrange's arrangeLanes region; no new region), text and flags are HTML.
      While dragging, only the screen moves first, and one intent is sent on release. Esc cancels. -->
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import type { Command, TimelineRef, TimelineView } from "../../bridge";
   import { glSlot } from "../../gl/slot";
-  import { send } from "../../state/app.svelte";
+  import { current, send } from "../../state/app.svelte";
   import { t } from "../../text";
   import type { TempoMap } from "../../time/tempoMap";
   import { tickToX, type View } from "../arrangeGeom";
   import { tempoText } from "../format";
   import { openContextMenu, type MenuEntry } from "../menu/contextMenu.svelte";
   import { metrics } from "../metrics.svelte";
-  import { onDragCancel } from "../pianoroll/view.svelte";
-  import { meterText, positionText, stepMeter, stepTempo, type Meter } from "../time";
+  import { dragReading, onDragCancel } from "../pianoroll/view.svelte";
+  import { meterFieldOf, meterText, positionText, stepMeter, stepTempo, type Meter } from "../time";
   import { readMeter, readTempo, type ClampNote } from "../valueClamp";
   import * as T from "./tempoGeom";
   import { pickTimeline } from "./pick";
@@ -43,8 +43,19 @@
   // ---- Tempo points ----
 
   let pointDrag = $state<T.PointDrag | null>(null);
+  /** The look kept after release until core's answer (so the point does not jump back for a moment): only while the point it names (its tick) still has its old tempo. */
+  let pointPending = $state.raw<{ drag: T.PointDrag; rev: number | null } | null>(null);
+  const pointKept = $derived.by(() => {
+    const d = pointPending?.drag;
+    return d && points.some((p) => p.tick === d.tick && p.bpm === d.fromBpm) ? d : null;
+  });
+  $effect(() => {
+    const p = pointPending;
+    if (p && (!pointKept || (p.rev !== null && current.rev >= p.rev))) pointPending = null;
+  });
+  const pointShown = $derived(pointDrag ?? pointKept);
   let hovered = $state(-1);
-  const shownPoints = $derived(T.draggedPoints(points, pointDrag));
+  const shownPoints = $derived(T.draggedPoints(points, pointShown));
   const isSelected = (ref: TimelineRef) => T.sameRef(selected, ref);
   const rects = $derived(
     T.tempoRects(
@@ -53,10 +64,10 @@
       scale,
       dims,
       (p, i) => ({
-        selected: pointDrag?.moved ? p.tick === pointDrag.toTick : isSelected({ kind: "tempoPoint", tick: p.tick }),
+        selected: pointShown?.moved ? p.tick === pointShown.toTick : isSelected({ kind: "tempoPoint", tick: p.tick }),
         hovered: i === hovered,
       }),
-      pointDrag?.moved ? { tick: pointDrag.tick, bpm: pointDrag.fromBpm } : null,
+      pointShown?.moved ? { tick: pointShown.tick, bpm: pointShown.fromBpm } : null,
     ),
   );
   const labels = $derived(T.tempoLabels(view, shownPoints, scale, dims.point, dims));
@@ -76,6 +87,11 @@
   function readAt(e: PointerEvent, tick: number): void {
     const r = band!.getBoundingClientRect();
     reading = { text: positionText(tick, map), x: e.clientX - r.left, y: e.clientY - r.top };
+    dragReading.text = reading.text;
+  }
+  function unread(): void {
+    if (reading) dragReading.text = null;
+    reading = null;
   }
   let readingW = $state(0);
   let readingH = $state(0);
@@ -97,6 +113,7 @@
     pickTimeline();
     if (!isSelected({ kind: "tempoPoint", tick: pt.tick })) send({ type: "selectTimeline", target: { kind: "tempoPoint", tick: pt.tick } });
     if (busy) return;
+    pointPending = null;
     pointDrag = { tick: pt.tick, fromBpm: pt.bpm, toTick: pt.tick, bpm: pt.bpm, downX: p.x, downY: p.y, moved: false };
     lane!.setPointerCapture?.(e.pointerId);
   }
@@ -107,7 +124,7 @@
       hovered = pointUnder(p);
       return;
     }
-    const next = T.dragPoint(d, view, scale, map, p.x, p.y, still(), e.shiftKey);
+    const next = T.dragPoint(d, view, scale, map, p.x, p.y, still());
     if (next !== d) {
       pointDrag = next;
       readAt(e, next.toTick);
@@ -116,9 +133,13 @@
   function laneUp(): void {
     const d = pointDrag;
     pointDrag = null;
-    reading = null;
+    unread();
     if (!d?.moved || (d.toTick === d.tick && d.bpm === d.fromBpm)) return;
-    send({ type: "moveTempoPoint", tick: d.tick, toTick: d.toTick, bpm: d.bpm });
+    const made = { drag: d, rev: null as number | null };
+    pointPending = made;
+    void send({ type: "moveTempoPoint", tick: d.tick, toTick: d.toTick, bpm: d.bpm }).then((rev) => {
+      if (pointPending === made) pointPending = { ...made, rev: rev ?? -Infinity };
+    });
   }
   function laneLeave(): void {
     if (!pointDrag) hovered = -1;
@@ -158,6 +179,17 @@
   // ---- Time signature flags ----
 
   let flagDrag = $state<T.FlagDrag | null>(null);
+  /** The look kept after release until core's answer: only while the flag it names (its bar) is still there. */
+  let flagPending = $state.raw<{ drag: T.FlagDrag; rev: number | null } | null>(null);
+  const flagKept = $derived.by(() => {
+    const d = flagPending?.drag;
+    return d && flagList.some((f) => f.bar === d.bar) ? d : null;
+  });
+  $effect(() => {
+    const p = flagPending;
+    if (p && (!flagKept || (p.rev !== null && current.rev >= p.rev))) flagPending = null;
+  });
+  const flagShown = $derived(flagDrag ?? flagKept);
   function flagDown(e: PointerEvent, f: T.Flag): void {
     if (e.button !== 0) return;
     e.stopPropagation();
@@ -165,6 +197,7 @@
     pickTimeline();
     if (!isSelected(ref)) send({ type: "selectTimeline", target: ref });
     if (busy) return;
+    flagPending = null;
     flagDrag = { bar: f.bar, toBar: f.bar, downX: at(e, meterRow).x, moved: false };
     meterRow!.setPointerCapture?.(e.pointerId);
   }
@@ -183,8 +216,13 @@
   function rowUp(): void {
     const d = flagDrag;
     flagDrag = null;
-    reading = null;
-    if (d?.moved && d.toBar !== d.bar) send({ type: "moveMeterChange", bar: d.bar, toBar: d.toBar });
+    unread();
+    if (!d?.moved || d.toBar === d.bar) return;
+    const made = { drag: d, rev: null as number | null };
+    flagPending = made;
+    void send({ type: "moveMeterChange", bar: d.bar, toBar: d.toBar }).then((rev) => {
+      if (flagPending === made) flagPending = { ...made, rev: rev ?? -Infinity };
+    });
   }
   function rowDouble(e: MouseEvent): void {
     if (busy) return;
@@ -206,7 +244,7 @@
 
   /** Where flags are drawn: while dragging, the moved flag at the start of its bar, with a gray.7 border at the original place. */
   const flagsShown = $derived.by(() => {
-    const d = flagDrag?.moved ? flagDrag : null;
+    const d = flagShown?.moved ? flagShown : null;
     return flagList
       .filter((f) => !d || d.bar === 0 || f.bar !== d.toBar || f.bar === d.bar)
       .map((f) => {
@@ -215,7 +253,7 @@
       })
       .filter((f) => f.x > -view.width && f.x < view.width);
   });
-  const flagFrom = $derived(flagDrag?.moved && flagDrag.bar !== 0 ? tickToX(view, map.tickOfBar(flagDrag.bar)) : null);
+  const flagFrom = $derived(flagShown?.moved && flagShown.bar !== 0 ? tickToX(view, map.tickOfBar(flagShown.bar)) : null);
   let movingFlagW = $state(0);
 
   // ---- Typing ----
@@ -242,10 +280,11 @@
     if (!pointDrag && !flagDrag) return false;
     pointDrag = null;
     flagDrag = null;
-    reading = null;
+    unread();
     return true;
   }
   onMount(() => onDragCancel(cancel));
+  onDestroy(unread);
 </script>
 
 <div class="band" class:open={timeline.open} bind:this={band} data-test="tempo-band">
@@ -299,7 +338,10 @@
             step={(r, d) => meterText(stepMeter(r.value, d))}
             commit={(r: { value: Meter; clamp: ClampNote | null }) =>
               commitClamped({ type: "setMeterChange", bar: editFlag.bar, num: r.value.num, den: r.value.den }, r.clamp)}
-            reject={() => send({ type: "rejectValue", field: "meterNum", kept: String(editFlag.num), range: null })}
+            reject={(draft) => {
+              const field = meterFieldOf(draft);
+              send({ type: "rejectValue", field, kept: String(field === "meterNum" ? editFlag.num : editFlag.den), range: null });
+            }}
             close={closeEdit}
             label={t("transport.timeSignature")}
             chars={5}
@@ -326,7 +368,7 @@
         <span class="ramp m-lbl" style:left="{(r.x0 + r.x1) / 2}px">{t("timeline.ramp")}</span>
       {/each}
       {#each labels as l (l.tick)}
-        {@const on = pointDrag?.moved ? l.tick === pointDrag.toTick : isSelected({ kind: "tempoPoint", tick: l.tick })}
+        {@const on = pointShown?.moved ? l.tick === pointShown.toTick : isSelected({ kind: "tempoPoint", tick: l.tick })}
         <span
           class="m-num value"
           class:selected={on}
@@ -359,7 +401,7 @@
       {/if}
     </div>
   {:else}
-    <span class="m-num m-lbl now" style:left="{-view.scrollX}px" data-test="tempo-now">{now}</span>
+    <span class="m-num m-lbl now" data-test="tempo-now">{now}</span>
   {/if}
   {#if readingBox && reading}
     <div class="m-num reading" style:left="{readingBox.left}px" style:top="{readingBox.top}px" bind:clientWidth={readingW} bind:clientHeight={readingH} data-test="tempo-reading">

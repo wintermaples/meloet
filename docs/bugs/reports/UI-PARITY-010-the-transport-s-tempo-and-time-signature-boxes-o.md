@@ -4,7 +4,7 @@ title: The transport's tempo and time signature boxes open and take Enter while 
 area: UI-PARITY
 kind: parity
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -52,4 +52,9 @@ Fix plan (as suggested): a `disabled` prop on `ui/src/components/NumberField.sve
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+Not committed yet (the lead commits).
+
+- `ui/src/components/NumberField.svelte` (another fixer's file, kept small): a `disabled` prop — pressing does not open the box, no `m-typable`, no hover border, `cursor: default`, and `aria-disabled="true"` (the transport's way of marking parts that cannot be used now). Without it the markup is as before.
+- `ui/src/components/Transport.svelte`: `disabled={recordingNow}` for the tempo and the time signature, and for the position too (`locate` is refused while busy as well, as the verification asked).
+
+Test: `ui/tests/transport.test.ts` — "while recording or counting in, tempo, time signature and position do not open and do not look typable (core takes none of them, as in the tempo band)".

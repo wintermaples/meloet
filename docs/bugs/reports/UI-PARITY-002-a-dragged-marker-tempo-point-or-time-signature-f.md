@@ -4,7 +4,7 @@ title: A dragged marker, tempo point or time signature flag jumps back to its ol
 area: UI-PARITY
 kind: parity
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -45,4 +45,8 @@ Fix plan: the same kept look in `ui/src/components/timeline/MarkerRow.svelte` an
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+Not committed yet (the lead commits).
+
+- `ui/src/components/timeline/MarkerRow.svelte`, `ui/src/components/timeline/TempoBand.svelte`: the released drag is kept (`pending`, `pointPending`, `flagPending`) until `current.rev` reaches the rev `send()` resolves with, the same pattern as `AutoLane` / `CompBand`. It is tied to the thing by its name and used only while that thing is still as it was in `timeline`: the marker id at its old tick, the tempo point's tick with its old tempo, the flag's bar. A new press drops it; Esc does not (as in the siblings: the intent is already sent).
+
+Tests: `ui/tests/round6.timeline.test.ts` — "after release a marker keeps its moved place until core's answer; the answer or a rev with no change ends it", "after release a tempo point and a time signature flag keep their moved place until core's answer".

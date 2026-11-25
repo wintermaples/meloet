@@ -4,7 +4,7 @@ title: Automation point, marker and tempo or time signature drags show their rea
 area: UI-PARITY
 kind: parity
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -45,4 +45,8 @@ Fix plan (as suggested): in `ui/src/components/automation/AutoLane.svelte`, `ui/
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+Not committed yet (the lead commits).
+
+- `ui/src/components/automation/AutoLane.svelte`, `ui/src/components/timeline/TempoBand.svelte`, `ui/src/components/timeline/MarkerRow.svelte`: the text of the reading in place is also written to `dragReading.text` (point moves and the place a press would add a point; tempo points and flags; markers), and set back to null on release, on Esc and when the part goes away. `tools/measure/webkit-damage.sh` was not run (it needs the real app).
+
+Tests: `ui/tests/automation.lane-drag.test.ts` — "moving a point, and holding an empty place, put the in-place reading's text on the status line; release and Esc take it away"; `ui/tests/round6.timeline.test.ts` — "the reading in place is on the status line too; it goes on release and on Esc (spec 2 「その場の読み値」)".

@@ -4,7 +4,7 @@ title: The folded tempo row's text of the play line's tempo and meter scrolls aw
 area: UI-ARRANGE
 kind: ui-ux
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -43,4 +43,8 @@ Fix plan (as suggested): in `ui/src/components/timeline/TempoBand.svelte` drop `
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+Not committed yet (the lead commits).
+
+- `ui/src/components/timeline/TempoBand.svelte`: the folded row's 「96.00 ・ 4/4」 has no `style:left` any more; it sits at the row's left edge (`.now` keeps `margin-left: space.1`). `tools/measure/webkit-damage.sh` was not run (it needs the real app).
+
+Test: `ui/tests/round6.timeline.test.ts` — "the folded row's tempo and time signature at the play line stay at the row's left edge when the arrange is scrolled".

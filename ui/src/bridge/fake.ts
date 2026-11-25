@@ -3158,7 +3158,7 @@ SCENES.pianoRollMarker = {
 
 /**
  * Protocol 21, enough for pictures and tests: the lanes' own switches (fold, 「● 書く」, the selection, 「もどす」),
- * lanes added and deleted, and the jump of the history band. Points are not added, moved or deleted here, and no
+ * lanes added and deleted, points moved, and the jump of the history band. Points are not added or deleted here, and no
  * step is listed. `null`: not one of these commands.
  */
 function reduceRound6(state: AppState, command: Command, rows: readonly HistoryRow[]): Change[] | null {
@@ -3246,8 +3246,31 @@ function reduceRound6(state: AppState, command: Command, rows: readonly HistoryR
       message = { id: "historyJumped", index: command.index, name: to.name, steps: Math.abs(command.index - current), forward: command.index > current };
       break;
     }
+    // The moved points under a new lane id, chosen, as `auto::move_points` in Rust does.
+    case "moveAutoPoints": {
+      const home = [...song.tracks, song.master].find((t) => t.lanes.some((l) => l.laneId === command.lane));
+      const old = FAKE_LANES.get(command.lane);
+      const picked = [...new Set(command.points)].filter((i) => i < (old?.points.length ?? 0)).sort((a, b) => a - b);
+      if (!home || !old || picked.length === 0) return [];
+      const moving = picked.map((i) => old.points[i]!);
+      const values = moving.map((p) => p[1]);
+      const dTick = Math.max(command.dTick, -moving[0]![0]);
+      const dValue = Math.min(Math.max(command.dValue, -Math.min(...values)), 1 - Math.max(...values));
+      if (dTick === 0 && dValue === 0) return [];
+      const shifted = moving.map(([tick, value]): [number, number] => [tick + dTick, Math.min(1, Math.max(0, value + dValue))]);
+      const all = [
+        ...old.points.filter(([tick], i) => !picked.includes(i) && !shifted.some(([to]) => to === tick)).map((p) => ({ p, moved: false })),
+        ...shifted.map((p) => ({ p, moved: true })),
+      ].sort((a, b) => a.p[0] - b.p[0]);
+      const made: FakeLane = { id: Math.max(600, ...FAKE_LANES.keys()) + 1, step: old.step, points: all.map((a) => a.p) };
+      FAKE_LANES.set(made.id, made);
+      const at = home.lanes.findIndex((l) => l.laneId === command.lane);
+      home.lanes[at] = { ...home.lanes[at]!, laneId: made.id, points: made.points.length };
+      automation.selected = { laneId: made.id, points: toRanges(all.flatMap((a, i) => (a.moved ? [i] : []))) };
+      step();
+      break;
+    }
     case "addAutoPoint":
-    case "moveAutoPoints":
     case "deleteAutoPoints":
       return [];
     // Round 12 M5: the points of the master's lane are made anew under a new id, as Rust does; no row of the history.

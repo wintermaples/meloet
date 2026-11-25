@@ -199,8 +199,8 @@ export interface PointDrag {
 /** Sideways it snaps to the start of beats (ticks with Shift); up and down is position. The first point stops at the start of the song. */
 export function dragPoints(drag: PointDrag, pts: readonly Pt[], v: View, d: LaneDims, map: TempoMap, x: number, y: number, still: number, shift: boolean): PointDrag {
   const moved = drag.moved || Math.hypot(x - drag.downX, y - drag.downY) >= still;
-  if (!moved) return drag;
-  const grab = pts[drag.grab]!;
+  const grab = pts[drag.grab];
+  if (!moved || !grab || drag.points.some((i) => !pts[i])) return drag;
   const at = grab.tick + (x - drag.downX) / v.pxPerTick;
   const first = Math.min(...drag.points.map((i) => pts[i]!.tick));
   const to = Math.max(0, shift ? Math.round(at) : nearestBeatTick(map, at));
@@ -212,6 +212,7 @@ export function dragPoints(drag: PointDrag, pts: readonly Pt[], v: View, d: Lane
 
 /** The points while dragging. If a moved point lands on the same tick as another point, it takes that point's place. moved marks the points being moved. */
 export function draggedPoints(pts: readonly Pt[], drag: PointDrag | null): { pts: Pt[]; moving: boolean[] } {
+  if (drag?.moved && drag.points.some((i) => !pts[i])) return { pts: [...pts], moving: pts.map(() => false) };
   if (!drag?.moved) return { pts: [...pts], moving: pts.map((_, i) => drag?.points.includes(i) ?? false) };
   const chosen = new Set(drag.points);
   const moved = drag.points.map((i) => ({ tick: pts[i]!.tick + drag.dTick, value: Math.min(1, Math.max(0, pts[i]!.value + drag.dValue)) }));

@@ -18,11 +18,12 @@ use crate::state::Effect;
 const STUDIO_KIT: InstrumentRef = InstrumentRef::Builtin(BuiltinInstrument::StudioKit);
 
 impl Play {
-    /// The selected track when it is a drum track.
+    /// The selected track when it is a drum track, a plugin that names its keys included.
     fn drum_target(&self) -> Option<TrackId> {
         let track = self.doc().track(self.song.session.play_target?)?;
-        let drums = track.instrument.group() == InstrumentGroup::Drums && !track.kind.is_vocal();
-        drums.then_some(track.id)
+        let drums = track.instrument.group() == InstrumentGroup::Drums
+            || self.instrument_key_names(track.id).is_some();
+        (drums && !track.kind.is_vocal()).then_some(track.id)
     }
 
     /// The rows of 「パターン」: only in the shelf of a new track.

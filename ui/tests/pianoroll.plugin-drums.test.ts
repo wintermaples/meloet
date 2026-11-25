@@ -66,10 +66,11 @@ describe("drums.ts for a plugin that names its keys", () => {
     expect(keysDrums(s)).toBe(false);
   });
 
-  it("not offered as a ghost track, as other kits; a pattern goes on a new studio kit, as core places it", () => {
+  it("not offered as a ghost track, as other kits; a pattern goes on it when it is selected, as core places it", () => {
     const s = named();
     expect(ghostCandidates(s.song.tracks, s.song.tracks[0]!.id).map((x) => x.id)).not.toContain(kitOf(s).id);
-    expect(placeText(s)).not.toContain(kitOf(s).name);
+    s.song.playTarget = kitOf(s).id;
+    expect(placeText(s)).toContain(kitOf(s).name);
   });
 });
 

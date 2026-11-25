@@ -688,8 +688,11 @@
         return plain("msg.audioFilesMissing", { count: m.count });
       case "clipSplit":
         return plain("msg.clipSplit", { clip: m.name, position: positionText(m.tick, mapOf(app.timeline)) });
-      case "audioImported":
-        return plain("msg.audioImported", { file: m.file, track: track(m.track), position: positionText(m.tick, mapOf(app.timeline)) });
+      case "audioImported": {
+        const imported = textParts("msg.audioImported", { file: m.file, track: track(m.track), position: positionText(m.tick, mapOf(app.timeline)) });
+        const skipped = m.skipped > 0 ? textParts("msg.audioSkipped", { skipped: m.skipped }) : [];
+        return { parts: [...imported, ...gapBefore(skipped)], strong: [], button: null };
+      }
       case "audioUnreadable":
         return plain("msg.audioUnreadable", { file: m.file });
       case "audioDragging":

@@ -1508,6 +1508,8 @@ struct Audio {
     wanted: (Vec<(MadeKey, u32)>, Vec<[u8; 16]>),
     /// The plans may be other ones than `wanted`.
     plans_changed: bool,
+    /// Files found with other contents whose made audio is not let go of yet.
+    redone: Vec<[u8; 16]>,
     /// A test runs the engine's blocks itself, as a stream of this rate would
     /// (`Audio::open_by_hand`).
     #[cfg(test)]
@@ -1648,6 +1650,7 @@ impl Audio {
             made: HashSet::new(),
             wanted: Default::default(),
             plans_changed: false,
+            redone: Vec::new(),
             #[cfg(test)]
             by_hand: None,
         };
@@ -1699,6 +1702,7 @@ impl Audio {
     /// Asks the maker for what the clips need now, when that is another list than it was
     /// last asked for. What is no longer in it is given up there.
     fn want_made(&mut self) {
+        self.let_go_of_made();
         if !std::mem::take(&mut self.plans_changed) {
             return;
         }
@@ -1869,13 +1873,45 @@ impl Audio {
             .readahead
             .stats()
             .unopened
-            .load(std::sync::atomic::Ordering::Relaxed);
+            .load(std::sync::atomic::Ordering::SeqCst);
         if unopened == 0 {
             return;
         }
         self.readahead.store_changed();
         for seat in (0..64).filter(|seat| unopened & (1u64 << seat) != 0) {
             self.send_clips(seat, true);
+        }
+    }
+
+    /// Files that were found with other contents (`AudioStore::drop_cache`): the audio made
+    /// for their clips from what they held before leaves the cache, before the maker is
+    /// told the plans, and the clips play the files until it is made again. A file whose
+    /// clips have no plans now (no stream runs) waits for them while the song has it.
+    fn let_go_of_made(&mut self) {
+        self.redone.extend(self.store.take_redone());
+        if self.redone.is_empty() {
+            return;
+        }
+        let (mut seats, mut done) = (Vec::new(), Vec::new());
+        for entry in &self.clips {
+            for plan in entry.plans.iter().filter(|p| self.redone.contains(&p.uid)) {
+                if let Some(path) = self.store.made_path(&plan.key) {
+                    let _ = std::fs::remove_file(path);
+                }
+                done.push(plan.uid);
+                if self.made.remove(&plan.key) && !seats.contains(&entry.seat) {
+                    seats.push(entry.seat);
+                }
+            }
+        }
+        let sources = &self.sources;
+        (self.redone).retain(|u| !done.contains(u) && sources.iter().any(|s| s.uid == *u));
+        // Anew: the read-ahead thread lets go of the files it holds open.
+        for seat in seats {
+            self.send_clips(seat, true);
+        }
+        if let (false, Some(maker)) = (done.is_empty(), &self.maker) {
+            maker.retry();
         }
     }
 

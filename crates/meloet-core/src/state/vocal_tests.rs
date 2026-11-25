@@ -272,6 +272,10 @@ fn no_input_is_said_and_shown() {
     );
     assert!(m.view().transport.recording.is_some());
     assert!(m.view().transport.recording_vocals.is_empty());
+    // Said over the count-in and the recording, which go on without the voice.
+    assert_eq!(status(&m), Some(StatusMessage::NoInput));
+    started(&mut m, 0);
+    assert_eq!(status(&m), Some(StatusMessage::NoInput));
 
     // A mono microphone has no second channel.
     let (mut m, id) = with_vocal(1);

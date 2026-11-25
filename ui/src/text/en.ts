@@ -1174,6 +1174,7 @@ export const enTexts: Record<TextKey, EnText> = {
   "msg.clipSplit": "Split {clip} at {position}.",
   "msg.audioRendering": "Making the sound of {clip} {percent} % · until it is ready, the original plays",
   "msg.audioImported": "Brought in {file} ({track} · {position}).",
+  "msg.audioSkipped": n("skipped", "{skipped} file could not be read.", "{skipped} files could not be read."),
   "clip.loading": "Loading {percent} %",
   "msg.audioUnreadable": "“{file}” cannot be read (wav · mp3 · flac · ogg can).",
   "msg.audioDragging": n("count", "Dragging {count} audio file · drop on the left for separate tracks, on the right to line them up on one", "Dragging {count} audio files · drop on the left for separate tracks, on the right to line them up on one"),

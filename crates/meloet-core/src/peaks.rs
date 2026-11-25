@@ -14,7 +14,7 @@
 //!  4  1  version (1)
 //!  5  1  channels (1 or 2)
 //!  6  2  0
-//!  8  8  frames of the audio the peaks were made from
+//!  8  8  frames of the audio the peaks were made from, as the song's table has them
 //! 16 20  how many peaks each of the five levels has (u32 each)
 //! 36  …  level 0, then 1 … 4: for each peak, for each channel, smallest then largest (i16)
 //! ```
@@ -211,13 +211,18 @@ impl PeakBuilder {
     /// Writes the peaks file whole: a temporary file beside it, then renamed into place, so
     /// a reader never finds half of one. Not synced: the file can be made again.
     pub fn write(&self, path: &Path) -> io::Result<()> {
+        self.write_as(path, self.frames)
+    }
+
+    /// As [`PeakBuilder::write`], with `frames` in the head for the frames of the audio.
+    pub fn write_as(&self, path: &Path, frames: u64) -> io::Result<()> {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
         }
         let mut bytes = Vec::new();
         bytes.extend_from_slice(MAGIC);
         bytes.extend_from_slice(&[FILE_VERSION, self.channels, 0, 0]);
-        bytes.extend_from_slice(&self.frames.to_le_bytes());
+        bytes.extend_from_slice(&frames.to_le_bytes());
         for level in 0..LEVELS {
             bytes.extend_from_slice(&self.count(level).to_le_bytes());
         }
@@ -238,8 +243,8 @@ impl PeakBuilder {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PeaksHead {
     pub channels: u8,
-    /// Frames of the audio the peaks were made from: a file of another length is not this
-    /// audio's.
+    /// Frames of the audio the peaks were made from, as the song's table has them
+    /// (`AudioSource::frames`): a file of another length is not this audio's.
     pub frames: u64,
     pub counts: [u32; LEVELS],
 }

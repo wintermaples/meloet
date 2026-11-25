@@ -37,7 +37,7 @@ pub const CACHE_LIMIT: u64 = 4 << 30;
 const TRIM_EVERY: Duration = Duration::from_secs(30);
 /// A file that is being written (`….part`) and was not touched for this long was left
 /// behind by a meloet that ended in the middle.
-const PART_LEFT: Duration = Duration::from_secs(600);
+pub(crate) const PART_LEFT: Duration = Duration::from_secs(600);
 
 /// A clip whose audio is being made, or waits to be.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -454,6 +454,7 @@ fn render_plan(
     progress: &mut dyn FnMut(u8),
     cancel: &AtomicBool,
 ) -> Result<Rendered, Box<dyn std::error::Error>> {
+    let drops = store.drops();
     let Some(mut file) = store.open(&plan.uid, plan.sample_rate) else {
         return Ok(Rendered::NoSource);
     };
@@ -504,6 +505,12 @@ fn render_plan(
         ),
     };
     match made {
+        // A file was found with other contents meanwhile: what was read may be what it
+        // held before, and is not kept.
+        Ok(()) if store.drops() != drops => {
+            out.abandon();
+            Ok(Rendered::Cancelled)
+        }
         Ok(()) => {
             out.finish()?;
             Ok(Rendered::Made)

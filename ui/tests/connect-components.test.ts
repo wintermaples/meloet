@@ -569,6 +569,16 @@ describe("status line", () => {
       false,
     ],
     [{ id: "audioNotCopied", file: "声.wav" }, "「声.wav」を入れられませんでした。作業の場所に書けません。", false],
+    [
+      { id: "audioImported", file: "ドラム.wav", track: { number: 6, name: "歌" }, tick: 4 * 7_680, count: 3, skipped: 0 },
+      "ドラム.wav を入れました（6 歌 ・ 5. 1. 0000）。",
+      false,
+    ],
+    [
+      { id: "audioImported", file: "ドラム.wav", track: { number: 6, name: "歌" }, tick: 4 * 7_680, count: 3, skipped: 2 },
+      "ドラム.wav を入れました（6 歌 ・ 5. 1. 0000）。2 個は読めませんでした。",
+      false,
+    ],
   ] as const)("知らせ %o", (message, sentence, button) => {
     show(
       StatusLine,

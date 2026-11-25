@@ -51,6 +51,8 @@ describe("t() in the language of the page", () => {
     expect(t("pr.readMove", { ticks: "+0.0000", keys: "−2" })).toBe("+0.0000 · −2 semitones");
     expect(t("arrange.readMove", { position: "3. 1. 0000", delta: "−1" })).toBe("3. 1. 0000 (−1 bar)");
     expect(t("arrange.readMove", { position: "3. 1. 0000", delta: "−1.5" })).toBe("3. 1. 0000 (−1.5 bars)");
+    expect(t("msg.audioSkipped", { skipped: 1 })).toBe("1 file could not be read.");
+    expect(t("msg.audioSkipped", { skipped: 2 })).toBe("2 files could not be read.");
   });
 
   it("the range mark and the brackets follow the language", () => {

@@ -89,6 +89,8 @@ pub struct WavFile {
     /// For the dither of 16 bits.
     seed: u32,
     bytes: Vec<u8>,
+    /// A write failed: nothing more is written, so what the file holds stays its frames.
+    failed: bool,
 }
 
 impl WavFile {
@@ -110,6 +112,7 @@ impl WavFile {
             frames: 0,
             seed: 0x9E37_79B9,
             bytes: Vec::new(),
+            failed: false,
         })
     }
 
@@ -134,8 +137,16 @@ impl WavFile {
         (self.seed >> 8) as f32 / (1u32 << 24) as f32
     }
 
+    fn check(&self) -> io::Result<()> {
+        match self.failed {
+            true => Err(io::Error::other("an earlier write of this file failed")),
+            false => Ok(()),
+        }
+    }
+
     /// `samples`: interleaved, a whole number of frames of this file's channels.
     pub fn write(&mut self, samples: &[f32]) -> io::Result<()> {
+        self.check()?;
         let mut bytes = std::mem::take(&mut self.bytes);
         bytes.clear();
         for &s in samples {
@@ -157,17 +168,22 @@ impl WavFile {
         }
         let result = self.file.write_all(&bytes);
         self.bytes = bytes;
+        self.failed = result.is_err();
         result?;
         self.frames += (samples.len() / usize::from(self.channels)) as u64;
         Ok(())
     }
 
     pub fn write_silence(&mut self, frames: u64) -> io::Result<()> {
+        self.check()?;
         let zeros = [0u8; 4_096];
         let mut left = frames * self.frame_bytes();
         while left > 0 {
             let n = left.min(zeros.len() as u64) as usize;
-            self.file.write_all(&zeros[..n])?;
+            if let Err(e) = self.file.write_all(&zeros[..n]) {
+                self.failed = true;
+                return Err(e);
+            }
             left -= n as u64;
         }
         self.frames += frames;
@@ -182,6 +198,10 @@ impl WavFile {
     /// Puts the true lengths into the head. Returns the frames of the file.
     pub fn finish(mut self) -> io::Result<u64> {
         let data = (self.frames * self.frame_bytes()) as u32;
+        if self.failed {
+            // What a write that failed part way left after the last whole frame.
+            self.file.set_len(WAV_HEAD + u64::from(data))?;
+        }
         self.file.seek(SeekFrom::Start(0))?;
         self.file.write_all(&wav_head(
             self.sample_rate,

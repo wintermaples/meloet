@@ -331,6 +331,16 @@ impl CacheWav {
     /// Puts the length into the head and gives the file its name. Not synced: the file can
     /// be made again. Returns how many frames it holds.
     pub fn finish(self) -> io::Result<u64> {
+        self.close(false)
+    }
+
+    /// As [`CacheWav::finish`], synced before it gets its name: what is found under the
+    /// name after a power cut is whole, for a file that is taken as ready when it opens.
+    pub fn finish_synced(self) -> io::Result<u64> {
+        self.close(true)
+    }
+
+    fn close(self, sync: bool) -> io::Result<u64> {
         let CacheWav {
             out,
             temp,
@@ -347,6 +357,9 @@ impl CacheWav {
         {
             file.seek(SeekFrom::Start(0))?;
             file.write_all(&float_head(sample_rate, channels, data))?;
+        }
+        if sync {
+            file.sync_data()?;
         }
         drop(file);
         std::fs::rename(&temp, &path)?;

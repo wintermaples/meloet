@@ -547,10 +547,10 @@ impl Work {
         let cache = match need.cache_rate {
             Some(rate) => {
                 let path = (self.store.cache_path(&source.uid, rate)).ok_or("no cache folder")?;
-                let wav =
-                    CacheWav::create(&path, rate, source.channels).map_err(|e| e.to_string())?;
                 let resample = Resample::new(decoder.sample_rate(), rate, source.channels)
                     .map_err(|e| e.to_string())?;
+                let wav =
+                    CacheWav::create(&path, rate, source.channels).map_err(|e| e.to_string())?;
                 Some((resample, wav))
             }
             None => None,
@@ -633,14 +633,20 @@ impl Work {
                 wav.abandon();
                 return Err(e.to_string());
             }
-            wav.finish().map_err(|e| e.to_string())?;
+            wav.finish_synced().map_err(|e| e.to_string())?;
             self.store.file_arrived();
         }
         if let Some(peaks) = job.peaks {
             self.peaks_made.insert(uid);
             if let Some(path) = self.store.peaks_path(&uid) {
                 let peaks = peaks.lock().unwrap_or_else(|e| e.into_inner());
-                peaks.write(&path).map_err(|e| e.to_string())?;
+                // The length the song has for the file, which `watch` looks for: a file
+                // whose head says more than it holds decodes to fewer frames.
+                let frames = job.need.source.frames;
+                // The file plays all the same; only its wave is not drawn.
+                if let Err(e) = peaks.write_as(&path, frames) {
+                    eprintln!("meloet: the peaks of an audio file were not kept: {e}");
+                }
             }
         }
         Ok(())

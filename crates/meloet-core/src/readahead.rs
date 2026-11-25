@@ -24,7 +24,10 @@
 //! a gap, and the engine does nothing.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering::Relaxed};
+use std::sync::atomic::{
+    AtomicBool, AtomicU64,
+    Ordering::{Relaxed, SeqCst},
+};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -358,15 +361,24 @@ impl Fed {
         let at = match self.files.iter().position(|(k, _)| *k == key) {
             Some(at) => at,
             None => {
-                let file = match &key.1 {
-                    Some(made) => store.open_made(made, self.sample_rate),
-                    None => store.open(&key.0, self.sample_rate),
+                let rate = self.sample_rate;
+                let open = || match &key.1 {
+                    Some(made) => store.open_made(made, rate),
+                    None => store.open(&key.0, rate),
                 };
+                let seen = store.generation();
+                let mut file = open();
                 if file.is_none() {
-                    stats.unopened.fetch_or(seat_bit(self.seat), Relaxed);
-                    if key.1.is_some() {
-                        stats.made_lost.store(true, Relaxed);
+                    stats.unopened.fetch_or(seat_bit(self.seat), SeqCst);
+                    // The file may have come between the open and the mark, and the core
+                    // may have looked at the marks in between: it would not tell this
+                    // thread to ask again.
+                    if store.generation() != seen {
+                        file = open();
                     }
+                }
+                if file.is_none() && key.1.is_some() {
+                    stats.made_lost.store(true, Relaxed);
                 }
                 self.files.push((key, file));
                 self.files.len() - 1

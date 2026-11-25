@@ -362,6 +362,7 @@ impl Engine {
                         self.stamp_played(MidiIn { event, t_us }, timing, u64::MAX);
                     }
                 }
+                self.hand.keys = 0;
             }
             (true, true) => {
                 if old.hold && !set.hold {

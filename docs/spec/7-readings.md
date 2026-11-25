@@ -418,6 +418,7 @@ In the "Basis" column: "spec 3" is chapter 3 of this spec; "mock Main" is a mock
 | Two keyboards with faders | Their fader values are not kept apart; picking up is shared. | the developers' provisional form |
 | Picking up on a track with automation | The fader is compared with the volume set by hand, not with the value the automation plays. | the developers' provisional form |
 | The second and later ports of a device | Every port after the lowest one is a button port, also on a sound card with two MIDI inputs: notes 86–100 there work as buttons, other notes are not used (before round 10 those ports were not read at all). | the developers' reading |
+| A keyboard pulled out while the song plays | Only what the keyboards held is let go: their keys and their pedal on the track the keys sound on, with the bend and the modulation back to rest. The song's own notes keep sounding, on that track and on every other. | the owner's decision, 2026-11-25 |
 
 ## A-27 Details of the round 10 mocks (round 10)
 

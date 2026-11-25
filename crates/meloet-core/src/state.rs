@@ -504,7 +504,8 @@ pub enum Effect {
     CloseOutput,
     /// Play the test tone on the open stream.
     TestTone,
-    /// Release every sounding note and forget the held keys.
+    /// The keyboards are gone: let go of what they held and forget the held keys. The song's
+    /// notes keep sounding.
     AllNotesOff,
     SaveSettings(Box<Settings>),
     /// Keep the song files opened or saved lately (`crate::recent`) in the state folder.

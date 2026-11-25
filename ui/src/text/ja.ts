@@ -561,6 +561,14 @@ export const texts = {
   "songDialog.unsaved": e("保存していない変更", "spec:3"),
   "songDialog.cannotSave": e("保存できませんでした", "spec:3"),
   "songDialog.broken": e("ひらけない曲", "spec:3"),
+  // Asked right after 「戻さない」 (spec 3 has no text; the name is the term of spec 5).
+  "songDialog.deleteRecovery": e("なおすためのファイル", "builder:2026-11-25"),
+  "msg.deleteRecoveryFile": e(
+    "なおすためのファイルも消しますか？ 消すと、meloet が急に止まったあとに、すてた変更は戻りません。",
+    "builder:2026-11-25",
+  ),
+  "button.deleteRecoveryFile": e("消す", "builder:2026-11-25"),
+  "button.keepRecoveryFile": e("残す", "builder:2026-11-25"),
   // 「音の設定をひらいています」 is status.settingsOpen.
   "status.dialogOpen": s6(
     "Dialog is open",

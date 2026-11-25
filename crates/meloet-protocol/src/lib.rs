@@ -96,7 +96,7 @@ pub use vocal::{
     VocalRecordingView, VocalRef,
 };
 
-pub const PROTOCOL_VERSION: u32 = 38;
+pub const PROTOCOL_VERSION: u32 = 39;
 
 /// Screen → Rust. Intent only; Rust decides what the state becomes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -2104,6 +2104,10 @@ pub enum SongAnswer {
     ChooseLocation,
     /// "1 つ前を開く" (`Broken` with `previous`).
     OpenPrevious,
+    /// "消す" (`DeleteRecovery`): the recovery file goes.
+    Delete,
+    /// "残す" (`DeleteRecovery`): the recovery file stays, as with Esc.
+    Keep,
     /// "やめる" (every dialog).
     Cancel,
 }
@@ -2990,6 +2994,8 @@ pub enum SongDialogKind {
     CannotSave,
     /// "1 つ前を開く / やめる", or "やめる" alone.
     Broken,
+    /// "残す / 消す", right after "戻さない": whether the recovery file goes too.
+    DeleteRecovery,
 }
 
 /// Heights are px at 100 %; the screen multiplies by the scale. `lower` is top to bottom.
@@ -4319,3 +4325,5 @@ mod tests36;
 mod tests37;
 #[cfg(test)]
 mod tests38;
+#[cfg(test)]
+mod tests39;

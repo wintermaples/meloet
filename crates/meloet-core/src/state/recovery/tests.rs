@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use meloet_model::{Song, StepKind};
 use meloet_protocol::{
-    Command, Hint, RecoveryCause, RecoveryView, SongAnswer, SongFile, StatusMessage,
+    Command, Hint, RecoveryCause, RecoveryView, SongAnswer, SongDialogKind, SongFile, StatusMessage,
 };
 
 use super::QUIET_US;
@@ -74,6 +74,25 @@ fn assert_saved(m: &Model, saved: &Song) {
 
 fn recovery_view(m: &Model) -> Option<RecoveryView> {
     m.view().workspace.recovery
+}
+
+/// A button of the song dialog up now.
+fn answer(m: &mut Model, answer: SongAnswer) -> Vec<Effect> {
+    let dialog = m.view().workspace.song_dialog.expect("a song dialog").id;
+    cmd(m, Command::AnswerSongDialog { dialog, answer })
+}
+
+/// Writes and removes the recovery file in `dir` as the writer thread does.
+fn on_disk(dir: &Path, effects: &[Effect]) {
+    for effect in effects {
+        match effect {
+            Effect::WriteRecovery {
+                song, path, cause, ..
+            } => recovery::write(dir, &recovery::encode(song, path.as_deref(), *cause, 1)).unwrap(),
+            Effect::RemoveRecovery => recovery::remove(dir).unwrap(),
+            _ => {}
+        }
+    }
 }
 
 /// Saves the way the core thread does; returns the effects that came after.
@@ -426,7 +445,13 @@ fn dont_restore_is_the_second_step_and_undo_goes_back_through_both() {
     let m = &mut m;
 
     let effects = cmd(m, Command::DiscardRecovered);
-    assert_eq!(removes(&effects), 0, "the file stays until the next save");
+    assert_eq!(removes(&effects), 0, "asked first");
+    let effects = answer(m, SongAnswer::Keep);
+    assert_eq!(
+        removes(&effects),
+        0,
+        "「残す」: the file stays until the next save"
+    );
     assert_saved(m, &saved);
     assert_eq!(file(m), SongFile::Saved);
     assert_eq!(recovery_view(m), None);
@@ -475,6 +500,77 @@ fn dont_restore_is_the_second_step_and_undo_goes_back_through_both() {
     // Saved again: the file has the song brought back.
     save(m, &songs);
     assert_eq!(songfile::read(&path).unwrap(), changed);
+    let _ = (fs::remove_dir_all(dir), fs::remove_dir_all(songs));
+}
+
+#[test]
+fn dont_restore_asks_whether_the_file_goes_too() {
+    let (dir, songs) = (
+        temp_dir("recovery-delete"),
+        temp_dir("recovery-delete-songs"),
+    );
+    let (saved, changed, _) = saved_then_changed(&dir, &songs);
+    let (mut m, _) = start_from(&dir);
+    let m = &mut m;
+
+    let effects = at(m, 1_000_000, Input::Command(Command::DiscardRecovered));
+    assert_eq!(removes(&effects), 0);
+    let d = m.view().workspace.song_dialog.expect("asked");
+    assert_eq!(
+        (d.kind, d.title.as_str()),
+        (SongDialogKind::DeleteRecovery, "はじめての曲")
+    );
+    assert_eq!(m.view().song.undo_count, 2, "the question is not a step");
+    // A button this dialog does not have does nothing.
+    answer(m, SongAnswer::Save);
+    assert_eq!(m.view().workspace.song_dialog, Some(d.clone()));
+
+    let effects = at(
+        m,
+        1_000_001,
+        Input::Command(Command::AnswerSongDialog {
+            dialog: d.id,
+            answer: SongAnswer::Delete,
+        }),
+    );
+    assert_eq!(removes(&effects), 1);
+    on_disk(&dir, &effects);
+    assert!(!dir.join(recovery::FILE_NAME).exists());
+    assert_eq!(m.view().workspace.song_dialog, None);
+    assert_eq!(status(m), Some(StatusMessage::RecoveryDiscarded));
+    assert_eq!(m.view().song.undo_count, 2);
+    assert_saved(m, &saved);
+    on_disk(&dir, &tick(m, 60_000_000));
+    assert!(
+        recovery_start(&dir, meloet_model::Language::Ja).is_none(),
+        "a start after a crash finds nothing"
+    );
+
+    // Undo still brings the changes back, unsaved, and they are written again.
+    at(m, 70_000_000, Input::Command(Command::Undo));
+    assert_eq!(song(m), changed);
+    assert_eq!(file(m), SongFile::Changed);
+    assert!(writes(&tick(m, 70_000_000 + QUIET_US - 1)).is_empty());
+    let effects = tick(m, 70_000_000 + QUIET_US);
+    assert_eq!(writes(&effects), [(140.0, RecoveryCause::Sudden, false)]);
+    on_disk(&dir, &effects);
+    let (again, _) = start_from(&dir);
+    assert_eq!(song(&again), changed);
+    let _ = (fs::remove_dir_all(dir), fs::remove_dir_all(songs));
+}
+
+#[test]
+fn esc_on_the_question_keeps_the_file() {
+    let (dir, songs) = (temp_dir("recovery-keep"), temp_dir("recovery-keep-songs"));
+    saved_then_changed(&dir, &songs);
+    let (mut m, _) = start_from(&dir);
+    let m = &mut m;
+    cmd(m, Command::DiscardRecovered);
+    let effects = cmd(m, Command::Back);
+    assert_eq!(removes(&effects), 0);
+    assert_eq!(m.view().workspace.song_dialog, None);
+    assert_eq!(status(m), Some(StatusMessage::RecoveryDiscarded));
+    assert!(dir.join(recovery::FILE_NAME).exists());
     let _ = (fs::remove_dir_all(dir), fs::remove_dir_all(songs));
 }
 

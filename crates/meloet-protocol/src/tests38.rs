@@ -14,11 +14,6 @@ where
 }
 
 #[test]
-fn the_version() {
-    assert_eq!(PROTOCOL_VERSION, 38);
-}
-
-#[test]
 fn the_messages() {
     both_ways(
         StatusMessage::VocalsNotRecorded { keys: true },

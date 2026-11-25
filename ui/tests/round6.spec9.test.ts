@@ -93,6 +93,7 @@ describe("status line (spec 6 text of version 9)", () => {
       ["unsaved", "「保存していない変更」のダイアログをひらいています"],
       ["cannotSave", "「保存できませんでした」のダイアログをひらいています"],
       ["broken", "「ひらけない曲」のダイアログをひらいています"],
+      ["deleteRecovery", "「なおすためのファイル」のダイアログをひらいています"],
     ] as const) {
       show(scene(name), StatusLine);
       expect(text(q(".message"))).toBe(said);

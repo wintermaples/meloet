@@ -742,6 +742,112 @@ fn closing_while_a_save_is_written_closes_once_it_has_answered() {
 }
 
 #[test]
+fn closing_while_an_open_or_a_window_waits_closes_once_it_has_answered() {
+    // The open window: the close comes before the song picked there, or when it is put away.
+    for picked in [true, false] {
+        let w = &mut World::new("flow-close-open-window");
+        let path = write_two_versions(&w.songs);
+        let m = &mut ready();
+        assert!(cmd(m, Command::OpenSong).contains(&Effect::PickSongFile));
+        w.input(m, Input::CloseRequested);
+        w.cmd(m, Command::Quit);
+        assert!(!w.exited);
+        let effects = w.input(m, Input::SongFilePicked(picked.then_some(path)));
+        assert!(w.exited, "{picked}");
+        assert!(!effects.iter().any(|e| matches!(e, Effect::ReadSong { .. })));
+        assert_eq!(m.song_path(), None);
+    }
+
+    // The song being read: it is taken, then the close goes on.
+    let w = &mut World::new("flow-close-reading");
+    let path = write_two_versions(&w.songs);
+    let m = &mut ready();
+    cmd(m, Command::OpenSong);
+    let effects = m.handle(Input::SongFilePicked(Some(path.clone())));
+    assert!(effects.contains(&Effect::ReadSong {
+        path: path.clone(),
+        previous: false
+    }));
+    w.input(m, Input::CloseRequested);
+    assert!(!w.exited);
+    w.input(m, read_song(path.clone(), false));
+    assert_eq!(m.song_path(), Some(path.as_path()));
+    assert!(w.exited);
+
+    // A file that does not read says so first, and the close is not kept past it.
+    let w = &mut World::new("flow-close-reading-broken");
+    let path = w.songs.join("x.meloet");
+    fs::write(&path, b"[]").unwrap();
+    let m = &mut ready();
+    cmd(m, Command::OpenSong);
+    m.handle(Input::SongFilePicked(Some(path.clone())));
+    w.input(m, Input::CloseRequested);
+    w.input(m, read_song(path, false));
+    assert!(!w.exited);
+    assert_eq!(kind(m), Some(SongDialogKind::Broken));
+    w.answer(m, SongAnswer::Cancel);
+    assert!(!w.exited);
+
+    // The folder window after 「保存できない」: the save picked there goes first.
+    let w = &mut World::new("flow-close-folder");
+    let other = temp_dir("flow-close-folder-other");
+    let m = &mut ready();
+    let _ = start_saving(m);
+    m.handle(Input::SongNotSaved);
+    let id = dialog(m).unwrap().id;
+    let effects = cmd(
+        m,
+        Command::AnswerSongDialog {
+            dialog: id,
+            answer: SongAnswer::ChooseLocation,
+        },
+    );
+    assert!(effects.contains(&Effect::PickFolder));
+    w.input(m, Input::CloseRequested);
+    assert!(!w.exited);
+    w.input(m, Input::FolderPicked(Some(other.clone())));
+    assert!(w.exited);
+    assert!(other.join("はじめての曲/はじめての曲.meloet").exists());
+    let _ = fs::remove_dir_all(other);
+
+    // Put away: 「保存できない」 again, before the close.
+    let w = &mut World::new("flow-close-folder-away");
+    let m = &mut ready();
+    let _ = start_saving(m);
+    m.handle(Input::SongNotSaved);
+    let id = dialog(m).unwrap().id;
+    cmd(
+        m,
+        Command::AnswerSongDialog {
+            dialog: id,
+            answer: SongAnswer::ChooseLocation,
+        },
+    );
+    w.input(m, Input::CloseRequested);
+    w.input(m, Input::FolderPicked(None));
+    assert!(!w.exited);
+    assert_eq!(kind(m), Some(SongDialogKind::CannotSave));
+
+    // The save window: the song is saved where picked, then the close goes on; put away, the
+    // close goes on at once.
+    for picked in [true, false] {
+        let w = &mut World::new("flow-close-save-as");
+        let m = &mut ready();
+        assert!(
+            cmd(m, Command::SaveSongAs)
+                .iter()
+                .any(|e| matches!(e, Effect::PickSaveAs { .. }))
+        );
+        w.input(m, Input::CloseRequested);
+        assert!(!w.exited);
+        let to = w.songs.join("夏の曲");
+        w.input(m, Input::SaveAsPicked(picked.then(|| to.clone())));
+        assert!(w.exited, "{picked}");
+        assert_eq!(to.join("夏の曲.meloet").exists(), picked);
+    }
+}
+
+#[test]
 fn a_keyboard_fader_step_still_waiting_goes_with_the_song_it_was_for() {
     let w = &mut World::new("flow-fader");
     let m = &mut ready();

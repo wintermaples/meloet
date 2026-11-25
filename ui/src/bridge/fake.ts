@@ -1423,6 +1423,17 @@ export const SCENES: Record<string, SceneDef> = {
     bands: ["history"],
     meters: QUIET,
   },
+  // Not from a mock: right after 「戻さない」, whether the recovery file goes too (builder:2026-11-25).
+  deleteRecovery: {
+    setup(s) {
+      changedSong(s);
+      s.song.undoCount = 2;
+      s.song.file = "saved";
+      s.status.message = { id: "recoveryDiscarded" };
+      s.workspace.songDialog = { id: 1, kind: "deleteRecovery", title: "はじめての曲", previous: false };
+    },
+    meters: QUIET,
+  },
   // The mock F-Recover3: the recovery file did not read; the song last saved is open.
   recover3: {
     setup(s) {
@@ -5942,7 +5953,10 @@ function reduce(state: AppState, bands: FakeBands, rest: StatusMessage | null, s
       else if (!ws.recovery) ws.hint = null;
       break;
     case "discardRecovered":
-      if (ws.recovery?.kind === "recovered") ws.recovery = null;
+      if (ws.recovery?.kind === "recovered") {
+        ws.recovery = null;
+        ws.songDialog = { id: 1, kind: "deleteRecovery", title: state.song.name, previous: false };
+      }
       break;
     // The fake scans nothing: a retry stays 「ためしています…」, and 「場所を足す…」 and 「もう一度スキャン」 do nothing.
     case "openScanStopped":

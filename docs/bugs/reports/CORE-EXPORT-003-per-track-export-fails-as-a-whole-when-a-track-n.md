@@ -4,7 +4,7 @@ title: Per-track export fails as a whole when a track name is longer than a file
 area: CORE-EXPORT
 kind: bug
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -49,4 +49,6 @@ Fix plan: `crates/meloet-core/src/export/job.rs` `free_name`: cut `clean` at a c
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`crates/meloet-core/src/export/job.rs`: a shared helper `cut_name(name: &str) -> &str` with `NAME_BYTES = 200` (cut on a character boundary, no space or dot left at the end); `free_name` cuts the cleaned track name with it before the " 2" number and the ending are added, so the name stays within 255 bytes and names still differ. Audio and MIDI 「トラックごと」 (and the AI link's file list, `state/ai.rs`) all use `free_name`.
+
+Test: `export::job::tests::a_track_name_too_long_for_a_file_name_is_cut_between_characters` (`export/job/tests.rs`).

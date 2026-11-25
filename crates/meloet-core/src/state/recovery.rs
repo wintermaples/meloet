@@ -206,7 +206,8 @@ impl Model {
             self.recovery.changed_at_us = Some(self.now_us);
         }
         let busy = self.play.busy();
-        let started = busy && !std::mem::replace(&mut self.recovery.was_busy, busy);
+        let was_busy = std::mem::replace(&mut self.recovery.was_busy, busy);
+        let started = busy && !was_busy;
         if busy {
             // A recording starts over a change that still waits: the song is written now.
             // The voice recorded from here on is placed on this song, and a start after

@@ -4,7 +4,7 @@ title: The shell's own zoom subscription counts as the screen's greeting, so the
 area: EDGE
 kind: bug
 severity: medium
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -52,4 +52,6 @@ Fix plan: `crates/meloet-core/src/service.rs`: a second method (for example `Cor
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`crates/meloet-core/src/service.rs`: a new `Core::listen(messages)` that only adds the sink (`hub.subscribe` with a telemetry sink that says no) and sends no `Msg::ScreenReady`. `crates/meloet-app/src/core_handle.rs` (`CoreHandle::listen`) and `crates/meloet-app/src/main.rs` `follow_scale` use it; the page's `subscribe` command keeps `Core::subscribe`. `docs/architecture.md` 20-10 says the shell's own listening does not count.
+
+Test: `service::shell_tests::the_shells_own_listening_is_not_the_screens_greeting` (`service/shell_tests.rs`: with `wait_for_screen` and a song handed over, `listen` leaves the scan held and the song not opened; `subscribe` starts both). Not checked by hand under VS Code's 「meloet（デバッグ）」 (the fixer did not start the app).

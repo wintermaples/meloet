@@ -53,6 +53,8 @@ pub(super) struct Files {
     waiting: Option<Waiting>,
     /// Asked to close while recording: once the take is in the song.
     close_when_recorded: bool,
+    /// Asked to close while a save is written: once it has answered.
+    close_when_saved: bool,
     exiting: bool,
     /// The name typed in the save window, for the save that goes on from there (also after
     /// "保存できない" and a folder picked).
@@ -393,16 +395,25 @@ impl Model {
                 self.recovery_done(effects);
                 // What was changed while the save went on is not in the file.
                 self.recovery_changed_again();
-                self.then(then, effects);
+                if std::mem::take(&mut self.files.close_when_saved) && then != Then::Close {
+                    self.close_requested(effects);
+                } else {
+                    self.then(then, effects);
+                }
             }
             (Input::SongNotSaved, Some(Waiting::Save(then))) => {
                 self.files.waiting = None;
                 self.play.not_saved();
+                let close = std::mem::take(&mut self.files.close_when_saved);
                 match self.files.ai.take() {
                     Some(ticket) => {
                         let why = "the song could not be written there".to_owned();
                         self.ai_ended(ticket, AiOutcome::Failed(why));
+                        if close {
+                            self.close_requested(effects);
+                        }
                     }
+                    // 「保存できない」 comes before a close asked meanwhile.
                     None => self.put_up(SongDialogKind::CannotSave, then, None),
                 }
             }
@@ -452,6 +463,9 @@ impl Model {
     }
 
     pub(super) fn close_requested(&mut self, effects: &mut Vec<Effect>) {
+        if self.saving() && !self.files.exiting {
+            self.files.close_when_saved = true;
+        }
         if self.files.exiting || self.files.waiting.is_some() {
             return;
         }
@@ -536,6 +550,8 @@ impl Model {
     /// `unsaved`: the song does not match its file.
     pub(super) fn replace_song(&mut self, song: Song, unsaved: bool, effects: &mut Vec<Effect>) {
         self.play.replace_song(song, unsaved, effects);
+        // A keyboard fader's level that waits to become a step goes with the song it was for.
+        self.fader = Default::default();
         self.buffer_unsaid = true;
         self.new_song_unsaid = false;
     }

@@ -4,7 +4,7 @@ title: mp3 export check says the file does not clip when 32-bit was chosen for w
 area: CORE-EXPORT
 kind: bug
 severity: medium
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -54,4 +54,6 @@ Fix plan: `crates/meloet-core/src/export.rs` `check`: `let floats = self.format 
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`crates/meloet-core/src/export.rs` `check`: the bits count as floats only when the format takes 32 bits (`self.bits == Bits32 && self.format.bits_choices().contains(&Bits32)`), so an mp3 with over > 0 clips whatever bits were kept for wav. The other readers of `self.bits` were looked at: the job's target and the done view carry the bits, but the mp3 sink does not read them and the done view shows the bitrate for mp3. `docs/architecture.md` 23-7 and 23-8 say "a 32-bit wav".
+
+Test: `export::tests::an_mp3_clips_whatever_bits_were_kept_for_wav` (`export/tests.rs`).

@@ -890,6 +890,12 @@ impl Core {
         let _ = self.tx.send(Msg::ScreenReady);
     }
 
+    /// As [`Core::subscribe`] for the shell's own use: the patches only, and the screen does
+    /// not count as up for it.
+    pub fn listen(&self, messages: MessageSink) {
+        self.hub.subscribe(messages, Box::new(|_| false));
+    }
+
     /// Stops every thread, closes the stream, and writes what is left to write. Dropping the
     /// core does the same.
     pub fn stop(&self) {
@@ -3227,13 +3233,13 @@ impl Worker {
                         }
                     }
                     Effect::PickFolder => {
-                        let folder = self.start_folder();
+                        let folder = self.place_folder();
                         if !self.ask_shell(ShellRequest::PickFolder { folder }) {
                             inputs.push_back(Input::FolderPicked(None));
                         }
                     }
                     Effect::PickSaveAs { name } => {
-                        let folder = self.start_folder();
+                        let folder = self.place_folder();
                         if !self.ask_shell(ShellRequest::PickSaveAs { folder, name }) {
                             inputs.push_back(Input::SaveAsPicked(None));
                         }
@@ -3797,13 +3803,26 @@ impl Worker {
 
     /// The folder of the song file in use, or else the songs folder.
     fn start_folder(&self) -> Option<PathBuf> {
-        self.model
-            .song_path()
-            .and_then(|p| p.parent())
-            .map(PathBuf::from)
-            .or_else(|| self.songs_dir.clone())
-            .filter(|d| d.is_dir())
+        let song_folder = self.model.song_path().and_then(Path::parent);
+        first_folder(song_folder, self.songs_dir.as_deref())
     }
+
+    /// For a window whose save makes a new song folder in the place picked: the folder that
+    /// holds the song's folder, or else the songs folder.
+    fn place_folder(&self) -> Option<PathBuf> {
+        let song_folder = self.model.song_path().and_then(Path::parent);
+        first_folder(
+            song_folder.and_then(Path::parent),
+            self.songs_dir.as_deref(),
+        )
+    }
+}
+
+/// `folder` when it is there, or else the songs folder when that is there.
+fn first_folder(folder: Option<&Path>, songs_dir: Option<&Path>) -> Option<PathBuf> {
+    (folder.filter(|d| d.is_dir()))
+        .or(songs_dir.filter(|d| d.is_dir()))
+        .map(Path::to_path_buf)
 }
 
 /// The song with `state` as the state of the plugin at `place`: what a save writes. The
@@ -4222,6 +4241,8 @@ mod input;
 mod keys;
 #[cfg(test)]
 mod plug_tests;
+#[cfg(test)]
+mod shell_tests;
 #[cfg(test)]
 mod tests;
 mod typed;

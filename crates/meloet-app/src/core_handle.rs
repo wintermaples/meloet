@@ -23,6 +23,10 @@ pub trait CoreHandle: Send + Sync + 'static {
     /// `subscribe` returns misses nothing.
     fn subscribe(&self, messages: MessageSink, telemetry: TelemetrySink);
 
+    /// As `subscribe`, for the shell's own use: the patches only, and the screen does not
+    /// count as up for it.
+    fn listen(&self, messages: MessageSink);
+
     /// The take binary of a take in the song now.
     fn take_notes(&self, id: u32) -> Option<Vec<u8>>;
 
@@ -112,6 +116,10 @@ impl CoreHandle for meloet_core::Core {
 
     fn subscribe(&self, messages: MessageSink, telemetry: TelemetrySink) {
         meloet_core::Core::subscribe(self, messages, telemetry);
+    }
+
+    fn listen(&self, messages: MessageSink) {
+        meloet_core::Core::listen(self, messages);
     }
 
     fn take_notes(&self, id: u32) -> Option<Vec<u8>> {

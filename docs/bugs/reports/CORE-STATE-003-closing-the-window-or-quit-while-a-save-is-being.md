@@ -4,7 +4,7 @@ title: Closing the window or Quit while a save is being written is dropped witho
 area: CORE-STATE
 kind: ui-ux
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -48,4 +48,6 @@ Fix plan: `crates/meloet-core/src/state/songs.rs`: in `close_requested`, when so
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`crates/meloet-core/src/state/songs.rs`: a new flag `Files::close_when_saved`, set by `close_requested` while a save is being written. When the save answers (`SongSaved`), the close is done then (it comes before a new song or an open that was to follow the save; a close that was what followed already just ends). After `SongNotSaved` 「保存できない」 comes first and the flag is dropped (for a save of the AI link, which puts up no dialog, the close goes on). No new wording. `docs/architecture.md` 14 (Flow) says so.
+
+Test: `state::songs::tests::closing_while_a_save_is_written_closes_once_it_has_answered` (`state/songs/tests.rs`: close and Quit during the save, then the answer ends meloet; a change made during the save is asked about; a failed save shows 「保存できない」 and the close is not kept past it).

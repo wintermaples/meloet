@@ -177,6 +177,32 @@ fn nothing_is_written_while_recording_and_the_take_is_written_after() {
 }
 
 #[test]
+fn every_recording_over_a_waiting_change_writes_it_first() {
+    let m = &mut ready();
+    cmd(m, Command::SetCountIn { bars: 0 });
+    at(m, 1_000_000, Input::Command(Command::Record));
+    started(m);
+    m.set_now(1_100_000, None);
+    cmd(m, Command::Record);
+    report(
+        m,
+        RecordReport::Stopped {
+            t_us: 1_100_000,
+            tick: 400.0,
+            lap: 0,
+        },
+    );
+    assert!(!m.play.busy());
+    at(
+        m,
+        2_000_000,
+        Input::Command(Command::SetTempo { bpm: 100.0 }),
+    );
+    let record = at(m, 2_500_000, Input::Command(Command::Record));
+    assert_eq!(writes(&record), [(100.0, RecoveryCause::Sudden, false)]);
+}
+
+#[test]
 fn saving_removes_the_file_and_so_does_closing_without_saving() {
     let songs = temp_dir("recovery-save");
     let m = &mut ready();

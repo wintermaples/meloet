@@ -274,3 +274,5 @@ export { MUTE_SET_NAME_MAX, MUTE_SETS_MAX } from "./generated/muteSets";
 export type { ExportMidiProblem } from "./generated/ExportMidiProblem";
 export type { ExportMidiTrack } from "./generated/ExportMidiTrack";
 export type { ExportMidiTracks } from "./generated/ExportMidiTracks";
+// Protocol 39 (the owner, 2026-11-25): the export dialog asks before it writes over files that are there already.
+export type { ExportReplace } from "./generated/ExportReplace";

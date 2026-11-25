@@ -53,6 +53,7 @@ fn dialog() -> ExportDialogView {
         realtime: false,
         realtime_forced: false,
         can_export: true,
+        replace: None,
         loudness: ExportLoudness::Match,
         can_match: true,
         loudness_result: Some(ExportLoudnessResult {
@@ -123,6 +124,7 @@ fn the_dialog_json_shape() {
             "realtime": false,
             "realtimeForced": false,
             "canExport": true,
+            "replace": null,
             "loudness": "match",
             "canMatch": true,
             "loudnessResult": {"gainDb": 4.5, "limited": false, "lufs": -14.0},

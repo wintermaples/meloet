@@ -85,6 +85,9 @@ pub struct ExportDialogView {
     /// 「書き出す」 can be pressed. Under `ExportFormat::Midi` the check is not waited for
     /// (nothing is measured), and it is false while `midi_problem` is `Some`.
     pub can_export: bool,
+    /// Protocol 39: 「書き出す」 found files of this export there already, and asks before
+    /// writing over them. `None`: no question.
+    pub replace: Option<ExportReplace>,
     /// F1 「音の大きさ」. Kept as long as the format is.
     pub loudness: ExportLoudness,
     /// F1 「公開先に合わせる」 can be chosen: not for 「トラックごと」, nor for a song whose
@@ -129,6 +132,22 @@ pub struct ExportDialogView {
     /// Why the choice of 「入れるトラック」 cannot be written, in `color.rec`. While `Some`,
     /// `can_export` is false. Only under `ExportFormat::Midi`.
     pub midi_problem: Option<ExportMidiProblem>,
+}
+
+/// The question of `ExportDialogView::replace`, in `color.rec` in the place of the check (for
+/// MIDI, where the check would be), with 「このまま書き出す」: 「「はじめての曲.wav」はもう
+/// あります。上書きします。」, or for two or more files 「同じ名前のファイルが 3 個もうあります。
+/// 上書きします。」. `Command::StartExport` writes over them; `Command::CloseExport` and any
+/// `Command::SetExport` or `Command::ChooseExportPlace` take the question away and leave the
+/// dialog open. A file the PC's save window has just asked about is not asked about again.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct ExportReplace {
+    /// How many of the files are there already: 1 or more.
+    pub count: u32,
+    /// The first of them, without its folder.
+    pub file: String,
 }
 
 /// F1 「音の大きさ」.

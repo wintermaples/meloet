@@ -408,6 +408,9 @@ fn export_writes_one_file_of_the_tracks_taken_at_once() {
             range: ExportRange::Loop,
         },
     );
+    // The file is there now: 「書き出す」 asks first, and pressed again writes over it.
+    assert!(asks(cmd(&mut m, Command::StartExport)).is_empty());
+    assert!(dialog(&m).replace.is_some());
     let (job, files) = started(&mut m);
     let run = written(&mut m, job, &files);
     assert!(

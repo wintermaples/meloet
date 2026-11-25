@@ -1572,6 +1572,12 @@ export const enTexts: Record<TextKey, EnText> = {
   "export.midiNoSuchTrack": "There is no track {number}",
   "export.midiUnreadable": "Write the numbers like “1-3, 5”",
   "export.midiNoTrack": "No track to include",
+  "export.replaceOne": "“{file}” is already there. It will be replaced.",
+  "export.replaceMany": n(
+    "count",
+    "{count} file with the same name is already there. It will be replaced.",
+    "{count} files with the same names are already there. They will be replaced.",
+  ),
   "msg.exportedMidi": n("tracks", "Exported {file} (MIDI · {tracks} track).", "Exported {file} (MIDI · {tracks} tracks)."),
   "msg.exportedMidiFiles": n("count", "Exported {count} file (MIDI).", "Exported {count} files (MIDI)."),
   "exported.title": "Exported",

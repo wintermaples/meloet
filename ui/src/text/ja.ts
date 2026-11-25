@@ -2963,6 +2963,10 @@ export const texts = {
   "export.midiNoSuchTrack": e("{number} 番のトラックはありません", "builder:2026-11-24", { number: "8" }),
   "export.midiUnreadable": e("番号は「1-3, 5」のように書きます", "builder:2026-11-24"),
   "export.midiNoTrack": e("入れるトラックがありません", "builder:2026-11-24"),
+  // 「書き出す」 asks before it writes over files that are there already (the owner, 2026-11-25), from 「「{name}」はもうあります」 and 「上書き」.
+  // One file by its name; two or more (「トラックごと」) by their count.
+  "export.replaceOne": e("「{file}」はもうあります。上書きします。", "builder:2026-11-25", { file: "はじめての曲.wav" }),
+  "export.replaceMany": e("同じ名前のファイルが {count} 個もうあります。上書きします。", "builder:2026-11-25", { count: "3" }),
   "msg.exportedMidi": e("{file} を書き出しました（MIDI ・ {tracks} トラック）。", "builder:2026-11-24", { file: "はじめての曲.mid", tracks: "3" }),
   "msg.exportedMidiFiles": e("{count} つのファイルを書き出しました（MIDI）。", "builder:2026-11-24", { count: "3" }),
   // The dialog 「書き出しました」 when an export ends (round 12 E9). 「フォルダをひらく」 and 「閉じる」 are button.openFolder and button.close.

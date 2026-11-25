@@ -134,6 +134,12 @@ impl Worker {
             ExportAsk::WriteMidi { job, files } => {
                 Some(Input::Export(crate::export::midi::write(job, &files)))
             }
+            ExportAsk::Remove { files } => {
+                for file in files {
+                    let _ = std::fs::remove_file(file);
+                }
+                None
+            }
         }
     }
 

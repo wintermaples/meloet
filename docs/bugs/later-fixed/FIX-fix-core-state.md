@@ -1,4 +1,4 @@
-# fix-core-state — seen while fixing, not fixed
+# FIX-fix-core-state — fixed in the second pass (2026-11-25)
 
 - crates/meloet-core/src/songfile.rs `folder_name` — a song's folder and file name come from the song's name with no byte limit; a song name over about 80 Japanese characters makes the first save and 「名前をつけて保存…」 fail (ENAMETOOLONG), the same fault as CORE-EXPORT-003. `export::job::cut_name` could be used there.
 - crates/meloet-core/src/export.rs — the export still writes over a file there without a question when 「えらぶ…」 was never used (the default place and the song's name), when the format is changed after a place was picked (asked about `.wav`, writes over `.flac`), and when the file comes between picking and 「書き出す」. Asking at 「書き出す」 would need new wording.

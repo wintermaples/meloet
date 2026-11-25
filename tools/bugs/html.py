@@ -2,7 +2,7 @@
 """One HTML page of everything under docs/bugs/, for reading in a browser.
 
   python3 -I tools/bugs/html.py [--out docs/bugs/report.html]
-      reads docs/bugs/reports/*.md and docs/bugs/later/*.md and writes one page with no outside files
+      reads docs/bugs/reports/*.md, docs/bugs/later/*.md and docs/bugs/later-fixed/*.md and writes one page with no outside files
   python3 -I tools/bugs/html.py --lang ja
       the same from the Japanese translations under docs/bugs/ja/, to docs/bugs/report.ja.html
 
@@ -40,6 +40,8 @@ WORDS = {
         "all": "すべて",
         "Open / close all": "全部開く / 閉じる",
         "To look at later (not bugs, not fixed)": "後で見たい点(バグではない、直していない)",
+        "Later lines that were fixed after all": "後で見たい点のうち、あとで直したもの",
+        "later lines fixed": "後で見たい点を修正",
         "found": "見つけた日",
         "Where": "場所",
         "What happens": "起きること",
@@ -287,6 +289,7 @@ def main():
         )
 
     laters = [later(p) for p in sorted((source / "later").glob("*.md"))]
+    fixed = [later(p) for p in sorted((source / "later-fixed").glob("*.md"))]
     areas = sorted({h.get("area", "?") for h, _, _ in rows})
     intro = ""
     readme = source / "README.md"
@@ -317,7 +320,8 @@ def main():
 {w("from")} <code>{html.escape(str(source.relative_to(ROOT)))}/</code>. {w("Do not edit by hand.")}</p>
 <div class="counts"><div><b>{len(rows)}</b>{w("reports")}</div>{count("severity", report.SEVERITIES)}
 {count("kind", report.KINDS)}{count("status", [s for s in report.STATUSES if any(h.get("status") == s for h, _, _ in rows)])}
-<div><b>{sum(n for n, _ in laters)}</b>{w("to look at later")}</div></div>
+<div><b>{sum(n for n, _ in laters)}</b>{w("to look at later")}</div>
+<div><b>{sum(n for n, _ in fixed)}</b>{w("later lines fixed")}</div></div>
 {intro}
 <h2>{w("Reports")}</h2>
 <div class="bar">
@@ -331,6 +335,8 @@ def main():
 {chr(10).join(card(*r) for r in rows)}
 <h2>{w("To look at later (not bugs, not fixed)")}</h2>
 {chr(10).join(text for _, text in laters)}
+<h2>{w("Later lines that were fixed after all")}</h2>
+{chr(10).join(text for _, text in fixed)}
 </main>
 <script>{SCRIPT}</script>
 </body>

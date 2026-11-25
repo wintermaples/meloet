@@ -1,0 +1,6 @@
+# CORE-STATE — fixed in the second pass (2026-11-25)
+
+- crates/meloet-core/src/state/recovery.rs:239-245 — after 「戻さない」 or an undo back to the saved song, nothing is unsaved, so `write_recovery` writes nothing and nothing removes the file: a crash or a PC shutdown after that brings the song the person turned down back at the next start (architecture 15 lists when the file goes; the test `dont_restore_is_the_second_step_and_undo_goes_back_through_both` keeps the file on purpose, for undo).
+- crates/meloet-core/src/service/input.rs:362-372 — the kept vocal note (`work/rec.json`) is removed as soon as the recovery writer answers, also when that write failed (recovery.rs `writer_loop` answers `done` either way): after a failed write only memory knows where the kept clips belong.
+- crates/meloet-core/src/service.rs:430-434 — `Held::release_all` (keyboard pulled out, MIDI input stopped) lets go of keys and sustain but keeps bend and modulation; the next recording's `Started { held }` (`Held::controls`) can write a mod wheel or bend of a keyboard that is gone at the head of the take.
+- crates/meloet-core/src/state/updates.rs:34-45 — 「新しい版をたしかめる」 off and on again in the same run forgets the version found and does not look again until the next start (fits "at most one look a run", but 「meloet について」 loses the line).

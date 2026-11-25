@@ -1,0 +1,9 @@
+# PLUG — fixed in the second pass (2026-11-25)
+
+- crates/meloet-plughost/src/control.rs:217-224 — `close_window` clears `told` before it lets the slot's held parameters go, so a value held back by the 33 ms limit is dropped instead of being told before `ParamEnd` (wire.rs:399-400 says the last value before `ParamEnd` is always told). Needs a close or an unload within one look of the last move.
+- crates/meloet-plughost/src/control.rs:352-365 — closing a window by its × while the person is in it sends `EditorLeft` but does not call `controller.editor_left()` as `look_at_focus` (404-406) does, so VST3's re-sync after leaving (architecture 20-14) is skipped for this way of leaving. No plugin seen that needs it there.
+- crates/meloet-plugin/src/ipc/ends.rs:211-216 — `block_ms` is whole milliseconds; with blocks under 1 ms (32 frames at 48 kHz) it is 0 and any request a host thread holds counts as long, so an overdue answer is never slept for (one more silent block each time).
+- crates/meloet-engine/src/plugin.rs:198-208 — `push_event` returning false is ignored; a host late for many blocks (a plugin loading a patch inside its block for a second or more) fills the 256-record ring and later events, note-offs too, are lost: possible stuck notes.
+- crates/meloet-plughost/src/window.rs:297-298 — when the X connection breaks (Xwayland gone), `events` stops reading but the fd stays in `poll` and keeps signalling hang-up, so the host's main loop spins.
+- crates/meloet-plughost/src/control.rs:1149-1152 — a reply whose text is over 16 MiB or blob over 256 MiB fails `write_frame` before anything is written, yet the host then ends; an `Error` reply would keep the plugin running.
+- crates/meloet-plugin/src/scan.rs:148-149 — one unreadable folder inside a bundle makes `BundleStamp::read` fail, and `places_todo` (scanner.rs:270) then never scans that bundle, without a word.

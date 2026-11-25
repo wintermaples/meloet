@@ -1,0 +1,3 @@
+# FIX-fix-model-a — fixed in the second pass (2026-11-25)
+
+- crates/meloet-model/src/record.rs:372 — a controller move that comes late for an ended pass (a pedal let go a few ms before the loop end, said a block later) is not settled: with no pass going on yet it stays with the ended pass and its point is lost (the next pass starts from the moved value); with a pass going on it lands there at its own tick while that pass's head keeps the old value, so a late pedal-up leaves the whole pass with the pedal down (asserted as meant in `a_pedal_of_a_pass_goes_there_though_notes_of_the_next_pass_came_first`). One way: set the head of the pass going on and put no point (the rest of MODEL-A-004); a choice for the lead.

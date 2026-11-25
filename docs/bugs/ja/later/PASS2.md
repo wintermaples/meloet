@@ -1,0 +1,43 @@
+# PASS2 — 後で見たい点を直している間に見つけ、直していない点 (2026-11-25)
+
+- crates/meloet-core/src/service/export.rs:153 (service.rs の `ai_jobs` と合わせて) — AI の計測や書き出しが、前の依頼の答えの直後に頼まれると、「別の計測が動いています」と断られることがあります。終わった仕事がまだ数えられていないためです。PC が混んでいると、`meloet-ai`（`analyze`、`link`、`params`）のテストがときどき落ちます。直した人のうち三人がこれに当たりました。
+- crates/meloet-model/src/record.rs — 終わったループの一周に遅れて届いたキーは、今まわっている一周の中で、ループ一つ分だけ後ろに置かれたままです（MODEL-A #3、FIX-fix-model-a #2）。提案する決まりは、今まわっている一周の先頭に、押さえていた長さのまま置くことです。`Recorder::push` で十行ほど、テストが二つ、architecture の 13 と 25 も変わります。使う人の判断を待っています。
+- crates/meloet-model/src/record.rs — 終わった一周のテイクは、遅れて離されたペダルの位置を持ちません。そのため、テイクはペダルが踏まれたままで終わります。
+- crates/meloet-model/src/timeline.rs:100 `move_tempo_point`、`set_tempo_ramp` — 最後のテンポの点は、動かすことや傾きの切りかえによって、まだ `ramp: true` を持つか、持ち続けることがあります（MODEL-A #2 と同じ種類。テストがそれを期待しています）。
+- crates/meloet-model/src/audio/comp.rs:28 `comp_window`、`comp_joined` — トリム、カット、つなぎによって、表示中のテイクだけでできた「いいとこ取り」になることがあります。その状態では「ノーマライズ」と「逆にする」が使えないままです（MODEL-B #5 と同じ兆候）。
+- crates/meloet-engine/src/engine.rs `set_play_target` — 古い演奏先に `AllNotesOff` が送られるため、演奏先を変えると、そのトラックの曲のノートも離されます。キーボードのベンドとモジュレーションは、古い演奏先に残ったままです。
+- crates/meloet-engine/src/engine.rs `record_here` — 再生中に `Locate` の直後（出力の遅れの中）で R を押すと、ジャンプの前の場所から録音が始まります。
+- crates/meloet-engine/src/engine.rs `ClearTrack` と音源の差し替え — キーボードが押さえている音は、演奏先の音源が変わっても残されます。次に「キーボードがなくなった」ときに、そのノートオフが新しい音源へ送られます。
+- crates/meloet-engine/src/engine.rs `run_place` — 再生を始めた直後、「さっきのを残す」の場所は、連続した演奏の始まりより前まで遡って数えられています。
+- crates/meloet-engine（キーボードがなくなったとき） — キーボードが二つあるとき、片方を抜くと、両方（と PC のキーボード）が押さえているものが離されます。これは今までどおりです。抜けたほうだけを離すには、コアからキーボードごとのイベントが要ります。ソステヌート（66）とソフト（67）は追いかけていません。
+- crates/meloet-engine/src/engine.rs:2662 `LatencyRecord`（FIX-fix-engine-ear #3、そのまま残した） — 設定のキーから音までの数字は、バッファの経路だけです。マスターのプラグインの遅れも、トラックのプラグインの遅れも含まれていません。含めるかどうかは、決める人が決める必要があります。
+- crates/meloet-engine/src/plugin.rs — プラグインのイベントの輪が一杯のとき失われたピッチベンドは、切れたままになります（ノートオフとペダルを上げる操作は、今では後から送られます）。
+- crates/meloet-plughost/src/formats/vst3.rs `Vst3Processor::reset` — Surge XT は `setProcessing(0)/(1)` で押さえたノートを止めないため、VST3 のリセットでは鳴っている音が消えません。FIX-fix-rt #1 の修正（ゲートの下のリセットを後で行う）には、同じ理由でテストがありません。
+- crates/meloet-plughost/src/control.rs `tell` — フレームに入らないほど大きい通知でも、ホストが終わってしまいます（PLUG #9 は答えだけを直しました）。
+- crates/meloet-plughost/src/control.rs `close_window` — 窓のないスロットでは、すぐに戻るため、プラグインを外すときにパラメータが離されないことがあります（推測で、確かめていません）。
+- crates/meloet-plugin/src/wire.rs `Notice::EditorClosed` — ドキュメントコメントは、失われる表示が何かを書いていません（PLUG #8）。ワイヤは触らない予定でした。
+- crates/meloet-core/src/play/plugs.rs `confirm_state_said` — 「決める」の答えの前に、プラグインが答える前（数ミリ秒）に別の手が入ると、変わった状態は「決める」の手の一部ではなく、その後ろの別の手になります。答えの前に保存すると、曲は変わったように見えます。
+- crates/meloet-core/src/play/windows.rs:225 `start_visit` — 訪問は `WindowEntered` を受けたときにだけ始まります。「決める」の時点でキーボードが試したプラグインの窓の中にいると、窓を出て入り直すまでの間の変更は、手になりません。
+- crates/meloet-core/src/play/plugs.rs `load_again_at`（CORE-PLAY-C #4、そのまま残した） — 提案: プラグインを今の状態で読み直すとき、訪問を新しいチケットへ移し、古いチケットの `Left` の答えは捨てる。十行ほどで、訪問の順序の決まりに触ります。
+- crates/meloet-core/src/play/params.rs:205-214 — パラメータの欄からプラグインの動くレーンを休ませると、押さえはすぐ離れますが、休ませる手はプラグインの答えを待ちます。その間にレーンが値を動かすことがあります（読むだけ）。
+- crates/meloet-ai（AI #2、そのまま残した） — 五つの依頼は、AI のスレッドで解決されたトラックの番号を持っています（`AiPlace::Track`、`CreateClip`、`CreateClipTo`、`KeyNames`、`AiRenderWhat::Note`）。id を持たせるには、それらの形、`state/ai.rs`、`play/ai.rs`、多くのテストと、バッチの答えを変える必要があります。
+- crates/meloet-ai/src/tools/mixer.rs `set_mute` — 「● 書く」がオンのとき、レーンの値が反転されるため、`on: true` がレーンでミュートしているところに、ミュートを解く点を書くことがあります。答えには、点を書いたと出るようになりました。
+- crates/meloet-ai/src/lib.rs — 切り替えを切るときと、終わるときの一時置き場の掃除は、まだランタイムのスレッドで動いています。
+- crates/meloet-core/src/state/songs.rs（`SongSaved` の腕） — 「保存してから閉じる」の間に変わった曲は、確認なしに閉じられます（Fable が読んだだけで、テストはしていません）。
+- crates/meloet-core/src/play.rs `apply_placed` — 最後の行の外への貼り付け（`OffTheSong`）は、今でも何も言わずに断られます。
+- crates/meloet-core/src/sounds/fetch.rs:777 — 展開したフォルダの名前を変えた後、フォルダの同期は行われていません。`recovery.rs`、`audiofiles.rs`、`export/job.rs` は、それぞれ自分の `sync_dir` を持っています。
+- crates/meloet-core/src/songfile.rs — 一つのフォルダにある二つの古いファイルで、名前の最初の 250 バイトが同じものは、一時ファイルと `.prev` を共有することがあります（meloet は今ではそうした名前を作りません）。
+- crates/meloet-core/src/readahead.rs:650 `Msg::StoreChanged` — 読み込みと作り直しの間に失敗した席には、短い無音を入れ直してもらえません。
+- crates/meloet-core/src/audiofiles/wav.rs `CacheWav::close`、maker.rs — close が失敗すると、`.part` が 10 分間残ります。作られた音声は同期されていません（CORE-AUDIO #4 と同じ種類）。`peaks.rs` の `write_as` は `.tmp` を使いますが、`.part` の掃除はそれを見ません。
+- crates/meloet-core/src/made.rs — 「さがす…」の後、同じ uid で形やレートが違い、今の曲にない作られた音声は見つかりません（キーはハッシュ値です）。
+- crates/meloet-core/src/export.rs — 選んだあとに、同じパスで削除されて作り直されたファイルについては、確認されません。モジュールのコメントはルールを純粋な計算と書いていますが、実際はディスクを見ています。
+- crates/meloet-protocol/src/lib.rs — `TransportView::can_play` と `Command::GoToMarker` のドキュメントコメントは、録音が片づけられている間や、録音が続いている間に今何が起きるかを書いていません。
+- ui/src/components/export/ExportDialog.svelte — 小さい窓で「くわしく」を開いているとき、上書きの確認が見えなくなるまでスクロールできます。変わって見えるのは、ボタンの文字だけのようです。
+- ui/src/bridge/fake.ts — フェイクは、`chooseExportPlace` で書き出しの確認を片づけません。その行の数え方は、一番上の行から数えています（一番早いクリップの行からではなく）。場面は、リクオンタイズ、最後のテンポの点の傾き、テイクが一つだけのいいとこ取りの新しい決まりに従っていません。
+- ui/src/components/trackMenu.ts:72 — トラックの右クリックの一覧にある「ミュート」の印は、手で設定したミュートをまだ示しています。一方、見出しとミキサーの M は、実際に聞こえているものを示します。
+- ui/src/components/pianoroll/Roll.svelte:1156 — 窓がぼける（blur）ときに `letGo` が呼ばれないため、ページめくりの押さえが次のポインタを離すまで残ることがあります（アレンジは blur で離します）。
+- ui/src/components/pianoroll/NoteInspector.svelte `toolDrafts` — 入力している最中に、差分によって書き戻されることがあります。`bulkDrafts` がそうだったように（読むだけ）。
+- ui/src/components/pianoroll（UI-ROLL #7、そのまま残した） — 仕様の 2 章は「Drum hit square」にホバーの状態を挙げていますが、その見た目は書かれていません。値は、決める人から必要です。
+- ui/src/components/TrackHeads.svelte / Arrange.svelte — 見出しの並べ替えのドラッグ中に、見出しが（全体図で）消えると、`headDrag` が true のまま残ることがあります（確かめていません）。
+- ui/src/keys/attach.ts `OVER_DIALOGS` — ダイアログの上でどのキーが効くかは、開発者の読み方です（仕様の 4 章にはルールがありません）。文字、数字、矢印、Delete、F2、Mod A/X/C/V/D/J/R は、ダイアログの上では待ちます。Esc、Enter、Space、Home、F10 とほかの Mod キーは効きます。Alt ← → も待ちます。
+- ui/src/text/index.ts:74 — `replace("−", "-")` は最初の U+2212 だけを置き換えます（害はありません）。`Surface.svelte` は、パッチのたびに今も `setTracks` を呼びます（費用だけ）。

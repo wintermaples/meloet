@@ -1,8 +1,5 @@
 # ENGINE — worth a look later (not bugs)
 
-- crates/meloet-engine/src/engine.rs:2260-2267 — `SetLoop` seeks every lane whose `ahead_wrapped` is set, also while stopped, and `stop()` (2397-2431) does not clear the flag: a stop in the last L frames before the loop's end (a track with latency L) followed by a loop change while stopped chases the song's pedal, wheel and bend onto that instrument while it stands still (keys played then sustain until play starts). Narrow window.
-- crates/meloet-engine/src/engine.rs:2144-2150 — `AllNotesOff` (sent when a keyboard is pulled out) releases the song's sounding notes on every track while the song plays, not only what the keyboards held on the play target; a design question.
-- crates/meloet-engine/src/engine.rs:1776-1783 — a callback with 0 frames stores a block length of 0, so the next callback always counts as late (`late_callbacks`).
 - crates/meloet-engine/src/automation.rs:300-302, 373-375 — one `turn` serves the instrument's lanes and every plugin slot's lanes of a track, and moves by `PLUGIN_POINTS` places in the list of all lanes rather than past the lanes it served; turn-taking over more than 128 lanes is only rough.
 - crates/meloet-engine/src/clipplay.rs:126-133 — `set_reader` while a track's clips sound sets the gate to 0 at once (no 10 ms fade); only matters if a ring is replaced while playing.
 - crates/meloet-engine/src/clock.rs:224-231 — `segment_at` reads up to 512 slots on the audio thread for each key older than every stretch (right after a stream opens); with a full MIDI ring that is many atomic reads in one block.

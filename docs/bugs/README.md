@@ -9,6 +9,8 @@ Findings of a sweep over the code (`crates/` and `ui/`): bugs, UI/UX problems, a
 - Japanese translations of the reports, the "later" lines and this file are in [`ja/`](ja/) (same file names; made by helpers on 2026-11-25, checked by machine only for shape and code spans). `python3 -I tools/bugs/html.py --lang ja` writes [`report.ja.html`](report.ja.html) from them. The English files are the source: when a report changes, its translation must be changed too.
 - Things that are not bugs but are worth a look later (slowness, spec and mock disagreeing, design worries) go in [`later/`](later/), one file per area, one line each. They are not fixed in the sweep.
 
+- Lines of [`later/`](later/) that were fixed after all are moved to [`later-fixed/`](later-fixed/) (one file per area; lines that turned out not to be true are under their own heading there).
+
 ## Fields
 
 - `kind`: `bug` (wrong behavior), `ui-ux` (works, but a person is confused, blocked or misled), `parity` (one side has it and its sibling does not: similar screen parts, Rust and the screen, Japanese and English wording).
@@ -18,3 +20,4 @@ Findings of a sweep over the code (`crates/` and `ui/`): bugs, UI/UX problems, a
 ## Sweeps
 
 - 2026-11-25: the first sweep (branch `fix/bug-sweep`): 114 found, 110 true, 110 fixed. What is left open is in `docs/progress.md`, section 6, "Bug sweep".
+- 2026-11-25, second pass (the same branch): the owner asked for the later list to be gone through. Of its 193 lines, 112 were fixed and 4 were not true; 77 stay, and 41 new lines seen on the way are in `later/PASS2.md`. The owner's decisions and the lead's are in `docs/spec/7-readings.md`.

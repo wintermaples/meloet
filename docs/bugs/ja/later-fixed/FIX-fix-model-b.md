@@ -1,3 +1,5 @@
+# FIX-fix-model-b — 2 回目で直した点 (2026-11-25)
+
 - crates/meloet-ai/src/tools.rs:383-385 — 拒まれた `add_lane`(ボーカルのトラックの `instrument`、組み込みの音源が使わないつまみ、そこにないインサートのパラメータ)は `NoSuchLane` と答えます。その文面 "the track has no lane for that; add it with add_lane first" は、AI に、今呼んだばかりのツールを呼ぶよう言っています。
 - crates/meloet-core/src/play/automation.rs:905-922 — 再生中に「● 書く」が入っているときの AI の `set_mute` は、`mute_pressed` を通ります。点は書かれ、手のミュートは残りますが、AI には `changed: true` と答えられ、`get_mixer` は古い `muted` を示したままです。
 - crates/meloet-core/src/play/mixer.rs:486-488 — プラグインに入力された値(`type_plugin_param`)は、入力されたとおりに渡されます。全角の数字や単位は、組み込みエフェクトで `ParamSpec::read` が今行っているように平文にされません(プラグイン自身の読み取り文字では確かめていません)。

@@ -1,3 +1,5 @@
+# FIX-fix-model-b — fixed in the second pass (2026-11-25)
+
 - crates/meloet-ai/src/tools.rs:383-385 — a refused `add_lane` (a vocal track's `instrument`, a knob a built-in sound does not use, an insert parameter that is not there) answers `NoSuchLane`, whose text "the track has no lane for that; add it with add_lane first" tells the AI to call the tool it just called.
 - crates/meloet-core/src/play/automation.rs:905-922 — the AI's `set_mute` with 「● 書く」 on while playing goes through `mute_pressed`: a point is written and the hand's mute stays, yet the AI is answered `changed: true` and `get_mixer` still shows the old `muted`.
 - crates/meloet-core/src/play/mixer.rs:486-488 — a plugin's typed value (`type_plugin_param`) is passed on as typed; full-width digits or units are not made plain as `ParamSpec::read` now does for built-in effects (not checked against a plugin's own text reading).

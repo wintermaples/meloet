@@ -2,15 +2,15 @@
 
 meloet is a DAW for people who have just bought a MIDI keyboard. This document guides you from installing meloet, through using it, to removing it (documents for developers are in `docs/development/`). The Japanese version, [README.ja.md](README.ja.md), is the source; this one follows it.
 
-The current version is 0.6.0. It runs on Ubuntu 24.04 and 26.04.
+The current version is 0.7.0. It runs on Ubuntu 24.04 and 26.04.
 
 ## Installing
 
-1. Download `meloet_0.6.0_amd64.deb` from the GitHub Releases page.
+1. Download `meloet_0.7.0_amd64.deb` from the GitHub Releases page.
 2. Open a terminal where the downloaded file is, and type:
 
    ```bash
-   sudo apt install ./meloet_0.6.0_amd64.deb
+   sudo apt install ./meloet_0.7.0_amd64.deb
    ```
 
    Do not forget the `./`. The parts meloet uses (WebKitGTK, ALSA, PipeWire and so on) are installed with it.

@@ -86,6 +86,7 @@
     unsaved: "songDialog.unsaved",
     cannotSave: "songDialog.cannotSave",
     broken: "songDialog.broken",
+    deleteRecovery: "songDialog.deleteRecovery",
   };
 
   const BAND_NAMES: Record<Band, TextKey> = {

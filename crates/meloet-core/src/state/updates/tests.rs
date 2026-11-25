@@ -140,11 +140,37 @@ fn not_in_the_count_in() {
 }
 
 #[test]
-fn switched_off_what_was_found_is_gone_and_a_late_answer_is_dropped() {
+fn switched_off_what_was_found_is_hidden_and_on_again_it_is_back() {
     let mut m = found();
     cmd(&mut m, Command::SetCheckUpdates { on: false });
     assert_eq!(m.view().updates.new_version, None);
     assert!(!said(&m));
+    assert_eq!(cmd(&mut m, Command::OpenReleasePage), [], "nothing shown");
+    // On again: no second look, and 「meloet について」 has its line again.
+    assert_eq!(
+        asked(&cmd(&mut m, Command::SetCheckUpdates { on: true })),
+        0
+    );
+    assert_eq!(m.view().updates.new_version.as_deref(), Some("0.4.0"));
+    assert!(said(&m), "not put away yet");
+
+    // An answer that comes while off is kept for when it is on again.
+    let mut m = playing();
+    m.handle(Input::ScreenUp);
+    cmd(&mut m, Command::SetCheckUpdates { on: false });
     m.handle(Input::NewVersion("0.4.0".into()));
     assert_eq!(m.view().updates.new_version, None);
+    assert!(!said(&m));
+    cmd(&mut m, Command::SetCheckUpdates { on: true });
+    assert_eq!(m.view().updates.new_version.as_deref(), Some("0.4.0"));
+}
+
+#[test]
+fn put_away_it_stays_away_after_off_and_on_again() {
+    let mut m = found();
+    cmd(&mut m, Command::DismissNewVersion);
+    cmd(&mut m, Command::SetCheckUpdates { on: false });
+    cmd(&mut m, Command::SetCheckUpdates { on: true });
+    assert!(!said(&m));
+    assert_eq!(m.view().updates.new_version.as_deref(), Some("0.4.0"));
 }

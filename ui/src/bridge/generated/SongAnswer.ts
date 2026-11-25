@@ -3,4 +3,4 @@
 /**
  * The buttons of the song dialogs, one for one.
  */
-export type SongAnswer = "save" | "dontSave" | "chooseLocation" | "openPrevious" | "cancel";
+export type SongAnswer = "save" | "dontSave" | "chooseLocation" | "openPrevious" | "delete" | "keep" | "cancel";

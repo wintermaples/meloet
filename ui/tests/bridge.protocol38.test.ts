@@ -4,8 +4,8 @@ import { PROTOCOL_VERSION, type StatusMessage } from "../src/bridge";
 import { t } from "../src/text";
 
 describe("shape of protocol 38", () => {
-  it("version 38; three messages, each with its text", () => {
-    expect(PROTOCOL_VERSION).toBe(38);
+  it("version 38 or later; three messages, each with its text", () => {
+    expect(PROTOCOL_VERSION).toBeGreaterThanOrEqual(38);
     const messages: StatusMessage[] = [
       { id: "vocalsNotRecorded", keys: true },
       { id: "recordingStoppedDisk", reason: "cannotWrite" },

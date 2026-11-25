@@ -146,6 +146,17 @@ describe("match length (C-6 51)", () => {
     show(StatusLine);
     expect(text(q(".message"))).toBe("3 ノートの長さを 0.0960 にそろえました。");
   });
+
+  it("UI-SHELL #4 (later): the length is counted in the time signature at the selected notes, not the song start's", async () => {
+    await scene("lengthMatched", (s) => {
+      s.timeline.meterChanges = [{ bar: 1, meterNum: 6, meterDen: 8 }];
+      s.pianoRoll.selectedNotes = [{ start: 14, end: 17 }];
+    });
+    const clip = shown.shown.clip!;
+    expect(clip.start + clip.takeOffset + shown.shown.take!.starts[14]!).toBeGreaterThanOrEqual(4 * TPQ);
+    show(StatusLine);
+    expect(text(q(".message"))).toBe("3 ノートの長さを 1.0000 にそろえました。");
+  });
 });
 
 describe("sizes of the change-all row (C-6 67)", () => {

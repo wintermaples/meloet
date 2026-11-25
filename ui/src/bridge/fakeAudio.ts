@@ -4,7 +4,7 @@
 
 import { PEAK_LEVELS, PEAKS_MAX_COUNT } from "./generated/audio";
 import { encodePeaks } from "./peaks";
-import type { AudioClipView, ClipView, SourceTempoView, StretchView } from "./types";
+import type { AudioClipView, AudioTakeView, ClipView, SourceTempoView, StretchView } from "./types";
 
 export interface FakeAudio {
   id: number;
@@ -139,7 +139,21 @@ export function fakeAudioClip(a: FakeAudio, more: Partial<AudioClipView> = {}): 
   };
 }
 
-/** A vocal clip. Its take id is the clip's id + 1, as recorded clips have it in the fake. */
+/**
+ * A vocal clip. Its take id is the clip's id + 1, as recorded clips have it in the fake. With no takes given, `audio.takes`
+ * lists the shown one, as Rust always does.
+ */
 export function fakeVocalClip(id: number, name: string, start: number, end: number, audio: AudioClipView, takeOffset = 0): ClipView {
-  return { id, name, start, end, take: 1, takes: 1, takeId: id + 1, takeOffset, noteCount: 0, audio, comp: [] };
+  const shown: AudioTakeView = {
+    takeId: id + 1,
+    number: 1,
+    audio: audio.audio,
+    firstFrame: audio.firstFrame,
+    frames: audio.frames,
+    takeOffset,
+    sourceTempo: audio.sourceTempo,
+    state: audio.state,
+  };
+  const listed = audio.takes.length > 0 ? audio : { ...audio, takes: [shown] };
+  return { id, name, start, end, take: 1, takes: 1, takeId: id + 1, takeOffset, noteCount: 0, audio: listed, comp: [] };
 }

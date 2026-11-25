@@ -91,6 +91,58 @@ describe("keys while a dialog is in front", () => {
     expect([keyList.open, about.open]).toEqual([false, true]);
   });
 
+  it("UI-SHELL #2 (later): on 「くわしい設定」 Enter is the bright button 「閉じる」, Esc goes back one", () => {
+    state.workspace = { ...state.workspace, settings: { draftOutput: null, advancedOpen: true } };
+    press("Enter");
+    press("Escape");
+    expect(sent).toEqual([{ type: "settingsCancel" }, { type: "back" }]);
+  });
+
+  it("FIX-fix-ui-keys #1: behind a dialog the keys for the parts behind it do nothing; play, save and undo still work", () => {
+    const behind: [string, KeyboardEventInit][] = [
+      ["l", { code: "KeyL" }],
+      ["c", { code: "KeyC" }],
+      ["k", { code: "KeyK" }],
+      ["Delete", {}],
+      ["M", { code: "KeyM", shiftKey: true }],
+      ["a", { code: "KeyA", ctrlKey: true }],
+    ];
+    const still: [string, KeyboardEventInit, Command["type"]][] = [
+      [" ", { code: "Space" }, "playStop"],
+      ["Home", {}, "goToStart"],
+      ["s", { code: "KeyS", ctrlKey: true }, "saveSong"],
+      ["z", { code: "KeyZ", ctrlKey: true }, "undo"],
+    ];
+    state = scene("tracks6");
+    for (const [key, init] of behind) {
+      sent.length = 0;
+      press(key, init);
+      expect(sent.length, `${key} with no dialog`).toBe(1);
+    }
+    const dialogs: [string, (s: AppState) => void][] = [
+      ["settings", (s) => (s.workspace.settings = { draftOutput: null, advancedOpen: false })],
+      ["song", (s) => (s.workspace.songDialog = { id: 1, kind: "unsaved", title: "はじめての曲", previous: false })],
+      ["latency", (s) => (s.workspace.latencyDialog = { measure: { state: "done", measuredMs: 12.4 } })],
+      ["about", () => openAbout()],
+    ];
+    for (const [name, open] of dialogs) {
+      state = scene("tracks6");
+      open(state);
+      sent.length = 0;
+      for (const [key, init] of behind) {
+        const ev = press(key, init);
+        expect(ev.defaultPrevented, `${name}: ${key}`).toBe(init.ctrlKey === true);
+      }
+      expect(sent, name).toEqual([]);
+      for (const [key, init, type] of still) {
+        sent.length = 0;
+        press(key, init);
+        expect(sent.map((c) => c.type), `${name}: ${key}`).toEqual([type]);
+      }
+      closeAbout();
+    }
+  });
+
   it("UI-SHELL-004: a key a part already took is not used again", () => {
     state = scene("exportDialog");
     const ev = new KeyboardEvent("keydown", { key: "Enter", cancelable: true });

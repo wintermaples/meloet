@@ -1,14 +1,14 @@
 // The screen's wording in English (round 12, D4). Japanese (ja.ts) is the source: this table has the same keys and the
 // same {holes}, and follows it. A text that changes with a number may be a pair: the form for 1 and the form for any other
-// number, chosen by the value of the hole `by`.
+// number, chosen by the value of the hole `by`. A text with two such numbers is a pair of pairs.
 
 import type { StepName } from "../bridge/generated/StepName";
 import type { TextKey } from "./ja";
 
-export type EnText = string | { readonly by: string; readonly one: string; readonly other: string };
+export type EnText = string | { readonly by: string; readonly one: EnText; readonly other: EnText };
 
 /** The form for 1 and the form for any other number of the hole `by`. */
-const n = (by: string, one: string, other: string): EnText => ({ by, one, other });
+const n = (by: string, one: EnText, other: EnText): EnText => ({ by, one, other });
 
 /** The joints of ja.ts in English. */
 export const enJoins = { term: " — ", status: " · ", list: ", ", sentence: " ", end: ".", range: "–", open: " (", close: ")" };
@@ -1203,7 +1203,11 @@ export const enTexts: Record<TextKey, EnText> = {
   "clipParams.follow": "Follow the song's tempo",
   "clipParams.sourceTempo": "Tempo of this sound",
   "clipParams.pitch": "Pitch",
-  "clipParams.pitchValue": "{semitones} semitones {cents} cents",
+  "clipParams.pitchValue": n(
+    "semitones",
+    n("cents", "{semitones} semitone {cents} cent", "{semitones} semitone {cents} cents"),
+    n("cents", "{semitones} semitones {cents} cent", "{semitones} semitones {cents} cents"),
+  ),
   "clipParams.keepFormant": "Keep the voice's character",
   "clipParams.findTempo": "Find",
   "clipParams.tune": "Pull to scale",
@@ -1590,7 +1594,11 @@ export const enTexts: Record<TextKey, EnText> = {
   "msg.fadeDragging": "{edge} fade of {clip} {value} (dragging) · let go to set it · {cancelKey} to cancel",
   "clip.fadeEdgeIn": "In",
   "clip.fadeEdgeOut": "Out",
-  "msg.pitchDragging": "Pitch {semitones} semitones {cents} cents (dragging)",
+  "msg.pitchDragging": n(
+    "semitones",
+    n("cents", "Pitch {semitones} semitone {cents} cent (dragging)", "Pitch {semitones} semitone {cents} cents (dragging)"),
+    n("cents", "Pitch {semitones} semitones {cents} cent (dragging)", "Pitch {semitones} semitones {cents} cents (dragging)"),
+  ),
   "msg.tuneDragging": "Pull to scale {percent} % (dragging)",
   "settings.latencyUnit": "ms",
   "status.exportShort": "Export {percent} %",

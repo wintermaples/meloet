@@ -153,7 +153,7 @@
         <span class="m-num m-hi value" class:m-typable={!busy} role="presentation" data-test="clips-value-pitch" ondblclick={() => startTyping("semitones")}>{dash}</span>
       {:else}
         <span class="m-num m-hi value" data-test="clips-value-pitch"
-          >{#each textParts("clipParams.pitchValue", { semitones: "", cents: "" }) as part, i (i)}{#if part.hole === "semitones" || part.hole === "cents"}{@render pitchPart(
+          >{#each textParts("clipParams.pitchValue", { semitones: sel.semitones ?? "", cents: sel.cents ?? "" }) as part, i (i)}{#if part.hole === "semitones" || part.hole === "cents"}{@render pitchPart(
                 part.hole,
               )}{:else}{part.text}{/if}{/each}</span
         >

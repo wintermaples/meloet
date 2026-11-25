@@ -5,6 +5,7 @@
   import ScrollArea from "../lib/ScrollArea.svelte";
   import { current, send } from "../state/app.svelte";
   import Button from "./Button.svelte";
+  import { metrics } from "./metrics.svelte";
   import { songDialogLook } from "./songDialog";
 
   const dialog = $derived(current.state?.workspace.songDialog ?? null);
@@ -14,7 +15,7 @@
 {#if dialog && look}
   <div class="place">
     <div class="lead"></div>
-    <div class="dialog" role="dialog" aria-label={dialog.title} data-test="song-dialog" use:movableDialog>
+    <div class="dialog" role="dialog" aria-label={dialog.title} data-test="song-dialog" style:color-scheme={metrics.colorScheme} use:movableDialog>
       <div class="head" data-dialog-head><span class="title">{dialog.title}</span></div>
       <ScrollArea data-test="song-dialog-body">
         <p class="body">{look.body}</p>

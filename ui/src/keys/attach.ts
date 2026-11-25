@@ -430,6 +430,29 @@ const WITH_MOD = new Set<KeyAction["kind"]>([
 ]);
 
 /**
+ * The keys that still work while a dialog is in front (besides Esc and the dialog's Enter): play and stop, the start, the menu bar, and the
+ * Mod keys of the 「ファイル」 rows, undo, the view and 「キーで弾く」. The keys that act on the chosen parts behind the dialog do nothing
+ * (one letter, digits, arrows, Delete, F2, Mod A X C V D J R; 7-readings).
+ */
+const OVER_DIALOGS = new Set<KeyAction["kind"]>([
+  "playStop",
+  "toStart",
+  "menuBar",
+  "newSong",
+  "openSong",
+  "saveSong",
+  "saveSongAs",
+  "export",
+  "audioSettings",
+  "quit",
+  "undo",
+  "redo",
+  "zoom",
+  "scale",
+  "typedKeys",
+]);
+
+/**
  * At the shelf's turn of Esc, if an audition is on, stop it before closing (spec 3: Esc stops it and goes back to the track's sound;
  * the next Esc closes the shelf). A dialog comes first if there is one.
  */
@@ -487,7 +510,7 @@ export function handleKeydown(ev: KeyboardEvent, deps: KeyDeps): void {
           : "main";
 
   // Keys for tempo and time signature changes and markers (K, Alt ← →, F2 with a marker chosen, Delete of the chosen ones). Esc does not go through here.
-  if (context === "main" && ev.key !== "Escape") {
+  if (context === "main" && ev.key !== "Escape" && !front) {
     const lane = laneDeleteCommand(
       keyInputOf(ev),
       { typing, busy: songBusy(state), toArrange: prView.focus === "arrange" || !pianoRollOpen(state) },
@@ -550,9 +573,10 @@ export function handleKeydown(ev: KeyboardEvent, deps: KeyDeps): void {
       // 「書き出しました」: the bright button 「閉じる」 (round 12 E9).
       ev.preventDefault();
       deps.send({ type: "closeExport" });
-    } else if (plainEnter && front === "settings") {
+    } else if (plainEnter && front === "settings" && state.workspace.settings) {
+      // The bright button: 「これで決まり」 on the first page, 「閉じる」 on 「くわしい設定」.
       ev.preventDefault();
-      deps.send({ type: "settingsApply" });
+      deps.send({ type: state.workspace.settings.advancedOpen ? "settingsCancel" : "settingsApply" });
     }
     return;
   }
@@ -579,6 +603,11 @@ export function handleKeydown(ev: KeyboardEvent, deps: KeyDeps): void {
                 ? { type: "shelfCancel" }
                 : { type: "back" },
       );
+    return;
+  }
+
+  if (front && !OVER_DIALOGS.has(action.kind)) {
+    if (WITH_MOD.has(action.kind)) ev.preventDefault();
     return;
   }
 

@@ -82,7 +82,8 @@
       return;
     }
     e.preventDefault();
-    e.stopPropagation();
+    // The box is in body, where Svelte hears its keys on document: the document's key handler (keys/attach.ts) is the next listener there.
+    e.stopImmediatePropagation();
   }
 </script>
 

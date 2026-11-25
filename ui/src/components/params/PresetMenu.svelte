@@ -58,9 +58,9 @@
     ]);
   }
 
-  // Keys stay here: the list around has its own ↑ ↓ and Enter.
+  // Keys stay here: the list around has its own ↑ ↓ and Enter. Mod keys and Space go on to the key handler, as from the other lists.
   function onkeydown(ev: KeyboardEvent): void {
-    if (ev.isComposing) return;
+    if (ev.isComposing || ev.ctrlKey || ev.metaKey || ev.key === " ") return;
     if (ev.key === "Escape") {
       ev.preventDefault();
       if (naming) naming = false;

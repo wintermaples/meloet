@@ -195,6 +195,27 @@ describe("the name box (mounted)", () => {
     expect(app.sent).toEqual([]);
   });
 
+  it("UI-PARITY #2 (later): Enter and Esc it takes do not reach the next listener on document", async () => {
+    show(MuteSetBox, scene("mixerMuteSets"));
+    muteSetBox.open = { kind: "save", at: { x: 0, y: 0 } };
+    flushSync();
+    await tick();
+    const heard: string[] = [];
+    const listen = (e: KeyboardEvent) => void heard.push(e.key);
+    document.addEventListener("keydown", listen);
+    try {
+      type("サビ");
+      key("Enter");
+      muteSetBox.open = { kind: "save", at: { x: 0, y: 0 } };
+      flushSync();
+      await tick();
+      key("Escape");
+    } finally {
+      document.removeEventListener("keydown", listen);
+    }
+    expect(heard).toEqual([]);
+  });
+
   it("closes when recording starts", async () => {
     const s = scene("mixerMuteSets");
     show(MuteSetBox, s);

@@ -90,6 +90,7 @@
   bind:this={node}
   class="drag"
   class:m-typable={!disabled}
+  class:disabled
   role="slider"
   tabindex="-1"
   aria-label={label}
@@ -117,6 +118,9 @@
   .drag {
     cursor: ns-resize;
     touch-action: none;
+  }
+  .drag.disabled {
+    cursor: default;
   }
   /* The reading in place (spec 2; the same form as the arrange reading). Placed against the window so it can go outside the panel. */
   .reading {

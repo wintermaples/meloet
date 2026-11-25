@@ -30,11 +30,11 @@
   import { current, onEvent, send } from "../state/app.svelte";
   import { shownWork } from "../state/audioWork.svelte";
   import { exportShown } from "../state/exportShown.svelte";
-  import { LIST_COMMA, SENTENCE_END, SENTENCE_JOIN, STATUS_JOIN, t, textLanguage, type TextKey } from "../text";
+  import { BRACKET_CLOSE, BRACKET_OPEN, LIST_COMMA, SENTENCE_END, SENTENCE_JOIN, STATUS_JOIN, t, textLanguage, type TextKey } from "../text";
   import { about } from "./about/about.svelte";
   import { keyList } from "./keylist/keyList.svelte";
   import { runShown } from "./export/exportText";
-  import { gridText, msText, noteLengthText, pitchClassName, scaleName, tempoText, termParts, textParts, type TextPart } from "./format";
+  import { gridText, msText, noteLengthText, pitchClassName, rangeText, scaleName, tempoText, termParts, textParts, type TextPart } from "./format";
   import { laneNameText, stepNameText, stepWhatText } from "./history/stepText";
   import { laneAddOpenFor } from "./automation/laneAdd.svelte";
   import { stripName } from "./mixer/stripName";
@@ -159,7 +159,7 @@
     if (to.kind === "plugin") return { param: spaced(to.name), range: to.range, value: to.value };
     const spec = EFFECT_PARAMS[to.effect][to.param];
     if (!spec) return { param: "", range: "", value: "" };
-    return { param: paramName(to.effect, to.param), range: `${plainNumber(spec.min)}〜${plainNumber(spec.max)}`, value: valueText(to.effect, spec, to.value) };
+    return { param: paramName(to.effect, to.param), range: rangeText(plainNumber(spec.min), plainNumber(spec.max)), value: valueText(to.effect, spec, to.value) };
   }
 
   /** Where a plugin window belongs (「1 ピアノ ・ 音源」「A リバーブ ・ インサート 1」「棚 ・ ためし弾き」). */
@@ -240,6 +240,15 @@
   }
 
   /**
+   * The monitor piece is the only piece of these texts that lies between two joints with no hole in it. The mark is split
+   * without its spaces, as Japanese writes 「）・ 」 after a bracket.
+   */
+  function withoutMonitorPiece(text: string): string {
+    const pieces = text.split(STATUS_JOIN.trim());
+    return pieces.length < 3 ? text : [pieces[0], ...pieces.slice(2)].join(STATUS_JOIN.trim());
+  }
+
+  /**
    * The text while recording vocals (spec 6 "Recording vocals", "Recording 2 or more vocal tracks", "Recording keyboard and vocals"). The leading 「● 録音中 ・ 」 is said by the tag on the left, so it is left out of the text.
    * 「モニター オン ・ 」 is left out when monitoring is off. For keyboard plus 2 or more vocals, the vocals are listed as 「6 歌（入口 1）、7 歌 2」 (a form not in the spec).
    */
@@ -247,21 +256,21 @@
     const short = (v: VocalRef) => t(`vocal.inputShort.${v.input}`);
     const last = vocals.at(-1);
     if (!last) return keys ? textParts("msg.recording", { track: track(keys), take: app.transport.recording?.take ?? 1 }) : [];
-    const lead = vocals.slice(0, -1).map((v) => `${track(v.track)}（${short(v)}）`);
+    const inBrackets = (v: VocalRef) => `${track(v.track)}${BRACKET_OPEN}${short(v)}${BRACKET_CLOSE}`;
+    const lead = vocals.slice(0, -1).map(inBrackets);
     const vocal = [...lead, track(last.track)].join(LIST_COMMA);
     const values = { stopKey: t("key.playStop"), input: short(last) };
     const parts = keys
       ? textParts("msg.recordingKeysAndVocal", { ...values, keys: track(keys), vocal })
       : vocals.length > 1
-        ? textParts("msg.recordingVocals", { stopKey: values.stopKey, vocals: vocals.map((v) => `${track(v.track)}（${short(v)}）`).join(LIST_COMMA) })
+        ? textParts("msg.recordingVocals", { stopKey: values.stopKey, vocals: vocals.map(inBrackets).join(LIST_COMMA) })
         : textParts("msg.recordingVocal", { ...values, track: vocal });
     const badge = `${t("status.recording")}${STATUS_JOIN}`;
-    const monitorOn = `${t("meter.monitorOn")}${STATUS_JOIN}`;
     return parts
       .map((p, i) => {
         if (p.hole !== null) return p;
         let text = i === 0 && p.text.startsWith(badge) ? p.text.slice(badge.length) : p.text;
-        if (!monitor) text = text.replace(monitorOn, "");
+        if (!monitor) text = withoutMonitorPiece(text);
         return { ...p, text };
       })
       .filter((p) => p.text !== "");

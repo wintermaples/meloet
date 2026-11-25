@@ -573,7 +573,8 @@ impl Play {
                 to: ParamEnd::Plugin {
                     name: row.name.clone(),
                     value: end(read.text, read.value),
-                    range: format!("{}〜{}", end(read.low, 0.0), end(read.high, 1.0)),
+                    range: [end(read.low, 0.0), end(read.high, 1.0)]
+                        .join(self.names.pick("〜", "–")),
                 },
             }
         });

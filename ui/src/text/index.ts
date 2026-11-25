@@ -25,6 +25,12 @@ export let STATUS_JOIN = ja.STATUS_JOIN;
 /** The joint before the last 「と」 when listing three or more names (spec 6 「棚をひらいている（見出し）」). */
 export let LIST_COMMA = ja.LIST_COMMA;
 
+/** The mark between the two ends of a range (「1〜127」). */
+export let RANGE_MARK = ja.RANGE_MARK;
+/** The brackets around a short note after a name (「6 歌（入口 1）」). */
+export let BRACKET_OPEN = ja.BRACKET_OPEN;
+export let BRACKET_CLOSE = ja.BRACKET_CLOSE;
+
 /** Between two sentences put one after the other: nothing after 「。」, a space after ". ". */
 export let SENTENCE_JOIN = "";
 /** The mark that ends a sentence (where a note in brackets goes before it). */
@@ -34,12 +40,26 @@ export let SENTENCE_END = "。";
 export function useLanguage(next: Language): void {
   language = next;
   const joins =
-    next === "en" ? enJoins : { term: ja.TERM_SEPARATOR, status: ja.STATUS_JOIN, list: ja.LIST_COMMA, sentence: "", end: "。" };
+    next === "en"
+      ? enJoins
+      : {
+          term: ja.TERM_SEPARATOR,
+          status: ja.STATUS_JOIN,
+          list: ja.LIST_COMMA,
+          sentence: "",
+          end: "。",
+          range: ja.RANGE_MARK,
+          open: ja.BRACKET_OPEN,
+          close: ja.BRACKET_CLOSE,
+        };
   TERM_SEPARATOR = joins.term;
   STATUS_JOIN = joins.status;
   LIST_COMMA = joins.list;
   SENTENCE_JOIN = joins.sentence;
   SENTENCE_END = joins.end;
+  RANGE_MARK = joins.range;
+  BRACKET_OPEN = joins.open;
+  BRACKET_CLOSE = joins.close;
 }
 
 export function textLanguage(): Language {
@@ -51,7 +71,7 @@ type Values = Readonly<Record<string, string | number>>;
 /** An English text that changes with a number takes the form of that number (1, or any other). */
 function english(entry: EnText, values?: Values): string {
   if (typeof entry === "string") return entry;
-  return Number(values?.[entry.by]) === 1 ? entry.one : entry.other;
+  return Math.abs(Number(String(values?.[entry.by]).replace("−", "-"))) === 1 ? entry.one : entry.other;
 }
 
 /** The text of `key` with its holes as they are (to split it around the values). */

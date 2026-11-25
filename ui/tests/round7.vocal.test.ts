@@ -12,7 +12,7 @@ import ParamsPanel from "../src/components/params/ParamsPanel.svelte";
 import StatusLine from "../src/components/StatusLine.svelte";
 import { Levels } from "../src/gl/levels";
 import { watchSlots, type GlSlot } from "../src/gl/slot";
-import { t } from "../src/text";
+import { t, useLanguage } from "../src/text";
 import * as app from "./fake-app.svelte";
 
 vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));
@@ -261,6 +261,21 @@ describe("status line text (spec 6)", () => {
     unmount(mounted!);
     const on = say({ id: "recordingVocals", keys: null, vocals, monitor: true }, (s) => (s.transport.state = "recording"));
     expect(`${text(q('[data-test="status-badge"]'))} ・ ${on}`).toBe(t("msg.recordingVocals", { vocals: "6 歌（入口 1）、7 歌 2（入口 2）", stopKey: "Space" }));
+  });
+
+  it("English: with monitor off, 「monitor on · 」 is removed too, and the inputs are in English brackets", () => {
+    useLanguage("en");
+    try {
+      const vocals = [{ track: six, input: "mono1" as const }, { track: { number: 7, name: "歌 2" }, input: "mono2" as const }];
+      const rec = (s: AppState) => (s.transport.state = "recording");
+      expect(say({ id: "recordingVocals", keys: null, vocals, monitor: false }, rec)).toBe("6 歌 (In 1), 7 歌 2 (In 2) · Space to stop");
+      unmount(mounted!);
+      expect(say({ id: "recordingVocals", keys: null, vocals: [vocals[0]], monitor: false }, rec)).toBe("6 歌 (In 1) · Space to stop");
+      unmount(mounted!);
+      expect(say({ id: "recordingVocals", keys: null, vocals: [vocals[0]], monitor: true }, rec)).toBe("6 歌 (In 1) · monitor on · Space to stop");
+    } finally {
+      useLanguage("ja");
+    }
   });
 
   it("mic too loud (how long): back to the usual summary 4 s after it last reached 0 dB. Shown again if it reaches it again", () => {

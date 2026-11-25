@@ -1,6 +1,6 @@
 // How numbers are shown. Pure functions with no DOM.
 import type { ScaleMode } from "../bridge";
-import { findTerm, rawText, t, textLanguage, type TextKey } from "../text";
+import { findTerm, RANGE_MARK, rawText, t, textLanguage, type TextKey } from "../text";
 import { barBeatTick, tickText, ticksPerBeat, type Bars, type Meter } from "./time";
 
 /** The minus sign is 「−」 (U+2212), as in the spec. */
@@ -151,7 +151,7 @@ export function gridText(division: number, triplet: boolean): string {
 
 /** The usable range, 「1〜127」「C-1〜G9」 (the range style of spec 6 "Typed a value out of range"). */
 export function rangeText(low: string, high: string): string {
-  return `${low}〜${high}`;
+  return `${low}${RANGE_MARK}${high}`;
 }
 
 /** Position in the note list (「3.1.0000」, the form of mock A-PianoRoll; ticks in 4 digits). Ticks in the song. */

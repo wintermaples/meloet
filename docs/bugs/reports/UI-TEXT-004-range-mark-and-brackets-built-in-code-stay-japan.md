@@ -4,7 +4,7 @@ title: Range mark and brackets built in code stay Japanese in English status lin
 area: UI-TEXT
 kind: parity
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -50,4 +50,5 @@ Fix plan: add two joints beside `LIST_COMMA` / `STATUS_JOIN` (`ui/src/text/ja.ts
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+Joints `RANGE_MARK` (「〜」 / "–") and `BRACKET_OPEN` / `BRACKET_CLOSE` (「（」「）」 / " (" ")") added beside `LIST_COMMA` (`ui/src/text/ja.ts`, `en.ts` `enJoins`, `index.ts` live bindings). Used in `rangeText` (`ui/src/components/format.ts`), `tickRangeText` (`ui/src/time/bars.ts`), the two ranges of `ui/src/components/valueClamp.ts` (through `rangeText`), and `ui/src/components/StatusLine.svelte` (the built-in parameter range through `rangeText`, the vocal input brackets). Rust: `crates/meloet-core/src/play/params.rs` joins a plugin parameter's two ends with `self.names.pick("〜", "–")`; no protocol change. Japanese output unchanged. Documents: architecture 25-36 (joints, the plugin range), 7-readings D4 row "Range mark and brackets".
+Tests: `ui/tests/language.test.ts` "the range mark and the brackets follow the language"; `ui/tests/round7.vocal.test.ts` "English: with monitor off, …" (the brackets); `crates/meloet-core/src/play/params/tests.rs` `the_range_of_a_clamped_plugin_value_is_joined_in_the_language_of_the_page`.

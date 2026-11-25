@@ -11,7 +11,7 @@ export type EnText = string | { readonly by: string; readonly one: string; reado
 const n = (by: string, one: string, other: string): EnText => ({ by, one, other });
 
 /** The joints of ja.ts in English. */
-export const enJoins = { term: " — ", status: " · ", list: ", ", sentence: " ", end: "." };
+export const enJoins = { term: " — ", status: " · ", list: ", ", sentence: " ", end: ".", range: "–", open: " (", close: ")" };
 
 export const enTexts: Record<TextKey, EnText> = {
   "msg.keyboardMissing": "Plug in a USB keyboard and it shows here. You can also write notes with the mouse.",
@@ -30,8 +30,12 @@ export const enTexts: Record<TextKey, EnText> = {
   "msg.unusableHeadingChooser": "Switched by the PC {switched} · Off in the PC's settings {stopped}",
   "msg.unusableHeadingSettings": "meloet does not change the PC's settings",
   "msg.unusableInputHeading": "Inputs you cannot use now",
-  "msg.countingIn": "Count-in · recording starts in {beats} beats. Space to stop",
-  "msg.countingInRest": "Recording starts in {beats} beats. Space to stop",
+  "msg.countingIn": n(
+    "beats",
+    "Count-in · recording starts in {beats} beat. Space to stop",
+    "Count-in · recording starts in {beats} beats. Space to stop",
+  ),
+  "msg.countingInRest": n("beats", "Recording starts in {beats} beat. Space to stop", "Recording starts in {beats} beats. Space to stop"),
   "msg.recording": "Recording to {track} · stop to keep it as take {take}",
   "msg.loopRecording": "Recording to {track} · loop {from}–{to}, pass {lap} · each pass is a take",
   "msg.takeSwitched": "{track} · {clip} is now take {take} / {takes}",
@@ -44,7 +48,11 @@ export const enTexts: Record<TextKey, EnText> = {
   "msg.keyboardInputStopped": "Input from the keyboard stopped. The song is safe. meloet is connecting again.",
   "msg.micTooLoud": "The mic is too loud (it reached 0 dB). Move it a little away, or turn down the input level on the PC.",
   "msg.scanning": "Scanning {done} / {total} · what is done can be used now",
-  "msg.scanDone": "The scan is done · {added} added to the shelf. {stopped} stopped while being checked and were left out. meloet and the song are safe.",
+  "msg.scanDone": n(
+    "stopped",
+    "The scan is done · {added} added to the shelf. {stopped} stopped while being checked and was left out. meloet and the song are safe.",
+    "The scan is done · {added} added to the shelf. {stopped} stopped while being checked and were left out. meloet and the song are safe.",
+  ),
   "msg.windowNotYet": "This plugin's window cannot open yet. You can move its parameters here. meloet does not support this kind of window yet. The sound plays as usual.",
   "msg.noWindow": "This plugin has no window. You can move its parameters here.",
   "msg.windowsOpen": n("count", "{count} plugin window is open", "{count} plugin windows are open"),
@@ -1098,7 +1106,7 @@ export const enTexts: Record<TextKey, EnText> = {
   "lane.restore": "Restore",
   "lane.resting": "Resting · {value}",
   "lane.restingBare": "Resting",
-  "lane.now": "Now {value} · {count} pts",
+  "lane.now": n("count", "Now {value} · {count} pt", "Now {value} · {count} pts"),
   "lane.count": "Points {count}",
   "lane.add": "+ Add lane ▾",
   "lane.addEffectParams": "Effect parameters…",
@@ -1137,9 +1145,14 @@ export const enTexts: Record<TextKey, EnText> = {
   "history.pluginParam": "Change a parameter of {plugin}",
   "history.pluginWindowWhat": "Plugin window",
   "history.placePluginWindow": "{strip} · plugin window",
-  "history.head": "{total} steps · now at step {current}. The {redo} above are undone and can be redone",
-  "history.headLatest": "{total} steps · now at step {current} (the newest)",
-  "history.headAllUndone": "{total} steps · all undone · {redoKey} to redo",
+  // {total} is at least 2 here (one step done, one undone), so only {redo} needs the form for 1.
+  "history.head": n(
+    "redo",
+    "{total} steps · now at step {current}. The {redo} above is undone and can be redone",
+    "{total} steps · now at step {current}. The {redo} above are undone and can be redone",
+  ),
+  "history.headLatest": n("total", "{total} step · now at step {current} (the newest)", "{total} steps · now at step {current} (the newest)"),
+  "history.headAllUndone": n("total", "{total} step · all undone · {redoKey} to redo", "{total} steps · all undone · {redoKey} to redo"),
   "history.headEmpty": "No steps yet · each thing you do lines up here, one step at a time",
   "history.undo": "Undo",
   "history.redo": "Redo",

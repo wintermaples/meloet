@@ -160,7 +160,10 @@ fn bounced(place: &Place, doc: &Doc, track: TrackId, span: (u64, u64)) -> (Doc, 
     assert_eq!(read_wav(&temp), rendered, "written as rendered");
     let audio = adopt(&place.store, &temp, "リード（音） 50.wav", &[]).unwrap();
     assert_eq!(audio.frames as usize, rendered.len() / 2);
-    let after = bounce_track(doc, track, audio, span.0).unwrap().edit.doc;
+    let after = bounce_track(doc, track, audio, span.0, meloet_model::Language::Ja)
+        .unwrap()
+        .edit
+        .doc;
     (place.store).set_sources(
         after
             .audio

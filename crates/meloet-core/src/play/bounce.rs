@@ -90,7 +90,7 @@ impl Play {
         if self.doc().tracks.len() >= MAX_TRACKS {
             return Some(StatusMessage::TooManyTracks);
         }
-        let made = bounce_track(self.doc(), from, audio, start).ok()?;
+        let made = bounce_track(self.doc(), from, audio, start, self.names).ok()?;
         self.apply(made.edit, effects);
         Some(StatusMessage::Bounced {
             track: self.track_ref(made.track)?,

@@ -455,7 +455,7 @@ impl Tools {
             Some(text) => {
                 let path = check!(path_ok(text));
                 if !is_midi_name(&path) {
-                    return Ok(failed("the file's name must end in .mid"));
+                    return Ok(failed("the file's name must end in .mid or .midi"));
                 }
                 if !path.parent().is_some_and(Path::is_dir) {
                     return Ok(failed(format!(

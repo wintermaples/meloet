@@ -1,4 +1,5 @@
-//! Surge XT's modulation sources as its patches number them (1.3.x, 41 of them;
+//! Surge XT's modulation sources as its patches number them (1.3.x: 41 ids, of which 0 is
+//! "off" and is not listed here, so 40 sources;
 //! docs/research/2026-11-23-plugin-presets-state.md Q4). The short names are Surge XT's own
 //! (its OSC names); the long ones are ours.
 

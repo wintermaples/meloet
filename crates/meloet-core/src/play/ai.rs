@@ -468,7 +468,12 @@ impl Play {
                 C::SetParam { .. } => {
                     cannot("that slot does not hold that effect, or it has no such parameter")
                 }
-                C::AddLane { .. } | C::DeleteLane { .. } => AiRefusal::NoSuchLane,
+                C::AddLane { .. } => cannot(
+                    "the track cannot have a lane for that: a vocal track has no instrument, \
+                     a built-in sound does not use every knob, and an insert lane needs an \
+                     effect in that slot with that parameter",
+                ),
+                C::DeleteLane { .. } => AiRefusal::NoSuchLane,
                 _ => AiRefusal::SlotEmpty,
             },
             Err(e) => refusal(e),

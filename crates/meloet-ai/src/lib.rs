@@ -36,6 +36,8 @@ pub const MAX_BAR: u64 = 9999;
 pub const MAX_TICK: u64 = MAX_BAR * 1920 * 12;
 /// Connections at once; more are closed at once.
 const MAX_CONNECTIONS: usize = 8;
+/// How long the link waits after a failed accept before it accepts again.
+const ACCEPT_PAUSE: Duration = Duration::from_millis(100);
 
 /// What the link needs of meloet. Every call may wait for the core thread; the link makes
 /// them on threads of the blocking pool.
@@ -283,7 +285,11 @@ async fn run(
                 Some(Order::Stop) | None => break,
             },
             accepted = accepting => {
-                let Ok((stream, _)) = accepted else { continue };
+                let Ok((stream, _)) = accepted else {
+                    // An error that repeats (out of file handles) must not spin this thread.
+                    tokio::time::sleep(ACCEPT_PAUSE).await;
+                    continue;
+                };
                 let uid = stream.peer_cred().map(|c| c.uid());
                 if uid.as_ref().ok() != Some(&options.expect_uid) {
                     eprintln!("meloet: the AI link refused a connection of uid {uid:?}");
@@ -306,7 +312,10 @@ async fn run(
                 });
             }
             _ = ended.recv() => {}
-            _ = sweep.tick() => scratch.clean(scratch::KEEP),
+            _ = sweep.tick() => {
+                let scratch = scratch.clone();
+                tokio::task::spawn_blocking(move || scratch.clean(scratch::KEEP));
+            }
         }
     }
     if let Some(open) = socket.take() {

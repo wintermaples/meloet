@@ -447,6 +447,7 @@ In the "Basis" column: "spec 3" is chapter 3 of this spec; "mock Main" is a mock
 | Solo in a mute set | A set remembers solo and a recall sets it, but solo is not part of the step (as solo is never a step): undo does not bring the old solo back. | the developers' decision (architecture 24-16 F) |
 | The history row of a whole plugin state put by the AI link (`set_plugin_state`, `set_plugin_state_text`, `load_preset`, the Surge XT tools) | One step with the row 「プラグインの窓」 (`StepKind::PluginWindow`), as a change made in the plugin's window; no new wording. | the developers' decision (architecture 24-16 G); decided by the owner as it is (user:2026-11-24) |
 | The history row of several parameters of one plugin set at once by the AI link (`set_params`) | One step with the row of the first parameter (`SetPluginParam`); the model has no step name for "several parameters". | the developers' decision (architecture 24-16 H); decided by the owner as it is (user:2026-11-24) |
+| `set_mute` by the AI link while the song plays with 「● 書く」 on and the mute lane armed | Does what the person's mute button does then (a point in the lane, the track's own mute unchanged); the answer says so (`wrote_mute_lane: true`, `muted`) instead of a plain "Done". | the lead's decision (2026-11-25) |
 
 ## A-29 Round 12 (the owner's request of 2026-11-23)
 

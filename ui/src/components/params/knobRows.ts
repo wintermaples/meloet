@@ -39,7 +39,7 @@ export function knobText(value: number): string {
 
 /** A typed value (「35」「35 %」「35%」), or null when it is not a number. Rust puts it into 0 to 100. */
 export function typedKnob(text: string): number | null {
-  const s = text.normalize("NFKC").replace(/[%％\s]/g, "").replace("−", "-");
+  const s = text.normalize("NFKC").replace(/[%％\s]/g, "").replaceAll("−", "-");
   const v = s === "" ? NaN : Number(s);
   return Number.isFinite(v) ? v : null;
 }

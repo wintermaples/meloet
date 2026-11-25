@@ -11,6 +11,7 @@
   import { LIST_COMMA, t, type TextKey } from "../../text";
   import { mapOf } from "../../time/bars";
   import Button from "../Button.svelte";
+  import { metrics } from "../metrics.svelte";
   import { openContextMenu, type MenuEntry } from "../menu/contextMenu.svelte";
   import { stripName } from "../mixer/stripName";
   import { cutHead } from "./cutHead";
@@ -143,7 +144,7 @@
 {#if app && dialog && bars}
   <div class="place">
     <div class="lead"></div>
-    <div class="dialog" role="dialog" aria-label={t("export.title")} data-test="export-dialog" use:movableDialog>
+    <div class="dialog" role="dialog" aria-label={t("export.title")} data-test="export-dialog" style:color-scheme={metrics.colorScheme} use:movableDialog>
       <div class="head" data-dialog-head>
         <span class="title">{t("export.title")}</span>
         <span class="spacer"></span>

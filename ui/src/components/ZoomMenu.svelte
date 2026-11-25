@@ -36,7 +36,7 @@
     const rows = usableRows();
     const i = rows.indexOf(document.activeElement as HTMLButtonElement);
     if (ev.key === "ArrowUp" || ev.key === "ArrowDown") {
-      const next = ev.key === "ArrowUp" ? Math.max(0, i - 1) : Math.min(rows.length - 1, i + 1);
+      const next = ev.key === "ArrowUp" ? (i < 0 ? rows.length - 1 : Math.max(0, i - 1)) : Math.min(rows.length - 1, i + 1);
       rows[next]?.focus();
     } else if (ev.key === "Enter") {
       if (i >= 0) onpick(Number(rows[i]!.dataset.scale) as Scale);

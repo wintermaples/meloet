@@ -685,6 +685,23 @@ fn back_closes_the_dialog_first_and_leaves_the_chooser() {
     cmd(&mut m, Command::Back);
     assert!(m.view().workspace.layout.lower.is_empty());
 
+    // On 「くわしい設定」 Esc goes back to the first page and keeps the draft; the next Esc closes.
+    cmd(&mut m, Command::OpenSettings { advanced: false });
+    cmd(&mut m, Command::SettingsSelectOutput { output: USB.into() });
+    cmd(&mut m, Command::SettingsToggleAdvanced);
+    cmd(&mut m, Command::Back);
+    let settings = m.view().workspace.settings;
+    assert_eq!(
+        settings,
+        Some(SettingsDialogView {
+            draft_output: Some(USB.into()),
+            advanced_open: false
+        })
+    );
+    cmd(&mut m, Command::Back);
+    assert_eq!(m.view().workspace.settings, None);
+    assert_eq!(m.view().outputs.chosen.as_deref(), Some(HP));
+
     let mut m = fresh();
     m.handle(Input::KeyboardAdded(keyboard(1)));
     m.handle(usual());
@@ -922,6 +939,8 @@ fn status_table_in_order() {
         })
     );
     cmd(&mut m, Command::OpenSettings { advanced: true });
+    assert_eq!(status(&m), Some(SettingsOpen));
+    cmd(&mut m, Command::Back);
     assert_eq!(status(&m), Some(SettingsOpen));
     cmd(&mut m, Command::Back);
     assert!(matches!(status(&m), Some(OutputMissing { .. })));

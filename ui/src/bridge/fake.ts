@@ -5893,6 +5893,7 @@ function reduce(state: AppState, bands: FakeBands, rest: StatusMessage | null, s
     case "back":
       if (plugins.stoppedOpen) plugins.stoppedOpen = false;
       else if (ws.songDialog) ws.songDialog = null;
+      else if (ws.settings?.advancedOpen) ws.settings.advancedOpen = false;
       else if (ws.settings) ws.settings = null;
       else bands.back();
       break;
@@ -6160,7 +6161,7 @@ export function createFakeTransport(initial?: AppState): Transport {
       if (command.type === "setPluginParam") values = tables.set(command.table, command.param, command.value);
       if (command.type === "typeParam" && command.param.kind === "plugin") {
         const p = command.param;
-        const typed = tables.type(p.table, p.param, command.text);
+        const typed = tables.type(p.table, p.param, command.text, state.workspace.language);
         values = typed.values;
         const said: StatusMessage | null = typed.rejected !== null
           ? { id: "paramRejected", param: p, kept: typed.rejected }

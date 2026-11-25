@@ -1,6 +1,7 @@
 // The script that drives the undo history band, only when measuring (ui/src/dev/historyScript.ts), and reading keys.
 import { describe, expect, it } from "vitest";
-import type { HistoryView } from "../src/bridge";
+import type { AppState, HistoryView } from "../src/bridge";
+import { historyStep, historyUi } from "../src/components/history/historyUi.svelte";
 import { HistoryScript, type HistoryTarget } from "../src/dev/historyScript";
 import { isHistoryPart, parseUiScript, type Clock, type ScriptRecord } from "../src/dev/script";
 import { keyAction } from "../src/keys/keys";
@@ -14,6 +15,15 @@ describe("keys while the band has focus (spec 4)", () => {
     expect(keyAction(k("Home"), false, "other", "history")).toEqual({ kind: "historyHome" });
     expect(keyAction(k("Enter"), false, "other", "history")).toEqual({ kind: "historyConfirm" });
     expect(keyAction(k("Escape"), false, "other", "history")).toEqual({ kind: "back" });
+  });
+  it("UI-SHELL #3 (later): with every step undone and nothing chosen, ↓ chooses nothing and ↑ chooses row 1", () => {
+    const state = { history: { total: 3, redo: 3, current: 0, newest: 3 } } as AppState;
+    historyUi.selected = null;
+    historyStep(state, -1);
+    expect(historyUi.selected).toBeNull();
+    historyStep(state, 1);
+    expect(historyUi.selected).toBe(1);
+    historyUi.selected = null;
   });
   it("outside the band, as before", () => {
     expect(keyAction(k("Home"), false, "other")).toEqual({ kind: "toStart" });

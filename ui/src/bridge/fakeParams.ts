@@ -2,7 +2,7 @@
 // F-ParamFew, F-ParamMany, F-ParamSearch, F-ParamNoWindow and F5-MixerBypass. Where a mock shows
 // only some rows of a group, the rest are filler with plain names.
 
-import type { ParamGroup, ParamKind, ParamRow, ParamTable, ParamValues } from "./types";
+import type { Language, ParamGroup, ParamKind, ParamRow, ParamTable, ParamValues } from "./types";
 
 const SMOOTH: ParamKind = { kind: "smooth" };
 const TOGGLE: ParamKind = { kind: "toggle" };
@@ -181,15 +181,18 @@ export class FakeParamTables {
     return { table, seq: t.seq, values: [{ id, value: row.value, text: row.text }] };
   }
 
-  /** A typed value: the number is read as % of the range. Past an end: put at the end, `clamped` says so. Unreadable: `rejected`. */
-  type(table: number, id: number, text: string): { values: ParamValues | null; clamped: { name: string; value: string; range: string } | null; rejected: string | null } {
+  /**
+   * A typed value: the number is read as % of the range. Past an end: put at the end, `clamped` says so (its range joined as
+   * the core joins it in that language). Unreadable: `rejected`.
+   */
+  type(table: number, id: number, text: string, language: Language = "ja"): { values: ParamValues | null; clamped: { name: string; value: string; range: string } | null; rejected: string | null } {
     const row = this.row(table, id);
     if (!row) return { values: null, clamped: null, rejected: null };
     const n = Number.parseFloat(text.trim().replace(/^[−ー]/, "-"));
     if (!Number.isFinite(n)) return { values: null, clamped: null, rejected: row.text ?? "—" };
     const want = n / 100;
     const values = this.set(table, id, want);
-    const clamped = want < 0 || want > 1 ? { name: row.name, value: row.text ?? "", range: `${textOf(row, 0)}〜${textOf(row, 1)}` } : null;
+    const clamped = want < 0 || want > 1 ? { name: row.name, value: row.text ?? "", range: [textOf(row, 0), textOf(row, 1)].join(language === "en" ? "–" : "〜") } : null;
     return { values, clamped, rejected: null };
   }
 }

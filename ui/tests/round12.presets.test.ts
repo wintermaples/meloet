@@ -201,6 +201,25 @@ describe("「プリセット ▾」 in the params panel", () => {
     }
   });
 
+  it("FIX-fix-ui-keys #2: with the focus in the open list, Mod S, Mod Z and Space still work", () => {
+    show(scene("presets"));
+    const deps: KeyDeps = { state: () => app.current.state, send: app.send, nav: { platform: "Linux" } };
+    const on = (ev: KeyboardEvent) => handleKeydown(ev, deps);
+    document.addEventListener("keydown", on);
+    try {
+      q("preset-button")!.click();
+      flushSync();
+      const row = all("preset-factory")[0]!;
+      row.focus();
+      for (const init of [{ key: "s", code: "KeyS", ctrlKey: true }, { key: "z", code: "KeyZ", ctrlKey: true }, { key: " ", code: "Space" }])
+        row.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init }));
+      expect(app.sent.map((c) => c.type)).toEqual(["saveSong", "undo", "playStop"]);
+      expect(q("preset-menu")).not.toBeNull();
+    } finally {
+      document.removeEventListener("keydown", on);
+    }
+  });
+
   it("「いまの設定を残す…」 is a name box: Enter keeps, Esc puts the row back, then Esc closes the list", () => {
     show(scene("presets"));
     q("preset-button")!.click();

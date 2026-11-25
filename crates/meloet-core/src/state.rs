@@ -1717,7 +1717,7 @@ impl Model {
             Command::Back => {
                 if !self.plugins.close_stopped()
                     && !self.cancel_song_dialog()
-                    && self.dialog.take().is_none()
+                    && !self.settings_back()
                     && !self.play.end_audition(effects)
                 {
                     self.bands.back();
@@ -3049,6 +3049,16 @@ impl Model {
 
     fn chooser_shown(&self) -> bool {
         self.chosen.is_none() && self.all_keyboards().next().is_some()
+    }
+
+    /// Esc in the sound settings: from 「くわしい設定」 back to the first page, from the first page closed (the draft is dropped).
+    fn settings_back(&mut self) -> bool {
+        match &mut self.dialog {
+            Some(dialog) if dialog.advanced_open => dialog.advanced_open = false,
+            Some(_) => self.dialog = None,
+            None => return false,
+        }
+        true
     }
 
     pub fn view(&self) -> AppState {

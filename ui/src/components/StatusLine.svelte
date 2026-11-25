@@ -53,7 +53,7 @@
   import { chordHover } from "./pianoroll/chordPick.svelte";
   import { shelfStatus, shelfUi } from "./tracks.svelte";
   import { statusFit, type StatusRightShown } from "./statusFit";
-  import { mapOf } from "../time/bars";
+  import { mapOf, meterAtOf } from "../time/bars";
   import { positionText, shownTick } from "./time";
   import ZoomMenu from "./ZoomMenu.svelte";
   import { overdubClipName } from "./clipEdits";
@@ -213,6 +213,17 @@
    * 「選択 3 ノート ・ D4 E4 F4 ・ クオンタイズ済み（もとの位置へ戻せます）」 (mock A-PianoRoll). Repeated names are grouped as 「スネア ×2」 (spec 3 85).
    * With 5 or more names, 「…」 after 4.
    */
+  /** The time signature at the first selected note of the shown take, the one the note panel counts lengths in (the song start's when none). */
+  function selectedMeter(): { num: number; den: number } {
+    const map = mapOf(app.timeline);
+    const take = shownNotes.take;
+    const clip = shownNotes.clip;
+    if (!take || !clip) return meterAtOf(map, 0);
+    let first = Infinity;
+    for (const r of app.pianoRoll.selectedNotes) for (let i = r.start; i < Math.min(r.end, take.starts.length); i++) first = Math.min(first, take.starts[i]!);
+    return meterAtOf(map, first === Infinity ? 0 : clip.start + clip.takeOffset + first);
+  }
+
   function notesParts(n: NoteSelection): TextPart[] {
     const values = { count: n.count, keys: keyCountsText(n.names.slice(0, 4), rollDrums) };
     return joined(
@@ -427,7 +438,7 @@
       case "velocityMatched":
         return plain("msg.velocityMatched", { count: m.count, value: m.value });
       case "lengthMatched":
-        return plain("msg.lengthMatched", { count: m.count, value: noteLengthText(m.value, { num: app.timeline.meterNum, den: app.timeline.meterDen }) });
+        return plain("msg.lengthMatched", { count: m.count, value: noteLengthText(m.value, selectedMeter()) });
       case "velocityScaled":
         return plain("msg.velocityScaled", { count: m.count, percent: m.percent });
       case "velocityRamped":
@@ -904,13 +915,18 @@
   const setHeld = (keys: number[]) => {
     if (!sameKeys(keys, held)) held = keys;
   };
+  /** The key words of the last telemetry counted (most messages carry the same ones, often none). */
+  let heldWords: Uint32Array | null = null;
   $effect(() => {
     const tel = current.telemetry;
     if (!countingHeld) {
+      heldWords = null;
       untrack(() => setHeld([]));
       return;
     }
     if (!tel) return;
+    if (heldWords !== null && tel.keys.every((w, i) => w === heldWords![i])) return;
+    heldWords = tel.keys.slice();
     const keys: number[] = [];
     for (let k = 0; k < 128; k++) if (keyIsDown(tel, k)) keys.push(k);
     untrack(() => setHeld(keys));

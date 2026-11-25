@@ -248,6 +248,18 @@ describe("sound settings ▸ advanced settings ▸ plugin locations (R9-Scan)", 
     expect(into).toHaveBeenCalledWith({ block: "nearest" });
     expect(placesReveal.pending).toBe(false);
   });
+
+  it("UI-MIX #2 (later): already shown, it scrolls into view when 「プラグインの場所…」 is pressed", () => {
+    const into = vi.fn();
+    HTMLElement.prototype.scrollIntoView = into;
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((f) => (f(0), 0));
+    show(PluginPlaces, scene("pluginPlaces"), { plugins: scene("pluginPlaces").plugins });
+    expect(into).not.toHaveBeenCalled();
+    placesReveal.pending = true;
+    flushSync();
+    expect(into).toHaveBeenCalledWith({ block: "nearest" });
+    expect(placesReveal.pending).toBe(false);
+  });
 });
 
 describe("moving dialogs (82): about meloet", () => {
@@ -375,7 +387,7 @@ describe("Esc order (spec 3): box being typed in -> term tip or menu -> dialog -
     expect(shelfHasKeys(s)).toBe(false);
   });
 
-  it("fake: back closes the stopped-plugins dialog -> sound settings -> band, in that order", async () => {
+  it("fake: back closes the stopped-plugins dialog -> 「くわしい設定」 to the first page -> sound settings, in that order", async () => {
     const { createFakeTransport } = await import("../src/bridge/fake");
     const start = scene("scanStopped");
     start.workspace.settings = { draftOutput: null, advancedOpen: true };
@@ -391,6 +403,8 @@ describe("Esc order (spec 3): box being typed in -> term tip or menu -> dialog -
     );
     await transport.send({ type: "back" });
     expect([held.plugins.stoppedOpen, held.workspace.settings !== null]).toEqual([false, true]);
+    await transport.send({ type: "back" });
+    expect(held.workspace.settings).toEqual({ draftOutput: null, advancedOpen: false });
     await transport.send({ type: "back" });
     expect(held.workspace.settings).toBeNull();
   });

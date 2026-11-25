@@ -71,7 +71,7 @@ type Values = Readonly<Record<string, string | number>>;
 /** An English text that changes with a number takes the form of that number (1, or any other). */
 function english(entry: EnText, values?: Values): string {
   if (typeof entry === "string") return entry;
-  return Math.abs(Number(String(values?.[entry.by]).replace("−", "-"))) === 1 ? entry.one : entry.other;
+  return english(Math.abs(Number(String(values?.[entry.by]).replace("−", "-"))) === 1 ? entry.one : entry.other, values);
 }
 
 /** The text of `key` with its holes as they are (to split it around the values). */

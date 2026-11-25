@@ -1,7 +1,7 @@
 <!-- The horizontal bar (spec 2 "Scroll bar" laid on its side; spec 3 "Horizontal zoom in and out"). Drawn over the very bottom
      of the track rows or the note area; it takes no space. Not shown when everything fits (visible >= total). Numbers are
      CSS px (the bar is as long as visible). Height 8 (with the line.thin line.hair on top), background gray.3, handle gray.6,
-     gray.8 on hover, gray.9 while moving, corner 0. The shortest handle is as long as the bar is thick, 8 (the same as the
+     accent with an accent.ink border on hover, accent.ink while moving, corner 0. The shortest handle is as long as the bar is thick, 8 (the same as the
      vertical bar; docs/history/design-notes.ja.md A-3). Pressing outside the handle moves one screen.
      Esc while dragging the handle goes back to where it was (spec 4). -->
 <script lang="ts">

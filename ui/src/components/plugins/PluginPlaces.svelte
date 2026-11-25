@@ -11,15 +11,17 @@
   let { plugins }: { plugins: PluginsView } = $props();
   const open = $derived(plugins.placesOpen);
 
-  /** When opened from 「プラグインの場所…」 in the stopped-plugins dialog, scroll it into view. */
-  function reveal(node: HTMLElement): void {
-    if (!placesReveal.pending) return;
+  let node = $state<HTMLElement>();
+  /** When opened from 「プラグインの場所…」 in the stopped-plugins dialog, scroll it into view (also when it is already shown). */
+  $effect(() => {
+    if (!node || !placesReveal.pending) return;
     placesReveal.pending = false;
-    requestAnimationFrame(() => node.scrollIntoView?.({ block: "nearest" }));
-  }
+    const at = node;
+    requestAnimationFrame(() => at.scrollIntoView?.({ block: "nearest" }));
+  });
 </script>
 
-<div class="places" data-test="plugin-places" use:reveal>
+<div class="places" data-test="plugin-places" bind:this={node}>
   <button type="button" class="hd m-focus-in" onclick={() => send({ type: "togglePluginPlaces" })} data-test="plugin-places-head">
     <span class={open ? "m-hi" : "m-lbl"}>{open ? "▾" : "▸"}</span>
     <span class="m-hi name">{t("plugin.places")}</span>

@@ -340,7 +340,7 @@
           {:else}
             <!-- 「+2 半音 0 セント」. The semitones and cents numbers are each dragged up and down, or typed after pressing twice. -->
             <span class="m-num m-hi value"
-              >{#each textParts("clipParams.pitchValue", { semitones: "", cents: "" }) as part, i (i)}{#if part.hole === "semitones"}<StretchNumber
+              >{#each textParts("clipParams.pitchValue", { semitones: stretch.semitones, cents: stretch.cents }) as part, i (i)}{#if part.hole === "semitones"}<StretchNumber
                     value={stretch.semitones}
                     min={-CLIP_SEMITONES_MAX}
                     max={CLIP_SEMITONES_MAX}

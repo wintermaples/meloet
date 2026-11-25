@@ -25,7 +25,7 @@
     const all = rows();
     const i = all.indexOf(document.activeElement as HTMLButtonElement);
     if (ev.key === "ArrowUp" || ev.key === "ArrowDown") {
-      all[ev.key === "ArrowUp" ? Math.max(0, i - 1) : Math.min(all.length - 1, i + 1)]?.focus();
+      all[ev.key === "ArrowUp" ? (i < 0 ? all.length - 1 : Math.max(0, i - 1)) : Math.min(all.length - 1, i + 1)]?.focus();
     } else if (ev.key === "Enter") {
       all[i]?.click();
     } else return;

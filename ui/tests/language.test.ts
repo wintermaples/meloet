@@ -35,6 +35,16 @@ describe("t() in the language of the page", () => {
     expect(t("history.notes", { count: 3 })).toBe("3 ノート");
   });
 
+  it("UI-TEXT #3 (later): two counts in one text each take their own form (semitones, cents)", () => {
+    useLanguage("en");
+    expect(t("msg.pitchDragging", { semitones: "+1", cents: "−1" })).toBe("Pitch +1 semitone −1 cent (dragging)");
+    expect(t("msg.pitchDragging", { semitones: "+2", cents: "+1" })).toBe("Pitch +2 semitones +1 cent (dragging)");
+    expect(t("clipParams.pitchValue", { semitones: "−1", cents: "+30" })).toBe("−1 semitone +30 cents");
+    expect(t("clipParams.pitchValue", { semitones: "+0", cents: "0" })).toBe("+0 semitones 0 cents");
+    useLanguage("ja");
+    expect(t("clipParams.pitchValue", { semitones: "+1", cents: "+1" })).toBe("+1 半音 +1 セント");
+  });
+
   it("English: a count of 1 takes the form for 1, also when signed with 「−」", () => {
     useLanguage("en");
     expect(t("msg.countingInRest", { beats: 1 })).toBe("Recording starts in 1 beat. Space to stop");

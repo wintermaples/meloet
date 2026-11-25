@@ -187,7 +187,9 @@ pub struct ProcessBlock<'a> {
 /// The half of a plugin on the audio thread. `process` and `reset` must not allocate, lock or
 /// block. It is dropped on the main thread.
 pub trait Processor: Send {
-    fn process(&mut self, block: &mut ProcessBlock<'_>);
+    /// False when the plugin was not run (its [`Gate`] was taken): the block's events are
+    /// handed to it again with the next block.
+    fn process(&mut self, block: &mut ProcessBlock<'_>) -> bool;
     /// Silence at once; parameters stay.
     fn reset(&mut self);
     /// The plugin's delay in frames, as of the last `process`. `crate::rt` tells meloet when

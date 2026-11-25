@@ -5,13 +5,13 @@
 mod common;
 
 use meloet_engine::{
-    BlockTiming, Engine, EngineCommand, EngineConfig, EngineParts, Instrument, InstrumentEvent,
-    MidiIn, Sequence, SequenceEvent,
+    BlockTiming, Effect, EffectContext, Engine, EngineCommand, EngineConfig, EngineParts,
+    Instrument, InstrumentEvent, MidiIn, MixStrip, PluginBlock, Sequence, SequenceEvent,
 };
 use meloet_plugin::ipc::Transport;
 use rtrb::{Consumer, Producer, RingBuffer};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering::Relaxed};
+use std::sync::atomic::{AtomicI64, AtomicU32, Ordering::Relaxed};
 
 const RATE: u64 = 48_000;
 const Q: u64 = meloet_model::TICKS_PER_QUARTER;
@@ -364,6 +364,59 @@ fn plugins_are_told_where_the_song_is() {
     let eighths = told(&rig);
     assert_eq!((eighths.meter_num, eighths.meter_den), (6, 8));
     assert_eq!(eighths.tempo_bpm, 90.0);
+    assert_eq!(common::audio_block_counts(), (0, 0));
+}
+
+/// Stands for a plugin effect: where the song is, as its block is told when it runs.
+struct Told {
+    block: Arc<PluginBlock>,
+    position_frames: Arc<AtomicI64>,
+}
+
+impl Effect for Told {
+    fn prepare(&mut self, _sample_rate: f32, _max_frames: usize) {}
+    fn set_param(&mut self, _index: u32, _value: f32) {}
+    fn process(&mut self, _left: &mut [f32], _right: &mut [f32], _ctx: &EffectContext) {
+        let told = self.block.transport().position_frames;
+        self.position_frames.store(told, Relaxed);
+    }
+    fn reset(&mut self) {}
+}
+
+/// The returns and the master are not cut into stretches: their plugins are told the first
+/// frame of the piece, also when the tracks' stretches cut it.
+#[test]
+fn plugins_on_the_returns_and_the_master_are_told_the_head_of_the_piece() {
+    let mut rig = Rig::new();
+    let _tape = rig.tape(0);
+    // A key or a key let go every 100 frames, 50 frames into the first block.
+    let keys: Vec<_> = (0..64)
+        .map(|n| (n * 8 + 4, if n % 2 == 0 { on(60) } else { off(60) }))
+        .collect();
+    rig.sequence(0, &keys);
+    let block = rig.parts.handle.plugin_block().clone();
+    let told: [Arc<AtomicI64>; 2] = Default::default();
+    for (strip, position_frames) in [
+        (MixStrip::Return(0), &told[0]),
+        (MixStrip::Master, &told[1]),
+    ] {
+        let effect = Told {
+            block: block.clone(),
+            position_frames: position_frames.clone(),
+        };
+        let set = rig
+            .parts
+            .handle
+            .set_effect(strip, 0, Some(Box::new(effect)));
+        assert!(set.is_ok());
+    }
+    rig.send(EngineCommand::Play { from: 0 });
+    for n in 0..20 {
+        rig.run(1);
+        let head = (n * BLOCK) as i64;
+        let got = [told[0].load(Relaxed), told[1].load(Relaxed)];
+        assert_eq!(got, [head, head], "block {n}");
+    }
     assert_eq!(common::audio_block_counts(), (0, 0));
 }
 

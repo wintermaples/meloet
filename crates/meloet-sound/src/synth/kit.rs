@@ -10,6 +10,7 @@ use meloet_engine::{Instrument, InstrumentEvent, SongPlace};
 use meloet_model::drums::DrumPiece;
 
 use super::dsp::{Rng, Svf, decay_coef, pulse, svf_g};
+use crate::effects::dsp::flush;
 
 const SLOTS: usize = 2;
 const VOICES: usize = DrumPiece::COUNT * SLOTS;
@@ -274,6 +275,9 @@ impl Voice {
             Shape::Metal { .. } => 1.0,
             _ => self.coef[2],
         };
+        for env in &mut self.env {
+            *env = flush(*env);
+        }
         self.age += 1;
         out
     }
@@ -462,5 +466,38 @@ impl Instrument for ElectroKit {
         if knob == meloet_engine::knobs::KNOB_RELEASE {
             self.knobs.set(knob, place);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every envelope of a hit that rings is 0 or above 1e-18: a short one that fell past
+    /// hearing does not go on as a denormal number while the rest of the hit rings.
+    #[test]
+    fn no_envelope_rings_on_below_hearing() {
+        let mut kit = ElectroKit::new();
+        kit.prepare(48_000.0, 256);
+        for piece in DrumPiece::ROWS {
+            kit.event(InstrumentEvent::NoteOn {
+                note: piece.note(),
+                velocity: 127,
+            });
+        }
+        let (mut left, mut right) = ([0.0f32; 256], [0.0f32; 256]);
+        let mut rang = 0;
+        for _ in 0..48_000 * 10 / 256 {
+            kit.render(&mut left, &mut right);
+            for v in kit.voices.iter().filter(|v| v.active) {
+                rang += 1;
+                assert!(
+                    v.env.iter().all(|e| *e == 0.0 || e.abs() >= 1.0e-18),
+                    "{:?}",
+                    v.env
+                );
+            }
+        }
+        assert!(rang > 0);
     }
 }

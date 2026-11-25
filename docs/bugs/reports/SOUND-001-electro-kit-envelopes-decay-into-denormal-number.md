@@ -4,7 +4,7 @@ title: Electro kit envelopes decay into denormal numbers and stay there for the 
 area: SOUND
 kind: bug
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -82,4 +82,5 @@ Fix plan: `crates/meloet-sound/src/synth/kit.rs` `Voice::tick`: after the multip
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+- `crates/meloet-sound/src/synth/kit.rs` `Voice::tick`: after the multiplies, each envelope below 1e-18 is set to 0 (`effects::dsp::flush`).
+- Test: `synth::kit::tests::no_envelope_rings_on_below_hearing` (all twelve pieces at velocity 127 for 10 s: every envelope of a voice that rings is 0 or at least 1e-18). No stored hash changed (`tests/knobs.rs` and the other kit tests pass as they were).

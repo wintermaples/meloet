@@ -2949,8 +2949,8 @@ impl Engine {
             feed.take(frames, &mut self.input_bus);
         }
         let fade = fade_frames(self.sample_rate);
-        // The returns and the master are not cut into stretches: they hear the tempo at the
-        // first frame of the piece.
+        // The returns and the master are not cut into stretches: they hear the tempo, and their
+        // plugins are told the transport, at the first frame of the piece.
         let mut piece_ctx = None;
         self.master_auto.count = 0;
 
@@ -2966,7 +2966,7 @@ impl Engine {
             let ctx = EffectContext {
                 tempo_bpm: told.tempo_bpm as f32,
             };
-            piece_ctx.get_or_insert(ctx);
+            piece_ctx.get_or_insert((ctx, told));
             self.automate(to - from);
             self.master_auto.mark(&self.transport, from, to);
             // Every instrument that renders in another process starts on this stretch now.
@@ -3014,9 +3014,10 @@ impl Engine {
             }
             from = to;
         }
-        let Some(ctx) = piece_ctx else {
+        let Some((ctx, told)) = piece_ctx else {
             return;
         };
+        self.plugin_block.set_transport(&told);
 
         let [master_l, master_r, sums @ ..] = &mut self.sums;
         let (master_l, master_r) = (&mut master_l[..frames], &mut master_r[..frames]);

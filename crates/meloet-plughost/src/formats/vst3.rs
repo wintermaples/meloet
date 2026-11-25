@@ -698,6 +698,7 @@ pub fn load(
         view: None,
         instance,
         from_audio,
+        just_set: None,
         units: None,
         settle: None,
         sets: set_buses,
@@ -965,7 +966,7 @@ impl Vst3Processor {
 }
 
 impl Processor for Vst3Processor {
-    fn process(&mut self, block: &mut ProcessBlock<'_>) {
+    fn process(&mut self, block: &mut ProcessBlock<'_>) -> bool {
         let frames = block.outputs[0].len();
         if !self.instance.gate.enter() {
             // The main thread is switching the plugin off and on: this block goes round it.
@@ -976,7 +977,7 @@ impl Processor for Vst3Processor {
                 sets.not_measured(self.instance.buses_on.load(Relaxed));
                 sets.outputs.missed(frames);
             }
-            return;
+            return false;
         }
         self.events.clear();
         self.changes.clear();
@@ -1078,6 +1079,7 @@ impl Processor for Vst3Processor {
         // After `silent`: a count that moved on tells of it.
         self.instance.blocks.fetch_add(1, Release);
         self.instance.gate.leave();
+        true
     }
 
     fn reset(&mut self) {
@@ -1109,6 +1111,9 @@ struct Vst3Controller {
     view: Option<(ComPtr<IPlugView>, ComWrapper<Frame>)>,
     instance: Arc<Instance>,
     from_audio: rtrb::Consumer<(u32, f64)>,
+    /// The parameter `set_param` set last, until the ring is heard again: what the ring holds
+    /// of it was given before that value.
+    just_set: Option<u32>,
     /// What each parameter is measured in, by id; filled when the parameters are first listed.
     units: Option<HashMap<u32, String>>,
     settle: Option<Settle>,
@@ -1163,13 +1168,18 @@ fn normal(value: f64) -> f64 {
 
 impl Vst3Controller {
     /// The controller learns what the audio thread gave the processor (automation, and the
-    /// parameters the plugin moves by itself), as VST3 has the host do.
+    /// parameters the plugin moves by itself), as VST3 has the host do. Not what it gave of
+    /// the parameter set last, the first time after.
     fn hear_audio(&mut self) {
         let Some(controller) = &self.instance.controller else {
             while self.from_audio.pop().is_ok() {}
             return;
         };
+        let just_set = self.just_set.take();
         while let Ok((id, value)) = self.from_audio.pop() {
+            if just_set == Some(id) {
+                continue;
+            }
             // SAFETY: a plain call on the main thread.
             unsafe { controller.setParamNormalized(id, value) };
         }
@@ -1457,10 +1467,12 @@ impl Controller for Vst3Controller {
     }
 
     fn set_param(&mut self, id: u32, value: f64) {
+        self.hear_audio();
         if let Some(controller) = &self.instance.controller {
             // SAFETY: a plain call on the main thread.
             unsafe { controller.setParamNormalized(id, value) };
         }
+        self.just_set = Some(id);
     }
 
     fn save_state(&mut self) -> Result<Vec<u8>, String> {
@@ -1986,6 +1998,43 @@ mod tests {
             ]
         );
         assert_eq!(loaded.plugin.audio_outputs, 2);
+    }
+
+    /// A value set is answered as it was set, also when the ring from the audio thread still
+    /// holds the value set before it: a block was running with that one meanwhile.
+    #[test]
+    #[ignore = "needs Surge XT (VST3)"]
+    fn a_value_set_is_answered_over_the_one_before_it_heard_from_the_audio_thread() {
+        let Some(mut loaded) = surge(false, &OutputSettings::default()) else {
+            return;
+        };
+        let id = (loaded.controller.params().iter())
+            .find(|p| p.name == "Global Volume")
+            .unwrap()
+            .id;
+        let silence = [0.0f32; 256];
+        let mut sink = super::super::EventSink::with_capacity(16);
+        let mut block = |loaded: &mut Loaded, value| {
+            let (mut left, mut right) = ([0.0f32; 256], [0.0f32; 256]);
+            let set = ToPlugin::Param {
+                frame: 0,
+                id,
+                value,
+            };
+            loaded.processor.process(&mut ProcessBlock {
+                inputs: [&silence, &silence],
+                outputs: [&mut left, &mut right],
+                events: std::slice::from_ref(&set),
+                transport: &Transport::default(),
+                sink: &mut sink,
+            });
+        };
+        loaded.controller.set_param(id, 0.25);
+        block(&mut loaded, 0.25);
+        loaded.controller.set_param(id, 0.75);
+        block(&mut loaded, 0.25);
+        let now = loaded.controller.param(id).unwrap();
+        assert!((now.value.unwrap() - 0.75).abs() < 0.01, "{now:?}");
     }
 
     /// The tune of [`play_surge`] with every set at its default, as the code before the output

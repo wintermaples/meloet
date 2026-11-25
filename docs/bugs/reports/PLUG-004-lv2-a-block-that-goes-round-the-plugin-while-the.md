@@ -4,7 +4,7 @@ title: LV2: a block that goes round the plugin while the main thread holds the g
 area: PLUG
 kind: bug
 severity: medium
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -59,4 +59,8 @@ Fix plan (one place for both formats, no new buffer): `crates/meloet-plughost/sr
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+- `crates/meloet-plughost/src/formats/mod.rs`: `Processor::process` returns whether the plugin ran.
+- `crates/meloet-plughost/src/formats/lv2.rs`, `formats/vst3.rs`: false on the gate's early return (LV2 also for a block longer than it was made for), true at the end. VST3 had the same hole and is fixed the same way. `formats/fake.rs`: true.
+- `crates/meloet-plughost/src/rt.rs` `SlotRun::serve`: after a block the plugin did not run, its events stay in the slot's event buffer (made at load: the ring's size + 256), their frames set to 0, and go with the next block before its own. When the buffer is full, an event that ends a sound (note-off, note-on of velocity 0, CC 120 / 123, pedal CC 64 / 66 below 64) takes the place of the first event that does not. A block with `RESET` drops the kept MIDI that ends no sound (a key from before is not started after the reset). `Handle::forget_params` drops only the parameter changes; kept MIDI stays.
+- `crates/meloet-plughost/src/formats/lv2.rs` `save_state`: the gate is held for `instance.state()` and the kept values only; the Turtle text is written after it is let go (as `save_preset`).
+- Test: `rt::tests::the_events_of_a_block_the_plugin_did_not_run_go_with_the_next` (meloet-plughost; also counts allocations of the audio thread's code: 0).

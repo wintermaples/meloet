@@ -4,7 +4,7 @@ title: SF2 modulation envelope jumps when a key is let go during its attack
 area: SOUND
 kind: bug
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -77,4 +77,5 @@ Fix plan: `crates/meloet-sound/src/sampler/shape.rs` `release_amount`: when `ris
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+- `crates/meloet-sound/src/sampler/shape.rs` `Adsr::release_amount`: in the attack, `fall = 1 - amount()` (the convex value), so the release starts where the attack was.
+- Test: `sampler::shape::tests::the_modulation_release_goes_on_from_the_attack`. No SF2 test expectation changed (`tests/sf2.rs`, `tests/sf2_fluidr3.rs` pass as they were).

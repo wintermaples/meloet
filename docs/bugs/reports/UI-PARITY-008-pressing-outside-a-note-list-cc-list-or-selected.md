@@ -4,7 +4,7 @@ title: Pressing outside a note list, CC list or selected-notes field box pulls t
 area: UI-PARITY
 kind: parity
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -50,4 +50,8 @@ Fix plan (as suggested): give the blur its own path: in `ui/src/components/piano
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+No protocol, wording or look change.
+
+- `ui/src/components/pianoroll/NoteFieldInput.svelte`: `oncancel(refocus)`: Esc passes `true`, the blur `false`.
+- `ui/src/components/pianoroll/NoteListPanel.svelte`, `ui/src/components/pianoroll/CcListPanel.svelte`, `ui/src/components/pianoroll/NoteInspector.svelte`: pass it on to `close(refocus)` / `closeField(refocus)`, so a press outside only closes the box.
+- Tests: `ui/tests/pianoroll.panels.test.ts` "pressing outside a field box leaves the focus there (UI-PARITY-008)" (note list, selected notes); `ui/tests/pianoroll.r5-notes.test.ts` "pressing another text box closes the box and leaves the focus there (UI-PARITY-008)".

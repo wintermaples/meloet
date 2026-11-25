@@ -4,7 +4,7 @@ title: Note list and CC list: Tab after a value that reorders the take opens the
 area: UI-ROLL
 kind: bug
 severity: medium
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -50,4 +50,8 @@ Fix plan (the smaller of the two in the report, no new mechanism): in `ui/src/co
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+No protocol change.
+
+- `ui/src/components/pianoroll/NoteListPanel.svelte`: after Tab (or Shift Tab) decided a 「位置」 or 「音」 that was really sent, the box closes and the next field waits (`after`) for the reply's rev and for the take Rust now shows; it then opens on the row of the note Rust selected (the edited note), with its text from that take. If Rust kept the same take, it opens on the same row as before; if the row is not found, nothing opens. Other fields move on at once as before.
+- `ui/src/components/pianoroll/CcListPanel.svelte`: the same for 「位置」 in 「CC の一覧」 (the moved point is the selected point).
+- Tests: `ui/tests/pianoroll.panels.test.ts` "the next field opens on the moved note once Rust's take is shown, with its text. Deciding it unchanged sends nothing" and "when Rust changed nothing (the same take), the next field opens on the same row"; `ui/tests/pianoroll.r5-notes.test.ts` "Tab after a position that changes the order opens 「値」 of the moved point once Rust's take is shown; unchanged it sends nothing (UI-ROLL-002)". Changed to the right behavior: `pianoroll.panels.test.ts` "↑ ↓ by 1 …" now waits for the answer after Shift Tab from a changed pitch.

@@ -7,7 +7,7 @@ import { decodeTake } from "../src/bridge/take";
 import { runFrameCallbacks } from "../src/gl/slot";
 import NoteInspector from "../src/components/pianoroll/NoteInspector.svelte";
 import NoteListPanel from "../src/components/pianoroll/NoteListPanel.svelte";
-import { dragReading, prView } from "../src/components/pianoroll/view.svelte";
+import { dragReading, inspectorFolds, prView } from "../src/components/pianoroll/view.svelte";
 import { attachKeys } from "../src/keys/attach";
 import StatusLine from "../src/components/StatusLine.svelte";
 import * as app from "./fake-app.svelte";
@@ -450,7 +450,8 @@ describe("typing values in the note list (mock R3-Lanes)", () => {
     flushSync();
     expect(field()!.value).toBe("F3");
     key(field()!, "Tab", { shiftKey: true });
-    flushSync();
+    // A changed pitch can change the order: the next field opens after the answer.
+    await settle();
     key(field()!, "ArrowUp", { shiftKey: true });
     flushSync();
     expect(field()!.value).toBe("1.1.0010");
@@ -665,5 +666,143 @@ describe("status line: quantized, typed an unusable value", () => {
     await scene("pianoRoll", (s) => (s.status.message = { id: "valueRejected", field: "playPosition", kept: "1. 1. 000", range: null }));
     show(StatusLine);
     expect(left()).toBe("位置は「5」「5.2」「5.2.240」の形で打ちます。もとの 1. 1. 000 のままです。");
+  });
+});
+
+// ---- fixes of the bug sweep (2026-11-25) ----
+
+/** Rust's answer to moving note i to start: a take with a new id, in start (then key) order. index: where note i went. */
+function withNoteAt(t: TakeNotes, id: number, i: number, start: number): { take: TakeNotes; index: number } {
+  const startOf = (k: number) => (k === i ? start : t.starts[k]!);
+  const order = Array.from(t.starts, (_, k) => k).sort((a, b) => startOf(a) - startOf(b) || t.keys[a]! - t.keys[b]!);
+  const each = (arr: ArrayLike<number>) => order.map((k) => arr[k]!);
+  return {
+    take: {
+      ...t,
+      id,
+      starts: Uint32Array.from(order.map(startOf)),
+      lengths: Uint32Array.from(each(t.lengths)),
+      keys: Uint8Array.from(each(t.keys)),
+      velocities: Uint8Array.from(each(t.velocities)),
+      froms: Uint32Array.from(each(t.froms)),
+    },
+    index: order.indexOf(i),
+  };
+}
+
+describe("Tab after a value that changes the order of the notes (UI-ROLL-002)", () => {
+  it("the next field opens on the moved note once Rust's take is shown, with its text. Deciding it unchanged sends nothing", async () => {
+    const { s, take } = await scene("pianoRoll");
+    show(NoteListPanel);
+    double(0, "position");
+    flushSync();
+    typeIn("1.4.0000");
+    key(field()!, "Tab");
+    expect(app.sent).toEqual([{ type: "setNotesField", take: take.id, notes: [0], field: "start", value: at(1, 4, 0) }]);
+    // Rust's answer: the moved note is selected in a take with a new id, which the screen then fetches.
+    const answer = withNoteAt(take, take.id + 100, 0, at(1, 4, 0));
+    expect(answer.index).not.toBe(0);
+    app.setState({ ...s, pianoRoll: { ...s.pianoRoll, take: answer.take.id, selectedNotes: [{ start: answer.index, end: answer.index + 1 }] } });
+    await settle();
+    expect(field()).toBeNull();
+    shown.setShown({ clip: shown.shown.clip, track: shown.shown.track, take: answer.take });
+    await settle();
+    expect(field()!.value).toBe("C3");
+    expect(field()!.closest(".row")!.getAttribute("data-note")).toBe(String(answer.index));
+    app.sent.length = 0;
+    key(field()!, "Enter");
+    await settle();
+    expect(app.sent).toEqual([]);
+  });
+
+  it("when Rust changed nothing (the same take), the next field opens on the same row", async () => {
+    await scene("pianoRoll");
+    show(NoteListPanel);
+    double(2, "key");
+    flushSync();
+    typeIn("F4");
+    key(field()!, "Tab");
+    await settle();
+    expect(field()!.value).toBe("1.0000");
+    expect(field()!.closest(".row")!.getAttribute("data-note")).toBe("2");
+  });
+});
+
+describe("pressing outside a field box leaves the focus there (UI-PARITY-008)", () => {
+  /** Another text box of the page (the shelf search, say), outside the panel. */
+  let other: HTMLInputElement;
+  beforeEach(() => {
+    other = document.createElement("input");
+    document.body.append(other);
+  });
+  afterEach(() => other.remove());
+
+  it("note list: the box closes and the pressed box keeps the focus. Esc still gives it back to the row", async () => {
+    await scene("pianoRoll");
+    show(NoteListPanel);
+    double(2, "velocity");
+    flushSync();
+    other.focus();
+    await settle();
+    expect(field()).toBeNull();
+    expect(document.activeElement).toBe(other);
+    double(2, "velocity");
+    flushSync();
+    key(field()!, "Escape");
+    await settle();
+    expect(document.activeElement).toBe(qa(".row")[2]);
+    expect(app.sent).toEqual([]);
+  });
+
+  it("selected notes: the same", async () => {
+    await scene("pianoRoll");
+    show(NoteInspector);
+    q('[data-test="inspector-velocity"]')!.click();
+    flushSync();
+    other.focus();
+    await settle();
+    expect(field()).toBeNull();
+    expect(document.activeElement).toBe(other);
+    q('[data-test="inspector-velocity"]')!.click();
+    flushSync();
+    key(field()!, "Escape");
+    await settle();
+    expect(document.activeElement).toBe(q('[data-test="inspector-velocity"]'));
+  });
+});
+
+describe("while recording or counting in, the panels do not edit (UI-ROLL-008)", () => {
+  it("note list: rows still select, but no field opens", async () => {
+    const { take } = await scene("pianoRoll", (s) => (s.transport = { ...s.transport, state: "countIn" }));
+    show(NoteListPanel);
+    double(2, "velocity");
+    flushSync();
+    expect(field()).toBeNull();
+    const row = qa(".row")[0]!;
+    key(row, "Enter");
+    flushSync();
+    expect(field()).toBeNull();
+    row.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(app.sent).toEqual([{ type: "selectNotes", take: take.id, notes: [0], mode: "replace" }]);
+  });
+
+  it("selected notes: the values stay shown, but the fields, quantize, 「もとの位置へ戻す」 and the tools are disabled", async () => {
+    await scene("pianoRoll", (s) => (s.transport = { ...s.transport, state: "recording" }));
+    inspectorFolds.sameLength = true;
+    inspectorFolds.velocityAll = true;
+    try {
+      show(NoteInspector);
+      const velocity = q('[data-test="inspector-velocity"]') as HTMLButtonElement;
+      expect(text(velocity)).toBe("77 – 83");
+      expect(velocity.disabled).toBe(true);
+      for (const test of ["quantize-apply", "quantize-restore", "inspector-legato", "inspector-scale-velocity", "inspector-match-velocity"]) {
+        expect(q(`[data-test="${test}"]`)!.getAttribute("aria-disabled"), test).toBe("true");
+        q(`[data-test="${test}"]`)!.click();
+      }
+      expect(app.sent).toEqual([]);
+    } finally {
+      inspectorFolds.sameLength = false;
+      inspectorFolds.velocityAll = false;
+    }
   });
 });

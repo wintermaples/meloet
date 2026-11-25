@@ -6,6 +6,7 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
   import type { Command, ScaleMode } from "../../bridge";
+  import { songBusy } from "../../keys/attach";
   import { menuOpened } from "../../lib/menu";
   import { term, tip } from "../../lib/tip.svelte";
   import { current, send } from "../../state/app.svelte";
@@ -79,6 +80,14 @@
     if (rec) return { take: rec.take, takes: Math.max(clip.takes, rec.take), recording: true };
     return clip.takes >= 2 ? { take: clip.take, takes: clip.takes, recording: false } : null;
   });
+  /** The same rule as 「次のテイク」「前のテイク」 in the menu: not while recording or counting in. */
+  const takeBusy = $derived(songBusy(app));
+  /** stepTake acts on the arrange's chosen clip, so the shown clip is chosen first. */
+  function stepTake(delta: 1 | -1): void {
+    if (!clip) return;
+    if (app.arrange.selectedClip !== clip.id) send({ type: "selectClip", clip: clip.id });
+    send({ type: "stepTake", delta });
+  }
 
   const TOOLS: { tool: Tool; key: TextKey; hotkey: TextKey }[] = [
     { tool: "select", key: "pr.toolSelect", hotkey: "key.toolSelect" },
@@ -222,7 +231,7 @@
   {/if}
   {#if takeTag}
     <div class="take" data-test="pr-take">
-      <button class="m-plain step" aria-label={t("arrange.takePrev")} disabled={takeTag.recording} onclick={() => send({ type: "stepTake", delta: -1 })}
+      <button class="m-plain step" aria-label={t("arrange.takePrev")} disabled={takeBusy} onclick={() => stepTake(-1)}
         >◂</button
       >
       <span class="m-hi">
@@ -231,7 +240,7 @@
           {#if part.hole}<span class="m-num">{part.text}</span>{:else}{@render termed(part.text, "テイク")}{/if}
         {/each}
       </span>
-      <button class="m-plain step" aria-label={t("arrange.takeNext")} disabled={takeTag.recording} onclick={() => send({ type: "stepTake", delta: 1 })}
+      <button class="m-plain step" aria-label={t("arrange.takeNext")} disabled={takeBusy} onclick={() => stepTake(1)}
         >▸</button
       >
       <span class="m-num m-lbl">{t("arrange.takeKey")}</span>

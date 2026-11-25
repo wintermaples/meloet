@@ -4,7 +4,7 @@ title: Drum row names of the piano roll lose their term tips in English
 area: UI-TEXT
 kind: parity
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -44,4 +44,7 @@ Fix plan (as suggested): in `ui/src/components/pianoroll/drums.ts` `drumTerm`, w
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+No wording change.
+
+- `ui/src/components/pianoroll/drums.ts`: `drumTerm` also finds a term's English word in the name on an English page (a whole word in any case, as `termParts` does) and gives the Japanese word, longer words first as before.
+- Test: `ui/tests/language.test.ts` "the English kit names find the same terms as the Japanese ones".

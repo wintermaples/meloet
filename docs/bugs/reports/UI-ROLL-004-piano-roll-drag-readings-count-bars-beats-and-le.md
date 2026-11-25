@@ -4,7 +4,7 @@ title: Piano roll drag readings count bars, beats and lengths in the song's firs
 area: UI-ROLL
 kind: bug
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -49,4 +49,8 @@ Fix plan for this report: `ui/src/components/pianoroll/drag.ts` and `cc.ts` read
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+Fixed together with UI-ROLL-005 and UI-ROLL-006. No protocol change.
+
+- `ui/src/components/pianoroll/drag.ts`, `ui/src/components/pianoroll/cc.ts`: `RollInput.meter()` / `LaneInput.meter()` give the tempo map (`Bars`); positions are read with `positionText(tick, map)` and lengths in the time signature at the note (`meterAtOf`).
+- `ui/src/components/pianoroll/Roll.svelte`, `ui/src/components/pianoroll/CcLanes.svelte`: hand the tempo map (`mapOf(timeline)`) instead of the first time signature.
+- Tests: `ui/tests/pianoroll.meters.test.ts` "readings while dragging follow the time signature changes (UI-ROLL-004)" (3 tests) and "the piano roll hands the tempo map to its readings (mount)".

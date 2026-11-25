@@ -75,6 +75,29 @@ describe("toolbar", () => {
     expect(app.sent).toEqual([{ type: "stepTake", delta: -1 }]);
   });
 
+  it("◂ ▸ switch the take of the shown clip: when the arrange chose another clip or none, the shown one is chosen first (UI-ROLL-001)", () => {
+    const s = scene();
+    const clip = s.song.tracks[0]!.clips[0]!;
+    s.song.tracks[0]!.clips[0] = { ...clip, take: 2, takes: 3 };
+    s.arrange = { ...s.arrange, selectedClip: null };
+    show(s);
+    const [, next] = [...target.querySelectorAll<HTMLButtonElement>("[data-test=pr-take] button")];
+    next!.click();
+    expect(app.sent).toEqual([
+      { type: "selectClip", clip: clip.id },
+      { type: "stepTake", delta: 1 },
+    ]);
+  });
+
+  it("◂ ▸ cannot be used while counting in or recording, as the menu's 「次のテイク」「前のテイク」 (UI-ROLL-001)", () => {
+    const s = scene();
+    s.song.tracks[0]!.clips[0] = { ...s.song.tracks[0]!.clips[0]!, take: 2, takes: 3 };
+    s.transport = { ...s.transport, state: "countIn" };
+    show(s);
+    const buttons = [...target.querySelectorAll<HTMLButtonElement>("[data-test=pr-take] button")];
+    expect(buttons.map((b) => b.disabled)).toEqual([true, true]);
+  });
+
   it("the tool (select, draw, erase) is a screen-only state", () => {
     show(scene());
     q("[data-test=pr-tool-draw]")!.click();

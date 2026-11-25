@@ -367,3 +367,68 @@ describe("fake scene pianoRoll", () => {
     expect(snap.state.pianoRoll.selectedControls).toEqual([{ start: 1, end: 2 }, { start: 3, end: 4 }]);
   });
 });
+
+describe("CC drags: the take of the press, and while recording (UI-ROLL-003, UI-ROLL-008)", () => {
+  const none = { shift: false, alt: false, mod: false };
+  let sent: Command[];
+  let tool: Tool;
+  let busy: boolean;
+  let now: G.Shown | null;
+  const make = () =>
+    new LaneMouse({
+      shown: () => now,
+      control: () => PB,
+      geom: () => GEOM,
+      box: () => LANE,
+      step: () => TPQ / 4,
+      meter: () => ({ num: 4, den: 4 }),
+      tool: () => tool,
+      selected: () => [],
+      reachPx: () => 4,
+      stillPx: () => 4,
+      send: (c) => void sent.push(c),
+      busy: () => busy,
+    });
+  beforeEach(() => {
+    sent = [];
+    tool = "select";
+    busy = false;
+    now = shown();
+  });
+
+  it("release sends the id of the take the points were read from, even if another take is shown by then", () => {
+    const m = make();
+    m.down(20, 24, none);
+    m.move(40, 24, none);
+    now = G.shownOf(withControls(8), 0);
+    expect(m.up()).toEqual({ type: "moveControls", take: 7, points: [1], ticks: TPQ / 2, value: 0 });
+  });
+
+  it("a held drag is dropped when another take is shown; not while the same take is shown", () => {
+    const m = make();
+    m.down(20, 24, none);
+    m.move(40, 24, none);
+    expect(m.dropIfTakeChanged()).toBe(false);
+    now = G.shownOf(withControls(8), 0);
+    expect(m.dropIfTakeChanged()).toBe(true);
+    expect(m.up()).toBeNull();
+  });
+
+  it("while recording or counting in, a press on a point only selects it. Drawing and erasing start nothing. A box still selects", () => {
+    busy = true;
+    const m = make();
+    m.down(20, 24, none);
+    expect(sent).toEqual([{ type: "selectControls", take: 7, points: [1], mode: "replace" }]);
+    expect(m.drag).toBeNull();
+    tool = "draw";
+    m.down(60, 24, none);
+    expect(m.drag).toBeNull();
+    tool = "erase";
+    m.down(20, 24, none);
+    expect(m.drag).toBeNull();
+    tool = "select";
+    m.down(5, 1, none);
+    m.move(100, 47, none);
+    expect(m.up()).toEqual({ type: "selectControls", take: 7, points: [1, 4], mode: "replace" });
+  });
+});

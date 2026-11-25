@@ -9,6 +9,7 @@
 <script lang="ts">
   import { mapOf, meterAtOf } from "../../time/bars";
   import type { Command, QuantizeAlign, QuantizeSettings, ScaleMode } from "../../bridge";
+  import { songBusy } from "../../keys/attach";
   import { menuOpened } from "../../lib/menu";
   import ScrollArea from "../../lib/ScrollArea.svelte";
   import { term, tip } from "../../lib/tip.svelte";
@@ -44,6 +45,8 @@
   const take = $derived(shown.take);
   /** The shown take is the same as the take of Rust's pianoRoll (intents may be sent). */
   const live = $derived(take !== null && shown.clip !== null && pr.take === take.id);
+  /** Intents that edit may be sent: not while recording or counting in (Rust takes none then). */
+  const editable = $derived(live && !songBusy(app));
   const drums = $derived(rollShowsDrums(app, shown.clip, shown.track));
   const summary = $derived(live ? selectedSummary(take!, shown.clip!, pr.selectedNotes, meter, 64, (k) => keyLabel(k, drums)) : null);
   const count = $derived(summary?.count ?? 0);
@@ -92,7 +95,7 @@
   let editing = $state<{ name: FieldName; draft: string; token: number } | null>(null);
   let tokens = 0;
   const fieldButtons: Partial<Record<FieldName, HTMLButtonElement>> = $state({});
-  const specOf = (name: FieldName) => (live && selected.length > 0 ? noteFieldSpec(name, take!, shown.clip!, selected, meter, drums) : null);
+  const specOf = (name: FieldName) => (editable && selected.length > 0 ? noteFieldSpec(name, take!, shown.clip!, selected, meter, drums) : null);
   const editSpec = $derived(editing ? specOf(editing.name) : null);
 
   function openField(name: FieldName): void {
@@ -145,7 +148,7 @@
 
   function matchBulk(name: Bulk): void {
     const spec = bulkSpecs[name];
-    if (!spec || !live) return;
+    if (!spec || !editable) return;
     const r = readField(spec, bulkDrafts[name]);
     if (r === null) {
       send(rejectCommand(spec, fieldText[name]));
@@ -177,7 +180,7 @@
 
   // ---- 「割合」 「だんだん」 「ばらつき」 and 「次の音までのばす」 (P3) ----
 
-  const toolUsable = $derived(live && selected.length > 0);
+  const toolUsable = $derived(editable && selected.length > 0);
   const toolDrafts = $state<Record<ToolField, string>>({
     percent: toolInitial("percent"),
     rampFrom: toolInitial("rampFrom"),
@@ -261,8 +264,8 @@
     return () => observer.disconnect();
   });
 
-  const canQuantize = $derived(live && take!.starts.length > 0);
-  const canUnquantize = $derived(live && quantized);
+  const canQuantize = $derived(editable && take!.starts.length > 0);
+  const canUnquantize = $derived(editable && quantized);
   const quantize = () => canQuantize && send({ type: "quantize", take: take!.id, notes: selected });
   const unquantize = () => canUnquantize && send({ type: "unquantize", take: take!.id, notes: selected });
 
@@ -354,7 +357,7 @@
           test={TESTS[name]}
           right={name !== "key"}
           onfinish={finishField}
-          oncancel={() => editing?.token === e.token && closeField(true)}
+          oncancel={(refocus) => editing?.token === e.token && closeField(refocus)}
           onreject={rejectField}
         />
       </span>
@@ -362,8 +365,8 @@
       <button
         class="m-plain m-hi value"
         class:m-num={!(drums && name === "key")}
-        class:pick={summary !== null}
-        disabled={summary === null}
+        class:pick={summary !== null && editable}
+        disabled={summary === null || !editable}
         aria-label={LABELS[name]}
         data-test={TESTS[name]}
         bind:this={fieldButtons[name]}

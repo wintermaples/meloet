@@ -4,7 +4,7 @@ title: The draw tool sounds its note or chord while the song plays, records or c
 area: UI-ROLL
 kind: ui-ux
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -43,4 +43,8 @@ Fix plan (as suggested): in `ui/src/components/pianoroll/drag.ts` wrap the two `
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+No protocol change.
+
+- `ui/src/components/pianoroll/drag.ts`: both `audition.play` calls of the draw tool (one note and a chord) only when `mayAudition()`; writing stays as it was. The pitch-change sound while moving notes already had the check.
+- Tests: `ui/tests/pianoroll.drag.test.ts` "writes the note but does not sound it (only when stopped, as pressing a note)". Changed to the right behavior: the two draw tool tests that expect a sound now set `auditionOn = true` (stopped).
+- `docs/architecture.md` 16 "Audition": the draw tool sounds only while stopped.

@@ -12,7 +12,7 @@
   import { t } from "../../text";
   import { metrics } from "../metrics.svelte";
   import type { Meter } from "../time";
-  import { mapOf } from "../../time/bars";
+  import { gridTick, mapOf } from "../../time/bars";
   import { fitLanes, LANE_ORDER, LaneMouse, laneControl, type LaneBox, type LaneDrag } from "./cc";
   import { cursorCss } from "./cursor";
   import type { CursorKind, Mods } from "./drag";
@@ -81,13 +81,16 @@
   let lastSent: Promise<unknown> | null = null;
 
   const boxOf = (tag: LaneTag | null): LaneBox => ({ height: tag ? heights[tag] : 0, pad });
+  const map = $derived(mapOf(current.state!.timeline));
+  const transport = $derived(current.state!.transport);
   const mouse = new LaneMouse({
     shown: () => take,
     control: () => (active ? laneControl(active, ccLanes.other) : null),
     geom: () => g,
     box: () => boxOf(active),
     step: () => step,
-    meter: () => meter,
+    grid: () => (tick: number, floor: boolean) => gridTick(map, tick, step, floor, pr.grid.division === 0),
+    meter: () => map,
     tool: () => prView.tool,
     selected: () => selectedRanges,
     reachPx: () => metrics.px("space.1"),
@@ -95,6 +98,13 @@
     send: (c: Command) => {
       lastSent = send(c);
     },
+    busy: () => transport.state === "recording" || transport.state === "countIn",
+  });
+  $effect(() => {
+    void take?.take.id;
+    untrack(() => {
+      if (mouse.dropIfTakeChanged()) changed(null);
+    });
   });
 
   const shownDrag = $derived.by(() => {

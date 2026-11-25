@@ -192,6 +192,46 @@ fn tempo_points_are_added_set_moved_and_deleted() {
 }
 
 #[test]
+fn deleting_the_last_tempo_point_ends_the_ramp_into_it() {
+    let doc = Doc::new_default();
+    let doc = add_tempo_point(&doc, 4 * BAR, tempo(10_400)).unwrap().doc;
+    let doc = add_tempo_point(&doc, 8 * BAR, tempo(12_000)).unwrap().doc;
+    let doc = set_tempo_ramp(&doc, 0, true).unwrap().doc;
+    let ramping = set_tempo_ramp(&doc, 4 * BAR, true).unwrap().doc;
+
+    // The point before the deleted last one has nothing to ramp to.
+    let e = delete_tempo_point(&ramping, 8 * BAR).unwrap();
+    assert_eq!(e.step, StepKind::DeleteTempoPoint { tick: 8 * BAR });
+    assert_eq!(points(&e.doc), [(4 * BAR, 10_400, false)]);
+    assert!(e.doc.timeline.head_ramp);
+    // So a point added after it later is not ramped into.
+    let later = add_tempo_point(&e.doc, 12 * BAR, tempo(9_000)).unwrap().doc;
+    assert_eq!(
+        points(&later),
+        [(4 * BAR, 10_400, false), (12 * BAR, 9_000, false)]
+    );
+
+    // A point that is not the last: the ramp before it goes on to the next point.
+    let e = delete_tempo_point(&ramping, 4 * BAR).unwrap();
+    assert_eq!(points(&e.doc), [(8 * BAR, 12_000, false)]);
+    assert!(e.doc.timeline.head_ramp);
+
+    // The only point: the head is the last.
+    let one = delete_tempo_point(&e.doc, 8 * BAR).unwrap().doc;
+    assert!(points(&one).is_empty());
+    assert!(!one.timeline.head_ramp);
+
+    // One step: undo brings the point and the ramp back.
+    let mut history = History::new();
+    let mut now = ramping.clone();
+    let e = delete_tempo_point(&ramping, 8 * BAR).unwrap();
+    history.apply(&mut now, e);
+    assert!(!now.timeline.tempo_points[0].ramp);
+    history.undo(&mut now);
+    assert_eq!(now.timeline, ramping.timeline);
+}
+
+#[test]
 fn meter_changes_are_added_set_moved_and_deleted() {
     let doc = Doc::new_default();
     let e = add_meter_change(&doc, 8, meter(3, 4)).unwrap();

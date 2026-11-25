@@ -53,6 +53,7 @@ In the "Basis" column: "spec 3" is chapter 3 of this spec; "mock Main" is a mock
 | Count-in bars, recorded clip names, first save | — | When the count-in is 「なし」, the button value is 「なし」. A recorded clip gets the track name (「ピアノ」). The first save does not ask: it goes to 「はじめての曲/はじめての曲.meloet」 in the PC's Music folder (「はじめての曲 2」 if that name is already used) | the owner's decision |
 | Loop 「5–9」 | The accent band on the ruler of Main | From the start of bar 5 to the start of bar 9 (the numbers of the bar lines) | the developers' reading of the mock |
 | Behaviour around recording (where play and record start, the last half beat of the count-in, not playing the earlier takes of the track being recorded, a recording with no notes, take switching that goes round, actions not taken during the count-in and recording, and so on) | — | Chapters 10, 12 and 13 of [`docs/architecture.md`](../architecture.md) | the developers' decision |
+| A pedal, bend or other controller move that comes late for an ended loop pass | — | It is the value the pass going on starts with (the head of its take) and makes no point at the tick it came with; with no pass going on yet, the next pass starts from it. A pedal let go late does not leave the next pass with the pedal down | decided by the lead, 2026-11-25 |
 
 ## A-5 Round 3 (piano roll and clips)
 
@@ -97,6 +98,7 @@ In the "Basis" column: "spec 3" is chapter 3 of this spec; "mock Main" is a mock
 | Input box of the change-all row | Spec 2 「入力の枠」 | Border gray.6 normally, gray.8 on hover, gray.10 while typing, gray.5 with text gray.7 when disabled, rec when broken. The heading can be opened with nothing selected (the rows inside are disabled) | spec 2 |
 | Wording of a rounded value | — | In the note fields, the form of the field (「3.4.0000」). When 2 or more parts were rounded, only one is reported, in the order clip range → bar → beat → tick | the developers' reading |
 | What is read out of range | — | Velocity: negative numbers and decimals (rounded half up). Position: bar 0 and negative numbers, beat 0 and beats above the top number, ticks of one beat or more. Note names: C10, C-2 and so on. None of these is made 「こわれた」 | the developers' reading |
+| 「かけなおす」 with 「始まりだけ」 after a length was changed by hand | Spec 3 | 「始まりだけ」 moves only the start (from the recorded position); the length is the one the note has now, so a length changed by hand is kept. 「始まりと終わり」 still takes both ends from the recorded note, and 「もとの位置へ戻す」 still puts back the recorded start and length | user:2026-11-25 |
 
 ## A-8 Round 3, part 1 (arrange, transport, input meter)
 
@@ -347,6 +349,7 @@ In the "Basis" column: "spec 3" is chapter 3 of this spec; "mock Main" is a mock
 | Pressing outside the name box | The box closes and the name does not change. | the developers' reading (the comment in the protocol) |
 | 「96.00 ・ 4/4」 on the folded row | The values at the play line. | spec 3 |
 | Horizontal zoom of the arrange | The px of one bar is counted with a bar of the time signature at the start of the song (a 3/4 bar is 3/4 of the width of a 4/4 bar). | positions are straight in ticks |
+| Deleting the last tempo point when the point before it ramps | The ramp of the point before it (of the head when no point is left) is cleared in the same step; undo brings the point and the ramp back. A point added after it later is then not ramped into without the person asking. | decided by the lead, 2026-11-25 |
 
 ## A-21 Automation (round 6, part 2)
 

@@ -246,6 +246,62 @@ fn writing_puts_the_line_back_around_what_was_written() {
 }
 
 #[test]
+fn a_hand_value_that_is_not_a_number_makes_no_point() {
+    let empty = with_volume(Vec::new());
+    let id = lane(&empty, AutoTarget::Volume).id;
+    assert_eq!(
+        add_point(&empty, id, Q, None, f32::NAN).unwrap_err(),
+        EditError::Unchanged
+    );
+    assert_eq!(
+        add_point(&empty, id, Q, Some(f32::NAN), f32::NAN).unwrap_err(),
+        EditError::Unchanged
+    );
+    let pass = vec![p(10, 0.2)];
+    assert_eq!(
+        write(
+            &empty,
+            T1,
+            AutoTarget::Volume,
+            std::slice::from_ref(&pass),
+            f32::NAN
+        )
+        .unwrap_err(),
+        EditError::Unchanged
+    );
+    // Past the ends it goes to the end.
+    let (e, _, _) = add_point(&empty, id, Q, None, f32::INFINITY).unwrap();
+    assert_eq!(ticks_values(lane(&e.doc, AutoTarget::Volume)), [(Q, 1.0)]);
+    let (e, _) = write(
+        &empty,
+        T1,
+        AutoTarget::Volume,
+        std::slice::from_ref(&pass),
+        -3.0,
+    )
+    .unwrap();
+    assert_eq!(
+        ticks_values(lane(&e.doc, AutoTarget::Volume)),
+        [(9, 0.0), (10, 0.2), (11, 0.0)]
+    );
+    assert_eq!(e.doc.check_lanes(), Ok(()));
+
+    // Where the lane has a line, the hand's value is not looked at.
+    let doc = with_volume(vec![p(0, 0.5)]);
+    let id = lane(&doc, AutoTarget::Volume).id;
+    let (e, _, _) = add_point(&doc, id, Q, None, f32::NAN).unwrap();
+    assert_eq!(
+        ticks_values(lane(&e.doc, AutoTarget::Volume)),
+        [(0, 0.5), (Q, 0.5)]
+    );
+    let (e, _) = write(&doc, T1, AutoTarget::Volume, &[pass], f32::NAN).unwrap();
+    assert_eq!(
+        ticks_values(lane(&e.doc, AutoTarget::Volume)),
+        [(0, 0.5), (9, 0.5), (10, 0.2), (11, 0.5)]
+    );
+}
+
+#[test]
 fn a_later_pass_of_a_loop_wins() {
     let doc = with_volume(Vec::new());
     let first = vec![p(100, 0.1), p(200, 0.1), p(300, 0.1)];

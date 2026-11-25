@@ -742,7 +742,8 @@ fn a_pedal_of_a_pass_goes_there_though_notes_of_the_next_pass_came_first() {
     // Pass 1 starts with the pedal up and the wheel where it was left.
     assert_eq!(controls(&r.takes[1]), [(0, ControlValue::PitchBend(500))]);
 
-    // Once the pass was ended, what comes late for it goes into the pass going on.
+    // Once the pass was ended, what comes late for it is what the pass going on starts
+    // with: the pedal is up from its head, and there is no point where the move came.
     let mut rec = Recorder::new(BAR, bars_2_3(), HeldControls::default());
     for &e in &events[..4] {
         rec.push(e);
@@ -751,8 +752,78 @@ fn a_pedal_of_a_pass_goes_there_though_notes_of_the_next_pass_came_first() {
     rec.push(events[4]);
     rec.push(events[7]);
     let r = rec.finish(B + 500, 1).unwrap();
+    assert_eq!(controls(&r.takes[0]), []);
+}
+
+#[test]
+fn a_late_controller_move_is_the_start_of_the_pass_going_on() {
+    let cc7 = |value| ControlValue::Cc { number: 7, value };
+    // The pass going on is there already (a note of it was said first).
+    let mut r = Recorder::new(BAR, bars_2_3(), HeldControls::default());
+    r.push(on(B, 0, 60));
+    r.push(cc(B + 100, 0, CC_SUSTAIN, 127));
+    r.push(cc(B + 110, 0, CC_MODULATION, 40));
+    r.push(off(B + 384, 0, 60));
+    r.push(on(B, 1, 60));
+    assert_eq!(r.close_laps(0).len(), 1);
+    r.push(cc(3 * B - 30, 0, CC_SUSTAIN, 0));
+    r.push(bend(3 * B - 20, 0, 500));
+    r.push(cc(3 * B - 10, 0, 7, 99));
+    r.push(cc(3 * B - 5, 0, 7, 90));
+    // A move of the pass going on is a point as always.
+    r.push(cc(B + 200, 1, CC_SUSTAIN, 127));
+    r.push(off(B + 384, 1, 60));
+    let takes = r.close_laps(1);
+    assert_eq!(takes.len(), 1);
     assert_eq!(
-        controls(&r.takes[0]),
-        [(0, sustain(127)), (499, sustain(0))]
+        controls(&takes[0]),
+        [
+            (
+                0,
+                ControlValue::Cc {
+                    number: CC_MODULATION,
+                    value: 40
+                }
+            ),
+            (0, ControlValue::PitchBend(500)),
+            (0, cc7(90)),
+            (200, sustain(127)),
+        ]
     );
+    // The passes after it start from what the pass left, as always.
+    r.push(on(B + 10, 2, 62));
+    r.push(off(B + 20, 2, 62));
+    let last = r.finish(B + 500, 2).unwrap();
+    assert!(controls(&last.takes[0]).contains(&(0, sustain(127))));
+
+    // No pass going on yet: the next pass starts from the moved value.
+    let mut r = Recorder::new(BAR, bars_2_3(), HeldControls::default());
+    r.push(cc(B + 50, 0, CC_SUSTAIN, 127));
+    r.push(on(B + 100, 0, 60));
+    r.push(off(B + 200, 0, 60));
+    assert_eq!(r.close_laps(0).len(), 1);
+    r.push(cc(3 * B - 30, 0, CC_SUSTAIN, 0));
+    r.push(bend(3 * B - 20, 0, -300));
+    r.push(cc(3 * B - 10, 0, 7, 99));
+    // Nothing was played in the pass going on: still no take.
+    assert!(r.clone().finish(B + 500, 1).is_none());
+    assert!(r.live_notes(B + 10, 1).is_empty());
+    r.push(on(B + 10, 1, 64));
+    r.push(off(B + 60, 1, 64));
+    let takes = r.close_laps(1);
+    assert_eq!(takes.len(), 1);
+    assert_eq!(notes(&takes[0]), [(10, 50, 64)]);
+    assert_eq!(
+        controls(&takes[0]),
+        [(0, ControlValue::PitchBend(-300)), (0, cc7(99))]
+    );
+
+    // Without a loop there is no pass to be late for.
+    let mut r = Recorder::new(BAR, None, HeldControls::default());
+    r.push(on(B, 0, 60));
+    assert!(r.close_laps(0).is_empty());
+    r.push(cc(B + 100, 0, CC_SUSTAIN, 127));
+    r.push(off(B + 384, 0, 60));
+    let one = r.finish(B + 500, 0).unwrap();
+    assert_eq!(controls(&one.takes[0]), [(100, sustain(127))]);
 }

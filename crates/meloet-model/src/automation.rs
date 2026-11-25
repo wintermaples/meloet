@@ -364,8 +364,9 @@ pub fn delete_lane(
 }
 
 /// A point at `tick` (past `MAX_TICK` is `MAX_TICK`). `value`: without it, or not a number,
-/// the line's value there, or `flat` on a lane with no points. A point at that tick takes
-/// the value. Returns the lane's new id and the point's place.
+/// the line's value there, or `flat` on a lane with no points (nothing happens when that
+/// is not a number either). A point at that tick takes the value. Returns the lane's new id
+/// and the point's place.
 pub fn add_point(
     doc: &Doc,
     lane: LaneId,
@@ -378,7 +379,8 @@ pub fn add_point(
     let tick = tick.min(MAX_TICK);
     let value = (value.and_then(clamp_value))
         .or_else(|| l.value_at(tick))
-        .unwrap_or(flat.clamp(0.0, 1.0));
+        .or_else(|| clamp_value(flat))
+        .ok_or(EditError::Unchanged)?;
     let mut points = l.points.to_vec();
     let at = match points.binary_search_by_key(&tick, |p| p.tick) {
         Ok(at) => {
@@ -608,7 +610,8 @@ fn written(pass: &[AutoPoint], step: bool) -> Vec<AutoPoint> {
 /// 「● 書く」: what one press wrote, until it was let go or the song stopped (spec 3, 16-B;
 /// docs/architecture.md 21-9). `passes`: the points written in each pass of a loop, the
 /// oldest first; a later pass wins where they meet. `flat`: the value of a lane with no
-/// points, where the hand put it.
+/// points, where the hand put it; when the lane needs it and it is not a number, nothing
+/// happens.
 pub fn write(
     doc: &Doc,
     home: impl Into<LaneHome>,
@@ -619,6 +622,12 @@ pub fn write(
     let home = home.into();
     let li = find_target(doc, home, target)?;
     let l = lane_at(doc, home, li);
+    let flat = match clamp_value(flat) {
+        Some(flat) => flat,
+        None if l.points.is_empty() => return Err(EditError::Unchanged),
+        // Not looked at: the line has a value everywhere.
+        None => 0.0,
+    };
     let mut points = l.points.to_vec();
     for pass in passes {
         write_pass(&mut points, &written(pass, l.step), l.step, flat);

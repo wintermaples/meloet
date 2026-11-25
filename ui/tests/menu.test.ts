@@ -33,7 +33,7 @@ const CLIP: ClipView = { id: 5, name: "Aメロ", start: 0, end: 16 * TPQ, take: 
 function withClip(edit: (s: AppState) => void = () => {}): AppState {
   const s = fakeState();
   s.song.tracks[0]!.clips = [CLIP];
-  s.arrange = { selectedClips: [5], selectedClip: 5, pianoRollClip: 5, clipboardClips: 0, tallTrack: null };
+  s.arrange = { selectedClips: [5], selectedClip: 5, pianoRollClip: 5, clipboardClips: 0, clipboardKind: null, tallTrack: null };
   s.song.undoCount = 2;
   s.transport.canPlay = true;
   edit(s);
@@ -219,7 +219,7 @@ describe("menu contents (B-59)", () => {
     expect(sent).toEqual([{ type: "deleteTake", clip: 5 }]);
     const one = withClip((s) => (s.song.tracks[0]!.clips = [{ ...CLIP, takes: 1 }]));
     expect(row(topMenus(one, depsOf(one, []), "other")[5]!.entries, "テイクを消す").usable).toBe(false);
-    const none = withClip((s) => (s.arrange = { selectedClips: [], selectedClip: null, pianoRollClip: null, clipboardClips: 0, tallTrack: null }));
+    const none = withClip((s) => (s.arrange = { selectedClips: [], selectedClip: null, pianoRollClip: null, clipboardClips: 0, clipboardKind: null, tallTrack: null }));
     expect(row(topMenus(none, depsOf(none, []), "other")[5]!.entries, "テイクを消す").usable).toBe(false);
   });
 
@@ -442,9 +442,24 @@ describe("new keys (chapter 4 and B-59, 70, 71)", () => {
     ]);
   });
 
+  it("Mod V and 「編集 ▸ 貼りつけ」: not when the selected track is of the other kind than the first clip kept", () => {
+    const sent: Command[] = [];
+    const s = withClip((s) => Object.assign(s.arrange, { clipboardClips: 1, clipboardKind: "vocal" }));
+    const deps = depsOf(s, sent);
+    const paste = () => row(topMenus(s, deps, "other")[1]!.entries, "貼りつけ").usable;
+    expect(s.song.tracks.find((t) => t.id === s.song.playTarget)!.kind.kind).toBe("keys");
+    expect(paste()).toBe(false);
+    press(deps, "v", { ctrlKey: true });
+    expect(sent).toEqual([]);
+    s.arrange.clipboardKind = "keys";
+    expect(paste()).toBe(true);
+    press(deps, "v", { ctrlKey: true });
+    expect(sent).toEqual([{ type: "pasteClips", to: null }]);
+  });
+
   it("not sent when there is nothing to paste or no clip chosen", () => {
     const sent: Command[] = [];
-    const s = withClip((s) => (s.arrange = { selectedClips: [], selectedClip: null, pianoRollClip: null, clipboardClips: 0, tallTrack: null }));
+    const s = withClip((s) => (s.arrange = { selectedClips: [], selectedClip: null, pianoRollClip: null, clipboardClips: 0, clipboardKind: null, tallTrack: null }));
     const deps = depsOf(s, sent);
     for (const l of ["c", "x", "v", "d"]) press(deps, l, { ctrlKey: true });
     expect(sent).toEqual([]);
@@ -697,7 +712,7 @@ describe("「消す」 in the menu bar goes the same way as Delete (UI-PARITY-00
   it("a marker pressed after a chosen clip: the row deletes the marker, not the clip", () => {
     const s = fakeScene("markerMoving")!.state;
     s.song.tracks[0]!.clips = [CLIP];
-    s.arrange = { selectedClips: [5], selectedClip: 5, pianoRollClip: 5, clipboardClips: 0, tallTrack: null };
+    s.arrange = { selectedClips: [5], selectedClip: 5, pianoRollClip: 5, clipboardClips: 0, clipboardKind: null, tallTrack: null };
     pickTimeline();
     const sent: Command[] = [];
     const del = row(topMenus(s, depsOf(s, sent), "other")[1]!.entries, "消す");
@@ -708,7 +723,7 @@ describe("「消す」 in the menu bar goes the same way as Delete (UI-PARITY-00
 
   it("with no clip chosen, the row is usable for a marker; not for the start of the song, nor when nothing is chosen", () => {
     const s = fakeScene("markerMoving")!.state;
-    s.arrange = { selectedClips: [], selectedClip: null, pianoRollClip: null, clipboardClips: 0, tallTrack: null };
+    s.arrange = { selectedClips: [], selectedClip: null, pianoRollClip: null, clipboardClips: 0, clipboardKind: null, tallTrack: null };
     const usable = () => row(topMenus(s, depsOf(s, []), "other")[1]!.entries, "消す").usable;
     pickTimeline();
     expect(usable()).toBe(true);

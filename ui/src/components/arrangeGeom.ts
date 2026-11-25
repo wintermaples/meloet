@@ -93,6 +93,17 @@ export function clipBox(v: View, d: LaneDims, row: number, start: number, end: n
   };
 }
 
+/**
+ * The box of a clip of row `row` moved `rows` rows down (up when negative), on the row it lands on, with that row's top and height.
+ * Past the first or the last of the `count` rows (a move that cannot be made), rows of trackH go on above or below them.
+ */
+export function movedClipBox(v: View, d: LaneDims, count: number, row: number, rows: number, start: number, end: number): Box {
+  const to = row + rows;
+  if (to >= 0 && to < count) return clipBox(v, d, to, start, end);
+  const top = to < 0 ? rowTop(d, 0) + to * d.trackH : rowTop(d, count - 1) + rowHeight(d, count - 1) + (to - count) * d.trackH;
+  return { x0: tickToX(v, start), x1: tickToX(v, end), y0: top + d.inset, y1: top + d.trackH - d.hair - d.inset };
+}
+
 export interface ClipColors {
   frame: ColorName;
   top: ColorName;

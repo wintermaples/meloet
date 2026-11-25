@@ -166,6 +166,30 @@ describe("the line while writing (F6-AutoRec. The core makes 1 step on release; 
     expect(q("[data-test=auto-write-line]")).toBeNull();
   });
 
+  it("when the loop turns while writing, the line goes on taking the hand's values in the new pass", async () => {
+    POINTS.set(501, points(501, [[0, 0.8], [12 * BAR, 0.6]]));
+    const state = scene("autoRec");
+    const piano = state.song.tracks[0]!;
+    const from = state.automation.writing[0]!.fromTick;
+    show(Arrange, state);
+    await settle();
+    const frame = (at: number) => {
+      tick = at;
+      runFrameCallbacks();
+      flushSync();
+    };
+    const pointYs = () => new Set(rectsOf(q("[data-test=auto-write-line]")).filter((r) => r.color === "color.gray.10" && r.w === r.h).map((r) => r.y));
+    noteHand({ type: "setGain", strip: { kind: "track", id: piano.id }, db: -8.4, commit: false });
+    for (let i = 1; i <= 8; i++) frame(from + i * TPQ);
+    const before = pointYs();
+    expect(before.size).toBeGreaterThan(0);
+    // The loop turns back to before the start of writing; the play line passes it again with the fader at 0 dB.
+    noteHand({ type: "setGain", strip: { kind: "track", id: piano.id }, db: 0, commit: false });
+    frame(from - 2 * BAR);
+    for (let i = 1; i <= 8; i++) frame(from + i * TPQ);
+    expect([...pointYs()].some((y) => !before.has(y))).toBe(true);
+  });
+
   it("cancelled (finished writing with the same laneId): dropped at once", async () => {
     POINTS.set(501, points(501, [[0, 0.8], [12 * BAR, 0.6]]));
     const state = scene("autoRec");

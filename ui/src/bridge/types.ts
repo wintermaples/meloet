@@ -14,6 +14,7 @@ export type { Change } from "./generated/Change";
 export type { ChooserView } from "./generated/ChooserView";
 export type { ChosenState } from "./generated/ChosenState";
 export type { ClipEdge } from "./generated/ClipEdge";
+export type { ClipKind } from "./generated/ClipKind";
 export type { ClipSpot } from "./generated/ClipSpot";
 export type { ClipView } from "./generated/ClipView";
 export type { Command } from "./generated/Command";

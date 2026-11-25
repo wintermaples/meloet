@@ -91,12 +91,12 @@ pub use timeline::{
     TempoPointView, TimelineRef, TimelineView,
 };
 pub use vocal::{
-    DiskStop, KeptVocals, LATENCY_CLICKS, LatencyDialogView, LatencyFailure, LatencyMeasure,
-    LatencySource, LatencyView, RecordFormat, SelectedSound, TrackKindView, VocalInput,
-    VocalRecordingView, VocalRef,
+    ClipKind, DiskStop, KeptVocals, LATENCY_CLICKS, LatencyDialogView, LatencyFailure,
+    LatencyMeasure, LatencySource, LatencyView, RecordFormat, SelectedSound, TrackKindView,
+    VocalInput, VocalRecordingView, VocalRef,
 };
 
-pub const PROTOCOL_VERSION: u32 = 38;
+pub const PROTOCOL_VERSION: u32 = 39;
 
 /// Screen → Rust. Intent only; Rust decides what the state becomes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -2816,6 +2816,9 @@ pub struct ArrangeView {
     pub piano_roll_clip: Option<u32>,
     /// How many clips `PasteClips` would put in; 0 when there is nothing to paste.
     pub clipboard_clips: u32,
+    /// The kind of the first clip kept, the one `PasteClips` puts on the track it is given (or
+    /// the selected one): a track of the other kind takes none. `None` with nothing to paste.
+    pub clipboard_kind: Option<ClipKind>,
     /// The vocal track whose row is 160 high (`Command::SetTallTrack`; spec 3 「歌のトラックで
     /// ピアノロールをひらこうとしたとき」), by `TrackView::id`. `None` again when the track is
     /// deleted or another song comes. Not saved, and no step.
@@ -4318,3 +4321,5 @@ mod tests36;
 mod tests37;
 #[cfg(test)]
 mod tests38;
+#[cfg(test)]
+mod tests39;

@@ -322,6 +322,21 @@ describe("the clip that was pressed", () => {
   });
 });
 
+describe("the moving picture of a clip move", () => {
+  // Row 0 has two bands under it (48 + 24), row 2 is a 160 row.
+  const rows: G.LaneDims = { ...dims, tops: [0, 136, 200], heights: [64, 64, 160] };
+  it("each clip is drawn on the row it lands on, with that row's top and height", () => {
+    expect(G.movedClipBox(view(), rows, 3, 0, 1, 0, BAR)).toEqual(G.clipBox(view(), rows, 1, 0, BAR));
+    expect(G.movedClipBox(view(), rows, 3, 1, 1, 0, BAR)).toEqual({ x0: 0, x1: 64, y0: 203, y1: 200 + 160 - 1 - 3 });
+    // A group of rows 0 and 1 moved one row down: the clip of row 0 is not shifted by the grabbed clip's px (136).
+    expect(G.movedClipBox(view(), rows, 3, 0, 1, 0, BAR).y0).toBe(139);
+  });
+  it("past the last or the first row (a move that cannot be made), rows of trackH go on", () => {
+    expect(G.movedClipBox(view(), rows, 3, 2, 1, 0, BAR)).toEqual({ x0: 0, x1: 64, y0: 360 + 3, y1: 360 + 64 - 1 - 3 });
+    expect(G.movedClipBox(view(), rows, 3, 0, -1, BAR, 2 * BAR)).toEqual({ x0: 64, x1: 128, y0: -64 + 3, y1: -1 - 3 });
+  });
+});
+
 describe("the play line and the clip being recorded", () => {
   it("start of a pass: the first pass from where recording began, from the second pass the loop start", () => {
     expect(G.lapStart(1000, 0, { start: 2 * BAR, end: 4 * BAR })).toBe(1000);

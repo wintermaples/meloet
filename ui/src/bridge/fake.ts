@@ -389,7 +389,7 @@ const STOPPED_PLUGINS: StoppedPluginView[] = [
 
 /** One clip selected (and shown in the piano roll), or none; nothing to paste. */
 export function arrangeOf(clip: number | null): ArrangeView {
-  return { selectedClips: clip === null ? [] : [clip], selectedClip: clip, pianoRollClip: clip, clipboardClips: 0, tallTrack: null };
+  return { selectedClips: clip === null ? [] : [clip], selectedClip: clip, pianoRollClip: clip, clipboardClips: 0, clipboardKind: null, tallTrack: null };
 }
 
 /** Every instrument, in the order of the shelf: the fake has them all, so that the mocks can be drawn. */
@@ -1704,7 +1704,7 @@ function arrangeSelect(s: AppState): void {
     { ...track, id: 3, number: 3, name: "ドラム", color: 3, gainDb: -6, soloed: true, clips: [fakeClip(43, "8ビート", 1, 9, 1, [7])] },
   );
   s.song.playTarget = 2;
-  s.arrange = { selectedClips: [3, 41], selectedClip: 41, pianoRollClip: 41, clipboardClips: 1, tallTrack: null };
+  s.arrange = { selectedClips: [3, 41], selectedClip: 41, pianoRollClip: 41, clipboardClips: 1, clipboardKind: "keys", tallTrack: null };
   s.transport.position = 4 * BAR;
   s.status.message = { id: "summary", loopBars: null, nothingSelected: false, notes: null };
 }
@@ -5006,6 +5006,8 @@ export function reduceClips(
       const first = Math.min(...ids.map((id) => clipOf(id)!.start));
       clipboard.clips = ids.map((id, i) => ({ row: rows[i]! - top, at: clipOf(id)!.start - first, clip: { ...clipOf(id)! } }));
       arrange.clipboardClips = ids.length;
+      const lead = ids.reduce((a, b) => (clipOf(b)!.start < clipOf(a)!.start ? b : a));
+      arrange.clipboardKind = clipOf(lead)!.audio === null ? "keys" : "vocal";
       if (command.type === "copyClips") return done();
       if (busy(state)) return null;
       for (const t of song.tracks) t.clips = t.clips.filter((c) => !ids.includes(c.id));

@@ -18,8 +18,8 @@ use meloet_model::{
     Timeline, TrackId, arrange, roll, timeline as timeline_edit,
 };
 use meloet_protocol::{
-    ArrangeView, BarSpan, ClipEdge, ClipSpot, ClipView, ControlKind, Grid, IndexRange, KeyCount,
-    LiveNote, LiveNotes, LiveNotesSnapshot, MusicalScale, NOTE_SELECTION_KEYS, NoteField,
+    ArrangeView, BarSpan, ClipEdge, ClipKind, ClipSpot, ClipView, ControlKind, Grid, IndexRange,
+    KeyCount, LiveNote, LiveNotes, LiveNotesSnapshot, MusicalScale, NOTE_SELECTION_KEYS, NoteField,
     NoteSelection, PianoRollView, QuantizeAlign, QuantizeSettings, REPEAT_COUNT_MAX, RecordFormat,
     RecordingView, ScaleMode, SelectMode, StatusMessage, TakeControl, TakeControlValue, TakeNote,
     TakeNotes, TickSpan, TimelineRef, TrackRef, TransportState, TransportView,
@@ -2257,6 +2257,13 @@ impl Play {
             selected_clip: self.selected.map(|c| c.0),
             piano_roll_clip: self.piano_roll.map(|c| c.0),
             clipboard_clips: self.clip_board.len() as u32,
+            clipboard_kind: (self.clip_board.first()).map(|k| {
+                if k.clip.is_keys() {
+                    ClipKind::Keys
+                } else {
+                    ClipKind::Vocal
+                }
+            }),
             // The rules above the song have it (`state.rs`).
             tall_track: None,
         }

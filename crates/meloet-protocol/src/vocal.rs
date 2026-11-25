@@ -52,6 +52,16 @@ pub enum TrackKindView {
     },
 }
 
+/// The kind of track a clip can go on: keys clips on keyboard tracks, audio clips on vocal
+/// tracks (`ArrangeView::clipboard_kind`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub enum ClipKind {
+    Keys,
+    Vocal,
+}
+
 /// A vocal track that is being recorded (`TransportView::recording_vocals`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]

@@ -73,7 +73,7 @@ const song = (selected: number[], edit: (s: AppState) => void = () => {}) =>
       { ...base, id: 2, number: 2, name: "ベース", clips: [keys(41, "ベース A", 0, 4 * BAR)] },
       vocal,
     ];
-    s.arrange = { selectedClips: selected, selectedClip: selected[0] ?? null, pianoRollClip: null, clipboardClips: 0, tallTrack: null };
+    s.arrange = { selectedClips: selected, selectedClip: selected[0] ?? null, pianoRollClip: null, clipboardClips: 0, clipboardKind: null, tallTrack: null };
     edit(s);
   });
 

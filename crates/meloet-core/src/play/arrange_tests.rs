@@ -413,6 +413,7 @@ fn delete_cut_copy_and_paste_clips() {
     // Copy a and c; paste on track 1 at bar 9: c's copy a row lower and 2 bars later.
     p.copy_clips(&[c.0, a.0, 999]);
     assert_eq!(p.arrange_view().clipboard_clips, 2);
+    assert_eq!(p.arrange_view().clipboard_kind, Some(ClipKind::Keys));
     let to = |track, tick| Some(ClipSpot { track, tick });
     assert_eq!(p.paste_clips(to(1, 8 * BAR), e), None);
     assert_eq!(p.undo_count(), steps + 1);
@@ -453,6 +454,7 @@ fn delete_cut_copy_and_paste_clips() {
     // Another song lets go of what was kept.
     p.replace_song(Song::new_default(), false, e);
     assert_eq!(p.arrange_view().clipboard_clips, 0);
+    assert_eq!(p.arrange_view().clipboard_kind, None);
 }
 
 #[test]

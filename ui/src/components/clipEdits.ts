@@ -1,5 +1,5 @@
-// When joining and cutting clips can be used (spec 3 "Rules added in round 10", 7 A-27). No DOM.
-// The context menus, the menu bar and Mod J share these rules; Rust decides what is joined, these only disable rows.
+// When joining, cutting and pasting clips can be used (spec 3 "Rules added in round 10", 7 A-27). No DOM.
+// The context menus, the menu bar and the keys share these rules; Rust decides what is joined and pasted, these only disable rows.
 
 import { REPEAT_COUNT_MAX, type AppState, type ClipView, type TrackView } from "../bridge";
 
@@ -20,6 +20,20 @@ export function joinable(tracks: readonly TrackView[], ids: readonly number[]): 
 export function joinTarget(state: AppState): number[] | null {
   const ids = state.arrange.selectedClips;
   return joinable(state.song.tracks, ids) ? [...ids] : null;
+}
+
+/**
+ * Whether the clips kept can be pasted onto `track`: the first one goes there, and a track of the other kind takes none
+ * (keys clips go on keyboard tracks, audio clips on vocal tracks). Rust decides the rest (rows past the ends, overlaps).
+ */
+export function pasteable(state: AppState, track: TrackView | undefined): boolean {
+  const a = state.arrange;
+  return a.clipboardClips > 0 && track !== undefined && (a.clipboardKind === null || a.clipboardKind === track.kind.kind);
+}
+
+/** Whether Mod V and 「編集 ▸ 貼りつけ」 can paste: they paste onto the selected track. */
+export function pasteableOnSelected(state: AppState): boolean {
+  return pasteable(state, state.song.tracks.find((t) => t.id === state.song.playTarget));
 }
 
 /** 「ここで切る」: the snapped place, when it is inside the clip (not at an end). */

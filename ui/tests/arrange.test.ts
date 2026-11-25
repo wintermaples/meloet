@@ -94,7 +94,7 @@ const three = (selected: number[] = [], clicked: number | null = null) =>
     ];
     s.song.playTarget = 2;
     s.song.keysTarget = 2;
-    s.arrange = { selectedClips: selected, selectedClip: clicked, pianoRollClip: clicked, clipboardClips: 1, tallTrack: null };
+    s.arrange = { selectedClips: selected, selectedClip: clicked, pianoRollClip: clicked, clipboardClips: 1, clipboardKind: "keys", tallTrack: null };
   });
 
 const rows = () => (contextMenu.open?.entries ?? []).filter((e): e is MenuRow => e.kind === "row");
@@ -472,6 +472,31 @@ describe("context menu (B-60)", () => {
       { type: "pasteClips", to: { track: 2, tick: (600 * BAR) / 64 } },
       { type: "createClip", track: 2, tick: (600 * BAR) / 64 },
     ]);
+  });
+
+  it("paste is disabled over a track of the other kind than the first clip kept (Rust would refuse it with nothing said)", () => {
+    const s = three([3], 3);
+    s.song.tracks[2] = { ...s.song.tracks[2]!, kind: { kind: "vocal", input: "mono1", inputReady: true, armed: false, monitor: false }, clips: [] };
+    show(s);
+    const pasteUsable = () => rows().find((r) => r.label === "menu.paste")!.usable;
+    // Keys clips kept: an empty place of the vocal track (row 3) no, of a keyboard track yes.
+    ctx(q(".lanes")!, 600, 150);
+    expect(pasteUsable()).toBe(false);
+    ctx(q(".lanes")!, 600, 100);
+    expect(pasteUsable()).toBe(true);
+    // Audio clips kept: the other way round. On a clip, it pastes onto the track that is selected once the right-click arrives (its own when it was not selected).
+    app.setState({ ...s, arrange: { ...s.arrange, clipboardKind: "vocal" } });
+    flushSync();
+    ctx(q(".lanes")!, 600, 150);
+    expect(pasteUsable()).toBe(true);
+    ctx(q(".lanes")!, 600, 100);
+    expect(pasteUsable()).toBe(false);
+    ctx(q(".lanes")!, 300, 100);
+    expect(pasteUsable()).toBe(false);
+    app.setState({ ...s, song: { ...s.song, playTarget: 3 }, arrange: { ...s.arrange, clipboardKind: "vocal" } });
+    flushSync();
+    ctx(q(".lanes")!, 300, 30);
+    expect(pasteUsable()).toBe(true);
   });
 
   it("track head (mock R6-Tracks): mute, solo, record arm / bounce (A7) / name, duplicate (A3), color, up, down / delete. Sends selectTrack first if not selected", () => {

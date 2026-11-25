@@ -196,7 +196,10 @@ export interface PointDrag {
   dValue: number;
 }
 
-/** Sideways it snaps to the start of beats (ticks with Shift); up and down is position. The first point stops at the start of the song. */
+/**
+ * Sideways it snaps to the start of beats (ticks with Shift); up and down is position. The first point stops at the start of the song,
+ * and the points stop together at 0 and 1, keeping their distances (as `move_points` in Rust).
+ */
 export function dragPoints(drag: PointDrag, pts: readonly Pt[], v: View, d: LaneDims, map: TempoMap, x: number, y: number, still: number, shift: boolean): PointDrag {
   const moved = drag.moved || Math.hypot(x - drag.downX, y - drag.downY) >= still;
   const grab = pts[drag.grab];
@@ -205,7 +208,8 @@ export function dragPoints(drag: PointDrag, pts: readonly Pt[], v: View, d: Lane
   const first = Math.min(...drag.points.map((i) => pts[i]!.tick));
   const to = Math.max(0, shift ? Math.round(at) : nearestBeatTick(map, at));
   const dTick = Math.max(to - grab.tick, -first) || 0;
-  const dValue = dyToValue(d, y - drag.downY);
+  const values = drag.points.map((i) => pts[i]!.value);
+  const dValue = Math.min(1 - Math.max(0, ...values), Math.max(-Math.min(1, ...values), dyToValue(d, y - drag.downY)));
   if (drag.moved && dTick === drag.dTick && dValue === drag.dValue) return drag;
   return { ...drag, moved, dTick, dValue };
 }

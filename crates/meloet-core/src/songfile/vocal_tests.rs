@@ -310,6 +310,10 @@ fn a_vocal_clip_pasted_after_its_import_was_undone_keeps_its_file() {
     let audio = p.song().doc.audio.last().unwrap().id.0;
     assert_eq!(p.song().doc.audio.len(), 3);
     p.copy_clips(&[clip.0]);
+    assert_eq!(
+        p.arrange_view().clipboard_kind,
+        Some(meloet_protocol::ClipKind::Vocal)
+    );
     p.undo(e);
     assert_eq!(p.song().doc.audio.len(), 2);
     e.clear();

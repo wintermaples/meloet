@@ -67,7 +67,7 @@ const song = (selected: number[], edit: (s: AppState) => void = () => {}) =>
       clips: [fakeVocalClip(61, "歌", 0, 2 * BAR, audio), fakeVocalClip(63, "歌 2", 2 * BAR, 4 * BAR, audio)],
     };
     s.song.tracks = [{ ...base, clips: [{ ...fakeVocalClip(1, "イントロ", 0, 4 * BAR, audio), audio: null }] }, vocal];
-    s.arrange = { selectedClips: selected, selectedClip: selected[0] ?? null, pianoRollClip: null, clipboardClips: 0, tallTrack: null };
+    s.arrange = { selectedClips: selected, selectedClip: selected[0] ?? null, pianoRollClip: null, clipboardClips: 0, clipboardKind: null, tallTrack: null };
     edit(s);
   });
 

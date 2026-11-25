@@ -42,6 +42,8 @@ export class WaveBook {
   private readonly failed = new Map<number, number>();
   /** How many times it was not ready (the wait doubles). */
   private readonly tries = new Map<number, number>();
+  /** The song `trim` last saw: `failed` and `tries` are by audio id, which starts again per song. */
+  private serial: number | null = null;
   private timer = 0;
 
   constructor(
@@ -139,11 +141,15 @@ export class WaveBook {
   }
 
   /**
-   * When the song changes: let go of other songs' entries (numbers start at 0 per song) and of peaks the bridge no longer holds
+   * When the song changes: let go of other songs' entries and waits (numbers start at 0 per song) and of peaks the bridge no longer holds
    * (let go at the `PeakStore` limit). The amount kept stays the bridge's limit.
    */
   trim(serial: number): void {
     for (const [key, e] of this.entries) if (e.serial !== serial || this.fetch.peek(e.audio, e.level) === undefined) this.entries.delete(key);
+    if (serial === this.serial) return;
+    this.serial = serial;
+    this.failed.clear();
+    this.tries.clear();
   }
 
   held(): number {

@@ -31,7 +31,7 @@ pub mod timeline;
 
 pub use arp::{ARP_GATE_PERCENT, ARP_KEYS_MAX, ARP_OCTAVES_MAX, Arp, ArpRate, ArpShape};
 pub use arrange::{ClipEdge, ClipEdited, ClipsSplit};
-pub use audio::bounce::{BOUNCED_SUFFIX, Bounced, bounce_track};
+pub use audio::bounce::{BOUNCED_SUFFIX, BOUNCED_SUFFIX_EN, Bounced, bounce_track};
 pub use audio::clips::{
     FadeEnd, ImportPlan, ImportedAudio, ImportedClip, fit_fades, import_audio, remove_audio,
     set_clip_fade, set_clip_gain, set_clips_shape,

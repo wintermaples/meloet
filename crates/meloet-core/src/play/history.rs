@@ -25,6 +25,9 @@ pub(super) struct StepNotes {
     /// The name of the parameter of a `StepKind::SetPluginParam`, as the plugin said it
     /// when the step was made.
     param_names: HashMap<u64, String>,
+    /// The solo a `StepKind::Bounce` moved from the keys track to the new one: undo moves
+    /// it back, redo again.
+    solo_moves: HashMap<u64, (TrackId, TrackId)>,
 }
 
 fn count(n: usize) -> u32 {
@@ -1314,12 +1317,19 @@ impl Play {
         }
     }
 
+    /// The newest step moved the solo of `from` to `to`.
+    pub(super) fn note_solo_step(&mut self, from: TrackId, to: TrackId) {
+        let step = self.history.version();
+        self.step_notes.solo_moves.insert(step, (from, to));
+    }
+
     /// Before a new step: the steps that could be redone go, and what was noted of them.
     pub(super) fn forget_undone_steps(&mut self) {
         if self.history.redo_count() > 0 {
             // A step made later has a higher number than any made before it.
             let now = self.history.version();
             self.step_notes.param_names.retain(|&step, _| step <= now);
+            self.step_notes.solo_moves.retain(|&step, _| step <= now);
         }
     }
 
@@ -1392,9 +1402,25 @@ impl Play {
             .skip(done.min(to))
             .take(done.abs_diff(to))
             .any(|kind| matches!(kind, StepKind::Recovered | StepKind::DiscardRecovered));
+        let mut solo_moves: Vec<(TrackId, TrackId)> = (done.min(to)..done.max(to))
+            .filter_map(|i| self.history.row(self.doc(), i))
+            .filter_map(|row| self.step_notes.solo_moves.get(&row.number).copied())
+            .collect();
         let steps = self.history.jump(&mut self.song.doc, to);
         if steps == 0 {
             return 0;
+        }
+        // A solo a crossed step moved goes back (undo) or again (redo) with the sound, when
+        // it is still where it was left.
+        let (soloed, back) = (&mut self.song.session.soloed, to < done);
+        if back {
+            solo_moves.reverse();
+        }
+        for (from, into) in solo_moves {
+            let (now, then) = if back { (into, from) } else { (from, into) };
+            if soloed.remove(&now) {
+                soloed.insert(then);
+            }
         }
         self.forget_copy();
         if crossed {

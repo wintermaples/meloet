@@ -27,6 +27,7 @@
   import LaneHead from "./automation/LaneHead.svelte";
   import { laneMenu } from "./automation/laneMenu";
   import { masterHome, masterOwner } from "./automation/laneValue";
+  import { shownMuted } from "./automation/autoState.svelte";
   import { laneNameText } from "./history/stepText";
   import { bandHeight } from "./comp/comp";
   import CompHead from "./comp/CompHead.svelte";
@@ -277,8 +278,8 @@
           <!-- Usable while recording and during count-in too (A-14). -->
           <button
             class="tog live"
-            class:on={track.muted}
-            aria-pressed={track.muted}
+            class:on={shownMuted(track, current.state!.automation.held)}
+            aria-pressed={shownMuted(track, current.state!.automation.held)}
             aria-label={t("arrange.mute")}
             data-test="track-mute"
             use:term={"ミュート"}

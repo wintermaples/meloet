@@ -7,7 +7,7 @@
 import { clockOffsetUs, lanePoints, peekLanePoints, type AppState, type AutoTarget, type LanePoints } from "../../bridge";
 import { current } from "../../state/app.svelte";
 import { shownTick } from "../time";
-import { laneMoves, masterOwner, targetKey, valueAt, type LaneOwner } from "./laneValue";
+import { laneMoves, laneOf, masterOwner, targetKey, valueAt, type LaneOwner } from "./laneValue";
 
 let version = $state(0);
 const RETRY_MS = 100;
@@ -110,6 +110,13 @@ export function livePosition(track: number, target: AutoTarget): number | null {
 export function shownPosition(track: number, target: AutoTarget): number | null {
   reads(shownTicks, track);
   return shown.get(track)?.get(targetKey(target)) ?? null;
+}
+
+/** What the M of a track shows, in the mixer and in the track head alike: while its mute lane moves, the lane's value; else the mute set by hand. */
+export function shownMuted(track: Pick<LaneOwner, "id" | "lanes" | "muted">, held: AppState["automation"]["held"]): boolean {
+  const lane = laneOf(track, { kind: "mute" });
+  const pos = laneMoves(lane, held, track.id) ? shownPosition(track.id, { kind: "mute" }) : null;
+  return pos === null ? track.muted : pos >= 0.5;
 }
 
 /** How finely positions are written (1/4096 of a knob's length). Not written if the same. */

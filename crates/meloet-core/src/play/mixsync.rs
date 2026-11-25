@@ -385,6 +385,8 @@ impl Play {
     /// The seat's track is gone: the engine empties the seat, strip and all.
     pub(super) fn clear_seat(&mut self, seat: usize, effects: &mut Vec<Effect>) {
         self.mix_told.seat_cleared(seat);
+        // The engine forgets the seat's voice too.
+        self.voices_sent.retain(|(s, _)| *s != seat);
         self.seat_plugs_gone(seat, effects);
         effects.push(Effect::Engine(EngineOp::ClearSeat { seat }));
     }

@@ -121,12 +121,8 @@ impl ParamSpec {
     pub fn read(&self, text: &str) -> Option<f32> {
         let text: String = (text.trim().chars())
             .map(|c| match c {
-                '０'..='９' => char::from_digit(c as u32 - '０' as u32, 10).unwrap_or(c),
                 'Ａ'..='Ｚ' | 'ａ'..='ｚ' => char::from_u32(c as u32 - 0xFEE0).unwrap_or(c),
-                '−' | '－' => '-',
-                '＋' => '+',
-                '．' => '.',
-                c => c,
+                c => plain_number_char(c),
             })
             .collect();
         let (sign, rest) = match text.strip_prefix(['-', '+']) {
@@ -152,6 +148,18 @@ impl ParamSpec {
             _ => 1.0,
         };
         Some(sign * number * scale)
+    }
+}
+
+/// A full-width digit, sign or decimal point as the plain one; any other character as it is.
+/// A typed value is read with these (a plugin's too).
+pub fn plain_number_char(c: char) -> char {
+    match c {
+        '０'..='９' => char::from_digit(c as u32 - '０' as u32, 10).unwrap_or(c),
+        '−' | '－' => '-',
+        '＋' => '+',
+        '．' => '.',
+        c => c,
     }
 }
 

@@ -66,9 +66,11 @@ impl Play {
     /// The name the file of the audio is asked for: as a recording names its file, with the
     /// number the step will most likely give it.
     pub fn bounce_file_name(&self, track: TrackId) -> String {
+        use meloet_model::{BOUNCED_SUFFIX, BOUNCED_SUFFIX_EN};
         let doc = self.doc();
         let name = doc.track(track).map_or("", |t| t.name.as_str());
-        let name = format!("{name}{}", meloet_model::BOUNCED_SUFFIX);
+        let suffix = self.names.pick(BOUNCED_SUFFIX, BOUNCED_SUFFIX_EN);
+        let name = format!("{name}{suffix}");
         vocalrec::file_name(&name, doc.next_id)
     }
 
@@ -91,7 +93,15 @@ impl Play {
             return Some(StatusMessage::TooManyTracks);
         }
         let made = bounce_track(self.doc(), from, audio, start, self.names).ok()?;
+        // The solo goes with the sound: the keys track is muted now.
+        let moved = self.song.session.soloed.remove(&from);
+        if moved {
+            self.song.session.soloed.insert(made.track);
+        }
         self.apply(made.edit, effects);
+        if moved {
+            self.note_solo_step(from, made.track);
+        }
         Some(StatusMessage::Bounced {
             track: self.track_ref(made.track)?,
         })

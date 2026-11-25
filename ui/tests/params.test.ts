@@ -243,6 +243,65 @@ describe("params panel (mock F4-Mixer)", () => {
     ]);
   });
 
+  it("UI-PARITY-011: with the focus on the list, ← → and Shift ← → move the chosen row's value and go no further", () => {
+    show(RightRail, scene("mixer"));
+    const list = q("[data-test=params-list] .list")!;
+    list.focus();
+    const reached: string[] = [];
+    const seen = (ev: KeyboardEvent) => reached.push(ev.key);
+    document.addEventListener("keydown", seen);
+    app.sent.length = 0;
+    list.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }));
+    flushSync();
+    list.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", shiftKey: true, bubbles: true, cancelable: true }));
+    flushSync();
+    document.removeEventListener("keydown", seen);
+    const decay = spec("reverb", "decay");
+    const insert = { strip: { kind: "return", bus: "a" }, slot: 0 };
+    const right = keyStep(decay, 2.4, 1, false);
+    expect(app.sent).toEqual([
+      { type: "setParam", insert, effect: "reverb", param: 0, value: right, commit: true },
+      { type: "setParam", insert, effect: "reverb", param: 0, value: keyStep(decay, right, -1, true), commit: true },
+    ]);
+    expect(reached).toEqual([]);
+  });
+
+  it("UI-PARITY-012: ↑ ↓ bring the chosen row into view", () => {
+    const into = vi.fn();
+    const was = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = into;
+    try {
+      show(RightRail, scene("mixer"));
+      const list = q("[data-test=params-list] .list")!;
+      list.focus();
+      list.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
+      flushSync();
+      expect(into).toHaveBeenCalledWith({ block: "nearest" });
+      expect((into.mock.contexts[0] as HTMLElement).dataset.param).toBe("1");
+    } finally {
+      HTMLElement.prototype.scrollIntoView = was;
+    }
+  });
+
+  it("UI-PARITY-015: after Enter or Esc in the typing box, ↑ ↓ choose rows again", async () => {
+    show(RightRail, scene("mixer"));
+    const list = q("[data-test=params-list] .list")!;
+    list.focus();
+    for (const close of ["Enter", "Escape"]) {
+      list.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+      flushSync();
+      const input = q("[data-test=param-input]") as HTMLInputElement;
+      expect(document.activeElement).toBe(input);
+      input.value = "3";
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: close, bubbles: true, cancelable: true }));
+      flushSync();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(q("[data-test=param-input]")).toBeNull();
+      expect(document.activeElement, close).toBe(list);
+    }
+  });
+
   it("search box: the count changes, and with no match the text and 「さがす枠を空にする」", () => {
     show(RightRail, scene("mixer"));
     const input = q("[data-test=params-search]") as HTMLInputElement;

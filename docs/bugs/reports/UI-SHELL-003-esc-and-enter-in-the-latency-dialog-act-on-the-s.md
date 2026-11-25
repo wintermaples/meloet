@@ -4,7 +4,7 @@ title: Esc and Enter in the latency dialog act on the sound settings dialog unde
 area: UI-SHELL
 kind: bug
 severity: medium
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -53,4 +53,4 @@ Fix plan for this report: in `ui/src/keys/attach.ts`, when `state.workspace.late
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`ui/src/keys/attach.ts`: with the latency dialog in front, Esc sends `latencyCancel(measure)` (`stopLatencyMeasure` while measuring, else `closeLatencyMeasure`) and plain Enter sends nothing. `latencyCancel` lives in `ui/src/keys/front.ts`; `cancel` of `ui/src/components/LatencyDialog.svelte` uses it too. Test: `ui/tests/keys.front.test.ts` "UI-SHELL-003: …".

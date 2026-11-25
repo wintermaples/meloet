@@ -2,6 +2,7 @@
 // core keeps the song and the shelf contents. This is only how they are shown.
 
 import type { AppState, Command, LibraryView, ShelfMode, SoundRef } from "../bridge";
+import { dialogInFront } from "../keys/front";
 import { headingOpen, rowIs, shelfModel, stepRow, type ShelfList, type ShelfModel, type ShelfRow } from "./shelfList";
 import { patternModel } from "./shelfPatterns";
 import { sameSound } from "./sounds";
@@ -56,14 +57,7 @@ export function shelfToggle(state: AppState): Command {
 
 /** Whether keys go to the shelf (the shelf is in front and there is no dialog). */
 export function shelfHasKeys(state: AppState): boolean {
-  const ws = state.workspace;
-  return (
-    shelfUi.keys &&
-    ws.layout.rightFront === "shelf" &&
-    ws.songDialog === null &&
-    ws.settings === null &&
-    !state.plugins.stoppedOpen
-  );
+  return shelfUi.keys && state.workspace.layout.rightFront === "shelf" && dialogInFront(state) === null;
 }
 
 /** The current shelf list (effects in the instrument mode and instruments in the effect mode are view only). */

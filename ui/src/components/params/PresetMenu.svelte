@@ -4,11 +4,12 @@
      into a name box in its place (at most PRESET_NAME_MAX characters): Enter keeps, Esc puts the row back. Right click on a row of
      「自分で残したもの」: 「消す」. Esc closes the list. Core keeps the presets; the screen keeps only whether the list is open. -->
 <script lang="ts">
-  import { tick } from "svelte";
+  import { onMount, tick } from "svelte";
   import type { PresetRef, SelectedInsert } from "../../bridge";
   import { FACTORY_PRESETS, PRESET_NAME_MAX } from "../../bridge/types";
   import { current, send } from "../../state/app.svelte";
   import { t } from "../../text";
+  import { menuOpened } from "../../lib/menu";
   import { openContextMenu } from "../menu/contextMenu.svelte";
   import { presetName } from "./presetName";
 
@@ -18,6 +19,9 @@
   const busy = $derived(app.transport.state === "recording" || app.transport.state === "countIn");
   const factory = $derived(FACTORY_PRESETS[sel.effect]);
   const mine = $derived(app.presets.user.find((u) => u.effect === sel.effect)?.names ?? []);
+
+  // In the Esc order of menus (keys/attach.ts), so Esc closes it wherever the focus is.
+  onMount(() => menuOpened(() => onclose()));
 
   let naming = $state(false);
   let name = $state("");

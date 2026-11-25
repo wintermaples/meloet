@@ -4,7 +4,7 @@ title: Edit > Delete in the menu bar ignores a marker, tempo change or automatio
 area: UI-PARITY
 kind: parity
 severity: medium
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -48,4 +48,4 @@ Fix plan (as suggested): in `ui/src/keys/attach.ts` make one function "what Dele
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`ui/src/keys/attach.ts`: `pickedDelete(state)` asks the same rules as the Delete key (`laneDeleteCommand`, then `timelineKeyCommand`, with a plain Delete) when the keys go to the arrange; `command()` uses it for `deleteSelected` (so the menu row sends `deleteAutoPoints` / `deleteTimeline` as the key does), and `arrangeDeleteUsable(state)` gives the row's `usable` (points chosen, a timeline item that is not the start of the song, or chosen clips while not busy). `ui/src/components/menu/menus.ts`: 「消す」 takes `usable` from it. Tests: `ui/tests/menu.test.ts` "「消す」 in the menu bar goes the same way as Delete (UI-PARITY-003)" (three cases).

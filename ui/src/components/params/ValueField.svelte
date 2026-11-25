@@ -1,7 +1,7 @@
 <!-- The box to type a value (spec 3 (86-6), mock R9-Params). Background gray.0, border gray.10, right-aligned. Works without a unit too.
      Enter decides, Esc stops. Leaving the box by pressing elsewhere also stops (only Enter decides). -->
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
 
   interface Props {
     /** The text put in first (the current value). */
@@ -16,8 +16,11 @@
 
   let input = $state<HTMLInputElement>();
   let done = false;
+  /** What had the focus when the box opened (the fader, the parameter list …). */
+  let opener: Element | null = null;
 
   onMount(() => {
+    opener = document.activeElement;
     input?.focus();
     input?.select();
   });
@@ -29,15 +32,25 @@
       e.stopPropagation();
       done = true;
       onsubmit(input?.value ?? "");
+      giveBack();
     } else if (e.key === "Escape") {
       e.preventDefault();
       e.stopPropagation();
       done = true;
       oncancel();
+      giveBack();
     } else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
       // Do not pass it to the row choosing of the panel.
       e.stopPropagation();
     }
+  }
+  /** Closed by a key: the keys go back to where they were, unless the focus went somewhere already. */
+  function giveBack(): void {
+    const to = opener;
+    void tick().then(() => {
+      const now = document.activeElement;
+      if (to instanceof HTMLElement && to.isConnected && (now === null || now === document.body)) to.focus({ preventScroll: true });
+    });
   }
   function onblur(): void {
     if (!done) oncancel();

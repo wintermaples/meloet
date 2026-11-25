@@ -4,7 +4,7 @@ title: Arrow keys and Enter go to the output chooser even while a dialog is open
 area: UI-SHELL
 kind: bug
 severity: medium
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -53,4 +53,4 @@ Fix plan for this report: in `ui/src/keys/attach.ts` use the "outputChooser" con
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`ui/src/keys/front.ts` (new): `dialogInFront(state)` names the dialog that has the keys (About, the key list, the scan-stopped dialog, a song dialog, the export dialog, 「書き出しました」, the latency dialog, the sound settings; in the Esc order: the screen's own dialogs first, then the order core's `Back` closes them). `ui/src/keys/attach.ts`: `handleKeydown` uses the "outputChooser" (and "shelf", "history") context only when no dialog is in front; the plain-Enter branches go by `dialogInFront`. Test: `ui/tests/keys.front.test.ts` "UI-SHELL-001: …" (two cases); `ui/tests/screen.test.ts` "↑ ↓ Enter in the output chooser, Enter in sound settings" still passes unchanged.

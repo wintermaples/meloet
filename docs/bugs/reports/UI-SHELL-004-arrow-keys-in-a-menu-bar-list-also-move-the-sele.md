@@ -4,7 +4,7 @@ title: Arrow keys in a menu bar list also move the selected notes in the piano r
 area: UI-SHELL
 kind: bug
 severity: medium
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -58,4 +58,4 @@ Fix plan for this report: `handleKeydown` returns early when `ev.defaultPrevente
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`ui/src/keys/attach.ts`: `handleKeydown` returns at once when the key is already `defaultPrevented` (after the 「キーで弾く」 keys and the hint), so keys taken by a list moved to `body` (MenuList, ChoiceMenu, zoom lists; all `preventDefault` what they take) are not used again. The other `preventDefault` callers in keydown handlers under `ui/src` were checked: all of them also stop the key (`stopPropagation`). `docs/architecture.md` 25-8 says so now. Tests: `ui/tests/menu.test.ts` "UI-SHELL-004: ↑ ↓ ← → used in the list do not move the selected notes of the piano roll" (MenuBar mounted in a child of `body`, piano roll open with a note selected); `ui/tests/keys.front.test.ts` "UI-SHELL-004: a key a part already took is not used again".

@@ -4,7 +4,7 @@ title: After Enter or Esc in a fader, pan, send or parameter value box the focus
 area: UI-PARITY
 kind: parity
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -51,4 +51,4 @@ Fix plan for this report: when the box closes by Enter or Esc (not by blur), foc
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`ui/src/components/params/ValueField.svelte`: the box remembers what had the focus when it opened and, after it closes by Enter or Esc (not by blur), gives the focus back to it when the focus fell to nothing (the fader, pan or send that got Enter; the parameter list). One place for every user of the box; `mixer/control.svelte.ts` and the lists are not changed for this. Tests: `ui/tests/round5.step3.test.ts` "UI-PARITY-015: after Enter or Esc in the typing box, the fader or pan has the keys again"; `ui/tests/params.test.ts` "UI-PARITY-015: after Enter or Esc in the typing box, ↑ ↓ choose rows again".

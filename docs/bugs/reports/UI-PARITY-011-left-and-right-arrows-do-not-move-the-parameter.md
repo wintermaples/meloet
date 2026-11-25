@@ -4,7 +4,7 @@ title: Left and right arrows do not move the parameter row chosen with up and do
 area: UI-PARITY
 kind: ui-ux
 severity: medium
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -54,4 +54,4 @@ Fix plan for this report: in the `onkeydown` of `ui/src/components/params/Builti
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`ui/src/components/params/rowKeys.ts` (new): `arrowToChosenRow` takes ← → and Shift ← → on a parameter list when a row is chosen, stops them, and hands them to that row's own control (`[data-param] [role=slider]`), so the row's own step (`keyStep` / the plugin step) is the one that runs. Called first in the `onkeydown` of `ui/src/components/params/BuiltinList.svelte`, `SoundKnobList.svelte`, `PluginList.svelte`. `ParamRow.svelte` and `PluginParamRow.svelte` are not changed. Tests: `ui/tests/params.test.ts` "UI-PARITY-011: with the focus on the list, ← → and Shift ← → …", `ui/tests/e3.knobs.test.ts` "UI-PARITY-011: …", `ui/tests/round5.step3.test.ts` "UI-PARITY-011: … plugin row …".

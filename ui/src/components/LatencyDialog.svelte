@@ -3,6 +3,7 @@
      「この数を使う」 makes it the setting of that PC (it belongs to the PC, not the song). The number the PC reports is AudioView.latency. -->
 <script lang="ts">
   import { LATENCY_CLICKS, type LatencyMeasure } from "../bridge";
+  import { latencyCancel } from "../keys/front";
   import { movableDialog } from "../lib/dialogMove";
   import { current, send } from "../state/app.svelte";
   import { t } from "../text";
@@ -47,7 +48,7 @@
 
   const close = () => send({ type: "closeLatencyMeasure" });
   /** Cancel (Esc): while measuring, stops measuring; otherwise closes the dialog. */
-  const cancel = () => send(measure?.state === "measuring" ? { type: "stopLatencyMeasure" } : { type: "closeLatencyMeasure" });
+  const cancel = () => send(latencyCancel(measure));
 </script>
 
 {#if app && measure && latency}

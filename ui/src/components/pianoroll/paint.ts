@@ -55,9 +55,16 @@ export interface RollPicture {
   eraseHover: number;
   /** Notes of other tracks (「ほかのトラックも見る」, ghosts.ts). Not drawn on drum rows. */
   ghosts?: GhostPicture | null;
+  /** The key of the highlighted row (the row under the pointer, or where a dragged note lies), or none. */
+  row?: number | null;
 }
 
 const FRAME: ColorName = "color.gray.7";
+
+/** The ground of the highlighted row, in the note area and the keyboard column (spec 7 readings). */
+export const ROW_HIGHLIGHT: ColorName = "color.gray.5";
+/** The highlighted row of the drum name column, whose rows are gray.5 already (its name is gray.10 there). */
+export const DRUM_NAME_HIGHLIGHT: ColorName = "color.gray.6";
 
 /** The grid lines by kind: 0 bar, 1 beat, 2 other. */
 const GRID = ["color.line.bar", "color.line.beat", "color.line.grid"] as const satisfies readonly ColorName[];
@@ -174,7 +181,8 @@ function paintDrumRoll(out: Batch, box: Box, p: RollPicture, marks: Uint8Array |
   const rows = Math.min(d.keys.length - d.top, rowsShown(g) + 1);
   for (let r = 0; r < rows; r++) {
     const y = box.y0 + r * rowH;
-    out.rect(box.x0, y, box.x1, y + rowH - HAIR, rgb((d.top + r) % 2 === 0 ? "color.row.white" : "color.row.black"));
+    const ground: ColorName = d.keys[d.top + r] === p.row ? ROW_HIGHLIGHT : (d.top + r) % 2 === 0 ? "color.row.white" : "color.row.black";
+    out.rect(box.x0, y, box.x1, y + rowH - HAIR, rgb(ground));
   }
   const bottom = box.y0 + rows * rowH;
   gridLines(out, box, p, X, Math.min(box.y1, bottom));
@@ -259,7 +267,7 @@ export function paintRoll(out: Batch, box: Box, p: RollPicture, marks: Uint8Arra
     const key = g.topKey - r;
     if (key < 0) break;
     const y = Y(key);
-    out.rect(box.x0, y, box.x1, y + rowH - HAIR, rgb(rowColor(key, p.scale)));
+    out.rect(box.x0, y, box.x1, y + rowH - HAIR, rgb(key === p.row ? ROW_HIGHLIGHT : rowColor(key, p.scale)));
   }
 
   const from = g.scrollTick;
@@ -378,7 +386,10 @@ export function paintVelocityLane(out: Batch, box: Box, p: RollPicture, dpr: num
   }
 }
 
-/** The key part of the keyboard column (right of the note name field). White keys key.white, black keys key.black, lit keys accent with an accent.ink mark on the left, a gray.1 line below. */
+/**
+ * The key part of the keyboard column (right of the note name field). White keys key.white, black keys key.black, lit keys accent with an accent.ink mark on the left, a gray.1 line below.
+ * The key of `row` is the highlighted row, unless it is lit.
+ */
 export function paintRollKeys(
   out: Batch,
   box: Box,
@@ -386,6 +397,7 @@ export function paintRollKeys(
   lit: (key: number) => boolean,
   dpr: number,
   mark: { width: number; color: ColorName } = { width: 2, color: "color.accent.ink" },
+  row: number | null = null,
 ): void {
   const rowH = g.rowH * dpr;
   out.rect(box.x0, box.y0, box.x1, box.y1, rgb("color.gray.1"));
@@ -396,8 +408,10 @@ export function paintRollKeys(
     const markW = Math.max(HAIR, Math.round(mark.width * dpr));
     for (let r = 0; r < rows; r++) {
       const y = box.y0 + r * rowH;
-      out.rect(box.x0, y, box.x1, y + rowH - HAIR, rgb("color.gray.5"));
-      if (lit(g.drum.keys[g.drum.top + r]!)) out.rect(box.x0, y, box.x0 + markW, y + rowH - HAIR, rgb(mark.color));
+      const key = g.drum.keys[g.drum.top + r]!;
+      const on = lit(key);
+      out.rect(box.x0, y, box.x1, y + rowH - HAIR, rgb(!on && key === row ? DRUM_NAME_HIGHLIGHT : "color.gray.5"));
+      if (on) out.rect(box.x0, y, box.x0 + markW, y + rowH - HAIR, rgb(mark.color));
     }
     return;
   }
@@ -407,7 +421,7 @@ export function paintRollKeys(
     const key = g.topKey - r;
     if (key < 0) break;
     const y = box.y0 + r * rowH;
-    const color: ColorName = lit(key) ? "color.accent" : isBlack(key) ? "color.key.black" : "color.key.white";
+    const color: ColorName = lit(key) ? "color.accent" : key === row ? ROW_HIGHLIGHT : isBlack(key) ? "color.key.black" : "color.key.white";
     out.rect(box.x0, y, box.x1, y + rowH - HAIR, rgb(color));
     if (lit(key)) out.rect(box.x0, y, box.x0 + markW, y + rowH - HAIR, rgb(mark.color));
   }

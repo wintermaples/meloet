@@ -740,6 +740,20 @@ list.focus();
 for (const key of %s) list.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
 """
 
+# Puts the pointer over the note area of the piano roll, x px from its left edge, on the row of a label of the key column
+# (the row under the pointer is highlighted from the key column to the right edge).
+HOVER_ROW = """
+const label = document.querySelector('%s').getBoundingClientRect();
+const area = document.querySelector(".roll .area");
+const a = area.getBoundingClientRect();
+area.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, pointerId: 1, clientX: a.left + %d, clientY: label.top + label.height / 2 }));
+"""
+
+
+def hover_row(label, x):
+    return "js:" + HOVER_ROW % (label, x)
+
+
 # Shots that need a click first (a menu is screen-only state): name -> (scene, CSS selector to click).
 # A selector that starts with "js:" is run as a script instead (it may await).
 # One that starts with "mouse:" is an expression for an element: the real pointer goes to its middle (CSS :hover).
@@ -886,6 +900,12 @@ CLICKS = {
     "pianoRollGhostFolded": ("pianoRollGhost", ('[data-test="pr-ghost-menu"]', '[data-test="pr-ghost-tracks"] [data-row="0"]')),
     # E1 (round 12): 表示 opened, with 「鳴っている音を光らせる」 checked at its end.
     "pianoRollGlowMenu": ("pianoRollGlow", '[data-menu="2"]'),
+    # The row under the pointer highlighted (user:2026-11-25): over the note area on E4, on the clap row of the drums, and the
+    # real pointer on 「D」 of the key column. Every row has its letter at the row height of 12; at 8 only the C rows do.
+    "pianoRollRowHover": ("pianoRoll", hover_row('.key-name[data-key="64"]', 240)),
+    "drumRollRowHover": ("drumRoll", hover_row('.drum-name[data-key="39"]', 240)),
+    "pianoRollKeyHover": ("pianoRoll", 'mouse:document.querySelector(\'.key-name[data-key="62"]\')'),
+    "pianoRollRows8": ("pianoRoll", '[data-test="pr-row-zoom-out"]'),
 }
 SIZES = [(1280, 800), (1920, 1080)]
 SCALES = [100, 125]
@@ -944,6 +964,10 @@ ONLY = {
     "pianoRollGhostFolded": [(1280, 800, 100), (1280, 800, 125)],
     "pianoRollGlow": [(1280, 800, 100), (1920, 1080, 100)],
     "pianoRollGlowMenu": [(1280, 800, 100)],
+    "pianoRollRowHover": [(1280, 800, 100), (1920, 1080, 125)],
+    "drumRollRowHover": [(1280, 800, 100), (1920, 1080, 125)],
+    "pianoRollKeyHover": [(1280, 800, 100)],
+    "pianoRollRows8": [(1280, 800, 100), (1280, 800, 125)],
     "noteListTyping": [(1280, 800, 100)],
     "noteListBroken": [(1280, 800, 100)],
     "ccLanes": [(1280, 800, 100), (1920, 1080, 100), (1920, 1080, 125)],

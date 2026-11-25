@@ -468,6 +468,26 @@ export class RollDrag {
   }
 }
 
+/**
+ * The key of the row the grabbed note lies on while notes are dragged: where a move puts it, the row of a note whose length
+ * changes, the row (or the chord's root) being drawn, and the root of the chord shadow. Null for other drags and when nothing is held.
+ */
+export function heldRow(d: Drag | null, shadow: Shadow | null, n: Shown | null, pick: ChordPick = SINGLE): number | null {
+  if (!d) return shadow ? rootOf(pick, shadow.key) : null;
+  switch (d.kind) {
+    case "move":
+    case "resize": {
+      const key = n?.take.keys[d.grab];
+      if (key === undefined) return null;
+      return d.kind === "move" ? key + d.keys : key;
+    }
+    case "draw":
+      return d.key;
+    default:
+      return null;
+  }
+}
+
 /** Whether the draw tool can write on the row (not below the drum rows). */
 const drawable = (key: number, scale: MusicalScale) => key >= 0 && writable(key, scale);
 

@@ -36,6 +36,7 @@ In the "Basis" column: "spec 3" is chapter 3 of this spec; "mock Main" is a mock
 | Two or more keyboards | The rule that widens the name field for a name over 8 characters counts the whole 「名前 +N」. Hovering shows all the names joined with 「 ・ 」. 「入口:」 on the status line shows the name of one keyboard only | the developers' decision |
 | Black keys with an even width (the thin keys at 125 %) | They cannot sit on the middle of a line, so the extra 1 dot goes on the right | the developers' decision |
 | A lower band that does not fit even alone | Its lowest height is its toolbar, 32 | the developers' decision |
+| A field of `settings.json` that does not read (another type) | That field takes its default; the other fields are kept, and so is the rest at the next save. A file that is not JSON, or of another version, still gives the defaults | decided by the lead, 2026-11-25, bug sweep CORE-FILES |
 
 ## A-4 Round 2 (recording, transport, arrange)
 
@@ -53,6 +54,8 @@ In the "Basis" column: "spec 3" is chapter 3 of this spec; "mock Main" is a mock
 | Count-in bars, recorded clip names, first save | — | When the count-in is 「なし」, the button value is 「なし」. A recorded clip gets the track name (「ピアノ」). The first save does not ask: it goes to 「はじめての曲/はじめての曲.meloet」 in the PC's Music folder (「はじめての曲 2」 if that name is already used) | the owner's decision |
 | Loop 「5–9」 | The accent band on the ruler of Main | From the start of bar 5 to the start of bar 9 (the numbers of the bar lines) | the developers' reading of the mock |
 | Behaviour around recording (where play and record start, the last half beat of the count-in, not playing the earlier takes of the track being recorded, a recording with no notes, take switching that goes round, actions not taken during the count-in and recording, and so on) | — | Chapters 10, 12 and 13 of [`docs/architecture.md`](../architecture.md) | the developers' decision |
+| 「自動で残してある 1 つ前の状態」 after a save with nothing changed | Spec 6 (the song file is broken): 「自動で残してある 1 つ前の状態からなら開けます」 | A save whose file would be the same bytes as the song file there leaves `.prev` as it is, so it stays the state before the last change. The song is still saved and shows as saved. | the owner's decision (user:2026-11-25), bug sweep CORE-FILES |
+| A long song name and its folder | — | A name over 200 bytes (66 Japanese characters) is cut to 200 bytes between two characters for the song's folder and file, and the song's name follows, as it does for 「 2」. A song file whose name is already longer still saves: the names of its temporary files and of `.prev` are cut to fit. | decided by the lead, 2026-11-25, bug sweep CORE-FILES |
 
 ## A-5 Round 3 (piano roll and clips)
 

@@ -476,7 +476,8 @@ struct ReturnsFile {
 struct ReturnFile {
     #[serde(default = "unity")]
     gain_db: Option<f64>,
-    #[serde(default)]
+    /// Missing, or not a whole number: the middle.
+    #[serde(default, deserialize_with = "pan_or_middle")]
     pan: i64,
     #[serde(default, skip_serializing_if = "is_false")]
     muted: bool,
@@ -1962,7 +1963,11 @@ pub fn songs_dir() -> Option<PathBuf> {
 
 /// `<name>.meloet.prev`: the file as it was before the last save.
 pub fn previous_path(path: &Path) -> PathBuf {
-    let mut name = path.file_name().map(OsString::from).unwrap_or_default();
+    let name = path.file_name().unwrap_or_default();
+    if name.len() + ".prev".len() > FILE_NAME_BYTES {
+        return path.with_file_name(fitted("", &name.to_string_lossy(), ".prev"));
+    }
+    let mut name = OsString::from(name);
     name.push(".prev");
     path.with_file_name(name)
 }
@@ -1971,9 +1976,10 @@ pub fn read(path: &Path) -> Result<Song, ReadError> {
     decode(&fs::read(path).map_err(ReadError::Io)?)
 }
 
-/// Writes the song over `path`. Before that, the file there (when it reads as a song) becomes
-/// `<name>.meloet.prev`. Every file is synced before it is renamed into place, and the folder
-/// after, so `path` is always one whole song: the one before or this one.
+/// Writes the song over `path`. Before that, the file there (when it reads as a song and is
+/// not these same bytes) becomes `<name>.meloet.prev`. Every file is synced before it is
+/// renamed into place, and the folder after, so `path` is always one whole song: the one
+/// before or this one.
 pub fn save(path: &Path, song: &Song) -> io::Result<()> {
     let bytes = encode(song);
     let dir = path.parent().filter(|d| !d.as_os_str().is_empty());
@@ -1983,14 +1989,16 @@ pub fn save(path: &Path, song: &Song) -> io::Result<()> {
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "no file name"))?
         .to_string_lossy()
         .into_owned();
-    let fresh = dir.join(format!(".{name}.new"));
+    let fresh = dir.join(fitted(".", &name, ".new"));
+    let kept = dir.join(fitted(".", &name, ".prev.new"));
     let result = (|| {
         write_synced(&fresh, &bytes)?;
-        // A file that does not read as a song is not kept: it would push out a good copy.
+        // A file that does not read as a song is not kept: it would push out a good copy. Nor
+        // is the song as it is written now: `.prev` stays the one before it.
         if let Ok(old) = fs::read(path)
+            && old != bytes
             && decode(&old).is_ok()
         {
-            let kept = dir.join(format!(".{name}.prev.new"));
             write_synced(&kept, &old)?;
             fs::rename(&kept, previous_path(path))?;
         }
@@ -1999,9 +2007,23 @@ pub fn save(path: &Path, song: &Song) -> io::Result<()> {
     })();
     if result.is_err() {
         let _ = fs::remove_file(&fresh);
-        let _ = fs::remove_file(dir.join(format!(".{name}.prev.new")));
+        let _ = fs::remove_file(&kept);
     }
     result
+}
+
+/// The bytes a file name holds.
+const FILE_NAME_BYTES: usize = 255;
+
+/// `{before}{name}{after}`, with `name` cut between two characters so that it fits a file
+/// name.
+fn fitted(before: &str, name: &str, after: &str) -> String {
+    let room = FILE_NAME_BYTES.saturating_sub(before.len() + after.len());
+    let mut end = name.len().min(room);
+    while !name.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{before}{}{after}", &name[..end])
 }
 
 /// The first save: makes `<base>/<name>/<name>.meloet`. When `<base>/<name>` is there already
@@ -2047,7 +2069,8 @@ pub fn save_new_with(
     unreachable!("u32 names run out")
 }
 
-/// The song's name with what a folder name cannot hold made into "_".
+/// The song's name with what a folder name cannot hold made into "_", cut so that the file
+/// names made from it ([`save_new_with`], [`save`]) fit.
 fn folder_name(song: &str) -> String {
     let name: String = song
         .trim()
@@ -2060,11 +2083,11 @@ fn folder_name(song: &str) -> String {
             }
         })
         .collect();
-    let name = name.trim_matches('.').to_owned();
+    let name = crate::export::job::cut_name(name.trim_matches('.'));
     if name.is_empty() {
         "meloet".into()
     } else {
-        name
+        name.to_owned()
     }
 }
 
@@ -2076,12 +2099,12 @@ fn write_synced(path: &Path, bytes: &[u8]) -> io::Result<()> {
 
 /// The renames in `dir` reach the disk. Windows has no way to open a folder for this.
 #[cfg(unix)]
-fn sync_dir(dir: &Path) -> io::Result<()> {
+pub(crate) fn sync_dir(dir: &Path) -> io::Result<()> {
     File::open(dir)?.sync_all()
 }
 
 #[cfg(not(unix))]
-fn sync_dir(_: &Path) -> io::Result<()> {
+pub(crate) fn sync_dir(_: &Path) -> io::Result<()> {
     Ok(())
 }
 

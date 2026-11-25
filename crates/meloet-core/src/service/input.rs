@@ -83,9 +83,9 @@ struct RecPeaks {
 pub(super) enum KeptNote {
     #[default]
     None,
-    /// The recovery file has not been asked for yet.
+    /// The recovery file has not been asked for yet, or was not written.
     Waiting,
-    /// Told when the recovery file is written.
+    /// Told when the recovery file is written; let go of when it is not.
     Writing(Receiver<()>),
 }
 
@@ -352,13 +352,18 @@ impl Worker {
 
     /// The note a start brought back goes once the recovery file holds its clips.
     fn settle_kept_note(&mut self) {
-        if let KeptNote::Writing(done) = &self.input.kept_note
-            && !matches!(done.try_recv(), Err(TryRecvError::Empty))
-        {
-            self.input.kept_note = KeptNote::None;
-            if let Some(dir) = &self.input.state_dir {
-                vocalrec::remove_note(dir);
+        let KeptNote::Writing(written) = &self.input.kept_note else {
+            return;
+        };
+        match written.try_recv() {
+            Ok(()) => {
+                self.input.kept_note = KeptNote::None;
+                if let Some(dir) = &self.input.state_dir {
+                    vocalrec::remove_note(dir);
+                }
             }
+            Err(TryRecvError::Disconnected) => self.input.kept_note = KeptNote::Waiting,
+            Err(TryRecvError::Empty) => {}
         }
     }
 

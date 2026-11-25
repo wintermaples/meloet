@@ -307,6 +307,91 @@ fn telemetry_goes_once_to_a_new_sink_then_stops_until_something_changes() {
     assert_eq!(Telemetry::decode(&bytes).unwrap().keys_low, 0);
 }
 
+/// A keyboard pulled out lets go of all it held: the next take does not start with them.
+#[test]
+fn letting_go_of_everything_lets_go_of_bend_and_modulation_too() {
+    let held = Held::default();
+    held.note(MidiEvent::NoteOn {
+        note: 60,
+        velocity: 90,
+    });
+    for (controller, value) in [(64, 127), (1, 80)] {
+        held.note(MidiEvent::Control { controller, value });
+    }
+    held.note(MidiEvent::PitchBend { value: 4000 });
+    held.release_all();
+    let now = held.now();
+    assert_eq!(now.keys, 0);
+    assert_eq!(
+        (
+            now.controls.sustain,
+            now.controls.modulation,
+            now.controls.bend
+        ),
+        (0, 0, 0)
+    );
+}
+
+/// The note of a recording a start brought back stays until a recovery file that holds its
+/// clip is written, not only asked for.
+#[test]
+fn a_kept_recording_note_waits_for_a_recovery_file_that_was_written() {
+    use crate::vocalrec::{Marks, NoteFile, RecNote, WavFile, work_audio_dir, write_note};
+    use meloet_protocol::RecordFormat;
+    let dir = crate::settings::temp_dir("core-kept-note");
+    let audio = work_audio_dir(&dir);
+    std::fs::create_dir_all(&audio).unwrap();
+    let mut wav =
+        WavFile::create(&audio.join("歌 9.wav"), 48_000, 1, RecordFormat::Bits24).unwrap();
+    wav.write(&vec![0.25; 48_000]).unwrap();
+    wav.sync().unwrap();
+    drop(wav);
+    let files = vec![NoteFile {
+        file: "歌 9.wav".into(),
+        track: 77,
+        track_name: "歌".into(),
+        channels: 1,
+    }];
+    let marks = Marks {
+        from: 0,
+        loop_range: None,
+        roll: Some((0.0, 0.0)),
+        laps: Vec::new(),
+    };
+    let rec_note = RecNote::new(None, 48_000, RecordFormat::Bits24, files, marks);
+    write_note(&dir, &rec_note).unwrap();
+    let note = dir.join(crate::vocalrec::REC_NOTE);
+    // Where the recovery file's temporary file goes, a folder: the write fails.
+    let blocker = dir.join(format!(".{}.new", recovery::FILE_NAME));
+    std::fs::create_dir(&blocker).unwrap();
+
+    let core = Core::start(CoreOptions {
+        state_dir: Some(dir.clone()),
+        ..CoreOptions::offline()
+    });
+    assert!(core.pc_ending(Duration::from_secs(5)));
+    std::thread::sleep(HOUSEKEEPING * 3);
+    assert!(!dir.join(recovery::FILE_NAME).exists());
+    assert!(note.exists(), "the recovery file was not written");
+
+    std::fs::remove_dir(&blocker).unwrap();
+    core.send(Command::AddMarker {
+        name: "m".into(),
+        tick: Some(0),
+    });
+    assert!(core.pc_ending(Duration::from_secs(5)));
+    let until = Instant::now() + Duration::from_secs(5);
+    while note.exists() {
+        assert!(
+            Instant::now() < until,
+            "the note stayed after the file was written"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(dir.join(recovery::FILE_NAME).exists());
+    core.stop();
+}
+
 #[test]
 fn midi_events_become_engine_and_protocol_events() {
     assert_eq!(

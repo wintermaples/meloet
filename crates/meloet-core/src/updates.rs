@@ -232,7 +232,8 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
     file.write_all(bytes)?;
     file.sync_all()?;
     drop(file);
-    fs::rename(&temporary, path)
+    fs::rename(&temporary, path)?;
+    path.parent().map_or(Ok(()), crate::songfile::sync_dir)
 }
 
 #[cfg(test)]

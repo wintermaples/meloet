@@ -595,6 +595,60 @@ fn a_save_keeps_the_one_before_and_only_a_good_one() {
     let _ = fs::remove_dir_all(dir);
 }
 
+/// The owner (2026-11-25): a save with nothing changed keeps the `.prev` there.
+#[test]
+fn a_save_of_the_same_bytes_keeps_the_one_before() {
+    let dir = temp_dir("songfile-same");
+    let path = dir.join("曲.meloet");
+    save(&path, &rich_song("1", 3)).unwrap();
+    save(&path, &rich_song("2", 3)).unwrap();
+    save(&path, &rich_song("2", 3)).unwrap();
+    assert_eq!(read(&path).unwrap().doc.name, "2");
+    assert_eq!(read(&previous_path(&path)).unwrap().doc.name, "1");
+    save(&path, &rich_song("3", 3)).unwrap();
+    assert_eq!(read(&previous_path(&path)).unwrap().doc.name, "2");
+    assert_eq!(fs::read_dir(&dir).unwrap().count(), 2, "no file left over");
+    let _ = fs::remove_dir_all(dir);
+}
+
+/// A name of 100 Japanese characters is 300 bytes; a file name holds 255.
+#[test]
+fn a_long_name_is_cut_and_saves_again_and_again() {
+    let base = temp_dir("songfile-long");
+    let mut song = Song::new_default();
+    song.doc.name = "あ".repeat(100);
+    let (path, name) = save_new(&base, &song).unwrap();
+    assert!(
+        name.len() <= 200 && name.chars().all(|c| c == 'あ'),
+        "{name}"
+    );
+    assert_eq!(path, base.join(&name).join(format!("{name}.meloet")));
+    assert_eq!(read(&path).unwrap().doc.name, name);
+    save(&path, &rich_song("2", 3)).unwrap();
+    save(&path, &rich_song("3", 3)).unwrap();
+    assert_eq!(read(&previous_path(&path)).unwrap().doc.name, "2");
+    let (again, other) = save_new(&base, &song).unwrap();
+    assert_eq!(other, format!("{name} 2"));
+    save(&again, &rich_song("2", 3)).unwrap();
+
+    // A song saved before names were cut, or a file named so by hand, still saves.
+    for bytes in [250, 255] {
+        let dir = temp_dir("songfile-long-kept");
+        let file = format!("{}.meloet", "x".repeat(bytes - ".meloet".len()));
+        let path = dir.join(&file);
+        fs::write(&path, encode(&rich_song("1", 3))).unwrap();
+        save(&path, &rich_song("2", 3)).unwrap();
+        save(&path, &rich_song("3", 3)).unwrap();
+        assert_eq!(read(&path).unwrap().doc.name, "3");
+        let prev = previous_path(&path);
+        assert!(prev.file_name().unwrap().len() <= 255);
+        assert_eq!(read(&prev).unwrap().doc.name, "2", "{bytes}");
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 2, "no file left over");
+        let _ = fs::remove_dir_all(dir);
+    }
+    let _ = fs::remove_dir_all(base);
+}
+
 #[test]
 fn a_first_save_takes_the_next_free_folder_and_name() {
     let base = temp_dir("songfile-new");
@@ -1153,6 +1207,18 @@ fn effects_and_parameters_that_are_not_known_do_not_cost_the_song() {
     let mut v = rich_json();
     v["song"]["mixer"]["master"]["pan"] = serde_json::json!(900);
     assert_eq!(read_json(&v).doc.master.pan, Pan::new(100));
+    // The same for a return's pan.
+    for pan in [serde_json::json!(12.5), serde_json::json!("left")] {
+        let mut v = rich_json();
+        v["song"]["mixer"]["returns"]["a"]["pan"] = pan;
+        let song = read_json(&v);
+        assert_eq!(song.doc.returns[0].channel.pan, Pan::CENTER);
+        let mut a = (*want.doc.returns[0]).clone();
+        a.channel.pan = Pan::CENTER;
+        assert_eq!(*song.doc.returns[0], a);
+        assert_eq!(song.doc.returns[1], want.doc.returns[1]);
+        assert_eq!(song.doc.master, want.doc.master);
+    }
 
     // A mixer that is not understood: the one of a new song, and the tracks stay.
     let mut v = rich_json();

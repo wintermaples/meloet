@@ -211,6 +211,8 @@ struct OnDisk {
     output: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     output_name: Option<String>,
+    /// Missing: 0, which reads as the default.
+    #[serde(default)]
     scale: u16,
     /// The JSON name of the protocol (`"pinkDark"`). A name this meloet does not know (one a
     /// newer meloet wrote) gives the default, and the rest of the file is still read.
@@ -399,12 +401,28 @@ fn config_dir_from(var: impl Fn(&str) -> Option<OsString>) -> Option<PathBuf> {
         .or_else(|| set("HOME").map(|dir| dir.join(".config").join("meloet")))
 }
 
-/// A missing, unreadable or broken file gives the defaults.
+/// The fields of the file. One that does not read (another type) is left out, so that it
+/// takes its default and the others are kept.
+fn read_fields(text: &str) -> Result<OnDisk, serde_json::Error> {
+    let fields: serde_json::Map<String, serde_json::Value> = serde_json::from_str(text)?;
+    let version = fields.get("version").cloned().unwrap_or_default();
+    let reads = |key: &str, value: &serde_json::Value| {
+        let alone = serde_json::json!({ "version": version, key: value });
+        serde_json::from_value::<OnDisk>(alone).is_ok()
+    };
+    let fields = (fields.iter())
+        .filter(|(key, value)| reads(key, value))
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect();
+    serde_json::from_value(serde_json::Value::Object(fields))
+}
+
+/// A missing, unreadable or broken file, or one of another version, gives the defaults.
 pub fn load(dir: &Path) -> Settings {
     let Ok(text) = std::fs::read_to_string(dir.join(FILE_NAME)) else {
         return Settings::default();
     };
-    match serde_json::from_str::<OnDisk>(&text) {
+    match read_fields(&text) {
         Ok(mut disk) if disk.version == VERSION => Settings {
             click: click_from_disk(&disk),
             shelf: shelf_from_disk(&mut disk),
@@ -462,7 +480,7 @@ pub fn load(dir: &Path) -> Settings {
     }
 }
 
-/// Writes a temporary file next to the real one and renames it over it.
+/// Writes a temporary file next to the real one, renames it over it and syncs the folder.
 pub fn save(dir: &Path, settings: &Settings) -> std::io::Result<()> {
     let shelf = &settings.shelf;
     let disk = OnDisk {
@@ -546,7 +564,8 @@ pub fn save(dir: &Path, settings: &Settings) -> std::io::Result<()> {
     file.write_all(text.as_bytes())?;
     file.sync_all()?;
     drop(file);
-    std::fs::rename(&temporary, dir.join(FILE_NAME))
+    std::fs::rename(&temporary, dir.join(FILE_NAME))?;
+    crate::songfile::sync_dir(dir)
 }
 
 #[cfg(test)]
@@ -796,8 +815,10 @@ mod tests {
             (loaded.click.volume_db, loaded.click.sound),
             (6.0, ClickSound::Tick)
         );
-        write(r#","click_sound":3"#);
-        assert_eq!(load(&dir), Settings::default(), "not a name: a broken file");
+        write(r#","click_sound":3,"click_when":"recordingOnly""#);
+        let loaded = load(&dir);
+        assert_eq!(loaded.click.sound, ClickSound::default(), "not a name");
+        assert_eq!(loaded.click.when, ClickWhen::RecordingOnly);
         for click in [
             ClickSettings::default(),
             ClickSettings {
@@ -879,7 +900,8 @@ mod tests {
             "{",
             "[]",
             r#"{"version":2,"output":"x","scale":100}"#,
-            r#"{"version":1,"output":7,"scale":100}"#,
+            r#"{"version":"1","output":"x","scale":100}"#,
+            r#"{"output":"x","scale":100}"#,
         ] {
             std::fs::write(dir.join("settings.json"), broken).unwrap();
             assert_eq!(load(&dir), Settings::default(), "{broken:?}");
@@ -921,10 +943,15 @@ mod tests {
         }
         std::fs::write(
             dir.join("settings.json"),
-            r#"{"version":1,"output":"x","scale":100,"theme":7}"#,
+            r#"{"version":1,"output":"x","scale":125,"theme":7}"#,
         )
         .unwrap();
-        assert_eq!(load(&dir), Settings::default(), "not a name: a broken file");
+        let loaded = load(&dir);
+        assert_eq!(
+            (loaded.theme, loaded.output.as_deref(), loaded.scale),
+            (Theme::Dark, Some("x"), 125),
+            "not a name: that field alone"
+        );
 
         std::fs::write(
             dir.join("settings.json"),
@@ -942,6 +969,36 @@ mod tests {
         assert!(load(&dir).sound.measured.is_empty());
         std::fs::write(dir.join("settings.json"), file("measured_latency_2")).unwrap();
         assert_eq!(load(&dir).sound.measured_for("o", "i", 48_000), Some(-3000));
+    }
+
+    /// The lead (2026-11-25): a field of another type takes its default, the others stay,
+    /// and the next save keeps them.
+    #[test]
+    fn a_field_that_does_not_read_takes_its_default_alone() {
+        let dir = temp_dir("one-field");
+        std::fs::write(
+            dir.join("settings.json"),
+            r#"{"version":1,"output":"out","scale":"x","favorites":["sine"],
+                "plugin_places":["/opt/plugins"],"count_in_bars":"two","buffer":512,
+                "favorite_sf2":[{"file":"a.sf2","bank":0}],"newer_field":true}"#,
+        )
+        .unwrap();
+        let want = Settings {
+            output: Some("out".into()),
+            favorites: vec![BuiltinInstrument::Sine],
+            plugin_places: vec![PathBuf::from("/opt/plugins")],
+            sound: SoundSettings {
+                buffer: 512,
+                ..SoundSettings::default()
+            },
+            ..Settings::default()
+        };
+        assert_eq!(load(&dir), want);
+        save(&dir, &load(&dir)).unwrap();
+        assert_eq!(load(&dir), want);
+
+        std::fs::write(dir.join("settings.json"), r#"{"version":1,"output":7}"#).unwrap();
+        assert_eq!(load(&dir), Settings::default());
     }
 
     #[test]

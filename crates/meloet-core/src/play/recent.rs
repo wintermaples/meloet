@@ -159,7 +159,12 @@ impl Phrase {
             } else {
                 // One key held under a long run of controller moves: the key stays, and
                 // the oldest of the moves goes.
-                self.events.remove(1);
+                let oldest_move = (self.events.iter().skip(1))
+                    .position(|e| {
+                        matches!(e.kind, RecEventKind::Cc { .. } | RecEventKind::PitchBend(_))
+                    })
+                    .map_or(1, |i| i + 1);
+                self.events.remove(oldest_move);
             }
         }
         while (self.events.front()).is_some_and(|e| e.t_us + MAX_AGE_US < ev.t_us) {

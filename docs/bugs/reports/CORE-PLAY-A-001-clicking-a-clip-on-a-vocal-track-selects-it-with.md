@@ -4,7 +4,7 @@ title: Clicking a clip on a vocal track selects it without the vocal-track rules
 area: CORE-PLAY-A
 kind: bug
 severity: medium
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -54,4 +54,6 @@ Fix plan: `crates/meloet-core/src/play.rs` `Play::click`: `let before = self.son
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`crates/meloet-core/src/play.rs` `Play::click` (a clip clicked, `SelectClip` and `SelectClips` with one clip): when the selected track changes, `selected_track_changed(before)` runs, as for a click on the track's header. The same rule where the selection moves by itself: `play/tracks.rs` `delete_track` (with the deleted track as the one before, on the song before the step) and the switch to the first track in `play.rs` `after_change` (with none before: that track is gone). `crates/meloet-core/src/state.rs`: `SelectClip` and `SelectClips` give the existing `NoInput` notice when the click made a vocal track the selected one and there is no input (`no_input_if_vocal_selected`).
+
+Tests (in `play/clips_tests.rs`): `a_click_on_a_vocal_clip_selects_its_track_as_its_head_does`, `a_vocal_track_selected_in_place_of_a_deleted_one_gets_its_arm`, `a_vocal_track_selected_when_undo_takes_the_selected_one_away_gets_its_arm`.

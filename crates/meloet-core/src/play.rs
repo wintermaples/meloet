@@ -991,7 +991,7 @@ impl Play {
         let range = match self.doc().loop_range {
             None if self.song.session.loop_on => {
                 let map = self.map();
-                let head = map.meter_at(self.position);
+                let head = map.meter_at(self.play_line());
                 TickRange::new(head.bar_tick, map.tick_of_bar(head.bar + DEFAULT_LOOP_BARS))
             }
             _ => None,
@@ -1069,8 +1069,12 @@ impl Play {
     /// The clip becomes the one clicked: shown in the piano roll, its track selected.
     fn click(&mut self, id: ClipId) {
         if let Some((track, _)) = self.doc().clip(id) {
+            let track = track.id;
             if !self.busy() {
-                self.song.session.play_target = Some(track.id);
+                let before = self.song.session.play_target.replace(track);
+                if before != Some(track) {
+                    self.selected_track_changed(before);
+                }
             }
             self.selected = Some(id);
             self.piano_roll = Some(id);
@@ -1414,6 +1418,8 @@ impl Play {
         let target = &mut self.song.session.play_target;
         if target.is_none_or(|t| doc.track(t).is_none()) {
             *target = doc.tracks.first().map(|t| t.id);
+            // The track before is gone: not one for the keys to stay on.
+            self.selected_track_changed(None);
         }
         self.drop_gone_vocals();
         self.recent_follow_target();

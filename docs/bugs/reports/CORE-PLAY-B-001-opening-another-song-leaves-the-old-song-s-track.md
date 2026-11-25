@@ -4,7 +4,7 @@ title: Opening another song leaves the old song's track lanes playing in the eng
 area: CORE-PLAY-B
 kind: bug
 severity: high
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -51,4 +51,6 @@ Fix plan: `crates/meloet-core/src/play/autosync.rs` `send_automation`: with `all
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`crates/meloet-core/src/play/autosync.rs` `send_automation`: with `all` (a new stream, another song) a seat whose track has no playing lane is no longer passed over: it is sent `EngineOp::Automation { seat, lanes: [] }`, as the master's lane is told "also none". This also closes the known hole of `docs/progress.md` (a track's lanes deleted or rested while no stream runs stayed in the engine): a new stream is now told every seat's lanes. `docs/architecture.md` 25-32 says so.
+
+Tests (in `play/autosync.rs`): `another_song_leaves_no_lane_of_the_one_before_on_its_seats` (「新しい曲」 → 「保存しない」 after a volume lane on track 1: every seat of the new song is told, with no lane) and `a_new_stream_hears_of_a_lane_deleted_while_none_ran`. Changed to the right behavior: `a_song_without_lanes_tells_the_engine_nothing` is now `a_song_without_lanes_tells_a_new_stream_so_and_then_nothing` (a new stream is told "no lane" once per seat, and nothing after), and `play/tests.rs` `the_stream_opening_gets_everything` now also expects `Automation { seat: 0, lanes: [] }`.

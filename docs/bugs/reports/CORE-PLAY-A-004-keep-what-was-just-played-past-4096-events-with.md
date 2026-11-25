@@ -4,7 +4,7 @@ title: Keep what was just played: past 4096 events with one key in the phrase, t
 area: CORE-PLAY-A
 kind: bug
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -44,4 +44,6 @@ Fix plan: `crates/meloet-core/src/play/recent.rs` `Phrase::push`: in the `else` 
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`crates/meloet-core/src/play/recent.rs` `Phrase::push`: with one key press in a full phrase, the oldest controller move (`Cc` or `PitchBend`) after the press goes; only when there is none does the event after the press go, as before.
+
+Test (in `play/recent/tests.rs`): `one_key_let_go_under_thousands_of_controller_moves_keeps_its_length`.

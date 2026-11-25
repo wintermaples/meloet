@@ -4,7 +4,7 @@ Where meloet is now, the work still open, and notes for the next round. Read thi
 
 The history of rounds 1 to 9 (what each round did, in order, with every number) is in [`history/progress.ja.md`](history/progress.ja.md). It is in Japanese and is not changed any more. This file does not repeat that history; it only says what is true now. When something here and the history disagree, this file is newer.
 
-Last written: 2026-11-25, after the second pass of the bug sweep (branch `fix/bug-sweep`, not merged into `main`; section 6, "Bug sweep" and "Bug sweep, second pass").
+Last written: 2026-11-25, after the second pass of the bug sweep (branch `fix/bug-sweep`, merged into `main` and pushed on 2026-11-25, all other branches deleted on the owner's order; section 6, "Bug sweep" and "Bug sweep, second pass").
 
 Branch: each piece of work is done on its own branch made from `main` (`fea/`, `fix/`, `doc/`, `refactor/`, `chore/`; the rule is in `CLAUDE.md`), and goes into `main` when the owner asks. `foundation` is no longer used (the owner: the basic build is done); older lines that name it are records of that time.
 

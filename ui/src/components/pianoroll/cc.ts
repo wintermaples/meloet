@@ -253,7 +253,7 @@ export class LaneMouse {
 
   /** The point the erase tool is over when nothing is pressed. True if it changed. */
   hover(x: number, y: number): boolean {
-    const erase = this.input.tool() === "erase" ? this.hit(x, y) : -1;
+    const erase = this.input.tool() === "erase" && !this.input.busy?.() ? this.hit(x, y) : -1;
     const changed = erase !== this.eraseHover;
     this.eraseHover = erase;
     return changed;

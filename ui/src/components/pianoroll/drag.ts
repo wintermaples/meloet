@@ -131,21 +131,24 @@ export class RollDrag {
   /** The cursor and the note the erase tool is over when nothing is pressed. True if they changed. */
   hover(x: number, y: number, mods: Mods): { cursor: CursorKind; changed: boolean; shadowChanged: boolean } {
     const i = this.input;
+    // While recording or counting in, a press only selects or does nothing: no edit look then.
+    const busy = i.busy?.() ?? false;
     const hit = hitNote(i.shown(), i.geom(), x, y, i.edgePx(), true);
-    const erase = i.tool() === "erase" && hit && !hit.edge ? hit.note : -1;
+    const erase = !busy && i.tool() === "erase" && hit && !hit.edge ? hit.note : -1;
     const changed = erase !== this.eraseHover;
     this.eraseHover = erase;
     const pick = this.chord();
     const key = yToKey(i.geom(), y);
     let shadow: Shadow | null = null;
-    if (!hit && i.tool() === "draw" && isChord(pick) && key >= 0) {
+    if (!busy && !hit && i.tool() === "draw" && isChord(pick) && key >= 0) {
       const at = xToTick(i.geom(), x);
       const start = drawStart(at, mods.shift ? null : i.step(at), i.grid?.());
       shadow = { start, length: i.step(start), keys: stampKeys(pick, key), key };
     }
     const shadowChanged = this.setShadow(shadow);
     let cursor: CursorKind;
-    if (hit?.edge) cursor = "ew-resize";
+    if (busy) cursor = "default";
+    else if (hit?.edge) cursor = "ew-resize";
     else if (i.tool() === "erase") cursor = "eraser";
     else if (hit) cursor = mods.alt ? "copy" : "move";
     // A chord is written also where the scale lock refuses one note (the owner's decision).
@@ -282,7 +285,7 @@ export class RollDrag {
     const t1 = xToTick(g, x + near);
     for (let k = 0; k < n.take.starts.length; k++) {
       const s = noteStart(n, k);
-      if (s < t0 || s > t1 || !noteShown(n, k)) continue;
+      if (s < t0 || s > t1 || !noteShown(n, k) || (g.drum && !g.drum.keys.includes(n.take.keys[k]!))) continue;
       const top = bottom - (n.take.velocities[k]! * full) / 127;
       const d = Math.abs(y - top) + Math.abs(x - tickToX(g, s));
       if (Math.abs(y - top) <= near && d < best) {
@@ -292,7 +295,7 @@ export class RollDrag {
     }
     if (grab < 0) return;
     const selected = this.selectedSet();
-    const notes = selected.has(grab) ? [...selected] : [grab];
+    const notes = selected.has(grab) ? [...selected].filter((k) => !g.drum || g.drum.keys.includes(n.take.keys[k]!)) : [grab];
     this.pressTake = n.take.id;
     this.drag = { kind: "velocity", press: { x, y, moved: false }, notes, grab, delta: 0 };
   }

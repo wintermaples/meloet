@@ -23,14 +23,15 @@ export function soundingKeys(take: SoundingTake | null, clip: SoundingClip | nul
 
 /**
  * The indexes of the notes sounding at `tick`, by the rules of `soundingKeys`, in index order. Written into `out` (emptied first)
- * when it is given, so a caller that asks every frame makes no new array.
+ * when it is given, so a caller that asks every frame makes no new array. With `maxLength` (the longest note of the take), the notes
+ * that ended before now are skipped by a binary search, so a frame does not walk the take from its first note.
  */
-export function soundingNotes(take: SoundingTake | null, clip: SoundingClip | null, tick: number, out: number[] = []): number[] {
+export function soundingNotes(take: SoundingTake | null, clip: SoundingClip | null, tick: number, out: number[] = [], maxLength?: number): number[] {
   out.length = 0;
   if (!take || !clip || take.id !== clip.takeId || tick < clip.start || tick >= clip.end) return out;
   const local = tick - (clip.start + clip.takeOffset);
   // Notes are in start order, so nothing after one that starts later than now is checked.
-  for (let i = 0; i < take.starts.length; i++) {
+  for (let i = maxLength === undefined ? 0 : firstAfter(take.starts, local - maxLength); i < take.starts.length; i++) {
     const start = take.starts[i]!;
     if (start > local) break;
     // Notes moved before the clip's start by trimming the edge do not sound.
@@ -38,6 +39,18 @@ export function soundingNotes(take: SoundingTake | null, clip: SoundingClip | nu
     if (local < start + take.lengths[i]!) out.push(i);
   }
   return out;
+}
+
+/** The first index whose start is greater than `at` (starts are in order). */
+function firstAfter(starts: ArrayLike<number>, at: number): number {
+  let lo = 0;
+  let hi = starts.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (starts[mid]! <= at) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
 }
 
 /** The keys of the notes `notes` of `take`, lowest first, without repeats. */

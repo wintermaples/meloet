@@ -426,6 +426,8 @@ describe("CC drags: the take of the press, and while recording (UI-ROLL-003, UI-
     tool = "erase";
     m.down(20, 24, none);
     expect(m.drag).toBeNull();
+    m.hover(20, 24);
+    expect(m.eraseHover).toBe(-1);
     tool = "select";
     m.down(5, 1, none);
     m.move(100, 47, none);

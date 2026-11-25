@@ -74,6 +74,11 @@ export function followShownTake(): void {
       takeSerial = serial;
       take = got;
       origin = from;
+    }, () => {
+      // Refused (an id core no longer has): show nothing rather than the take of the clip shown before.
+      if (ticket !== asked) return;
+      take = null;
+      origin = null;
     });
   });
 }

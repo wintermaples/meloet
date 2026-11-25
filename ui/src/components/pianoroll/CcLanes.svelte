@@ -139,6 +139,8 @@
   function cursorAt(p: { x: number; y: number }): CursorKind {
     const d = mouse.drag;
     if (d) return d.kind === "move" ? "move" : d.kind === "add" ? "pencil" : d.kind === "erase" ? "eraser" : "default";
+    // While recording or counting in, a press only selects or does nothing.
+    if (transport.state === "recording" || transport.state === "countIn") return "default";
     if (prView.tool === "erase") return "eraser";
     if (mouse.over(p.x, p.y)) return "move";
     return prView.tool === "draw" && take ? "pencil" : "default";

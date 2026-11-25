@@ -8,7 +8,7 @@ import * as A from "../src/components/automation/autoGeom";
 import { handAt, noteHand } from "../src/components/automation/handValue";
 import HistoryHead from "../src/components/history/HistoryHead.svelte";
 import { closeContextMenu, contextMenu } from "../src/components/menu/contextMenu.svelte";
-import { labelsBesideMarkers } from "../src/components/pianoroll/rulerMarks";
+import { keepWidthsOf, labelsBesideMarkers } from "../src/components/pianoroll/rulerMarks";
 import StatusLine from "../src/components/StatusLine.svelte";
 import TempoBand from "../src/components/timeline/TempoBand.svelte";
 import { runFrameCallbacks, watchSlots, type GlRect, type GlSlot } from "../src/gl/slot";
@@ -251,5 +251,11 @@ describe("markers on the piano roll ruler (R11-Answers92)", () => {
     const shown = labelsBesideMarkers(labels, [{ id: 1, x: 128 }], widths, { 1: 40 });
     expect(shown.map((l) => l.text)).toEqual(["5.4", "6.3"]);
     expect(labelsBesideMarkers(labels, [{ id: 1, x: 128 }], widths, {})).toHaveLength(4);
+  });
+
+  it("widths of numbers and markers no longer on the ruler are dropped (the tables do not grow while scrolling)", () => {
+    const widths: Record<number, number> = { 0: 22, 1920: 22, 3840: 30 };
+    keepWidthsOf(widths, [1920, 3840, 5760]);
+    expect(widths).toEqual({ 1920: 22, 3840: 30 });
   });
 });

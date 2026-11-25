@@ -135,11 +135,17 @@
     return spec?.current != null ? spec.format(spec.current) : "";
   };
   const bulkDrafts = $state<Record<Bulk, string>>({ length: "", velocity: "" });
+  /** The person is typing in the row: a diff that arrives meanwhile does not put the value back over the text. */
+  const bulkTyping: Record<Bulk, boolean> = { length: false, velocity: false };
   $effect(() => {
-    bulkDrafts.length = bulkInitial("length");
+    const v = bulkInitial("length");
+    if (bulkSpecs.length === null) bulkTyping.length = false;
+    if (!bulkTyping.length) bulkDrafts.length = v;
   });
   $effect(() => {
-    bulkDrafts.velocity = bulkInitial("velocity");
+    const v = bulkInitial("velocity");
+    if (bulkSpecs.velocity === null) bulkTyping.velocity = false;
+    if (!bulkTyping.velocity) bulkDrafts.velocity = v;
   });
   const bulkBroken = (name: Bulk) => {
     const spec = bulkSpecs[name];
@@ -157,6 +163,7 @@
     if (name === "length") send({ type: "matchLength", take: take!.id, notes: selected, value: r.value });
     else send({ type: "matchVelocity", take: take!.id, notes: selected, value: r.value });
     if (r.clamped) send(clampCommand(r.clamped));
+    bulkTyping[name] = false;
     bulkDrafts[name] = spec.format(r.value);
   }
 
@@ -166,10 +173,12 @@
     if (ev.key === "Enter" && !ev.shiftKey) {
       matchBulk(name);
     } else if (ev.key === "Escape" && !ev.shiftKey) {
+      bulkTyping[name] = false;
       bulkDrafts[name] = bulkInitial(name);
       (ev.currentTarget as HTMLInputElement).blur();
     } else if ((ev.key === "ArrowUp" || ev.key === "ArrowDown") && spec) {
       const from = readField(spec, bulkDrafts[name])?.value ?? spec.current ?? readField(spec, spec.initial)?.value ?? spec.low;
+      bulkTyping[name] = true;
       bulkDrafts[name] = spec.format(stepField(spec, from, (ev.key === "ArrowUp" ? 1 : -1) * (ev.shiftKey ? spec.shift : 1)));
     } else {
       return;
@@ -415,6 +424,8 @@
       disabled={!usable}
       data-test={fieldTest}
       bind:value={bulkDrafts[name]}
+      oninput={() => (bulkTyping[name] = true)}
+      onblur={() => (bulkTyping[name] = false)}
       onkeydown={(ev) => bulkKey(ev, name)}
     />
     <button class="m-btn" aria-disabled={!usable} data-test={buttonTest} onclick={() => matchBulk(name)}>{t("inspector.matchVelocity")}</button>

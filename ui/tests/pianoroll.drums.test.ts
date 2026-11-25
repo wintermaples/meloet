@@ -9,7 +9,7 @@ import { RollDrag, type Mods } from "../src/components/pianoroll/drag";
 import { DRUM_KEYS, drumKeyOf, drumName, drumTerm, isDrumKit, keyLabel, keysDrums, keysLabel, pianoRollDrums } from "../src/components/pianoroll/drums";
 import * as G from "../src/components/pianoroll/geom";
 import { DRUM_FIELD_ORDER, nextField, noteFieldSpec, readField } from "../src/components/pianoroll/noteFields";
-import { noteMarks, paintRoll, paintRollKeys, type RollPicture } from "../src/components/pianoroll/paint";
+import { noteMarks, paintRoll, paintRollKeys, paintVelocityLane, type RollPicture } from "../src/components/pianoroll/paint";
 import { drumFitRowPx, drumView, prView, zoomRowsBy } from "../src/components/pianoroll/view.svelte";
 import { THEME_IDS, palettes } from "../src/design/themes";
 import { Batch } from "../src/gl/batch";
@@ -236,6 +236,72 @@ describe("mouse (drag.ts)", () => {
   it("no edge cursor (there is no edge to change the length)", () => {
     expect(drag.hover(41, rowY(SNARE) + 10, NONE).cursor).toBe("move");
     expect(drag.hover(48, rowY(SNARE) + 10, NONE).cursor).toBe("move");
+  });
+});
+
+describe("velocity lane: notes on keys not in the kit are not shown there either (spec 3)", () => {
+  // 0: C4 at 1.1 (not in the kit), 1: kick at 1.1, 2: C4 at 1.2 alone.
+  const n = G.shownOf(
+    take([
+      [0, TPQ / 4, 60, 100],
+      [0, TPQ / 4, KICK, 50],
+      [TPQ, TPQ / 4, 60, 100],
+    ]),
+    0,
+  );
+  const SIZES = { noteH: 11, edge: 2, velBar: 3, velCap: 7, velFull: 64, velMid: 36, endMark: 16, drumGap: 8 };
+  const topOf = (v: number) => 71 - Math.round((v * 64) / 127);
+
+  it("no bar is drawn for them", () => {
+    const out = new Batch();
+    out.clip(0, 0, 696, 71);
+    const p: RollPicture = {
+      g: GEOM,
+      sizes: SIZES,
+      scale: { root: 0, mode: "major", lock: false, highlight: true },
+      meter: { num: 4, den: 4 },
+      step: TPQ / 4,
+      shown: n,
+      origin: null,
+      selected: null,
+      live: [{ start: 2 * TPQ, length: TPQ / 4, key: 60, velocity: 100, lap: 0, index: 0 }],
+      drag: null,
+      eraseHover: -1,
+    };
+    paintVelocityLane(out, { x0: 0, y0: 0, x1: 696, y1: 71 }, p, 1);
+    const bars = out.rects().filter((r) => r[2]! - r[0]! === 3);
+    expect(bars.map((r) => [r[0], r[1]])).toEqual([[1, topOf(50)]]);
+  });
+
+  it("they cannot be grabbed, and a drag of the selection leaves them out", () => {
+    let selected: IndexRange[] = [];
+    const drag = new RollDrag({
+      shown: () => n,
+      geom: () => GEOM,
+      step: () => TPQ / 4,
+      scale: () => ({ root: 0, mode: "major", lock: false, highlight: true }),
+      meter: () => ({ num: 4, den: 4 }),
+      tool: () => "select",
+      selected: () => selected,
+      edgePx: () => 6,
+      stillPx: () => 4,
+      velocityFullPx: () => 64,
+      velocityHeight: () => 71,
+      send: () => {},
+      drawVelocity: () => 100,
+      mayAudition: () => false,
+      ticksToMs: (ticks) => ticks,
+      audition: new Auditioner(() => {}),
+    });
+    const top = 71 - (100 * 64) / 127;
+    drag.downVelocity(40, top);
+    expect(drag.drag).toBeNull();
+    expect(drag.overVelocityBar(40, top)).toBe(false);
+    drag.downVelocity(0, top);
+    expect(drag.drag).toBeNull();
+    selected = [{ start: 0, end: 3 }];
+    drag.downVelocity(0, 71 - (50 * 64) / 127);
+    expect(drag.drag).toMatchObject({ kind: "velocity", notes: [1], grab: 1 });
   });
 });
 

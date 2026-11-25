@@ -13,7 +13,7 @@
      The velocity lane folds with 「▾ ベロシティ」 (the band table in spec 3; it opens with 「▸ ベロシティ」 in the CC tab row). The folded height goes to the note area.
      Even when folded, the region (pianoRoll) box stays, so the WebGL context is not made again. -->
 <script lang="ts">
-  import { labelsBesideMarkers } from "./rulerMarks";
+  import { keepWidthsOf, labelsBesideMarkers } from "./rulerMarks";
   import { onDestroy, onMount, untrack } from "svelte";
   import { clockOffsetUs, liveNotes, peekTakeNotes, takeNotes, type Command, type LiveNote, type LiveNotesBook, type TakeNotes } from "../../bridge";
   import type { ColorName } from "../../design/tokens";
@@ -346,6 +346,16 @@
     const r = area!.getBoundingClientRect();
     return { x: e.clientX - r.left, y: e.clientY - r.top };
   }
+
+  // Recording or the count-in starts under a still pointer: drop the edit look at once.
+  $effect(() => {
+    if (!busy) return;
+    untrack(() => {
+      clearShadow();
+      drag.eraseHover = eraseHover = -1;
+      if (!drag.drag) cursor = "default";
+    });
+  });
 
   function changed(e: MouseEvent | null): void {
     dragVersion += 1;
@@ -918,7 +928,7 @@
     }
     placeLine(tick);
     const notes = liveMode ? null : n;
-    soundingNotes(notes && notes.take, shown.clip, tick, soundScratch);
+    soundingNotes(notes && notes.take, shown.clip, tick, soundScratch, notes?.maxLength);
     if (notes !== soundFor || !sameKeys(soundScratch, soundNow)) {
       soundFor = notes;
       soundNow = soundScratch.slice();
@@ -995,6 +1005,14 @@
   const markerW: Record<number, number> = $state({});
   const labelW: Record<number, number> = $state({});
   const shownLabels = $derived(labelsBesideMarkers(rulerLabels, rulerMarkers, labelW, markerW));
+  $effect(() => {
+    const ticks = rulerLabels.map((l) => l.tick);
+    const ids = rulerMarkers.map((m) => m.id);
+    untrack(() => {
+      keepWidthsOf(labelW, ticks);
+      keepWidthsOf(markerW, ids);
+    });
+  });
   /** Drum row names. Rows hit in this clip are gray.10, others gray.9 (mock R7-Drum; unused rows are not darkened either). */
   const usedKeys = $derived.by(() => {
     const used = new Set<number>();

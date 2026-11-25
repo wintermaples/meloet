@@ -7,13 +7,14 @@ import { decodeTake, TakeStore } from "../src/bridge/take";
 import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 import * as app from "./fake-app.svelte";
 
-const song = vi.hoisted(() => ({ key: 60, asked: [] as number[] }));
+const song = vi.hoisted(() => ({ key: 60, asked: [] as number[], refused: new Set<number>() }));
 
 vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));
 vi.mock("../src/bridge", async (original) => ({
   ...(await original<typeof import("../src/bridge")>()),
   takeNotes: async (id: number) => {
     song.asked.push(id);
+    if (song.refused.has(id)) throw new Error("no such take");
     return decodeTake(bytes(id, song.key));
   },
 }));
@@ -107,6 +108,26 @@ describe("shown", () => {
     await settle();
     expect(song.asked).toEqual([3, 3]);
     expect(shown.take?.keys[0]).toBe(72);
+    stop();
+  });
+
+  it("a refused fetch is caught; the take shown before (of another take) does not stay", async () => {
+    song.asked.length = 0;
+    song.key = 60;
+    song.refused.add(5);
+    app.setState(stateWith(1, 3));
+    const stop = $effect.root(() => followShownTake());
+    flushSync();
+    await settle();
+    expect(shown.take?.id).toBe(3);
+
+    app.setState(stateWith(1, 5));
+    flushSync();
+    await settle();
+    expect(song.asked).toContain(5);
+    expect(shown.take).toBeNull();
+    expect(shown.origin).toBeNull();
+    song.refused.clear();
     stop();
   });
 });

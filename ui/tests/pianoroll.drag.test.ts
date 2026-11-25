@@ -328,4 +328,14 @@ describe("while recording or counting in (UI-ROLL-008)", () => {
     drag.move(x(3 * TPQ), y(59), NONE);
     expect(drag.up()).toEqual({ type: "selectNotes", take: 7, notes: [0, 1, 2], mode: "replace" });
   });
+
+  it("the cursor is the plain one over notes, edges and with every tool; the erase tool marks no note", () => {
+    expect(drag.hover(x((5 * TPQ) / 24), y(60), NONE).cursor).toBe("default");
+    expect(drag.hover(x(TPQ) - 2, y(60), NONE).cursor).toBe("default");
+    tool = "draw";
+    expect(drag.hover(x((25 * TPQ) / 8), y(50), NONE).cursor).toBe("default");
+    tool = "erase";
+    expect(drag.hover(x((5 * TPQ) / 24), y(60), NONE).cursor).toBe("default");
+    expect(drag.eraseHover).toBe(-1);
+  });
 });

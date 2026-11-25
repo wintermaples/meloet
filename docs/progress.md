@@ -487,6 +487,15 @@ Left open after the second pass:
 - Tests of `meloet-ai` (`analyze`, `link`, `params`) fail now and then on a busy PC with "another measurement is running" (`bugs/later/PASS2.md` of commit `ae3721a`, first line); not from this pass as far as three fixers could tell, not proven on the old code.
 - No test watches: the VST3 reset done later (FIX-fix-rt #1), the real loss of the X display (PLUG #8), the folder syncs, the pause after a failed accept.
 
+### Piano roll rows (2026-11-25, `fea/pianoroll-row-highlight`)
+
+The owner's order: highlight the row in focus in the piano roll and put note letters on the keys (sharps on black keys), because on a wide screen it is hard to see where a note will be put, most of all with drums.
+
+- Built (screen only, no protocol change): the row under the pointer is one band from the key column to the right edge of the note area, on normal and drum tracks; during a note move or draw it is the row where the note will lie. Every key row carries its letter, the C rows the octave too; at the row height 8 only the C rows. Drum tracks keep their piece names. Spec 3 (the vertical zoom) was changed with the owner's word; the rules are in `spec/7-readings.md`, "Decided on 2026-11-25 (piano roll rows)", the drawing in architecture 7.
+- The owner chose `color.gray.5` for the band from pictures of gray.5 and gray.4; the pairs under the contrast minimum on the band are the owner's exceptions in `tools/design/contrast-pairs.json`.
+- Not done: nothing tried in the real app. To measure there: `tools/measure/webkit-damage.sh` while the pointer crosses rows (stopped, playing, with the mixer open) — a row change redraws the whole `pianoRoll` canvas, `pianoRollKeys` and the name field's band; `webkit-layout.sh` while the labels scroll.
+- Known: with the pointer resting on the key column while the band's place changes, the row can be one off until the pointer enters the note area (the box is not read again there). The rows are highlighted under the horizontal scroll bar too.
+
 ## 7. Notes for Windows and Mac
 
 From the end of round 8 (only what was noticed).

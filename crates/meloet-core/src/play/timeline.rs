@@ -435,6 +435,9 @@ impl Play {
 
     /// A press on a marker: selects it and goes there.
     pub fn go_to_marker(&mut self, id: u32, effects: &mut Vec<Effect>) {
+        if self.busy() {
+            return;
+        }
         let Some(tick) = self.doc().marker(MarkerId(id)).map(|m| m.tick) else {
             return;
         };

@@ -179,6 +179,7 @@ In the "Basis" column: "spec 3" is chapter 3 of this spec; "mock Main" is a mock
 | Record button during audition | The mock keeps the red ring. Recording cannot be done during audition, so it is disabled | spec 3 (recording cannot be done) |
 | 「ためし弾き ・ （名前）」 in the input meter | Mock F4-ShelfReplace breaks it into 2 lines. It stays 1 line; if it does not fit, 「…」 | spec 1 (it is never removed) |
 | Instrument name in the heading during the audition of a replace | The name of the instrument being tried, in accent (「…」 if it does not fit) | mock F4-ShelfReplace |
+| The selected track when a step takes it away | The track now at its place (the one that was below it), or the last track when there is none, as 「トラックを消す」 does: the undo of 「トラックを足す」 or 「トラックを複製」, a history jump. | decided by the lead, 2026-11-25, bug sweep (later list) |
 
 ## A-13 Round 4, part 2 (drum piano roll, 「meloet について」)
 
@@ -347,6 +348,7 @@ In the "Basis" column: "spec 3" is chapter 3 of this spec; "mock Main" is a mock
 | Pressing outside the name box | The box closes and the name does not change. | the developers' reading (the comment in the protocol) |
 | 「96.00 ・ 4/4」 on the folded row | The values at the play line. | spec 3 |
 | Horizontal zoom of the arrange | The px of one bar is counted with a bar of the time signature at the start of the song (a 3/4 bar is 3/4 of the width of a 4/4 bar). | positions are straight in ticks |
+| A press on a marker while counting in or recording | Nothing: the marker is not selected and the play line stays, as a click on the ruler then. | decided by the lead, 2026-11-25, bug sweep (later list) |
 
 ## A-21 Automation (round 6, part 2)
 
@@ -362,6 +364,7 @@ In the "Basis" column: "spec 3" is chapter 3 of this spec; "mock Main" is a mock
 | The step when moving by hand puts a band to rest | The value and the rest go into one step such as 「音量を変える」 (the rest goes only into the song of that step). If the value does not change, it is 1 step 「オートメーションを休ませる」. | architecture 21-11 |
 | Moving by hand a band with no points | It does not rest (the band moves nothing). It can be written with 「● 書く」. | the developers' reading |
 | Values when a band is deleted | Volume, pan, send, mute and built-in effects stop at the value at the play line. A plugin keeps the value that the band sent last. | the developers' reading |
+| The M of a track head under a mute lane | Shows what the mixer's M shows: while the lane moves, its value at the play line; while it rests or a hand holds it, the mute set by hand. | decided by the lead, 2026-11-25, bug sweep (after CORE-PLAY-B-002) |
 
 ## A-22 The undo history band (round 6, part 3)
 
@@ -595,6 +598,7 @@ The switch 「色をつける」 and its rows below were taken away on 2026-11-2
 | The button | Lit while something can be kept, `aria-disabled` otherwise, no key shown on it. A click while disabled sends nothing; Shift R always sends (so 「残せる演奏がありません」 can be said). It hides first (see "How the round was run"). | the developers' decision |
 | Not built | The request picture's status line 「さっき弾いた 2 小節ぶん（ノート 14）を残せます」: the text does not ask for it and there is no shape for it. | the request's text |
 | Shift R | No clash (a test that pinned "Shift R does nothing" now checks Shift L). | the developers' check |
+| Keys while the shelf auditions | Not in the phrase (they sound another instrument): a key pressed then closes the phrase and starts none; letting go of a key held from before still goes in. | decided by the lead, 2026-11-25, bug sweep (later list) |
 
 ### R2 Playing with the PC keyboard
 
@@ -768,6 +772,7 @@ The switch 「色をつける」 and its rows below were taken away on 2026-11-2
 | Refusals | While the export dialog is open the status line says the dialog is open (so 「書き出しか…」 is not seen then). The AI link's export and measuring are refused while bouncing. A file that comes too late is removed from the work place. | the developers' decision |
 | Progress | A status line message with a button (as 「音を作っています」), not the export's bar; the percent is the range's, 99 until the step. `clip_doc` of the AI link was not widened; `bounce_doc` is its own. | the developers' decision |
 | Wording (status line) | 「{track} に音のクリップを置きました。もとのトラックはミュートしました。」, 「音にするのをやめました。」, 「音にできませんでした。{plugin} が止まりました。」, 「音にできませんでした。作業の場所に書けません。」, 「もとのトラックがなくなったので、できた音はすてました。」, 「書き出しか「音にする」の途中なので、終わってからもう一度ためしてください。」, 「このトラックにはクリップがありません。」, 「音にしているあいだは書き出せません。終わってからひらいてください。」 | builder:2026-11-23 |
+| Solo | The solo goes with the sound: a soloed keys track gives its solo to the new track in the same step (muted, it would leave nothing heard). Undo gives it back and redo moves it again, when it is still where it was left. The one step that moves a solo (A-28: solo is no step). | decided by the lead, 2026-11-25, bug sweep (later list) |
 
 ### M5 The master's lane and the fade-out
 

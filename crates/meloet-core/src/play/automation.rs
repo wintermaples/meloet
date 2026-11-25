@@ -735,11 +735,27 @@ impl Play {
         typed: bool,
         effects: &mut Vec<Effect>,
     ) -> LetGo {
+        let (let_go, held) = self.hand_lifted(key, place, typed, effects);
+        if held {
+            self.hold_lane(key.0, key.1, false, effects);
+        }
+        let_go
+    }
+
+    /// As `hand_let_go`, but a lane the hand held stays held (the second is whether it
+    /// was): the caller lets go of it after the step of the value, so that the engine has
+    /// the lanes of the step before the old line may play again.
+    pub(super) fn hand_lifted(
+        &mut self,
+        key: LaneKey,
+        place: f32,
+        typed: bool,
+        effects: &mut Vec<Effect>,
+    ) -> (LetGo, bool) {
         let heard = Self::heard_place(self.heard);
         if let Some(at) = self.auto.grips.iter().position(|g| g.lane == key) {
             let grip = self.auto.grips.remove(at);
-            self.hold_lane(key.0, key.1, false, effects);
-            return match grip.hand {
+            let let_go = match grip.hand {
                 Hand::Rest if self.lane_at(key).is_some_and(|l| !l.resting) => LetGo::Rest(key),
                 Hand::Rest => LetGo::Free,
                 Hand::Write(mut w) => {
@@ -751,9 +767,10 @@ impl Play {
                 }
                 Hand::Spent => LetGo::Nothing,
             };
+            return (let_go, true);
         }
         let Some(lane) = self.lane_at(key).filter(|l| !l.resting) else {
-            return LetGo::Free;
+            return (LetGo::Free, false);
         };
         if !typed && lane.step && self.armed(key) && self.can_write() {
             if let Some((_, tick)) = heard
@@ -761,13 +778,14 @@ impl Play {
             {
                 self.apply(e, effects);
             }
-            return LetGo::Written;
+            return (LetGo::Written, false);
         }
-        if lane.moves() {
+        let let_go = if lane.moves() {
             LetGo::Rest(key)
         } else {
             LetGo::Free
-        }
+        };
+        (let_go, false)
     }
 
     /// Esc during a drag: the hands on the mixer and the panel are let go with no step, and

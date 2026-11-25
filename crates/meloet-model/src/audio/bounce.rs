@@ -13,9 +13,10 @@ use crate::song::{Clip, ClipId, ClipTake, ClipTakes, Doc, TakeId, Track};
 use crate::tempo_map::TempoMap;
 use crate::{InstrumentRef, Language, TrackColor, TrackId};
 
-/// What the name of the new track has after the name of the track it was made from (in
-/// Japanese; English has " (audio)").
+/// What the name of the new track has after the name of the track it was made from, in
+/// Japanese and in English.
 pub const BOUNCED_SUFFIX: &str = "（音）";
+pub const BOUNCED_SUFFIX_EN: &str = " (audio)";
 
 /// What [`bounce_track`] made.
 #[derive(Debug, Clone, PartialEq)]
@@ -165,7 +166,7 @@ pub fn bounce_track(
 
 /// 「（name）（音）」, with the smallest number from 2 after it when a track has that name.
 fn bounced_name(doc: &Doc, name: &str, language: Language) -> String {
-    let base = format!("{name}{}", language.pick(BOUNCED_SUFFIX, " (audio)"));
+    let base = format!("{name}{}", language.pick(BOUNCED_SUFFIX, BOUNCED_SUFFIX_EN));
     let taken = |n: &str| doc.tracks.iter().any(|t| t.name == n);
     if !taken(&base) {
         return base;

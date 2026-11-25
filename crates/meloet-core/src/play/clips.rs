@@ -53,7 +53,10 @@ impl Play {
             return false;
         };
         self.apply_selecting(e, None, Some(ClipPick::one(clip)), effects);
-        self.song.session.play_target = Some(TrackId(track));
+        let before = self.song.session.play_target.replace(TrackId(track));
+        if before != Some(TrackId(track)) {
+            self.selected_track_changed(before);
+        }
         self.fix_selection();
         true
     }

@@ -249,9 +249,9 @@ impl Play {
             return;
         }
         self.mixer.previews.retain(|p| !p.same_control(&value));
-        let let_go = match lane {
-            Some((key, place)) => self.hand_let_go(key, place, typed, effects),
-            None => LetGo::Free,
+        let (let_go, held) = match lane {
+            Some((key, place)) => self.hand_lifted(key, place, typed, effects),
+            None => (LetGo::Free, false),
         };
         match let_go {
             LetGo::Free => {
@@ -264,6 +264,9 @@ impl Play {
                 self.rest_with(key, e, effects);
             }
             LetGo::Written | LetGo::Nothing => {}
+        }
+        if let Some((key, _)) = lane.filter(|_| held) {
+            self.hold_lane(key.0, key.1, false, effects);
         }
     }
 
@@ -484,7 +487,10 @@ impl Play {
                 param,
             } => (insert, effect, param),
             ParamRef::Plugin { slot, table, param } => {
-                self.type_plugin_param(slot, table, param, text, effects);
+                let text: String = (text.chars())
+                    .map(meloet_model::effects::plain_number_char)
+                    .collect();
+                self.type_plugin_param(slot, table, param, &text, effects);
                 return None;
             }
         };

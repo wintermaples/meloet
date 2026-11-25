@@ -632,8 +632,7 @@ fn a_vocal_track_selected_in_place_of_a_deleted_one_gets_its_arm() {
 fn a_vocal_track_selected_when_undo_takes_the_selected_one_away_gets_its_arm() {
     let m = &mut ready();
     three_tracks(m);
-    cmd(m, Command::MoveTrack { track: 3, to: 0 });
-    assert_eq!(m.play().doc().tracks[0].id, TrackId(3));
+    assert_eq!(m.play().doc().tracks[2].id, TrackId(3));
     cmd(
         m,
         Command::SelectTrack {

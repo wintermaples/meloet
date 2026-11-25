@@ -515,6 +515,46 @@ fn esc_lets_the_lane_move_again_with_no_step() {
     assert!(!resting(m, VOLUME));
 }
 
+/// On release the engine has the lanes of the step before the hand lets go of the lane, so
+/// the old line never plays in between.
+#[test]
+fn the_lanes_of_the_step_come_before_the_hand_lets_go() {
+    use crate::play::EngineOp;
+    use crate::state::Effect;
+    let order = |effects: &[Effect]| -> Vec<&str> {
+        (effects.iter())
+            .filter_map(|e| match e {
+                Effect::Engine(EngineOp::Automation { .. }) => Some("lanes"),
+                Effect::Engine(EngineOp::HoldLane { on: false, .. }) => Some("let go"),
+                _ => None,
+            })
+            .collect()
+    };
+    let m = &mut ready();
+    with_volume_lane(m);
+    cmd(m, gain(-6.0, false));
+    let effects = cmd(m, gain(-6.0, true));
+    assert!(resting(m, VOLUME));
+    assert_eq!(order(&effects), ["lanes", "let go"], "a rest");
+
+    cmd(m, Command::Undo);
+    cmd(
+        m,
+        Command::SetLaneWrite {
+            home: meloet_protocol::LaneHome::Track { track: 1 },
+            target: VOLUME,
+            on: true,
+        },
+    );
+    cmd(m, Command::PlayStop);
+    play_at(m, 1_000, (2 * Q) as f64);
+    cmd(m, gain(-6.0, false));
+    play_at(m, 2_000, (2 * Q + Q / 4) as f64);
+    let effects = cmd(m, gain(0.0, true));
+    assert!(matches!(last_step(m), StepKind::WriteAutomation { .. }));
+    assert_eq!(order(&effects), ["lanes", "let go"], "what was written");
+}
+
 #[test]
 fn a_typed_value_rests_the_lane_while_writing_too() {
     let m = &mut ready();

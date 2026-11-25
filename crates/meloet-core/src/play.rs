@@ -1420,7 +1420,12 @@ impl Play {
         let doc = &self.song.doc;
         let target = &mut self.song.session.play_target;
         if target.is_none_or(|t| doc.track(t).is_none()) {
-            *target = doc.tracks.first().map(|t| t.id);
+            // As `delete_track`: the track now at its place, or the last one.
+            let place = target.and_then(|t| before.tracks.iter().position(|b| b.id == t));
+            let at = place.map_or(doc.tracks.first(), |i| {
+                doc.tracks.get(i).or_else(|| doc.tracks.last())
+            });
+            *target = at.map(|t| t.id);
             // The track before is gone: not one for the keys to stay on.
             self.selected_track_changed(None);
         }
@@ -2175,6 +2180,8 @@ impl Play {
     }
 
     pub fn transport_view(&self, open: bool) -> TransportView {
+        // Stopped, with the recording still being put away: Space and R do nothing yet.
+        let open = open && !(self.state == TransportState::Stopped && self.rec.is_some());
         TransportView {
             state: self.state,
             position: self.position,

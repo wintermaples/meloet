@@ -104,6 +104,9 @@ pub(super) struct Around {
     pub loop_range: Option<TickRange>,
     /// The time of two bars where the play line is.
     pub two_bars_us: u64,
+    /// The keys sound another instrument (the shelf's 「ためし弾き」): a key press closes the
+    /// phrase and starts none.
+    pub auditioning: bool,
 }
 
 #[derive(Debug, Default)]
@@ -239,6 +242,13 @@ impl Recent {
         let head = self.controls;
         let idle_since = self.idle_since;
         self.hold(kind, t_us);
+        // Only the presses: the letting go of a key held before still goes in.
+        if around.auditioning && press {
+            if let Some(p) = &mut self.phrase {
+                p.closed = true;
+            }
+            return;
+        }
         let ev = Ev {
             kind,
             t_us,
@@ -394,6 +404,7 @@ impl Play {
             track: self.song.keys_target(),
             loop_range: self.loop_on(),
             two_bars_us: (2.0 * bar as f64 / per_us).round() as u64,
+            auditioning: self.auditioning(),
         }
     }
 

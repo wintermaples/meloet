@@ -356,10 +356,14 @@ fn the_monitor_is_heard_only_with_the_arm_on_and_says_how_late_it_is_once() {
     ));
     assert!(cmd(&mut m, Command::ToggleMonitor { track: 1 }).is_empty());
 
-    // The track goes: its seat no longer sounds the input.
+    // The track goes: its seat is emptied, which takes the voice with it.
+    let at = (m.view().song.tracks.iter()).position(|t| t.id == id);
+    let seat = at.and_then(|at| m.track_seats()[at]).expect("a seat");
     let effects = cmd(&mut m, Command::DeleteTrack { track: id });
+    let cleared = Effect::Engine(EngineOp::ClearSeat { seat });
+    assert!(effects.contains(&cleared), "{effects:?}");
     assert!(
-        voices(&effects).iter().any(|(_, v)| v.is_none()),
+        voices(&effects).iter().all(|(s, _)| *s != seat),
         "{effects:?}"
     );
     assert!(m.play.song().session.armed_vocals.is_empty());
@@ -528,6 +532,11 @@ fn the_keys_and_the_voice_are_recorded_together_as_one_step() {
     assert!(effects.contains(&Effect::StopVocalRecording), "{effects:?}");
     assert_eq!(m.view().song.undo_count, undo, "waits for the disk");
     assert!(m.play.busy());
+    let transport = m.view().transport;
+    assert!(
+        !transport.can_play && !transport.can_record,
+        "Space and R wait too"
+    );
 
     let effects = m.handle(written(140_000));
     assert!(effects.contains(&Effect::RemoveRecNote));
@@ -540,6 +549,7 @@ fn the_keys_and_the_voice_are_recorded_together_as_one_step() {
     let view = m.view();
     assert_eq!(view.song.undo_count, undo + 1, "one recording is one step");
     assert!(view.transport.recording_vocals.is_empty());
+    assert!(view.transport.can_play && view.transport.can_record);
     let doc = &m.play.song().doc;
     assert_eq!(doc.audio.len(), 1);
     let source = &doc.audio[0];

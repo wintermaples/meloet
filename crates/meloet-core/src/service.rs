@@ -431,6 +431,8 @@ impl Held {
         self.keys_low.store(0, Relaxed);
         self.keys_high.store(0, Relaxed);
         self.sustain.store(0, Relaxed);
+        self.modulation.store(0, Relaxed);
+        self.bend.store(0, Relaxed);
     }
 }
 
@@ -3254,18 +3256,19 @@ impl Worker {
                         cause,
                         ending,
                     } => {
-                        let mut done = if ending {
+                        let done = if ending {
                             std::mem::take(&mut self.ending)
                         } else {
                             Vec::new()
                         };
+                        let mut written = Vec::new();
                         if matches!(self.input.kept_note, input::KeptNote::Waiting) {
-                            let (tx, written) = mpsc::channel();
-                            done.push(tx);
-                            self.input.kept_note = input::KeptNote::Writing(written);
+                            let (tx, rx) = mpsc::channel();
+                            written.push(tx);
+                            self.input.kept_note = input::KeptNote::Writing(rx);
                         }
                         match &self.recovery {
-                            Some(writer) => writer.write(song, path, cause, done),
+                            Some(writer) => writer.write(song, path, cause, done, written),
                             None => {
                                 for d in done {
                                     let _ = d.send(());

@@ -176,12 +176,14 @@ fn the_writer_does_the_jobs_in_order_and_tells_when_done() {
         None,
         RecoveryCause::Sudden,
         Vec::new(),
+        Vec::new(),
     );
     writer.write(
         Box::new(song_with_notes("2", 3)),
         None,
         RecoveryCause::PcEnding,
         vec![tx.clone()],
+        Vec::new(),
     );
     rx.recv_timeout(Duration::from_secs(5)).unwrap();
     let back = decode(&fs::read(dir.join(FILE_NAME)).unwrap()).unwrap();
@@ -195,6 +197,7 @@ fn the_writer_does_the_jobs_in_order_and_tells_when_done() {
         None,
         RecoveryCause::Sudden,
         Vec::new(),
+        Vec::new(),
     );
     writer.remove();
     drop(writer);
@@ -203,6 +206,42 @@ fn the_writer_does_the_jobs_in_order_and_tells_when_done() {
         fs::read_dir(&dir).unwrap().next().is_none(),
         "no temporary file left"
     );
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
+fn the_writer_says_written_only_when_the_file_is_written() {
+    let dir = temp_dir("recovery-not-written");
+    // Where the temporary file goes, a folder: the write fails.
+    let blocker = dir.join(format!(".{FILE_NAME}.new"));
+    fs::create_dir(&blocker).unwrap();
+    let writer = Writer::start(dir.clone());
+    let write = |name: &str| {
+        let (done, done_rx) = mpsc::channel();
+        let (written, written_rx) = mpsc::channel();
+        writer.write(
+            Box::new(song_with_notes(name, 3)),
+            None,
+            RecoveryCause::Sudden,
+            vec![done],
+            vec![written],
+        );
+        done_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        written_rx.try_recv()
+    };
+    assert_eq!(write("1"), Err(mpsc::TryRecvError::Disconnected));
+    assert!(!dir.join(FILE_NAME).exists());
+    fs::remove_dir(&blocker).unwrap();
+    assert_eq!(write("2"), Ok(()));
+    assert_eq!(
+        decode(&fs::read(dir.join(FILE_NAME)).unwrap())
+            .unwrap()
+            .song
+            .doc
+            .name,
+        "2"
+    );
+    drop(writer);
     let _ = fs::remove_dir_all(dir);
 }
 

@@ -264,6 +264,8 @@ enum Job {
         cause: RecoveryCause,
         /// Told once the file is written (or failed to be).
         done: Vec<Sender<()>>,
+        /// Told only when the file is written; let go of when it is not.
+        written: Vec<Sender<()>>,
     },
     Remove,
 }
@@ -288,13 +290,16 @@ impl Writer {
         }
     }
 
-    /// `done` is told once this song, or a later job, is done.
+    /// `done` is told once this song, or a later job, is done. `written` is told once this
+    /// song, or a later one, is in the file; it is let go of when the job that came last
+    /// failed or was a remove.
     pub fn write(
         &self,
         song: Box<Song>,
         path: Option<PathBuf>,
         cause: RecoveryCause,
         done: Vec<Sender<()>>,
+        written: Vec<Sender<()>>,
     ) {
         if let Some(tx) = &self.tx {
             let _ = tx.send(Job::Write {
@@ -302,6 +307,7 @@ impl Writer {
                 path,
                 cause,
                 done,
+                written,
             });
         }
     }
@@ -327,9 +333,16 @@ fn writer_loop(dir: &Path, rx: &Receiver<Job>) {
     while let Ok(first) = rx.recv() {
         let mut last = first;
         let mut done = Vec::new();
+        let mut written = Vec::new();
         while let Ok(next) = rx.try_recv() {
-            if let Job::Write { done: d, .. } = std::mem::replace(&mut last, next) {
+            if let Job::Write {
+                done: d,
+                written: w,
+                ..
+            } = std::mem::replace(&mut last, next)
+            {
                 done.extend(d);
+                written.extend(w);
             }
         }
         match last {
@@ -338,11 +351,18 @@ fn writer_loop(dir: &Path, rx: &Receiver<Job>) {
                 path,
                 cause,
                 done: d,
+                written: w,
             } => {
                 done.extend(d);
+                written.extend(w);
                 let bytes = encode(&song, path.as_deref(), cause, now_ms());
-                if let Err(e) = write(dir, &bytes) {
-                    eprintln!("meloet: the recovery file was not written: {e}");
+                match write(dir, &bytes) {
+                    Ok(()) => {
+                        for w in written {
+                            let _ = w.send(());
+                        }
+                    }
+                    Err(e) => eprintln!("meloet: the recovery file was not written: {e}"),
                 }
             }
             Job::Remove => {

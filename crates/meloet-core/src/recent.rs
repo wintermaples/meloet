@@ -49,7 +49,8 @@ pub fn noted(songs: &[PathBuf], song: &Path) -> Vec<PathBuf> {
     list
 }
 
-/// As the settings are written: a whole temporary file, synced, renamed over the old one.
+/// As the settings are written: a whole temporary file, synced, renamed over the old one,
+/// and the folder synced.
 pub fn save(dir: &Path, songs: &[PathBuf]) -> std::io::Result<()> {
     let disk = OnDisk {
         version: VERSION,
@@ -63,7 +64,8 @@ pub fn save(dir: &Path, songs: &[PathBuf]) -> std::io::Result<()> {
     file.write_all(text.as_bytes())?;
     file.sync_all()?;
     drop(file);
-    std::fs::rename(&temporary, dir.join(FILE_NAME))
+    std::fs::rename(&temporary, dir.join(FILE_NAME))?;
+    crate::songfile::sync_dir(dir)
 }
 
 #[cfg(test)]

@@ -495,6 +495,20 @@ struct Tone {
 }
 
 const MAX_PARTIALS: usize = 6;
+/// Clicks that wait for their first frame: those of 16 beats while the master's inserts
+/// delay the song.
+const WAITING: usize = 16;
+
+/// A click that starts later.
+#[derive(Clone, Copy)]
+struct Waiting {
+    /// Frames until its first frame.
+    frames: usize,
+    bar_head: bool,
+    sample_rate: f32,
+    sound: ClickSound,
+    gain: f32,
+}
 
 /// A short decaying sound, started exactly on a beat. One at a time: a new click ends the
 /// one before.
@@ -503,6 +517,7 @@ pub(crate) struct Click {
     total: usize,
     tones: [Tone; MAX_PARTIALS],
     used: usize,
+    waiting: [Option<Waiting>; WAITING],
 }
 
 impl Click {
@@ -526,12 +541,53 @@ impl Click {
             total: 0,
             tones: [Self::SILENT; MAX_PARTIALS],
             used: 0,
+            waiting: [None; WAITING],
+        }
+    }
+
+    /// [`Click::start`] `delay` frames after the next frame [`Click::add`] is given. More
+    /// than [`WAITING`] clicks waiting at once: the newest is dropped.
+    pub fn start_after(
+        &mut self,
+        delay: usize,
+        bar_head: bool,
+        sample_rate: f32,
+        sound: ClickSound,
+        gain: f32,
+    ) {
+        if delay == 0 {
+            self.start(bar_head, sample_rate, sound, gain);
+        } else if let Some(free) = self.waiting.iter_mut().find(|w| w.is_none()) {
+            *free = Some(Waiting {
+                frames: delay,
+                bar_head,
+                sample_rate,
+                sound,
+                gain,
+            });
+        }
+    }
+
+    /// The clicks that wait are not heard.
+    pub fn drop_waiting(&mut self) {
+        self.waiting = [None; WAITING];
+    }
+
+    /// The clicks that wait start `by` frames later (earlier when below 0), as the song does
+    /// when the master's inserts delay it by another amount; one whose start would be past
+    /// is not heard, as the song there is not.
+    pub fn delay_waiting(&mut self, by: i64) {
+        for slot in self.waiting.iter_mut() {
+            *slot = slot.and_then(|w| {
+                let frames = usize::try_from(w.frames as i64 + by).ok()?;
+                Some(Waiting { frames, ..w })
+            });
         }
     }
 
     /// `gain` scales the whole click (1.0: as made). The bar head is higher and louder than
     /// the other beats with every sound.
-    pub fn start(&mut self, bar_head: bool, sample_rate: f32, sound: ClickSound, gain: f32) {
+    fn start(&mut self, bar_head: bool, sample_rate: f32, sound: ClickSound, gain: f32) {
         let recipe = sound.recipe();
         let (hz, level) = if bar_head {
             (recipe.bar_hz, Self::BAR_LEVEL)
@@ -552,17 +608,42 @@ impl Click {
                 decay: (-1.0 / (p.decay_s * sample_rate)).exp(),
             };
         }
-        *self = Click {
-            frame: 0,
-            total: (Self::LENGTH_S * sample_rate) as usize,
-            tones,
-            used: recipe.partials.len().min(MAX_PARTIALS),
-        };
+        self.frame = 0;
+        self.total = (Self::LENGTH_S * sample_rate) as usize;
+        self.tones = tones;
+        self.used = recipe.partials.len().min(MAX_PARTIALS);
     }
 
     /// Adds to `out` (the same on the left and the right). The first frame after `start` is
-    /// the loudest.
-    pub fn add(&mut self, out: &mut [f32]) {
+    /// the loudest; a click that waits starts on its frame.
+    pub fn add(&mut self, mut out: &mut [f32]) {
+        loop {
+            let next = (self.waiting.iter().enumerate())
+                .filter_map(|(i, w)| w.map(|w| (i, w.frames)))
+                .min_by_key(|&(_, frames)| frames)
+                .filter(|&(_, frames)| frames < out.len());
+            let Some((i, frames)) = next else {
+                break;
+            };
+            let (before, rest) = std::mem::take(&mut out).split_at_mut(frames);
+            self.sound(before);
+            self.pass(frames);
+            if let Some(w) = self.waiting[i].take() {
+                self.start(w.bar_head, w.sample_rate, w.sound, w.gain);
+            }
+            out = rest;
+        }
+        self.pass(out.len());
+        self.sound(out);
+    }
+
+    fn pass(&mut self, frames: usize) {
+        for w in self.waiting.iter_mut().flatten() {
+            w.frames -= frames;
+        }
+    }
+
+    fn sound(&mut self, out: &mut [f32]) {
         for o in out.iter_mut() {
             if self.frame >= self.total {
                 return;

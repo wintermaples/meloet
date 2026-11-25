@@ -10,8 +10,8 @@ use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::{Duration, Instant};
 
 use meloet_engine::{
-    AudioInput, EngineCommand, InputFeed, InputMeters, InputTarget, ProbeHeard, Recorded,
-    RunningInput, probe_wave,
+    AudioInput, EngineCommand, EngineHandle, InputFeed, InputMeters, InputTarget, ProbeHeard,
+    Recorded, RunningInput, probe_wave,
 };
 use meloet_model::{
     Doc, NewAudio, TempoMap, TrackId, VocalInput, VocalRecording, add_vocal_recordings, edit,
@@ -381,27 +381,36 @@ impl Worker {
     }
 
     /// Where the engine says the song rolls or a lap begins: the frame of the files that was
-    /// sung when that frame of the engine was heard (docs/architecture.md 22-6). At the roll
-    /// the disk writer is told where the files begin, too. `None`: no files are written, or
-    /// it is not a mark.
+    /// sung when the song of that frame of the engine was heard, which the master's inserts
+    /// delayed (docs/architecture.md 20-8, 22-6). At the roll the disk writer is told where
+    /// the files begin, too. `None`: no files are written, or it is not a mark.
     pub(super) fn vocal_mark(&mut self, recorded: &Recorded) -> Option<f64> {
+        let job = self.input.job.as_mut()?;
+        Self::mark(job, &self.input.writer, &self.audio.handle, recorded)
+    }
+
+    /// [`Worker::vocal_mark`] for the recording `job`, which `writer` writes.
+    fn mark(
+        job: &mut Job,
+        writer: &DiskWriter,
+        handle: &EngineHandle,
+        recorded: &Recorded,
+    ) -> Option<f64> {
         let (frame, rolling) = match *recorded {
             Recorded::Rolling { frame, tick } => (frame, Some(tick)),
             Recorded::LapChanged { frame, .. } => (frame, None),
             _ => return None,
         };
-        let job = self.input.job.as_mut()?;
-        let handle = &self.audio.handle;
-        let heard_us = handle.clock().time_of_frame(frame as f64);
+        let heard_us = handle.clock().heard_time_of_frame(frame as f64);
         if let Some(tick) = rolling.filter(|_| !job.from_said) {
             job.from_said = true;
             // Half a beat before the song rolls, as the keys keep.
             let (map, _) = handle.tempo_map();
             let half_beat_us = half_beat_us(map, tick);
             let from_us = heard_us.map_or(f64::NEG_INFINITY, |t| t - half_beat_us + job.x_us);
-            self.input.writer.from(from_us);
+            writer.from(from_us);
         }
-        self.input.writer.mark(heard_us? + job.x_us)
+        writer.mark(heard_us? + job.x_us)
     }
 
     /// Looks at the input: the head of a recording, a disk that cannot go on, a stream that
@@ -723,59 +732,4 @@ pub(super) fn keep_vocals(
 }
 
 #[cfg(test)]
-mod tests {
-    use meloet_model::{Meter, Tempo, Timeline};
-
-    use super::*;
-    use crate::audiofiles::SONG_AUDIO;
-    use crate::settings::temp_dir;
-
-    #[test]
-    fn the_files_begin_half_a_beat_of_the_meter_before_the_roll() {
-        let at_120 = |num, den| {
-            let meter = Meter::new(num, den).unwrap();
-            TempoMap::new(&Timeline::new(Tempo::from_centi(12_000).unwrap(), meter))
-        };
-        // A quarter note is half a second at 120, whatever the meter.
-        assert_eq!(half_beat_us(&at_120(4, 4), 0.0), 250_000.0);
-        assert_eq!(half_beat_us(&at_120(2, 2), 0.0), 500_000.0);
-        assert_eq!(half_beat_us(&at_120(6, 8), 0.0), 125_000.0);
-        assert_eq!(half_beat_us(&at_120(6, 8), -300.0), 125_000.0);
-    }
-
-    #[test]
-    fn a_recording_never_takes_a_name_the_song_has() {
-        let root = temp_dir("rec-names");
-        let store = AudioStore::new(Some(root.join("state")));
-        let song = root.join("曲");
-        std::fs::create_dir_all(song.join(SONG_AUDIO)).unwrap();
-        store.set_song_dir(Some(song.clone()));
-        let work = vocalrec::work_audio_dir(&root.join("state"));
-        std::fs::create_dir_all(&work).unwrap();
-        let ask = |audio: u32| VocalFileAsk {
-            audio,
-            name: vocalrec::file_name("歌", audio),
-            channels: vec![0],
-        };
-        let names = |taken: &[String], asks: &[VocalFileAsk]| {
-            free_recording_names(&store, &work, taken, asks)
-        };
-        assert_eq!(names(&[], &[ask(40)]), ["歌 40.wav"]);
-
-        // A file brought in and saved earlier has the name: its song folder's file would
-        // play in place of the recording, and a save would keep that one.
-        std::fs::write(song.join(SONG_AUDIO).join("歌 40.wav"), b"brought in").unwrap();
-        assert_eq!(names(&[], &[ask(40)]), ["歌 40 (2).wav"]);
-        // A recording that was undone keeps its file in the work place.
-        std::fs::write(work.join("歌 40 (2).wav"), b"undone").unwrap();
-        assert_eq!(names(&[], &[ask(40)]), ["歌 40 (3).wav"]);
-        // A name of the audio table whose file is not found.
-        let taken = ["歌 41.wav".to_owned()];
-        assert_eq!(names(&taken, &[ask(41)]), ["歌 41 (2).wav"]);
-        // Two files of one recording never get the same name.
-        assert_eq!(
-            names(&taken, &[ask(41), ask(41)]),
-            ["歌 41 (2).wav", "歌 41 (3).wav"]
-        );
-    }
-}
+mod tests;

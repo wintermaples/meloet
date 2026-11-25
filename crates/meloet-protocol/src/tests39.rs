@@ -1,6 +1,6 @@
 //! The shapes protocol 39 added (bug sweep, 2026-11-25): the song dialog that asks, right
 //! after "戻さない", whether the recovery file goes too; the export dialog asks before it
-//! writes over files that are there already.
+//! writes over files that are there already; the kind of the clips the clipboard holds.
 
 use serde_json::{Value, json};
 
@@ -62,4 +62,18 @@ fn the_question_before_writing_over() {
         },
         json!({"count": 3, "file": "ピアノ.wav"}),
     );
+}
+
+#[test]
+fn the_clipboard_kind() {
+    both_ways(
+        ArrangeView {
+            clipboard_clips: 2,
+            clipboard_kind: Some(ClipKind::Vocal),
+            ..ArrangeView::default()
+        },
+        json!({"selectedClips": [], "selectedClip": null, "pianoRollClip": null,
+               "clipboardClips": 2, "clipboardKind": "vocal", "tallTrack": null}),
+    );
+    both_ways(ClipKind::Keys, json!("keys"));
 }

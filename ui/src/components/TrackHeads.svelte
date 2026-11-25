@@ -113,6 +113,8 @@
 
   let press: { id: number; from: number; y0: number; pointer: number; el: HTMLElement } | null = null;
   let drag = $state<{ id: number; from: number; dy: number } | null>(null);
+  /** A head is being dragged: the arrange does not scroll the rows under it with the wheel. */
+  let { reordering = $bindable(false) }: { reordering?: boolean } = $props();
   const trackH = $derived(metrics.px("size.track"));
   /** The master standing in as the owner of its lane (round 12 M5); null while it has none. */
   const master = $derived(song.master.lanes.length > 0 ? masterOwner(song.master) : null);
@@ -150,6 +152,7 @@
     if (!drag) {
       if (busy || Math.abs(dy) < metrics.px("space.1")) return;
       drag = { id: press.id, from: press.from, dy };
+      reordering = true;
     } else drag = { ...drag, dy };
   }
   function headUp(e: PointerEvent): void {
@@ -166,6 +169,7 @@
     if (press?.el.hasPointerCapture?.(press.pointer)) press.el.releasePointerCapture(press.pointer);
     press = null;
     drag = null;
+    reordering = false;
   }
   onMount(() =>
     onDragCancel(() => {

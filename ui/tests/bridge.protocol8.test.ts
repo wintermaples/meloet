@@ -39,7 +39,7 @@ describe("protocol 8 fake scenes", () => {
       ["ドラム", false, true],
     ]);
     expect(s.song.playTarget).toBe(2);
-    expect(s.arrange).toEqual({ selectedClips: [3, 41], selectedClip: 41, pianoRollClip: 41, clipboardClips: 1, tallTrack: null });
+    expect(s.arrange).toEqual({ selectedClips: [3, 41], selectedClip: 41, pianoRollClip: 41, clipboardClips: 1, clipboardKind: "keys", tallTrack: null });
   });
 
   it("fixed velocity is on (100)", () => {

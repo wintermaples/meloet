@@ -33,7 +33,7 @@ import {
 } from "../components/tracks.svelte";
 import { shownTick } from "../components/time";
 import { laneDeleteCommand } from "../components/automation/laneKeys";
-import { joinTarget, renameClipTarget, repeatTarget } from "../components/clipEdits";
+import { joinTarget, pasteableOnSelected, renameClipTarget, repeatTarget } from "../components/clipEdits";
 import { openRepeatBox } from "../components/arrange/repeatBox.svelte";
 import { startClipRename } from "../components/clipName.svelte";
 import { historyFocused, historyHome, historyJumpCommand, historyStep } from "../components/history/historyUi.svelte";
@@ -244,7 +244,7 @@ function command(action: KeyAction, state: AppState): Command | null {
       return clips.length === 0 || busy ? null : { type: "cutClips", clips };
     // Paste goes at the play position on the selected track (Rust moves it to the start of the bar).
     case "paste":
-      return state.arrange.clipboardClips === 0 || busy
+      return !pasteableOnSelected(state) || busy
         ? null
         : { type: "pasteClips", to: null };
     // Disabled while recording or counting in, like the song name list.

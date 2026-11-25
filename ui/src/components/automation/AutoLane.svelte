@@ -4,7 +4,7 @@
      Holding and moving from an empty place chooses by a box. A point is removed by pressing it twice, or by choosing it and pressing Delete (laneKeys.ts).
      While dragging, only the screen moves first, and one intent is sent on release. Esc cancels (cancelDrag in pianoroll/view.svelte.ts). -->
 <script lang="ts">
-  import { onDestroy, onMount } from "svelte";
+  import { onDestroy, onMount, untrack } from "svelte";
   import { peekLanePoints, type LaneView } from "../../bridge";
   import { everyGlFrame, glSlot } from "../../gl/slot";
   import { current, send } from "../../state/app.svelte";
@@ -240,7 +240,8 @@
     const w = writing;
     if (!w || !recFrame) return;
     const x0 = tickToX(view, w.fromTick);
-    const x1 = tickToX(view, Math.max(w.fromTick, playTick()));
+    // The meters come about 60 times a second: read untracked, so the effect below does not start again for each.
+    const x1 = tickToX(view, Math.max(w.fromTick, untrack(playTick)));
     const width = Math.round((x1 - Math.max(x0, 0)) * metrics.dpr) / metrics.dpr;
     if (width === drawnWidth) return;
     drawnWidth = width;

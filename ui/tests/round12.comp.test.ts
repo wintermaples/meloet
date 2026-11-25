@@ -161,7 +161,7 @@ const song = (comp: CompPiece[] = [], edit: (s: AppState) => void = () => {}) =>
       clips: [clip, fakeVocalClip(71, "ひとつ", 4 * BAR, 6 * BAR, fakeAudioClip(file))],
     };
     s.song.tracks = [{ ...base, clips: [] }, vocal];
-    s.arrange = { selectedClips: [CLIP], selectedClip: CLIP, pianoRollClip: null, clipboardClips: 0, tallTrack: null };
+    s.arrange = { selectedClips: [CLIP], selectedClip: CLIP, pianoRollClip: null, clipboardClips: 0, clipboardKind: null, tallTrack: null };
     edit(s);
   });
 

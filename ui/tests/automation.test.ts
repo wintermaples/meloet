@@ -111,12 +111,20 @@ describe("points in the band", () => {
   });
   it("moving a point: sideways to beat starts, up and down for value. Shift gives ticks. The first point stops at the song start", () => {
     const start: A.PointDrag = { points: [1], grab: 1, downX: 96, downY: 10, moved: false, dTick: 0, dValue: 0 };
-    const moved = A.dragPoints(start, pts, v, d, map, 96 + 13, 10 - 10, 4, false);
+    const moved = A.dragPoints(start, pts, v, d, map, 96 + 13, 10 + 10, 4, false);
     expect(moved.dTick).toBe(TPQ);
-    expect(moved.dValue).toBeCloseTo(10 / 39);
+    expect(moved.dValue).toBeCloseTo(-10 / 39);
     expect(A.dragPoints(start, pts, v, d, map, 97, 11, 4, false)).toBe(start);
     const first: A.PointDrag = { ...start, points: [0, 1], grab: 1 };
     expect(A.dragPoints(first, pts, v, d, map, 0, 10, 4, false).dTick).toBe(0);
+  });
+  it("points moved past the top or the bottom stop together and keep their distances (as Rust's move_points)", () => {
+    const up = A.dragPoints({ points: [0, 1], grab: 1, downX: 96, downY: 40, moved: false, dTick: 0, dValue: 0 }, pts, v, d, map, 96, 40 - 30, 4, true);
+    expect(up.dValue).toBeCloseTo(0.2);
+    expect(A.draggedPoints(pts, up).pts.map((p) => +p.value.toFixed(3))).toEqual([0.7, 1, 0.2]);
+    const down = A.dragPoints({ points: [1, 2], grab: 1, downX: 96, downY: 10, moved: false, dTick: 0, dValue: 0 }, pts, v, d, map, 96, 10 + 30, 4, true);
+    expect(down.dValue).toBeCloseTo(-0.2);
+    expect(A.draggedPoints(pts, down).pts.map((p) => +p.value.toFixed(3))).toEqual([0.5, 0.6, 0]);
   });
   it("a point moved onto the tick of another point swaps with it", () => {
     const drag: A.PointDrag = { points: [1], grab: 1, downX: 0, downY: 0, moved: true, dTick: 2 * BAR, dValue: 0 };
@@ -193,6 +201,26 @@ describe("arrange bands (mocks F6-AutoRec / F6-AutoRest)", () => {
     expect(text(q("[data-test=lane-add-row]"))).toBe("＋ 帯を足す ▾ 1");
     expect(qa("[data-test=auto-lane]")).toHaveLength(1);
     expect(q("[data-test=auto-writing]")).not.toBeNull();
+  });
+  it("the rec border is not written again for every meter message (only its frame callback reads the play line)", () => {
+    show(Arrange, scene("autoRec"));
+    const frame = q("[data-test=auto-writing]")!;
+    let width = frame.style.width;
+    let writes = 0;
+    Object.defineProperty(frame.style, "width", {
+      configurable: true,
+      get: () => width,
+      set: (w: string) => {
+        writes += 1;
+        width = w;
+      },
+    });
+    const at = scene("autoRec").transport.position;
+    for (let i = 0; i < 5; i++) {
+      app.setTelemetry(app.telemetryWith({ seq: i + 1, position: { tick: at, ticksPerUs: 0, state: "playing", countInBeatsLeft: 0, lap: 0 } }));
+      flushSync();
+    }
+    expect(writes).toBe(0);
   });
   it("resting shows 「もどす」 and 「休み ・ （いまの値）」. Pressing sends RestoreLane. ▾ folds, pan in the 「＋ 帯を足す ▾」 list adds a band", () => {
     show(Arrange, scene("autoRest"));

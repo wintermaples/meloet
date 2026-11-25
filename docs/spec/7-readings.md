@@ -120,6 +120,7 @@ In the "Basis" column: "spec 3" is chapter 3 of this spec; "mock Main" is a mock
 | Input meter with no keyboard | 「ベロシティ」 and 「固定」 are shown. The reading only while fixed is on (the fixed value). No bar. This differs from mock F-Connect1 | the developers' reading (velocity lock can be used with no keyboard) |
 | ↑ ↓ in the field of the fixed value | By 1; with Shift, by 10. It does not go outside 1–127 | the tempo field |
 | Position input box | 10 characters wide. Readable forms: bar[.beat[.tick]]. Spaces around the dots and full-width characters are fine | the developers' decision |
+| 「貼りつけ」 over a track of the other kind | Disabled when the first clip kept (the earliest, the one that goes on the track pasted onto) is of the other kind than that track: keys clips go on keyboard tracks, audio clips on vocal tracks. The same for the right-click on an empty place (the track pressed), on a clip (the track selected once the right-click arrives), Mod V and 「編集 ▸ 貼りつけ」 (the selected track). The core tells the kind (`ArrangeView::clipboard_kind`, protocol 39). The other clips of a group kept from several tracks stay Rust's call. | decided by the lead, 2026-11-25, bug sweep VERIFY-UI |
 
 ## A-9 Round 3, part 1 (menu bar and context menus)
 

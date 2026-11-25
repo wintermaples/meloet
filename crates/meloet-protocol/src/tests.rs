@@ -256,6 +256,7 @@ pub(super) fn sample_state() -> AppState {
             selected_clip: None,
             piano_roll_clip: Some(4),
             clipboard_clips: 2,
+            clipboard_kind: Some(ClipKind::Keys),
             tall_track: None,
         },
         piano_roll: PianoRollView {
@@ -1563,7 +1564,7 @@ fn state_json_is_camel_case_and_round_trips() {
     assert_eq!(
         v["state"]["arrange"],
         json!({"selectedClips": [4, 9], "selectedClip": null, "pianoRollClip": 4,
-               "clipboardClips": 2, "tallTrack": null})
+               "clipboardClips": 2, "clipboardKind": "keys", "tallTrack": null})
     );
     assert_eq!(v["state"]["song"]["tracks"][0]["muted"], true);
     assert_eq!(v["state"]["song"]["tracks"][0]["soloed"], false);

@@ -71,7 +71,7 @@ flowchart LR
 
 ## 3. The contract between Rust and the screen (report 7-3)
 
-The contract is **version 39** (`PROTOCOL_VERSION` in `crates/meloet-protocol/src/lib.rs`; the versions of round 12: 25-1 to 25-3, 25-37 to 25-39; 37: `TrackView::key_names` and the drum rows of a plugin that names keys, 24-16 E; 38: the status line messages `VocalsNotRecorded`, `RecordingStoppedDisk` and `AudioNotCopied`, when the files of a recording or a file brought in cannot be written, 22-7 and 22-18 A2; 39: the song dialog `DeleteRecovery` with the answers `Delete` and `Keep`, asked right after 「戻さない」, 15, and `ExportDialogView::replace`, the export dialog asks before it writes over files that are there already, 22-11).
+The contract is **version 39** (`PROTOCOL_VERSION` in `crates/meloet-protocol/src/lib.rs`; the versions of round 12: 25-1 to 25-3, 25-37 to 25-39; 37: `TrackView::key_names` and the drum rows of a plugin that names keys, 24-16 E; 38: the status line messages `VocalsNotRecorded`, `RecordingStoppedDisk` and `AudioNotCopied`, when the files of a recording or a file brought in cannot be written, 22-7 and 22-18 A2; 39: the song dialog `DeleteRecovery` with the answers `Delete` and `Keep`, asked right after 「戻さない」, 15, and `ExportDialogView::replace`, the export dialog asks before it writes over files that are there already, 22-11, and `ArrangeView::clipboard_kind`, the kind of the first clip kept, so 「貼りつけ」 is off over a track of the other kind).
 
 ### 3-1. Steps
 

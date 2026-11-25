@@ -307,7 +307,7 @@ fn drag_events_and_sections_json_shape() {
             ..ArrangeView::default()
         },
         json!({"selectedClips": [], "selectedClip": null, "pianoRollClip": null,
-               "clipboardClips": 0, "tallTrack": 6}),
+               "clipboardClips": 0, "clipboardKind": null, "tallTrack": 6}),
     );
 }
 

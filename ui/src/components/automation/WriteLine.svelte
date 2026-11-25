@@ -10,6 +10,7 @@
   import { current } from "../../state/app.svelte";
   import { tickToX, type View } from "../arrangeGeom";
   import { metrics } from "../metrics.svelte";
+  import { TICKS_PER_QUARTER } from "../../time/ticks";
   import * as A from "./autoGeom";
   import { playTick, pointsOf } from "./autoState.svelte";
   import { handAt } from "./handValue";
@@ -31,15 +32,20 @@
   /** The collected (tick, value). laneId is the lane at the start of writing, from is the tick at the start of writing. done: writing has ended (waiting for the core's step). */
   let buf = $state.raw<{ laneId: number; from: number; pts: A.Pt[]; range: A.LaneRange; done: boolean } | null>(null);
   let now = $state(0);
+  /** The position heard at the last sample: when it goes back by more than a quarter note, the loop turned and a new pass starts. */
+  let heard = -Infinity;
 
   function sample(): void {
     const w = writing;
     if (!w) return;
     const hand = handAt(track.id, lane.target);
     if (hand === null) return;
-    const tick = Math.max(w.fromTick, playTick());
+    const at = playTick();
+    const turned = at < heard - TICKS_PER_QUARTER;
+    heard = at;
+    const tick = Math.max(w.fromTick, at);
     const b = buf;
-    if (!b || b.done || b.from !== w.fromTick) {
+    if (!b || b.done || b.from !== w.fromTick || turned) {
       buf = { laneId: lane.laneId, from: w.fromTick, pts: [{ tick: w.fromTick, value: hand }], range: A.laneRange(committed, lane.step), done: false };
       now = tick;
       return;

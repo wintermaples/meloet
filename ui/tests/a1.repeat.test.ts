@@ -217,7 +217,7 @@ describe("Arrange: the handle with the mouse, and the box", () => {
     return app.stateWith((s) => {
       s.song.tracks = tracks();
       s.song.playTarget = 1;
-      s.arrange = { selectedClips: selected, selectedClip: selected[0] ?? null, pianoRollClip: null, clipboardClips: 0, tallTrack: null };
+      s.arrange = { selectedClips: selected, selectedClip: selected[0] ?? null, pianoRollClip: null, clipboardClips: 0, clipboardKind: null, tallTrack: null };
       edit(s);
     });
   }

@@ -280,6 +280,24 @@ describe("scrolling the track rows up and down (temporary form, user:2026-11-20)
     expect(q(".lanes-view")!.hasAttribute("data-gl-clip")).toBe(true);
   });
 
+  it("while a head is dragged to reorder, the wheel does not scroll the rows (as during a clip drag); after release it does", () => {
+    show(six());
+    const head = q("[data-test=track-head]")!;
+    const pointer = (type: string, clientY: number) => {
+      head.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX: 10, clientY, button: 0 }));
+      flushSync();
+    };
+    pointer("pointerdown", 10);
+    pointer("pointermove", 40);
+    expect(head.classList.contains("lifted")).toBe(true);
+    wheel(q(".head")!, { deltaY: 30 });
+    wheel(q(".time")!, { deltaY: 30 });
+    expect(tops()).toEqual([0, 0]);
+    pointer("pointerup", 40);
+    wheel(q(".head")!, { deltaY: 30 });
+    expect(tops()).toEqual([30, 30]);
+  });
+
   it("Shift + wheel stays sideways and Mod + wheel stays zoom (no vertical scroll)", () => {
     show(six());
     wheel(q(".time")!, { deltaY: 40, shiftKey: true });

@@ -52,6 +52,16 @@ pub enum TrackKindView {
     },
 }
 
+/// The kind of track a clip can go on: keys clips on keyboard tracks, audio clips on vocal
+/// tracks (`ArrangeView::clipboard_kind`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub enum ClipKind {
+    Keys,
+    Vocal,
+}
+
 /// A vocal track that is being recorded (`TransportView::recording_vocals`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -181,6 +191,17 @@ pub enum LatencyFailure {
     Unsteady,
     /// There is no input, or the audio is not running.
     NoInput,
+}
+
+/// Why the files of a recording could not be written on (`StatusMessage::RecordingStoppedDisk`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub enum DiskStop {
+    /// The disk refused a write: it is full, or cannot be written.
+    CannotWrite,
+    /// A file reached the size a wav file can have.
+    FileFull,
 }
 
 /// "録っていた歌 1 つを、止まる直前（9. 3. 0000 ごろ）まで残しました。" (spec 3 「録っている

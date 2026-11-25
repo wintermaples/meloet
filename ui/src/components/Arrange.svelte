@@ -37,7 +37,7 @@
   import VScrollbar from "./mixer/VScrollbar.svelte";
   import { term } from "../lib/tip.svelte";
   import { openContextMenu, type MenuEntry, type MenuRow } from "./menu/contextMenu.svelte";
-  import { joinable, overdubClipName, repeatCountOf, splitTick } from "./clipEdits";
+  import { joinable, overdubClipName, pasteable, repeatCountOf, splitTick } from "./clipEdits";
   import { bounceable } from "./arrange/bounce";
   import { clipEdit, renameCommand, startClipRename, stopClipRename } from "./clipName.svelte";
   import { current, send } from "../state/app.svelte";
@@ -57,7 +57,7 @@
     zoomArrangeBy,
   } from "./pianoroll/view.svelte";
   import { shownTick, ticksPerBar, ticksPerBeat } from "./time";
-  import { barLineTick, eachLine, mapOf, nearestBarTick, nearestBeatTick, snapToStep } from "../time/bars";
+  import { eachLine, mapOf, nearestBarTick, nearestBeatTick, snapToStep } from "../time/bars";
   import type { GridLine } from "../gl/slot";
   import MarkerRow from "./timeline/MarkerRow.svelte";
   import TempoBand from "./timeline/TempoBand.svelte";
@@ -95,6 +95,24 @@
   let scrollTick = $state(0);
   /** Whether to page along with the playhead. Stops when moved sideways by hand, and follows again on the next play. */
   let follow = true;
+  /**
+   * A pointer is held down inside the arrange (a clip, box select, ruler, marker, tempo point, lane or comp band drag).
+   * No paging then: drags count px from the press, so what is held would land a page away from the pointer.
+   */
+  let held = false;
+  const holdDown = () => (held = true);
+  const holdUp = () => (held = false);
+  onMount(() => {
+    const opts = { capture: true };
+    window.addEventListener("pointerup", holdUp, opts);
+    window.addEventListener("pointercancel", holdUp, opts);
+    window.addEventListener("blur", holdUp);
+    return () => {
+      window.removeEventListener("pointerup", holdUp, opts);
+      window.removeEventListener("pointercancel", holdUp, opts);
+      window.removeEventListener("blur", holdUp);
+    };
+  });
 
   /** px per bar. The horizontal zoom step (arrangeView.barPx is px at 100 %) times the same scale as mock.arrange.bar. */
   const barPx = $derived((metrics.px("mock.arrange.bar") * arrangeView.barPx) / DEFAULT_ARRANGE_BAR);
@@ -370,14 +388,14 @@
   const songLoop = $derived(song.loopOn ? G.loopBars(song.loopRange, map) : null);
   /** The look during a drag. Cleared when the Rust answer (the next diff) comes. */
   let preview = $state<G.BarRange | null>(null);
-  const shownLoop = $derived(preview ?? songLoop);
+  const shownLoop = $derived(preview ? G.barLoop(preview, map) : songLoop);
   $effect(() => {
     void current.rev;
     untrack(() => {
       if (!drag) preview = null;
     });
   });
-  const loopX = (bar: number) => G.tickToX(view, barLineTick(map, bar));
+  const loopX = (tick: number) => G.tickToX(view, tick);
 
   // ---- Clip drag (move, copy with Alt, trim an edge; arrangeDrag.ts) ----
 
@@ -406,12 +424,12 @@
     const d = shownDrag;
     if (!d) return null;
     if (d.kind === "repeat") return `r${d.group.map((g) => g.clip.id).join(",")}:${d.count}`;
-    return d.kind === "trim" ? `t${d.clip.id}:${d.start}:${d.end}` : `m${dragKey}`;
+    return d.kind === "trim" ? `t${d.clip.id}:${d.start}:${d.end}` : `m${dragKey}:${d.toRow - d.row}`;
   });
   const dragShift = $derived.by(() => {
     const d = shownDrag;
-    if (!d || d.kind !== "move" || (d.ticks === 0 && d.toRow === d.row)) return null;
-    return `translate(${d.ticks * pxPerTick}px, ${G.rowTop(dims, d.toRow) - G.rowTop(dims, d.row)}px)`;
+    if (!d || d.kind !== "move" || d.ticks === 0) return null;
+    return `translateX(${d.ticks * pxPerTick}px)`;
   });
 
   $effect(() => {
@@ -447,20 +465,24 @@
     });
     let place: { left: number; top: number; width: number; height: number };
     if (d.kind === "move") {
-      // Draw all the clips with the start of the front clip and the top row at 0 (including parts that come into view as it moves).
+      // Draw all the clips on the rows they land on, with the start of the front clip and the top one at 0 (including parts that come into view as it moves).
+      // Rows differ in height and bands lie between them, so the picture is made again when the rows change; sideways it moves with transform.
+      const rows = d.toRow - d.row;
       const first = Math.min(...d.group.map((g) => g.clip.start));
       const last = Math.max(...d.group.map((g) => g.clip.end));
-      const top = G.clipBox(view, dims, Math.min(...d.group.map((g) => g.row)), first, last).y0;
-      const bottom = G.clipBox(view, dims, Math.max(...d.group.map((g) => g.row)), first, last).y1;
       const local: G.View = { pxPerTick, scrollX: first * pxPerTick, width: Infinity };
-      for (const { clip, row } of d.group) {
-        const inner = G.clipBox(local, dims, row, clip.start, clip.end);
-        const colors = G.clipColorsFor(G.CLIP_SELECTED, song.tracks[row]?.muted ?? false);
+      const boxes = d.group.map((g) => G.movedClipBox(local, dims, song.tracks.length, g.row, rows, g.clip.start, g.clip.end));
+      const top = Math.min(...boxes.map((b) => b.y0));
+      const bottom = Math.max(...boxes.map((b) => b.y1));
+      d.group.forEach(({ clip, row }, i) => {
+        const inner = boxes[i]!;
+        const track = song.tracks[row + rows] ?? song.tracks[row];
+        const colors = G.clipColorsFor(G.CLIP_SELECTED, track?.muted ?? false);
         const moved = { ...inner, y0: inner.y0 - top, y1: inner.y1 - top };
-        if (clip.audio && song.tracks[row]) paintAudioClip(rects, waves, handles, local, moved, song.tracks[row], clip, G.CLIP_SELECTED, null);
+        if (clip.audio && track) paintAudioClip(rects, waves, handles, local, moved, track, clip, G.CLIP_SELECTED, null);
         else G.paintClip(rects, local, dims, moved, colors, notesOf(row, clip));
-        labels.push(labelOf(clip, G.clipBox(view, dims, row, clip.start, clip.end)));
-      }
+        labels.push(labelOf(clip, G.movedClipBox(view, dims, song.tracks.length, row, rows, clip.start, clip.end)));
+      });
       for (const h of handles) rects.push(h);
       place = { left: G.tickToX(view, first), top, width: (last - first) * pxPerTick, height: bottom - top };
     } else if (d.kind === "repeat") {
@@ -571,8 +593,8 @@
     }
     if (shownLoop) {
       const h = rows.height;
-      for (const bar of [shownLoop.from, shownLoop.to]) {
-        const x = G.tickToX(v, barLineTick(map, bar));
+      for (const tick of [shownLoop.start, shownLoop.end]) {
+        const x = G.tickToX(v, tick);
         if (x >= 0 && x < v.width) out.push({ x, y: 0, w: dims.hair, h, color: "color.gray.8" });
       }
     }
@@ -990,13 +1012,15 @@
     slot: { update(next: GlSlot): void; destroy(): void };
     label: HTMLElement | null;
     labelFullPx: number;
+    /** The take number the label had when its full width was measured. */
+    labelTake: number;
     drawn: string;
     labelPx: number;
   }
   const vocalTails = new Map<number, VocalTail>();
   function vocalTail(node: HTMLElement, track: number) {
     const slot = glSlot(node, { kind: "rects", rects: [], alignY: TAIL_ALIGN });
-    vocalTails.set(track, { node, slot, label: null, labelFullPx: 0, drawn: "", labelPx: NaN });
+    vocalTails.set(track, { node, slot, label: null, labelFullPx: 0, labelTake: 0, drawn: "", labelPx: NaN });
     return {
       destroy() {
         slot.destroy();
@@ -1029,9 +1053,11 @@
       commitAll = commit;
       const nowPx = Math.round((at * pxPerTick - scrollX) * dpr);
       if (tail.label) {
-        if (tail.labelFullPx === 0) {
+        if (tail.labelFullPx === 0 || r.take !== tail.labelTake) {
+          tail.labelTake = r.take;
           tail.label.style.clipPath = "";
           tail.labelFullPx = Math.ceil(tail.label.offsetWidth * dpr);
+          tail.labelPx = NaN;
         }
         const startPx = Math.round(Math.max(r.from * pxPerTick - scrollX, 0) * dpr);
         const labelPx = Math.min(Math.max(0, nowPx - startPx - 2), tail.labelFullPx);
@@ -1080,7 +1106,7 @@
   function frame(): void {
     const tick = shownTick(transport, current.telemetry, offsetUs === null ? null : performance.now() * 1000 + offsetUs);
     let scrollX = scrollTick * pxPerTick;
-    if (follow) {
+    if (follow && !held) {
       const next = G.followScroll(tick * pxPerTick, scrollX, viewWidth);
       if (next !== scrollX) {
         scrollX = next;
@@ -1206,9 +1232,11 @@
   });
   const rowsScroll = (y: number) => (scrollY = Math.max(0, Math.min(y, maxScrollY)));
 
-  /** Scroll vertically with the wheel. Not during a clip drag or a box select (what is held would slip from under the pointer). true if it scrolled. */
+  /** A track head is being dragged to reorder (TrackHeads). */
+  let headDrag = $state(false);
+  /** Scroll vertically with the wheel. Not during a clip drag, a box select or a head drag (what is held would slip from under the pointer). true if it scrolled. */
   function wheelRows(dy: number, mode: number): boolean {
-    if (layout.arrangeOverview || clipDrag || boxSel || maxScrollY <= 0) return false;
+    if (layout.arrangeOverview || clipDrag || boxSel || headDrag || maxScrollY <= 0) return false;
     const unit = mode === 1 ? metrics.px("size.row") : mode === 2 ? rowsHeight : 1;
     rowsScroll(shownY + dy * unit);
     return true;
@@ -1261,7 +1289,8 @@
   const still = () => metrics.px("space.1");
 
   function rulerDown(e: PointerEvent): void {
-    if (e.button !== 0) return;
+    // While recording or counting in, core takes neither a loop range nor a move of the play position.
+    if (e.button !== 0 || busy) return;
     const left = (e.currentTarget as HTMLElement).getBoundingClientRect().left;
     const x = e.clientX - left;
     drag = { d: G.startRulerDrag(view, x, map, songLoop, metrics.px("space.2")), downX: x, left };
@@ -1542,10 +1571,9 @@
   const menuRow = (label: MenuRow["label"], usable: boolean, run: () => void, key?: string): MenuRow => ({ kind: "row", label, key, usable, run });
   /** The selection when a row is pressed (any change from the right-click has arrived by then). */
   const chosen = () => current.state!.arrange.selectedClips;
-  const clipboardCount = $derived(current.state!.arrange.clipboardClips);
 
-  /** While recording and during count-in, rows that change the song cannot be used. */
-  function clipMenu(clip: ClipView, at: number, ids: readonly number[]): MenuEntry[] {
+  /** While recording and during count-in, rows that change the song cannot be used. `pasteOn`: the selected track once the right-click has arrived (what 「貼りつけ」 pastes onto). */
+  function clipMenu(clip: ClipView, at: number, ids: readonly number[], pasteOn: TrackView | undefined): MenuEntry[] {
     const change = !busy;
     const keys = clip.audio === null;
     const open = () => {
@@ -1581,7 +1609,7 @@
       ...(keys ? ([menuRow("menu.openInPianoRoll", true, open, t("key.pianoRoll")), { kind: "separator" }] satisfies MenuEntry[]) : []),
       menuRow("menu.cut", change, () => send({ type: "cutClips", clips: chosen() }), modKey(t("key.cut"))),
       menuRow("menu.copy", true, () => send({ type: "copyClips", clips: chosen() }), modKey(t("key.copy"))),
-      menuRow("menu.paste", change && clipboardCount > 0, () => send({ type: "pasteClips", to: null }), modKey(t("key.paste"))),
+      menuRow("menu.paste", change && pasteable(current.state!, pasteOn), () => send({ type: "pasteClips", to: null }), modKey(t("key.paste"))),
       menuRow("menu.duplicate", change, () => send({ type: "duplicateClips", clips: chosen() }), modKey(t("key.duplicate"))),
       menuRow("menu.repeatClips", change, () => openRepeatBox(chosen(), clip.id), modKey(t("key.repeatClips"))),
       menuRow("menu.delete", change, () => send({ type: "deleteSelected" }), t("key.delete")),
@@ -1635,7 +1663,9 @@
       pickClips();
       const had = selectedSet.has(hit.clip.id);
       if (!had) send({ type: "selectClip", clip: hit.clip.id });
-      openContextMenu(e.clientX, e.clientY, clipMenu(hit.clip, at, had ? current.state!.arrange.selectedClips : [hit.clip.id]));
+      // A clip not selected yet is selected now, which makes its track the selected one.
+      const pasteOn = had ? song.tracks.find((t) => t.id === song.playTarget) : song.tracks[hit.row];
+      openContextMenu(e.clientX, e.clientY, clipMenu(hit.clip, at, had ? current.state!.arrange.selectedClips : [hit.clip.id], pasteOn));
       return;
     }
     // Move the pressed place to the same grid as clip moves (usually 1 bar). Not with Shift.
@@ -1650,7 +1680,7 @@
         ? [menuRow("menu.createClipHere", !busy, () => send({ type: "createClip", track: track.id, tick: Math.round(at) }))]
         : [menuRow("menu.importAudio", !busy, () => send({ type: "importAudio", track: track.id }))];
     openContextMenu(e.clientX, e.clientY, [
-      menuRow("menu.paste", !busy && track !== undefined && clipboardCount > 0, paste, modKey(t("key.paste"))),
+      menuRow("menu.paste", !busy && pasteable(current.state!, track), paste, modKey(t("key.paste"))),
       ...more,
     ]);
   }
@@ -1707,7 +1737,14 @@
     {#if keysHere}<div class="focus-mark" data-test="arrange-focus-mark"></div>{/if}
   </section>
 {:else}
-  <section class="arrange" style:height="{height}px" onpointerdowncapture={focusArrange}>
+  <section
+    class="arrange"
+    style:height="{height}px"
+    onpointerdowncapture={() => {
+      focusArrange();
+      holdDown();
+    }}
+  >
     <div class="head" onwheel={wheelHeads}>
       <div class="row title-row">
         <span class="m-name" use:term={"アレンジ"}>{t("arrange.title")}</span>
@@ -1749,7 +1786,7 @@
         {/if}
       </div>
       <div class="heads-view" bind:this={headsView} use:glRegion={"trackMeters"}>
-        <TrackHeads />
+        <TrackHeads bind:reordering={headDrag} />
       </div>
     </div>
 
@@ -1768,7 +1805,7 @@
           {/each}
         </div>
         {#if shownLoop}
-          <div class="loop-mark" style:left="{loopX(shownLoop.from)}px" style:width="{loopX(shownLoop.to) - loopX(shownLoop.from)}px"></div>
+          <div class="loop-mark" style:left="{loopX(shownLoop.start)}px" style:width="{loopX(shownLoop.end) - loopX(shownLoop.start)}px"></div>
         {/if}
         <FadeBox tracks={song.tracks} {view} shut={busy || layout.arrangeOverview} />
       </div>
@@ -1974,7 +2011,7 @@
         {/if}
         <AudioClipNotes {view} {dims} tracks={song.tracks} askHost={timeBox} />
         <AudioClipHandles {view} {dims} tracks={song.tracks} selected={selectedSet} {busy} />
-        <DropFrame {view} {dims} tracks={song.tracks} {map} {perBar} />
+        <DropFrame {view} {dims} tracks={song.tracks} {map} {perBar} tracksBottom={rows.tracksHeight} />
         {#if boxFrame}
           <div
             class="box-frame"
@@ -1987,13 +2024,13 @@
         {/if}
         {#if switcher}
           <div class="switcher" role="presentation" data-over-clips onpointerdown={(e) => e.stopPropagation()} style:left="{switcher.x}px" style:top="{switcher.y}px" style:height="{switchH}px">
-            <button class="tog step" aria-label={t("arrange.takePrev")} onclick={() => send({ type: "stepTake", delta: -1 })}>◂</button>
+            <button class="tog step" aria-label={t("arrange.takePrev")} disabled={busy} onclick={() => send({ type: "stepTake", delta: -1 })}>◂</button>
             <span class="m-hi">
               {#each textParts("arrange.takeSwitch", { take: switcher.take, takes: switcher.takes }) as part, i (i)}
                 {#if part.hole}<span class="m-num">{part.text}</span>{:else}{@render termed(part.text, "テイク")}{/if}
               {/each}
             </span>
-            <button class="tog step" aria-label={t("arrange.takeNext")} onclick={() => send({ type: "stepTake", delta: 1 })}>▸</button>
+            <button class="tog step" aria-label={t("arrange.takeNext")} disabled={busy} onclick={() => send({ type: "stepTake", delta: 1 })}>▸</button>
             <span class="m-num m-lbl">{t("arrange.takeKey")}</span>
           </div>
         {/if}
@@ -2366,6 +2403,33 @@
     z-index: 3;
     border: var(--line-hair) solid var(--color-accent-ink);
     pointer-events: none;
+  }
+  .tog.step {
+    width: var(--part-toggle-size);
+    height: var(--part-toggle-size);
+    flex-shrink: 0;
+    padding: 0;
+    border: var(--line-hair) solid var(--color-gray-6);
+    border-radius: var(--radius-1);
+    background: var(--color-gray-1);
+    color: var(--color-gray-8);
+    font: inherit;
+    text-align: center;
+    cursor: pointer;
+  }
+  .tog.step:hover {
+    border-color: var(--color-gray-8);
+    color: var(--color-gray-10);
+  }
+  .tog.step:active {
+    background: var(--color-gray-2);
+    border-color: var(--color-gray-8);
+  }
+  .tog.step:disabled {
+    background: var(--color-gray-1);
+    border-color: var(--color-gray-5);
+    color: var(--color-gray-7);
+    cursor: default;
   }
   .switcher {
     position: absolute;

@@ -14,6 +14,7 @@ export type { Change } from "./generated/Change";
 export type { ChooserView } from "./generated/ChooserView";
 export type { ChosenState } from "./generated/ChosenState";
 export type { ClipEdge } from "./generated/ClipEdge";
+export type { ClipKind } from "./generated/ClipKind";
 export type { ClipSpot } from "./generated/ClipSpot";
 export type { ClipView } from "./generated/ClipView";
 export type { Command } from "./generated/Command";
@@ -274,3 +275,5 @@ export { MUTE_SET_NAME_MAX, MUTE_SETS_MAX } from "./generated/muteSets";
 export type { ExportMidiProblem } from "./generated/ExportMidiProblem";
 export type { ExportMidiTrack } from "./generated/ExportMidiTrack";
 export type { ExportMidiTracks } from "./generated/ExportMidiTracks";
+// Protocol 39 (the owner, 2026-11-25): the export dialog asks before it writes over files that are there already.
+export type { ExportReplace } from "./generated/ExportReplace";

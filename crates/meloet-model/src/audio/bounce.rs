@@ -11,10 +11,12 @@ use crate::history::StepKind;
 use crate::mixer::Channel;
 use crate::song::{Clip, ClipId, ClipTake, ClipTakes, Doc, TakeId, Track};
 use crate::tempo_map::TempoMap;
-use crate::{InstrumentRef, TrackColor, TrackId};
+use crate::{InstrumentRef, Language, TrackColor, TrackId};
 
-/// What the name of the new track has after the name of the track it was made from.
+/// What the name of the new track has after the name of the track it was made from, in
+/// Japanese and in English.
 pub const BOUNCED_SUFFIX: &str = "（音）";
+pub const BOUNCED_SUFFIX_EN: &str = " (audio)";
 
 /// What [`bounce_track`] made.
 #[derive(Debug, Clone, PartialEq)]
@@ -38,13 +40,15 @@ fn of_the_strip(target: AutoTarget) -> bool {
 /// sounds at the song's tempo there, not following the tempo. The new track is named as
 /// `from` with [`BOUNCED_SUFFIX`] (and a number from 2 when a track has that name); it has
 /// the fader, the pan and the sends of `from` and their lanes, and no inserts. `from` is
-/// muted and keeps everything else. The audio goes into the audio table as a recording does.
+/// muted, with its mute lane at rest when it moves (so that the mute is heard), and keeps
+/// everything else. The audio goes into the audio table as a recording does.
 /// `WrongKind` for a vocal track; `BadTake(0)` for audio that cannot be.
 pub fn bounce_track(
     doc: &Doc,
     from: TrackId,
     audio: NewAudio,
     start: u64,
+    language: Language,
 ) -> Result<Bounced, EditError> {
     let ti = track_index(doc, from)?;
     let source_track = &doc.tracks[ti];
@@ -79,7 +83,7 @@ pub fn bounce_track(
         sha256: None,
     });
     let track = TrackId(ids.next()?);
-    let name = bounced_name(doc, &source_track.name);
+    let name = bounced_name(doc, &source_track.name, language);
     let clip = Arc::new(Clip {
         id: ClipId(ids.next()?),
         name: name.clone(),
@@ -139,6 +143,12 @@ pub fn bounce_track(
         muted: true,
         ..Track::clone(source_track)
     });
+    if source_track
+        .lane(AutoTarget::Mute)
+        .is_some_and(|l| l.moves())
+    {
+        crate::automation::set_resting(&mut new, from, AutoTarget::Mute, true);
+    }
     new.tracks.insert(at, Arc::new(new_track));
     let mut table = doc.audio.as_ref().clone();
     table.push(source);
@@ -155,8 +165,8 @@ pub fn bounce_track(
 }
 
 /// 「（name）（音）」, with the smallest number from 2 after it when a track has that name.
-fn bounced_name(doc: &Doc, name: &str) -> String {
-    let base = format!("{name}{BOUNCED_SUFFIX}");
+fn bounced_name(doc: &Doc, name: &str, language: Language) -> String {
+    let base = format!("{name}{}", language.pick(BOUNCED_SUFFIX, BOUNCED_SUFFIX_EN));
     let taken = |n: &str| doc.tracks.iter().any(|t| t.name == n);
     if !taken(&base) {
         return base;

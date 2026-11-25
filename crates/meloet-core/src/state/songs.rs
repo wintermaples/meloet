@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use meloet_model::Song;
 use meloet_protocol::{
-    RECENT_SHOWN, RecentSong, SongAnswer, SongDialogKind, SongDialogView, SongFile,
+    RECENT_SHOWN, RecentSong, SongAnswer, SongDialogKind, SongDialogView, SongFile, StatusMessage,
 };
 
 use super::{Effect, Input, Model, SaveTo};
@@ -53,6 +53,9 @@ pub(super) struct Files {
     waiting: Option<Waiting>,
     /// Asked to close while recording: once the take is in the song.
     close_when_recorded: bool,
+    /// Asked to close while the core waits (`waiting`): once the save, the read or the PC's
+    /// window has answered.
+    close_when_answered: bool,
     exiting: bool,
     /// The name typed in the save window, for the save that goes on from there (also after
     /// "保存できない" and a folder picked).
@@ -317,7 +320,18 @@ impl Model {
 
     /// Esc. Returns whether a song dialog was there to put away.
     pub(super) fn cancel_song_dialog(&mut self) -> bool {
-        self.files.dialog.take().is_some()
+        let Some(dialog) = self.files.dialog.take() else {
+            return false;
+        };
+        if dialog.kind == SongDialogKind::DeleteRecovery {
+            self.notice = Some(StatusMessage::RecoveryDiscarded);
+        }
+        true
+    }
+
+    /// Right after "戻さない": whether the recovery file goes too.
+    pub(super) fn ask_delete_recovery(&mut self) {
+        self.put_up(SongDialogKind::DeleteRecovery, Then::Stay, None);
     }
 
     pub(super) fn answer_song_dialog(
@@ -330,6 +344,17 @@ impl Model {
             return;
         };
         match (dialog.kind, answer) {
+            // While the dialog was up the status line named it instead of what "戻さない"
+            // did: that comes back.
+            (
+                SongDialogKind::DeleteRecovery,
+                SongAnswer::Delete | SongAnswer::Keep | SongAnswer::Cancel,
+            ) => {
+                if answer == SongAnswer::Delete {
+                    self.delete_recovery(effects);
+                }
+                self.notice = Some(StatusMessage::RecoveryDiscarded);
+            }
             (_, SongAnswer::Cancel) => {}
             (SongDialogKind::Unsaved, SongAnswer::Save) => self.save(dialog.then, None, effects),
             (SongDialogKind::Unsaved, SongAnswer::DontSave) => self.then(dialog.then, effects),
@@ -358,7 +383,10 @@ impl Model {
             (Input::CloseRequested, _) => self.close_requested(effects),
             (Input::SongFilePicked(path), Some(Waiting::PickFile)) => {
                 self.files.waiting = None;
-                if let Some(path) = path {
+                // A close asked while the window was up comes before the song picked there.
+                if std::mem::take(&mut self.files.close_when_answered) {
+                    self.close_requested(effects);
+                } else if let Some(path) = path {
                     self.files.waiting = Some(Waiting::Read);
                     effects.push(Effect::ReadSong {
                         path,
@@ -369,9 +397,14 @@ impl Model {
             (Input::FolderPicked(folder), Some(Waiting::PickFolder(then))) => {
                 self.files.waiting = None;
                 match folder {
+                    // A close asked meanwhile waits for this save.
                     Some(folder) => self.save(then, Some(folder), effects),
-                    // Back to where the folder window was asked for.
-                    None => self.put_up(SongDialogKind::CannotSave, then, None),
+                    // Back to where the folder window was asked for, before a close asked
+                    // meanwhile.
+                    None => {
+                        self.files.close_when_answered = false;
+                        self.put_up(SongDialogKind::CannotSave, then, None);
+                    }
                 }
             }
             (Input::SaveAsPicked(picked), Some(Waiting::PickSaveAs)) => {
@@ -379,6 +412,8 @@ impl Model {
                 if let Some((folder, name)) = picked.as_deref().and_then(split_save_as) {
                     self.files.save_as = Some(name);
                     self.save(Then::Stay, Some(folder), effects);
+                } else if std::mem::take(&mut self.files.close_when_answered) {
+                    self.close_requested(effects);
                 }
             }
             (Input::SongSaved { path, name }, Some(Waiting::Save(then))) => {
@@ -393,16 +428,25 @@ impl Model {
                 self.recovery_done(effects);
                 // What was changed while the save went on is not in the file.
                 self.recovery_changed_again();
-                self.then(then, effects);
+                if std::mem::take(&mut self.files.close_when_answered) && then != Then::Close {
+                    self.close_requested(effects);
+                } else {
+                    self.then(then, effects);
+                }
             }
             (Input::SongNotSaved, Some(Waiting::Save(then))) => {
                 self.files.waiting = None;
                 self.play.not_saved();
+                let close = std::mem::take(&mut self.files.close_when_answered);
                 match self.files.ai.take() {
                     Some(ticket) => {
                         let why = "the song could not be written there".to_owned();
                         self.ai_ended(ticket, AiOutcome::Failed(why));
+                        if close {
+                            self.close_requested(effects);
+                        }
                     }
+                    // 「保存できない」 comes before a close asked meanwhile.
                     None => self.put_up(SongDialogKind::CannotSave, then, None),
                 }
             }
@@ -422,18 +466,26 @@ impl Model {
                 self.files.path = Some(path);
                 self.take_song(*song, from_previous, effects);
                 self.say_missing();
+                if std::mem::take(&mut self.files.close_when_answered) {
+                    self.close_requested(effects);
+                }
             }
             (Input::SongUnreadable { path, previous }, _) if reading => {
                 self.files.waiting = None;
                 self.forget_if_gone(&path, effects);
+                let close = std::mem::take(&mut self.files.close_when_answered);
                 if let Some(ticket) = self.files.ai.take() {
                     let why = match previous {
                         true => "the file does not read; its .prev copy might",
                         false => "the file does not read",
                     };
                     self.ai_ended(ticket, AiOutcome::Failed(why.to_owned()));
+                    if close {
+                        self.close_requested(effects);
+                    }
                     return;
                 }
+                // 「ひらけない曲」 comes before a close asked meanwhile.
                 self.put_up(SongDialogKind::Broken, Then::Stay, Some(path));
                 if let Some(d) = &mut self.files.dialog {
                     d.previous = previous;
@@ -452,6 +504,9 @@ impl Model {
     }
 
     pub(super) fn close_requested(&mut self, effects: &mut Vec<Effect>) {
+        if self.files.waiting.is_some() && !self.files.exiting {
+            self.files.close_when_answered = true;
+        }
         if self.files.exiting || self.files.waiting.is_some() {
             return;
         }
@@ -536,6 +591,8 @@ impl Model {
     /// `unsaved`: the song does not match its file.
     pub(super) fn replace_song(&mut self, song: Song, unsaved: bool, effects: &mut Vec<Effect>) {
         self.play.replace_song(song, unsaved, effects);
+        // A keyboard fader's level that waits to become a step goes with the song it was for.
+        self.fader = Default::default();
         self.buffer_unsaid = true;
         self.new_song_unsaid = false;
     }

@@ -160,7 +160,10 @@ fn bounced(place: &Place, doc: &Doc, track: TrackId, span: (u64, u64)) -> (Doc, 
     assert_eq!(read_wav(&temp), rendered, "written as rendered");
     let audio = adopt(&place.store, &temp, "リード（音） 50.wav", &[]).unwrap();
     assert_eq!(audio.frames as usize, rendered.len() / 2);
-    let after = bounce_track(doc, track, audio, span.0).unwrap().edit.doc;
+    let after = bounce_track(doc, track, audio, span.0, meloet_model::Language::Ja)
+        .unwrap()
+        .edit
+        .doc;
     (place.store).set_sources(
         after
             .audio
@@ -186,4 +189,153 @@ fn a_tail_that_rings_on_is_in_the_audio_up_to_ten_seconds() {
     assert!(with.len() > without.len(), "the delay rings on");
     assert!(with.len() / 2 <= without.len() / 2 + 10 * RATE as usize);
     assert_eq!(&with[..without.len()], &without[..]);
+}
+
+/// The step mutes the keys track for real: a mute lane of it that plays the track rests.
+#[test]
+fn the_keys_track_is_silent_after_the_step_under_its_mute_lane() {
+    use meloet_protocol::{Command, LaneHome};
+
+    use crate::play::EngineOp;
+    use crate::play::tests::{cmd, ready};
+
+    let m = &mut ready();
+    let home = LaneHome::Track { track: 1 };
+    let target = meloet_protocol::AutoTarget::Mute;
+    cmd(m, Command::AddLane { home, target });
+    let view = m.view();
+    let lane = (view.song.tracks[0].lanes.iter())
+        .find(|l| l.target == target)
+        .unwrap()
+        .lane_id;
+    cmd(
+        m,
+        Command::AddAutoPoint {
+            lane,
+            tick: 0,
+            value: Some(0.0),
+        },
+    );
+    let seat = m.play().seats.of(TrackId(1)).unwrap();
+    let audio = NewAudio {
+        uid: [3; 16],
+        file: "ピアノ（音） 9.wav".to_owned(),
+        frames: RATE.into(),
+        sample_rate: RATE,
+        channels: 2,
+        bits: Some(24),
+    };
+    let mut effects = Vec::new();
+    let notice = m.play_mut().bounce_made(TrackId(1), audio, 0, &mut effects);
+    assert!(matches!(notice, Some(StatusMessage::Bounced { .. })));
+    m.play_mut().sync_silent(&mut effects);
+    let silent = effects.iter().rev().find_map(|e| match e {
+        Effect::Engine(EngineOp::SilentTracks { tracks }) => Some(tracks.clone()),
+        _ => None,
+    });
+    assert_eq!(silent, Some(vec![seat]));
+}
+
+/// The new track and its work file are named in the language of the names
+/// (`Play::names`), whatever the song was made in.
+#[test]
+fn the_new_track_and_its_file_follow_the_language_of_the_names() {
+    use crate::play::tests::ready;
+    use meloet_model::Language;
+
+    for (language, name) in [
+        (Language::Ja, "ピアノ（音）"),
+        (Language::En, "ピアノ (audio)"),
+    ] {
+        let m = &mut ready();
+        m.play_mut().set_names(language, false);
+        let next = m.play().song().doc.next_id;
+        assert_eq!(
+            m.play().bounce_file_name(TrackId(1)),
+            format!("{name} {next}.wav")
+        );
+        let audio = NewAudio {
+            uid: [3; 16],
+            file: format!("{name} {next}.wav"),
+            frames: RATE.into(),
+            sample_rate: RATE,
+            channels: 2,
+            bits: Some(24),
+        };
+        let mut effects = Vec::new();
+        let notice = m.play_mut().bounce_made(TrackId(1), audio, 0, &mut effects);
+        assert!(matches!(notice, Some(StatusMessage::Bounced { .. })));
+        assert_eq!(m.view().song.tracks[1].name, name);
+    }
+}
+
+/// A soloed keys track gives its solo to the audio it became, in the one step; undo gives it
+/// back, redo moves it again, and so does a jump over more than one step.
+#[test]
+fn the_solo_goes_with_the_sound() {
+    use meloet_protocol::Command;
+
+    use crate::play::tests::{cmd, ready};
+    use crate::state::Model;
+
+    let m = &mut ready();
+    cmd(m, Command::SetTempo { bpm: 100.0 });
+    cmd(m, Command::ToggleSolo { track: 1 });
+    let audio = |n: u8| NewAudio {
+        uid: [n; 16],
+        file: format!("ピアノ（音） {n}.wav"),
+        frames: RATE.into(),
+        sample_rate: RATE,
+        channels: 2,
+        bits: Some(24),
+    };
+    let soloed = |m: &Model| -> Vec<u32> {
+        let view = m.view();
+        (view.song.tracks.iter())
+            .filter(|t| t.soloed)
+            .map(|t| t.id)
+            .collect()
+    };
+    let mut effects = Vec::new();
+    m.play_mut()
+        .bounce_made(TrackId(1), audio(1), 0, &mut effects);
+    let first = m.view().song.tracks[1].id;
+    assert_eq!(soloed(m), [first]);
+    assert!(m.view().song.tracks[0].muted);
+    cmd(m, Command::Undo);
+    assert_eq!(soloed(m), [1]);
+    assert!(!m.view().song.tracks[0].muted);
+    cmd(m, Command::Redo);
+    assert_eq!(soloed(m), [first]);
+
+    // From a keys track with no solo nothing moves.
+    m.play_mut()
+        .bounce_made(TrackId(1), audio(2), 0, &mut effects);
+    assert_eq!(m.view().song.tracks.len(), 3);
+    assert_eq!(soloed(m), [first]);
+    let row = m.history_rows(1, 1).pop().expect("the tempo's row");
+    cmd(
+        m,
+        Command::HistoryJump {
+            index: row.index,
+            step: row.step,
+        },
+    );
+    assert_eq!(m.view().song.tracks.len(), 1);
+    assert_eq!(soloed(m), [1]);
+    let row = m.history_rows(3, 3).pop().expect("the second bounce's row");
+    cmd(
+        m,
+        Command::HistoryJump {
+            index: row.index,
+            step: row.step,
+        },
+    );
+    assert_eq!(soloed(m), [first]);
+
+    // Only a solo that is still where the step put it goes back.
+    cmd(m, Command::ToggleSolo { track: first });
+    cmd(m, Command::Undo);
+    cmd(m, Command::Undo);
+    assert_eq!(soloed(m), Vec::<u32>::new());
 }

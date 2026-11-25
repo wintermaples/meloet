@@ -541,6 +541,38 @@ fn newer_older_and_broken_files_do_not_read() {
     }
 }
 
+/// Notes, control points and the loop stay within `MAX_TICK`, as the model's edits keep them.
+#[test]
+fn ticks_past_max_tick_do_not_read() {
+    let good = rich_json();
+    let with = |f: &dyn Fn(&mut serde_json::Value)| {
+        let mut v = good.clone();
+        f(&mut v);
+        decode(&serde_json::to_vec(&v).unwrap())
+    };
+    let broken: [&dyn Fn(&mut serde_json::Value); 6] = [
+        &|v| v["takes"][0]["notes"][0] = serde_json::json!([1, u64::MAX, 60, 100]),
+        &|v| v["takes"][0]["notes"][0] = serde_json::json!([0, 1u64 << 63, 60, 100]),
+        &|v| v["takes"][0]["notes"][0] = serde_json::json!([0, MAX_TICK + 1, 60, 100]),
+        &|v| v["takes"][0]["controls"][2] = serde_json::json!([MAX_TICK + 1, 1, 12]),
+        &|v| v["song"]["loop"]["end"] = u64::MAX.into(),
+        &|v| v["song"]["loop"]["end"] = (MAX_TICK + 1).into(),
+    ];
+    for (i, f) in broken.iter().enumerate() {
+        assert!(matches!(with(*f), Err(ReadError::Broken)), "case {i}");
+    }
+    let song = with(&|v| {
+        v["takes"][0]["notes"][0] = serde_json::json!([0, MAX_TICK, 60, 100]);
+        v["takes"][0]["controls"][2] = serde_json::json!([MAX_TICK, 1, 12]);
+        v["song"]["loop"]["end"] = MAX_TICK.into();
+    })
+    .unwrap();
+    assert_eq!(song.doc.loop_range.unwrap().end(), MAX_TICK);
+    for t in &song.doc.tracks {
+        meloet_model::playback::track_events(&song.doc, t.id);
+    }
+}
+
 #[test]
 fn a_save_keeps_the_one_before_and_only_a_good_one() {
     let dir = temp_dir("songfile-prev");
@@ -561,6 +593,60 @@ fn a_save_keeps_the_one_before_and_only_a_good_one() {
         .collect();
     assert_eq!(names.len(), 2, "no file left over: {names:?}");
     let _ = fs::remove_dir_all(dir);
+}
+
+/// The owner (2026-11-25): a save with nothing changed keeps the `.prev` there.
+#[test]
+fn a_save_of_the_same_bytes_keeps_the_one_before() {
+    let dir = temp_dir("songfile-same");
+    let path = dir.join("曲.meloet");
+    save(&path, &rich_song("1", 3)).unwrap();
+    save(&path, &rich_song("2", 3)).unwrap();
+    save(&path, &rich_song("2", 3)).unwrap();
+    assert_eq!(read(&path).unwrap().doc.name, "2");
+    assert_eq!(read(&previous_path(&path)).unwrap().doc.name, "1");
+    save(&path, &rich_song("3", 3)).unwrap();
+    assert_eq!(read(&previous_path(&path)).unwrap().doc.name, "2");
+    assert_eq!(fs::read_dir(&dir).unwrap().count(), 2, "no file left over");
+    let _ = fs::remove_dir_all(dir);
+}
+
+/// A name of 100 Japanese characters is 300 bytes; a file name holds 255.
+#[test]
+fn a_long_name_is_cut_and_saves_again_and_again() {
+    let base = temp_dir("songfile-long");
+    let mut song = Song::new_default();
+    song.doc.name = "あ".repeat(100);
+    let (path, name) = save_new(&base, &song).unwrap();
+    assert!(
+        name.len() <= 200 && name.chars().all(|c| c == 'あ'),
+        "{name}"
+    );
+    assert_eq!(path, base.join(&name).join(format!("{name}.meloet")));
+    assert_eq!(read(&path).unwrap().doc.name, name);
+    save(&path, &rich_song("2", 3)).unwrap();
+    save(&path, &rich_song("3", 3)).unwrap();
+    assert_eq!(read(&previous_path(&path)).unwrap().doc.name, "2");
+    let (again, other) = save_new(&base, &song).unwrap();
+    assert_eq!(other, format!("{name} 2"));
+    save(&again, &rich_song("2", 3)).unwrap();
+
+    // A song saved before names were cut, or a file named so by hand, still saves.
+    for bytes in [250, 255] {
+        let dir = temp_dir("songfile-long-kept");
+        let file = format!("{}.meloet", "x".repeat(bytes - ".meloet".len()));
+        let path = dir.join(&file);
+        fs::write(&path, encode(&rich_song("1", 3))).unwrap();
+        save(&path, &rich_song("2", 3)).unwrap();
+        save(&path, &rich_song("3", 3)).unwrap();
+        assert_eq!(read(&path).unwrap().doc.name, "3");
+        let prev = previous_path(&path);
+        assert!(prev.file_name().unwrap().len() <= 255);
+        assert_eq!(read(&prev).unwrap().doc.name, "2", "{bytes}");
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 2, "no file left over");
+        let _ = fs::remove_dir_all(dir);
+    }
+    let _ = fs::remove_dir_all(base);
 }
 
 #[test]
@@ -810,11 +896,9 @@ fn origins_that_cannot_be_do_not_read() {
         decode(&serde_json::to_vec(&v).unwrap())
     };
     assert!(with(&|_| {}).is_ok());
-    let broken: [&dyn Fn(&mut serde_json::Value); 6] = [
+    let broken: [&dyn Fn(&mut serde_json::Value); 5] = [
         // An origin note past the end of the origin.
         &|v| v["takes"][q]["notes"][0][4] = 3.into(),
-        // An origin note in a take with no origin.
-        &|v| v["takes"][o]["notes"][0] = serde_json::json!([10, 50, 60, 90, 0]),
         // No such origin take.
         &|v| v["takes"][q]["origin"]["take"] = 77.into(),
         // An origin of an origin.
@@ -828,6 +912,62 @@ fn origins_that_cannot_be_do_not_read() {
     for (i, f) in broken.iter().enumerate() {
         assert!(matches!(with(*f), Err(ReadError::Broken)), "case {i}");
     }
+}
+
+/// A take with no origin reads a note with an index into an origin as a plain note.
+#[test]
+fn an_origin_note_in_a_take_with_no_origin_reads_as_plain() {
+    let song = quantized_song();
+    let mut v: serde_json::Value = serde_json::from_slice(&encode(&song)).unwrap();
+    let o = (v["takes"].as_array().unwrap().iter())
+        .position(|t| t["id"] == 8)
+        .unwrap();
+    v["takes"][o]["notes"][0] = serde_json::json!([10, 50, 60, 90, 0]);
+    let back = decode(&serde_json::to_vec(&v).unwrap()).unwrap();
+    assert_eq!(back, song);
+    // The same in a take shown by a clip.
+    let mut v = rich_json();
+    v["takes"][0]["notes"][1]
+        .as_array_mut()
+        .unwrap()
+        .push(5.into());
+    assert_eq!(read_json(&v), rich_song("x", 3));
+}
+
+/// Joining a quantized clip with its neighbour: the joined take has no origin, and the song
+/// comes back from its file.
+#[test]
+fn a_joined_quantized_clip_comes_back() {
+    use meloet_model::edit::{NewTake, add_recording};
+    let mut song = Song::new_default();
+    let track = song.doc.tracks[0].id;
+    let mut clips = Vec::new();
+    for (origin, start) in [(0, 13), (4 * Q, 0)] {
+        let take = NewTake {
+            origin,
+            length: 4 * Q,
+            notes: vec![Note {
+                start,
+                length: 100,
+                key: 60,
+                velocity: 90,
+                from: None,
+            }],
+            controls: Vec::new(),
+        };
+        let (e, added) = add_recording(&song.doc, track, vec![take], 0).unwrap();
+        song.doc = e.doc;
+        clips.push(added.clip);
+    }
+    let (q, _) =
+        meloet_model::quantize::quantize(&song.doc, clips[0], &[], QuantizeSettings::default())
+            .unwrap();
+    song.doc = q.edit.doc;
+    let (e, joined) = meloet_model::arrange::join_clips(&song.doc, &clips).unwrap();
+    song.doc = e.doc;
+    let (_, c) = song.doc.clip(joined).unwrap();
+    assert!(c.active_take().take.origin.is_none());
+    assert_eq!(decode(&encode(&song)).unwrap(), song);
 }
 
 #[test]
@@ -1067,6 +1207,18 @@ fn effects_and_parameters_that_are_not_known_do_not_cost_the_song() {
     let mut v = rich_json();
     v["song"]["mixer"]["master"]["pan"] = serde_json::json!(900);
     assert_eq!(read_json(&v).doc.master.pan, Pan::new(100));
+    // The same for a return's pan.
+    for pan in [serde_json::json!(12.5), serde_json::json!("left")] {
+        let mut v = rich_json();
+        v["song"]["mixer"]["returns"]["a"]["pan"] = pan;
+        let song = read_json(&v);
+        assert_eq!(song.doc.returns[0].channel.pan, Pan::CENTER);
+        let mut a = (*want.doc.returns[0]).clone();
+        a.channel.pan = Pan::CENTER;
+        assert_eq!(*song.doc.returns[0], a);
+        assert_eq!(song.doc.returns[1], want.doc.returns[1]);
+        assert_eq!(song.doc.master, want.doc.master);
+    }
 
     // A mixer that is not understood: the one of a new song, and the tracks stay.
     let mut v = rich_json();

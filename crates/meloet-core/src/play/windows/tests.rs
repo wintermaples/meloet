@@ -98,7 +98,7 @@ impl FakeHost {
                     };
                     self.plugins.insert(*ticket, values);
                 }
-                Effect::ReloadPlugin { ticket } => {
+                Effect::ReloadPlugin { ticket, .. } => {
                     self.dead.remove(ticket);
                 }
                 Effect::SetPluginState { ticket, state } => {

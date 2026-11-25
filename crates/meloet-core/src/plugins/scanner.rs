@@ -214,9 +214,7 @@ fn run_job(context: &Context, job: ScanJob) {
             let spawned = std::thread::Builder::new()
                 .name(format!("meloet-scan-{n}"))
                 .spawn_scoped(scope, move || {
-                    loop {
-                        let next = queue.lock().unwrap_or_else(|e| e.into_inner()).pop_front();
-                        let Some(todo) = next else { break };
+                    while let Some(todo) = next_todo(context, queue) {
                         if let Some(record) = scan_bundle(context, todo) {
                             (context.news)(ScanNews::Bundle {
                                 job: id,
@@ -241,6 +239,15 @@ fn run_job(context: &Context, job: ScanJob) {
     }
 }
 
+/// The bundle a thread scans next; none once meloet is ending, when its child would only be
+/// started to be killed.
+fn next_todo(context: &Context, queue: &Mutex<VecDeque<Todo>>) -> Option<Todo> {
+    if context.stop.load(Relaxed) {
+        return None;
+    }
+    queue.lock().unwrap_or_else(|e| e.into_inner()).pop_front()
+}
+
 /// Every bundle in the places, each once, in the order of their paths.
 fn bundles_in(places: &[PathBuf]) -> Vec<(PathBuf, PluginFormat)> {
     fn look(dir: &Path, depth: u32, found: &mut Vec<(PathBuf, PluginFormat)>) {
@@ -250,7 +257,10 @@ fn bundles_in(places: &[PathBuf]) -> Vec<(PathBuf, PluginFormat)> {
         for entry in entries.flatten() {
             let path = entry.path();
             if let Some(format) = bundle_format(&path) {
-                found.push((path, format));
+                // A link that points nowhere is no bundle.
+                if path.exists() {
+                    found.push((path, format));
+                }
             } else if depth > 0 && entry.file_type().is_ok_and(|t| t.is_dir()) {
                 look(&path, depth - 1, found);
             }
@@ -573,6 +583,32 @@ mod tests {
     }
 
     #[test]
+    fn no_bundle_is_taken_once_meloet_is_ending() {
+        let root = temp_dir("none-taken-once-ending");
+        let todo = |n: u32| {
+            let path = bundle(&root, &format!("b{n}.lv2"));
+            let stamp = BundleStamp::read(&path).unwrap();
+            Todo::fresh(path, PluginFormat::Lv2, stamp, None)
+        };
+        let queue = Mutex::new((0..3).map(todo).collect::<VecDeque<_>>());
+        let context = Context {
+            exe: root.join("no-host"),
+            env: Vec::new(),
+            timeout: Duration::from_secs(1),
+            stop: Arc::new(AtomicBool::new(false)),
+            news: Arc::new(|_| {}),
+        };
+        assert!(next_todo(&context, &queue).is_some());
+        context.stop.store(true, Relaxed);
+        assert!(next_todo(&context, &queue).is_none());
+        assert_eq!(
+            queue.lock().unwrap().len(),
+            2,
+            "the bundles left are not taken"
+        );
+    }
+
+    #[test]
     fn bundles_are_found_in_a_place_and_in_its_folders() {
         let root = temp_dir("places");
         let a = bundle(&root, "lv2/a.lv2");
@@ -589,6 +625,18 @@ mod tests {
         // A place inside another gives each bundle once.
         let found = bundles_in(&[root.join("lv2"), root.join("lv2")]);
         assert_eq!(found, [(a, PluginFormat::Lv2)]);
+    }
+
+    #[test]
+    fn a_bundle_that_is_a_link_is_found_while_it_points_somewhere() {
+        let root = temp_dir("linked-places");
+        let target = bundle(&root, "elsewhere/a.lv2");
+        let place = root.join("lv2");
+        std::fs::create_dir_all(&place).unwrap();
+        std::os::unix::fs::symlink(&target, place.join("a.lv2")).unwrap();
+        std::os::unix::fs::symlink(root.join("gone.lv2"), place.join("b.lv2")).unwrap();
+        let found = bundles_in(std::slice::from_ref(&place));
+        assert_eq!(found, [(place.join("a.lv2"), PluginFormat::Lv2)]);
     }
 
     #[test]

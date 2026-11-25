@@ -10,6 +10,7 @@
   import { laneMoves, laneOf } from "../automation/laneValue";
   import ParamRow from "./ParamRow.svelte";
   import { paramUi } from "./paramUi.svelte";
+  import { arrowToChosenRow } from "./rowKeys";
 
   let { sel, knobs }: { sel: SelectedSound; knobs: SoundKnobsView } = $props();
 
@@ -45,8 +46,9 @@
     if (knobs.row !== param) send({ type: "selectParam", param });
   }
 
-  // Spec 4 "In the parameters: choose the row above / below" (↑ ↓) and "type a value" (Enter), as in BuiltinList.
+  // Spec 4 "In the parameters: choose the row above / below" (↑ ↓), "move the value" (← →) and "type a value" (Enter), as in BuiltinList.
   function onkeydown(ev: KeyboardEvent): void {
+    if (arrowToChosenRow(ev, list, knobs.row)) return;
     if (ev.ctrlKey || ev.metaKey || ev.altKey || ev.shiftKey || ev.isComposing) return;
     if (ev.key === "Enter") {
       ev.preventDefault();

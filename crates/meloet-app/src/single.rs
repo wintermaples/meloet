@@ -30,6 +30,9 @@ const LONGEST: u64 = 64 * 1024;
 const REACH: Duration = Duration::from_secs(5);
 /// How long either side waits for the other once connected.
 const TALK: Duration = Duration::from_secs(2);
+/// How long a later meloet waits for the answer: the first one starts listening only after
+/// its own start (`Core::start`), which may take longer than `TALK`.
+const ANSWER_WAIT: Duration = Duration::from_secs(30);
 
 /// What a later meloet hands over.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -229,7 +232,7 @@ fn hand_over(path: &Path, handed: &Handed) -> io::Result<()> {
         }
     };
     stream.set_write_timeout(Some(TALK))?;
-    stream.set_read_timeout(Some(TALK))?;
+    stream.set_read_timeout(Some(ANSWER_WAIT))?;
     stream.write_all(&handed.encode())?;
     stream.shutdown(std::net::Shutdown::Write)?;
     let mut answer = Vec::new();
@@ -387,6 +390,32 @@ mod tests {
 
         first.remove_socket();
         assert!(!runtime.join("meloet").join(SOCKET).exists());
+        drop(first);
+        let _ = fs::remove_dir_all(runtime);
+    }
+
+    #[test]
+    fn a_second_meloet_waits_for_a_first_that_is_still_starting() {
+        let runtime = scratch("slow");
+        let Start::First(first) = start(Some(&runtime), my_uid(), &Handed::default()) else {
+            panic!("the first");
+        };
+        let (tx, rx) = mpsc::channel();
+        let listener = first.listener.try_clone().unwrap();
+        let starting = std::thread::spawn(move || {
+            std::thread::sleep(TALK + Duration::from_secs(1));
+            listen(listener, my_uid(), move |h| {
+                let _ = tx.send(h);
+            })
+            .unwrap();
+        });
+        let handed = song("/a.meloet");
+        assert!(matches!(
+            start(Some(&runtime), my_uid(), &handed),
+            Start::Handed
+        ));
+        assert_eq!(rx.recv_timeout(TALK).unwrap(), handed);
+        starting.join().unwrap();
         drop(first);
         let _ = fs::remove_dir_all(runtime);
     }

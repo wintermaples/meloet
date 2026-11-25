@@ -147,6 +147,40 @@ fn setting_and_clearing_are_steps_and_the_takes_stay() {
 }
 
 #[test]
+fn the_shown_take_whole_takes_the_comp_away() {
+    let before = song();
+    let mut doc = before.clone();
+    let mut history = History::default();
+    let span = (BAR, 5 * BAR);
+    let comp = pieces(&[(0, 0), (BAR, 1), (3 * BAR, 2)]);
+    let edit = set_comp(&doc, CLIP, span, &comp).unwrap();
+    history.apply(&mut doc, edit);
+    let with = doc.clone();
+
+    // Take 3 is the shown one: laid over the whole clip it is what plays without a comp.
+    let edit = set_comp(&doc, CLIP, span, &pieces(&[(0, 2)])).unwrap();
+    assert_eq!(edit.step, StepKind::SetComp { clip: CLIP });
+    history.apply(&mut doc, edit);
+    assert!(comp_of(&doc, CLIP).is_empty());
+    assert_eq!(doc, before);
+    assert_eq!(
+        set_comp(&doc, CLIP, span, &pieces(&[(0, 2)])).err(),
+        Some(EditError::Unchanged)
+    );
+    // Another take whole stays a comp.
+    let other = set_comp(&with, CLIP, span, &pieces(&[(0, 1)])).unwrap().doc;
+    assert_eq!(comp_of(&other, CLIP), [(0, 1)]);
+
+    assert_eq!(
+        history.undo(&mut doc),
+        Some(StepKind::SetComp { clip: CLIP })
+    );
+    assert_eq!(doc, with);
+    assert!(history.redo(&mut doc).is_some());
+    assert_eq!(doc, before);
+}
+
+#[test]
 fn what_is_not_a_comp_of_the_clip_does_nothing() {
     let doc = song();
     let span = (BAR, 5 * BAR);

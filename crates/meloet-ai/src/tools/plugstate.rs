@@ -279,8 +279,9 @@ impl Tools {
                  step was made"
             ),
             AiPutEnd::Stopped => "the plugin's process stopped while it took the state (the \
-                 state may be broken); it is loaded again with the song's state, and no step \
-                 was made"
+                 state may be broken); it is loaded again with the state it had before the put \
+                 (with the song's state when an undo or a redo came meanwhile), and no step was \
+                 made"
                 .into(),
             AiPutEnd::Overtaken => "an undo or a redo changed the plugin first, or it was \
                  loaded again with the song's state; no step was made"
@@ -308,18 +309,21 @@ impl Tools {
         ending: &str,
         bytes: Arc<[u8]>,
     ) -> Result<PathBuf, CallToolResult> {
-        self.scratch.clean(crate::scratch::KEEP);
-        let dir = self.scratch.dir().map_err(|e| {
-            failed(format!(
-                "the private temporary folder is not usable ({e}); ask with `inline: true`"
-            ))
-        })?;
-        let path = self.scratch.name(&dir, name, ending);
-        let to = path.clone();
-        off_thread(move || write_state_file(&to, &bytes))
-            .await?
-            .map_err(|e| failed(format!("the state could not be written ({e})")))?;
-        Ok(path)
+        let scratch = self.scratch.clone();
+        let (name, ending) = (name.to_owned(), ending.to_owned());
+        off_thread(move || {
+            scratch.clean(crate::scratch::KEEP);
+            let dir = scratch.dir().map_err(|e| {
+                failed(format!(
+                    "the private temporary folder is not usable ({e}); ask with `inline: true`"
+                ))
+            })?;
+            let path = scratch.name(&dir, &name, &ending);
+            write_state_file(&path, &bytes)
+                .map_err(|e| failed(format!("the state could not be written ({e})")))?;
+            Ok(path)
+        })
+        .await?
     }
 }
 

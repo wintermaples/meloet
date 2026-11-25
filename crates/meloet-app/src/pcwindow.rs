@@ -135,9 +135,11 @@ mod imp {
         }
         if pick == Pick::SongFile {
             let filter = gtk::FileFilter::new();
-            let pattern = format!("*.{}", meloet_core::songfile::EXTENSION);
-            filter.add_pattern(&pattern);
-            filter.set_name(Some(&pattern));
+            let ending = meloet_core::songfile::EXTENSION;
+            for pattern in patterns(&[ending]) {
+                filter.add_pattern(&pattern);
+            }
+            filter.set_name(Some(&format!("*.{ending}")));
             dialog.add_filter(filter);
         }
         if pick == Pick::Sf2 {

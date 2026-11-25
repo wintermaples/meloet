@@ -362,6 +362,26 @@ describe("plugins in the params panel (mock F-ParamFew, F-ParamMany, F-ParamNoWi
     expect(app.sent.at(-1)).toMatchObject({ type: "setPluginParam", param: 0, value: 0.5, commit: true });
   });
 
+  it("UI-PARITY-011: with the focus on the list, ← → move the chosen plugin row and go no further", async () => {
+    const s = scene("paramNoWindow");
+    const sel = s.params.selected!;
+    if (sel.kind !== "plugin") throw new Error("the scene shows a plugin");
+    sel.row = 2;
+    show(s, RightRail);
+    await settle(FAKE_TABLES.mossy);
+    const list = q("[data-test=params-list] .list")!;
+    list.focus();
+    const reached: string[] = [];
+    const seen = (ev: KeyboardEvent) => reached.push(ev.key);
+    document.addEventListener("keydown", seen);
+    app.sent.length = 0;
+    key(list, "ArrowRight");
+    document.removeEventListener("keydown", seen);
+    expect(app.sent).toHaveLength(1);
+    expect(app.sent[0]).toMatchObject({ type: "setPluginParam", param: 2, commit: true });
+    expect(reached).toEqual([]);
+  });
+
   it("built-in effects also take typing after pressing the value twice (unit after the number)", () => {
     show(scene("paramClamped"), RightRail);
     const ratio = qa("[data-test=param-row]")[1]!;
@@ -666,6 +686,25 @@ describe("the rest of 86 in the mixer", () => {
     input.value = "−3";
     key(input, "Enter");
     expect(app.sent).toEqual([{ type: "setGain", strip, db: -3, commit: true }]);
+  });
+
+  it("UI-PARITY-015: after Enter or Esc in the typing box, the fader or pan has the keys again", async () => {
+    const s = scene("mixer");
+    show(s, MixerStrips);
+    const piano = target.querySelector<HTMLElement>('[data-strip^="track-"]')!;
+    for (const [part, close] of [["mixer-fader", "Enter"], ["mixer-pan", "Escape"]] as const) {
+      const el = piano.querySelector<HTMLElement>(`[data-test=${part}]`)!;
+      el.focus();
+      key(el, "Enter");
+      const input = piano.querySelector<HTMLInputElement>("[data-test=param-input]")!;
+      expect(document.activeElement).toBe(input);
+      input.value = "−3";
+      key(input, close);
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(piano.querySelector("[data-test=param-input]")).toBeNull();
+      expect(document.activeElement, part).toBe(el);
+    }
   });
 
   it("reading dB and pan, one ↑ ↓ step", () => {

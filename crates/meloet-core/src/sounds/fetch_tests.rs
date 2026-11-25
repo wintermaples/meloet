@@ -595,6 +595,33 @@ fn a_link_that_ran_out_is_followed_again_from_the_catalog() {
     }
 }
 
+/// 416, or 206 with no `Content-Range`, to a request for the whole file: said as a cut, not
+/// asked again and again.
+#[test]
+fn a_part_answered_to_a_request_for_the_whole_file_is_a_cut() {
+    for (ways, asked) in [
+        (&[Way::Status(416)][..], 1),
+        (&[Way::Status(206)][..], 1),
+        // Cut, then 416 to the rest and to the whole.
+        (&[Way::Cut(1000), Way::Status(416)][..], 3),
+    ] {
+        let server = Server::start();
+        let rig = Rig::new("pack-416", &server, &[("common", ways)], |_| {});
+        let told = rig.fetch(1);
+        assert!(
+            matches!(
+                last(&told),
+                PackNews::Failed {
+                    failure: PackFailure::CutOff,
+                    ..
+                }
+            ),
+            "{ways:?}: {told:?}"
+        );
+        assert_eq!(server.requests("common-c1.tar").len(), asked, "{ways:?}");
+    }
+}
+
 #[test]
 fn a_full_disk_is_said_before_and_while_writing() {
     let server = Server::start();

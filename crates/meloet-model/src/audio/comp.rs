@@ -120,7 +120,8 @@ fn with_comp(doc: &Doc, (ti, ci): (usize, usize), comp: Vec<CompPiece>) -> Doc {
 }
 
 /// 「いいとこ取り」: the comp of `clip` becomes `pieces`, when the clip still starts at `start`
-/// and ends at `end` (what the pieces were laid out for).
+/// and ends at `end` (what the pieces were laid out for). The shown take whole is no comp:
+/// the comp the clip has goes.
 ///
 /// `WrongKind` for a keys clip. `Unchanged` for a clip with fewer than two takes, other
 /// edges, pieces that break the rules of a comp or are none, and pieces that say what the
@@ -150,7 +151,15 @@ pub fn set_comp(
         return Err(EditError::Unchanged);
     }
     Ok(Edit {
-        doc: with_comp(doc, (ti, ci), pieces.to_vec()),
+        doc: with_comp(
+            doc,
+            (ti, ci),
+            if pieces == now {
+                Vec::new()
+            } else {
+                pieces.to_vec()
+            },
+        ),
         step: StepKind::SetComp { clip },
     })
 }

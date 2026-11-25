@@ -167,6 +167,9 @@ pub enum EngineCommand {
     /// Empties the sample seat: its instrument fades out and comes back on the retired ring.
     StopSample,
     TestTone,
+    /// The keyboards are gone: what they held on the play target is let go (their keys, and
+    /// their pedal, bend and modulation back to rest), and the arpeggio ends. What the song
+    /// and an `Audition` sound goes on.
     AllNotesOff,
     /// Sounds keys on a track, as the keyboard would, and lets go of the keys the last
     /// `Audition` sounded. Not recorded.
@@ -686,6 +689,44 @@ impl EngineMeters {
 /// How long an instrument that was replaced goes on sounding, fading out under the new one, so
 /// that what it was sounding does not end in a click.
 pub const FADE_S: f32 = 0.010;
+
+const SUSTAIN: u8 = 64;
+const MODULATION: u8 = 1;
+
+/// What the keyboards hold on the play target ([`EngineCommand::AllNotesOff`] lets go of it).
+#[derive(Default)]
+struct Hand {
+    /// The keys that sound by themselves, one bit a note: not those the arpeggio took.
+    keys: u128,
+    sustain: bool,
+    modulation: bool,
+    bend: bool,
+}
+
+impl Hand {
+    fn saw(&mut self, event: InstrumentEvent) {
+        match event {
+            InstrumentEvent::NoteOn { note, velocity } if note <= 127 && velocity > 0 => {
+                self.keys |= 1 << note;
+            }
+            InstrumentEvent::NoteOn { note, .. } | InstrumentEvent::NoteOff { note }
+                if note <= 127 =>
+            {
+                self.keys &= !(1 << note);
+            }
+            InstrumentEvent::Control {
+                controller: SUSTAIN,
+                value,
+            } => self.sustain = value > 0,
+            InstrumentEvent::Control {
+                controller: MODULATION,
+                value,
+            } => self.modulation = value > 0,
+            InstrumentEvent::PitchBend { value } => self.bend = value != 0,
+            _ => {}
+        }
+    }
+}
 
 struct Track {
     instrument: Option<Box<dyn Instrument>>,
@@ -1466,6 +1507,9 @@ pub struct Engine {
     returns: [Strip; 2],
     /// Its fader and pan come before its slots (docs/architecture.md 19-11).
     master_strip: Strip,
+    /// How many frames the master's inserts delay everything by in this block: the song
+    /// reaches the ear that much after the DAC, and the metronome waits as long.
+    ear: u32,
     master_auto: MasterAuto,
     midi: Consumer<MidiIn>,
     /// The keys of the PC keyboard ([`EngineHandle::typed_in`]), read with `midi` in time order.
@@ -1497,6 +1541,7 @@ pub struct Engine {
     tone: TestTone,
     /// The track and keys the last `Audition` sounded, until they are let go.
     audition: Option<(usize, Chord)>,
+    hand: Hand,
     last_callback: Option<(Instant, f64)>,
     /// What goes out is cut to ±1.0 (0 dB), to spare ears and speakers.
     clamp_out: bool,
@@ -1572,6 +1617,7 @@ impl Engine {
             auto_ticks: vec![0.0; config.max_frames.div_ceil(MIX_STEP) + 1].into_boxed_slice(),
             returns: [Strip::new(), Strip::new()],
             master_strip: Strip::new(),
+            ear: 0,
             master_auto: MasterAuto::new(config.max_frames),
             midi: midi_rx,
             typed: typed_rx,
@@ -1593,6 +1639,7 @@ impl Engine {
             plugin_block: plugin_block.clone(),
             tone: TestTone::idle(),
             audition: None,
+            hand: Hand::default(),
             last_callback: None,
             clamp_out: true,
             mono: Mono::default(),
@@ -1717,6 +1764,7 @@ impl Engine {
         self.probe = Probe::new(sample_rate.max(1));
         self.audition = None;
         self.arp_reset();
+        self.hand = Hand::default();
         self.click = Click::idle();
         self.last_callback = None;
     }
@@ -1727,6 +1775,7 @@ impl Engine {
     /// ([`EngineHandle::drop_retired`]) and call again.
     pub fn settle(&mut self) {
         self.arp_reset();
+        self.hand = Hand::default();
         self.read_commands(BlockTiming::default());
         for track in self.tracks.iter_mut().chain([&mut self.sample]) {
             track.end_fades(&mut self.retired);
@@ -1780,7 +1829,10 @@ impl Engine {
         {
             self.meters.late_callbacks.fetch_add(1, Relaxed);
         }
-        self.last_callback = Some((began, block_s));
+        // A callback with no frames is no block: the next one is due after the last real one.
+        if frames > 0 {
+            self.last_callback = Some((began, block_s));
+        }
         self.meters.callbacks.fetch_add(1, Relaxed);
         self.meters.last_frames.store(frames as u32, Relaxed);
         let out_delay = timing.playback_us.saturating_sub(timing.callback_us);
@@ -1808,6 +1860,12 @@ impl Engine {
         for track in self.tracks.iter_mut() {
             let instrument = track.instrument.as_ref().map_or(0, |i| i.latency());
             track.lookahead = instrument.saturating_add(track.strip.latency());
+        }
+        let ear = self.master_strip.latency();
+        if ear != self.ear {
+            self.click
+                .delay_waiting(i64::from(ear) - i64::from(self.ear));
+            self.ear = ear;
         }
         self.aim_streams();
         self.read_midi(timing, u64::MAX);
@@ -2141,13 +2199,7 @@ impl Engine {
                     }
                 }
                 EngineCommand::TestTone => self.tone.start(self.sample_rate),
-                EngineCommand::AllNotesOff => {
-                    self.arp_all_off(timing);
-                    self.audition = None;
-                    for instrument in self.tracks.iter_mut().filter_map(|t| t.instrument.as_mut()) {
-                        instrument.event(InstrumentEvent::AllNotesOff);
-                    }
-                }
+                EngineCommand::AllNotesOff => self.keyboards_let_go(timing),
                 EngineCommand::Audition {
                     track,
                     keys,
@@ -2186,8 +2238,14 @@ impl Engine {
                         && t.click_audible()
                     {
                         let (sound, gain) = (self.click_sound, self.click_gain);
-                        self.click
-                            .start(beat.downbeat, self.sample_rate, sound, gain);
+                        let delay = self.ear as usize;
+                        (self.click).start_after(
+                            delay,
+                            beat.downbeat,
+                            self.sample_rate,
+                            sound,
+                            gain,
+                        );
                     }
                     // Cannot fail: checked above, and this is the only producer.
                     let _ = self.retired_maps.push(old);
@@ -2262,11 +2320,19 @@ impl Engine {
                         if self.tracks[track].ahead_wrapped {
                             let slot = &mut self.tracks[track];
                             slot.lane.silence(slot.instrument.as_deref_mut());
-                            self.seek_lane(track);
+                            slot.ahead_wrapped = false;
+                            if self.transport.lane_plays(track) {
+                                self.seek_lane(track);
+                            }
                         }
                     }
                 }
-                EngineCommand::SetMetronome { on } => self.transport.metronome = on,
+                EngineCommand::SetMetronome { on } => {
+                    self.transport.metronome = on;
+                    if !self.transport.click_audible() {
+                        self.click.drop_waiting();
+                    }
+                }
                 EngineCommand::SetMonoListen { on } => {
                     self.mono.target = if on { 1.0 } else { 0.0 }
                 }
@@ -2278,6 +2344,9 @@ impl Engine {
                     self.click_sound = sound;
                     self.click_gain = gain;
                     self.transport.click_recording_only = recording_only;
+                    if !self.transport.click_audible() {
+                        self.click.drop_waiting();
+                    }
                 }
                 EngineCommand::Play { from } => {
                     self.end_recording(timing);
@@ -2347,10 +2416,37 @@ impl Engine {
         }
     }
 
+    /// [`EngineCommand::AllNotesOff`].
+    fn keyboards_let_go(&mut self, timing: BlockTiming) {
+        self.arp_all_off(timing);
+        let hand = std::mem::take(&mut self.hand);
+        let Some(instrument) = self
+            .play_target
+            .and_then(|t| self.tracks[t].instrument.as_mut())
+        else {
+            return;
+        };
+        for note in (0..128u8).filter(|n| hand.keys & (1 << n) != 0) {
+            instrument.event(InstrumentEvent::NoteOff { note });
+        }
+        if hand.bend {
+            instrument.event(InstrumentEvent::PitchBend { value: 0 });
+        }
+        if hand.modulation {
+            let (controller, value) = (MODULATION, 0);
+            instrument.event(InstrumentEvent::Control { controller, value });
+        }
+        if hand.sustain {
+            let (controller, value) = (SUSTAIN, 0);
+            instrument.event(InstrumentEvent::Control { controller, value });
+        }
+    }
+
     fn set_play_target(&mut self, target: Option<usize>) {
         if target == self.play_target {
             return;
         }
+        self.hand = Hand::default();
         if let Some(instrument) = self
             .play_target
             .and_then(|t| self.tracks[t].instrument.as_mut())
@@ -2453,7 +2549,7 @@ impl Engine {
             .clock
             .segment_at(now)
             .filter(|s| s.session == t.session && s.state == TransportState::Playing)
-            .map_or_else(|| t.tick(), |s| heard(&s, now, t.map_for(&s)).tick);
+            .map_or(t.run_from as f64, |s| heard(&s, now, t.map_for(&s)).tick);
         let from = heard_tick.max(0.0).floor() as u64;
         self.end_run(timing.callback_us, timing);
         let t = &mut self.transport;
@@ -2533,6 +2629,7 @@ impl Engine {
     fn silence_lanes(&mut self) {
         for track in self.tracks.iter_mut() {
             track.lane.silence(track.instrument.as_deref_mut());
+            track.ahead_wrapped = false;
         }
     }
 
@@ -2650,6 +2747,7 @@ impl Engine {
         if self.arp_key(midi, timing) {
             return;
         }
+        self.hand.saw(midi.event);
         if let Some(instrument) = self
             .play_target
             .and_then(|t| self.tracks[t].instrument.as_mut())
@@ -2748,6 +2846,8 @@ impl Engine {
             ticks_per_frame: t.speed_at(tick) / t.sample_rate,
             sec0: t.anchor_sec + t.frames as f64 / t.sample_rate,
             map_gen: t.map_gen,
+            ear: self.ear,
+            until_us: None,
             state: t.state,
             session: t.session,
             lap: t.lap,
@@ -2828,9 +2928,9 @@ impl Engine {
         let t = &mut self.transport;
         if t.click_frame <= t.frames {
             if t.click_audible() {
-                let (sound, gain) = (self.click_sound, self.click_gain);
-                self.click
-                    .start(t.next_click.downbeat, self.sample_rate, sound, gain);
+                let (sound, gain, delay) = (self.click_sound, self.click_gain, self.ear as usize);
+                let downbeat = t.next_click.downbeat;
+                (self.click).start_after(delay, downbeat, self.sample_rate, sound, gain);
             }
             t.advance_click();
         }
@@ -2949,8 +3049,8 @@ impl Engine {
             feed.take(frames, &mut self.input_bus);
         }
         let fade = fade_frames(self.sample_rate);
-        // The returns and the master are not cut into stretches: they hear the tempo at the
-        // first frame of the piece.
+        // The returns and the master are not cut into stretches: they hear the tempo, and their
+        // plugins are told the transport, at the first frame of the piece.
         let mut piece_ctx = None;
         self.master_auto.count = 0;
 
@@ -2966,7 +3066,7 @@ impl Engine {
             let ctx = EffectContext {
                 tempo_bpm: told.tempo_bpm as f32,
             };
-            piece_ctx.get_or_insert(ctx);
+            piece_ctx.get_or_insert((ctx, told));
             self.automate(to - from);
             self.master_auto.mark(&self.transport, from, to);
             // Every instrument that renders in another process starts on this stretch now.
@@ -3014,9 +3114,10 @@ impl Engine {
             }
             from = to;
         }
-        let Some(ctx) = piece_ctx else {
+        let Some((ctx, told)) = piece_ctx else {
             return;
         };
+        self.plugin_block.set_transport(&told);
 
         let [master_l, master_r, sums @ ..] = &mut self.sums;
         let (master_l, master_r) = (&mut master_l[..frames], &mut master_r[..frames]);

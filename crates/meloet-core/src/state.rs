@@ -304,7 +304,9 @@ pub enum Input {
     },
     /// The files reached the size a wav file can have, or the disk refused: the recording
     /// is to stop.
-    VocalsCannotGoOn,
+    VocalsCannotGoOn {
+        reason: meloet_protocol::DiskStop,
+    },
     /// The answer to [`Effect::LatencyClick`]: what the round trip of the click took more
     /// than the PC says, in microseconds; `None`: it did not come back.
     LatencyAnswer {
@@ -481,6 +483,10 @@ pub enum StateAsk {
     },
     /// For the copy 「トラックを複製」 makes of its track; the number of the duplicate.
     Copy(u64),
+    /// For the step of the shelf's 「決める」 that made the auditioned plugin a track's
+    /// instrument, which is to hold its state. `at`: the song and the number of its `Doc`
+    /// right after that step; `puts` as for `Param`.
+    Confirm { at: (u32, u64), puts: u32 },
 }
 
 /// Where [`Effect::SaveSong`] writes.
@@ -502,7 +508,8 @@ pub enum Effect {
     CloseOutput,
     /// Play the test tone on the open stream.
     TestTone,
-    /// Release every sounding note and forget the held keys.
+    /// The keyboards are gone: let go of what they held and forget the held keys. The song's
+    /// notes keep sounding.
     AllNotesOff,
     SaveSettings(Box<Settings>),
     /// Keep the song files opened or saved lately (`crate::recent`) in the state folder.
@@ -599,10 +606,12 @@ pub enum Effect {
         ticket: u64,
         outputs: meloet_model::PluginOutputs,
     },
-    /// Start a new process for the stopped plugin loaded under `ticket`, with the state
-    /// remembered for it. Answer as for [`Effect::LoadPlugin`], with the same ticket.
+    /// Start a new process for the stopped plugin loaded under `ticket`, at `sample_rate`,
+    /// with the state remembered for it. Answer as for [`Effect::LoadPlugin`], with the same
+    /// ticket.
     ReloadPlugin {
         ticket: u64,
+        sample_rate: u32,
     },
     /// Ask the plugin loaded under `ticket`, off the core thread. Answers come as
     /// [`Input::PluginSaid`].
@@ -636,10 +645,12 @@ pub enum Effect {
     /// Make the files of a recording in the work folder and start writing the input into
     /// them, before the engine is told to record. Answer with [`Input::VocalsStarted`] or
     /// [`Input::VocalsNotStarted`]. `x_us`: what the round trip takes more than the PC says.
+    /// `taken`: the names of the song's audio table, which a new file must not get.
     StartVocalRecording {
         files: Vec<VocalFileAsk>,
         format: RecordFormat,
         x_us: i64,
+        taken: Vec<String>,
     },
     /// Write what is still on its way and close the files. Answer with
     /// [`Input::VocalsWritten`].
@@ -1391,7 +1402,14 @@ impl Model {
                 self.play
                     .vocals_started(names, path.as_deref(), &mut effects);
             }
-            Input::VocalsNotStarted => self.play.vocals_not_started(),
+            Input::VocalsNotStarted => {
+                if let Some(keys) = self.play.vocals_not_started() {
+                    self.notice = Some(StatusMessage::VocalsNotRecorded { keys });
+                    if !keys {
+                        self.play.stop_recording(&mut effects);
+                    }
+                }
+            }
             Input::VocalsWritten(written) => {
                 let ours = self.play.recording_vocals();
                 let skipped = written.gap_count.saturating_add(written.dropped_blocks);
@@ -1406,8 +1424,9 @@ impl Model {
                 }
             }
             Input::VocalFaults { gaps, dropped } => self.play.vocal_faults(gaps, dropped),
-            Input::VocalsCannotGoOn => {
+            Input::VocalsCannotGoOn { reason } => {
                 if self.play.recording_vocals() {
+                    self.play.vocals_cut(Cut::Disk(reason));
                     self.play.stop_recording(&mut effects);
                 }
             }
@@ -1702,7 +1721,7 @@ impl Model {
             Command::Back => {
                 if !self.plugins.close_stopped()
                     && !self.cancel_song_dialog()
-                    && self.dialog.take().is_none()
+                    && !self.settings_back()
                     && !self.play.end_audition(effects)
                 {
                     self.bands.back();
@@ -1849,7 +1868,11 @@ impl Model {
             }
             Command::ToggleLoop => self.play.toggle_loop(effects),
             Command::SetLoop { from_bar, to_bar } => self.play.set_loop(from_bar, to_bar, effects),
-            Command::SelectClip { clip } => self.play.select_clip(clip),
+            Command::SelectClip { clip } => {
+                let before = self.play.selected_vocal();
+                self.play.select_clip(clip);
+                self.no_input_if_vocal_selected(before);
+            }
             Command::SelectTrack { track, from_arm } => {
                 if let Some(n) = self.play.select_track(track, from_arm) {
                     self.notice = Some(n);
@@ -2051,7 +2074,11 @@ impl Model {
                 }
             }
             Command::StopSample => self.play.stop_sample(effects),
-            Command::SelectClips { clips, mode } => self.play.select_clips(clips, mode),
+            Command::SelectClips { clips, mode } => {
+                let before = self.play.selected_vocal();
+                self.play.select_clips(clips, mode);
+                self.no_input_if_vocal_selected(before);
+            }
             Command::SelectAllClips => self.play.select_all_clips(),
             Command::CopyClips { clips } => self.play.copy_clips(&clips),
             Command::CutClips { clips } => self.play.cut_clips(&clips, effects),
@@ -2701,6 +2728,15 @@ impl Model {
         }
     }
 
+    /// A click on a clip made a vocal track the selected one: with no input, says so as a
+    /// click on its header does.
+    fn no_input_if_vocal_selected(&mut self, before: Option<meloet_model::TrackId>) {
+        let now = self.play.selected_vocal();
+        if now.is_some_and(|v| before != Some(v)) && !self.has_input() {
+            self.notice = Some(StatusMessage::NoInput);
+        }
+    }
+
     pub(super) fn say_missing(&mut self) {
         let library = self.library_view();
         let sounds = self.play.available_sounds();
@@ -3019,6 +3055,16 @@ impl Model {
         self.chosen.is_none() && self.all_keyboards().next().is_some()
     }
 
+    /// Esc in the sound settings: from 「くわしい設定」 back to the first page, from the first page closed (the draft is dropped).
+    fn settings_back(&mut self) -> bool {
+        match &mut self.dialog {
+            Some(dialog) if dialog.advanced_open => dialog.advanced_open = false,
+            Some(_) => self.dialog = None,
+            None => return false,
+        }
+        true
+    }
+
     pub fn view(&self) -> AppState {
         let audio = self.audio_view();
         let chosen_state = self.chosen_state();
@@ -3227,6 +3273,12 @@ impl Model {
                 FileDropView { addable: true, .. } => StatusMessage::Sf2Dragging,
                 _ => StatusMessage::NotSf2Dragging,
             });
+        }
+        // Over the recording, which goes on without the vocals.
+        if let Some(m @ (StatusMessage::VocalsNotRecorded { .. } | StatusMessage::NoInput)) =
+            &self.notice
+        {
+            return Some(m.clone());
         }
         if let Some(m) = self.play.moving_status() {
             return Some(m);

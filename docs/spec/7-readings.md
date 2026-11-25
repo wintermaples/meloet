@@ -36,6 +36,7 @@ In the "Basis" column: "spec 3" is chapter 3 of this spec; "mock Main" is a mock
 | Two or more keyboards | The rule that widens the name field for a name over 8 characters counts the whole 「名前 +N」. Hovering shows all the names joined with 「 ・ 」. 「入口:」 on the status line shows the name of one keyboard only | the developers' decision |
 | Black keys with an even width (the thin keys at 125 %) | They cannot sit on the middle of a line, so the extra 1 dot goes on the right | the developers' decision |
 | A lower band that does not fit even alone | Its lowest height is its toolbar, 32 | the developers' decision |
+| A field of `settings.json` that does not read (another type) | That field takes its default; the other fields are kept, and so is the rest at the next save. A file that is not JSON, or of another version, still gives the defaults | decided by the lead, 2026-11-25, bug sweep CORE-FILES |
 
 ## A-4 Round 2 (recording, transport, arrange)
 
@@ -53,6 +54,9 @@ In the "Basis" column: "spec 3" is chapter 3 of this spec; "mock Main" is a mock
 | Count-in bars, recorded clip names, first save | — | When the count-in is 「なし」, the button value is 「なし」. A recorded clip gets the track name (「ピアノ」). The first save does not ask: it goes to 「はじめての曲/はじめての曲.meloet」 in the PC's Music folder (「はじめての曲 2」 if that name is already used) | the owner's decision |
 | Loop 「5–9」 | The accent band on the ruler of Main | From the start of bar 5 to the start of bar 9 (the numbers of the bar lines) | the developers' reading of the mock |
 | Behaviour around recording (where play and record start, the last half beat of the count-in, not playing the earlier takes of the track being recorded, a recording with no notes, take switching that goes round, actions not taken during the count-in and recording, and so on) | — | Chapters 10, 12 and 13 of [`docs/architecture.md`](../architecture.md) | the developers' decision |
+| A pedal, bend or other controller move that comes late for an ended loop pass | — | It is the value the pass going on starts with (the head of its take) and makes no point at the tick it came with; with no pass going on yet, the next pass starts from it. A pedal let go late does not leave the next pass with the pedal down | decided by the lead, 2026-11-25 |
+| 「自動で残してある 1 つ前の状態」 after a save with nothing changed | Spec 6 (the song file is broken): 「自動で残してある 1 つ前の状態からなら開けます」 | A save whose file would be the same bytes as the song file there leaves `.prev` as it is, so it stays the state before the last change. The song is still saved and shows as saved. | the owner's decision (user:2026-11-25), bug sweep CORE-FILES |
+| A long song name and its folder | — | A name over 200 bytes (66 Japanese characters) is cut to 200 bytes between two characters for the song's folder and file, and the song's name follows, as it does for 「 2」. A song file whose name is already longer still saves: the names of its temporary files and of `.prev` are cut to fit. | decided by the lead, 2026-11-25, bug sweep CORE-FILES |
 
 ## A-5 Round 3 (piano roll and clips)
 
@@ -97,6 +101,7 @@ In the "Basis" column: "spec 3" is chapter 3 of this spec; "mock Main" is a mock
 | Input box of the change-all row | Spec 2 「入力の枠」 | Border gray.6 normally, gray.8 on hover, gray.10 while typing, gray.5 with text gray.7 when disabled, rec when broken. The heading can be opened with nothing selected (the rows inside are disabled) | spec 2 |
 | Wording of a rounded value | — | In the note fields, the form of the field (「3.4.0000」). When 2 or more parts were rounded, only one is reported, in the order clip range → bar → beat → tick | the developers' reading |
 | What is read out of range | — | Velocity: negative numbers and decimals (rounded half up). Position: bar 0 and negative numbers, beat 0 and beats above the top number, ticks of one beat or more. Note names: C10, C-2 and so on. None of these is made 「こわれた」 | the developers' reading |
+| 「かけなおす」 with 「始まりだけ」 after a length was changed by hand | Spec 3 | 「始まりだけ」 moves only the start (from the recorded position); the length is the one the note has now, so a length changed by hand is kept. 「始まりと終わり」 still takes both ends from the recorded note, and 「もとの位置へ戻す」 still puts back the recorded start and length | user:2026-11-25 |
 
 ## A-8 Round 3, part 1 (arrange, transport, input meter)
 
@@ -115,6 +120,7 @@ In the "Basis" column: "spec 3" is chapter 3 of this spec; "mock Main" is a mock
 | Input meter with no keyboard | 「ベロシティ」 and 「固定」 are shown. The reading only while fixed is on (the fixed value). No bar. This differs from mock F-Connect1 | the developers' reading (velocity lock can be used with no keyboard) |
 | ↑ ↓ in the field of the fixed value | By 1; with Shift, by 10. It does not go outside 1–127 | the tempo field |
 | Position input box | 10 characters wide. Readable forms: bar[.beat[.tick]]. Spaces around the dots and full-width characters are fine | the developers' decision |
+| 「貼りつけ」 over a track of the other kind | Disabled when the first clip kept (the earliest, the one that goes on the track pasted onto) is of the other kind than that track: keys clips go on keyboard tracks, audio clips on vocal tracks. The same for the right-click on an empty place (the track pressed), on a clip (the track selected once the right-click arrives), Mod V and 「編集 ▸ 貼りつけ」 (the selected track). The core tells the kind (`ArrangeView::clipboard_kind`, protocol 39). The other clips of a group kept from several tracks stay Rust's call. | decided by the lead, 2026-11-25, bug sweep VERIFY-UI |
 
 ## A-9 Round 3, part 1 (menu bar and context menus)
 
@@ -128,6 +134,8 @@ In the "Basis" column: "spec 3" is chapter 3 of this spec; "mock Main" is a mock
 | An on mark in a disabled row | Mark border gray.5, dot inside gray.7 | spec 2 (disabled) |
 | Stacking order | Lists (menu bar, context menu) are above dialogs and below term tips | the lists before |
 | Space | When text is not being typed, both the press and the release of Space are stopped (a button with focus is not pressed) | the table of spec 4 |
+| Esc and Enter on 「くわしい設定」 (the sound settings' second page) | Esc goes back to the first page (as 「◂ 音の設定」); Enter is the bright button 「閉じる」. The first page as before: Esc closes it, Enter is 「これで決まり」. | decided by the owner, 2026-11-25 (bug sweep, later list UI-SHELL #1, #2) |
+| Keys while a dialog is in front | The keys that act on the chosen parts behind the dialog do nothing: one letter (with Shift too), digits, arrows (Alt ← → too), Delete, F2, and Mod A, X, C, V, D, J, R. Still working: Esc and the dialog's Enter, Space (play / stop), Home, F10, and the other Mod keys (new, open, save, save as, export, sound settings, quit, undo, redo, zoom, the screen scale, 「キーで弾く」), which are rows of the menu bar that stays usable. Keys a part inside the dialog takes are its own. | spec 4 says nothing of dialogs; the developers' reading of the lead's rule (bug sweep, later list FIX-fix-ui-keys #1, 2026-11-25) |
 
 ## A-10 Version 5 of the design
 
@@ -179,6 +187,7 @@ In the "Basis" column: "spec 3" is chapter 3 of this spec; "mock Main" is a mock
 | Record button during audition | The mock keeps the red ring. Recording cannot be done during audition, so it is disabled | spec 3 (recording cannot be done) |
 | 「ためし弾き ・ （名前）」 in the input meter | Mock F4-ShelfReplace breaks it into 2 lines. It stays 1 line; if it does not fit, 「…」 | spec 1 (it is never removed) |
 | Instrument name in the heading during the audition of a replace | The name of the instrument being tried, in accent (「…」 if it does not fit) | mock F4-ShelfReplace |
+| The selected track when a step takes it away | The track now at its place (the one that was below it), or the last track when there is none, as 「トラックを消す」 does: the undo of 「トラックを足す」 or 「トラックを複製」, a history jump. | decided by the lead, 2026-11-25, bug sweep (later list) |
 
 ## A-13 Round 4, part 2 (drum piano roll, 「meloet について」)
 
@@ -277,6 +286,7 @@ In the "Basis" column: "spec 3" is chapter 3 of this spec; "mock Main" is a mock
 | A plugin that is bypassed and also stopped | In the summary when the mixer opens, it is only in the 「止まっています」 part. | the developers' decision |
 | The mixer summary and the window texts while a stopped notice stays | The summary when the mixer opens, and the window texts (「…この画面より大きい窓です」 too), are shown once above the stopped notice; the next action brings back the stopped notice. Reason: the summary names the stopped slots itself, and if it were under the notice, half of 「止まっています」 would never be seen; a window text answers what was just pressed. Other notices stay under the stopped notice. | the developers' decision |
 | Text that is not a number, typed in the plugin panel (spec 3, 86-6) | For VST3, it is read only when it is the same as a text that the plugin shows itself (step names, On, Off). Note names for Surge XT (「c4」) are treated as not readable (JUCE plugins answer even to text they cannot read, so meloet cannot tell). | the developers' decision |
+| 「決める」 of a plugin tried on the shelf (spec 3, Y14, Y15) | The one step of 「決める」 holds the plugin as it sounds then: what was changed in its window while it was tried goes into the song with the new track (or the replaced instrument), so the sound, the song, undo and the recovery file agree; redo brings the track back with it. Nothing changed: the song has it "as it starts". If the plugin does not answer (it stopped), the track is made without it, with no text. If another step comes before the plugin answers (a few ms), what was changed becomes a step of its own, 「（プラグイン）の窓で変えた所」, after it. | user:2026-11-25; the step after another one is the developers' decision |
 
 ## A-18 The params panel and the mixer on the screen (round 5, part 3, second pass)
 
@@ -347,6 +357,8 @@ In the "Basis" column: "spec 3" is chapter 3 of this spec; "mock Main" is a mock
 | Pressing outside the name box | The box closes and the name does not change. | the developers' reading (the comment in the protocol) |
 | 「96.00 ・ 4/4」 on the folded row | The values at the play line. | spec 3 |
 | Horizontal zoom of the arrange | The px of one bar is counted with a bar of the time signature at the start of the song (a 3/4 bar is 3/4 of the width of a 4/4 bar). | positions are straight in ticks |
+| Deleting the last tempo point when the point before it ramps | The ramp of the point before it (of the head when no point is left) is cleared in the same step; undo brings the point and the ramp back. A point added after it later is then not ramped into without the person asking. | decided by the lead, 2026-11-25 |
+| A press on a marker while counting in or recording | Nothing: the marker is not selected and the play line stays, as a click on the ruler then. | decided by the lead, 2026-11-25, bug sweep (later list) |
 
 ## A-21 Automation (round 6, part 2)
 
@@ -362,6 +374,7 @@ In the "Basis" column: "spec 3" is chapter 3 of this spec; "mock Main" is a mock
 | The step when moving by hand puts a band to rest | The value and the rest go into one step such as 「音量を変える」 (the rest goes only into the song of that step). If the value does not change, it is 1 step 「オートメーションを休ませる」. | architecture 21-11 |
 | Moving by hand a band with no points | It does not rest (the band moves nothing). It can be written with 「● 書く」. | the developers' reading |
 | Values when a band is deleted | Volume, pan, send, mute and built-in effects stop at the value at the play line. A plugin keeps the value that the band sent last. | the developers' reading |
+| The M of a track head under a mute lane | Shows what the mixer's M shows: while the lane moves, its value at the play line; while it rests or a hand holds it, the mute set by hand. | decided by the lead, 2026-11-25, bug sweep (after CORE-PLAY-B-002) |
 
 ## A-22 The undo history band (round 6, part 3)
 
@@ -398,6 +411,9 @@ In the "Basis" column: "spec 3" is chapter 3 of this spec; "mock Main" is a mock
 | Numbers in "the developers' provisional decisions stay" (spec 3) that also got a text in spec 6 or 41-A (94-27, 36, 44, 46, 51, 53, 75) | The behavior stays; the text is the one in spec 6 or 41-A. | the developers' reading |
 | The slim input meter split into left and right (the spec 3 example, and R12-Meters, have no track name and no monitor) | The current form, with the track name, stays (spec 3 says that the developers' form stays). | the developers' reading |
 | Texts made by the developers in round 7 (`builder:2026-11-21`) for questions B-94-19, B-94-81 and B-94-86 | 「測った数 ・ 12.4 ms」 (spec 3, 94-19), the export status line without 「残り 約 …」 while the time left is not known, and 「実時間で書き出しています（3:02）。」 (spec 6, "Exporting", "Exporting in real time") are now in the body. The owner approved them on 2026-11-24; their tags in `ui/src/text/ja.ts` stay `builder:2026-11-21`. | the owner's decision (user:2026-11-24) |
+| Texts when a recording or a file cannot be written (`msg.vocalsNotRecorded`, `msg.vocalsNotRecordedKeys`, `msg.recordingStoppedDisk`, `msg.recordingStoppedFileFull`, `msg.audioNotCopied`, `builder:2026-11-25`) | Spec 6 has no text for these. The files of the vocal tracks cannot be made as a recording starts: 「歌を録れません。作業の場所に書けません。」 (English "Cannot record the vocal. Cannot write to the work place."), said at once, over the recording; a recording with keys goes on with them and says 「歌を録れません。作業の場所に書けません。鍵盤はこのまま録ります。」 ("… The keyboard is still being recorded."), one of vocal tracks alone is stopped. A recording stopped because the disk refused a write: 「ディスクに書けなくなったので、録音を止めました。録れた所までは残しています。」 ("The disk could not be written to, so recording stopped. What was recorded so far is kept."); because a file reached the size a wav file can have: 「音のファイルがいちばん大きい所まで来たので、録音を止めました。録れた所までは残しています。」 ("The audio file reached its largest size, so recording stopped. …"); both said once the take is in. A file that reads and could not be copied into the work place (brought in, or found with 「さがす…」): 「「{file}」を入れられませんでした。作業の場所に書けません。」 ("Could not bring in “{file}”. Cannot write to the work place."). Where the words come from: 「作業の場所に書けません」 `msg.bounceFailedWrite`; 「録音を止めました。録れた所までは残しています。」 `msg.inputLost` (spec 6); 「…ので、録音を止めました」 `msg.recordingStoppedAudioSystem` (spec 6); 「歌」 for what a vocal track records, as `recovery.vocalKept` and `msg.diskTooSlow` (spec 6; the lead's draft said 「声」); 「鍵盤」 as `msg.recordingKeysAndVocal` (spec 6); 「録れ…」 as 「録れた所」; 「ディスク」 as `msg.diskTooSlow`; 「音のファイル」 as `msg.diskTooSlow` and `msg.audioFilesMissing` (spec 6; the lead's draft said 「ファイル」); 「入れる」 as `msg.audioImported` (spec 6). | decided by the lead, 2026-11-25, bug sweep CORE-AUDIO-003, CORE-AUDIO-004, CORE-AUDIO-005 |
+| The question after 「戻さない」 (`SongDialogKind::DeleteRecovery`; `msg.deleteRecoveryFile`, `button.keepRecoveryFile`, `button.deleteRecoveryFile`, `songDialog.deleteRecovery`, `builder:2026-11-25`) | Right after 「戻さない」 (which makes its step and its status line text as before), a song dialog asks 「なおすためのファイルも消しますか？ 消すと、meloet が急に止まったあとに、すてた変更は戻りません。」 ("Delete the recovery file too? If you delete it, the changes you dropped will not come back after meloet stops suddenly."), with 「残す」 ("Keep", Esc) and the bright 「消す」 ("Delete", Enter) at the right end. The heading is the song name, as the other song dialogs; the status line names it 「なおすためのファイル」 ("Recovery file", the term of spec 5) and says 「戻さない」's text again once it is answered. 「消す」 removes the file; undo still brings the changes back, and they are written to a new file as any other change. The question is not a step. An undo back to the saved song asks nothing and leaves the file. | decided by the owner (the question), 2026-11-25, bug sweep CORE-STATE (later list); the words and the dialog name by the lead |
+| Files left out when audio files are brought in (`msg.audioSkipped`, `builder:2026-11-25`) | Spec 6 has no text for it. When some of the files chosen or let go of over the window do not read and the others are brought in (`StatusMessage::AudioImported` with `skipped` above 0), the text of 「入れました」 is followed by 「{skipped} 個は読めませんでした。」 (English "{skipped} file could not be read." / "{skipped} files could not be read."): 「ドラム.wav を入れました（6 歌 ・ 5. 1. 0000）。2 個は読めませんでした。」. With none left out the text is as it was. | decided by the owner (the person is told how many were left out) and by the lead (the text), 2026-11-25, bug sweep, later list PROTO |
 
 ## A-25 Pasting notes (round 10)
 
@@ -417,6 +433,7 @@ In the "Basis" column: "spec 3" is chapter 3 of this spec; "mock Main" is a mock
 | Two keyboards with faders | Their fader values are not kept apart; picking up is shared. | the developers' provisional form |
 | Picking up on a track with automation | The fader is compared with the volume set by hand, not with the value the automation plays. | the developers' provisional form |
 | The second and later ports of a device | Every port after the lowest one is a button port, also on a sound card with two MIDI inputs: notes 86–100 there work as buttons, other notes are not used (before round 10 those ports were not read at all). | the developers' reading |
+| A keyboard pulled out while the song plays | Only what the keyboards held is let go: their keys and their pedal on the track the keys sound on, with the bend and the modulation back to rest. The song's own notes keep sounding, on that track and on every other. | the owner's decision, 2026-11-25 |
 
 ## A-27 Details of the round 10 mocks (round 10)
 
@@ -446,6 +463,7 @@ In the "Basis" column: "spec 3" is chapter 3 of this spec; "mock Main" is a mock
 | Solo in a mute set | A set remembers solo and a recall sets it, but solo is not part of the step (as solo is never a step): undo does not bring the old solo back. | the developers' decision (architecture 24-16 F) |
 | The history row of a whole plugin state put by the AI link (`set_plugin_state`, `set_plugin_state_text`, `load_preset`, the Surge XT tools) | One step with the row 「プラグインの窓」 (`StepKind::PluginWindow`), as a change made in the plugin's window; no new wording. | the developers' decision (architecture 24-16 G); decided by the owner as it is (user:2026-11-24) |
 | The history row of several parameters of one plugin set at once by the AI link (`set_params`) | One step with the row of the first parameter (`SetPluginParam`); the model has no step name for "several parameters". | the developers' decision (architecture 24-16 H); decided by the owner as it is (user:2026-11-24) |
+| `set_mute` by the AI link while the song plays with 「● 書く」 on and the mute lane armed | Does what the person's mute button does then (a point in the lane, the track's own mute unchanged); the answer says so (`wrote_mute_lane: true`, `muted`) instead of a plain "Done". | the lead's decision (2026-11-25) |
 
 ## A-29 Round 12 (the owner's request of 2026-11-23)
 
@@ -473,6 +491,7 @@ The rules are in spec 3, "Rules added in round 12"; how each is built is archite
 | Q | Listed as 「クオンタイズをかけなおす」 as in the request's picture; the menu row stays 「クオンタイズ」. | the request's picture |
 | The link and the filter box | The link is accent text in the foot, not a button; the filter box is a row of its own under the heading (as About's second page), not in the heading. | the developers' decision |
 | Wording made up (`keyList.*`, `builder:2026-11-23`), rows of the key list | 「ひとつ戻る ／ 閉じる」, 「メニューバーへ」, 「次のボタンや欄へ ／ 前へ」, 「トラック ／ クリップの名前を変える」, 「道具：選ぶ ／ 書く ／ 消す」, 「ノートを半音 ／ 1 オクターブ動かす」, 「ノートをグリッド 1 つ動かす」, 「ノートの一覧：欄に打ちこむ ／ 右の欄へ」, 「複製しながら動かす」, 「グリッドに合わせずに動かす」, 「ドラッグをやめて元に戻す」, 「マーカーを足す」, 「次のマーカーへ ／ 前のマーカーへ」, 「マーカーの名前を変える」, 「選んだ点 ／ マーカーを消す」, 「テンポ ／ 拍子の箱で 1 ／ 10 ずつ変える」, 「棚：上 ／ 下の行を選ぶ」, 「棚：選んだ音を入れる」, 「棚：サンプルを鳴らす ／ 止める」, 「棚：お気に入りの印」, 「履歴：上 ／ 下の行を選ぶ」, 「履歴：いまのステップへ」, 「履歴：ここまで戻す」, 「選んだインサートをとばす ／ 戻す」, 「選んだインサートを外す」, 「フェーダー ／ センドを動かす（細かく）」, 「パンを動かす（大きく）」, 「フェーダー ／ パン ／ センドを最初の値に戻す」, 「フェーダー ／ パン ／ センドに値を打ちこむ」, 「パラメータ：上 ／ 下の行を選ぶ」, 「パラメータ：値を動かす（細かく）」, 「パラメータ：値を打ちこむ」, 「パラメータ：さがす箱へ」 (33 rows). Other rows reuse the menu wording. | builder:2026-11-23; approved by the owner (user:2026-11-24) |
+| Rows added in the bug sweep (`keyList.metronome`, `keyList.closeExported`, `builder:2026-11-25`) | Spec 4 lists two key rows the table lacked. 「再生と録音」: 「メトロノーム：音量を動かす ／ テンポを手拍子で」 (English "Metronome: move the volume / tap the tempo"), keys 「← → ／ Space Enter」. 「曲とファイル」: 「「書き出しました」を閉じる」 (English "Close “Exported”"), keys 「Esc ／ Enter」. Where the words come from: 「メトロノーム」 `menu.metronome`; 「音量」 `metronome.volume`; 「…を動かす」 the verb of `keyList.fader`; 「テンポを手拍子で」 `metronome.tapRow` (the owner's wording of that row); the 「名前：…」 form of `keyList.shelfSample`; 「書き出しました」 `exported.title`; 「閉じる」 `button.close` (spec 6) and `keyList.back`; spec 4 itself ("Close 「書き出しました」"). | decided by the lead, 2026-11-25, bug sweep UI-SHELL-008 |
 
 ### A3 Duplicating a track
 
@@ -559,6 +578,8 @@ The switch 「色をつける」 and its rows below were taken away on 2026-11-2
 | Clipping lines with matching | With 「公開先に合わせる」 in force there are no clipping lines (the file is at −1 dBTP or lower); the peak line still shows the peak as it plays. | the developers' decision |
 | `Done`'s numbers | The measured numbers plus the gain, not measured again after a rate conversion (a few tenths of a dB off at another rate). | the developers' decision |
 | Wording | 「ここまでの大きさ {lufs} LUFS ・ トゥルーピーク {peak} dBTP」 (the check while counting), 「合わせると {db} dB 小さくなります」 (the request gives only the louder sentence). | builder:2026-11-23 |
+| Writing over files that are there already | 「書き出す」 asks first, whatever the way the name came: the usual place and the song's name, a format changed after the place was picked, a file that came after picking, each file of 「トラックごと」, MIDI too. The dialog stays; the question is a `color.rec` line at the end of 「書き出す前のたしかめ」 (under MIDI, alone where that part would be), and the button becomes 「このまま書き出す」, not bright, as for clipping. 「このまま書き出す」 and Enter write over; 「やめる」, Esc and also 「閉じる」 take only the question away; any choice or 「えらぶ…」 takes it away too. One file is named, two or more are counted. The file the PC's save window asked about when it was picked is not asked about again, for the next 「書き出す」 only. When it clips too, the check is seen first (it is there before the press), then the question. | the owner's decision (2026-11-25); the form decided by the lead, 2026-11-25, bug sweep CORE-EXPORT-3; 「閉じる」 and "the next only" the developers' reading |
+| Wording | 「「{file}」はもうあります。上書きします。」 "“{file}” is already there. It will be replaced."; 「同じ名前のファイルが {count} 個もうあります。上書きします。」 "{count} files with the same names are already there. They will be replaced." Made from 「「{name}」はもうあります」 and 「上書き」. | builder:2026-11-25 |
 
 ### E9 「書き出しました」
 
@@ -576,7 +597,7 @@ The switch 「色をつける」 and its rows below were taken away on 2026-11-2
 | 「止まっているとき」 | The song is not moving: playing also waits, not only the count-in and recording. | the developers' reading; decided by the owner as it is (user:2026-11-24) |
 | "At most once a run" | It stays while stopped until 「あとで」 or 「ページをひらく」, or until the song is started after it was shown; it does not come back in that run. | the developers' reading |
 | Once a day | 24 hours since the last look (as the sound pack's catalog look), not the calendar day. | the developers' decision |
-| Turning it off | Also takes away what was found; an answer that comes while off is dropped; on again later in the run looks once if it has not looked yet. With the development hooks nothing is remembered. | the developers' decision |
+| Turning it off | Hides what was found; an answer that comes while off is kept; on again later in the run shows it again (in 「meloet について」, and in the status line unless it was put away), or looks once if it has not looked yet. With the development hooks nothing is remembered. | the developers' decision; what was found is kept for the run, decided by the lead, 2026-11-25 (bug sweep CORE-STATE, later list) |
 | Order in the status line | After every notice, before 「鍵盤をさがしています」 and the keyboard / chooser lines (else a person without a keyboard would never see it). | the developers' decision |
 | 「meloet について」 | The line sits under 「バージョン」 in the value column with an empty label, gray.10, no button. | the developers' decision |
 | Wording | 「オン」, 「オフ」 of the settings row (the words of 「AI とつなぐ」). | the developers' decision (user:2026-11-23 tag, the neighbours' words) |
@@ -593,6 +614,7 @@ The switch 「色をつける」 and its rows below were taken away on 2026-11-2
 | The button | Lit while something can be kept, `aria-disabled` otherwise, no key shown on it. A click while disabled sends nothing; Shift R always sends (so 「残せる演奏がありません」 can be said). It hides first (see "How the round was run"). | the developers' decision |
 | Not built | The request picture's status line 「さっき弾いた 2 小節ぶん（ノート 14）を残せます」: the text does not ask for it and there is no shape for it. | the request's text |
 | Shift R | No clash (a test that pinned "Shift R does nothing" now checks Shift L). | the developers' check |
+| Keys while the shelf auditions | Not in the phrase (they sound another instrument): a key pressed then closes the phrase and starts none; letting go of a key held from before still goes in. | decided by the lead, 2026-11-25, bug sweep (later list) |
 
 ### R2 Playing with the PC keyboard
 
@@ -766,6 +788,7 @@ The switch 「色をつける」 and its rows below were taken away on 2026-11-2
 | Refusals | While the export dialog is open the status line says the dialog is open (so 「書き出しか…」 is not seen then). The AI link's export and measuring are refused while bouncing. A file that comes too late is removed from the work place. | the developers' decision |
 | Progress | A status line message with a button (as 「音を作っています」), not the export's bar; the percent is the range's, 99 until the step. `clip_doc` of the AI link was not widened; `bounce_doc` is its own. | the developers' decision |
 | Wording (status line) | 「{track} に音のクリップを置きました。もとのトラックはミュートしました。」, 「音にするのをやめました。」, 「音にできませんでした。{plugin} が止まりました。」, 「音にできませんでした。作業の場所に書けません。」, 「もとのトラックがなくなったので、できた音はすてました。」, 「書き出しか「音にする」の途中なので、終わってからもう一度ためしてください。」, 「このトラックにはクリップがありません。」, 「音にしているあいだは書き出せません。終わってからひらいてください。」 | builder:2026-11-23 |
+| Solo | The solo goes with the sound: a soloed keys track gives its solo to the new track in the same step (muted, it would leave nothing heard). Undo gives it back and redo moves it again, when it is still where it was left. The one step that moves a solo (A-28: solo is no step). | decided by the lead, 2026-11-25, bug sweep (later list) |
 
 ### M5 The master's lane and the fade-out
 
@@ -826,6 +849,9 @@ The switch 「色をつける」 and its rows below were taken away on 2026-11-2
 | PC file window titles | "Open", "Choose a folder", "Save as", "Export", "Choose a folder to export to". The window's own GTK words (cancel, open, home …) follow the PC's language, not meloet's setting (with a Japanese PC and English chosen, the title is "Open" and the buttons 「キャンセル」「開く」). | the developers' translation; approved by the owner (user:2026-11-24); the GTK words decided by the owner as it is (user:2026-11-24) |
 | Joints | 「 ・ 」 → " · ", 「、」 → ", ", two sentences one after the other get a space; 「（…の帯も消えました）」 goes before the first "." as before the first 「。」. | the developers' decision |
 | Numbers | A text whose noun follows a number has a form for 1 and one for any other number (`n(by, one, other)` in en.ts); Japanese is unchanged. | the request |
+| Range mark and brackets | 「1〜127」 → "1–127" and 「6 歌（入口 1）」 → "6 Vocal (In 1)", as en.ts writes them; also the range of a plugin parameter, which the core joins in the language it holds. The form for 1 is also taken for a signed 「−1」 (as for 「+1」). | the developers' decision (bug sweep UI-TEXT-003, UI-TEXT-004, 2026-11-25) |
+| The name of a track turned into audio | 「（元の名前）（音）」 → "(name) (audio)": "Piano (audio)", "Piano (audio) 2" when taken. Songs already saved keep their names. | decided by the lead, 2026-11-25, bug sweep UI-TEXT-006 |
+| Two numbers in one text | Each noun takes its own form: "+1 semitone 0 cents", "+2 semitones +1 cent" (`clipParams.pitchValue`, `msg.pitchDragging`; a pair of pairs in en.ts). Japanese is unchanged. | decided by the lead, 2026-11-25 (bug sweep, later list UI-TEXT #3) |
 | The English table | All the English of `ui/src/text/en.ts` (1535 texts, 99 step names, 107 terms; for example いいとこ取り "Comping", 音程を寄せる "Pull to scale", さっきのを残す "Keep last", はじめての曲 "My first song", 「止」 "■", the short forms "Instr." and "Sel.") was translated by the developers following `glossary.md`. | the developers' translation; approved by the owner (user:2026-11-24) |
 | Who gives way in English (1280 × 800) | The rules of E7 and R2 as they are: the song name in the transport does not fold to 「▾」 in English, so the spectrum (E7) is not shown in most scenes, and the input meter shows the modulation, so the "PC keys" switch (R2) has no room in five scenes (also while on). In Japanese both are shown. | the developers' decision; decided by the owner as it is (user:2026-11-24) |
 | Term tips | Looked up by the Japanese word as before; in English a name shown in English (drum names, …) finds its term too. Explanations that said "also called 「ハイカット」" where the English word is that name now leave it out. | the developers' decision |

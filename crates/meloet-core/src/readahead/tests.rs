@@ -68,6 +68,10 @@ struct Store {
     stereo: AtomicBool,
     /// The made files are not there.
     made_gone: AtomicBool,
+    /// The files that are not there are made ready the moment after this file was asked
+    /// for and was not there.
+    ready_after: Mutex<Option<u8>>,
+    generation: AtomicU64,
 }
 
 impl Store {
@@ -82,7 +86,12 @@ impl PcmStore for Store {
     fn open(&self, uid: &[u8; 16], sample_rate: u32) -> Option<Box<dyn PcmFile>> {
         assert_eq!(sample_rate, RATE);
         self.opened.fetch_add(1, Relaxed);
-        (uid[0] < *self.gone_from.lock().unwrap()).then(|| {
+        let there = uid[0] < *self.gone_from.lock().unwrap();
+        if !there && *self.ready_after.lock().unwrap() == Some(uid[0]) {
+            *self.gone_from.lock().unwrap() = u8::MAX;
+            self.generation.fetch_add(1, Relaxed);
+        }
+        there.then(|| {
             Box::new(Numbers {
                 n: uid[0],
                 frames: 1_000_000,
@@ -91,6 +100,10 @@ impl PcmStore for Store {
                 gate: self.gate.clone(),
             }) as Box<dyn PcmFile>
         })
+    }
+
+    fn generation(&self) -> u64 {
+        self.generation.load(Relaxed)
     }
 
     /// What was made under a key is a file of numbers too: number `key[0]`.
@@ -419,6 +432,25 @@ fn a_file_that_is_not_there_is_silence_until_the_store_has_it() {
     assert_eq!(store.opened.load(Relaxed), 3);
     assert_eq!(out[1_000][0], sample(2, 0));
     assert_eq!(out[1_999][0], sample(2, 999));
+}
+
+#[test]
+fn a_file_that_comes_just_after_the_store_had_none_is_read() {
+    // Made ready between the open and the mark that says it was not there: the core may
+    // have looked at the marks then, and would not say that the store changed.
+    let store = Store::new();
+    *store.gone_from.lock().unwrap() = 2;
+    *store.ready_after.lock().unwrap() = Some(2);
+    let clips = vec![clip(0, 1_000, 1, 0), clip(1_000, 900_000, 2, 0)];
+    let mut rig = Rig::new(store.clone(), clips);
+    rig.jump(0.0, 0, None);
+    rig.wait_full(96_000);
+    let (out, missing) = rig.read(0, 2_000);
+    assert_eq!(missing, 0);
+    assert_eq!(out[999][0], sample(1, 999));
+    assert_eq!(out[1_000][0], sample(2, 0));
+    assert_eq!(out[1_999][0], sample(2, 999));
+    assert_eq!(store.opened.load(Relaxed), 3);
 }
 
 #[test]

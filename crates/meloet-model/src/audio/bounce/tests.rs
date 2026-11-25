@@ -9,7 +9,7 @@ use crate::id_book::{IdBook, held};
 use crate::mixer::{self, Bus, Gain, Pan, StripId};
 use crate::song::Note;
 use crate::time::Tempo;
-use crate::{BuiltinInstrument, NewTake, TICKS_PER_QUARTER, timeline};
+use crate::{BuiltinInstrument, Language, NewTake, TICKS_PER_QUARTER, timeline};
 
 const T1: TrackId = TrackId(1);
 const Q: u64 = TICKS_PER_QUARTER;
@@ -77,7 +77,7 @@ fn song() -> Doc {
 #[test]
 fn the_audio_goes_on_a_new_vocal_track_right_below_with_the_strip_and_the_track_is_muted() {
     let doc = song();
-    let b = bounce_track(&doc, T1, audio(48_000 * 3), 4 * Q).unwrap();
+    let b = bounce_track(&doc, T1, audio(48_000 * 3), 4 * Q, Language::Ja).unwrap();
     let new = &b.edit.doc;
     assert_eq!(b.edit.step, StepKind::Bounce { track: b.track });
     let order: Vec<TrackId> = new.tracks.iter().map(|t| t.id).collect();
@@ -144,13 +144,38 @@ fn undo_takes_the_whole_step_back_and_redo_brings_it() {
     let doc = song();
     let mut history = History::default();
     let mut now = doc.clone();
-    let b = bounce_track(&now, T1, audio(48_000), 0).unwrap();
+    let b = bounce_track(&now, T1, audio(48_000), 0, Language::Ja).unwrap();
     history.apply(&mut now, b.edit.clone());
     assert_eq!(now, b.edit.doc);
     assert!(history.undo(&mut now).is_some());
     assert_eq!(held(&now), held(&doc));
     assert!(history.redo(&mut now).is_some());
     assert_eq!(held(&now), held(&b.edit.doc));
+}
+
+#[test]
+fn a_mute_lane_that_moves_rests_in_the_same_step_so_the_mute_is_heard() {
+    let (e, lane) = auto::add_lane(&song(), T1, AutoTarget::Mute, true).unwrap();
+    let (e, _, _) = auto::add_point(&e.doc, lane, 0, Some(0.0), 0.0).unwrap();
+    let doc = e.doc;
+    let mut history = History::default();
+    let mut now = doc.clone();
+    let b = bounce_track(&now, T1, audio(48_000), 0, Language::Ja).unwrap();
+    history.apply(&mut now, b.edit);
+    let from = now.track(T1).unwrap();
+    assert!(from.muted);
+    let rested = from.lane(AutoTarget::Mute).unwrap();
+    assert!(rested.resting, "the hand's mute is what is heard");
+    assert_eq!(rested.points, doc.track(T1).unwrap().automation[3].points);
+    assert!(history.undo(&mut now).is_some());
+    assert_eq!(held(&now), held(&doc));
+    assert!(
+        now.track(T1)
+            .unwrap()
+            .lane(AutoTarget::Mute)
+            .unwrap()
+            .moves()
+    );
 }
 
 #[test]
@@ -161,7 +186,7 @@ fn a_name_that_is_taken_gets_a_number_and_the_clip_follows_the_songs_tempo_map()
     // From the second bar the song is twice as fast.
     let fast = Tempo::from_centi(19_200).unwrap();
     doc = timeline::add_tempo_point(&doc, 4 * Q, fast).unwrap().doc;
-    let b = bounce_track(&doc, T1, audio(48_000 * 3), 0).unwrap();
+    let b = bounce_track(&doc, T1, audio(48_000 * 3), 0, Language::Ja).unwrap();
     let to = b.edit.doc.track(b.track).unwrap();
     assert_eq!(to.name, "ピアノ（音） 2");
     let clip = &to.clips[0];
@@ -170,15 +195,28 @@ fn a_name_that_is_taken_gets_a_number_and_the_clip_follows_the_songs_tempo_map()
 }
 
 #[test]
+fn in_english_the_name_ends_in_audio_with_the_same_numbers() {
+    let mut doc = song();
+    let b = bounce_track(&doc, T1, audio(48_000), 0, Language::En).unwrap();
+    let to = b.edit.doc.track(b.track).unwrap();
+    assert_eq!(to.name, "ピアノ (audio)");
+    assert_eq!(to.clips[0].name, "ピアノ (audio)");
+    let (e, vocal) = add_vocal_track(&doc, None, Language::En).unwrap();
+    doc = rename_track(&e.doc, vocal, "ピアノ (audio)").unwrap().doc;
+    let b = bounce_track(&doc, T1, audio(48_000), 0, Language::En).unwrap();
+    assert_eq!(b.edit.doc.track(b.track).unwrap().name, "ピアノ (audio) 2");
+}
+
+#[test]
 fn a_vocal_track_bad_audio_or_no_track_change_nothing() {
     let doc = song();
     let (e, vocal) = add_vocal_track(&doc, None, crate::Language::Ja).unwrap();
     assert_eq!(
-        bounce_track(&e.doc, vocal, audio(10), 0),
+        bounce_track(&e.doc, vocal, audio(10), 0, Language::Ja),
         Err(EditError::WrongKind)
     );
     assert_eq!(
-        bounce_track(&doc, TrackId(99), audio(10), 0),
+        bounce_track(&doc, TrackId(99), audio(10), 0, Language::Ja),
         Err(EditError::NoSuchTrack(TrackId(99)))
     );
     for bad in [
@@ -192,10 +230,13 @@ fn a_vocal_track_bad_audio_or_no_track_change_nothing() {
             ..audio(10)
         },
     ] {
-        assert_eq!(bounce_track(&doc, T1, bad, 0), Err(EditError::BadTake(0)));
+        assert_eq!(
+            bounce_track(&doc, T1, bad, 0, Language::Ja),
+            Err(EditError::BadTake(0))
+        );
     }
     assert_eq!(
-        bounce_track(&doc, T1, audio(10), MAX_TICK),
+        bounce_track(&doc, T1, audio(10), MAX_TICK, Language::Ja),
         Err(EditError::OffTheSong)
     );
 }

@@ -30,6 +30,8 @@
   /** The value being moved, or a released value waiting for Rust's answer. */
   let held = $state<number | null>(null);
   const shown = $derived(held ?? value);
+  /** Where the knob was when the drag started (the gray.7 frame). */
+  let from = $state(0);
 
   $effect(() => {
     void value;
@@ -48,6 +50,7 @@
     if (ev.button !== 0 || !bar) return;
     ev.preventDefault();
     bar.setPointerCapture?.(ev.pointerId);
+    from = shown;
     dragging = true;
     held = at(ev);
   }
@@ -121,6 +124,7 @@
 >
   <div class="track"></div>
   <div class="fill" style:width="{shown}%"></div>
+  {#if dragging}<div class="knob ghost" style:left="{from}%"></div>{/if}
   <div class="knob" style:left="{shown}%"></div>
 </div>
 {#if typing}
@@ -168,5 +172,10 @@
     height: var(--part-param-knob-h);
     margin-left: calc(var(--part-param-knob-w) / -2);
     background: var(--color-gray-10);
+  }
+  .knob.ghost {
+    box-sizing: border-box;
+    background: none;
+    border: var(--line-hair) solid var(--color-gray-7);
   }
 </style>

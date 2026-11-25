@@ -121,11 +121,8 @@ impl ParamSpec {
     pub fn read(&self, text: &str) -> Option<f32> {
         let text: String = (text.trim().chars())
             .map(|c| match c {
-                '０'..='９' => char::from_digit(c as u32 - '０' as u32, 10).unwrap_or(c),
-                '−' | '－' => '-',
-                '＋' => '+',
-                '．' => '.',
-                c => c,
+                'Ａ'..='Ｚ' | 'ａ'..='ｚ' => char::from_u32(c as u32 - 0xFEE0).unwrap_or(c),
+                c => plain_number_char(c),
             })
             .collect();
         let (sign, rest) = match text.strip_prefix(['-', '+']) {
@@ -151,6 +148,18 @@ impl ParamSpec {
             _ => 1.0,
         };
         Some(sign * number * scale)
+    }
+}
+
+/// A full-width digit, sign or decimal point as the plain one; any other character as it is.
+/// A typed value is read with these (a plugin's too).
+pub fn plain_number_char(c: char) -> char {
+    match c {
+        '０'..='９' => char::from_digit(c as u32 - '０' as u32, 10).unwrap_or(c),
+        '−' | '－' => '-',
+        '＋' => '+',
+        '．' => '.',
+        c => c,
     }
 }
 
@@ -638,6 +647,10 @@ mod tests {
         assert_eq!(of(reverb, reverb::HIGH_CUT, "6 kHz"), Some(6000.0));
         assert_eq!(of(reverb, reverb::HIGH_CUT, "6000 Hz"), Some(6000.0));
         assert_eq!(of(reverb, reverb::MIX, "30%"), Some(30.0));
+        assert_eq!(of(reverb, reverb::DECAY, "５００ｍｓ"), Some(0.5));
+        assert_eq!(of(reverb, reverb::DECAY, "５００　ＭＳ"), Some(0.5));
+        assert_eq!(of(comp, compressor::ATTACK, "１．５ｓ"), Some(1500.0));
+        assert_eq!(of(reverb, reverb::HIGH_CUT, "２ｋＨｚ"), Some(2000.0));
         assert_eq!(of(EffectKind::Delay, delay::SYNC, "1"), Some(1.0));
         for text in [
             "", " ", "dB", "abc", "-", "+ dB", ".", "- .", "x4", "NaN", "inf",

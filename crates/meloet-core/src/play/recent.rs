@@ -104,6 +104,9 @@ pub(super) struct Around {
     pub loop_range: Option<TickRange>,
     /// The time of two bars where the play line is.
     pub two_bars_us: u64,
+    /// The keys sound another instrument (the shelf's 「ためし弾き」): a key press closes the
+    /// phrase and starts none.
+    pub auditioning: bool,
 }
 
 #[derive(Debug, Default)]
@@ -159,7 +162,12 @@ impl Phrase {
             } else {
                 // One key held under a long run of controller moves: the key stays, and
                 // the oldest of the moves goes.
-                self.events.remove(1);
+                let oldest_move = (self.events.iter().skip(1))
+                    .position(|e| {
+                        matches!(e.kind, RecEventKind::Cc { .. } | RecEventKind::PitchBend(_))
+                    })
+                    .map_or(1, |i| i + 1);
+                self.events.remove(oldest_move);
             }
         }
         while (self.events.front()).is_some_and(|e| e.t_us + MAX_AGE_US < ev.t_us) {
@@ -234,6 +242,13 @@ impl Recent {
         let head = self.controls;
         let idle_since = self.idle_since;
         self.hold(kind, t_us);
+        // Only the presses: the letting go of a key held before still goes in.
+        if around.auditioning && press {
+            if let Some(p) = &mut self.phrase {
+                p.closed = true;
+            }
+            return;
+        }
         let ev = Ev {
             kind,
             t_us,
@@ -389,6 +404,7 @@ impl Play {
             track: self.song.keys_target(),
             loop_range: self.loop_on(),
             two_bars_us: (2.0 * bar as f64 / per_us).round() as u64,
+            auditioning: self.auditioning(),
         }
     }
 

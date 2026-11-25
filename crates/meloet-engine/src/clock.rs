@@ -73,6 +73,12 @@ pub(crate) struct Segment {
     pub sec0: f64,
     /// The map the stretch was rendered on.
     pub map_gen: u32,
+    /// How many frames the master's inserts delayed the song by when the stretch began: its
+    /// song reaches the ear that much after its frames reach the DAC.
+    pub ear: u32,
+    /// Set by [`TransportClock::segment_at`]: when the next stretch's first frame reaches
+    /// the DAC, if there is one.
+    pub until_us: Option<f64>,
     pub state: TransportState,
     /// Recording session the stretch belongs to.
     pub session: u32,
@@ -90,11 +96,16 @@ impl Segment {
     /// The position and how fast it moves (ticks per microsecond) at `t_us`. `map`: the map
     /// of this stretch, if the reader has it.
     fn at(&self, t_us: f64, map: Option<&TempoMap>) -> (f64, f64) {
+        let ear_us = self.ear_us();
+        // Past the next stretch, while its song does not reach the ear yet (the master's
+        // inserts delay more since it began), the song stands where this stretch ends.
+        let held = self.until_us.filter(|&until| t_us >= until + ear_us);
+        let t_us = held.unwrap_or(t_us - ear_us);
         let on_map = matches!(
             self.state,
             TransportState::Playing | TransportState::Recording
         );
-        match map {
+        let (tick, per_us) = match map {
             Some(map) if on_map => {
                 let tick = map.tick_at(self.sec0 + (t_us - self.start_us) / 1e6);
                 (tick, map.tempo_at(tick) * TICKS_PER_QUARTER as f64 / 60e6)
@@ -103,7 +114,13 @@ impl Segment {
                 let per_us = self.ticks_per_frame * f64::from(self.sample_rate) / 1e6;
                 (self.tick + (t_us - self.start_us) * per_us, per_us)
             }
-        }
+        };
+        (tick, if held.is_some() { 0.0 } else { per_us })
+    }
+
+    /// [`Segment::ear`] in microseconds.
+    fn ear_us(&self) -> f64 {
+        f64::from(self.ear) * 1e6 / f64::from(self.sample_rate.max(1))
     }
 
     fn encode(&self) -> [u64; WORDS] {
@@ -116,7 +133,7 @@ impl Segment {
             self.record_from as u64,
             u64::from(self.ticks_per_beat) | u64::from(self.session) << 32,
             self.sec0.to_bits(),
-            u64::from(self.map_gen),
+            u64::from(self.map_gen) | u64::from(self.ear) << 32,
             self.frame0,
             u64::from(self.run) | u64::from(self.run_lap) << 32,
         ]
@@ -136,6 +153,8 @@ impl Segment {
             session: (w[6] >> 32) as u32,
             sec0: f64::from_bits(w[7]),
             map_gen: w[8] as u32,
+            ear: (w[8] >> 32) as u32,
+            until_us: None,
             frame0: w[9],
             run: w[10] as u32,
             run_lap: (w[10] >> 32) as u32,
@@ -220,14 +239,25 @@ impl TransportClock {
         None
     }
 
-    /// The newest segment that starts at or before `t_us`.
+    /// The newest segment whose song reaches the ear at or before `t_us`, with the time the
+    /// next one starts at in [`Segment::until_us`]. When the master's inserts delay the song
+    /// longer than the ring reaches back, the oldest segment kept, counted back from.
     pub(crate) fn segment_at(&self, t_us: f64) -> Option<Segment> {
         let written = self.written.load(Ordering::Acquire);
         let oldest = written.saturating_sub(SLOTS as u64);
-        (oldest..written)
+        let (mut next, mut last) = (None, None);
+        for mut segment in (oldest..written)
             .rev()
             .filter_map(|serial| self.read(serial))
-            .find(|segment| segment.start_us <= t_us)
+        {
+            segment.until_us = next;
+            if segment.start_us + segment.ear_us() <= t_us {
+                return Some(segment);
+            }
+            next = Some(segment.start_us);
+            last = Some(segment);
+        }
+        last.filter(|segment| segment.start_us <= t_us)
     }
 
     /// Which frame of the engine's stream (counted as [`crate::Recorded::Rolling::frame`]
@@ -274,6 +304,26 @@ impl TransportClock {
             |s| f64::from(s.frames) * 1e6 / f64::from(s.sample_rate.max(1)) / 2.0,
         );
         middle(&mut votes[..n])
+    }
+
+    /// When the song rendered at `frame` reaches the ear: [`TransportClock::time_of_frame`]
+    /// of the frame where it comes out of the master's inserts, which delayed it by
+    /// [`Segment::ear`] frames (docs/architecture.md 20-8). A frame older than every stretch
+    /// kept is counted back from the oldest, with its delay.
+    pub fn heard_time_of_frame(&self, frame: f64) -> Option<f64> {
+        let written = self.written.load(Ordering::Acquire);
+        let oldest = written.saturating_sub(SLOTS as u64);
+        let mut ear = 0;
+        for segment in (oldest..written)
+            .rev()
+            .filter_map(|serial| self.read(serial))
+        {
+            ear = segment.ear;
+            if segment.frame0 as f64 <= frame {
+                break;
+            }
+        }
+        self.time_of_frame(frame + f64::from(ear))
     }
 
     /// What the stretches around a moment say of it. `holds`: the stretch is at or before

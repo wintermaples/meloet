@@ -48,8 +48,4 @@ export const reasonText = (r: ScanStopReason): string => t(REASONS[r]);
 
 export const formatText = (f: PluginFormat): string => t(`plugin.format.${f}`);
 
-/**
- * When 「プラグインの場所…」 in the stopped-plugins dialog opens the sound settings, scroll the plugin locations into view.
- * Only the screen holds this (core does not need to know how far to scroll).
- */
-export const placesReveal = { pending: false };
+export { placesReveal } from "./reveal.svelte";

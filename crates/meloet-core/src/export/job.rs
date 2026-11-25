@@ -301,7 +301,7 @@ pub(crate) fn free_name(track: &str, ending: &str, taken: &[String]) -> String {
         .chars()
         .filter(|c| !matches!(c, '/' | '\\' | '\0') && !c.is_control())
         .collect();
-    let clean = clean.trim().trim_matches('.');
+    let clean = cut_name(clean.trim().trim_matches('.'));
     let clean = if clean.is_empty() { "_" } else { clean };
     let mut name = format!("{clean}.{ending}");
     let mut n = 1;
@@ -310,6 +310,20 @@ pub(crate) fn free_name(track: &str, ending: &str, taken: &[String]) -> String {
         name = format!("{clean} {n}.{ending}");
     }
     name
+}
+
+/// The bytes of a file name that a name made from a track's name may take: a file name holds
+/// 255, and a number, an id and an ending go after it.
+pub(crate) const NAME_BYTES: usize = 200;
+
+/// `name` cut to at most [`NAME_BYTES`] bytes, between two characters, with no space or dot
+/// left at its end.
+pub(crate) fn cut_name(name: &str) -> &str {
+    let mut end = name.len().min(NAME_BYTES);
+    while !name.is_char_boundary(end) {
+        end -= 1;
+    }
+    name[..end].trim_end().trim_end_matches('.')
 }
 
 /// Renders the job into the work place. A target that comes meanwhile is kept in `target`,

@@ -8,7 +8,8 @@ pub(super) struct UpdatesSide {
     screen_up: bool,
     /// The look went out in this run.
     asked: bool,
-    /// Newer than this meloet ("0.4.0").
+    /// Newer than this meloet ("0.4.0"). Kept for the run, shown only while
+    /// `Model::check_updates` is on.
     new_version: Option<String>,
     /// The status line said it while the song was stopped.
     said: bool,
@@ -39,20 +40,24 @@ impl Model {
         effects.push(Effect::SaveSettings(self.settings()));
         if on {
             self.ask_for_updates(effects);
-        } else {
-            self.updates.new_version = None;
         }
     }
 
     /// The look found `version`, newer than this meloet.
     pub(super) fn new_version_found(&mut self, version: String) {
-        if self.check_updates {
-            self.updates.new_version = Some(version);
-        }
+        self.updates.new_version = Some(version);
+    }
+
+    /// What the look found, while the switch is on.
+    fn shown_version(&self) -> Option<&String> {
+        self.updates
+            .new_version
+            .as_ref()
+            .filter(|_| self.check_updates)
     }
 
     pub(super) fn open_release_page(&mut self, effects: &mut Vec<Effect>) {
-        if let Some(version) = &self.updates.new_version {
+        if let Some(version) = self.shown_version() {
             effects.push(Effect::OpenUrl(crate::updates::release_page(version)));
             self.updates.put_away = true;
         }
@@ -64,7 +69,7 @@ impl Model {
 
     /// After every input: once the status line said it, the song moving puts it away.
     pub(super) fn settle_updates(&mut self) {
-        if self.updates.new_version.is_none() || self.updates.put_away {
+        if self.shown_version().is_none() || self.updates.put_away {
             return;
         }
         if self.play.is_moving() {
@@ -77,18 +82,17 @@ impl Model {
 
     /// Only while stopped: never in the count-in, while recording or playing.
     pub(super) fn new_version_status(&self) -> Option<StatusMessage> {
-        let u = &self.updates;
-        if u.put_away || self.play.is_moving() {
+        if self.updates.put_away || self.play.is_moving() {
             return None;
         }
-        let version = u.new_version.clone()?;
+        let version = self.shown_version()?.clone();
         Some(StatusMessage::NewVersion { version })
     }
 
     pub(super) fn updates_view(&self) -> UpdatesView {
         UpdatesView {
             check: self.check_updates,
-            new_version: self.updates.new_version.clone(),
+            new_version: self.shown_version().cloned(),
         }
     }
 }

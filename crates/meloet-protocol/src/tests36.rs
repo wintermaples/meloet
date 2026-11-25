@@ -102,6 +102,7 @@ fn the_dialog_under_midi() {
         realtime: false,
         realtime_forced: false,
         can_export: true,
+        replace: None,
         loudness: ExportLoudness::AsIs,
         can_match: false,
         loudness_result: None,

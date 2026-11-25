@@ -237,6 +237,77 @@ fn what_cannot_be_read_gets_its_own_error() {
     assert_eq!(file.open().load(0, 0, RATE).err(), none);
 }
 
+#[test]
+fn the_keys_of_a_preset_are_those_its_playable_zones_have() {
+    let mut rom = flat_sample();
+    rom.name = "rom";
+    rom.kind = 0x8001;
+    let mut no_rate = flat_sample();
+    no_rate.name = "no rate";
+    no_rate.rate = 0;
+    let zones = vec![
+        vec![(KEY_RANGE, range(60, 62)), (SAMPLE_ID, 0)],
+        // Wholly above 127: a broken file.
+        vec![(KEY_RANGE, range(130, 140)), (SAMPLE_ID, 0)],
+        vec![(KEY_RANGE, range(10, 11)), (SAMPLE_ID, 1)],
+        vec![(KEY_RANGE, range(20, 21)), (SAMPLE_ID, 2)],
+        // Cut to nothing.
+        vec![
+            (KEY_RANGE, range(30, 31)),
+            (START_OFFSET, 4799),
+            (SAMPLE_ID, 0),
+        ],
+        vec![
+            (KEY_RANGE, range(40, 41)),
+            (VEL_RANGE, range(0, 0)),
+            (SAMPLE_ID, 0),
+        ],
+    ];
+    let inst = Inst {
+        name: "inst",
+        zones,
+    };
+    let preset = Preset {
+        name: "preset",
+        bank: 0,
+        program: 0,
+        zones: vec![vec![(KEY_RANGE, range(0, 255)), (INSTRUMENT, 0)]],
+    };
+    let font = Font::new(vec![flat_sample(), rom, no_rate], vec![inst], vec![preset]);
+    let file = TempFile::new("playable-keys", &font.bytes());
+    let sf = file.open();
+    assert_eq!(sf.keys(0, 0).unwrap(), [60, 61, 62]);
+    let named: Vec<u8> = (sf.key_names(0, 0).unwrap().into_iter())
+        .map(|(key, _)| key)
+        .collect();
+    assert_eq!(named, [60, 61, 62]);
+}
+
+#[test]
+fn a_preset_that_names_many_zones_again_and_again_is_read_at_once() {
+    // Every preset zone is the same instrument of many zones, none of which plays.
+    let inst = Inst {
+        name: "many",
+        zones: vec![vec![(SAMPLE_ID, 9)]; 16_384],
+    };
+    let preset = Preset {
+        name: "again",
+        bank: 0,
+        program: 0,
+        zones: vec![vec![(INSTRUMENT, 0)]; 16_384],
+    };
+    let font = Font::new(vec![flat_sample()], vec![inst], vec![preset]);
+    let file = TempFile::new("again", &font.bytes());
+    let sf = file.open();
+    let began = std::time::Instant::now();
+    assert!(sf.keys(0, 0).unwrap().is_empty());
+    assert!(
+        began.elapsed() < std::time::Duration::from_secs(2),
+        "{:?}",
+        began.elapsed()
+    );
+}
+
 /// Opens the bytes as a file and, when that works, lists, loads and plays what is there.
 fn survive(name: &str, bytes: &[u8]) -> bool {
     let file = TempFile::new(name, bytes);

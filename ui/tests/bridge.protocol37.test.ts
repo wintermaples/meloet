@@ -6,8 +6,8 @@ import { fakeScene } from "../src/bridge/fake";
 const tracks = (scene: string): TrackView[] => fakeScene(scene)!.state.song.tracks;
 
 describe("shape of protocol 37", () => {
-  it("version 37; a named key is its key and the plugin's name", () => {
-    expect(PROTOCOL_VERSION).toBe(37);
+  it("version 37 or later; a named key is its key and the plugin's name", () => {
+    expect(PROTOCOL_VERSION).toBeGreaterThanOrEqual(37);
     const name: PluginKeyName = { key: 36, name: "Kick Drum" };
     expect(name).toEqual({ key: 36, name: "Kick Drum" });
   });

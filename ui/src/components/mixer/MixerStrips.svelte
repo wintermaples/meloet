@@ -17,7 +17,7 @@
   import { vocalInputRows } from "../trackMenu";
   import Strip from "./Strip.svelte";
   import FinishMeters from "./FinishMeters.svelte";
-  import { mixerLivePosition, shownPosition } from "../automation/autoState.svelte";
+  import { mixerLivePosition, shownMuted, shownPosition } from "../automation/autoState.svelte";
   import { hasLaneRef, laneMoves, laneOf, masterHome, masterOwner, panAt, type AutoLook, type LaneOwner, type StripAuto } from "../automation/laneValue";
   import { fracToDb } from "./scale";
   import type { AutoTarget } from "../../bridge";
@@ -95,11 +95,6 @@
   function liveValues(track: LaneOwner, auto: StripAuto): { gainDb?: number | null } {
     const pos = auto.gain === "moving" ? mixerLivePosition(track.id, { kind: "volume" }) : null;
     return { gainDb: pos === null ? undefined : fracToDb(pos) };
-  }
-  function shownMuted(track: TrackView): boolean {
-    const lane = laneOf(track, { kind: "mute" });
-    const pos = laneMoves(lane, app.automation.held, track.id) ? shownPosition(track.id, { kind: "mute" }) : null;
-    return pos === null ? track.muted : pos >= 0.5;
   }
   const sameStrip = (a: StripRef, b: StripRef) => JSON.stringify(a) === JSON.stringify(b);
   const slotOf = (strip: StripRef, sel: InsertRef | null) => (sel && sameStrip(sel.strip, strip) ? sel.slot : null);
@@ -216,7 +211,7 @@
           pan={shownPan(track, auto.pan)}
           gainDb={shownGain(track, auto.gain)}
           meter={{ track: track.number }}
-          mute={{ on: shownMuted(track), usable: true, run: () => send({ type: "toggleMute", track: track.id }) }}
+          mute={{ on: shownMuted(track, app.automation.held), usable: true, run: () => send({ type: "toggleMute", track: track.id }) }}
           {auto}
           live={liveValues(track, auto)}
           solo={{ on: track.soloed, usable: true, run: () => send({ type: "toggleSolo", track: track.id }) }}

@@ -213,6 +213,30 @@ describe("changing velocity for many notes (B-67)", () => {
     expect(app.sent).toEqual([{ type: "rejectValue", field: "velocity", kept: "77 – 83", range: null }]);
   });
 
+  it("text being typed stays when a diff arrives meanwhile; after Esc the value follows the state again", async () => {
+    const { s } = await scene("pianoRoll", (s) => (s.pianoRoll.selectedNotes = [{ start: 14, end: 15 }]));
+    inspectorFolds.velocityAll = true;
+    show(NoteInspector);
+    const input = q<HTMLInputElement>('[data-test="inspector-velocity-all-field"]')!;
+    expect(input.value).toBe("80");
+    input.focus();
+    input.value = "11";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    app.setState({ ...s, pianoRoll: { ...s.pianoRoll, selectedNotes: [{ start: 14, end: 15 }] } });
+    flushSync();
+    expect(input.value).toBe("11");
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    flushSync();
+    expect(input.value).toBe("80");
+    input.focus();
+    input.value = "12";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.blur();
+    app.setState({ ...s, pianoRoll: { ...s.pianoRoll, selectedNotes: [{ start: 14, end: 15 }] } });
+    flushSync();
+    expect(input.value).toBe("80");
+  });
+
   it("the value if all are the same. Disabled with no notes selected. Remembers it was open", async () => {
     await scene("pianoRoll", (s) => (s.pianoRoll.selectedNotes = [{ start: 14, end: 15 }]));
     inspectorFolds.velocityAll = true;

@@ -273,6 +273,11 @@ describe("checking before export (spec 3 (41-A, 42-C), mocks F8-ExportCheck / F8
     show(ExportDialog, scene("exportCheck"));
     expect(qa('[data-test^="export-format-"]').map(text)).toEqual(["wav", "flac", "mp3", "MIDI"]);
   });
+
+  it("UI-PARITY #5 (later): the dialog follows the theme's color-scheme", () => {
+    show(ExportDialog, scene("exportCheck"));
+    expect(q<HTMLElement>('[data-test="export-dialog"]')!.style.getPropertyValue("color-scheme")).not.toBe("");
+  });
 });
 
 describe("latency cannot be measured (spec 6, version 12)", () => {
@@ -281,6 +286,13 @@ describe("latency cannot be measured (spec 6, version 12)", () => {
     s.workspace.latencyDialog = { measure: { state: "failed", reason } };
     return s;
   };
+
+  it("UI-PARITY #4, #5 (later): the body scrolls in a ScrollArea; the dialog follows the theme's color-scheme", () => {
+    show(LatencyDialog, failed("unsteady"));
+    const body = q('[data-test="latency-body"]')!;
+    expect(body.parentElement!.querySelector('[data-test="scrollbar"]')).not.toBeNull();
+    expect(q<HTMLElement>('[data-test="latency-dialog"]')!.style.getPropertyValue("color-scheme")).not.toBe("");
+  });
 
   it("spread: the chapter 6 text and 「もう一度」", () => {
     show(LatencyDialog, failed("unsteady"));

@@ -132,6 +132,8 @@ impl Recorder {
         let tick = event.tick;
         match event.kind {
             RecEventKind::NoteOn { key, velocity } if key <= 127 && velocity > 0 => {
+                // A key that comes late for an ended pass goes into the pass going on.
+                self.enter_lap(self.open_from);
                 self.release(key, tick);
                 self.held[usize::from(key)] = Some(Held {
                     lap: self.laps.len() - 1,
@@ -298,7 +300,7 @@ impl Recorder {
                 (s, e, n.key, n.velocity)
             })
             .collect();
-        notes.sort_by_key(|n| n.0);
+        notes.sort_by_key(|n| (n.0, n.2));
         let reach = notes.iter().map(|n| n.1).max().unwrap_or(origin + 1);
         let end = if last || self.loop_range.is_none() {
             stop.max(reach).min(ceil)
@@ -366,10 +368,19 @@ impl Recorder {
 
     /// A controller move of pass `lap` goes into that pass while it is still open, also when
     /// notes of a later pass came first (an arpeggio's notes are said before they are heard);
-    /// the passes after it then start with the value it left. Else into the pass going on.
+    /// the passes after it then start with the value it left. A move that comes late for an
+    /// ended pass was made before the pass going on began: it is the value that pass starts
+    /// with, and no point of its own.
     fn control(&mut self, lap: u32, tick: i64, value: ControlValue) {
-        let last = self.laps.len() - 1;
         let open = self.open_from;
+        if self.loop_range.is_some() && lap < open {
+            self.enter_lap(open);
+            for going in self.laps.iter_mut().filter(|l| l.number >= open) {
+                set_start(&mut going.head, value);
+            }
+            return;
+        }
+        let last = self.laps.len() - 1;
         let at = match self.loop_range {
             Some(_) if lap >= open => (self.laps.iter())
                 .position(|l| l.number == lap)
@@ -399,6 +410,18 @@ fn set_head(head: &mut Vec<ControlValue>, value: ControlValue) {
     };
     if !rest {
         head.push(value);
+    }
+}
+
+/// The value a pass starts with after a move made before it began. A controller that is not
+/// written at a take's head otherwise is written there too, or the move would be lost.
+fn set_start(head: &mut Vec<ControlValue>, value: ControlValue) {
+    match value {
+        ControlValue::Cc { number, .. } if number != CC_SUSTAIN && number != CC_MODULATION => {
+            head.retain(|h| !matches!(h, ControlValue::Cc { number: n, .. } if *n == number));
+            head.push(value);
+        }
+        _ => set_head(head, value),
     }
 }
 

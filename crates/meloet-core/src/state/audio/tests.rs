@@ -293,7 +293,8 @@ fn several_files_go_apart_or_in_a_row_as_one_step() {
 fn files_that_do_not_read_bring_nothing_in() {
     let mut m = model();
     let steps = undo_count(&m);
-    // Each says why: not a kind meloet reads, broken, three channels or more (spec 6).
+    // Each says why: not a kind meloet reads, broken, three channels or more (spec 6), or
+    // it could not be copied into the work place.
     for (name, why, said) in [
         (
             "声.mp3",
@@ -314,6 +315,13 @@ fn files_that_do_not_read_bring_nothing_in() {
             Unread::TooManyChannels,
             StatusMessage::AudioTooManyChannels {
                 file: "8ch.wav".into(),
+            },
+        ),
+        (
+            "歌.wav",
+            Unread::NotCopied,
+            StatusMessage::AudioNotCopied {
+                file: "歌.wav".into(),
             },
         ),
     ] {
@@ -635,6 +643,18 @@ fn a_missing_file_is_said_looked_for_and_taken_out() {
         found: Finding::Mismatch,
     }));
     assert_eq!(status(&m), Some(StatusMessage::AudioFoundMismatch));
+    // It reads, and could not be copied into the work place.
+    m.handle(Input::Audio(AudioNews::Found {
+        audio,
+        file: "別.mp3".into(),
+        found: Finding::NotCopied,
+    }));
+    assert_eq!(
+        status(&m),
+        Some(StatusMessage::AudioNotCopied {
+            file: "別.mp3".into()
+        })
+    );
     // Found: the files are looked at again, and the clips that play it are counted.
     let effects = m.handle(Input::Audio(AudioNews::Found {
         audio,

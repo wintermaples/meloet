@@ -251,26 +251,22 @@ impl SmallestSize {
 fn follow_scale(core: &Core, window: WebviewWindow) {
     let smallest = Arc::new(SmallestSize::default());
     let (listener, on_patch) = (window.clone(), smallest.clone());
-    core.subscribe(
-        Box::new(move |message| {
-            if let ServerMessage::Patch(patch) = message {
-                for change in &patch.changes {
-                    // The workspace section also changes at every resize; only a new zoom is
-                    // passed on.
-                    if let Change::Workspace(workspace) = change
-                        && on_patch.scale.swap(workspace.scale, Relaxed) != workspace.scale
-                    {
-                        // This is the core thread, and the main thread may be waiting for it.
-                        let (window, smallest) = (listener.clone(), on_patch.clone());
-                        let _ = listener.run_on_main_thread(move || smallest.apply(&window));
-                    }
+    core.listen(Box::new(move |message| {
+        if let ServerMessage::Patch(patch) = message {
+            for change in &patch.changes {
+                // The workspace section also changes at every resize; only a new zoom is
+                // passed on.
+                if let Change::Workspace(workspace) = change
+                    && on_patch.scale.swap(workspace.scale, Relaxed) != workspace.scale
+                {
+                    // This is the core thread, and the main thread may be waiting for it.
+                    let (window, smallest) = (listener.clone(), on_patch.clone());
+                    let _ = listener.run_on_main_thread(move || smallest.apply(&window));
                 }
             }
-            true
-        }),
-        // No telemetry wanted: this sink is dropped at the first reading.
-        Box::new(|_| false),
-    );
+        }
+        true
+    }));
     let scale = core.snapshot().state.workspace.scale;
     smallest.scale.store(scale, Relaxed);
     smallest.apply(&window);

@@ -1096,6 +1096,102 @@ fn recording_while_playing_keeps_the_position_and_the_heard_ticks() {
     }
 }
 
+/// R before the first frame of the play reaches the DAC: nothing of the play is heard yet,
+/// so the recording begins where the play did, not where the frames rendered have come to.
+#[test]
+fn recording_before_the_play_is_heard_begins_where_the_play_did() {
+    for delay_ms in [13u64, 53] {
+        let mut rig = Rig::new(256, delay_ms * 1000);
+        rig.tempo(12_000);
+        rig.run(256);
+        rig.send(EngineCommand::Play { from: 2 * Q });
+        rig.run(512);
+        rig.send(EngineCommand::RecordHere {
+            muted: TrackSet::default(),
+        });
+        rig.run(256);
+        let got = rig.recorded_all();
+        let (Recorded::Started { from, frame, .. }, Recorded::Rolling { tick, .. }) =
+            (got[0], got[1])
+        else {
+            panic!("{delay_ms} ms: {got:?}");
+        };
+        assert_eq!((from, frame), (2 * Q, 768), "{delay_ms} ms");
+        // The song itself goes on from where it is.
+        let expected = (2 * Q) as f64 + 512.0 / 24_000.0 * Q as f64;
+        assert!((tick - expected).abs() < 1e-6, "{tick} vs {expected}");
+    }
+}
+
+/// `AllNotesOff` (the keyboards are gone) lets go of what the keyboards held on the play
+/// target and of nothing else: the song's notes and pedal are not touched.
+#[test]
+fn keyboards_that_are_gone_let_go_of_what_they_held_and_the_song_plays_on() {
+    let mut rig = Rig::new(256, 0);
+    let mut target = rig.tape(0);
+    let mut other = rig.tape(1);
+    rig.sequence(0, &[(0, cc(64, 127)), (0, on(60)), (0, on(64))]);
+    rig.sequence(1, &[(0, on(48))]);
+    rig.send(EngineCommand::Play { from: 0 });
+    rig.key(0, on(72));
+    rig.key(0, on(76));
+    rig.key(1, off(76));
+    rig.key(1, on(79));
+    rig.key(1, cc(64, 30));
+    rig.key(1, cc(1, 40));
+    rig.key(1, bend(-2000));
+    rig.run(RATE / 2);
+    assert_eq!(drain(&mut target).len(), 10);
+    assert_eq!(drain(&mut other).len(), 1);
+
+    let events = |tape: &mut Consumer<(u64, InstrumentEvent)>| -> Vec<InstrumentEvent> {
+        drain(tape).into_iter().map(|(_, e)| e).collect()
+    };
+    rig.send(EngineCommand::AllNotesOff);
+    rig.run(256);
+    assert_eq!(
+        events(&mut target),
+        [off(72), off(79), bend(0), cc(1, 0), cc(64, 0)]
+    );
+    assert_eq!(events(&mut other), []);
+
+    // Nothing is held any more.
+    rig.send(EngineCommand::AllNotesOff);
+    rig.run(256);
+    assert_eq!(events(&mut target), []);
+
+    // What was held on another track was let go when the keys went to this one.
+    rig.key(rig.base_us * 2, on(50));
+    rig.key(rig.base_us * 2, cc(64, 127));
+    rig.run(RATE);
+    rig.send(EngineCommand::SetPlayTarget { track: 1 });
+    rig.run(256);
+    assert_eq!(
+        events(&mut target),
+        [on(50), cc(64, 127), InstrumentEvent::AllNotesOff]
+    );
+    rig.send(EngineCommand::AllNotesOff);
+    rig.run(256);
+    assert_eq!(events(&mut target), []);
+    assert_eq!(events(&mut other), []);
+    assert_eq!(common::audio_block_counts(), (0, 0));
+}
+
+/// A callback that asks for no frames is not a block: the one after it is not late.
+#[test]
+fn a_callback_with_no_frames_does_not_make_the_next_one_late() {
+    let mut rig = Rig::new(4096, 0);
+    rig.run(4096);
+    let callback_us = rig.base_us + rig.frames * 1_000_000 / RATE;
+    let timing = BlockTiming {
+        callback_us,
+        playback_us: callback_us,
+    };
+    rig.parts.engine.process(&mut [], timing);
+    rig.run(4096);
+    assert_eq!(rig.parts.handle.meters().late_callbacks(), 0);
+}
+
 #[test]
 fn recording_here_when_not_playing_ends_at_once() {
     let mut rig = Rig::new(256, 0);

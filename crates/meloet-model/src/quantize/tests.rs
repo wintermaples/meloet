@@ -1,7 +1,8 @@
 use super::*;
 use crate::TrackId;
+use crate::arrange::ClipEdge;
 use crate::edit::{NewTake, add_recording, switch_take};
-use crate::notes::{WriteAt, move_notes, write_note};
+use crate::notes::{WriteAt, move_notes, resize_notes, write_note};
 use crate::roll::Grid;
 use crate::song::Take;
 use crate::tempo_map::{MeterChange, TempoMap, Timeline};
@@ -296,6 +297,71 @@ fn quantizing_again_starts_from_where_the_notes_were_played() {
     assert_eq!(
         again.origin.as_ref().unwrap().settings,
         settings(16, false, 50, 0)
+    );
+}
+
+#[test]
+fn start_only_keeps_a_length_changed_by_hand() {
+    let (doc, clip) = one_take(vec![note(Q / 4 + 10, 100, 60), note(Q - 10, 200, 62)]);
+    let doc = quantize(&doc, clip, &[], settings(4, false, 100, 0))
+        .unwrap()
+        .0
+        .edit
+        .doc;
+    let doc = resize_notes(&doc, clip, &[0], ClipEdge::End, 300)
+        .unwrap()
+        .edit
+        .doc;
+    assert_eq!(notes_of(&doc, clip)[0], (BAR, 400, Some(0)));
+    // Again, start only: the start from where it was played, the length as it is now.
+    let (e, _) = quantize(&doc, clip, &[], settings(16, false, 100, 0)).unwrap();
+    let again = e.edit.doc;
+    assert_eq!(
+        notes_of(&again, clip),
+        [(BAR + Q / 4, 400, Some(0)), (BAR + Q, 200, Some(1))]
+    );
+    // Start and end: both ends from where they were played.
+    let both = QuantizeSettings::new(
+        Grid::new(16, false).unwrap(),
+        100,
+        0,
+        QuantizeAlign::StartAndEnd,
+    )
+    .unwrap();
+    let (e, _) = quantize(&doc, clip, &[0], both).unwrap();
+    // Q / 4 + 10 to Q / 4 + 110 → Q / 4 to Q / 4, shorter than a tick: one step.
+    assert_eq!(
+        notes_of(&e.edit.doc, clip)[0],
+        (BAR + Q / 4, Q / 4, Some(0))
+    );
+    // Back: the recorded start and length.
+    let back = unquantize(&again, clip, &[]).unwrap().edit.doc;
+    assert_eq!(
+        notes_of(&back, clip),
+        [(BAR + Q / 4 + 10, 100, None), (BAR + Q - 10, 200, None)]
+    );
+    assert!(shown(&back, clip).1.origin.is_none());
+}
+
+#[test]
+fn start_only_fits_the_length_of_now_into_the_clip() {
+    // A note near the clip's end, made longer by hand up to the end.
+    let (doc, clip) = one_take(vec![note(2 * BAR - Q + 30, 100, 60)]);
+    let doc = quantize(&doc, clip, &[], settings(4, false, 100, 0))
+        .unwrap()
+        .0
+        .edit
+        .doc;
+    assert_eq!(notes_of(&doc, clip), [(3 * BAR - Q, 100, Some(0))]);
+    let doc = resize_notes(&doc, clip, &[0], ClipEdge::End, (Q - 100 - 10) as i64)
+        .unwrap()
+        .edit
+        .doc;
+    // Half way to the grid is 15 past the beat, where the note of Q - 10 would pass the end.
+    let (e, _) = quantize(&doc, clip, &[], settings(4, false, 50, 0)).unwrap();
+    assert_eq!(
+        notes_of(&e.edit.doc, clip),
+        [(3 * BAR - Q + 10, Q - 10, Some(0))]
     );
 }
 

@@ -810,3 +810,247 @@ fn the_head_of_a_wav_is_the_bytes_it_always_was() {
         );
     }
 }
+
+#[test]
+fn a_found_file_with_other_contents_is_made_ready_again_from_itself() {
+    let root = temp_dir("audio-found-other");
+    let store = Arc::new(store(&root));
+    let (keeper, rx) = keeper(&store);
+    let ogg = fixture("click.ogg");
+    let source = Arc::new(AudioSource {
+        id: AudioId(13),
+        uid: [7; 16],
+        file: "声.ogg".into(),
+        frames: 44_100,
+        sample_rate: 44_100,
+        channels: 2,
+        bits: None,
+        sha256: Some(sha256_of(&ogg).unwrap()),
+    });
+    store.set_sources(vec![(source.uid, source.file.clone())]);
+    // What was made from the file before it went missing, and what another file has.
+    let made = |uid: &[u8; 16], rate: u32| {
+        let path = store.cache_path(uid, rate).unwrap();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        write_wav(&path, rate, 2, 32, 480, |_, _| 0.5);
+        path
+    };
+    let decoded = [made(&source.uid, 48_000), made(&source.uid, 96_000)];
+    let other = made(&[8; 16], 48_000);
+    let peaks = store.peaks_path(&source.uid).unwrap();
+    std::fs::create_dir_all(peaks.parent().unwrap()).unwrap();
+    std::fs::write(&peaks, b"old peaks").unwrap();
+    let found = |path: &Path| {
+        keeper.find(source.clone(), path.to_owned());
+        let AudioNews::Found { found, .. } = next(&rx) else {
+            panic!("not found");
+        };
+        found
+    };
+
+    // The same bytes: what was made from them is still theirs.
+    assert_eq!(found(&ogg), Finding::Taken);
+    assert!(decoded.iter().all(|p| p.is_file()) && peaks.is_file());
+    assert!(store.take_redone().is_empty());
+    assert_eq!(
+        store.playable(&source.uid, &source.file, 48_000),
+        Playable::Ready
+    );
+
+    // Other bytes at the same rate and channels: made again from the file found.
+    let work = store.work_dir().unwrap();
+    std::fs::remove_file(work.join(&source.file)).unwrap();
+    assert_eq!(found(&fixture("click.mp3")), Finding::Taken);
+    assert!(decoded.iter().all(|p| !p.exists()) && !peaks.exists());
+    assert!(other.is_file());
+    // The core lets go of the audio made for its clips.
+    assert_eq!(store.take_redone(), [source.uid]);
+    assert!(store.take_redone().is_empty());
+    assert_eq!(
+        store.playable(&source.uid, &source.file, 48_000),
+        Playable::NeedsCache(work.join(&source.file))
+    );
+}
+
+#[test]
+fn a_file_that_cannot_be_copied_in_says_so() {
+    let root = temp_dir("audio-not-copied");
+    // No state folder: no work place.
+    let store = Arc::new(AudioStore::new(None).with_cache(Some(root.join("cache"))));
+    let (keeper, rx) = keeper(&store);
+    keeper.bring(
+        1,
+        vec![fixture("click.ogg"), root.join("ない.mp3")],
+        Vec::new(),
+    );
+    let AudioNews::Brought { files, .. } = next(&rx) else {
+        panic!("not brought");
+    };
+    assert_eq!(
+        files,
+        [
+            Brought::Unreadable("click.ogg".into(), Unread::NotCopied),
+            Brought::Unreadable("ない.mp3".into(), Unread::Broken)
+        ]
+    );
+    let source = Arc::new(AudioSource {
+        id: AudioId(13),
+        uid: [7; 16],
+        file: "声.ogg".into(),
+        frames: 44_100,
+        sample_rate: 44_100,
+        channels: 2,
+        bits: None,
+        sha256: None,
+    });
+    keeper.find(source, fixture("click.ogg"));
+    assert_eq!(
+        next(&rx),
+        AudioNews::Found {
+            audio: 13,
+            file: "click.ogg".into(),
+            found: Finding::NotCopied
+        }
+    );
+}
+
+/// A file of the work place as a source of the song, its numbers as [`facts`] gives them.
+fn work_source(store: &AudioStore, name: &str, uid: u8) -> Arc<AudioSource> {
+    let path = store.work_dir().unwrap().join(name);
+    let facts = facts(&path).unwrap();
+    let source = Arc::new(AudioSource {
+        id: AudioId(u32::from(uid)),
+        uid: [uid; 16],
+        file: name.into(),
+        frames: facts.frames,
+        sample_rate: facts.sample_rate,
+        channels: facts.channels,
+        bits: facts.bits,
+        sha256: None,
+    });
+    store.set_sources(vec![(source.uid, source.file.clone())]);
+    source
+}
+
+/// Watches `source` at `rate` until it is done: whether it was made ready.
+fn made_ready(store: &Arc<AudioStore>, source: &Arc<AudioSource>, rate: u32) -> bool {
+    let (keeper, rx) = keeper(store);
+    keeper.watch(1, vec![source.clone()], Some(rate));
+    loop {
+        if let AudioNews::Done { ok, .. } = next(&rx) {
+            return ok;
+        }
+    }
+}
+
+#[test]
+fn a_file_whose_peaks_cannot_be_kept_still_plays() {
+    let root = temp_dir("audio-no-peaks");
+    let store = Arc::new(store(&root));
+    // The folder of the peaks cannot be made: a file has its name.
+    std::fs::create_dir_all(root.join("cache")).unwrap();
+    std::fs::write(root.join("cache").join(CACHE_PEAKS), b"not a folder").unwrap();
+    let work = store.work_dir().unwrap();
+    std::fs::create_dir_all(&work).unwrap();
+    write_click_wav(&work.join("click.wav"));
+    let source = work_source(&store, "click.wav", 3);
+    assert!(made_ready(&store, &source, 48_000));
+    assert!(store.open(&source.uid, 48_000).is_some());
+}
+
+#[test]
+fn nothing_is_left_in_the_cache_when_the_resampler_cannot_be_made() {
+    let root = temp_dir("audio-no-resampler");
+    let store = Arc::new(store(&root));
+    let work = store.work_dir().unwrap();
+    std::fs::create_dir_all(&work).unwrap();
+    std::fs::copy(fixture("click.flac"), work.join("click.flac")).unwrap();
+    let source = work_source(&store, "click.flac", 5);
+    // No resampler goes to a rate of 0.
+    assert!(!made_ready(&store, &source, 0));
+    assert_eq!(
+        names(&root.join("cache").join(CACHE_AUDIO)),
+        [] as [String; 0]
+    );
+}
+
+#[test]
+fn a_flac_that_holds_less_than_its_head_says_gets_its_peaks_once() {
+    let root = temp_dir("audio-short-flac");
+    let store = Arc::new(store(&root));
+    let work = store.work_dir().unwrap();
+    std::fs::create_dir_all(&work).unwrap();
+    // click.flac with a head that says 1000 frames more: the frames of STREAMINFO are
+    // the low 36 bits of bytes 18 to 25.
+    let mut bytes = std::fs::read(fixture("click.flac")).unwrap();
+    let word = u64::from_be_bytes(bytes[18..26].try_into().unwrap());
+    assert_eq!(word & 0xF_FFFF_FFFF, 44_100);
+    bytes[18..26].copy_from_slice(&(word + 1_000).to_be_bytes());
+    std::fs::write(work.join("short.flac"), bytes).unwrap();
+    let source = work_source(&store, "short.flac", 6);
+    assert_eq!(source.frames, 45_100);
+    assert!(made_ready(&store, &source, 44_100));
+    assert_eq!(decode_all(&work.join("short.flac")).2.len(), 2 * 44_100);
+
+    // The next start: the file is ready, and its peaks are not made again.
+    let (keeper, rx) = keeper(&store);
+    keeper.watch(2, vec![source.clone()], Some(44_100));
+    keeper.measure(3, Vec::new());
+    let mut made = Vec::new();
+    loop {
+        match next(&rx) {
+            AudioNews::States { states, .. } => {
+                assert_eq!(states, [(source.uid, SourceState::Ready)]);
+            }
+            AudioNews::Measured { .. } => break,
+            other => made.push(other),
+        }
+    }
+    assert!(made.is_empty(), "{made:?}");
+}
+
+#[test]
+fn a_save_removes_what_a_save_cut_short_left_in_the_folder() {
+    let root = temp_dir("audio-left-parts");
+    let store = store(&root);
+    let song = root.join("songs/曲");
+    let audio = song.join(SONG_AUDIO);
+    std::fs::create_dir_all(&audio).unwrap();
+    let hour_ago = SystemTime::now() - Duration::from_secs(3_600);
+    let put = |name: &str, old: bool| {
+        let path = audio.join(name);
+        std::fs::write(&path, b"x").unwrap();
+        if old {
+            let file = std::fs::File::options().write(true).open(&path).unwrap();
+            file.set_modified(hour_ago).unwrap();
+        }
+    };
+    put("歌 1.wav.part", true);
+    put("ドラム.MP3.part", true);
+    // One being written now, one meloet does not name so, and an audio file.
+    put("歌 2.wav.part", false);
+    put("メモ.txt.part", true);
+    put("歌 3.wav", true);
+    store.settle(&song, &[], &mut |_| {}).unwrap();
+    assert_eq!(
+        names(&audio),
+        ["メモ.txt.part", "歌 2.wav.part", "歌 3.wav"]
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_file_brought_in_never_takes_the_place_of_one_that_has_its_name() {
+    let root = temp_dir("audio-bring-link");
+    let store = store(&root);
+    let work = store.work_dir().unwrap();
+    std::fs::create_dir_all(&work).unwrap();
+    // The name is there, and is not a file the song finds: a link to nothing.
+    std::os::unix::fs::symlink(root.join("nowhere"), work.join("ドラム.wav")).unwrap();
+    let from = root.join("ドラム.wav");
+    write_wav(&from, 48_000, 1, 16, 100, |i, _| i as f32 / 100.0);
+    assert_eq!(store.bring_in(&from, &[]).unwrap().0, "ドラム 2.wav");
+    let link = work.join("ドラム.wav").symlink_metadata().unwrap();
+    assert!(link.file_type().is_symlink());
+    assert_eq!(names(&work), ["ドラム 2.wav", "ドラム.wav"]);
+}

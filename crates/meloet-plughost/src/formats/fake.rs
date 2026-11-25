@@ -228,10 +228,11 @@ const SLOW: std::time::Duration = std::time::Duration::from_millis(30);
 struct Mode(bool);
 
 impl Processor for Mode {
-    fn process(&mut self, block: &mut ProcessBlock<'_>) {
+    fn process(&mut self, block: &mut ProcessBlock<'_>) -> bool {
         for output in &mut block.outputs {
             output.fill(if self.0 { 1.0 } else { 0.0 });
         }
+        true
     }
 
     fn reset(&mut self) {}
@@ -242,7 +243,7 @@ struct Pass {
 }
 
 impl Processor for Pass {
-    fn process(&mut self, block: &mut ProcessBlock<'_>) {
+    fn process(&mut self, block: &mut ProcessBlock<'_>) -> bool {
         let note =
             |e: &ToPlugin| matches!(e, ToPlugin::Midi { data, .. } if data[0] & 0xf0 == 0x90);
         match self.fault {
@@ -253,6 +254,7 @@ impl Processor for Pass {
         for (output, input) in block.outputs.iter_mut().zip(block.inputs) {
             output.copy_from_slice(input);
         }
+        true
     }
 
     fn reset(&mut self) {}
@@ -264,7 +266,7 @@ struct Gain {
 }
 
 impl Processor for Gain {
-    fn process(&mut self, block: &mut ProcessBlock<'_>) {
+    fn process(&mut self, block: &mut ProcessBlock<'_>) -> bool {
         for event in block.events {
             if let ToPlugin::Param {
                 id: LEVEL, value, ..
@@ -279,6 +281,7 @@ impl Processor for Gain {
                 *out = sample * level;
             }
         }
+        true
     }
 
     fn reset(&mut self) {}
@@ -324,7 +327,7 @@ impl Sine {
 }
 
 impl Processor for Sine {
-    fn process(&mut self, block: &mut ProcessBlock<'_>) {
+    fn process(&mut self, block: &mut ProcessBlock<'_>) -> bool {
         let mut events = block.events.iter().peekable();
         for frame in 0..block.outputs[0].len() {
             while let Some(event) = events.next_if(|e| e.frame() as usize <= frame) {
@@ -348,6 +351,7 @@ impl Processor for Sine {
                 self.level.store(late.level.load(Relaxed), Relaxed);
             }
         }
+        true
     }
 
     fn reset(&mut self) {
@@ -406,14 +410,14 @@ impl Outs {
 }
 
 impl Processor for Outs {
-    fn process(&mut self, block: &mut ProcessBlock<'_>) {
+    fn process(&mut self, block: &mut ProcessBlock<'_>) -> bool {
         let frames = block.outputs[0].len();
         if frames > self.max_frames {
             for output in &mut block.outputs {
                 output.fill(0.0);
             }
             self.outputs.missed(frames);
-            return;
+            return true;
         }
         let mut events = block.events.iter().peekable();
         for frame in 0..frames {
@@ -429,6 +433,7 @@ impl Processor for Outs {
         }
         let [left, right] = &mut block.outputs;
         self.outputs.mix(&self.out, self.max_frames, left, right);
+        true
     }
 
     fn reset(&mut self) {

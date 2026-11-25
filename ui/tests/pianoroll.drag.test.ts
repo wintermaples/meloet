@@ -32,6 +32,9 @@ let drag: RollDrag;
 /** Whether to play the note when it is pressed or moved (when stopped). */
 let auditionOn: boolean;
 let drawVelocity: number;
+/** The take shown now, and whether recording or counting in. */
+let shownNow: G.Shown | null;
+let busy: boolean;
 /** A fake timer: only remembers the stop time (ms). fire stops it. */
 let timers: { ms: number; run: () => void }[];
 const clock: Timer = {
@@ -47,9 +50,11 @@ beforeEach(() => {
   scale = { root: 0, mode: "major", lock: false, highlight: true };
   auditionOn = false;
   drawVelocity = G.DRAW_VELOCITY;
+  shownNow = n;
+  busy = false;
   timers = [];
   drag = new RollDrag({
-    shown: () => n,
+    shown: () => shownNow,
     geom: () => GEOM,
     step: () => TPQ / 4,
     scale: () => scale,
@@ -63,6 +68,7 @@ beforeEach(() => {
     send: (c) => void sent.push(c),
     drawVelocity: () => drawVelocity,
     mayAudition: () => auditionOn,
+    busy: () => busy,
     ticksToMs: (ticks) => ticks,
     audition: new Auditioner((c) => void sent.push(c), undefined, clock),
   });
@@ -165,6 +171,7 @@ describe("draw tool", () => {
   beforeEach(() => (tool = "draw"));
 
   it("Audition at the moment of the press; on release, stop the sound and AddNote (one grid step)", () => {
+    auditionOn = true;
     drag.down(x((25 * TPQ) / 8), y(50), NONE);
     expect(sent).toEqual([{ type: "audition", keys: [50], velocity: G.DRAW_VELOCITY }]);
     expect(drag.reading()).toBe("D3 ・ 1.4.0000 ・ 長さ 0.0480");
@@ -176,6 +183,7 @@ describe("draw tool", () => {
   });
 
   it("moving right while pressed makes it longer. Esc stops the sound without drawing", () => {
+    auditionOn = true;
     drag.down(x((25 * TPQ) / 8), y(50), NONE);
     drag.move(x((25 * TPQ) / 8) + 30, y(50), NONE);
     expect(drag.reading()).toBe("D3 ・ 1.4.0000 ・ 長さ 1.0000");
@@ -231,5 +239,103 @@ describe("velocity band", () => {
     const top = 71 - (80 * 64) / 127;
     drag.downVelocity(x(0), top);
     expect(drag.drag).toMatchObject({ kind: "velocity", notes: [0] });
+  });
+});
+
+describe("the draw tool while the song plays (UI-ROLL-009)", () => {
+  it("writes the note but does not sound it (only when stopped, as pressing a note)", () => {
+    tool = "draw";
+    auditionOn = false;
+    drag.down(x((25 * TPQ) / 8), y(50), NONE);
+    expect(sent).toEqual([]);
+    drag.up();
+    expect(sent).toEqual([{ type: "addNote", take: 7, start: 3 * TPQ, length: TPQ / 4, key: 50, velocity: G.DRAW_VELOCITY }]);
+  });
+});
+
+describe("a drag keeps the take of the press (UI-ROLL-003)", () => {
+  // The take after an undo: the same notes without D4, so index 1 is E4 there.
+  const other = G.shownOf(
+    take(
+      [
+        [0, TPQ, 60, 80],
+        [2 * TPQ, TPQ / 2, 64, 120],
+      ],
+      6,
+    ),
+    0,
+  );
+
+  it("release sends the id of the take the indexes were read from, even if another take is shown by then", () => {
+    drag.down(x((7 * TPQ) / 6), y(62), NONE);
+    drag.move(x((7 * TPQ) / 6) + 40, y(62), NONE);
+    shownNow = other;
+    expect(drag.up()).toEqual({ type: "moveNotes", take: 7, notes: [1], ticks: TPQ, keys: 0, copy: false });
+  });
+
+  it("the erase tool too: Rust does nothing for the old id", () => {
+    tool = "erase";
+    drag.down(x((7 * TPQ) / 6), y(62), NONE);
+    shownNow = other;
+    expect(drag.up()).toEqual({ type: "deleteNotes", take: 7, notes: [1] });
+  });
+
+  it("a held drag is dropped when another take is shown; not while the same take is shown", () => {
+    drag.down(x((7 * TPQ) / 6), y(62), NONE);
+    drag.move(x((7 * TPQ) / 6) + 40, y(62), NONE);
+    expect(drag.dropIfTakeChanged()).toBe(false);
+    expect(drag.drag).not.toBeNull();
+    shownNow = other;
+    expect(drag.dropIfTakeChanged()).toBe(true);
+    expect(drag.drag).toBeNull();
+    expect(drag.up()).toBeNull();
+    expect(sent.filter((c) => c.type === "moveNotes")).toEqual([]);
+  });
+});
+
+describe("while recording or counting in (UI-ROLL-008)", () => {
+  beforeEach(() => (busy = true));
+
+  it("pressing a note only selects it: nothing moves, nothing is sent on release", () => {
+    drag.down(x((5 * TPQ) / 24), y(60), NONE);
+    expect(sent).toEqual([{ type: "selectNotes", take: 7, notes: [0], mode: "replace" }]);
+    expect(drag.drag).toBeNull();
+    expect(drag.move(x((5 * TPQ) / 24) + 40, y(60), NONE)).toBe(false);
+    expect(drag.up()).toBeNull();
+    expect(sent).toHaveLength(1);
+  });
+
+  it("the edge of a note selects it but does not change its length", () => {
+    drag.down(x(TPQ) - 2, y(60), NONE);
+    expect(sent).toEqual([{ type: "selectNotes", take: 7, notes: [0], mode: "replace" }]);
+    expect(drag.drag).toBeNull();
+  });
+
+  it("the draw and erase tools and the velocity lane start nothing", () => {
+    tool = "draw";
+    auditionOn = true;
+    drag.down(x((25 * TPQ) / 8), y(50), NONE);
+    tool = "erase";
+    drag.down(x((5 * TPQ) / 24), y(60), NONE);
+    expect(drag.drag).toBeNull();
+    drag.downVelocity(x(0), 71 - (80 * 64) / 127);
+    expect(drag.drag).toBeNull();
+    expect(sent).toEqual([]);
+  });
+
+  it("a box still selects", () => {
+    drag.down(x(0) + 1, y(70), NONE);
+    drag.move(x(3 * TPQ), y(59), NONE);
+    expect(drag.up()).toEqual({ type: "selectNotes", take: 7, notes: [0, 1, 2], mode: "replace" });
+  });
+
+  it("the cursor is the plain one over notes, edges and with every tool; the erase tool marks no note", () => {
+    expect(drag.hover(x((5 * TPQ) / 24), y(60), NONE).cursor).toBe("default");
+    expect(drag.hover(x(TPQ) - 2, y(60), NONE).cursor).toBe("default");
+    tool = "draw";
+    expect(drag.hover(x((25 * TPQ) / 8), y(50), NONE).cursor).toBe("default");
+    tool = "erase";
+    expect(drag.hover(x((5 * TPQ) / 24), y(60), NONE).cursor).toBe("default");
+    expect(drag.eraseHover).toBe(-1);
   });
 });

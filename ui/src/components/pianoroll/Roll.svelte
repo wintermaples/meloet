@@ -13,7 +13,7 @@
      The velocity lane folds with 「▾ ベロシティ」 (the band table in spec 3; it opens with 「▸ ベロシティ」 in the CC tab row). The folded height goes to the note area.
      Even when folded, the region (pianoRoll) box stays, so the WebGL context is not made again. -->
 <script lang="ts">
-  import { labelsBesideMarkers } from "./rulerMarks";
+  import { keepWidthsOf, labelsBesideMarkers } from "./rulerMarks";
   import { onDestroy, onMount, untrack } from "svelte";
   import { clockOffsetUs, liveNotes, peekTakeNotes, takeNotes, type Command, type LiveNote, type LiveNotesBook, type TakeNotes } from "../../bridge";
   import type { ColorName } from "../../design/tokens";
@@ -28,7 +28,7 @@
   import * as AG from "../arrangeGeom";
   import { metrics } from "../metrics.svelte";
   import { shownTick, type Meter } from "../time";
-  import { eachLine, gridTick, mapOf } from "../../time/bars";
+  import { eachLine, gridTick, mapOf, meterAtOf } from "../../time/bars";
   import CcLanes from "./CcLanes.svelte";
   import { cursorCss } from "./cursor";
   import { Auditioner, chordOf, fixedOr100, NUDGE_MS, notesMayAudition, onNudgeKeys, ticksToMs } from "./audition";
@@ -115,13 +115,15 @@
 
   const ppt = $derived(pxPerTick(scale));
   const step = $derived(G.gridTicks(pr.grid, meter));
-  /** Drum rows: the top row stays inside the range it can move to for the number of visible rows. The square width is one grid cell − 2 (not smaller than 6). */
+  /** One grid step at tick: with the 1-bar grid, the bar there (the same as core's quantize). */
+  const stepAt = (tick: number) => G.gridTicks(pr.grid, meterAtOf(map, tick));
+  /** Drum rows: the top row stays inside the range it can move to for the number of visible rows. The square width is one grid cell − 2 (not smaller than 6; the cell at the left edge). */
   const drumGeom: G.DrumGeom | undefined = $derived(
     drums
       ? {
           keys: drumKeys,
           top: clampTopRow(drumView.topRow, drumKeys.length, G.wholeRows(areaH, rowH)),
-          hitW: Math.max(metrics.px("part.drum.hit-min"), step * ppt - metrics.px("part.drum.hit-inset")),
+          hitW: Math.max(metrics.px("part.drum.hit-min"), stepAt(prView.scrollTick) * ppt - metrics.px("part.drum.hit-inset")),
           names: drums,
         }
       : undefined,
@@ -131,6 +133,8 @@
   const rollScale = $derived(drums ? { ...pr.scale, lock: false } : pr.scale);
 
   const rec = $derived(transport.state === "recording" ? transport.recording : null);
+  /** While recording or counting in Rust takes no edit (songBusy in keys/attach.ts): no drag that edits starts. */
+  const busy = $derived(transport.state === "recording" || transport.state === "countIn");
   /** When the clip being recorded (or a recording with no clip yet) is shown, what is being recorded is drawn instead of the take. */
   const liveMode = $derived(rec !== null && (shown.clip === null || rec.clip === shown.clip.id));
 
@@ -279,10 +283,10 @@
   const drag = new RollDrag({
     shown: () => (liveMode ? null : n),
     geom: () => g,
-    step: () => step,
+    step: stepAt,
     grid: () => (tick: number, floor: boolean) => gridTick(map, tick, step, floor, pr.grid.division === 0),
     scale: () => rollScale,
-    meter: () => meter,
+    meter: () => map,
     tool: () => prView.tool,
     selected: () => selectedRanges,
     edgePx: () => metrics.px("part.note.resize"),
@@ -296,9 +300,16 @@
     },
     drawVelocity: () => fixedOr100(app),
     mayAudition,
+    busy: () => busy,
     ticksToMs: msOf,
     audition,
     chord: () => (drums ? SINGLE : chordPick.pick),
+  });
+  $effect(() => {
+    void (liveMode ? null : n?.take.id);
+    untrack(() => {
+      if (drag.dropIfTakeChanged()) changed(null);
+    });
   });
 
   /** The chord shadow under the cursor (drawn in the live surface), and its status line. */
@@ -335,6 +346,16 @@
     const r = area!.getBoundingClientRect();
     return { x: e.clientX - r.left, y: e.clientY - r.top };
   }
+
+  // Recording or the count-in starts under a still pointer: drop the edit look at once.
+  $effect(() => {
+    if (!busy) return;
+    untrack(() => {
+      clearShadow();
+      drag.eraseHover = eraseHover = -1;
+      if (!drag.drag) cursor = "default";
+    });
+  });
 
   function changed(e: MouseEvent | null): void {
     dragVersion += 1;
@@ -486,8 +507,10 @@
     // After it is decided whether to fold the left and right panels (the note area width changes).
     if (!clip || w <= 0 || h <= 0 || prPanels.list === null || prPanels.inspector === null) return;
     untrack(() => {
-      if (prView.shownClip !== clip.id) {
+      const serial = current.state?.song.serial ?? 0;
+      if (prView.shownClip !== clip.id || prView.shownSerial !== serial) {
         prView.shownClip = clip.id;
+        prView.shownSerial = serial;
         const made = madeAt !== null && clip.start <= madeAt && madeAt < clip.end;
         madeAt = null;
         if (made) {
@@ -891,17 +914,21 @@
     line.style.visibility = px < 0 || px / dpr >= areaW ? "hidden" : "";
   }
 
+  /** A pointer is held down in the piano roll: no page turn then (what is held would slip from under the pointer). */
+  let pointerHeld = false;
+  const letGo = () => (pointerHeld = false);
+
   function frame(): void {
     const tel = current.telemetry;
     const tick = shownTick(transport, tel, offsetUs === null ? null : performance.now() * 1000 + offsetUs);
     const scrolled = prView.scrollTick;
-    if (prView.follow && areaW > 0) {
+    if (prView.follow && areaW > 0 && !pointerHeld) {
       const x = AG.followScroll(tick * ppt, prView.scrollTick * ppt, areaW);
       if (x !== prView.scrollTick * ppt) prView.scrollTick = x / ppt;
     }
     placeLine(tick);
     const notes = liveMode ? null : n;
-    soundingNotes(notes && notes.take, shown.clip, tick, soundScratch);
+    soundingNotes(notes && notes.take, shown.clip, tick, soundScratch, notes?.maxLength);
     if (notes !== soundFor || !sameKeys(soundScratch, soundNow)) {
       soundFor = notes;
       soundNow = soundScratch.slice();
@@ -978,6 +1005,14 @@
   const markerW: Record<number, number> = $state({});
   const labelW: Record<number, number> = $state({});
   const shownLabels = $derived(labelsBesideMarkers(rulerLabels, rulerMarkers, labelW, markerW));
+  $effect(() => {
+    const ticks = rulerLabels.map((l) => l.tick);
+    const ids = rulerMarkers.map((m) => m.id);
+    untrack(() => {
+      keepWidthsOf(labelW, ticks);
+      keepWidthsOf(markerW, ids);
+    });
+  });
   /** Drum row names. Rows hit in this clip are gray.10, others gray.9 (mock R7-Drum; unused rows are not darkened either). */
   const usedKeys = $derived.by(() => {
     const used = new Set<number>();
@@ -1015,7 +1050,7 @@
   const songLoop = $derived(song.loopOn ? AG.loopBars(song.loopRange, map) : null);
   /** The look while dragging. Removed when Rust's answer (the next diff) comes. */
   let loopPreview = $state<AG.BarRange | null>(null);
-  const shownLoop = $derived(loopPreview ?? songLoop);
+  const shownLoop = $derived(loopPreview ? AG.barLoop(loopPreview, map) : songLoop);
   let rulerDrag: { d: AG.RulerDrag; downX: number; left: number } | null = null;
   $effect(() => {
     void current.rev;
@@ -1023,10 +1058,10 @@
       if (!rulerDrag) loopPreview = null;
     });
   });
-  const loopX = (bar: number) => AG.tickToX(rulerView, AG.lineTick(map, bar));
+  const loopX = (tick: number) => AG.tickToX(rulerView, tick);
 
   function rulerDown(e: PointerEvent): void {
-    if (e.button !== 0) return;
+    if (e.button !== 0 || busy) return;
     const left = (e.currentTarget as HTMLElement).getBoundingClientRect().left;
     const x = e.clientX - left;
     rulerDrag = { d: AG.startRulerDrag(rulerView, x, map, songLoop, metrics.px("space.2")), downX: x, left };
@@ -1103,7 +1138,7 @@
         busy: transport.state === "recording" || transport.state === "countIn",
         clipboard: pr.clipboardNotes > 0,
         origin: (notes?.take.origin ?? 0) !== 0,
-        pasteAt: Math.max(0, G.snapTick(G.xToTick(g, p.x), step)),
+        pasteAt: gridTick(map, G.xToTick(g, p.x), step, false, pr.grid.division === 0),
         mac: platform === "mac",
       },
       actions,
@@ -1126,7 +1161,9 @@
   const scrollTotal = $derived(Math.max((scrollMaxTick + areaW / 2 / ppt) * ppt + areaW / 2, prView.scrollTick * ppt + areaW));
 </script>
 
-<div class="roll" class:drums use:glRegion={"pianoRoll"}>
+<svelte:window onpointerup={letGo} onpointercancel={letGo} />
+
+<div class="roll" class:drums use:glRegion={"pianoRoll"} onpointerdowncapture={() => (pointerHeld = true)}>
   <div class="ruler">
     <div class="ruler-gap">
       <button
@@ -1154,7 +1191,7 @@
       data-test="pr-ruler"
     >
       {#if shownLoop}
-        <div class="loop-mark" style:left="{loopX(shownLoop.from)}px" style:width="{loopX(shownLoop.to) - loopX(shownLoop.from)}px"></div>
+        <div class="loop-mark" style:left="{loopX(shownLoop.start)}px" style:width="{loopX(shownLoop.end) - loopX(shownLoop.start)}px"></div>
       {/if}
       {#each shownLabels as l (l.tick)}
         <span class="m-num mark" class:bar={l.bar} style:left="{l.x}px" bind:offsetWidth={labelW[l.tick]}>{l.text}</span>

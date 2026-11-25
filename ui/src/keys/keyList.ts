@@ -93,8 +93,10 @@ export const ACTION_ROWS: Record<KeyAction["kind"], readonly KeyRow[]> = {
   menuBar: [row("view", "keyList.menuBar", () => t("key.f10"))],
 };
 
-/** Keys spec 4 lists that are taken outside keys.ts (the timeline, the mixer, the parameters panel, drags, boxes). */
+/** Keys spec 4 lists that are taken outside keys.ts (the timeline, the mixer, the parameters panel, drags, boxes, windows and dialogs). */
 export const OTHER_ROWS: readonly KeyRow[] = [
+  row("file", "keyList.closeExported", () => or(t("key.esc"), t("key.enter"))),
+  row("play", "keyList.metronome", () => or(both("key.left", "key.right"), both("key.playStop", "key.enter"))),
   row("arrange", "keyList.addMarker", () => t("key.marker")),
   row("arrange", "keyList.stepMarker", (k) => or(k.alt(t("key.right")), k.alt(t("key.left")))),
   row("arrange", "keyList.renameMarker", () => t("key.renameTrack")),

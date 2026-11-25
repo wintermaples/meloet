@@ -227,7 +227,7 @@ fn a_window_opens_and_what_is_turned_in_it_is_news_and_is_kept_for_a_reload() {
     let open = wait(|done| side.hosts.open_window(id, "Fake knob".into(), done));
     assert_eq!(open, Err(HostError::Gone));
     let block = side.parts.handle.plugin_block().clone();
-    let again = wait(|done| side.hosts.reload(id, block, done)).unwrap();
+    let again = wait(|done| side.hosts.reload(id, 48_000, block, done)).unwrap();
     assert_eq!(again.id, id);
     let level = wait(|done| side.hosts.param(id, 0, done)).unwrap();
     assert!((level.0 - 0.9).abs() < 1e-9, "{level:?}");

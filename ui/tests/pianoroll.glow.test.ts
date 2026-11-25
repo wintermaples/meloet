@@ -71,6 +71,31 @@ describe("the notes sounding at the play position", () => {
     expect(soundingNotes(t, null, 0)).toEqual([]);
   });
 
+  it("with the longest note given, the answer is the same as walking from the first note (forward, seeks back, loops), and few notes are read", () => {
+    let seed = 7;
+    const rand = (n: number) => (seed = (seed * 1103515245 + 12345) % 2147483648) % n;
+    const rows: [number, number, number][] = [];
+    let at = 0;
+    for (let i = 0; i < 2000; i++) {
+      at += rand(3) * (TPQ / 4);
+      rows.push([at, 1 + rand(2 * BAR), 36 + rand(48)]);
+    }
+    const big = take(rows);
+    const longest = Math.max(...big.lengths);
+    const clips = [
+      { ...CLIP, end: 1000 * BAR },
+      { ...CLIP, start: BAR, end: 1000 * BAR, takeOffset: -2 * BAR },
+    ];
+    const ticks = [0, TPQ, 5 * BAR, 40 * BAR, 3 * BAR, 3 * BAR + 1, 120 * BAR, 0, 119 * BAR + 7, 80 * BAR, 2 * BAR - 1];
+    for (const clip of clips) {
+      for (const tick of ticks) expect(soundingNotes(big, clip, tick, [], longest), `${tick}`).toEqual(soundingNotes(big, clip, tick));
+    }
+    let reads = 0;
+    const counted = { ...big, starts: new Proxy(big.starts, { get: (a, k) => (typeof k === "string" && /^\d+$/.test(k) && reads++, Reflect.get(a, k)) }) };
+    soundingNotes(counted, clips[0]!, at - TPQ, [], longest);
+    expect(reads).toBeLessThan(200);
+  });
+
   it("asked every frame, it writes into the same array (no new array per frame)", () => {
     const out: number[] = [];
     expect(soundingNotes(t, CLIP, 0, out)).toBe(out);

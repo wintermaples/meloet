@@ -157,9 +157,11 @@ describe("drawing chords with the draw tool (drag.ts)", () => {
   let pick: ChordPick;
   let tool: Tool;
   let lock: boolean;
+  let busy: boolean;
   let drag: RollDrag;
   beforeEach(() => {
     sent = [];
+    busy = false;
     pick = { kind: "shape", shape: "major" };
     tool = "draw";
     lock = false;
@@ -181,7 +183,15 @@ describe("drawing chords with the draw tool (drag.ts)", () => {
       ticksToMs: (ticks) => ticks,
       audition: new Auditioner((c) => void sent.push(c)),
       chord: () => pick,
+      busy: () => busy,
     });
+  });
+
+  it("while recording or counting in, no shadow (the draw tool writes nothing then)", () => {
+    busy = true;
+    const h = drag.hover(x(2 * TPQ + 10), y(62), NONE);
+    expect(h.cursor).toBe("default");
+    expect(drag.shadow).toBeNull();
   });
 
   it("over the keys, a shadow where it will be written. Not over a note, with the select tool, or for one note", () => {

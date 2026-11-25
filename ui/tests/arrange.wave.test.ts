@@ -17,7 +17,7 @@ import * as W from "../src/components/arrange/wave";
 import { WAVE_POLL_MS, WaveBook, type WaveFetch } from "../src/components/arrange/wavePeaks.svelte";
 import * as G from "../src/components/arrangeGeom";
 import { mock, tokensAt } from "../src/design/tokens";
-import { watchSlots, type GlSlot, type GlWave } from "../src/gl/slot";
+import { runFrameCallbacks, watchSlots, type GlSlot, type GlWave } from "../src/gl/slot";
 import type { WaveSource } from "../src/gl/wave";
 import { TempoMap } from "../src/time/tempoMap";
 import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
@@ -417,6 +417,20 @@ describe("peak book (WaveBook)", () => {
     book.trim(2);
     expect(book.held()).toBe(0);
   });
+
+  it("another song does not wait on the gaps of the last one (audio numbers start again per song). The same song keeps them", async () => {
+    const f = fakeFetch();
+    make(f.fetch);
+    book.trim(1);
+    book.sourceFor(1, 5, 0);
+    await f.fail(5, 0);
+    book.trim(1);
+    book.sourceFor(1, 5, 0);
+    expect(f.asked).toEqual(["get 5/0"]);
+    book.trim(2);
+    book.sourceFor(2, 5, 0);
+    expect(f.asked).toEqual(["get 5/0", "get 5/0"]);
+  });
 });
 
 // ---- with Arrange mounted ----
@@ -610,5 +624,44 @@ describe("audio clips in Arrange", () => {
     await show(scene("vocalRec"));
     const tail = slots.get(target.querySelector<HTMLElement>('[data-test="vocal-rec-tail"]')!) as Rects;
     expect(tail.alignY).toBe("trackMeters");
+  });
+
+  it("the name of a voice being recorded is measured again when its take number changes (a later lap): cut at the clip's right end", async () => {
+    const hadW = Object.getOwnPropertyDescriptor(proto, "offsetWidth");
+    let widthOf = (_text: string) => 1e6;
+    Object.defineProperty(proto, "offsetWidth", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.dataset.test === "vocal-rec-label" ? widthOf((this.textContent ?? "").trim()) : 0;
+      },
+    });
+    try {
+      const s = scene("vocalRec");
+      const rec = s.transport.recordingVocals[0]!;
+      app.setTelemetry(app.telemetryWith({ position: { tick: rec.from + 2 * BAR, ticksPerUs: 0, state: "recording", countInBeatsLeft: 0, lap: 0 } }));
+      const label = () => target.querySelector<HTMLElement>('[data-test="vocal-rec-label"]')!;
+      const frame = () => {
+        runFrameCallbacks();
+        flushSync();
+      };
+      // How wide the clip is: a very long name is cut there.
+      await show(s);
+      frame();
+      const clipPx = Number(/calc\(100% - ([\d.]+)px\)/.exec(label().style.clipPath)![1]);
+      unmount(mounted!);
+      mounted = null;
+      // Take 1 fits in the clip; take 2 is a little wider than the clip.
+      widthOf = (text) => (text.endsWith("2") ? clipPx + 4 : clipPx - 4);
+      await show(s);
+      frame();
+      expect(label().style.clipPath).toBe("");
+      app.setState({ ...s, transport: { ...s.transport, recordingVocals: [{ ...rec, take: 2 }] } });
+      flushSync();
+      frame();
+      expect(label().style.clipPath).toContain(`calc(100% - ${clipPx}px)`);
+    } finally {
+      if (hadW) Object.defineProperty(proto, "offsetWidth", hadW);
+      else delete (proto as unknown as Record<string, unknown>).offsetWidth;
+    }
   });
 });

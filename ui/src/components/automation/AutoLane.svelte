@@ -4,8 +4,8 @@
      Holding and moving from an empty place chooses by a box. A point is removed by pressing it twice, or by choosing it and pressing Delete (laneKeys.ts).
      While dragging, only the screen moves first, and one intent is sent on release. Esc cancels (cancelDrag in pianoroll/view.svelte.ts). -->
 <script lang="ts">
-  import { onMount } from "svelte";
-  import type { LaneView } from "../../bridge";
+  import { onDestroy, onMount, untrack } from "svelte";
+  import { peekLanePoints, type LaneView } from "../../bridge";
   import { everyGlFrame, glSlot } from "../../gl/slot";
   import { current, send } from "../../state/app.svelte";
   import { t } from "../../text";
@@ -13,7 +13,7 @@
   import { tickToX, type View } from "../arrangeGeom";
   import { metrics } from "../metrics.svelte";
   import { builtinOf } from "../params/selected";
-  import { onDragCancel } from "../pianoroll/view.svelte";
+  import { dragReading, onDragCancel } from "../pianoroll/view.svelte";
   import { positionText as placeText, ticksPerBar, ticksPerBeat } from "../time";
   import { pickLane } from "../timeline/pick";
   import * as A from "./autoGeom";
@@ -36,8 +36,20 @@
 
   const points = $derived(pointsOf(lane.laneId));
   const pts = $derived(points && points.id === lane.laneId ? A.pointList(points) : []);
+  /** The look kept after release and sending the intent, until the answer arrives (so the point does not jump back to the original place for a moment). */
+  let pending = $state.raw<{ drag: A.PointDrag; laneId: number; rev: number | null } | null>(null);
+  /** The kept look with the points it was made on: the answer gives the lane a new id (architecture 21-5), whose points come a moment later. */
+  const kept = $derived.by(() => {
+    const p = pending;
+    if (!p) return null;
+    if (p.laneId === lane.laneId) return { drag: p.drag, pts };
+    const old = points ? undefined : peekLanePoints(p.laneId);
+    return old ? { drag: p.drag, pts: A.pointList(old) } : null;
+  });
+  /** The points drawn: the lane's, or the ones the kept look was made on while the new ones are on their way. */
+  const drawn = $derived(kept?.pts ?? pts);
   /** The lane's vertical range (spec 3 (92-6, 21-B)). It comes from the points that arrived, so when a point is moved outside, it widens again when the answer comes after release. */
-  const range = $derived(A.laneRange(pts, lane.step));
+  const range = $derived(A.laneRange(drawn, lane.step));
   const dims: A.LaneDims = $derived({
     h: metrics.px("size.lane"),
     pad: metrics.px("space.1"),
@@ -48,7 +60,7 @@
   /** 「上 −3.0 dB」「下 −9.0 dB」 at the top right and bottom right. Not shown for a lane that shows the whole range, or one whose value text the screen cannot make (plugins). */
   const ends = $derived.by(() => {
     if (range === A.FULL_RANGE) return null;
-    const e = A.rangeEnds(pts, range);
+    const e = A.rangeEnds(drawn, range);
     const hi = positionText(lane.name, e.hi);
     const lo = positionText(lane.name, e.lo);
     return hi === null || lo === null ? null : { hi, lo };
@@ -65,19 +77,19 @@
   // ---- Dragging ----
 
   let drag = $state.raw<A.PointDrag | null>(null);
-  /** The look kept after release and sending the intent, until the answer arrives (so the point does not jump back to the original place for a moment). */
-  let pending = $state.raw<{ drag: A.PointDrag; laneId: number; rev: number | null } | null>(null);
+  /** The lane id the held point was pressed on: its indexes mean nothing in the points of another id. */
+  let dragLane = $state(0);
   let box = $state.raw<{ x0: number; y0: number; x: number; y: number; moved: boolean; shift: boolean } | null>(null);
   let hovered = $state(-1);
   let reading = $state<{ text: string; x: number; y: number } | null>(null);
 
   $effect(() => {
     const p = pending;
-    if (p && (p.laneId !== lane.laneId || (p.rev !== null && current.rev >= p.rev))) pending = null;
+    if (p && (p.laneId === lane.laneId ? p.rev !== null && current.rev >= p.rev : !kept)) pending = null;
   });
 
-  const shownDrag = $derived(drag ?? pending?.drag ?? null);
-  const shown = $derived(A.draggedPoints(pts, shownDrag));
+  const shownDrag = $derived((dragLane === lane.laneId ? drag : null) ?? kept?.drag ?? null);
+  const shown = $derived(A.draggedPoints(drawn, shownDrag));
   const rects = $derived.by(() => {
     const d = shownDrag?.moved ? shownDrag : null;
     return A.laneRects(view, shown.pts, lane.step, dims, {
@@ -85,8 +97,8 @@
       armed,
       selected: (i) => (d ? shown.moving[i]! : selected.has(i)),
       hovered: d ? -1 : hovered,
-      from: d ? d.points.map((i) => pts[i]!) : [],
-      flat: pts.length === 0 ? handPosition(track, lane.target, values) : null,
+      from: d ? d.points.flatMap((i) => drawn[i] ?? []) : [],
+      flat: drawn.length === 0 ? handPosition(track, lane.target, values) : null,
     });
   });
 
@@ -96,6 +108,11 @@
     return { x: e.clientX - r.left, y: e.clientY - r.top };
   };
   const meterAt = (tick: number) => map.meterAt(Math.max(0, tick));
+  /** The reading in place; the status line shows the same text (spec 2 "Reading in place"). */
+  function read(next: { text: string; x: number; y: number } | null): void {
+    if (next || reading) dragReading.text = next?.text ?? null;
+    reading = next;
+  }
 
   function moveReading(d: A.PointDrag, p: { x: number; y: number }): void {
     const grab = pts[d.grab]!;
@@ -104,14 +121,14 @@
     const delta = A.deltaText(d.dTick, ticksPerBar(m), ticksPerBeat(m));
     const from = bareText(lane.name, grab.value);
     const toText = positionText(lane.name, to);
-    reading = { text: from !== null && toText !== null ? t("lane.readMove", { delta, from, to: toText }) : delta, x: p.x, y: p.y };
+    read({ text: from !== null && toText !== null ? t("lane.readMove", { delta, from, to: toText }) : delta, x: p.x, y: p.y });
   }
   function addReading(p: { x: number; y: number }, shift: boolean): void {
     const tick = A.addTick(view, map, p.x, shift);
     const v = points ? valueAt(points, tick) : null;
     const value = v === null ? null : positionText(lane.name, v);
     const position = placeText(tick, map);
-    reading = { text: value === null ? position : t("lane.readAdd", { position, value }), x: p.x, y: p.y };
+    read({ text: value === null ? position : t("lane.readAdd", { position, value }), x: p.x, y: p.y });
   }
 
   function down(e: PointerEvent): void {
@@ -130,11 +147,16 @@
     if (!selected.has(i)) send({ type: "selectAutoPoints", lane: lane.laneId, points: [i] });
     if (busy) return;
     pending = null;
+    dragLane = lane.laneId;
     drag = { points: chosen, grab: i, downX: p.x, downY: p.y, moved: false, dTick: 0, dValue: 0 };
   }
   function move(e: PointerEvent): void {
     const p = at(e);
     const d = drag;
+    if (d && dragLane !== lane.laneId) {
+      cancel();
+      return;
+    }
     if (d) {
       const next = A.dragPoints(d, pts, view, dims, map, p.x, p.y, still(), e.shiftKey);
       if (next !== d) drag = next;
@@ -145,18 +167,18 @@
     if (b) {
       const moved = b.moved || Math.hypot(p.x - b.x0, p.y - b.y0) >= still();
       box = { ...b, x: p.x, y: p.y, moved };
-      if (moved) reading = null;
+      if (moved) read(null);
       return;
     }
     hovered = A.pointAt(view, pts, dims, p.x, p.y, dims.point);
   }
   function up(e: PointerEvent): void {
     const p = at(e);
-    reading = null;
+    read(null);
     const d = drag;
     if (d) {
       drag = null;
-      if (!d.moved || (d.dTick === 0 && d.dValue === 0)) return;
+      if (dragLane !== lane.laneId || !d.moved || (d.dTick === 0 && d.dValue === 0)) return;
       const made = { drag: d, laneId: lane.laneId, rev: null as number | null };
       pending = made;
       void send({ type: "moveAutoPoints", lane: lane.laneId, points: d.points, dTick: d.dTick, dValue: d.dValue }).then((rev) => {
@@ -177,10 +199,11 @@
     if (!drag && !box) return false;
     drag = null;
     box = null;
-    reading = null;
+    read(null);
     return true;
   }
   onMount(() => onDragCancel(cancel));
+  onDestroy(() => read(null));
 
   function double(e: MouseEvent): void {
     e.stopPropagation();
@@ -217,7 +240,8 @@
     const w = writing;
     if (!w || !recFrame) return;
     const x0 = tickToX(view, w.fromTick);
-    const x1 = tickToX(view, Math.max(w.fromTick, playTick()));
+    // The meters come about 60 times a second: read untracked, so the effect below does not start again for each.
+    const x1 = tickToX(view, Math.max(w.fromTick, untrack(playTick)));
     const width = Math.round((x1 - Math.max(x0, 0)) * metrics.dpr) / metrics.dpr;
     if (width === drawnWidth) return;
     drawnWidth = width;

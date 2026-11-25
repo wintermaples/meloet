@@ -1,7 +1,7 @@
 //! Tempo, meter and markers along the song (docs/architecture.md 21-1, 21-15).
 //!
-//! A tempo is beats per minute as an `f64` that is a whole number of 0.01 steps, the beat
-//! being the lower number of the meter in force there (`meloet_model::Tempo::bpm`).
+//! A tempo is quarter notes per minute, whatever the meter in force there, as an `f64` that is
+//! a whole number of 0.01 steps (`meloet_model::Tempo::bpm`).
 //!
 //! What names a tempo point is its tick, a meter change its bar: there is one at most at each
 //! place. Tick 0 and bar 0 are the song's head, which is always there, can be selected and

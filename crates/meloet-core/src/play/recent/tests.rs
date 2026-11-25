@@ -528,6 +528,31 @@ fn another_keys_target_and_another_song_forget_the_phrase() {
 }
 
 #[test]
+fn a_clip_made_on_another_track_takes_the_keys_there_and_forgets_the_phrase() {
+    let mut m = at_120();
+    cmd(&mut m, Command::DuplicateTrack { track: 1 });
+    let copy = m.view().song.tracks[1].id;
+    let select = |track: u32| Command::SelectTrack {
+        track,
+        from_arm: false,
+    };
+    cmd(&mut m, select(1));
+    played(&mut m, &[still(0, S, on(60)), still(0, S + 1000, off(60))]);
+    assert!(can_keep(&m));
+    cmd(
+        &mut m,
+        Command::CreateClip {
+            track: copy,
+            tick: 4 * BAR,
+        },
+    );
+    assert_eq!(m.view().song.play_target, Some(copy));
+    assert!(!can_keep(&m));
+    cmd(&mut m, select(1));
+    assert!(!can_keep(&m), "going back does not bring it back");
+}
+
+#[test]
 fn a_phrase_holds_4096_events_and_ten_minutes_and_lets_the_oldest_go() {
     let mut m = at_120();
     // 3000 keys, each pressed and let go 10 ms apart: 6000 events.
@@ -609,6 +634,25 @@ fn one_key_held_under_thousands_of_controller_moves_stays() {
 }
 
 #[test]
+fn one_key_let_go_under_thousands_of_controller_moves_keeps_its_length() {
+    let mut m = at_120();
+    let mut items = vec![still(0, S, on(60)), still(0, S + 250_000, off(60))];
+    items.extend((0..5000u64).map(|i| {
+        let kind = RecEventKind::Cc {
+            number: 1,
+            value: (i % 128) as u8,
+        };
+        still(0, S + 251_000 + i * 100, kind)
+    }));
+    played(&mut m, &items);
+    keep(&mut m, 2 * S);
+    let clip = clips(&m)[0].clone();
+    assert_eq!(notes(&m, &clip), [(60, 0, (Q / 2) as u32)]);
+    let take = TakeNotes::decode(&m.take_notes(clip.take_id).unwrap()).unwrap();
+    assert_eq!(take.controls.len(), MAX_EVENTS - 2, "the newest moves");
+}
+
+#[test]
 fn what_is_held_is_read_anew_after_a_recording_took_the_keys() {
     let pedal_down = HeldNow {
         keys: 0,
@@ -654,4 +698,34 @@ fn what_is_held_is_read_anew_after_a_recording_took_the_keys() {
         1,
         "the pedal is at the head of the take"
     );
+}
+
+#[test]
+fn keys_played_while_the_shelf_auditions_are_not_kept() {
+    use meloet_protocol::{InstrumentKind, ShelfMode};
+
+    crate::instruments::tests::EVERY_SOUND.set(true);
+    let mut m = at_120();
+    // Down before the audition, let go during it.
+    played(&mut m, &[still(0, 10 * S, on(60))]);
+    let mode = ShelfMode::NewTrack;
+    cmd(&mut m, Command::OpenShelf { mode });
+    let instrument = Some(InstrumentKind::SynthBass);
+    cmd(&mut m, Command::ShelfSelect { instrument });
+    assert!(m.play().auditioning());
+    played(
+        &mut m,
+        &[
+            still(0, 10 * S + 250_000, off(60)),
+            still(0, 10 * S + 500_000, on(64)),
+            still(0, 10 * S + 750_000, off(64)),
+        ],
+    );
+    cmd(&mut m, Command::ShelfCancel);
+    assert!(!m.play().auditioning());
+    // The phrase from before the audition is there to keep, without the key of the audition.
+    assert!(can_keep(&m));
+    keep(&mut m, 12 * S);
+    let clip = &clips(&m)[0];
+    assert_eq!(notes(&m, clip), [(60, 0, (Q / 2) as u32)]);
 }

@@ -2,7 +2,6 @@
 // Menu bar rows that have a key also go through runKeyAction here (so the choice between the piano roll and the arrange is made in one place).
 import { clockOffsetUs, type AppState, type Command } from "../bridge";
 import { aboutBack } from "../components/about/about.svelte";
-import { exportedOpen } from "../components/export/exported";
 import { keyListBack } from "../components/keylist/keyList.svelte";
 import { closeContextMenu } from "../components/menu/contextMenu.svelte";
 import { closeMenuBar, openMenuBar } from "../components/menu/menuBar.svelte";
@@ -34,7 +33,7 @@ import {
 } from "../components/tracks.svelte";
 import { shownTick } from "../components/time";
 import { laneDeleteCommand } from "../components/automation/laneKeys";
-import { joinTarget, renameClipTarget, repeatTarget } from "../components/clipEdits";
+import { joinTarget, pasteableOnSelected, renameClipTarget, repeatTarget } from "../components/clipEdits";
 import { openRepeatBox } from "../components/arrange/repeatBox.svelte";
 import { startClipRename } from "../components/clipName.svelte";
 import { historyFocused, historyHome, historyJumpCommand, historyStep } from "../components/history/historyUi.svelte";
@@ -51,6 +50,7 @@ import {
   platformOf,
   type KeyAction,
 } from "./keys";
+import { dialogInFront, latencyCancel } from "./front";
 import { forgetTyped, letGoTyped, switchTypedKeys, typedKeyDown, typedKeyUp, type TypedDeps } from "./typed.svelte";
 
 export interface KeyDeps {
@@ -153,6 +153,28 @@ export function songBusy(state: AppState): boolean {
   );
 }
 
+const PLAIN_DELETE = { key: "Delete", code: "Delete", ctrl: false, meta: false, alt: false, shift: false };
+
+/**
+ * Delete in the arrange when automation points or a tempo point, time signature flag or marker was pressed last (7-readings A-21):
+ * the same rules as the key (handleKeydown asks them first). null: the chosen clips. "none": taken, but nothing to delete.
+ */
+function pickedDelete(state: AppState): Command | "none" | null {
+  const c = { typing: false, busy: songBusy(state), toArrange: prView.focus === "arrange" || !pianoRollOpen(state) };
+  return laneDeleteCommand(PLAIN_DELETE, c, state.automation) ?? timelineKeyCommand(PLAIN_DELETE, c, state.timeline);
+}
+
+/** Whether 「消す」 of the menu bar deletes something when keys go to the arrange (the start of the song is not deleted). */
+export function arrangeDeleteUsable(state: AppState): boolean {
+  const picked = pickedDelete(state);
+  if (picked === "none") return false;
+  if (picked?.type === "deleteTimeline") {
+    const at = picked.target;
+    return !(at.kind === "tempoPoint" && at.tick === 0) && !(at.kind === "meterChange" && at.bar === 0);
+  }
+  return picked !== null || (state.arrange.selectedClips.length > 0 && !songBusy(state));
+}
+
 /** While there is no output yet, Space and R do nothing (the owner's decision). Space to stop still works. */
 function command(action: KeyAction, state: AppState): Command | null {
   const transport = state.transport;
@@ -202,8 +224,11 @@ function command(action: KeyAction, state: AppState): Command | null {
       const ids = joinTarget(state);
       return ids === null || busy ? null : { type: "joinClips", clips: ids };
     }
-    case "deleteSelected":
-      return { type: "deleteSelected" };
+    case "deleteSelected": {
+      const picked = pickedDelete(state);
+      if (picked === "none") return null;
+      return picked ?? { type: "deleteSelected" };
+    }
     // When keys go to the arrange (B-71). Mod D duplicates right after the chosen clips.
     case "duplicate":
       return clips.length === 0 || busy
@@ -219,7 +244,7 @@ function command(action: KeyAction, state: AppState): Command | null {
       return clips.length === 0 || busy ? null : { type: "cutClips", clips };
     // Paste goes at the play position on the selected track (Rust moves it to the start of the bar).
     case "paste":
-      return state.arrange.clipboardClips === 0 || busy
+      return !pasteableOnSelected(state) || busy
         ? null
         : { type: "pasteClips", to: null };
     // Disabled while recording or counting in, like the song name list.
@@ -405,33 +430,39 @@ const WITH_MOD = new Set<KeyAction["kind"]>([
 ]);
 
 /**
+ * The keys that still work while a dialog is in front (besides Esc and the dialog's Enter): play and stop, the start, the menu bar, and the
+ * Mod keys of the 「ファイル」 rows, undo, the view and 「キーで弾く」. The keys that act on the chosen parts behind the dialog do nothing
+ * (one letter, digits, arrows, Delete, F2, Mod A X C V D J R; 7-readings).
+ */
+const OVER_DIALOGS = new Set<KeyAction["kind"]>([
+  "playStop",
+  "toStart",
+  "menuBar",
+  "newSong",
+  "openSong",
+  "saveSong",
+  "saveSongAs",
+  "export",
+  "audioSettings",
+  "quit",
+  "undo",
+  "redo",
+  "zoom",
+  "scale",
+  "typedKeys",
+]);
+
+/**
  * At the shelf's turn of Esc, if an audition is on, stop it before closing (spec 3: Esc stops it and goes back to the track's sound;
  * the next Esc closes the shelf). A dialog comes first if there is one.
  */
 function auditionToCancel(state: AppState): boolean {
-  const ws = state.workspace;
-  return (
-    ws.songDialog === null &&
-    ws.settings === null &&
-    state.export.dialog === null &&
-    !state.plugins.stoppedOpen &&
-    ws.layout.rightOpen.includes("shelf") &&
-    shelfHasPick(state)
-  );
+  return dialogInFront(state) === null && state.workspace.layout.rightOpen.includes("shelf") && shelfHasPick(state);
 }
 
 /** When the undo history band has focus and there is no dialog, ↑ ↓ Home Enter Esc belong to the band (spec 4). */
 function historyKeys(state: AppState, doc: Document): boolean {
-  const ws = state.workspace;
-  return (
-    ws.songDialog === null &&
-    ws.settings === null &&
-    state.export.dialog === null &&
-    exportedOpen(state) === null &&
-    !state.plugins.stoppedOpen &&
-    ws.layout.lower.some((l) => l.band === "history") &&
-    historyFocused(doc)
-  );
+  return dialogInFront(state) === null && state.workspace.layout.lower.some((l) => l.band === "history") && historyFocused(doc);
 }
 
 /** The third turn of Esc (term tips and menus). true when it closed the menu bar menu, a context menu, or a list such as the status line's. */
@@ -464,16 +495,22 @@ export function handleKeydown(ev: KeyboardEvent, deps: KeyDeps): void {
   if (state.workspace.hint === "soundCameOut")
     deps.send({ type: "dismissHint" });
 
-  const context = state.workspace.chooser
-    ? "outputChooser"
-    : shelfHasKeys(state)
-      ? "shelf"
-      : historyKeys(state, doc)
-        ? "history"
-        : "main";
+  // A part that took the key says so (lists moved to body are heard on document too, before this handler).
+  if (ev.defaultPrevented) return;
+
+  const front = dialogInFront(state);
+  const context = front
+    ? "main"
+    : state.workspace.chooser
+      ? "outputChooser"
+      : shelfHasKeys(state)
+        ? "shelf"
+        : historyKeys(state, doc)
+          ? "history"
+          : "main";
 
   // Keys for tempo and time signature changes and markers (K, Alt ← →, F2 with a marker chosen, Delete of the chosen ones). Esc does not go through here.
-  if (context === "main" && ev.key !== "Escape") {
+  if (context === "main" && ev.key !== "Escape" && !front) {
     const lane = laneDeleteCommand(
       keyInputOf(ev),
       { typing, busy: songBusy(state), toArrange: prView.focus === "arrange" || !pianoRollOpen(state) },
@@ -515,11 +552,12 @@ export function handleKeydown(ev: KeyboardEvent, deps: KeyDeps): void {
       !ev.altKey &&
       !ev.ctrlKey &&
       !ev.metaKey;
-    if (plainEnter && state.plugins.stoppedOpen) {
+    // About, the key list and the latency dialog have no Enter of their own here (their focused button or box takes it).
+    if (plainEnter && front === "scanStopped") {
       // The bright button on the right, 「閉じる」 (the same rule as the save dialogs of spec 3).
       ev.preventDefault();
       deps.send({ type: "closeScanStopped" });
-    } else if (plainEnter && state.workspace.songDialog) {
+    } else if (plainEnter && front === "song" && state.workspace.songDialog) {
       ev.preventDefault();
       const d = state.workspace.songDialog;
       deps.send({
@@ -527,17 +565,18 @@ export function handleKeydown(ev: KeyboardEvent, deps: KeyDeps): void {
         dialog: d.id,
         answer: songDialogEnter(d),
       });
-    } else if (plainEnter && state.export.dialog) {
+    } else if (plainEnter && front === "export" && state.export.dialog) {
       // The bright button on the right, 「書き出す」 (does nothing when it cannot be pressed).
       ev.preventDefault();
       if (state.export.dialog.canExport) deps.send({ type: "startExport" });
-    } else if (plainEnter && exportedOpen(state)) {
+    } else if (plainEnter && front === "exported") {
       // 「書き出しました」: the bright button 「閉じる」 (round 12 E9).
       ev.preventDefault();
       deps.send({ type: "closeExport" });
-    } else if (plainEnter && state.workspace.settings) {
+    } else if (plainEnter && front === "settings" && state.workspace.settings) {
+      // The bright button: 「これで決まり」 on the first page, 「閉じる」 on 「くわしい設定」.
       ev.preventDefault();
-      deps.send({ type: "settingsApply" });
+      deps.send({ type: state.workspace.settings.advancedOpen ? "settingsCancel" : "settingsApply" });
     }
     return;
   }
@@ -556,12 +595,19 @@ export function handleKeydown(ev: KeyboardEvent, deps: KeyDeps): void {
       deps.send(
         context === "history"
           ? { type: "toggleBand", band: "history" }
-          : state.export.dialog || exportedOpen(state)
+          : front === "export" || front === "exported"
             ? { type: "closeExport" }
-            : auditionToCancel(state)
-              ? { type: "shelfCancel" }
-              : { type: "back" },
+            : front === "latency"
+              ? latencyCancel(state.workspace.latencyDialog?.measure ?? null)
+              : auditionToCancel(state)
+                ? { type: "shelfCancel" }
+                : { type: "back" },
       );
+    return;
+  }
+
+  if (front && !OVER_DIALOGS.has(action.kind)) {
+    if (WITH_MOD.has(action.kind)) ev.preventDefault();
     return;
   }
 

@@ -150,6 +150,14 @@ impl Model {
         self.play.discard_recovered(saved, effects);
         self.recovery.view = None;
         self.notice = Some(StatusMessage::RecoveryDiscarded);
+        self.ask_delete_recovery();
+    }
+
+    /// "消す", asked right after "戻さない". The song stays as it is: undo still brings the
+    /// changes back, and they are written again as any other change.
+    pub(super) fn delete_recovery(&mut self, effects: &mut Vec<Effect>) {
+        self.recovery.written = None;
+        effects.push(Effect::RemoveRecovery);
     }
 
     /// "ファイルの場所をひらく".
@@ -206,7 +214,8 @@ impl Model {
             self.recovery.changed_at_us = Some(self.now_us);
         }
         let busy = self.play.busy();
-        let started = busy && !std::mem::replace(&mut self.recovery.was_busy, busy);
+        let was_busy = std::mem::replace(&mut self.recovery.was_busy, busy);
+        let started = busy && !was_busy;
         if busy {
             // A recording starts over a change that still waits: the song is written now.
             // The voice recorded from here on is placed on this song, and a start after

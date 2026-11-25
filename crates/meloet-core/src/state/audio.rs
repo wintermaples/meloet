@@ -243,6 +243,7 @@ impl Model {
                     }
                     Finding::Mismatch => Some(StatusMessage::AudioFoundMismatch),
                     Finding::Unreadable => Some(StatusMessage::AudioUnreadable { file }),
+                    Finding::NotCopied => Some(StatusMessage::AudioNotCopied { file }),
                 };
             }
             AudioNews::Measured { ticket, peaks } => {
@@ -291,6 +292,7 @@ impl Model {
                     Unread::NotAudio => StatusMessage::AudioUnreadable { file },
                     Unread::Broken => StatusMessage::AudioBroken { file },
                     Unread::TooManyChannels => StatusMessage::AudioTooManyChannels { file },
+                    Unread::NotCopied => StatusMessage::AudioNotCopied { file },
                 });
             }
             return;

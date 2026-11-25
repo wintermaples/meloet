@@ -12,3 +12,9 @@ export function labelsBesideMarkers<L extends { tick: number; x: number }, M ext
 ): L[] {
   return labels.filter((l) => !markers.some((m) => l.x < m.x + (markerW[m.id] ?? 0) && l.x + (labelW[l.tick] ?? 0) > m.x));
 }
+
+/** Drops the widths of beat numbers or markers no longer on the ruler, so the tables do not grow while scrolling. */
+export function keepWidthsOf(widths: Record<number, number>, keys: readonly number[]): void {
+  const keep = new Set(keys);
+  for (const k of Object.keys(widths)) if (!keep.has(Number(k))) delete widths[Number(k)];
+}

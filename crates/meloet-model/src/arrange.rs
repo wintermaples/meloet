@@ -10,9 +10,9 @@
 use std::sync::Arc;
 
 use crate::TrackId;
-use crate::audio::AudioShape;
 use crate::audio::clips::fit_fades;
 use crate::audio::comp::comp_window;
+use crate::audio::{AudioShape, AudioSource};
 use crate::edit::{Edit, EditError, Ids, MAX_TICK, clip_index, track_index, with_track};
 use crate::history::StepKind;
 use crate::song::{
@@ -180,6 +180,8 @@ pub fn copy_clips(doc: &Doc, clips: &[ClipId]) -> Result<Vec<KeptClip>, EditErro
 
 /// Puts copies (new ids, the same takes) of the kept clips in, the first on `track` at `at`.
 /// The takes kept must be of this song: [`History`](crate::History) never gives their ids again.
+/// A file a kept vocal clip plays that is not in the audio table (an undo took it out since)
+/// goes back in, in the same step.
 pub fn paste_clips(
     doc: &Doc,
     kept: &[KeptClip],
@@ -196,7 +198,21 @@ pub fn paste_clips(
         placing.push((k.clip.clone(), row_from(doc, base, k.row)?, start));
     }
     let step = StepKind::PasteClips { count: kept.len() };
-    place(doc, &[], placing, step, Ids(doc.next_id))
+    let mut pasted = place(doc, &[], placing, step, Ids(doc.next_id))?;
+    let mut missing: Vec<Arc<AudioSource>> = Vec::new();
+    for ct in kept.iter().flat_map(|k| k.clip.takes.vocal()) {
+        let source = &ct.take.source;
+        if doc.audio(source.id).is_none() && !missing.iter().any(|m| m.id == source.id) {
+            missing.push(source.clone());
+        }
+    }
+    if !missing.is_empty() {
+        let mut table = doc.audio.to_vec();
+        table.extend(missing);
+        table.sort_by_key(|a| a.id);
+        pasted.edit.doc.audio = Arc::new(table);
+    }
+    Ok(pasted)
 }
 
 /// The index of the track `rows` rows from the one at `ti`; `OffTheSong` past the first or the
@@ -576,6 +592,7 @@ pub fn join_clips(doc: &Doc, clips: &[ClipId]) -> Result<(Edit, ClipId), EditErr
                 notes.push(Note {
                     start: s - start,
                     length: n.length.min(c.end - s),
+                    from: None,
                     ..*n
                 });
             }

@@ -324,8 +324,7 @@ describe("mouse in Arrange", () => {
     expect(target.querySelector('[data-test="arrange-reading"]')!.textContent!.trim()).toBe("6.1.0000（+1 小節）");
     expect(lanes().style.cursor).toBe("move");
     const box = target.querySelector<HTMLElement>(".rec-host .drag-clip")!;
-    // jsdom rewrites 「translate(64px, 0px)」 as 「translate(64px)」
-    expect(box.style.transform).toBe("translate(64px)");
+    expect(box.style.transform).toBe("translateX(64px)");
     expect(box.style.left).toBe("256px");
     expect(slots.get(box)?.kind).toBe("rects");
     const frame = laneRects().filter((r) => r.color === "color.gray.7");
@@ -334,10 +333,23 @@ describe("mouse in Arrange", () => {
     const before = laneRects();
     pointer("pointermove", 430, 30);
     expect(laneRects()).toBe(before);
-    expect(box.style.transform).toBe("translate(128px)");
+    expect(box.style.transform).toBe("translateX(128px)");
     pointer("pointerup", 366, 30);
     expect(moves()).toEqual([{ type: "moveClips", clips: [3], ticks: 2 * BAR, tracks: 0, copy: false }]);
     expect(dragReading.text).toBeNull();
+  });
+
+  it("moved onto a row of another height, the moving picture is made again on that row (only the sideways move is a transform)", () => {
+    show((s) => (s.arrange.tallTrack = 2));
+    pointer("pointerdown", 300, 30);
+    pointer("pointermove", 300, 94);
+    const box = target.querySelector<HTMLElement>(".rec-host .drag-clip")!;
+    // Row 1 is 160 high from 64: the box is the clip there (inset 3, hair 1).
+    expect([box.style.top, box.style.height, box.style.transform]).toEqual(["67px", `${160 - 1 - 2 * 3}px`, ""]);
+    pointer("pointermove", 364, 94);
+    expect(box.style.transform).toBe("translateX(64px)");
+    pointer("pointerup", 364, 94);
+    expect(moves()).toEqual([{ type: "moveClips", clips: [3], ticks: BAR, tracks: 1, copy: false }]);
   });
 
   it("selects the clip that was pressed (the current design). Moving to another track sends track 2's number", () => {

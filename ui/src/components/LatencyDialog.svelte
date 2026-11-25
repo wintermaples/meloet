@@ -3,11 +3,14 @@
      「この数を使う」 makes it the setting of that PC (it belongs to the PC, not the song). The number the PC reports is AudioView.latency. -->
 <script lang="ts">
   import { LATENCY_CLICKS, type LatencyMeasure } from "../bridge";
+  import { latencyCancel } from "../keys/front";
   import { movableDialog } from "../lib/dialogMove";
+  import ScrollArea from "../lib/ScrollArea.svelte";
   import { current, send } from "../state/app.svelte";
   import { t } from "../text";
   import Button from "./Button.svelte";
   import { msText, textParts } from "./format";
+  import { metrics } from "./metrics.svelte";
 
   const app = $derived(current.state);
   const measure = $derived<LatencyMeasure | null>(app?.workspace.latencyDialog?.measure ?? null);
@@ -47,13 +50,13 @@
 
   const close = () => send({ type: "closeLatencyMeasure" });
   /** Cancel (Esc): while measuring, stops measuring; otherwise closes the dialog. */
-  const cancel = () => send(measure?.state === "measuring" ? { type: "stopLatencyMeasure" } : { type: "closeLatencyMeasure" });
+  const cancel = () => send(latencyCancel(measure));
 </script>
 
 {#if app && measure && latency}
   <div class="place">
     <div class="lead"></div>
-    <div class="dialog" role="dialog" aria-label={t("latency.title")} data-test="latency-dialog" use:movableDialog>
+    <div class="dialog" role="dialog" aria-label={t("latency.title")} data-test="latency-dialog" style:color-scheme={metrics.colorScheme} use:movableDialog>
       <div class="head" data-dialog-head>
         <span class="title">{t("latency.title")}</span>
         <span class="spacer"></span>
@@ -61,32 +64,34 @@
           {t("settings.close")}<span class="mono">{t("key.esc")}</span>
         </button>
       </div>
-      <div class="body">
-        <span class="wrap">{t("latency.how", { count: LATENCY_CLICKS })}</span>
-        {#if progress}
-          <div class="progress" data-test="latency-progress">
-            <span class="label">{progress.label}</span>
-            <div class="bar"><div class="fill" style:transform="scaleX({progress.fraction})"></div></div>
-            <span class="mono strong">{progress.count}</span>
+      <ScrollArea data-test="latency-body">
+        <div class="body">
+          <span class="wrap">{t("latency.how", { count: LATENCY_CLICKS })}</span>
+          {#if progress}
+            <div class="progress" data-test="latency-progress">
+              <span class="label">{progress.label}</span>
+              <div class="bar"><div class="fill" style:transform="scaleX({progress.fraction})"></div></div>
+              <span class="mono strong">{progress.count}</span>
+            </div>
+          {/if}
+          <div class="table">
+            <div class="row">
+              <span class="strong name">{t("latency.reported")}</span>
+              <span class="mono strong" data-test="latency-reported">{ms(latency.reportedMs)}</span>
+            </div>
+            <div class="row">
+              <span class="strong name">{t("latency.measured")}</span>
+              <span class="mono strong" data-test="latency-measured">{ms(measured.value)}</span>
+              {#if measured.partial !== null}<span class="label">{t("latency.partialMean", { count: measured.partial })}</span>{/if}
+            </div>
           </div>
-        {/if}
-        <div class="table">
-          <div class="row">
-            <span class="strong name">{t("latency.reported")}</span>
-            <span class="mono strong" data-test="latency-reported">{ms(latency.reportedMs)}</span>
-          </div>
-          <div class="row">
-            <span class="strong name">{t("latency.measured")}</span>
-            <span class="mono strong" data-test="latency-measured">{ms(measured.value)}</span>
-            {#if measured.partial !== null}<span class="label">{t("latency.partialMean", { count: measured.partial })}</span>{/if}
-          </div>
+          {#if failure}
+            <span class="wrap strong" data-test="latency-failed">{failure}</span>
+          {:else}
+            <span class="wrap label">{t("latency.quietHint")}</span>
+          {/if}
         </div>
-        {#if failure}
-          <span class="wrap strong" data-test="latency-failed">{failure}</span>
-        {:else}
-          <span class="wrap label">{t("latency.quietHint")}</span>
-        {/if}
-      </div>
+      </ScrollArea>
       <div class="foot">
         <Button test="latency-cancel" onclick={cancel}>{t("button.cancel")}<span class="mono label">{t("key.esc")}</span></Button>
         {#if measure.state === "idle"}
@@ -180,8 +185,6 @@
     flex: 1;
   }
   .body {
-    min-height: 0;
-    overflow: auto;
     display: flex;
     flex-direction: column;
     gap: var(--space-3);

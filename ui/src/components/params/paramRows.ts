@@ -108,8 +108,11 @@ export function keyStep(
 ): number {
   if (p.shape !== "continuous")
     return Math.min(p.max, Math.max(p.min, Math.round(value) + dir));
-  if (fine) return roundTo(p, value + dir / 10 ** decimals(p));
-  return valueAt(p, fractionOf(p, value) + dir / 20);
+  const unit = roundTo(p, value + dir / 10 ** decimals(p));
+  if (fine) return unit;
+  const next = valueAt(p, fractionOf(p, value) + dir / 20);
+  // At the bottom of a log scale one twentieth of the bar can be less than one shown place.
+  return next !== roundTo(p, value) ? next : unit;
 }
 
 export interface ParamRow {

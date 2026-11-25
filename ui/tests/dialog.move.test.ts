@@ -112,6 +112,11 @@ describe.each([
     expect(dialog().style.transform).toBe("translate(50px, 40px)");
   });
 
+  it("UI-PARITY #5 (later): follows the theme's color-scheme (native parts of text boxes)", () => {
+    show(component, state());
+    expect(dialog().style.getPropertyValue("color-scheme")).not.toBe("");
+  });
+
   it("does not move when the contents or the bottom row are pressed", () => {
     show(component, state());
     dragBy(q(".foot"), 50, 40);

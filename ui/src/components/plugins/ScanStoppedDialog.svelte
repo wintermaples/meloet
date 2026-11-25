@@ -7,6 +7,7 @@
   import { current, send } from "../../state/app.svelte";
   import { t } from "../../text";
   import Button from "../Button.svelte";
+  import { metrics } from "../metrics.svelte";
   import { formatText, placesReveal, reasonText } from "./scan";
 
   const plugins = $derived(current.state?.plugins ?? null);
@@ -26,7 +27,7 @@
 {#if plugins?.stoppedOpen}
   <div class="place">
     <div class="lead"></div>
-    <div class="dialog" role="dialog" aria-label={t("plugin.stoppedTitle")} data-test="scan-stopped-dialog" use:movableDialog>
+    <div class="dialog" role="dialog" aria-label={t("plugin.stoppedTitle")} data-test="scan-stopped-dialog" style:color-scheme={metrics.colorScheme} use:movableDialog>
       <div class="head" data-dialog-head>
         <span class="title">{t("plugin.stoppedTitle")}</span>
         <span class="m-spacer"></span>

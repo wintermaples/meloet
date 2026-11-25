@@ -122,6 +122,12 @@ describe("song dialog", () => {
       ["cancel", "openPrevious"],
     ],
     [{ kind: "broken", title: "はじめての曲.meloet", previous: false }, "このファイルは読めませんでした。", ["やめる"], ["cancel"]],
+    [
+      { kind: "deleteRecovery" },
+      "なおすためのファイルも消しますか？ 消すと、meloet が急に止まったあとに、すてた変更は戻りません。",
+      ["残す", "消す"],
+      ["keep", "delete"],
+    ],
   ] as [Partial<SongDialogView>, string, string[], string[]][])("%o", (d, body, labels, answers) => {
     show(SongDialog, dialog(d));
     expect(text('[data-test="song-dialog"] .head')).toBe(d.title ?? "はじめての曲");
@@ -140,9 +146,14 @@ describe("song dialog", () => {
     state = dialog({ kind: "broken", previous: false });
     handleKeydown(new KeyboardEvent("keydown", { key: "Enter", cancelable: true }), deps);
     handleKeydown(new KeyboardEvent("keydown", { key: "Escape", cancelable: true }), deps);
+    state = dialog({ kind: "deleteRecovery" });
+    handleKeydown(new KeyboardEvent("keydown", { key: "Enter", cancelable: true }), deps);
+    handleKeydown(new KeyboardEvent("keydown", { key: "Escape", cancelable: true }), deps);
     expect(sent).toEqual([
       { type: "answerSongDialog", dialog: 7, answer: "save" },
       { type: "answerSongDialog", dialog: 7, answer: "cancel" },
+      { type: "back" },
+      { type: "answerSongDialog", dialog: 7, answer: "delete" },
       { type: "back" },
     ]);
   });

@@ -24,6 +24,7 @@ impl Play {
         if self.song.session.play_target == Some(id) {
             let left = &e.doc.tracks;
             self.song.session.play_target = left.get(index).or_else(|| left.last()).map(|t| t.id);
+            self.selected_track_changed(Some(id));
         }
         self.apply(e, effects);
         Some(StatusMessage::TrackDeleted { track: said })

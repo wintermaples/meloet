@@ -18,8 +18,8 @@ use meloet_model::{
     Timeline, TrackId, arrange, roll, timeline as timeline_edit,
 };
 use meloet_protocol::{
-    ArrangeView, BarSpan, ClipEdge, ClipSpot, ClipView, ControlKind, Grid, IndexRange, KeyCount,
-    LiveNote, LiveNotes, LiveNotesSnapshot, MusicalScale, NOTE_SELECTION_KEYS, NoteField,
+    ArrangeView, BarSpan, ClipEdge, ClipKind, ClipSpot, ClipView, ControlKind, Grid, IndexRange,
+    KeyCount, LiveNote, LiveNotes, LiveNotesSnapshot, MusicalScale, NOTE_SELECTION_KEYS, NoteField,
     NoteSelection, PianoRollView, QuantizeAlign, QuantizeSettings, REPEAT_COUNT_MAX, RecordFormat,
     RecordingView, ScaleMode, SelectMode, StatusMessage, TakeControl, TakeControlValue, TakeNote,
     TakeNotes, TickSpan, TimelineRef, TrackRef, TransportState, TransportView,
@@ -374,6 +374,8 @@ impl ClipPick {
 pub enum Cut {
     AudioSystem,
     Output,
+    /// The files of the vocal tracks could not be written on.
+    Disk(meloet_protocol::DiskStop),
 }
 
 struct Rec {
@@ -858,6 +860,7 @@ impl Play {
                 files: Play::vocal_file_asks(&vocals),
                 format,
                 x_us,
+                taken: self.doc().audio.iter().map(|s| s.file.clone()).collect(),
             });
         }
         self.rec = Some(Rec {
@@ -991,7 +994,7 @@ impl Play {
         let range = match self.doc().loop_range {
             None if self.song.session.loop_on => {
                 let map = self.map();
-                let head = map.meter_at(self.position);
+                let head = map.meter_at(self.play_line());
                 TickRange::new(head.bar_tick, map.tick_of_bar(head.bar + DEFAULT_LOOP_BARS))
             }
             _ => None,
@@ -1069,8 +1072,12 @@ impl Play {
     /// The clip becomes the one clicked: shown in the piano roll, its track selected.
     fn click(&mut self, id: ClipId) {
         if let Some((track, _)) = self.doc().clip(id) {
+            let track = track.id;
             if !self.busy() {
-                self.song.session.play_target = Some(track.id);
+                let before = self.song.session.play_target.replace(track);
+                if before != Some(track) {
+                    self.selected_track_changed(before);
+                }
             }
             self.selected = Some(id);
             self.piano_roll = Some(id);
@@ -1413,7 +1420,14 @@ impl Play {
         let doc = &self.song.doc;
         let target = &mut self.song.session.play_target;
         if target.is_none_or(|t| doc.track(t).is_none()) {
-            *target = doc.tracks.first().map(|t| t.id);
+            // As `delete_track`: the track now at its place, or the last one.
+            let place = target.and_then(|t| before.tracks.iter().position(|b| b.id == t));
+            let at = place.map_or(doc.tracks.first(), |i| {
+                doc.tracks.get(i).or_else(|| doc.tracks.last())
+            });
+            *target = at.map(|t| t.id);
+            // The track before is gone: not one for the keys to stay on.
+            self.selected_track_changed(None);
         }
         self.drop_gone_vocals();
         self.recent_follow_target();
@@ -2166,6 +2180,8 @@ impl Play {
     }
 
     pub fn transport_view(&self, open: bool) -> TransportView {
+        // Stopped, with the recording still being put away: Space and R do nothing yet.
+        let open = open && !(self.state == TransportState::Stopped && self.rec.is_some());
         TransportView {
             state: self.state,
             position: self.position,
@@ -2248,6 +2264,13 @@ impl Play {
             selected_clip: self.selected.map(|c| c.0),
             piano_roll_clip: self.piano_roll.map(|c| c.0),
             clipboard_clips: self.clip_board.len() as u32,
+            clipboard_kind: (self.clip_board.first()).map(|k| {
+                if k.clip.is_keys() {
+                    ClipKind::Keys
+                } else {
+                    ClipKind::Vocal
+                }
+            }),
             // The rules above the song have it (`state.rs`).
             tall_track: None,
         }

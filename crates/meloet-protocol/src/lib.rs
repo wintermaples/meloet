@@ -61,8 +61,8 @@ pub use export::{
     EXPORT_MP3_DEFAULT_KBPS, EXPORT_MP3_KBPS, EXPORT_MP3_SAMPLE_RATES, EXPORT_PICTURE_MAX_BYTES,
     EXPORT_TAIL_MAX_S, EXPORT_WAVE_BARS, ExportChange, ExportCheck, ExportDialogView,
     ExportFailure, ExportFormat, ExportLoudness, ExportLoudnessResult, ExportMidiProblem,
-    ExportMidiTrack, ExportMidiTracks, ExportRange, ExportRunView, ExportSolo, ExportStoppedPlugin,
-    ExportTail, ExportView,
+    ExportMidiTrack, ExportMidiTracks, ExportRange, ExportReplace, ExportRunView, ExportSolo,
+    ExportStoppedPlugin, ExportTail, ExportView,
 };
 pub use history::{HistoryRow, HistoryView, MeterValue, StepName, StepPlace, StepWhat, StripName};
 pub use knobs::{SOUND_KNOB_DEFAULTS, SoundKnob, SoundKnobsView};
@@ -91,12 +91,12 @@ pub use timeline::{
     TempoPointView, TimelineRef, TimelineView,
 };
 pub use vocal::{
-    KeptVocals, LATENCY_CLICKS, LatencyDialogView, LatencyFailure, LatencyMeasure, LatencySource,
-    LatencyView, RecordFormat, SelectedSound, TrackKindView, VocalInput, VocalRecordingView,
-    VocalRef,
+    ClipKind, DiskStop, KeptVocals, LATENCY_CLICKS, LatencyDialogView, LatencyFailure,
+    LatencyMeasure, LatencySource, LatencyView, RecordFormat, SelectedSound, TrackKindView,
+    VocalInput, VocalRecordingView, VocalRef,
 };
 
-pub const PROTOCOL_VERSION: u32 = 37;
+pub const PROTOCOL_VERSION: u32 = 39;
 
 /// Screen → Rust. Intent only; Rust decides what the state becomes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -743,7 +743,7 @@ pub enum Command {
     /// column while pressed (mock R3-PRMouse), a note while it is pressed, a drag at each change
     /// of key, ↑ ↓ on selected notes as a chord. Whatever was sounding stops first: this
     /// replaces it. Empty `keys` only stops. The screen times how long it sounds (↑ ↓: about
-    /// 0.3 s) and sends `AuditionOff`, and sends the fixed velocity while
+    /// 0.3 s) and then sends `Audition` with empty `keys`, and sends the fixed velocity while
     /// `KeyboardsView::velocity_fixed` is on. Keys outside the locked scale are left out, and
     /// keys past the first 16.
     ///
@@ -1355,7 +1355,8 @@ pub enum Command {
     /// runs.
     OpenExport,
     /// 「閉じる」, 「やめる」 and Esc in the dialog: it closes, and what the check wrote so
-    /// far is thrown away.
+    /// far is thrown away. While the dialog asks before writing over files
+    /// (`ExportDialogView::replace`), only the question goes and the dialog stays.
     CloseExport,
     /// A choice of the dialog.
     SetExport {
@@ -1366,7 +1367,9 @@ pub enum Command {
     ChooseExportPlace,
     /// 「書き出す」, 「このまま書き出す」 and Enter in the dialog: it closes and the export
     /// runs (`ExportView::run`); what the check wrote already is kept and used. Only with
-    /// `ExportDialogView::can_export`.
+    /// `ExportDialogView::can_export`. When files it would write are there already, the
+    /// dialog stays and asks first (`ExportDialogView::replace`); sent again while it asks,
+    /// it writes over them.
     StartExport,
     /// 「やめる」 of the status line: the export stops and what it wrote is taken away
     /// (`ExportRunView::Cancelled`).
@@ -1521,7 +1524,8 @@ pub enum Command {
     /// R2 a key of the PC keyboard while `KeyboardsView::typed_keys`: as a key of a MIDI
     /// keyboard (the sound, the input meter, recording, R1), at `TYPED_KEY_VELOCITY` or the
     /// fixed velocity. `t_us`: when it was pressed or let go, CLOCK_MONOTONIC µs of Rust
-    /// (the screen turns `KeyboardEvent.timeStamp` into it with `HelloReply::mono_us`); a
+    /// (the screen turns `KeyboardEvent.timeStamp` into it with the offset it measures by
+    /// round trips of the shell's `clock` call, `clockOffsetUs` in `ui/src/bridge/`); a
     /// recorded key takes its place from it. Nothing while `typed_keys` is off, nor for a
     /// `note` above 127.
     TypedKey {
@@ -2103,6 +2107,10 @@ pub enum SongAnswer {
     ChooseLocation,
     /// "1 つ前を開く" (`Broken` with `previous`).
     OpenPrevious,
+    /// "消す" (`DeleteRecovery`): the recovery file goes.
+    Delete,
+    /// "残す" (`DeleteRecovery`): the recovery file stays, as with Esc.
+    Keep,
     /// "やめる" (every dialog).
     Cancel,
 }
@@ -2816,6 +2824,9 @@ pub struct ArrangeView {
     pub piano_roll_clip: Option<u32>,
     /// How many clips `PasteClips` would put in; 0 when there is nothing to paste.
     pub clipboard_clips: u32,
+    /// The kind of the first clip kept, the one `PasteClips` puts on the track it is given (or
+    /// the selected one): a track of the other kind takes none. `None` with nothing to paste.
+    pub clipboard_kind: Option<ClipKind>,
     /// The vocal track whose row is 160 high (`Command::SetTallTrack`; spec 3 「歌のトラックで
     /// ピアノロールをひらこうとしたとき」), by `TrackView::id`. `None` again when the track is
     /// deleted or another song comes. Not saved, and no step.
@@ -2989,6 +3000,8 @@ pub enum SongDialogKind {
     CannotSave,
     /// "1 つ前を開く / やめる", or "やめる" alone.
     Broken,
+    /// "残す / 消す", right after "戻さない": whether the recovery file goes too.
+    DeleteRecovery,
 }
 
 /// Heights are px at 100 %; the screen multiplies by the scale. `lower` is top to bottom.
@@ -4067,6 +4080,24 @@ pub enum StatusMessage {
     MasterAutomationRestored,
     /// M5 `Command::AddFadeOut` in a song with no clip: there is no end to fade to.
     FadeOutNoClips,
+    // Protocol 38 (bug sweep, 2026-11-25).
+    /// The files of the vocal tracks could not be made as a recording started: "歌を録れません。
+    /// 作業の場所に書けません。" With `keys`, the keys are recorded all the same: "…鍵盤はこのまま
+    /// 録ります。" A recording of vocal tracks alone was stopped.
+    VocalsNotRecorded {
+        keys: bool,
+    },
+    /// A recording was stopped because its files could not be written on; what was recorded
+    /// is kept. "ディスクに書けなくなったので、録音を止めました。録れた所までは残しています。",
+    /// "音のファイルがいちばん大きい所まで来たので、…"
+    RecordingStoppedDisk {
+        reason: DiskStop,
+    },
+    /// A file brought in, or found by 「さがす…」, reads and could not be copied into the work
+    /// place: "「声.wav」を入れられませんでした。作業の場所に書けません。" Nothing was brought in.
+    AudioNotCopied {
+        file: String,
+    },
 }
 
 /// The selected notes of the piano roll, for the status line.
@@ -4298,3 +4329,7 @@ mod tests35;
 mod tests36;
 #[cfg(test)]
 mod tests37;
+#[cfg(test)]
+mod tests38;
+#[cfg(test)]
+mod tests39;

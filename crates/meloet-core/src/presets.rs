@@ -179,7 +179,8 @@ pub fn load(dir: &Path) -> UserPresets {
     presets
 }
 
-/// As the settings are written: a whole temporary file, synced, renamed over the old one.
+/// As the settings are written: a whole temporary file, synced, renamed over the old one,
+/// and the folder synced.
 pub fn save(dir: &Path, presets: &UserPresets) -> std::io::Result<()> {
     let mut effects = presets.other.clone();
     for kind in EffectKind::ALL {
@@ -213,7 +214,8 @@ pub fn save(dir: &Path, presets: &UserPresets) -> std::io::Result<()> {
     file.write_all(text.as_bytes())?;
     file.sync_all()?;
     drop(file);
-    std::fs::rename(&temporary, dir.join(FILE_NAME))
+    std::fs::rename(&temporary, dir.join(FILE_NAME))?;
+    crate::songfile::sync_dir(dir)
 }
 
 #[cfg(test)]

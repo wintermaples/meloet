@@ -35,6 +35,12 @@ pub trait PcmStore: Send + Sync {
     fn open_made(&self, _key: &[u8; 32], _sample_rate: u32) -> Option<Box<dyn PcmFile>> {
         None
     }
+
+    /// A number that goes up whenever the store may open what it could not before
+    /// (`AudioStore::generation`); a store whose files never change keeps it at 0.
+    fn generation(&self) -> u64 {
+        0
+    }
 }
 
 /// One clip as the read-ahead thread plays it: `[start, end)` in song frames, as the

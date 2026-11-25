@@ -2,7 +2,7 @@ use super::*;
 use crate::TICKS_PER_QUARTER;
 use crate::edit::{add_vocal_track, switch_take};
 use crate::notes::{song_controls, song_notes};
-use crate::song::CC_SUSTAIN;
+use crate::song::{CC_MODULATION, CC_SUSTAIN};
 
 const T1: TrackId = TrackId(1);
 const Q: u64 = TICKS_PER_QUARTER;
@@ -146,6 +146,43 @@ fn with_no_clip_there_a_new_clip_fills_only_the_empty_place() {
             clip: clips[1].id,
             takes: 1
         }
+    );
+}
+
+/// What was held where the empty place starts (a pedal down from the start of the recording,
+/// a modulation moved later) is there at the head of the new clip; a controller with a point
+/// right there, or back at rest, gets none.
+#[test]
+fn with_no_clip_there_the_new_clip_starts_with_what_was_held() {
+    let doc = with_clip(&Doc::new_default(), 0, 2, 36);
+    let cc = |tick, number, value| ControlPoint {
+        tick,
+        value: ControlValue::Cc { number, value },
+    };
+    let bend = |tick, v| ControlPoint {
+        tick,
+        value: ControlValue::PitchBend(v),
+    };
+    let mut played = new_take(0, 4 * BAR, vec![note(2 * BAR + Q, Q, 42)]);
+    played.controls = vec![
+        cc(0, CC_SUSTAIN, 127),
+        bend(Q, 500),
+        cc(BAR, CC_MODULATION, 30),
+        bend(BAR + Q, 0),
+        cc(2 * BAR, CC_MODULATION, 40),
+        cc(3 * BAR, CC_SUSTAIN, 0),
+    ];
+    let (edit, _) = overdub_recording(&doc, T1, played).unwrap();
+    let clips = &edit.doc.track(T1).unwrap().clips;
+    assert!(Arc::ptr_eq(&clips[0], &doc.track(T1).unwrap().clips[0]));
+    assert_eq!((clips[1].start, clips[1].end), (2 * BAR, 4 * BAR));
+    assert_eq!(
+        song_controls(&clips[1]),
+        [
+            cc(2 * BAR, CC_SUSTAIN, 127),
+            cc(2 * BAR, CC_MODULATION, 40),
+            cc(3 * BAR, CC_SUSTAIN, 0)
+        ]
     );
 }
 

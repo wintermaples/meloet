@@ -27,6 +27,7 @@
   import LaneHead from "./automation/LaneHead.svelte";
   import { laneMenu } from "./automation/laneMenu";
   import { masterHome, masterOwner } from "./automation/laneValue";
+  import { shownMuted } from "./automation/autoState.svelte";
   import { laneNameText } from "./history/stepText";
   import { bandHeight } from "./comp/comp";
   import CompHead from "./comp/CompHead.svelte";
@@ -65,14 +66,20 @@
 
   let field = $state<HTMLInputElement>();
   let draft = $state("");
+  let draftFor: number | null = null;
   $effect(() => {
     const id = trackEdit.renaming;
-    if (id === null) return;
+    if (id === null) {
+      draftFor = null;
+      return;
+    }
     const track = song.tracks.find((x) => x.id === id);
     if (!track) {
       trackEdit.renaming = null;
       return;
     }
+    if (id === draftFor) return;
+    draftFor = id;
     draft = track.name;
     void tick().then(() => {
       field?.focus();
@@ -107,6 +114,8 @@
 
   let press: { id: number; from: number; y0: number; pointer: number; el: HTMLElement } | null = null;
   let drag = $state<{ id: number; from: number; dy: number } | null>(null);
+  /** A head is being dragged: the arrange does not scroll the rows under it with the wheel. */
+  let { reordering = $bindable(false) }: { reordering?: boolean } = $props();
   const trackH = $derived(metrics.px("size.track"));
   /** The master standing in as the owner of its lane (round 12 M5); null while it has none. */
   const master = $derived(song.master.lanes.length > 0 ? masterOwner(song.master) : null);
@@ -144,6 +153,7 @@
     if (!drag) {
       if (busy || Math.abs(dy) < metrics.px("space.1")) return;
       drag = { id: press.id, from: press.from, dy };
+      reordering = true;
     } else drag = { ...drag, dy };
   }
   function headUp(e: PointerEvent): void {
@@ -160,6 +170,7 @@
     if (press?.el.hasPointerCapture?.(press.pointer)) press.el.releasePointerCapture(press.pointer);
     press = null;
     drag = null;
+    reordering = false;
   }
   onMount(() =>
     onDragCancel(() => {
@@ -267,8 +278,8 @@
           <!-- Usable while recording and during count-in too (A-14). -->
           <button
             class="tog live"
-            class:on={track.muted}
-            aria-pressed={track.muted}
+            class:on={shownMuted(track, current.state!.automation.held)}
+            aria-pressed={shownMuted(track, current.state!.automation.held)}
             aria-label={t("arrange.mute")}
             data-test="track-mute"
             use:term={"ミュート"}

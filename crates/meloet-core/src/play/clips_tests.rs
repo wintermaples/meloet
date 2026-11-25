@@ -581,3 +581,71 @@ fn open_in_the_piano_roll_while_recording_keeps_the_track() {
     assert_eq!(m.play().song().session.play_target, Some(TrackId(1)));
     assert_eq!(m.view().arrange.piano_roll_clip, Some(b));
 }
+
+#[test]
+fn a_click_on_a_vocal_clip_selects_its_track_as_its_head_does() {
+    let m = &mut ready();
+    three_tracks(m);
+    let select = |track| Command::SelectTrack {
+        track,
+        from_arm: false,
+    };
+    cmd(m, select(2));
+    cmd(m, Command::SelectClip { clip: Some(31) });
+    let song = m.play().song();
+    assert_eq!(song.session.play_target, Some(TrackId(3)));
+    assert_eq!(song.keys_target(), Some(TrackId(2)), "the keys stay");
+    assert!(song.session.armed_vocals.contains(&TrackId(3)), "its ●");
+    assert_eq!(status(m), Some(StatusMessage::NoInput));
+
+    cmd(m, select(1));
+    cmd(
+        m,
+        Command::SelectClips {
+            clips: vec![32],
+            mode: SelectMode::Add,
+        },
+    );
+    let song = m.play().song();
+    assert_eq!(song.session.play_target, Some(TrackId(3)));
+    assert_eq!(song.keys_target(), Some(TrackId(1)));
+}
+
+#[test]
+fn a_vocal_track_selected_in_place_of_a_deleted_one_gets_its_arm() {
+    let m = &mut ready();
+    three_tracks(m);
+    cmd(
+        m,
+        Command::SelectTrack {
+            track: 2,
+            from_arm: false,
+        },
+    );
+    cmd(m, Command::DeleteTrack { track: 2 });
+    let song = m.play().song();
+    assert_eq!(song.session.play_target, Some(TrackId(3)));
+    assert!(song.session.armed_vocals.contains(&TrackId(3)));
+}
+
+#[test]
+fn a_vocal_track_selected_when_undo_takes_the_selected_one_away_gets_its_arm() {
+    let m = &mut ready();
+    three_tracks(m);
+    assert_eq!(m.play().doc().tracks[2].id, TrackId(3));
+    cmd(
+        m,
+        Command::SelectTrack {
+            track: 1,
+            from_arm: false,
+        },
+    );
+    cmd(m, Command::AddVocalTrack);
+    let added = m.play().song().session.play_target;
+    assert_ne!(added, Some(TrackId(1)));
+    cmd(m, Command::Undo);
+    let song = m.play().song();
+    assert_eq!(song.session.play_target, Some(TrackId(3)));
+    assert!(song.session.armed_vocals.contains(&TrackId(3)));
+    assert_eq!(song.keys_target(), Some(TrackId(1)), "the keys stay");
+}

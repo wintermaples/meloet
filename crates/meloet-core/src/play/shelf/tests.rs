@@ -407,3 +407,26 @@ fn the_engine_at_the_start_has_the_song_and_the_keys_on_its_first_track() {
         ]
     );
 }
+
+#[test]
+fn a_new_track_from_the_shelf_takes_the_keys_as_a_selected_track_does() {
+    // The fake engine does not know vocal tracks.
+    let (m, _) = &mut rig();
+    cmd(m, Command::AddVocalTrack);
+    let vocal = m.view().song.play_target;
+    assert_eq!(
+        m.view().song.keys_target,
+        Some(1),
+        "the keys stay where they were"
+    );
+    cmd(m, open(ShelfMode::NewTrack));
+    cmd(m, select(SynthBass));
+    cmd(m, Command::ShelfConfirm);
+    let added = m.view().song.play_target;
+    assert_eq!(m.view().song.keys_target, added);
+    // As after a track selected by hand: taken away again, the keys do not go back to the
+    // track before the vocal one.
+    cmd(m, Command::Undo);
+    assert_eq!(m.view().song.play_target, vocal);
+    assert_eq!(m.view().song.keys_target, None);
+}

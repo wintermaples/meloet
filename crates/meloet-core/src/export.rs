@@ -31,6 +31,8 @@ mod mp3_gate_tests;
 mod mp3_tests;
 mod numbers;
 pub(crate) mod render;
+#[cfg(test)]
+mod replace_tests;
 pub mod sink;
 pub mod tags;
 pub(crate) mod told;
@@ -43,8 +45,8 @@ use meloet_model::{Doc, TickRange, TrackId};
 use meloet_protocol::{
     Command, EXPORT_MP3_DEFAULT_KBPS, EXPORT_MP3_KBPS, EXPORT_MP3_SAMPLE_RATES, ExportChange,
     ExportCheck, ExportDialogView, ExportFailure, ExportFormat, ExportLoudness, ExportMidiTracks,
-    ExportRange, ExportRunView, ExportSolo, ExportStoppedPlugin, ExportTail, ExportView,
-    PluginSlotRef, RecordFormat, StatusMessage, TickSpan, TrackRef,
+    ExportRange, ExportReplace, ExportRunView, ExportSolo, ExportStoppedPlugin, ExportTail,
+    ExportView, PluginSlotRef, RecordFormat, StatusMessage, TickSpan, TrackRef,
 };
 use midi::MidiOut;
 
@@ -79,6 +81,9 @@ pub enum ExportAsk {
     /// 「書き出す」 under MIDI: write the files at once with [`midi::write`], and answer
     /// with what it gives back.
     WriteMidi { job: u64, files: Vec<MidiOut> },
+    /// A run was cancelled after its files were in place: take them away. Nothing is
+    /// answered.
+    Remove { files: Vec<PathBuf> },
 }
 
 /// One rendering, at the rate the audio runs at, as 32 bit floats.
@@ -272,6 +277,9 @@ struct Job {
     done: bool,
     must_be_realtime: bool,
     failed: Option<ExportFailure>,
+    /// The names of the tracks of the song it renders, which 「トラックごと」 names its
+    /// files after.
+    tracks: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -281,8 +289,14 @@ struct Dialog {
     /// `None`: there is nothing to render (an empty song, or MIDI, which renders nothing).
     job: Option<Job>,
     picking: bool,
+    /// The file that would be written for the name typed, which is there already and is not
+    /// the one the window asked about: the window is shown again with it.
+    again: Option<PathBuf>,
     /// F2: the window for 「絵」 is shown.
     picking_picture: bool,
+    /// Files of the last 「書き出す」 that are there already: the dialog asks before writing
+    /// over them (`ExportDialogView::replace`). Empty: no question.
+    replace: Vec<PathBuf>,
 }
 
 #[derive(Debug)]
@@ -329,6 +343,13 @@ pub struct Exporting {
     /// Chosen with 「えらぶ…」: the folder, and the file's name without its ending.
     folder: Option<PathBuf>,
     name: Option<String>,
+    /// The file the PC's save window asked about writing over when it was chosen: the next
+    /// 「書き出す」 does not ask about it again.
+    agreed: Option<PathBuf>,
+    /// The job of the run cancelled last, and the files it put in place before the cancel
+    /// came: they go with [`ExportAsk::Remove`].
+    cancelled: Option<u64>,
+    left: Vec<PathBuf>,
     /// 「入れるトラック」 of MIDI, and the text of its number field as last sent.
     midi_tracks: ExportMidiTracks,
     midi_numbers: String,
@@ -363,6 +384,9 @@ impl Exporting {
             loudness: ExportLoudness::AsIs,
             folder: None,
             name: None,
+            agreed: None,
+            cancelled: None,
+            left: Vec::new(),
             midi_tracks: ExportMidiTracks::All,
             midi_numbers: String::new(),
             dialog: None,
@@ -429,17 +453,23 @@ impl Exporting {
                         serial: scene.serial,
                         job: None,
                         picking: false,
+                        again: None,
                         picking_picture: false,
+                        replace: Vec::new(),
                     });
                 }
             }
-            Command::CloseExport => self.close(asks),
+            Command::CloseExport => match self.dialog.as_mut().filter(|d| !d.replace.is_empty()) {
+                Some(dialog) => dialog.replace.clear(),
+                None => self.close(asks),
+            },
             Command::SetExport { change } => self.set(change.clone(), scene, asks),
             Command::ChooseExportPlace => {
                 let per_track = self.range == ExportRange::Tracks;
                 let (folder, name) = (self.folder_for(scene), self.file_name(scene));
                 if let Some(dialog) = self.dialog.as_mut().filter(|d| !d.picking) {
                     dialog.picking = true;
+                    dialog.replace.clear();
                     asks.push(ExportAsk::PickPlace {
                         folder,
                         name,
@@ -451,11 +481,20 @@ impl Exporting {
             Command::CancelExport => {
                 if let Some(Run::Going { job, .. }) = &self.run {
                     asks.push(ExportAsk::Drop { job: job.id });
+                    self.cancelled = Some(job.id);
                     self.run = Some(Run::Ended(ExportRunView::Cancelled, None));
                 }
             }
             _ => {}
         }
+    }
+
+    /// The files of a cancelled run that were in place before the cancel came, to be taken
+    /// away.
+    pub fn take_left(&mut self) -> Option<ExportAsk> {
+        (!self.left.is_empty()).then(|| ExportAsk::Remove {
+            files: std::mem::take(&mut self.left),
+        })
     }
 
     /// What 「フォルダをひらく」 shows in the PC's file manager.
@@ -486,9 +525,10 @@ impl Exporting {
     }
 
     fn set(&mut self, change: ExportChange, scene: &Scene, asks: &mut Vec<ExportAsk>) {
-        if self.dialog.is_none() {
+        let Some(dialog) = &mut self.dialog else {
             return;
-        }
+        };
+        dialog.replace.clear();
         match change {
             ExportChange::Mp3Kbps { kbps } => {
                 if EXPORT_MP3_KBPS.contains(&kbps) {
@@ -558,9 +598,10 @@ impl Exporting {
     }
 
     fn start(&mut self, scene: &Scene, asks: &mut Vec<ExportAsk>) {
-        if !self.can_export(scene) {
+        if !self.can_export(scene) || self.asks_first(scene) {
             return;
         }
+        self.agreed = None;
         if self.format == ExportFormat::Midi {
             self.start_midi(scene, asks);
             return;
@@ -587,6 +628,48 @@ impl Exporting {
             target: target.clone(),
         });
         self.run = Some(Run::Going { job, target });
+    }
+
+    /// Files 「書き出す」 would write over, other than the one the PC's save window asked
+    /// about, are asked about first: the dialog stays with the question. Pressed again while
+    /// it asks, the export goes on, unless more of its files have come meanwhile.
+    fn asks_first(&mut self, scene: &Scene) -> bool {
+        let agreed = self.agreed.as_deref();
+        let there: Vec<PathBuf> = (self.files(scene).into_iter())
+            .filter(|f| Some(f.as_path()) != agreed && is_there(f))
+            .collect();
+        let Some(dialog) = &mut self.dialog else {
+            return false;
+        };
+        if there.iter().all(|f| dialog.replace.contains(f)) {
+            return false;
+        }
+        dialog.replace = there;
+        true
+    }
+
+    /// The files 「書き出す」 writes now: for 「トラックごと」 one for each track, named as
+    /// the job and [`midi::files`] name them.
+    fn files(&self, scene: &Scene) -> Vec<PathBuf> {
+        let place = self.place(scene);
+        if self.range != ExportRange::Tracks {
+            return vec![place];
+        }
+        let names: Vec<&str> = match self.format {
+            ExportFormat::Midi => (self.midi_taken(scene).places.iter())
+                .map(|&i| scene.doc.tracks[i].name.as_str())
+                .collect(),
+            _ => (self.dialog.iter())
+                .flat_map(|d| d.job.iter().flat_map(|j| &j.tracks))
+                .map(String::as_str)
+                .collect(),
+        };
+        let mut taken = Vec::new();
+        for name in names {
+            let name = job::free_name(name, self.format.extension(), &taken);
+            taken.push(name);
+        }
+        taken.into_iter().map(|name| place.join(name)).collect()
     }
 
     /// MIDI is not rendered: the files are made here, written at once, and the run is
@@ -642,6 +725,15 @@ impl Exporting {
             self.close(asks);
             return;
         }
+        if let Some(again) = self.dialog.as_mut().and_then(|d| d.again.take()) {
+            asks.push(ExportAsk::PickPlace {
+                folder: again.parent().map(Path::to_path_buf),
+                name: (again.file_name())
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+                folder_only: false,
+            });
+        }
         let wanted = self.asked(scene);
         let had = (self.dialog.as_ref()).and_then(|d| Some(&d.job.as_ref()?.asked));
         if had == wanted.as_ref() {
@@ -685,6 +777,7 @@ impl Exporting {
             done: false,
             must_be_realtime: false,
             failed: None,
+            tracks: scene.doc.tracks.iter().map(|t| t.name.clone()).collect(),
         });
     }
 
@@ -730,14 +823,25 @@ impl Exporting {
                     return;
                 };
                 dialog.picking = false;
+                dialog.replace.clear();
                 let Some(path) = path else {
                     return;
                 };
                 if self.range == ExportRange::Tracks {
                     self.folder = Some(path);
-                } else if let Some(name) = path.file_stem() {
+                    self.agreed = None;
+                } else if let Some(typed) = path.file_name() {
+                    let name = typed_name(&typed.to_string_lossy(), self.format).to_owned();
+                    let real = path.with_file_name(format!("{name}.{}", self.format.extension()));
+                    // The window asked only about writing over the name typed.
+                    if real != path && real.exists() {
+                        dialog.picking = true;
+                        dialog.again = Some(real);
+                        return;
+                    }
                     self.folder = path.parent().map(Path::to_path_buf);
-                    self.name = Some(name.to_string_lossy().into_owned());
+                    self.name = Some(name);
+                    self.agreed = (real == path && is_there(&real)).then_some(real);
                 }
             }
             ExportNews::Counted {
@@ -767,6 +871,10 @@ impl Exporting {
                 if let Some(job) = self.job_mut(job) {
                     job.must_be_realtime = true;
                 }
+            }
+            ExportNews::Finished { job, files, .. } if self.cancelled == Some(job) => {
+                self.cancelled = None;
+                self.left.extend(files);
             }
             ExportNews::Finished { job, files, .. } if matches!(&self.run, Some(Run::Writing { id, .. }) if *id == job) => {
                 if let Some(Run::Writing { done, .. }) = self.run.take() {
@@ -913,9 +1021,11 @@ impl Exporting {
         };
         let over = job.over;
         // 32 bits are floats: a sample over 0 dB is written as it is. Matched, the true peak
-        // stays under 0 dB.
+        // stays under 0 dB. The bits kept for wav do not count for a format without bits.
         let matched = self.loudness_of(Some(job)) == ExportLoudness::Match;
-        let clips = over > 0 && self.bits != RecordFormat::Bits32 && !matched;
+        let floats = self.bits == RecordFormat::Bits32
+            && self.format.bits_choices().contains(&RecordFormat::Bits32);
+        let clips = over > 0 && !floats && !matched;
         match &job.failed {
             Some(reason) => ExportCheck::Failed {
                 reason: reason.clone(),
@@ -978,7 +1088,9 @@ impl Exporting {
 
     fn can_export(&self, scene: &Scene) -> bool {
         if self.format == ExportFormat::Midi {
-            return self.midi_taken(scene).problem.is_none()
+            return self.dialog.is_some()
+                && !self.running()
+                && self.midi_taken(scene).problem.is_none()
                 && self.folder_for(scene).is_some()
                 && !scene.busy;
         }
@@ -1027,6 +1139,12 @@ impl Exporting {
                 realtime: self.realtime || forced,
                 realtime_forced: forced,
                 can_export: self.can_export(scene),
+                replace: (dialog.replace.first()).map(|first| ExportReplace {
+                    count: dialog.replace.len() as u32,
+                    file: (first.file_name())
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_default(),
+                }),
                 loudness: self.loudness_of(job),
                 can_match: self.can_match(job),
                 loudness_result: (job.filter(|j| j.done && self.can_match(Some(j))))
@@ -1084,6 +1202,24 @@ fn mp3_rate(rate: u32) -> u32 {
         _ if EXPORT_MP3_SAMPLE_RATES.contains(&rate) => rate,
         _ if rate.is_multiple_of(11_025) => 44_100,
         _ => 48_000,
+    }
+}
+
+/// Something has the name `path`, a file or not, even a link that leads nowhere.
+fn is_there(path: &Path) -> bool {
+    path.symlink_metadata().is_ok()
+}
+
+/// The name typed in the save window, without the ending of `format` (in any case); other
+/// text after a dot is part of the name.
+fn typed_name(typed: &str, format: ExportFormat) -> &str {
+    match typed.rsplit_once('.') {
+        Some((name, ending))
+            if !name.is_empty() && ending.eq_ignore_ascii_case(format.extension()) =>
+        {
+            name
+        }
+        _ => typed,
     }
 }
 

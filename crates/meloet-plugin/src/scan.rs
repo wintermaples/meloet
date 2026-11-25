@@ -123,18 +123,20 @@ pub struct BundleStamp {
 const STAMP_DEPTH: u32 = 8;
 
 impl BundleStamp {
-    /// Reads the bundle's files. Links are not followed.
+    /// Reads the bundle's files. A bundle that is a link is read where it points; links in
+    /// it are not followed. What inside it cannot be read is left out, so that the stamp
+    /// stays the same while it stays unreadable; only a bundle that cannot be read itself is
+    /// an error.
     pub fn read(bundle: &Path) -> std::io::Result<BundleStamp> {
         let mut stamp = BundleStamp {
             modified_ns: 0,
             size: 0,
         };
-        stamp.add(bundle, STAMP_DEPTH)?;
+        stamp.add(std::fs::metadata(bundle)?, bundle, STAMP_DEPTH);
         Ok(stamp)
     }
 
-    fn add(&mut self, path: &Path, depth: u32) -> std::io::Result<()> {
-        let meta = std::fs::symlink_metadata(path)?;
+    fn add(&mut self, meta: std::fs::Metadata, path: &Path, depth: u32) {
         let modified = meta
             .modified()
             .ok()
@@ -143,15 +145,20 @@ impl BundleStamp {
         self.modified_ns = self.modified_ns.max(modified);
         if meta.is_dir() {
             if depth == 0 {
-                return Ok(());
+                return;
             }
-            for entry in std::fs::read_dir(path)? {
-                self.add(&entry?.path(), depth - 1)?;
+            let Ok(entries) = std::fs::read_dir(path) else {
+                return;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if let Ok(meta) = std::fs::symlink_metadata(&path) {
+                    self.add(meta, &path, depth - 1);
+                }
             }
         } else {
             self.size = self.size.saturating_add(meta.len());
         }
-        Ok(())
     }
 }
 
@@ -533,6 +540,43 @@ mod tests {
         std::fs::write(bundle.join("Contents/x86_64-linux/Thing.so"), [0u8; 101]).unwrap();
         assert_ne!(BundleStamp::read(&bundle).unwrap(), first);
         assert!(BundleStamp::read(&dir.join("Missing.vst3")).is_err());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn what_cannot_be_read_inside_a_bundle_is_left_out_of_its_stamp() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = temp_dir("stamp-unreadable");
+        let bundle = dir.join("Thing.lv2");
+        std::fs::create_dir_all(bundle.join("closed")).unwrap();
+        std::fs::write(bundle.join("closed/inside.ttl"), [0u8; 7]).unwrap();
+        std::fs::write(bundle.join("Thing.so"), [0u8; 100]).unwrap();
+        let closed = bundle.join("closed");
+        std::fs::set_permissions(&closed, std::fs::Permissions::from_mode(0o000)).unwrap();
+        let first = BundleStamp::read(&bundle);
+        let second = BundleStamp::read(&bundle);
+        std::fs::set_permissions(&closed, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let first = first.unwrap();
+        assert_eq!(first.size, 100);
+        assert_eq!(second.unwrap(), first);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_bundle_that_is_a_link_is_stamped_by_what_it_points_to() {
+        let dir = temp_dir("stamp-link");
+        let target = dir.join("elsewhere/Thing.vst3");
+        std::fs::create_dir_all(target.join("Contents")).unwrap();
+        std::fs::write(target.join("Contents/Thing.so"), [0u8; 100]).unwrap();
+        let link = dir.join("Thing.vst3");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        let first = BundleStamp::read(&link).unwrap();
+        assert_eq!(first.size, 100);
+        std::fs::write(target.join("Contents/Thing.so"), [0u8; 101]).unwrap();
+        assert_ne!(BundleStamp::read(&link).unwrap(), first);
+        // Pointing nowhere, it cannot be read.
+        std::fs::remove_dir_all(&target).unwrap();
+        assert!(BundleStamp::read(&link).is_err());
         std::fs::remove_dir_all(dir).unwrap();
     }
 

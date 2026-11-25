@@ -7,6 +7,7 @@ import type { ExportMidiProblem } from "./ExportMidiProblem";
 import type { ExportMidiTrack } from "./ExportMidiTrack";
 import type { ExportMidiTracks } from "./ExportMidiTracks";
 import type { ExportRange } from "./ExportRange";
+import type { ExportReplace } from "./ExportReplace";
 import type { ExportSolo } from "./ExportSolo";
 import type { ExportStoppedPlugin } from "./ExportStoppedPlugin";
 import type { ExportTail } from "./ExportTail";
@@ -70,6 +71,11 @@ realtimeForced: boolean,
  * (nothing is measured), and it is false while `midi_problem` is `Some`.
  */
 canExport: boolean, 
+/**
+ * Protocol 39: 「書き出す」 found files of this export there already, and asks before
+ * writing over them. `None`: no question.
+ */
+replace: ExportReplace | null, 
 /**
  * F1 「音の大きさ」. Kept as long as the format is.
  */

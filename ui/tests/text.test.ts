@@ -177,7 +177,7 @@ describe("source form", () => {
 
 describe("the English table (round 12 D4: Japanese is the source, English follows it)", () => {
   const holes = (text: string) => [...new Set([...text.matchAll(/\{(\w+)\}/g)].map((m) => m[1]!))].sort();
-  const forms = (e: EnText) => (typeof e === "string" ? [e] : [e.one, e.other]);
+  const forms = (e: EnText): string[] => (typeof e === "string" ? [e] : [...forms(e.one), ...forms(e.other)]);
 
   it("has every key of the Japanese table and no other", () => {
     expect(Object.keys(enTexts).sort()).toEqual(Object.keys(texts).sort());

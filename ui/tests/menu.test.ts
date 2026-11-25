@@ -2,7 +2,7 @@
 import { flushSync, mount, unmount } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, ClipView, Command } from "../src/bridge";
-import { fakeState } from "../src/bridge/fake";
+import { fakeScene, fakeState } from "../src/bridge/fake";
 import ContextMenu from "../src/components/menu/ContextMenu.svelte";
 import { closeContextMenu, contextMenu, openContextMenu } from "../src/components/menu/contextMenu.svelte";
 import MenuBar from "../src/components/menu/MenuBar.svelte";
@@ -17,6 +17,7 @@ import { closeMenu, menuOpened, menuVisible } from "../src/lib/menu";
 import * as app from "./fake-app.svelte";
 import { take } from "./pianoroll-fixture";
 import { trackEdit } from "../src/components/tracks.svelte";
+import { pickClips, pickLane, pickTimeline } from "../src/components/timeline/pick";
 import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 
 vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));
@@ -32,7 +33,7 @@ const CLIP: ClipView = { id: 5, name: "Aメロ", start: 0, end: 16 * TPQ, take: 
 function withClip(edit: (s: AppState) => void = () => {}): AppState {
   const s = fakeState();
   s.song.tracks[0]!.clips = [CLIP];
-  s.arrange = { selectedClips: [5], selectedClip: 5, pianoRollClip: 5, clipboardClips: 0, tallTrack: null };
+  s.arrange = { selectedClips: [5], selectedClip: 5, pianoRollClip: 5, clipboardClips: 0, clipboardKind: null, tallTrack: null };
   s.song.undoCount = 2;
   s.transport.canPlay = true;
   edit(s);
@@ -218,7 +219,7 @@ describe("menu contents (B-59)", () => {
     expect(sent).toEqual([{ type: "deleteTake", clip: 5 }]);
     const one = withClip((s) => (s.song.tracks[0]!.clips = [{ ...CLIP, takes: 1 }]));
     expect(row(topMenus(one, depsOf(one, []), "other")[5]!.entries, "テイクを消す").usable).toBe(false);
-    const none = withClip((s) => (s.arrange = { selectedClips: [], selectedClip: null, pianoRollClip: null, clipboardClips: 0, tallTrack: null }));
+    const none = withClip((s) => (s.arrange = { selectedClips: [], selectedClip: null, pianoRollClip: null, clipboardClips: 0, clipboardKind: null, tallTrack: null }));
     expect(row(topMenus(none, depsOf(none, []), "other")[5]!.entries, "テイクを消す").usable).toBe(false);
   });
 
@@ -441,9 +442,24 @@ describe("new keys (chapter 4 and B-59, 70, 71)", () => {
     ]);
   });
 
+  it("Mod V and 「編集 ▸ 貼りつけ」: not when the selected track is of the other kind than the first clip kept", () => {
+    const sent: Command[] = [];
+    const s = withClip((s) => Object.assign(s.arrange, { clipboardClips: 1, clipboardKind: "vocal" }));
+    const deps = depsOf(s, sent);
+    const paste = () => row(topMenus(s, deps, "other")[1]!.entries, "貼りつけ").usable;
+    expect(s.song.tracks.find((t) => t.id === s.song.playTarget)!.kind.kind).toBe("keys");
+    expect(paste()).toBe(false);
+    press(deps, "v", { ctrlKey: true });
+    expect(sent).toEqual([]);
+    s.arrange.clipboardKind = "keys";
+    expect(paste()).toBe(true);
+    press(deps, "v", { ctrlKey: true });
+    expect(sent).toEqual([{ type: "pasteClips", to: null }]);
+  });
+
   it("not sent when there is nothing to paste or no clip chosen", () => {
     const sent: Command[] = [];
-    const s = withClip((s) => (s.arrange = { selectedClips: [], selectedClip: null, pianoRollClip: null, clipboardClips: 0, tallTrack: null }));
+    const s = withClip((s) => (s.arrange = { selectedClips: [], selectedClip: null, pianoRollClip: null, clipboardClips: 0, clipboardKind: null, tallTrack: null }));
     const deps = depsOf(s, sent);
     for (const l of ["c", "x", "v", "d"]) press(deps, l, { ctrlKey: true });
     expect(sent).toEqual([]);
@@ -644,6 +660,91 @@ describe("menu bar (mount)", () => {
     listRows()[0]!.dispatchEvent(new PointerEvent("pointerenter"));
     await settle();
     expect(document.querySelector('[data-test="menubar-list-sub"]')).toBeNull();
+  });
+});
+
+describe("menu bar mounted in the app's box (its list moves to body)", () => {
+  let mounted: Record<string, unknown> | null = null;
+  let off = () => {};
+  afterEach(() => {
+    off();
+    if (mounted) unmount(mounted);
+    mounted = null;
+    document.body.innerHTML = "";
+  });
+
+  it("UI-SHELL-004: ↑ ↓ ← → used in the list do not move the selected notes of the piano roll", async () => {
+    const s = withClip((s) => {
+      prOpen(s);
+      s.pianoRoll = { ...s.pianoRoll, take: 7, selectedNotes: [{ start: 0, end: 1 }], grid: { division: 16, triplet: false } };
+    });
+    app.reset();
+    app.setState(s);
+    prView.focus = "pianoRoll";
+    const box = document.createElement("div");
+    document.body.append(box);
+    mounted = mount(MenuBar, { target: box });
+    flushSync();
+    const shown = shownOf(take([[0, TPQ, 60]], 7), 4 * TPQ);
+    const deps: KeyDeps = { state: () => app.current.state, send: app.send, nav: { platform: "Linux x86_64" }, pianoRoll: () => shown, playTick: () => 0 };
+    const on = (ev: KeyboardEvent) => handleKeydown(ev, deps);
+    document.addEventListener("keydown", on);
+    off = () => document.removeEventListener("keydown", on);
+    const keydown = (key: string) => {
+      (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+      flushSync();
+    };
+    keydown("F10");
+    await settle();
+    expect(menuBar.open).toBe(0);
+    keydown("ArrowDown");
+    expect(document.activeElement?.textContent).toContain("ひらく…");
+    keydown("ArrowRight");
+    await settle();
+    expect(menuBar.open).toBe(1);
+    expect(app.sent).toEqual([]);
+  });
+});
+
+describe("「消す」 in the menu bar goes the same way as Delete (UI-PARITY-003)", () => {
+  afterEach(() => pickClips());
+
+  it("a marker pressed after a chosen clip: the row deletes the marker, not the clip", () => {
+    const s = fakeScene("markerMoving")!.state;
+    s.song.tracks[0]!.clips = [CLIP];
+    s.arrange = { selectedClips: [5], selectedClip: 5, pianoRollClip: 5, clipboardClips: 0, clipboardKind: null, tallTrack: null };
+    pickTimeline();
+    const sent: Command[] = [];
+    const del = row(topMenus(s, depsOf(s, sent), "other")[1]!.entries, "消す");
+    expect(del.usable).toBe(true);
+    del.run!();
+    expect(sent).toEqual([{ type: "deleteTimeline", target: { kind: "marker", id: 2 } }]);
+  });
+
+  it("with no clip chosen, the row is usable for a marker; not for the start of the song, nor when nothing is chosen", () => {
+    const s = fakeScene("markerMoving")!.state;
+    s.arrange = { selectedClips: [], selectedClip: null, pianoRollClip: null, clipboardClips: 0, clipboardKind: null, tallTrack: null };
+    const usable = () => row(topMenus(s, depsOf(s, []), "other")[1]!.entries, "消す").usable;
+    pickTimeline();
+    expect(usable()).toBe(true);
+    s.timeline = { ...s.timeline, selected: { kind: "tempoPoint", tick: 0 } };
+    expect(usable()).toBe(false);
+    s.timeline = { ...s.timeline, selected: null };
+    expect(usable()).toBe(false);
+    pickClips();
+    expect(usable()).toBe(false);
+  });
+
+  it("automation points pressed last: the row deletes them; with none chosen it is disabled", () => {
+    const s = withClip();
+    pickLane();
+    const sent: Command[] = [];
+    expect(row(topMenus(s, depsOf(s, sent), "other")[1]!.entries, "消す").usable).toBe(false);
+    s.automation = { ...s.automation, selected: { laneId: 3, points: [{ start: 1, end: 3 }] } };
+    const del = row(topMenus(s, depsOf(s, sent), "other")[1]!.entries, "消す");
+    expect(del.usable).toBe(true);
+    del.run!();
+    expect(sent).toEqual([{ type: "deleteAutoPoints", lane: 3, points: [1, 2] }]);
   });
 });
 

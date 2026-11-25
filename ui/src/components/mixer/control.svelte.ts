@@ -3,9 +3,9 @@
 // Keys (spec 3 (86-7)): focus with Tab; each arrow press sends commit: false; 1 second after the key is released, or when focus leaves,
 // one commit: true (one step). Home for the start value, Enter for the typing box (typing).
 
-import { onMount } from "svelte";
+import { onMount, untrack } from "svelte";
 import type { Command, StripRef } from "../../bridge";
-import { send } from "../../state/app.svelte";
+import { current, send } from "../../state/app.svelte";
 import { onDragCancel } from "../pianoroll/view.svelte";
 import { KeySteps, MixPreview } from "./mixDrag";
 import { dbToFrac, fracToDb, parseDb } from "./scale";
@@ -39,6 +39,16 @@ export function mixControl<V>(opts: MixControlOptions<V>) {
     opts.value();
     keyed = null;
   });
+  /** The rev that answers a typed value: `keyed` goes once the state has reached it, also when Rust kept the value it had. */
+  let answer = $state.raw<{ keyed: { value: V }; rev: number } | null>(null);
+  $effect(() => {
+    const a = answer;
+    if (!a || current.rev < a.rev) return;
+    untrack(() => {
+      answer = null;
+      if (keyed === a.keyed) keyed = null;
+    });
+  });
 
   function end(): void {
     if (press?.el.hasPointerCapture?.(press.pointer)) press.el.releasePointerCapture(press.pointer);
@@ -51,7 +61,8 @@ export function mixControl<V>(opts: MixControlOptions<V>) {
     e.preventDefault();
     const el = e.currentTarget as HTMLElement;
     el.setPointerCapture?.(e.pointerId);
-    const from = opts.value();
+    keys.flush();
+    const from = keyed ? keyed.value : opts.value();
     press = { x: e.clientX, y: e.clientY, pointer: e.pointerId, box: el.getBoundingClientRect(), el, preview: new MixPreview(opts.make, send) };
     live = { from, now: from };
   }
@@ -81,6 +92,7 @@ export function mixControl<V>(opts: MixControlOptions<V>) {
     const off = onDragCancel(cancel);
     return () => {
       off();
+      cancel();
       keys.flush();
     };
   });
@@ -123,7 +135,10 @@ export function mixControl<V>(opts: MixControlOptions<V>) {
     if (v === undefined) return false;
     typing = false;
     keyed = { value: v };
-    send(opts.make(v, true));
+    const mine = keyed;
+    void send(opts.make(v, true)).then((rev) => {
+      if (keyed === mine) answer = { keyed: mine, rev: rev ?? -Infinity };
+    });
     return true;
   }
 

@@ -58,8 +58,10 @@ pub enum Finding {
     Taken,
     /// It reads, at another rate or with other channels than the song's audio.
     Mismatch,
-    /// It does not read, or could not be copied.
+    /// It does not read.
     Unreadable,
+    /// It reads, and could not be copied into the work place.
+    NotCopied,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -390,7 +392,7 @@ impl Work {
     fn bring(&self, path: &Path, taken: &[String]) -> Result<ImportedAudio, (String, Unread)> {
         let facts = decode::facts(path).map_err(|e| (e.detail, e.why))?;
         let (file, sha256) =
-            (self.store.bring_in(path, taken)).map_err(|e| (e.to_string(), Unread::NotAudio))?;
+            (self.store.bring_in(path, taken)).map_err(|e| (e.to_string(), Unread::NotCopied))?;
         let name = (path.file_stem())
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| file.clone());
@@ -410,13 +412,14 @@ impl Work {
 
     /// Takes the file at `path` for `source` when it has as many channels at the same
     /// rate: a file that another program wrote again is still the take, so the SHA-256 is
-    /// not asked to match.
-    fn found(&self, source: &AudioSource, path: &Path) -> Finding {
+    /// not asked to match. What was made from other contents (the decoded copies, the
+    /// peaks) is let go, to be made again from this file.
+    fn found(&mut self, source: &AudioSource, path: &Path) -> Finding {
         if self.store.find(&source.file).is_some() {
             return Finding::Taken;
         }
         let Some(work) = self.store.work_dir() else {
-            return Finding::Unreadable;
+            return Finding::NotCopied;
         };
         match decode::facts(path) {
             Ok(f) if f.sample_rate == source.sample_rate && f.channels == source.channels => {}
@@ -432,12 +435,18 @@ impl Work {
             std::fs::create_dir_all(&work).and_then(|()| super::copy_into(path, &to, &mut |_| {}));
         match copied {
             Ok(()) => {
+                let same = (source.sha256)
+                    .is_some_and(|sha| super::sha256_of(&to).is_ok_and(|s| s == sha));
+                if !same {
+                    self.store.drop_cache(&source.uid);
+                    self.peaks_made.remove(&source.uid);
+                }
                 self.store.file_arrived();
                 Finding::Taken
             }
             Err(e) => {
                 eprintln!("meloet: {} was not copied: {e}", path.display());
-                Finding::Unreadable
+                Finding::NotCopied
             }
         }
     }
@@ -538,10 +547,10 @@ impl Work {
         let cache = match need.cache_rate {
             Some(rate) => {
                 let path = (self.store.cache_path(&source.uid, rate)).ok_or("no cache folder")?;
-                let wav =
-                    CacheWav::create(&path, rate, source.channels).map_err(|e| e.to_string())?;
                 let resample = Resample::new(decoder.sample_rate(), rate, source.channels)
                     .map_err(|e| e.to_string())?;
+                let wav =
+                    CacheWav::create(&path, rate, source.channels).map_err(|e| e.to_string())?;
                 Some((resample, wav))
             }
             None => None,
@@ -624,14 +633,20 @@ impl Work {
                 wav.abandon();
                 return Err(e.to_string());
             }
-            wav.finish().map_err(|e| e.to_string())?;
+            wav.finish_synced().map_err(|e| e.to_string())?;
             self.store.file_arrived();
         }
         if let Some(peaks) = job.peaks {
             self.peaks_made.insert(uid);
             if let Some(path) = self.store.peaks_path(&uid) {
                 let peaks = peaks.lock().unwrap_or_else(|e| e.into_inner());
-                peaks.write(&path).map_err(|e| e.to_string())?;
+                // The length the song has for the file, which `watch` looks for: a file
+                // whose head says more than it holds decodes to fewer frames.
+                let frames = job.need.source.frames;
+                // The file plays all the same; only its wave is not drawn.
+                if let Err(e) = peaks.write_as(&path, frames) {
+                    eprintln!("meloet: the peaks of an audio file were not kept: {e}");
+                }
             }
         }
         Ok(())

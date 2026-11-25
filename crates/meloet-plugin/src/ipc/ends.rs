@@ -208,12 +208,13 @@ impl EngineEnd {
         }
         let words = self.map.slot_words(self.base);
         let seq = self.seq;
-        let block_ms = deadline_ns.saturating_sub(self.seen_deadline_ns) / 1_000_000;
+        let block_ns = deadline_ns.saturating_sub(self.seen_deadline_ns);
         // A thread that has held the request for a block and a half is in the middle of
         // something long (a synthesizer reading a patch in its audio callback takes 100 ms and
         // more). The answer's sound is lost anyway; sleeping for it block after block would
         // only make every other track late.
-        let long = (self.signs().0).is_some_and(|held_ms| u64::from(held_ms) * 2 >= block_ms * 3);
+        let long = (self.signs().0)
+            .is_some_and(|held_ms| u64::from(held_ms) * 2_000_000 >= block_ns.saturating_mul(3));
         let answered = if long {
             words.done.load(Acquire) == seq
         } else {
@@ -759,6 +760,26 @@ mod tests {
         taken.store(taken.load(SeqCst).wrapping_sub(HANG_MS), SeqCst);
         assert!(!waiting.await_overdue(began + 60_000_000));
         assert!(waiting.stopped() && other.stopped());
+    }
+
+    #[test]
+    fn an_answer_is_slept_for_in_a_block_shorter_than_a_millisecond() {
+        let map = Arc::new(Mapping::create(geometry()).unwrap());
+        let mut engine = EngineEnd::new(map.clone(), 0).unwrap();
+        let mut plugin = PluginEnd::new(map.clone(), 0).unwrap();
+        // 32 frames at 48 kHz.
+        let block = 666_667;
+        assert!(engine.begin(32));
+        engine.submit();
+        assert!(plugin.take_request().is_some());
+        let missed = futex::monotonic_ns() + block;
+        assert!(!engine.wait(missed));
+        // Held for a millisecond at most: less than a block and a half.
+        let taken = &map.slot_words(engine.base).taken_ms;
+        taken.store((futex::monotonic_ns() / 1_000_000) as u32, SeqCst);
+        assert!(!engine.await_overdue(missed + block));
+        assert!(futex::monotonic_ns() >= missed + block);
+        assert!(!engine.stopped());
     }
 
     #[test]

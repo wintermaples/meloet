@@ -58,10 +58,15 @@
     };
   });
 
+  // setScale marks every region dirty, so it waits for the scale itself to change.
+  const scale = $derived(current.state?.workspace.scale ?? null);
+  $effect(() => {
+    if (engine && scale !== null) engine.setScale(scale);
+  });
+
   $effect(() => {
     const state = current.state;
     if (!engine || !state) return;
-    engine.setScale(state.workspace.scale);
     engine.setTheme(metrics.theme);
     engine.setTracks(state.song.tracks.map((t) => t.number));
   });

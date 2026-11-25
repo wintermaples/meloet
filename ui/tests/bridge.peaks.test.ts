@@ -171,4 +171,9 @@ describe("peak store (PeakStore)", () => {
     expect(songAudioIds(song)).toEqual([60, 61]);
     expect(songAudioIds(song, [{ audio: 59 }, { audio: 61 }])).toEqual([60, 61, 59]);
   });
+
+  it("audio the song uses: every take of a comped clip, not only the shown one", () => {
+    const song = { tracks: [{ clips: [{ audio: { audio: 60, takes: [{ audio: 60 }, { audio: 62 }, { audio: 63 }] } }] }] };
+    expect(songAudioIds(song)).toEqual([60, 62, 63]);
+  });
 });

@@ -25,6 +25,7 @@
   import { current, send } from "../../state/app.svelte";
   import { shownWork } from "../../state/audioWork.svelte";
   import { askWhole } from "../automation/coverIf";
+  import ScrollArea from "../../lib/ScrollArea.svelte";
   import { clipEdit, renameCommand, startClipRename, stopClipRename } from "../clipName.svelte";
   import { tip } from "../../lib/tip.svelte";
   import { STATUS_JOIN, t } from "../../text";
@@ -273,6 +274,7 @@
       </div>
     </div>
   {:else}
+    <ScrollArea>
     <div class="list">
       <button class="m-plain group m-focus-in" onclick={() => toggle("clip")} data-group="clip">
         <span class={folded.includes("clip") ? "m-lbl" : "m-hi"}>{folded.includes("clip") ? "▸" : "▾"}</span>
@@ -338,7 +340,7 @@
           {:else}
             <!-- 「+2 半音 0 セント」. The semitones and cents numbers are each dragged up and down, or typed after pressing twice. -->
             <span class="m-num m-hi value"
-              >{#each textParts("clipParams.pitchValue", { semitones: "", cents: "" }) as part, i (i)}{#if part.hole === "semitones"}<StretchNumber
+              >{#each textParts("clipParams.pitchValue", { semitones: stretch.semitones, cents: stretch.cents }) as part, i (i)}{#if part.hole === "semitones"}<StretchNumber
                     value={stretch.semitones}
                     min={-CLIP_SEMITONES_MAX}
                     max={CLIP_SEMITONES_MAX}
@@ -395,6 +397,7 @@
         </div>
       {/if}
     </div>
+    </ScrollArea>
   {/if}
 {/if}
 
@@ -462,10 +465,6 @@
   .buttons {
     display: flex;
     gap: var(--space-2);
-  }
-  .list {
-    min-height: 0;
-    overflow-y: auto;
   }
   .group {
     width: 100%;

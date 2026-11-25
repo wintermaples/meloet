@@ -150,8 +150,9 @@ impl Play {
                 .held
                 .retain(|(home, _)| doc.lanes(*home).is_some());
         }
-        // The engine outlives a stream, and is told of lanes only while one runs: a new
-        // stream is told even that the master's lane plays nothing.
+        // The engine outlives a stream and a song, and is told of lanes only while a stream
+        // runs: a new stream, or another song, is told even that the master or a seat plays
+        // no lane.
         let master = master_lane(doc);
         if all || master.map(|l| l.id.0) != self.autosync.master_sent {
             self.autosync.master_sent = master.map(|l| l.id.0);
@@ -181,7 +182,7 @@ impl Play {
         for seat in seats {
             let (track, heads) = &now[&seat];
             let before = self.autosync.sent.get(&seat);
-            if before.map_or(heads.is_empty(), |b| b == heads) {
+            if before.map_or(!all && heads.is_empty(), |b| b == heads) {
                 continue;
             }
             // An effect that comes with meloet keeps the value its lane left it at: the
@@ -281,6 +282,7 @@ impl Play {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::play::tests::{cmd, ready};
 
     fn ops(effects: &[Effect]) -> Vec<&EngineOp> {
         (effects.iter())
@@ -323,11 +325,85 @@ mod tests {
     }
 
     #[test]
-    fn a_song_without_lanes_tells_the_engine_nothing() {
+    fn a_song_without_lanes_tells_a_new_stream_so_and_then_nothing() {
         let mut play = Play::new(false, 1);
+        let seat = play.seats.of(play.doc().tracks[0].id).unwrap();
         let mut effects = Vec::new();
         play.stream_opened(&mut effects);
+        assert_eq!(
+            ops(&effects),
+            [&EngineOp::Automation {
+                seat,
+                lanes: Vec::new()
+            }]
+        );
+        effects.clear();
         play.send_automation(false, &mut effects);
         assert!(ops(&effects).is_empty());
+    }
+
+    /// A volume lane with points on track 1.
+    fn with_volume_lane(m: &mut crate::state::Model) {
+        use meloet_protocol::{AutoTarget, Command, LaneHome};
+        let home = LaneHome::Track { track: 1 };
+        let target = AutoTarget::Volume;
+        cmd(m, Command::AddLane { home, target });
+        let mut effects = Vec::new();
+        for tick in [0, 4 * meloet_model::TICKS_PER_QUARTER] {
+            // The lane's number changes with its points.
+            let view = m.view();
+            let lane = (view.song.tracks[0].lanes.iter())
+                .find(|l| l.target == target)
+                .expect("the lane")
+                .lane_id;
+            let value = Some(0.0);
+            effects = cmd(m, Command::AddAutoPoint { lane, tick, value });
+        }
+        assert_eq!(told(&effects), [(0, 1)], "the lane plays on seat 0");
+    }
+
+    /// The seats told of their lanes, and how many lanes each.
+    fn told(effects: &[Effect]) -> Vec<(usize, usize)> {
+        (ops(effects).into_iter())
+            .filter_map(|op| match op {
+                EngineOp::Automation { seat, lanes } => Some((*seat, lanes.len())),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn another_song_leaves_no_lane_of_the_one_before_on_its_seats() {
+        use meloet_protocol::{Command, SongAnswer};
+        let m = &mut ready();
+        with_volume_lane(m);
+        cmd(m, Command::NewSong);
+        let dialog = (m.view().workspace.song_dialog)
+            .expect("the song has changes")
+            .id;
+        let answer = SongAnswer::DontSave;
+        let effects = cmd(m, Command::AnswerSongDialog { dialog, answer });
+        let play = m.play();
+        let mut seats: Vec<usize> = (play.doc().tracks.iter())
+            .filter_map(|t| play.seats.of(t.id))
+            .collect();
+        seats.sort_unstable();
+        assert!(seats.contains(&0), "the seat of the lane before");
+        let none: Vec<(usize, usize)> = seats.iter().map(|&seat| (seat, 0)).collect();
+        assert_eq!(told(&effects), none);
+    }
+
+    #[test]
+    fn a_new_stream_hears_of_a_lane_deleted_while_none_ran() {
+        use meloet_protocol::{AutoTarget, Command, LaneHome};
+        let m = &mut ready();
+        with_volume_lane(m);
+        // What the engine is told of while no stream runs is lost.
+        let home = LaneHome::Track { track: 1 };
+        let target = AutoTarget::Volume;
+        cmd(m, Command::DeleteLane { home, target });
+        let mut effects = Vec::new();
+        m.play_mut().stream_opened(&mut effects);
+        assert!(told(&effects).contains(&(0, 0)));
     }
 }

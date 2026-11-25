@@ -248,12 +248,12 @@ export interface PointDrag {
   moved: boolean;
 }
 
-/** Sideways it snaps to the start of beats (ticks with Shift); up and down is tempo. The point at the start of the song does not move sideways. */
-export function dragPoint(d: PointDrag, v: View, s: TempoScale, map: TempoMap, x: number, y: number, still: number, shift: boolean): PointDrag {
+/** Sideways it snaps to the start of beats, as core does (architecture 21-15); up and down is tempo. The point at the start of the song does not move sideways. */
+export function dragPoint(d: PointDrag, v: View, s: TempoScale, map: TempoMap, x: number, y: number, still: number): PointDrag {
   const moved = d.moved || Math.hypot(x - d.downX, y - d.downY) >= still;
   if (!moved) return d;
   const at = d.tick + (x - d.downX) / v.pxPerTick;
-  const toTick = d.tick === 0 ? 0 : Math.max(1, shift ? Math.round(at) : nearestBeatTick(map, at));
+  const toTick = d.tick === 0 ? 0 : Math.max(1, nearestBeatTick(map, at));
   const bpm = tidyBpm(d.fromBpm - (y - d.downY) / s.pxPerBpm);
   return { ...d, moved, toTick, bpm };
 }

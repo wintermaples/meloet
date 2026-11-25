@@ -7,11 +7,12 @@ use meloet_protocol::{
 };
 
 use super::*;
+use crate::ai::AiAsk;
 use crate::catalog::tests::{COMP_LV2, COMP_VST3, DRUMS_LV2, SURGE_LV2, SURGE_VST3};
 use crate::play::seats::tests::FakeEngine;
-use crate::play::windows::tests::{FRESH, FakeHost, state_of};
+use crate::play::windows::tests::{FRESH, FakeHost, LEVEL, Rig, state_of};
 use crate::sf2store::Sf2Key;
-use crate::state::added_tests::{plugin, rigged, sf2};
+use crate::state::added_tests::{loads, plugin, rigged, sf2};
 use crate::state::{Input, Model, PluginSaid};
 
 /// What the engine holds where an instrument goes.
@@ -77,7 +78,7 @@ impl Mini {
         for effect in effects {
             match effect {
                 Effect::Engine(op) => self.op(op.clone()),
-                Effect::LoadPlugin { ticket, .. } | Effect::ReloadPlugin { ticket } => {
+                Effect::LoadPlugin { ticket, .. } | Effect::ReloadPlugin { ticket, .. } => {
                     self.asked.push(*ticket);
                 }
                 Effect::DropPlugin { ticket } => {
@@ -447,7 +448,7 @@ fn random_plugins_and_presets_with_undo_and_redo_keep_the_engine_with_the_book()
     let (mut plugged, mut plugin_tracks, mut plugin_inserts, mut steps) = (0, 0, 0, 0);
     let (mut passed, mut moved, mut replaced, mut typed, mut other) = (0, 0, 0, 0, 0);
     let (mut entered, mut visits, mut dragged, mut windows) = (0, 0, 0, 0);
-    let mut duplicated = 0;
+    let (mut duplicated, mut tried_turned) = (0, 0);
     let texts = ["4", "−3 dB", "999", "x", "0.5 s", "1"];
     for seed in 1..=10u64 {
         let rng = &mut Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15));
@@ -500,6 +501,19 @@ fn random_plugins_and_presets_with_undo_and_redo_keep_the_engine_with_the_book()
                     if rng.below(3) > 0 && !mini.asked.is_empty() {
                         let last = mini.asked.len() - 1;
                         answer(m, mini, last, rng.below(8) == 0, &ctx);
+                    }
+                    // Now and then something is turned in the window of the row tried.
+                    let p = m.play();
+                    let tried = (p.trial_spot().and_then(|spot| p.plugs.at(spot)))
+                        .filter(|plug| plug.sounds())
+                        .map(|plug| plug.ticket);
+                    if let Some(ticket) = tried
+                        && rng.below(2) == 0
+                    {
+                        let value = rng.below(11) as f64 / 10.0;
+                        let turned = mini.host.turn(ticket, rng.below(3) as u32, value);
+                        go(m, mini, turned, &ctx);
+                        tried_turned += 1;
                     }
                     if rng.below(4) > 0 {
                         commands.push(Command::ShelfConfirm);
@@ -821,5 +835,322 @@ fn random_plugins_and_presets_with_undo_and_redo_keep_the_engine_with_the_book()
         "{entered} visits, {visits} were steps, {dragged} drags were, {windows} windows seen"
     );
     assert!(duplicated > 30, "{duplicated} tracks duplicated");
+    assert!(tried_turned > 30, "{tried_turned} rows turned while tried");
     let _ = (StripId::Master, TrackId(0));
+}
+
+fn engine_ops(effects: &[Effect]) -> Vec<EngineOp> {
+    (effects.iter())
+        .filter_map(|e| match e {
+            Effect::Engine(op) => Some(op.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The stream runs at another rate. Returns the effects.
+fn rate(r: &mut Rig, rate: u32) -> Vec<Effect> {
+    let mut effects = Vec::new();
+    r.m.play_mut().set_plug_rate(rate, &mut effects);
+    r.host.take(&effects);
+    effects
+}
+
+/// Track 1 sounds with Surge XT, whose state the song has (put in by the AI link). Returns
+/// its ticket, the track, its place and the state.
+fn surge_with_a_state(r: &mut Rig) -> (u64, u32, PluginPlace, Arc<[u8]>) {
+    let (surge, track, _) = r.surge();
+    let place = PluginPlace::Instrument(TrackId(track));
+    let state = state_of([0.75, 0.5, 0.0]);
+    let put = AiAsk::SetPluginState {
+        place,
+        state: state.clone(),
+    };
+    r.go(Input::Ai(put));
+    r.m.take_ai_answer();
+    r.settle();
+    assert_eq!(r.m.play().song().doc.plugin(place).unwrap().state, state);
+    (surge, track, place, state)
+}
+
+/// Another sound is tried in place of the track's own (「入れかえる」), loaded.
+fn try_on(r: &mut Rig, track: u32) {
+    r.cmd(Command::OpenShelf {
+        mode: ShelfMode::Replace { track },
+    });
+    let sound = Some(plugin(SURGE_LV2));
+    let effects = r.cmd(Command::ShelfSelectSound { sound });
+    r.loaded(&effects);
+}
+
+#[test]
+fn a_stopped_plugin_is_loaded_again_at_the_rate_the_stream_runs_at_now() {
+    let mut r = Rig::new();
+    let (surge, _, slot) = r.surge();
+    r.go(Input::PluginStopped { ticket: surge });
+    assert!(loads(&rate(&mut r, 44_100)).is_empty(), "it waits");
+    let effects = r.cmd(Command::ReloadPlugin { slot });
+    let reload = Effect::ReloadPlugin {
+        ticket: surge,
+        sample_rate: 44_100,
+    };
+    assert_eq!(effects, [reload]);
+
+    // Another rate while it is loaded again: once it is there, it is loaded again at that
+    // rate, with the state it has.
+    assert!(loads(&rate(&mut r, 48_000)).is_empty());
+    let effects = r.go(Input::PluginLoaded { ticket: surge });
+    let again = loads(&effects);
+    assert_eq!(again.len(), 1, "{effects:?}");
+    assert_eq!(again[0].2, PlugState::Of(surge));
+    let at_48k = |e: &Effect| {
+        matches!(
+            e,
+            Effect::LoadPlugin {
+                sample_rate: 48_000,
+                ..
+            }
+        )
+    };
+    assert!(effects.iter().any(at_48k));
+    r.go(Input::PluginLoaded { ticket: again[0].0 });
+    assert!(
+        r.m.play()
+            .plugs
+            .list
+            .iter()
+            .all(|p| p.phase == Phase::Ready)
+    );
+}
+
+#[test]
+fn a_tracks_plugin_that_became_ready_under_a_trial_keeps_the_songs_state_at_another_rate() {
+    let mut r = Rig::new();
+    let (_, track, _, state) = surge_with_a_state(&mut r);
+    let again = loads(&rate(&mut r, 44_100))[0].0;
+    try_on(&mut r, track);
+    r.go(Input::PluginLoaded { ticket: again });
+
+    let effects = rate(&mut r, 48_000);
+    let own = (loads(&effects).into_iter())
+        .find(|l| l.1 == SURGE_VST3)
+        .expect("loaded again");
+    assert_eq!(own.2, PlugState::Bytes(state));
+    assert!(effects.contains(&Effect::DropPlugin { ticket: again }));
+}
+
+#[test]
+fn a_tracks_plugin_that_does_not_load_under_a_trial_sounds_as_the_sine_wave_after_it() {
+    let mut r = Rig::new();
+    let (_, track, _) = r.surge();
+    let seat = r.m.track_seats()[0].unwrap();
+    let again = loads(&rate(&mut r, 44_100))[0].0;
+    try_on(&mut r, track);
+    let effects = r.go(Input::PluginUnreadable { ticket: again });
+    assert!(
+        !(engine_ops(&effects).iter()).any(|op| matches!(op, EngineOp::Instrument { .. })),
+        "the engine would take it for the tried one"
+    );
+
+    let ops = engine_ops(&r.cmd(Command::ShelfCancel));
+    let end = EngineOp::EndTrial { seat, keep: false };
+    let end = ops
+        .iter()
+        .position(|op| *op == end)
+        .expect("the trial ends");
+    let sine = EngineOp::Instrument {
+        seat,
+        instrument: InstrumentRef::SINE,
+    };
+    assert!(ops[end..].contains(&sine), "{ops:?}");
+}
+
+#[test]
+fn loading_again_a_plugin_this_pc_no_longer_has_leaves_the_sine_wave() {
+    let mut r = Rig::new();
+    let (_, _, slot) = r.surge();
+    let again = loads(&rate(&mut r, 44_100))[0].0;
+    r.go(Input::PluginUnreadable { ticket: again });
+    // It is taken off the PC, and a scan says so.
+    r.m.play_mut().set_known_plugins(Vec::new());
+
+    let effects = r.cmd(Command::ReloadPlugin { slot });
+    assert!(loads(&effects).is_empty());
+    let silent = (engine_ops(&effects).into_iter()).any(|op| {
+        matches!(
+            op,
+            EngineOp::Instrument {
+                instrument: InstrumentRef::Plugin(_),
+                ..
+            }
+        )
+    });
+    assert!(!silent, "{effects:?}");
+}
+
+#[test]
+fn a_stopped_plugin_is_loaded_anew_as_the_song_has_it_when_the_engine_is_made_anew() {
+    let mut r = Rig::new();
+    let (surge, track, place, state) = surge_with_a_state(&mut r);
+    let slot = PluginSlotRef::Instrument { track };
+    r.go(Input::PluginStopped { ticket: surge });
+    assert!(r.m.play().plugin_is_down(slot));
+
+    let effects = r.go(Input::PluginsLost);
+    let lost = loads(&effects);
+    assert_eq!(lost.len(), 1, "{effects:?}");
+    assert_eq!(lost[0].2, PlugState::Bytes(state));
+    assert!(!r.m.play().plugin_is_down(slot));
+    assert!(r.m.play().stopped_plugin().is_none());
+    r.go(Input::PluginLoaded { ticket: lost[0].0 });
+    let ready = meloet_protocol::PluginState::Ready;
+    assert_eq!(r.m.play().plugin_state(place), ready);
+}
+
+#[test]
+fn a_copy_gets_a_state_only_where_the_plugin_that_said_it_is() {
+    let mut r = Rig::new();
+    let track = r.m.view().song.tracks[0].id;
+    let first = r.effect(track, 0, COMP_LV2);
+    let second = r.effect(track, 1, COMP_VST3);
+    r.host.plugins.insert(first, [0.1, 0.0, 0.0]);
+    r.host.plugins.insert(second, [0.9, 1.0, 1.0]);
+
+    // Their states are asked for; before they come, the second goes above the first.
+    r.cmd(Command::DuplicateTrack { track });
+    let strip = StripRef::Track { id: track };
+    let insert = InsertRef { strip, slot: 1 };
+    r.cmd(Command::MoveInsert { insert, to: 0 });
+    r.settle();
+    let doc = &r.m.play().song().doc;
+    assert_eq!(doc.tracks.len(), 2, "copied");
+    let copy = StripId::Track(doc.tracks[1].id);
+    for slot in [0, 1] {
+        let plugin = doc.plugin(PluginPlace::Insert(copy, slot)).unwrap();
+        assert!(
+            plugin.state.is_empty(),
+            "slot {slot}: {} has the state of the other plugin",
+            plugin.key
+        );
+    }
+}
+
+fn track_ids(r: &Rig) -> Vec<u32> {
+    r.m.view().song.tracks.iter().map(|t| t.id).collect()
+}
+
+/// The track `before` did not have.
+fn new_track(r: &Rig, before: &[u32]) -> u32 {
+    let ids = track_ids(r);
+    *ids.iter()
+        .find(|t| !before.contains(t))
+        .expect("a new track")
+}
+
+fn state_in_song(r: &Rig, track: u32) -> Option<Arc<[u8]>> {
+    let place = PluginPlace::Instrument(TrackId(track));
+    (r.m.play().song().doc.plugin(place)).map(|p| p.state.clone())
+}
+
+/// Surge XT is tried on the shelf, and its level is turned in its window. Returns its ticket.
+fn tried_and_turned(r: &mut Rig, mode: ShelfMode) -> u64 {
+    r.cmd(Command::OpenShelf { mode });
+    let sound = Some(plugin(SURGE_VST3));
+    let effects = r.cmd(Command::ShelfSelectSound { sound });
+    let surge = r.loaded(&effects);
+    r.settle();
+    let turned = r.host.turn(surge, LEVEL, 0.9);
+    r.go(turned);
+    surge
+}
+
+#[test]
+fn the_step_of_confirm_holds_what_was_changed_in_the_tried_plugin() {
+    let turned = state_of([0.9, 0.0, 0.0]);
+
+    // A new track.
+    let mut r = Rig::new();
+    let before = track_ids(&r);
+    let surge = tried_and_turned(&mut r, ShelfMode::NewTrack);
+    let steps = r.undo_count();
+    r.cmd(Command::ShelfConfirm);
+    r.settle();
+    assert_eq!(r.undo_count(), steps + 1, "one step");
+    let new = new_track(&r, &before);
+    assert_eq!(state_in_song(&r, new), Some(turned.clone()));
+    assert_eq!(r.host.plugins[&surge], [0.9, 0.0, 0.0]);
+    assert_eq!(r.host.states_put, 0, "the plugin has it already");
+    // Undo takes the track away; redo brings it back with that state.
+    r.cmd(Command::Undo);
+    assert_eq!(state_in_song(&r, new), None);
+    let effects = r.cmd(Command::Redo);
+    assert_eq!(state_in_song(&r, new), Some(turned.clone()));
+    let again = loads(&effects);
+    assert_eq!(again.len(), 1, "{effects:?}");
+    assert_eq!(again[0].2, PlugState::Bytes(turned.clone()));
+
+    // In place of a track's sound.
+    let mut r = Rig::new();
+    let track = r.m.view().song.tracks[0].id;
+    tried_and_turned(&mut r, ShelfMode::Replace { track });
+    let steps = r.undo_count();
+    r.cmd(Command::ShelfConfirm);
+    r.settle();
+    assert_eq!(r.undo_count(), steps + 1, "one step");
+    assert_eq!(state_in_song(&r, track), Some(turned.clone()));
+    r.cmd(Command::Undo);
+    let effects = r.cmd(Command::Redo);
+    assert_eq!(loads(&effects)[0].2, PlugState::Bytes(turned));
+
+    // Tried with nothing changed: the song has it "as it starts", as before.
+    let mut r = Rig::new();
+    let (_, track, _) = r.surge();
+    r.settle();
+    assert_eq!(state_in_song(&r, track), Some(Arc::from(&[][..])));
+}
+
+#[test]
+fn with_no_answer_or_a_step_before_it_the_step_of_confirm_stays_as_it_was() {
+    // The plugin's process stops as it is asked.
+    let mut r = Rig::new();
+    let before = track_ids(&r);
+    let surge = tried_and_turned(&mut r, ShelfMode::NewTrack);
+    r.host.dead.insert(surge);
+    let steps = r.undo_count();
+    r.cmd(Command::ShelfConfirm);
+    r.settle();
+    assert_eq!(r.undo_count(), steps + 1);
+    let new = new_track(&r, &before);
+    assert_eq!(state_in_song(&r, new), Some(Arc::from(&[][..])));
+
+    // Another step comes first: the state is a step of its own after it, as at the end of a
+    // visit to the window.
+    let mut r = Rig::new();
+    let before = track_ids(&r);
+    let surge = tried_and_turned(&mut r, ShelfMode::NewTrack);
+    let steps = r.undo_count();
+    r.cmd(Command::ShelfConfirm);
+    let new = new_track(&r, &before);
+    let name = "B".to_owned();
+    r.cmd(Command::RenameTrack { track: new, name });
+    r.settle();
+    assert_eq!(r.undo_count(), steps + 3);
+    let place = PluginPlace::Instrument(TrackId(new));
+    let window = StepKind::PluginWindow { place };
+    assert_eq!(r.m.play().steps().last(), Some(&window));
+    assert_eq!(state_in_song(&r, new), Some(state_of([0.9, 0.0, 0.0])));
+    r.cmd(Command::Undo);
+    assert_eq!(state_in_song(&r, new), Some(Arc::from(&[][..])));
+    assert_eq!(r.host.plugins[&surge], FRESH, "as it started");
+
+    // The step is taken back and made again first: the track comes back as it was made.
+    let mut r = Rig::new();
+    let before = track_ids(&r);
+    tried_and_turned(&mut r, ShelfMode::NewTrack);
+    r.cmd(Command::ShelfConfirm);
+    let new = new_track(&r, &before);
+    r.cmd(Command::Undo);
+    r.cmd(Command::Redo);
+    r.settle();
+    assert_eq!(state_in_song(&r, new), Some(Arc::from(&[][..])));
 }

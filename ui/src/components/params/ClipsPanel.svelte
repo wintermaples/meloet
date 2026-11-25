@@ -5,6 +5,7 @@
      and cents apart (the same form as the panel for one clip). At the bottom, 「位置 ・ 長さ ・ フェード ・ この音のテンポは、1 つだけ選ぶと出ます。」. -->
 <script lang="ts">
   import { CLIP_CENTS_MAX, CLIP_SEMITONES_MAX, type SelectedClips, type StretchChange } from "../../bridge";
+  import ScrollArea from "../../lib/ScrollArea.svelte";
   import { current, send } from "../../state/app.svelte";
   import { STATUS_JOIN, t } from "../../text";
   import { dbNumber, textParts } from "../format";
@@ -114,6 +115,7 @@
   <span class="m-name name" data-test="params-name">{t("clips.selected", { count: sel.clips.length })}</span>
   <span class="m-lbl tracks" data-test="clips-tracks">{tracksLine}</span>
 </div>
+<ScrollArea>
 <div class="list">
   <button class="m-plain group m-focus-in" onclick={() => (folded = !folded)} data-group="clips">
     <span class={folded ? "m-lbl" : "m-hi"}>{folded ? "▸" : "▾"}</span>
@@ -151,7 +153,7 @@
         <span class="m-num m-hi value" class:m-typable={!busy} role="presentation" data-test="clips-value-pitch" ondblclick={() => startTyping("semitones")}>{dash}</span>
       {:else}
         <span class="m-num m-hi value" data-test="clips-value-pitch"
-          >{#each textParts("clipParams.pitchValue", { semitones: "", cents: "" }) as part, i (i)}{#if part.hole === "semitones" || part.hole === "cents"}{@render pitchPart(
+          >{#each textParts("clipParams.pitchValue", { semitones: sel.semitones ?? "", cents: sel.cents ?? "" }) as part, i (i)}{#if part.hole === "semitones" || part.hole === "cents"}{@render pitchPart(
                 part.hole,
               )}{:else}{part.text}{/if}{/each}</span
         >
@@ -161,6 +163,7 @@
   {/if}
   <div class="only-one m-lbl" data-test="clips-only-one">{t("clips.onlyOne")}</div>
 </div>
+</ScrollArea>
 
 <style>
   /* 「3 クリップを選んでいます」 and the track names (mock F8-MultiClip: 8 above and below, 12 left and right, gap 4, a line.thin line below). */
@@ -178,10 +181,6 @@
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
-  }
-  .list {
-    min-height: 0;
-    overflow-y: auto;
   }
   .group {
     width: 100%;

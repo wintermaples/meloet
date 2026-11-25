@@ -26,7 +26,9 @@ export function historyStep(state: AppState, delta: 1 | -1): boolean {
   const { total, current } = state.history;
   if (total === 0) return false;
   const from = selectedRow(state.history) ?? current;
-  historyUi.selected = from === 0 && delta === 1 ? 1 : Math.max(1, Math.min(total, from + delta));
+  // With everything undone and nothing chosen, there is no older row.
+  if (from === 0 && delta === -1) return true;
+  historyUi.selected = Math.max(1, Math.min(total, from + delta));
   historyUi.byKeys = true;
   return true;
 }

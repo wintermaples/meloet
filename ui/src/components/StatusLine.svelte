@@ -30,11 +30,11 @@
   import { current, onEvent, send } from "../state/app.svelte";
   import { shownWork } from "../state/audioWork.svelte";
   import { exportShown } from "../state/exportShown.svelte";
-  import { LIST_COMMA, SENTENCE_END, SENTENCE_JOIN, STATUS_JOIN, t, textLanguage, type TextKey } from "../text";
+  import { BRACKET_CLOSE, BRACKET_OPEN, LIST_COMMA, SENTENCE_END, SENTENCE_JOIN, STATUS_JOIN, t, textLanguage, type TextKey } from "../text";
   import { about } from "./about/about.svelte";
   import { keyList } from "./keylist/keyList.svelte";
   import { runShown } from "./export/exportText";
-  import { gridText, msText, noteLengthText, pitchClassName, scaleName, tempoText, termParts, textParts, type TextPart } from "./format";
+  import { gridText, msText, noteLengthText, pitchClassName, rangeText, scaleName, tempoText, termParts, textParts, type TextPart } from "./format";
   import { laneNameText, stepNameText, stepWhatText } from "./history/stepText";
   import { laneAddOpenFor } from "./automation/laneAdd.svelte";
   import { stripName } from "./mixer/stripName";
@@ -53,7 +53,7 @@
   import { chordHover } from "./pianoroll/chordPick.svelte";
   import { shelfStatus, shelfUi } from "./tracks.svelte";
   import { statusFit, type StatusRightShown } from "./statusFit";
-  import { mapOf } from "../time/bars";
+  import { mapOf, meterAtOf } from "../time/bars";
   import { positionText, shownTick } from "./time";
   import ZoomMenu from "./ZoomMenu.svelte";
   import { overdubClipName } from "./clipEdits";
@@ -86,6 +86,7 @@
     unsaved: "songDialog.unsaved",
     cannotSave: "songDialog.cannotSave",
     broken: "songDialog.broken",
+    deleteRecovery: "songDialog.deleteRecovery",
   };
 
   const BAND_NAMES: Record<Band, TextKey> = {
@@ -159,7 +160,7 @@
     if (to.kind === "plugin") return { param: spaced(to.name), range: to.range, value: to.value };
     const spec = EFFECT_PARAMS[to.effect][to.param];
     if (!spec) return { param: "", range: "", value: "" };
-    return { param: paramName(to.effect, to.param), range: `${plainNumber(spec.min)}〜${plainNumber(spec.max)}`, value: valueText(to.effect, spec, to.value) };
+    return { param: paramName(to.effect, to.param), range: rangeText(plainNumber(spec.min), plainNumber(spec.max)), value: valueText(to.effect, spec, to.value) };
   }
 
   /** Where a plugin window belongs (「1 ピアノ ・ 音源」「A リバーブ ・ インサート 1」「棚 ・ ためし弾き」). */
@@ -213,6 +214,17 @@
    * 「選択 3 ノート ・ D4 E4 F4 ・ クオンタイズ済み（もとの位置へ戻せます）」 (mock A-PianoRoll). Repeated names are grouped as 「スネア ×2」 (spec 3 85).
    * With 5 or more names, 「…」 after 4.
    */
+  /** The time signature at the first selected note of the shown take, the one the note panel counts lengths in (the song start's when none). */
+  function selectedMeter(): { num: number; den: number } {
+    const map = mapOf(app.timeline);
+    const take = shownNotes.take;
+    const clip = shownNotes.clip;
+    if (!take || !clip) return meterAtOf(map, 0);
+    let first = Infinity;
+    for (const r of app.pianoRoll.selectedNotes) for (let i = r.start; i < Math.min(r.end, take.starts.length); i++) first = Math.min(first, take.starts[i]!);
+    return meterAtOf(map, first === Infinity ? 0 : clip.start + clip.takeOffset + first);
+  }
+
   function notesParts(n: NoteSelection): TextPart[] {
     const values = { count: n.count, keys: keyCountsText(n.names.slice(0, 4), rollDrums) };
     return joined(
@@ -240,6 +252,15 @@
   }
 
   /**
+   * The monitor piece is the only piece of these texts that lies between two joints with no hole in it. The mark is split
+   * without its spaces, as Japanese writes 「）・ 」 after a bracket.
+   */
+  function withoutMonitorPiece(text: string): string {
+    const pieces = text.split(STATUS_JOIN.trim());
+    return pieces.length < 3 ? text : [pieces[0], ...pieces.slice(2)].join(STATUS_JOIN.trim());
+  }
+
+  /**
    * The text while recording vocals (spec 6 "Recording vocals", "Recording 2 or more vocal tracks", "Recording keyboard and vocals"). The leading 「● 録音中 ・ 」 is said by the tag on the left, so it is left out of the text.
    * 「モニター オン ・ 」 is left out when monitoring is off. For keyboard plus 2 or more vocals, the vocals are listed as 「6 歌（入口 1）、7 歌 2」 (a form not in the spec).
    */
@@ -247,21 +268,21 @@
     const short = (v: VocalRef) => t(`vocal.inputShort.${v.input}`);
     const last = vocals.at(-1);
     if (!last) return keys ? textParts("msg.recording", { track: track(keys), take: app.transport.recording?.take ?? 1 }) : [];
-    const lead = vocals.slice(0, -1).map((v) => `${track(v.track)}（${short(v)}）`);
+    const inBrackets = (v: VocalRef) => `${track(v.track)}${BRACKET_OPEN}${short(v)}${BRACKET_CLOSE}`;
+    const lead = vocals.slice(0, -1).map(inBrackets);
     const vocal = [...lead, track(last.track)].join(LIST_COMMA);
     const values = { stopKey: t("key.playStop"), input: short(last) };
     const parts = keys
       ? textParts("msg.recordingKeysAndVocal", { ...values, keys: track(keys), vocal })
       : vocals.length > 1
-        ? textParts("msg.recordingVocals", { stopKey: values.stopKey, vocals: vocals.map((v) => `${track(v.track)}（${short(v)}）`).join(LIST_COMMA) })
+        ? textParts("msg.recordingVocals", { stopKey: values.stopKey, vocals: vocals.map(inBrackets).join(LIST_COMMA) })
         : textParts("msg.recordingVocal", { ...values, track: vocal });
     const badge = `${t("status.recording")}${STATUS_JOIN}`;
-    const monitorOn = `${t("meter.monitorOn")}${STATUS_JOIN}`;
     return parts
       .map((p, i) => {
         if (p.hole !== null) return p;
         let text = i === 0 && p.text.startsWith(badge) ? p.text.slice(badge.length) : p.text;
-        if (!monitor) text = text.replace(monitorOn, "");
+        if (!monitor) text = withoutMonitorPiece(text);
         return { ...p, text };
       })
       .filter((p) => p.text !== "");
@@ -418,7 +439,7 @@
       case "velocityMatched":
         return plain("msg.velocityMatched", { count: m.count, value: m.value });
       case "lengthMatched":
-        return plain("msg.lengthMatched", { count: m.count, value: noteLengthText(m.value, { num: app.timeline.meterNum, den: app.timeline.meterDen }) });
+        return plain("msg.lengthMatched", { count: m.count, value: noteLengthText(m.value, selectedMeter()) });
       case "velocityScaled":
         return plain("msg.velocityScaled", { count: m.count, percent: m.percent });
       case "velocityRamped":
@@ -679,8 +700,11 @@
         return plain("msg.audioFilesMissing", { count: m.count });
       case "clipSplit":
         return plain("msg.clipSplit", { clip: m.name, position: positionText(m.tick, mapOf(app.timeline)) });
-      case "audioImported":
-        return plain("msg.audioImported", { file: m.file, track: track(m.track), position: positionText(m.tick, mapOf(app.timeline)) });
+      case "audioImported": {
+        const imported = textParts("msg.audioImported", { file: m.file, track: track(m.track), position: positionText(m.tick, mapOf(app.timeline)) });
+        const skipped = m.skipped > 0 ? textParts("msg.audioSkipped", { skipped: m.skipped }) : [];
+        return { parts: [...imported, ...gapBefore(skipped)], strong: [], button: null };
+      }
       case "audioUnreadable":
         return plain("msg.audioUnreadable", { file: m.file });
       case "audioDragging":
@@ -736,6 +760,12 @@
         return plain("msg.savingAudio", { done: m.done, total: m.total, doneMb: mb(m.doneBytes), totalMb: mb(m.totalBytes) });
       case "diskTooSlow":
         return plain("msg.diskTooSlow");
+      case "vocalsNotRecorded":
+        return plain(m.keys ? "msg.vocalsNotRecordedKeys" : "msg.vocalsNotRecorded");
+      case "recordingStoppedDisk":
+        return plain(m.reason === "fileFull" ? "msg.recordingStoppedFileFull" : "msg.recordingStoppedDisk");
+      case "audioNotCopied":
+        return plain("msg.audioNotCopied", { file: m.file });
       case "packAsking":
         return plain("pack.askingStatus");
       case "soundReady":
@@ -889,13 +919,18 @@
   const setHeld = (keys: number[]) => {
     if (!sameKeys(keys, held)) held = keys;
   };
+  /** The key words of the last telemetry counted (most messages carry the same ones, often none). */
+  let heldWords: Uint32Array | null = null;
   $effect(() => {
     const tel = current.telemetry;
     if (!countingHeld) {
+      heldWords = null;
       untrack(() => setHeld([]));
       return;
     }
     if (!tel) return;
+    if (heldWords !== null && tel.keys.every((w, i) => w === heldWords![i])) return;
+    heldWords = tel.keys.slice();
     const keys: number[] = [];
     for (let k = 0; k < 128; k++) if (keyIsDown(tel, k)) keys.push(k);
     untrack(() => setHeld(keys));

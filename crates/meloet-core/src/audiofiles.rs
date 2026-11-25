@@ -23,12 +23,16 @@ use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
-use std::time::{Duration, Instant};
+use std::sync::atomic::{
+    AtomicU64,
+    Ordering::{Relaxed, SeqCst},
+};
+use std::time::{Duration, Instant, SystemTime};
 
 use meloet_protocol::AUDIO_EXTENSIONS;
 use sha2::{Digest, Sha256};
 
+use crate::maker::PART_LEFT;
 use crate::pcm::{PcmFile, PcmStore};
 use crate::vocalrec::work_audio_dir;
 
@@ -98,6 +102,10 @@ struct Places {
     also: Vec<PathBuf>,
     /// `AudioSource::uid` → `AudioSource::file`, for the song as it is.
     sources: Vec<([u8; 16], String)>,
+    /// What [`AudioStore::drop_cache`] let go of, until the core takes it.
+    redone: Vec<[u8; 16]>,
+    /// How many times [`AudioStore::drop_cache`] was called.
+    drops: u64,
 }
 
 /// A name of the audio table is followed only as a plain file name.
@@ -166,14 +174,14 @@ impl AudioStore {
     }
 
     fn touch(&self) {
-        self.changed.fetch_add(1, Relaxed);
+        self.changed.fetch_add(1, SeqCst);
     }
 
     /// Goes up whenever a file that [`PcmStore::open`] did not give may be there now (it
     /// was found, made ready, or the song's folder changed). The read-ahead thread asks
     /// again for what it is missing when this is another number.
     pub fn generation(&self) -> u64 {
-        self.changed.load(Relaxed)
+        self.changed.load(SeqCst)
     }
 
     /// Another song: it was opened (`Some`), or it is new (`None`).
@@ -243,6 +251,41 @@ impl AudioStore {
         Some(crate::peaks::peaks_path(&dir.join(CACHE_PEAKS), uid))
     }
 
+    /// Lets go of what was made from the audio with this `uid`: its decoded copies at every
+    /// rate and its peaks file. They are made again from the file the song has now. The
+    /// audio made for its clips goes when the core takes the uid ([`AudioStore::take_redone`]).
+    pub fn drop_cache(&self, uid: &[u8; 16]) {
+        let mut places = self.lock();
+        places.redone.push(*uid);
+        places.drops += 1;
+        drop(places);
+        let Some(dir) = self.cache_dir() else {
+            return;
+        };
+        let head = format!("{}-", hex(uid));
+        for entry in (fs::read_dir(dir.join(CACHE_AUDIO)).into_iter().flatten()).flatten() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if name.starts_with(&head) && name.ends_with(".wav") {
+                let _ = fs::remove_file(entry.path());
+            }
+        }
+        if let Some(peaks) = self.peaks_path(uid) {
+            let _ = fs::remove_file(peaks);
+        }
+    }
+
+    /// The uids [`AudioStore::drop_cache`] let go of since the last time this was asked.
+    pub fn take_redone(&self) -> Vec<[u8; 16]> {
+        std::mem::take(&mut self.lock().redone)
+    }
+
+    /// Goes up with every [`AudioStore::drop_cache`]: what was made while it went up may be
+    /// made of what a file held before.
+    pub fn drops(&self) -> u64 {
+        self.lock().drops
+    }
+
     fn cached(&self, uid: &[u8; 16], sample_rate: u32) -> Option<wav::WavPcm> {
         let wav = wav::WavPcm::open(&self.cache_path(uid, sample_rate)?).ok()?;
         (wav.sample_rate() == sample_rate).then_some(wav)
@@ -305,7 +348,16 @@ impl AudioStore {
                 }
                 None if taken.contains(&name) => {}
                 None => {
-                    fs::rename(&temp, work.join(&name))?;
+                    // A link, not a rename: a file that got this name meanwhile stays.
+                    let to = work.join(&name);
+                    match fs::hard_link(&temp, &to) {
+                        Ok(()) => {
+                            let _ = fs::remove_file(&temp);
+                        }
+                        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
+                        // A file system without links.
+                        Err(_) => fs::rename(&temp, &to)?,
+                    }
                     sync_dir(&work)?;
                     self.touch();
                     return Ok((name, sha));
@@ -344,6 +396,7 @@ impl AudioStore {
         tell: &mut dyn FnMut(Settling),
     ) -> io::Result<()> {
         let dest = song_dir.join(SONG_AUDIO);
+        remove_left_copies(&dest, SystemTime::now());
         let (folders, work) = {
             let mut places = self.lock();
             let folders: Vec<PathBuf> = places.folders().filter(|d| *d != dest).collect();
@@ -442,6 +495,10 @@ impl PcmStore for AudioStore {
         let wav = wav::WavPcm::open(&self.made_path(key)?).ok()?;
         (wav.sample_rate() == sample_rate).then(|| Box::new(wav) as Box<dyn PcmFile>)
     }
+
+    fn generation(&self) -> u64 {
+        AudioStore::generation(self)
+    }
 }
 
 fn sha256_of(path: &Path) -> io::Result<[u8; 32]> {
@@ -488,6 +545,28 @@ fn copy_into(from: &Path, to: &Path, each: &mut dyn FnMut(usize)) -> io::Result<
         let _ = fs::remove_file(&temp);
     }
     copied
+}
+
+/// What a copy into `dir` that was cut short (meloet ended in the middle of a save) left:
+/// the names [`copy_into`] gives, an audio file's name and `.part`, not written to for
+/// [`PART_LEFT`]. One that was written to a moment ago may be another meloet's, and stays.
+fn remove_left_copies(dir: &Path, now: SystemTime) {
+    for entry in (fs::read_dir(dir).into_iter().flatten()).flatten() {
+        let name = entry.file_name();
+        let left = (name.to_str())
+            .and_then(|n| n.strip_suffix(".part"))
+            .is_some_and(|audio| looks_like_audio(Path::new(audio)));
+        let old = |meta: fs::Metadata| {
+            let age = meta
+                .modified()
+                .ok()
+                .and_then(|at| now.duration_since(at).ok());
+            meta.is_file() && age.is_some_and(|age| age >= PART_LEFT)
+        };
+        if left && entry.metadata().is_ok_and(old) {
+            let _ = fs::remove_file(entry.path());
+        }
+    }
 }
 
 /// Moves a file. Across file systems (`copy`, or the rename says so): a synced copy that

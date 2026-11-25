@@ -3,7 +3,7 @@
 import { LANGUAGES, SCALE_MODES, type AppState, type Band, type Command } from "../../bridge";
 import { THEME_IDS } from "../../design/themes";
 import { SCALES } from "../../design/tokens";
-import { keyActionUsable, pianoRollOpen, runKeyAction, songBusy, type KeyDeps } from "../../keys/attach";
+import { arrangeDeleteUsable, keyActionUsable, pianoRollOpen, runKeyAction, songBusy, type KeyDeps } from "../../keys/attach";
 import type { KeyAction, Platform } from "../../keys/keys";
 import { t, type TextKey } from "../../text";
 import { gridText, pitchClassName, scaleModeName } from "../format";
@@ -12,6 +12,7 @@ import { shown } from "../pianoroll/shown.svelte";
 import { shownFor } from "../pianoroll/shownNotes";
 import { prView, zoomRowsBy } from "../pianoroll/view.svelte";
 import { about, openAbout } from "../about/about.svelte";
+import { exportedOpen } from "../export/exported";
 import { keyList, openKeyList } from "../keylist/keyList.svelte";
 import { trackRows } from "../trackMenu";
 import { openShelf } from "../tracks.svelte";
@@ -142,7 +143,7 @@ export function topMenus(state: AppState, deps: KeyDeps, platform: Platform): To
     act("menu.paste", { kind: "paste" }, k.mod(t("key.paste"))),
     act("menu.duplicate", { kind: "duplicate" }, k.mod(t("key.duplicate"))),
     act("menu.repeatClips", { kind: "repeatClips" }, k.mod(t("key.repeatClips"))),
-    act("menu.delete", { kind: "deleteSelected" }, t("key.delete"), toArrange ? { usable: state.arrange.selectedClips.length > 0 && !busy } : {}),
+    act("menu.delete", { kind: "deleteSelected" }, t("key.delete"), toArrange ? { usable: arrangeDeleteUsable(state) } : {}),
     { kind: "separator" },
     act("menu.selectAll", { kind: "selectAll" }, k.mod(t("key.selectAll"))),
     act("menu.splitClip", { kind: "splitClips" }, t("key.split")),
@@ -302,8 +303,9 @@ export function topMenus(state: AppState, deps: KeyDeps, platform: Platform): To
     ...listEntries([edits.rename, edits.color, edits.up, edits.down, { kind: "separator" }, edits.remove]),
   ];
 
-  // Not opened while another dialog (song, sound settings) is open (so the Esc order stays single).
-  const noDialog = !state.workspace.songDialog && !state.workspace.settings && !state.plugins.stoppedOpen;
+  // Not opened while another dialog (song, sound settings, export) is open (so the Esc order stays single).
+  const noDialog =
+    !state.workspace.songDialog && !state.workspace.settings && !state.plugins.stoppedOpen && state.export.dialog === null && exportedOpen(state) === null;
   const help: ListEntry[] = [
     plain("menu.keyList", noDialog && !about.open, openKeyList),
     plain("menu.userGuide", true, send({ type: "openUserGuide" })),

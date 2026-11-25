@@ -6,6 +6,7 @@ import { arrangeOf } from "../src/bridge/fake";
 import Arrange from "../src/components/Arrange.svelte";
 import { contextMenu, type MenuRow } from "../src/components/menu/contextMenu.svelte";
 import { cancelDrag } from "../src/components/pianoroll/view.svelte";
+import { runFrameCallbacks } from "../src/gl/slot";
 import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 import * as app from "./fake-app.svelte";
 
@@ -93,7 +94,7 @@ const three = (selected: number[] = [], clicked: number | null = null) =>
     ];
     s.song.playTarget = 2;
     s.song.keysTarget = 2;
-    s.arrange = { selectedClips: selected, selectedClip: clicked, pianoRollClip: clicked, clipboardClips: 1, tallTrack: null };
+    s.arrange = { selectedClips: selected, selectedClip: clicked, pianoRollClip: clicked, clipboardClips: 1, clipboardKind: "keys", tallTrack: null };
   });
 
 const rows = () => (contextMenu.open?.entries ?? []).filter((e): e is MenuRow => e.kind === "row");
@@ -132,6 +133,24 @@ describe("clip name and tabs (spec 2 (Take mark and switch), mock F-Takes)", () 
       { type: "stepTake", delta: -1 },
       { type: "stepTake", delta: 1 },
     ]);
+  });
+
+  it("while recording or counting in, ◂ ▸ of the switch tab are disabled and send nothing", () => {
+    for (const state of ["recording", "countIn"] as const) {
+      show(
+        app.stateWith((s) => {
+          s.song.tracks[0]!.clips = [clip(1, "イントロ", 1, 5), clip(3, "Aメロ", 5, 9, 2, 3)];
+          s.arrange = arrangeOf(3);
+          s.transport.state = state;
+        }),
+      );
+      const buttons = qa(".switcher button") as HTMLButtonElement[];
+      expect(buttons.map((b) => b.disabled)).toEqual([true, true]);
+      for (const b of buttons) b.click();
+      expect(app.sent).toEqual([]);
+      unmount(mounted!);
+      mounted = null;
+    }
   });
 
   it("the switch tab is just above a clip of a lower row", () => {
@@ -307,6 +326,25 @@ describe("ruler (the owner's decision: the loop is a drag on the ruler)", () => 
     expect(app.sent).toEqual([{ type: "setLoop", fromBar: 5, toBar: 9 }]);
   });
 
+  it("while recording or counting in, a drag or a press on the ruler shows no loop range and sends nothing", () => {
+    for (const state of ["recording", "countIn"] as const) {
+      const busy = takes();
+      busy.transport.state = state;
+      show(busy);
+      const ruler = q(".ruler.bars")!;
+      pointer(ruler, "pointerdown", 256);
+      pointer(ruler, "pointermove", 512);
+      expect(q(".loop-mark")).toBeNull();
+      expect(text(q(".head .row:nth-child(2)"))).toBe("マーカー");
+      pointer(ruler, "pointerup", 512);
+      pointer(ruler, "pointerdown", 300);
+      pointer(ruler, "pointerup", 301);
+      expect(app.sent).toEqual([]);
+      unmount(mounted!);
+      mounted = null;
+    }
+  });
+
   it("a plain press sends locate. Snaps to the lines shown on the ruler (bars by default); with Shift it does not snap (B-61)", () => {
     show(takes());
     const ruler = q(".ruler.bars")!;
@@ -319,6 +357,15 @@ describe("ruler (the owner's decision: the loop is a drag on the ruler)", () => 
       { type: "locate", tick: (300 * BAR) / 64 },
     ]);
     expect(q(".loop-mark")).toBeNull();
+  });
+
+  it("a loop range off the bar lines (5.3–7.2): the mark at its ticks, 「ループ 5–8」 as in the status line", () => {
+    const on = takes();
+    on.song.loopRange = { start: 4 * BAR + 2 * TPQ, end: 6 * BAR + TPQ };
+    on.song.loopOn = true;
+    show(on);
+    expect(text(q(".loop-range"))).toBe("5–8");
+    expect([q(".loop-mark")!.style.left, q(".loop-mark")!.style.width]).toEqual(["288px", "112px"]);
   });
 
   it("with the loop on, accent on the top edge of the ruler and 「マーカー ・ ループ 5–9」. Not shown when off", () => {
@@ -427,6 +474,31 @@ describe("context menu (B-60)", () => {
     ]);
   });
 
+  it("paste is disabled over a track of the other kind than the first clip kept (Rust would refuse it with nothing said)", () => {
+    const s = three([3], 3);
+    s.song.tracks[2] = { ...s.song.tracks[2]!, kind: { kind: "vocal", input: "mono1", inputReady: true, armed: false, monitor: false }, clips: [] };
+    show(s);
+    const pasteUsable = () => rows().find((r) => r.label === "menu.paste")!.usable;
+    // Keys clips kept: an empty place of the vocal track (row 3) no, of a keyboard track yes.
+    ctx(q(".lanes")!, 600, 150);
+    expect(pasteUsable()).toBe(false);
+    ctx(q(".lanes")!, 600, 100);
+    expect(pasteUsable()).toBe(true);
+    // Audio clips kept: the other way round. On a clip, it pastes onto the track that is selected once the right-click arrives (its own when it was not selected).
+    app.setState({ ...s, arrange: { ...s.arrange, clipboardKind: "vocal" } });
+    flushSync();
+    ctx(q(".lanes")!, 600, 150);
+    expect(pasteUsable()).toBe(true);
+    ctx(q(".lanes")!, 600, 100);
+    expect(pasteUsable()).toBe(false);
+    ctx(q(".lanes")!, 300, 100);
+    expect(pasteUsable()).toBe(false);
+    app.setState({ ...s, song: { ...s.song, playTarget: 3 }, arrange: { ...s.arrange, clipboardKind: "vocal" } });
+    flushSync();
+    ctx(q(".lanes")!, 300, 30);
+    expect(pasteUsable()).toBe(true);
+  });
+
   it("track head (mock R6-Tracks): mute, solo, record arm / bounce (A7) / name, duplicate (A3), color, up, down / delete. Sends selectTrack first if not selected", () => {
     show(three());
     ctx(qa("[data-test=track-head]")[0]!, 10, 10);
@@ -502,6 +574,23 @@ describe("horizontal scroll", () => {
     flushSync();
     expect(text(q(".bar-number"))).toBe("1");
     expect(qa(".clip-label")).toHaveLength(2);
+  });
+});
+
+describe("paging with the play line", () => {
+  it("while a pointer is held in the arrange (a drag), no page turn; it pages at the first frame after release", () => {
+    const s = takes();
+    s.transport.state = "playing";
+    s.transport.position = 20 * BAR;
+    show(s);
+    pointer(q(".ruler.bars")!, "pointerdown", 100);
+    runFrameCallbacks();
+    flushSync();
+    expect(text(q(".bar-number"))).toBe("1");
+    window.dispatchEvent(new MouseEvent("pointerup", { button: 0 }));
+    runFrameCallbacks();
+    flushSync();
+    expect(text(q(".bar-number"))).not.toBe("1");
   });
 });
 

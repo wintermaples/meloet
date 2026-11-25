@@ -200,6 +200,13 @@ export function rowWhatText(row: HistoryRow, ctx: StepContext): string | null {
   if (row.name.kind === "pluginWindow") return t("history.pluginWindowWhat");
   if (row.place?.kind === "track" && row.what.kind === "soundReplaced")
     return t("history.change", { from: soundNameText(row.what.from), to: soundNameText(row.what.to) });
+  if (row.place?.kind === "track" && row.what.kind === "track" && row.what.track.number === row.place.track.number) return null;
+  if (row.place?.kind === "track" && row.what.kind === "soundKnob")
+    return t("history.changeAt", {
+      place: t(`knob.${row.what.knob}`),
+      from: String(Math.round(row.what.from)),
+      to: t("param.value.percent", { value: String(Math.round(row.what.to)) }),
+    });
   return stepWhatText(row.name, row.what, ctx);
 }
 

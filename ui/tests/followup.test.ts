@@ -294,6 +294,20 @@ describe("term tips (spec 5)", () => {
     expect(tab.textContent).not.toContain("ノート");
   });
 
+  it("the mixer tab says the master fader value (spec 3), −∞ when it is all the way down", () => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1280);
+    const tabText = (gainDb: number | null) => {
+      show(BandRow, app.stateWith((s) => (s.song.master = { ...s.song.master, gainDb })));
+      const text = q('[data-band="mixer"]')!.textContent!.replace(/\s+/g, " ");
+      unmount(mounted!);
+      mounted = null;
+      return text;
+    };
+    expect(tabText(-6.2)).toContain("マスター −6.2 dB");
+    expect(tabText(null)).toContain("マスター −∞ dB");
+    expect(tabText(0)).toContain("マスター 0.0 dB");
+  });
+
   it("piano roll: heading,「ノート」in the left and right panels, velocity, CC tags", () => {
     showRoll(fakeScene("pianoRollCc")!.state);
     expect(termAt(q('[data-test="pr-fold"] .m-name')!)).toBe("ピアノロール");

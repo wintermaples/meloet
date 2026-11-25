@@ -469,7 +469,32 @@ impl Tools {
         if muted == args.on {
             return Ok(self.no_change().await);
         }
-        Ok(self.screen(command).await)
+        let Command::ToggleMute { track } = command else {
+            return Ok(self.screen_when(command, args.on).await);
+        };
+        let ask = AiAsk::ScreenWhen {
+            command,
+            on: args.on,
+        };
+        let d = check!(self.ask(ask).await);
+        let mut value = super::done_value(&d);
+        let read = check!(self.read().await);
+        let hand = (read.song.doc.track(meloet_model::TrackId(track))).map(|t| t.muted);
+        if hand == Some(muted) {
+            value["muted"] = json!(muted);
+            value["wrote_mute_lane"] = json!(true);
+            return Ok(done(
+                format!(
+                    "Done, but not as a mute: the write switch (「● 書く」) is on while the song \
+                     plays, so, as the person's mute button does then, a point was written \
+                     into the track's mute lane at the play line (it turns over what the lane \
+                     makes heard there). The track's own mute did not change (muted: {muted}); \
+                     see get_automation.\n{value}"
+                ),
+                value,
+            ));
+        }
+        Ok(done(format!("Done: change the song.\n{value}"), value))
     }
 
     /// Solos a track or ends its solo. Solo changes only what plays: it is no undo step and
@@ -491,7 +516,8 @@ impl Tools {
         if read.song.session.soloed.contains(&id) == args.on {
             return Ok(self.no_change().await);
         }
-        Ok(self.screen(Command::ToggleSolo { track: id.0 }).await)
+        let command = Command::ToggleSolo { track: id.0 };
+        Ok(self.screen_when(command, args.on).await)
     }
 
     /// Puts an effect (built-in or plugin) into an empty insert slot, as one undo step.
@@ -606,7 +632,9 @@ impl Tools {
             strip: strip_ref(strip),
             slot: slot as u8,
         };
-        Ok(self.screen(Command::ToggleBypass { insert }).await)
+        Ok(self
+            .screen_when(Command::ToggleBypass { insert }, args.on)
+            .await)
     }
 }
 

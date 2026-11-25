@@ -100,6 +100,26 @@ fn deleting_the_selected_track_selects_the_one_below_or_above() {
 }
 
 #[test]
+fn a_step_that_takes_the_selected_track_away_selects_the_one_at_its_place_or_the_last() {
+    let m = &mut ready();
+    three_tracks(m);
+    let target = |m: &Model| m.view().song.play_target;
+    cmd(m, Command::DuplicateTrack { track: 2 });
+    let copy = ids(m)[2];
+    assert_eq!(target(m), Some(copy));
+    cmd(m, Command::Undo);
+    assert_eq!(
+        (ids(m), target(m)),
+        (vec![1, 2, 3], Some(3)),
+        "the one below"
+    );
+    cmd(m, Command::DuplicateTrack { track: 3 });
+    assert_eq!(target(m), Some(ids(m)[3]));
+    cmd(m, Command::Undo);
+    assert_eq!(target(m), Some(3), "it was the last: the one above");
+}
+
+#[test]
 fn renaming_keeps_the_old_name_for_an_empty_one() {
     let m = &mut ready();
     three_tracks(m);

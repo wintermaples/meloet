@@ -1158,6 +1158,7 @@ fn nothing_of_the_timeline_changes_while_recording() {
                 name: "C".into(),
             },
             Command::MoveMarker { id, tick: 3 * BAR },
+            Command::GoToMarker { id },
             Command::StepMarker { forward: true },
             Command::LoopFromMarker { id },
             Command::SetLoop {

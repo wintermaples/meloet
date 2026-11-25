@@ -442,6 +442,11 @@ impl Model {
         if let Some(busy) = self.ai_busy() {
             return Err(AiRefusal::Busy(busy));
         }
+        if let AiAsk::ScreenWhen { command, on } = &ask
+            && self.play.ai_switch(command) == Some(*on)
+        {
+            return Err(AiRefusal::Unchanged);
+        }
         let before = self.play.undo_count();
         let mut ticket = None;
         let mut no_step = false;
@@ -509,7 +514,7 @@ impl Model {
             | AiAsk::InBatch { .. }
             | AiAsk::Commit { .. }
             | AiAsk::Rollback { .. } => return Err(AiRefusal::NotInBatch),
-            AiAsk::Screen(command) => {
+            AiAsk::Screen(command) | AiAsk::ScreenWhen { command, .. } => {
                 if !screen_allowed(&command) {
                     return Err(AiRefusal::Cannot("an AI may not send that intent".into()));
                 }
@@ -517,7 +522,14 @@ impl Model {
                 // What the line said before is not what it says of this intent.
                 let said_before = self.notice.take();
                 let was = (self.play.changes(), self.play.ai_session());
-                self.command(command.clone(), effects);
+                match command {
+                    meloet_protocol::Command::ToggleMute { track } => {
+                        self.play.ai_toggle_mute(track, effects);
+                    }
+                    _ => {
+                        self.command(command.clone(), effects);
+                    }
+                }
                 let said = self.notice.as_ref().map(|notice| format!("{notice:?}"));
                 if said.is_none() {
                     self.notice = said_before;

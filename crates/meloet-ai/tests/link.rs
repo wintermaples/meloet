@@ -325,6 +325,84 @@ fn while_recording_writes_are_errors_with_the_reason() {
     assert_eq!(ports.last(), Some(&AiPort::Closed));
 }
 
+/// A meloet playing with 「● 書く」 on and the mute lane armed: the mute button writes a
+/// point into the lane, and the track's own mute stays.
+struct LaneTakesMute(Recording);
+
+impl Meloet for LaneTakesMute {
+    fn song(&self) -> Option<AiSong> {
+        let mut song = self.0.song()?;
+        song.busy = None;
+        Some(song)
+    }
+
+    fn ask(&self, ask: AiAsk) -> AiAnswer {
+        assert!(matches!(ask, AiAsk::ScreenWhen { on: true, .. }), "{ask:?}");
+        AiAnswer::Done(Box::new(meloet_core::ai::AiDone {
+            step: None,
+            undo_count: 1,
+            clip: None,
+            take: None,
+            notes: None,
+            track: None,
+            ticket: None,
+            pending: false,
+        }))
+    }
+
+    fn measure(
+        &self,
+        m: AiMeasure,
+        p: &mut dyn FnMut(u8),
+        s: &dyn Fn() -> bool,
+    ) -> Result<AiLevels, AiRefusal> {
+        self.0.measure(m, p, s)
+    }
+
+    fn measure_outputs(
+        &self,
+        m: AiOutputsMeasure,
+        p: &mut dyn FnMut(u8),
+        s: &dyn Fn() -> bool,
+    ) -> Result<AiOutputLevels, AiRefusal> {
+        self.0.measure_outputs(m, p, s)
+    }
+
+    fn render(
+        &self,
+        r: AiRender,
+        p: &mut dyn FnMut(u8),
+        s: &dyn Fn() -> bool,
+    ) -> Result<AiRendered, AiRefusal> {
+        self.0.render(r, p, s)
+    }
+
+    fn port(&self, port: AiPort) {
+        self.0.port(port);
+    }
+}
+
+#[test]
+fn a_mute_the_lane_took_is_told_as_a_point_written() {
+    let runtime = scratch("lanemute");
+    let options = options(&runtime);
+    let socket = options.socket_path().unwrap();
+    let meloet = Arc::new(LaneTakesMute(Recording {
+        ports: Mutex::new(Vec::new()),
+    }));
+    let link = AiLink::start(meloet, options).unwrap();
+    link.switch(true);
+    wait_for("the socket", || socket.exists());
+    let mut c = Client::start(&socket);
+    let answer = c.call("set_mute", json!({ "track": 1, "on": true }));
+    assert_eq!(answer["isError"], false, "{answer}");
+    let value = &answer["structuredContent"];
+    assert_eq!(value["wrote_mute_lane"], true, "{answer}");
+    assert_eq!(value["muted"], false, "{answer}");
+    let text = answer["content"][0]["text"].as_str().unwrap();
+    assert!(text.contains("mute lane"), "{text}");
+}
+
 #[test]
 fn too_many_calls_are_turned_away() {
     let runtime = scratch("bucket");
@@ -703,6 +781,16 @@ fn automation_and_time_are_steps() {
     ] {
         refused(&mut c, tool, args);
     }
+    // A knob the built-in sound does not have: why, not "add it with add_lane".
+    let said = refused(
+        &mut c,
+        "add_lane",
+        json!({ "track": 1, "target": "instrument", "param": 999 }),
+    );
+    assert!(
+        said.contains("cannot have a lane") && !said.contains("add_lane"),
+        "{said}"
+    );
     assert_eq!(steps(&r), at);
     undo_all(&mut c, &r, &before);
 }
@@ -981,6 +1069,12 @@ fn the_export_writes_over_a_file_only_when_asked() {
     let mut mp3 = args.clone();
     mp3["format"] = json!("mp3");
     refused(&mut c, "export_song", mp3);
+    let mut looped = args.clone();
+    looped["range"] = json!("loop");
+    looped["name"] = json!("looped");
+    let text = refused(&mut c, "export_song", looped);
+    assert!(text.contains("no loop range"), "{text}");
+    assert!(!dir.join("looped.wav").exists());
     let flac = ok(
         &mut c,
         "export_song",
@@ -988,6 +1082,100 @@ fn the_export_writes_over_a_file_only_when_asked() {
     );
     assert_eq!(flac["files"].as_array().unwrap().len(), 2, "{flac}");
     assert_eq!(steps(&r), steps_before, "exporting is no step");
+}
+
+/// Two asks for the same state that both read the switch before either reached meloet:
+/// the first flips it, the second changes nothing.
+#[test]
+fn a_toggle_for_a_state_ends_in_that_state() {
+    use meloet_protocol::{Command, InsertRef, StripRef};
+    let r = running("toggles");
+    let mut c = Client::start(&r.socket);
+    ok(
+        &mut c,
+        "insert_effect",
+        json!({ "track": 1, "slot": 1, "effect": "delay" }),
+    );
+    ok(&mut c, "set_loop", json!({ "from_bar": 1, "to_bar": 2 }));
+    ok(&mut c, "set_loop_on", json!({ "on": false }));
+    let song = r.core.ai_song().unwrap();
+    let track = song.song.doc.tracks[0].id.0;
+    let insert = InsertRef {
+        strip: StripRef::Track { id: track },
+        slot: 0,
+    };
+    let commands = [
+        Command::ToggleMute { track },
+        Command::ToggleSolo { track },
+        Command::ToggleBypass { insert },
+        Command::ToggleLoop,
+    ];
+    let state = || {
+        let song = r.core.ai_song().unwrap().song;
+        let t = &song.doc.tracks[0];
+        let bypassed = t.channel.inserts[0].as_ref().unwrap().bypassed;
+        let soloed = song.session.soloed.contains(&t.id);
+        [t.muted, soloed, bypassed, song.session.loop_on]
+    };
+    assert_eq!(state(), [false; 4]);
+    for on in [true, false] {
+        for command in &commands {
+            for twice in [false, true] {
+                let ask = AiAsk::ScreenWhen {
+                    command: command.clone(),
+                    on,
+                };
+                match (twice, r.core.ai(ask)) {
+                    (false, AiAnswer::Done(_)) => {}
+                    (true, AiAnswer::Refused(AiRefusal::Unchanged)) => {}
+                    (_, answer) => panic!("{command:?} {on} {twice}: {answer:?}"),
+                }
+            }
+        }
+        assert_eq!(state(), [on; 4]);
+    }
+}
+
+#[test]
+fn get_automation_gives_every_point_in_pages() {
+    let r = running("autopages");
+    let mut c = Client::start(&r.socket);
+    ok(
+        &mut c,
+        "add_lane",
+        json!({ "track": 1, "target": "volume" }),
+    );
+    let points: Vec<Value> = (0..2000)
+        .map(|i| json!({ "tick": i * 10, "value": 0.5 }))
+        .collect();
+    let args = json!({ "track": 1, "target": "volume", "points": points });
+    ok(&mut c, "write_automation", args);
+    let last = json!({ "track": 1, "target": "volume",
+        "points": [{ "tick": 100_000, "value": 0.25 }] });
+    ok(&mut c, "write_automation", last);
+    let page = ok(&mut c, "get_automation", json!({ "track": 1 }));
+    let lane = &page["lanes"][0];
+    assert_eq!(lane["total"], 2001);
+    assert_eq!(lane["points"].as_array().unwrap().len(), 2000);
+    assert_eq!(lane["next_first"], 2000);
+    let page = ok(
+        &mut c,
+        "get_automation",
+        json!({ "track": 1, "first": 2000 }),
+    );
+    let lane = &page["lanes"][0];
+    assert_eq!(lane["points"].as_array().unwrap().len(), 1, "{page}");
+    assert_eq!(lane["points"][0]["index"], 2000);
+    assert_eq!(lane["points"][0]["tick"], 100_000);
+    assert!(lane["next_first"].is_null(), "{page}");
+    let page = ok(
+        &mut c,
+        "get_automation",
+        json!({ "track": 1, "first": 5, "max": 2 }),
+    );
+    let lane = &page["lanes"][0];
+    assert_eq!(lane["points"][1]["index"], 6, "{page}");
+    assert_eq!(lane["next_first"], 7);
 }
 
 #[test]
@@ -1117,4 +1305,26 @@ fn an_audio_file_comes_in_and_its_clip_is_changed() {
     std::fs::write(&broken, b"not audio").unwrap();
     refused(&mut c, "import_audio", json!({ "path": broken }));
     undo_all(&mut c, &r, &before);
+}
+
+#[test]
+fn a_rename_of_the_marker_the_person_just_made_says_it_changed() {
+    let r = running("fresh");
+    let mut c = Client::start(&r.socket);
+    r.core.send(meloet_protocol::Command::AddMarker {
+        name: "A".into(),
+        tick: Some(0),
+    });
+    wait_for("the marker", || steps(&r) == 1);
+    let marker = ok(&mut c, "song_overview", json!({}))["markers"][0]["id"].clone();
+    let said = ok(
+        &mut c,
+        "rename_marker",
+        json!({ "marker": marker, "name": "サビ" }),
+    );
+    assert_eq!(said["changed"], true, "{said}");
+    // The name is a part of the step that made the marker.
+    assert_eq!(steps(&r), 1);
+    let overview = ok(&mut c, "song_overview", json!({}));
+    assert_eq!(overview["markers"][0]["name"], "サビ", "{overview}");
 }

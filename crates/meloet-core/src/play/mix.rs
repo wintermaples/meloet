@@ -1,7 +1,7 @@
 //! Mute and solo: which tracks the song plays. Mute is part of the song (a step); solo is only
 //! for listening, kept in the session.
 
-use meloet_model::edit;
+use meloet_model::edit::{self, EditError};
 use meloet_model::{AutoTarget, TrackId};
 
 use super::{EngineOp, Play};
@@ -11,15 +11,35 @@ impl Play {
     /// Also while counting in or recording: it does not move where the take is recorded.
     /// A lane of the mute takes the press as the mixer's controls do (docs/architecture.md
     /// 21-11): with 「● 書く」 on while the song plays, a point where it was pressed; else,
-    /// when it moves the mute, the mute and its rest as one step.
+    /// when it moves the mute, the opposite of what it gives at the play line and its rest
+    /// as one step.
     pub fn toggle_mute(&mut self, track: u32, effects: &mut Vec<Effect>) {
+        self.press_mute(track, true, effects);
+    }
+
+    /// The AI's `set_mute`: as M, but the mute put by hand (what `get_mixer` shows) always
+    /// flips, whatever a lane gives at the play line.
+    pub(crate) fn ai_toggle_mute(&mut self, track: u32, effects: &mut Vec<Effect>) {
+        self.press_mute(track, false, effects);
+    }
+
+    /// `heard`: the press is on what the lane makes heard, not on the mute put by hand.
+    fn press_mute(&mut self, track: u32, heard: bool, effects: &mut Vec<Effect>) {
         let track = TrackId(track);
         if self.mute_pressed(track, effects) {
             return;
         }
         let edit = edit::toggle_mute(self.doc(), track);
         let key = (track.into(), AutoTarget::Mute);
-        if self.lane_at(key).is_some_and(|l| l.moves()) {
+        let lane = self.lane_at(key).filter(|l| l.moves());
+        if let Some(lane) = lane {
+            let hand = self.hand_place(key);
+            let wanted = lane.value_at(self.play_line()).unwrap_or(hand) < 0.5;
+            let edit = if heard && (hand >= 0.5) == wanted {
+                Err(EditError::Unchanged)
+            } else {
+                edit
+            };
             self.rest_with(key, edit, effects);
         } else if let Ok(e) = edit {
             self.apply(e, effects);

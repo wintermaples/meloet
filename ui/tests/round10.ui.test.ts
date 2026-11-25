@@ -99,7 +99,7 @@ const song = (selected: number[] = [], clicked: number | null = null, edit: (s: 
     ];
     s.song.playTarget = 1;
     s.song.keysTarget = 1;
-    s.arrange = { selectedClips: selected, selectedClip: clicked, pianoRollClip: clicked, clipboardClips: 0, tallTrack: null };
+    s.arrange = { selectedClips: selected, selectedClip: clicked, pianoRollClip: clicked, clipboardClips: 0, clipboardKind: null, tallTrack: null };
     edit(s);
   });
 

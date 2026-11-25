@@ -561,6 +561,14 @@ export const texts = {
   "songDialog.unsaved": e("保存していない変更", "spec:3"),
   "songDialog.cannotSave": e("保存できませんでした", "spec:3"),
   "songDialog.broken": e("ひらけない曲", "spec:3"),
+  // Asked right after 「戻さない」 (spec 3 has no text; the name is the term of spec 5).
+  "songDialog.deleteRecovery": e("なおすためのファイル", "builder:2026-11-25"),
+  "msg.deleteRecoveryFile": e(
+    "なおすためのファイルも消しますか？ 消すと、meloet が急に止まったあとに、すてた変更は戻りません。",
+    "builder:2026-11-25",
+  ),
+  "button.deleteRecoveryFile": e("消す", "builder:2026-11-25"),
+  "button.keepRecoveryFile": e("残す", "builder:2026-11-25"),
   // 「音の設定をひらいています」 is status.settingsOpen.
   "status.dialogOpen": s6(
     "Dialog is open",
@@ -2367,6 +2375,7 @@ export const texts = {
     track: "6 歌",
     position: "5. 1. 0000",
   }),
+  "msg.audioSkipped": e("{skipped} 個は読めませんでした。", "builder:2026-11-25", { skipped: "2" }),
   "clip.loading": s6("Loading an audio file", "読みこんでいます {percent} %", { percent: "40" }),
   "msg.audioUnreadable": s6("File that cannot be read", "「{file}」は読めません（読めるのは wav ・ mp3 ・ flac ・ ogg）。", { file: "声.aac" }),
   "msg.audioDragging": s6(
@@ -2645,6 +2654,12 @@ export const texts = {
     totalMb: "240",
   }),
   "msg.diskTooSlow": s6("Disk too slow", "音のファイルを読むのが間に合わず、歌が少し切れました（ディスクがいそがしかったため）。"),
+  // When the files of a recording, or a file brought in, cannot be written (spec 7, A-24 "Texts when a recording or a file cannot be written", CORE-AUDIO-003, 004, 005).
+  "msg.vocalsNotRecorded": e("歌を録れません。作業の場所に書けません。", "builder:2026-11-25"),
+  "msg.vocalsNotRecordedKeys": e("歌を録れません。作業の場所に書けません。鍵盤はこのまま録ります。", "builder:2026-11-25"),
+  "msg.recordingStoppedDisk": e("ディスクに書けなくなったので、録音を止めました。録れた所までは残しています。", "builder:2026-11-25"),
+  "msg.recordingStoppedFileFull": e("音のファイルがいちばん大きい所まで来たので、録音を止めました。録れた所までは残しています。", "builder:2026-11-25"),
+  "msg.audioNotCopied": e("「{file}」を入れられませんでした。作業の場所に書けません。", "builder:2026-11-25", { file: "声.wav" }),
   // Sound pack (spec 2, spec 3 (43-B, 44-A, 45-A), spec 6, mock F8-Pack*). The two lines of the hint band split the spec 6 text.
   "pack.fetching": s6("Fetching the sound pack", "音の素材を取りにいっています", undefined, "part"),
   "pack.fetchingBytes": s6("Fetching the sound pack", "{percent} % ・ {done} / {total} MB", { percent: "38", done: "92", total: "240" }, "part"),
@@ -2886,6 +2901,9 @@ export const texts = {
   "keyList.paramMove": e("パラメータ：値を動かす（細かく）", "builder:2026-11-23"),
   "keyList.paramType": e("パラメータ：値を打ちこむ", "builder:2026-11-23"),
   "keyList.paramFind": e("パラメータ：さがす箱へ", "builder:2026-11-23"),
+  // Rows added in the bug sweep (spec 7, G1 "Rows added in the bug sweep", UI-SHELL-008).
+  "keyList.metronome": e("メトロノーム：音量を動かす ／ テンポを手拍子で", "builder:2026-11-25"),
+  "keyList.closeExported": e("「書き出しました」を閉じる", "builder:2026-11-25"),
   // [Text made by the screen alone] (spec 3, spec 6 version 12, mock F8-*)
   // Status line progress while the sound pack is fetched and a flow hint is shown (「44-B の形」 of spec 3 (44-A), mock Opt8-PackShow).
   "pack.fetchingPercent": e("{percent} %", "mock:Opt8-PackShow", { percent: "38" }),
@@ -2954,6 +2972,10 @@ export const texts = {
   "export.midiNoSuchTrack": e("{number} 番のトラックはありません", "builder:2026-11-24", { number: "8" }),
   "export.midiUnreadable": e("番号は「1-3, 5」のように書きます", "builder:2026-11-24"),
   "export.midiNoTrack": e("入れるトラックがありません", "builder:2026-11-24"),
+  // 「書き出す」 asks before it writes over files that are there already (the owner, 2026-11-25), from 「「{name}」はもうあります」 and 「上書き」.
+  // One file by its name; two or more (「トラックごと」) by their count.
+  "export.replaceOne": e("「{file}」はもうあります。上書きします。", "builder:2026-11-25", { file: "はじめての曲.wav" }),
+  "export.replaceMany": e("同じ名前のファイルが {count} 個もうあります。上書きします。", "builder:2026-11-25", { count: "3" }),
   "msg.exportedMidi": e("{file} を書き出しました（MIDI ・ {tracks} トラック）。", "builder:2026-11-24", { file: "はじめての曲.mid", tracks: "3" }),
   "msg.exportedMidiFiles": e("{count} つのファイルを書き出しました（MIDI）。", "builder:2026-11-24", { count: "3" }),
   // The dialog 「書き出しました」 when an export ends (round 12 E9). 「フォルダをひらく」 and 「閉じる」 are button.openFolder and button.close.
@@ -3383,3 +3405,10 @@ export const STATUS_JOIN = " ・ ";
 
 /** The joint before the last 「と」 when listing three or more names (spec 6 「棚をひらいている（見出し）」, as in 「ピアノ ・ 鍵盤、ギター と ベース」). */
 export const LIST_COMMA = "、";
+
+/** The mark between the two ends of a range (spec 6 "Typed a value out of range", 「1〜127」). */
+export const RANGE_MARK = "〜";
+
+/** The brackets around a short note after a name (spec 6 "Recording vocals", 「6 歌（入口 1）」). */
+export const BRACKET_OPEN = "（";
+export const BRACKET_CLOSE = "）";

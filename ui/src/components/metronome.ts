@@ -57,7 +57,7 @@ export function clickDbText(db: number): string {
 
 /** Typed volume (「-12」「−12 dB」「+3」), as whole dB put into the range. undefined if it cannot be read. */
 export function parseClickDb(text: string): number | undefined {
-  const s = text.trim().replace(/[−ー]/g, "-").replace(/\s*dB$/i, "");
+  const s = text.normalize("NFKC").trim().replace(/[−ー]/g, "-").replace(/\s*dB$/i, "");
   if (!/^[+-]?(\d+(\.\d*)?|\.\d+)$/.test(s)) return undefined;
   return Math.min(CLICK_VOLUME_MAX_DB, Math.max(CLICK_VOLUME_MIN_DB, Math.round(Number(s))));
 }

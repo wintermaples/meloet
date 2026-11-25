@@ -431,6 +431,8 @@ impl Held {
         self.keys_low.store(0, Relaxed);
         self.keys_high.store(0, Relaxed);
         self.sustain.store(0, Relaxed);
+        self.modulation.store(0, Relaxed);
+        self.bend.store(0, Relaxed);
     }
 }
 
@@ -888,6 +890,12 @@ impl Core {
     pub fn subscribe(&self, messages: MessageSink, telemetry: TelemetrySink) {
         self.hub.subscribe(messages, telemetry);
         let _ = self.tx.send(Msg::ScreenReady);
+    }
+
+    /// As [`Core::subscribe`] for the shell's own use: the patches only, and the screen does
+    /// not count as up for it.
+    pub fn listen(&self, messages: MessageSink) {
+        self.hub.subscribe(messages, Box::new(|_| false));
     }
 
     /// Stops every thread, closes the stream, and writes what is left to write. Dropping the
@@ -1502,6 +1510,8 @@ struct Audio {
     wanted: (Vec<(MadeKey, u32)>, Vec<[u8; 16]>),
     /// The plans may be other ones than `wanted`.
     plans_changed: bool,
+    /// Files found with other contents whose made audio is not let go of yet.
+    redone: Vec<[u8; 16]>,
     /// A test runs the engine's blocks itself, as a stream of this rate would
     /// (`Audio::open_by_hand`).
     #[cfg(test)]
@@ -1642,6 +1652,7 @@ impl Audio {
             made: HashSet::new(),
             wanted: Default::default(),
             plans_changed: false,
+            redone: Vec::new(),
             #[cfg(test)]
             by_hand: None,
         };
@@ -1693,6 +1704,7 @@ impl Audio {
     /// Asks the maker for what the clips need now, when that is another list than it was
     /// last asked for. What is no longer in it is given up there.
     fn want_made(&mut self) {
+        self.let_go_of_made();
         if !std::mem::take(&mut self.plans_changed) {
             return;
         }
@@ -1863,13 +1875,45 @@ impl Audio {
             .readahead
             .stats()
             .unopened
-            .load(std::sync::atomic::Ordering::Relaxed);
+            .load(std::sync::atomic::Ordering::SeqCst);
         if unopened == 0 {
             return;
         }
         self.readahead.store_changed();
         for seat in (0..64).filter(|seat| unopened & (1u64 << seat) != 0) {
             self.send_clips(seat, true);
+        }
+    }
+
+    /// Files that were found with other contents (`AudioStore::drop_cache`): the audio made
+    /// for their clips from what they held before leaves the cache, before the maker is
+    /// told the plans, and the clips play the files until it is made again. A file whose
+    /// clips have no plans now (no stream runs) waits for them while the song has it.
+    fn let_go_of_made(&mut self) {
+        self.redone.extend(self.store.take_redone());
+        if self.redone.is_empty() {
+            return;
+        }
+        let (mut seats, mut done) = (Vec::new(), Vec::new());
+        for entry in &self.clips {
+            for plan in entry.plans.iter().filter(|p| self.redone.contains(&p.uid)) {
+                if let Some(path) = self.store.made_path(&plan.key) {
+                    let _ = std::fs::remove_file(path);
+                }
+                done.push(plan.uid);
+                if self.made.remove(&plan.key) && !seats.contains(&entry.seat) {
+                    seats.push(entry.seat);
+                }
+            }
+        }
+        let sources = &self.sources;
+        (self.redone).retain(|u| !done.contains(u) && sources.iter().any(|s| s.uid == *u));
+        // Anew: the read-ahead thread lets go of the files it holds open.
+        for seat in seats {
+            self.send_clips(seat, true);
+        }
+        if let (false, Some(maker)) = (done.is_empty(), &self.maker) {
+            maker.retry();
         }
     }
 
@@ -3145,7 +3189,8 @@ impl Worker {
                         files,
                         format,
                         x_us,
-                    } => inputs.push_back(self.start_vocals(files, format, x_us)),
+                        taken,
+                    } => inputs.push_back(self.start_vocals(files, format, x_us, &taken)),
                     Effect::StopVocalRecording => inputs.push_back(self.stop_vocals()),
                     Effect::WriteRecNote(note) => {
                         // The note on the disk is another recording's from here on.
@@ -3227,13 +3272,13 @@ impl Worker {
                         }
                     }
                     Effect::PickFolder => {
-                        let folder = self.start_folder();
+                        let folder = self.place_folder();
                         if !self.ask_shell(ShellRequest::PickFolder { folder }) {
                             inputs.push_back(Input::FolderPicked(None));
                         }
                     }
                     Effect::PickSaveAs { name } => {
-                        let folder = self.start_folder();
+                        let folder = self.place_folder();
                         if !self.ask_shell(ShellRequest::PickSaveAs { folder, name }) {
                             inputs.push_back(Input::SaveAsPicked(None));
                         }
@@ -3247,18 +3292,19 @@ impl Worker {
                         cause,
                         ending,
                     } => {
-                        let mut done = if ending {
+                        let done = if ending {
                             std::mem::take(&mut self.ending)
                         } else {
                             Vec::new()
                         };
+                        let mut written = Vec::new();
                         if matches!(self.input.kept_note, input::KeptNote::Waiting) {
-                            let (tx, written) = mpsc::channel();
-                            done.push(tx);
-                            self.input.kept_note = input::KeptNote::Writing(written);
+                            let (tx, rx) = mpsc::channel();
+                            written.push(tx);
+                            self.input.kept_note = input::KeptNote::Writing(rx);
                         }
                         match &self.recovery {
-                            Some(writer) => writer.write(song, path, cause, done),
+                            Some(writer) => writer.write(song, path, cause, done, written),
                             None => {
                                 for d in done {
                                     let _ = d.send(());
@@ -3361,13 +3407,17 @@ impl Worker {
                             side.hosts.set_outputs(*id, outputs, Box::new(|_| {}));
                         }
                     }
-                    Effect::ReloadPlugin { ticket } => {
+                    Effect::ReloadPlugin {
+                        ticket,
+                        sample_rate,
+                    } => {
                         let id = (self.plugins.as_ref())
                             .and_then(|side| Some((side, side.ids.get(&ticket)?.0)));
                         match id {
                             Some((side, id)) => {
                                 let block = self.audio.handle.plugin_block().clone();
-                                side.hosts.reload(id, block, self.loaded_sink(ticket));
+                                let done = self.loaded_sink(ticket);
+                                side.hosts.reload(id, sample_rate, block, done);
                             }
                             None => inputs.push_back(Input::PluginUnreadable { ticket }),
                         }
@@ -3587,7 +3637,7 @@ impl Worker {
                         say(PluginSaid::StatePut(state.map(Arc::from)));
                     }
                 };
-                hosts.set_state(id, state.to_vec(), Box::new(set));
+                hosts.try_state(id, state.to_vec(), Box::new(set));
                 hosts.state(id, Box::new(got));
             }
             PluginAsk::ReadText { param, text } => {
@@ -3797,13 +3847,26 @@ impl Worker {
 
     /// The folder of the song file in use, or else the songs folder.
     fn start_folder(&self) -> Option<PathBuf> {
-        self.model
-            .song_path()
-            .and_then(|p| p.parent())
-            .map(PathBuf::from)
-            .or_else(|| self.songs_dir.clone())
-            .filter(|d| d.is_dir())
+        let song_folder = self.model.song_path().and_then(Path::parent);
+        first_folder(song_folder, self.songs_dir.as_deref())
     }
+
+    /// For a window whose save makes a new song folder in the place picked: the folder that
+    /// holds the song's folder, or else the songs folder.
+    fn place_folder(&self) -> Option<PathBuf> {
+        let song_folder = self.model.song_path().and_then(Path::parent);
+        first_folder(
+            song_folder.and_then(Path::parent),
+            self.songs_dir.as_deref(),
+        )
+    }
+}
+
+/// `folder` when it is there, or else the songs folder when that is there.
+fn first_folder(folder: Option<&Path>, songs_dir: Option<&Path>) -> Option<PathBuf> {
+    (folder.filter(|d| d.is_dir()))
+        .or(songs_dir.filter(|d| d.is_dir()))
+        .map(Path::to_path_buf)
 }
 
 /// The song with `state` as the state of the plugin at `place`: what a save writes. The
@@ -4222,6 +4285,8 @@ mod input;
 mod keys;
 #[cfg(test)]
 mod plug_tests;
+#[cfg(test)]
+mod shell_tests;
 #[cfg(test)]
 mod tests;
 mod typed;

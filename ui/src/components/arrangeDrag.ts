@@ -143,7 +143,8 @@ export function placeable(tracks: readonly TrackView[], row: number, start: numb
 }
 
 /**
- * Whether group can be placed after moving by ticks and rows. false if any one goes outside the tracks, before the song start, or overlaps another clip.
+ * Whether group can be placed after moving by ticks and rows. false if any one goes outside the tracks, onto a track of the other kind
+ * (an audio clip only on a vocal track, a keyboard clip only on a keyboard track), before the song start, or overlaps another clip.
  * For a copy, the original clips are in the way too.
  */
 export function groupPlaceable(tracks: readonly TrackView[], group: readonly GroupClip[], ticks: number, rows: number, copy: boolean): boolean {
@@ -153,6 +154,7 @@ export function groupPlaceable(tracks: readonly TrackView[], group: readonly Gro
     const start = clip.start + ticks;
     const end = clip.end + ticks;
     if (!track || start < 0) return false;
+    if ((clip.audio !== null) !== (track.kind.kind === "vocal")) return false;
     return !track.clips.some((c) => !moving?.has(c.id) && c.start < end && start < c.end);
   });
 }

@@ -399,7 +399,7 @@ enum Try {
     Cut,
     /// 403 or 410: the url the release sent meloet to is no longer good.
     Gone,
-    /// Some other answer (404, 500).
+    /// Some other answer (404, 500, a part of the file to a request for all of it).
     Refused,
     /// The `.part` does not fit what came: fetch the file from its start.
     Again,
@@ -661,6 +661,10 @@ impl Worker {
                     .and_then(|r| r.split('-').next())
                     .and_then(|r| r.parse::<u64>().ok());
                 if starts != Some(have) {
+                    // Asked for the whole file: asking again gets the same answer.
+                    if have == 0 {
+                        return Try::Refused;
+                    }
                     let _ = fs::remove_file(path);
                     meter.numbers.done = meter.numbers.done.saturating_sub(have);
                     return Try::Again;
@@ -672,6 +676,7 @@ impl Worker {
                 0
             }
             403 | 410 => return Try::Gone,
+            416 if have == 0 => return Try::Refused,
             416 => {
                 let _ = fs::remove_file(path);
                 meter.numbers.done = meter.numbers.done.saturating_sub(have);
@@ -866,5 +871,6 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
     file.write_all(bytes)?;
     file.sync_all()?;
     drop(file);
-    fs::rename(&temporary, path)
+    fs::rename(&temporary, path)?;
+    path.parent().map_or(Ok(()), crate::songfile::sync_dir)
 }

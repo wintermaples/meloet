@@ -10,16 +10,17 @@ use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::{Duration, Instant};
 
 use meloet_engine::{
-    AudioInput, EngineCommand, InputFeed, InputMeters, InputTarget, ProbeHeard, Recorded,
-    RunningInput, probe_wave,
+    AudioInput, EngineCommand, EngineHandle, InputFeed, InputMeters, InputTarget, ProbeHeard,
+    Recorded, RunningInput, probe_wave,
 };
 use meloet_model::{
     Doc, NewAudio, TempoMap, TrackId, VocalInput, VocalRecording, add_vocal_recordings, edit,
 };
-use meloet_protocol::{KeptVocals, RecordFormat};
+use meloet_protocol::{DiskStop, KeptVocals, RecordFormat};
 use sha2::{Digest, Sha256};
 
 use super::{Audio, Shared, Worker, lock};
+use crate::audiofiles::AudioStore;
 use crate::peaks::{PeaksPlace, SharedPeaks};
 use crate::play::VocalFileAsk;
 use crate::state::{Delays, Input};
@@ -82,9 +83,9 @@ struct RecPeaks {
 pub(super) enum KeptNote {
     #[default]
     None,
-    /// The recovery file has not been asked for yet.
+    /// The recovery file has not been asked for yet, or was not written.
     Waiting,
-    /// Told when the recovery file is written.
+    /// Told when the recovery file is written; let go of when it is not.
     Writing(Receiver<()>),
 }
 
@@ -201,6 +202,7 @@ impl Worker {
         files: Vec<VocalFileAsk>,
         format: RecordFormat,
         x_us: i64,
+        taken: &[String],
     ) -> Input {
         let Some(dir) = self
             .input
@@ -210,18 +212,7 @@ impl Worker {
         else {
             return Input::VocalsNotStarted;
         };
-        // A name that is taken (a recording that was undone keeps its file) gets a number.
-        let mut names: Vec<String> = Vec::new();
-        for ask in &files {
-            let stem = ask.name.strip_suffix(".wav").unwrap_or(&ask.name);
-            let free = (1u32..)
-                .map(|n| match n {
-                    1 => ask.name.clone(),
-                    n => format!("{stem} ({n}).wav"),
-                })
-                .find(|name| !names.contains(name) && !dir.join(name).exists());
-            names.extend(free);
-        }
+        let names = free_recording_names(&self.audio_store, &dir, taken, &files);
         let job = RecordJob {
             files: (files.iter().zip(&names))
                 .map(|(ask, name)| RecordFile {
@@ -361,13 +352,18 @@ impl Worker {
 
     /// The note a start brought back goes once the recovery file holds its clips.
     fn settle_kept_note(&mut self) {
-        if let KeptNote::Writing(done) = &self.input.kept_note
-            && !matches!(done.try_recv(), Err(TryRecvError::Empty))
-        {
-            self.input.kept_note = KeptNote::None;
-            if let Some(dir) = &self.input.state_dir {
-                vocalrec::remove_note(dir);
+        let KeptNote::Writing(written) = &self.input.kept_note else {
+            return;
+        };
+        match written.try_recv() {
+            Ok(()) => {
+                self.input.kept_note = KeptNote::None;
+                if let Some(dir) = &self.input.state_dir {
+                    vocalrec::remove_note(dir);
+                }
             }
+            Err(TryRecvError::Disconnected) => self.input.kept_note = KeptNote::Waiting,
+            Err(TryRecvError::Empty) => {}
         }
     }
 
@@ -390,27 +386,36 @@ impl Worker {
     }
 
     /// Where the engine says the song rolls or a lap begins: the frame of the files that was
-    /// sung when that frame of the engine was heard (docs/architecture.md 22-6). At the roll
-    /// the disk writer is told where the files begin, too. `None`: no files are written, or
-    /// it is not a mark.
+    /// sung when the song of that frame of the engine was heard, which the master's inserts
+    /// delayed (docs/architecture.md 20-8, 22-6). At the roll the disk writer is told where
+    /// the files begin, too. `None`: no files are written, or it is not a mark.
     pub(super) fn vocal_mark(&mut self, recorded: &Recorded) -> Option<f64> {
+        let job = self.input.job.as_mut()?;
+        Self::mark(job, &self.input.writer, &self.audio.handle, recorded)
+    }
+
+    /// [`Worker::vocal_mark`] for the recording `job`, which `writer` writes.
+    fn mark(
+        job: &mut Job,
+        writer: &DiskWriter,
+        handle: &EngineHandle,
+        recorded: &Recorded,
+    ) -> Option<f64> {
         let (frame, rolling) = match *recorded {
             Recorded::Rolling { frame, tick } => (frame, Some(tick)),
             Recorded::LapChanged { frame, .. } => (frame, None),
             _ => return None,
         };
-        let job = self.input.job.as_mut()?;
-        let handle = &self.audio.handle;
-        let heard_us = handle.clock().time_of_frame(frame as f64);
+        let heard_us = handle.clock().heard_time_of_frame(frame as f64);
         if let Some(tick) = rolling.filter(|_| !job.from_said) {
             job.from_said = true;
             // Half a beat before the song rolls, as the keys keep.
             let (map, _) = handle.tempo_map();
-            let half_beat_us = 30e6 / map.tempo_at(tick).max(1.0);
+            let half_beat_us = half_beat_us(map, tick);
             let from_us = heard_us.map_or(f64::NEG_INFINITY, |t| t - half_beat_us + job.x_us);
-            self.input.writer.from(from_us);
+            writer.from(from_us);
         }
-        self.input.writer.mark(heard_us? + job.x_us)
+        writer.mark(heard_us? + job.x_us)
     }
 
     /// Looks at the input: the head of a recording, a disk that cannot go on, a stream that
@@ -423,7 +428,12 @@ impl Worker {
             let status: Written = self.input.writer.status();
             if !job.trouble_said && (status.full || status.error.is_some()) {
                 job.trouble_said = true;
-                inputs.push(Input::VocalsCannotGoOn);
+                inputs.push(Input::VocalsCannotGoOn {
+                    reason: match status.error {
+                        Some(_) => DiskStop::CannotWrite,
+                        None => DiskStop::FileFull,
+                    },
+                });
             }
             let faults = (status.gap_count + status.cut_count, status.dropped_blocks);
             if faults != job.faults_said {
@@ -605,6 +615,42 @@ pub(super) fn mic_meters(shared: &Shared) -> (Vec<meloet_protocol::MicMeter>, bo
     (meters, clipped)
 }
 
+/// Half a beat of the meter at `tick`, at the tempo there, in microseconds: how long before
+/// the song rolls the files begin, as the keys keep what was played from then.
+fn half_beat_us(map: &TempoMap, tick: f64) -> f64 {
+    let beat = map.meter_at(tick.max(0.0) as u64).meter.ticks_per_beat() as f64;
+    beat / 2.0 / meloet_model::TICKS_PER_QUARTER as f64 * 60e6 / map.tempo_at(tick).max(1.0)
+}
+
+/// The names the files of a recording get in the work place `dir`: the ones asked for, or
+/// with « (2)», « (3)», … where a name is taken: by a file of the work place (a recording that
+/// was undone keeps its file), of any place the song looks in, or by a name of the song's
+/// audio table (`taken`).
+fn free_recording_names(
+    store: &AudioStore,
+    dir: &Path,
+    taken: &[String],
+    files: &[VocalFileAsk],
+) -> Vec<String> {
+    let mut names: Vec<String> = Vec::new();
+    for ask in files {
+        let stem = ask.name.strip_suffix(".wav").unwrap_or(&ask.name);
+        let free = (1u32..)
+            .map(|n| match n {
+                1 => ask.name.clone(),
+                n => format!("{stem} ({n}).wav"),
+            })
+            .find(|name| {
+                !names.contains(name)
+                    && !taken.contains(name)
+                    && !dir.join(name).exists()
+                    && store.find(name).is_none()
+            });
+        names.extend(free);
+    }
+    names
+}
+
 /// Puts the files a recording left when meloet ended into `doc`, each as a clip on its vocal
 /// track, as far as it was written. Returns how many were kept and where the last ends.
 pub(super) fn keep_vocals(
@@ -689,3 +735,6 @@ pub(super) fn keep_vocals(
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -125,6 +125,38 @@ fn bend_is_two_semitones_each_way() {
 }
 
 #[test]
+fn a_key_far_from_its_root_is_no_more_than_120_semitones_off() {
+    let pack = TestPack::new("far");
+    pack.wav("a4400", 48_000, &[&tone(4400.0, 48_000, 48_000, 0.5)]);
+    pack.instrument(
+        "",
+        &[
+            region("a4400", 0, 10, 127, ""),
+            region(
+                "a4400",
+                100,
+                127,
+                0,
+                "\"pitchKeytrack\": 1200, \"loopStart\": 200, \"loopEnd\": 1000",
+            ),
+        ],
+    );
+    let mut sampler = pack.sampler(RATE, BLOCK);
+    // 127 semitones down.
+    sampler.event(on(0, 100));
+    let (left, _) = play(&mut sampler, 3 * RATE as usize, BLOCK);
+    let off_by = cents(frequency(&left, RATE), semitones(4400.0, -120.0));
+    assert!(off_by.abs() < 5.0, "{off_by} cents");
+
+    // 1524 semitones up, in a loop: it goes round the loop 120 semitones up.
+    sampler.reset();
+    sampler.event(on(127, 100));
+    let (left, right) = play(&mut sampler, 4 * BLOCK, BLOCK);
+    assert!(left.iter().chain(&right).all(|x| x.is_finite()));
+    assert_eq!(sampler.active_voices(), 1);
+}
+
+#[test]
 fn velocity_picks_the_layer_and_sets_the_loudness() {
     let pack = TestPack::new("velocity");
     pack.wav("soft", 48_000, &[&level(0.25, 4800)]);

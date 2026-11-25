@@ -142,11 +142,54 @@ fn a_file_left_half_written_is_mended() {
     let _ = fs::remove_dir_all(dir);
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn after_a_write_fails_nothing_more_goes_into_the_file() {
+    let dir = scratch("failed");
+    let path = dir.join("歌 8.wav");
+    let samples = wave(1_000, 1);
+    let mut wav = WavFile::create(&path, RATE, 1, RecordFormat::Bits24).unwrap();
+    wav.write(&samples[..600]).unwrap();
+    // The disk is full: a write stops part way, two bytes of a frame in.
+    let full = File::options().write(true).open("/dev/full").unwrap();
+    let mut disk = std::mem::replace(&mut wav.file, full);
+    assert!(wav.write(&samples[600..700]).is_err());
+    disk.write_all(&[1, 2]).unwrap();
+    // Room again: the blocks after are not written out of step.
+    wav.file = disk;
+    assert!(wav.write(&samples[700..]).is_err());
+    assert!(wav.write_silence(10).is_err());
+    assert_eq!(wav.frames(), 600);
+    assert_eq!(wav.finish().unwrap(), 600);
+
+    assert_eq!(fs::metadata(&path).unwrap().len(), 44 + 600 * 3);
+    let (_, channels, read) = decode(&path);
+    assert_eq!((channels, read.len()), (1, 600));
+    let worst = (read.iter().zip(&samples))
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0f32, f32::max);
+    assert!(worst <= 1.0 / 8_388_607.0, "off by {worst}");
+    let _ = fs::remove_dir_all(dir);
+}
+
 #[test]
 fn the_file_name_is_the_track_and_the_id() {
     assert_eq!(file_name("歌", 12), "歌 12.wav");
     assert_eq!(file_name(" コーラス/上 ", 3), "コーラス上 3.wav");
     assert_eq!(file_name("..", 4), "歌 4.wav");
+}
+
+#[test]
+fn a_long_track_name_is_cut_to_fit_a_file_name() {
+    let long = "歌".repeat(100);
+    let name = file_name(&long, 12);
+    // Room is left for the « (2)» of a taken name.
+    assert!(name.len() + " (99)".len() <= 255, "{} bytes", name.len());
+    assert!(name.starts_with("歌歌歌"), "{name}");
+    assert!(name.ends_with("歌 12.wav"), "{name}");
+    // Cut between two characters, with no space or dot left before the id.
+    let name = file_name(&format!("{} .x", "a".repeat(199)), 3);
+    assert_eq!(name, format!("{} 3.wav", "a".repeat(199)));
 }
 
 /// An engine with no stream, to fill a clock: block `n` reaches the DAC at `dac_us(n)`.

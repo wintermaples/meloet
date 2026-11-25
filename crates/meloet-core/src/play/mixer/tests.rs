@@ -1118,3 +1118,37 @@ fn an_effect_taken_out_says_how_many_lanes_went_with_it() {
         })
     );
 }
+
+/// A value typed for a plugin goes to it with full-width digits, signs and the decimal point
+/// made plain, as one typed for an effect of meloet is read; the rest goes as typed.
+#[test]
+fn a_value_typed_for_a_plugin_goes_with_plain_digits() {
+    use crate::play::windows::tests::{LEVEL, Rig};
+    use crate::state::{Effect, PluginAsk};
+
+    let mut r = Rig::new();
+    let (surge, track, slot) = r.surge();
+    r.cmd(Command::SelectInstrument { track });
+    r.settle();
+    let table = r.selected().table.unwrap();
+    let param = ParamRef::Plugin {
+        slot,
+        table,
+        param: LEVEL,
+    };
+    let text = "－１２．５ ｄＢ".to_owned();
+    let effects = r.cmd(Command::TypeParam {
+        param: param.clone(),
+        text,
+    });
+    let text = "-12.5 ｄＢ".to_owned();
+    let ask = PluginAsk::ReadText { param: LEVEL, text };
+    let asked = Effect::AskPlugin { ticket: surge, ask };
+    assert!(effects.contains(&asked), "{effects:?}");
+    r.settle();
+
+    let text = "３０ %".to_owned();
+    r.cmd(Command::TypeParam { param, text });
+    r.settle();
+    assert_eq!(r.host.plugins[&surge], [0.3, 0.0, 0.0]);
+}

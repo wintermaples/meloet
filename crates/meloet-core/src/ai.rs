@@ -203,6 +203,12 @@ pub enum AiAsk {
     /// An intent the screen sends too, as the AI's step. Tracks are named by id, as the
     /// screen names them. Only the intents of [`screen_allowed`].
     Screen(Command),
+    /// [`AiAsk::Screen`] of a toggle (track or return mute, solo, bypass, the loop's switch)
+    /// for the state `on`: `Unchanged` when the switch is `on` already as meloet comes to it.
+    ScreenWhen {
+        command: Command,
+        on: bool,
+    },
     /// Notes of the take a clip shows now, by their indexes in it.
     EditNotes {
         take: u32,
@@ -486,7 +492,7 @@ pub enum AiEffect {
 impl AiAsk {
     pub fn name(&self) -> &'static str {
         match self {
-            AiAsk::Screen(_) => "change the song",
+            AiAsk::Screen(_) | AiAsk::ScreenWhen { .. } => "change the song",
             AiAsk::EditNotes { .. } => "edit notes",
             AiAsk::DeleteClips { .. } => "delete clips",
             AiAsk::SwitchTake { .. } => "switch the take",
@@ -714,7 +720,8 @@ pub enum AiPutEnd {
     /// The plugin refused it; the text is for the log.
     Refused(String),
     /// The plugin's process stopped while it took it (the state may be broken): it is loaded
-    /// again with the song's state.
+    /// again with the state it had before (with the song's state when an undo or a redo came
+    /// meanwhile).
     Stopped,
     /// An undo or a redo put another state into the plugin first, or it was loaded again with
     /// the song's state (another sample rate).

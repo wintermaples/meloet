@@ -36,6 +36,11 @@ export function songDialogLook(d: SongDialogView): SongDialogLook {
             buttons: [button("cancel", "button.cancel"), button("openPrevious", "button.openPrevious", true)],
           }
         : { body: t("msg.songBrokenFirst"), buttons: [button("cancel", "button.cancel", true)] };
+    case "deleteRecovery":
+      return {
+        body: t("msg.deleteRecoveryFile"),
+        buttons: [button("keep", "button.keepRecoveryFile"), button("delete", "button.deleteRecoveryFile", true)],
+      };
   }
 }
 

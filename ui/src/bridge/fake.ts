@@ -389,7 +389,7 @@ const STOPPED_PLUGINS: StoppedPluginView[] = [
 
 /** One clip selected (and shown in the piano roll), or none; nothing to paste. */
 export function arrangeOf(clip: number | null): ArrangeView {
-  return { selectedClips: clip === null ? [] : [clip], selectedClip: clip, pianoRollClip: clip, clipboardClips: 0, tallTrack: null };
+  return { selectedClips: clip === null ? [] : [clip], selectedClip: clip, pianoRollClip: clip, clipboardClips: 0, clipboardKind: null, tallTrack: null };
 }
 
 /** Every instrument, in the order of the shelf: the fake has them all, so that the mocks can be drawn. */
@@ -1423,6 +1423,17 @@ export const SCENES: Record<string, SceneDef> = {
     bands: ["history"],
     meters: QUIET,
   },
+  // Not from a mock: right after 「戻さない」, whether the recovery file goes too (builder:2026-11-25).
+  deleteRecovery: {
+    setup(s) {
+      changedSong(s);
+      s.song.undoCount = 2;
+      s.song.file = "saved";
+      s.status.message = { id: "recoveryDiscarded" };
+      s.workspace.songDialog = { id: 1, kind: "deleteRecovery", title: "はじめての曲", previous: false };
+    },
+    meters: QUIET,
+  },
   // The mock F-Recover3: the recovery file did not read; the song last saved is open.
   recover3: {
     setup(s) {
@@ -1704,7 +1715,7 @@ function arrangeSelect(s: AppState): void {
     { ...track, id: 3, number: 3, name: "ドラム", color: 3, gainDb: -6, soloed: true, clips: [fakeClip(43, "8ビート", 1, 9, 1, [7])] },
   );
   s.song.playTarget = 2;
-  s.arrange = { selectedClips: [3, 41], selectedClip: 41, pianoRollClip: 41, clipboardClips: 1, tallTrack: null };
+  s.arrange = { selectedClips: [3, 41], selectedClip: 41, pianoRollClip: 41, clipboardClips: 1, clipboardKind: "keys", tallTrack: null };
   s.transport.position = 4 * BAR;
   s.status.message = { id: "summary", loopBars: null, nothingSelected: false, notes: null };
 }
@@ -3158,7 +3169,7 @@ SCENES.pianoRollMarker = {
 
 /**
  * Protocol 21, enough for pictures and tests: the lanes' own switches (fold, 「● 書く」, the selection, 「もどす」),
- * lanes added and deleted, and the jump of the history band. Points are not added, moved or deleted here, and no
+ * lanes added and deleted, points moved, and the jump of the history band. Points are not added or deleted here, and no
  * step is listed. `null`: not one of these commands.
  */
 function reduceRound6(state: AppState, command: Command, rows: readonly HistoryRow[]): Change[] | null {
@@ -3246,8 +3257,31 @@ function reduceRound6(state: AppState, command: Command, rows: readonly HistoryR
       message = { id: "historyJumped", index: command.index, name: to.name, steps: Math.abs(command.index - current), forward: command.index > current };
       break;
     }
+    // The moved points under a new lane id, chosen, as `auto::move_points` in Rust does.
+    case "moveAutoPoints": {
+      const home = [...song.tracks, song.master].find((t) => t.lanes.some((l) => l.laneId === command.lane));
+      const old = FAKE_LANES.get(command.lane);
+      const picked = [...new Set(command.points)].filter((i) => i < (old?.points.length ?? 0)).sort((a, b) => a - b);
+      if (!home || !old || picked.length === 0) return [];
+      const moving = picked.map((i) => old.points[i]!);
+      const values = moving.map((p) => p[1]);
+      const dTick = Math.max(command.dTick, -moving[0]![0]);
+      const dValue = Math.min(Math.max(command.dValue, -Math.min(...values)), 1 - Math.max(...values));
+      if (dTick === 0 && dValue === 0) return [];
+      const shifted = moving.map(([tick, value]): [number, number] => [tick + dTick, Math.min(1, Math.max(0, value + dValue))]);
+      const all = [
+        ...old.points.filter(([tick], i) => !picked.includes(i) && !shifted.some(([to]) => to === tick)).map((p) => ({ p, moved: false })),
+        ...shifted.map((p) => ({ p, moved: true })),
+      ].sort((a, b) => a.p[0] - b.p[0]);
+      const made: FakeLane = { id: Math.max(600, ...FAKE_LANES.keys()) + 1, step: old.step, points: all.map((a) => a.p) };
+      FAKE_LANES.set(made.id, made);
+      const at = home.lanes.findIndex((l) => l.laneId === command.lane);
+      home.lanes[at] = { ...home.lanes[at]!, laneId: made.id, points: made.points.length };
+      automation.selected = { laneId: made.id, points: toRanges(all.flatMap((a, i) => (a.moved ? [i] : []))) };
+      step();
+      break;
+    }
     case "addAutoPoint":
-    case "moveAutoPoints":
     case "deleteAutoPoints":
       return [];
     // Round 12 M5: the points of the master's lane are made anew under a new id, as Rust does; no row of the history.
@@ -3869,6 +3903,7 @@ function fakeExportDialog(song: SongView, over: Partial<ExportDialogView> = {}):
     realtime: false,
     realtimeForced: false,
     canExport: true,
+    replace: null,
     loudness: "asIs",
     canMatch: false,
     loudnessResult: null,
@@ -3964,6 +3999,16 @@ SCENES.exportMp3 = exportDialogScene({
   picture: "表紙.png",
 });
 
+// Protocol 39: 「書き出す」 found the file there already and asks before writing over it.
+SCENES.exportReplace = exportDialogScene({ replace: { count: 1, file: "はじめての曲.wav" } });
+// 「トラックごと」: three of the four files are there already.
+SCENES.exportReplaceTracks = exportDialogScene({ range: "tracks", place: "~/音楽/", replace: { count: 3, file: "ピアノ.wav" } });
+// It clips and the file is there: the check first, then the question, one 「このまま書き出す」.
+SCENES.exportReplaceClips = exportDialogScene({
+  check: { state: "done", peakDb: 1.2, clips: true, over: 3, lufs: null, truePeakDb: null },
+  replace: { count: 1, file: "はじめての曲.wav" },
+});
+
 // ---- MIDI export (protocol 36; spec 3 "MIDI export", spec 7 A-31) ----
 
 /** The band's 「1 ピアノ」 to 「3 ドラム」, the vocal track 「4 歌」, then 「5 パッド」; 「1 ピアノ」 selected. */
@@ -4000,6 +4045,8 @@ SCENES.exportMidi = midiDialogScene({});
 SCENES.exportMidiNumbers = midiDialogScene({ midiTracks: "numbers", midiNumbers: "1-2, 4" });
 // 「番号で」 「1-3, 9」: 「9 番のトラックはありません」 in color.rec, and 「書き出す」 is disabled.
 SCENES.exportMidiProblem = midiDialogScene({ midiTracks: "numbers", midiNumbers: "1-3, 9" });
+// Protocol 39: the MIDI file is there already; the question is where the check of audio would be.
+SCENES.exportReplaceMidi = midiDialogScene({ replace: { count: 1, file: "はじめての曲.mid" } });
 
 /** The song of F7-Exporting: the band, "5 Surge XT" and 「6 歌」 with one clip; saved, the keys on 「1 ピアノ」. */
 function exportingSong(s: AppState, run: ExportRunView): void {
@@ -4325,6 +4372,11 @@ export function reduceExport(state: AppState, command: Command): Change[] | null
         view.run = null;
         break;
       }
+      // While it asks before writing over files, only the question goes (protocol 39).
+      if (view.dialog.replace) {
+        view.dialog.replace = null;
+        break;
+      }
       view.dialog = null;
       message = null;
       break;
@@ -4332,6 +4384,7 @@ export function reduceExport(state: AppState, command: Command): Change[] | null
       const d = view.dialog;
       const c = command.change;
       if (!d) return [];
+      d.replace = null;
       if (c.kind === "range") {
         if ((c.range === "loop" && !d.loopRange) || (c.range === "tracks" && d.tracks === 0)) return [];
         d.range = c.range;
@@ -4983,6 +5036,8 @@ export function reduceClips(
       const first = Math.min(...ids.map((id) => clipOf(id)!.start));
       clipboard.clips = ids.map((id, i) => ({ row: rows[i]! - top, at: clipOf(id)!.start - first, clip: { ...clipOf(id)! } }));
       arrange.clipboardClips = ids.length;
+      const lead = ids.reduce((a, b) => (clipOf(b)!.start < clipOf(a)!.start ? b : a));
+      arrange.clipboardKind = clipOf(lead)!.audio === null ? "keys" : "vocal";
       if (command.type === "copyClips") return done();
       if (busy(state)) return null;
       for (const t of song.tracks) t.clips = t.clips.filter((c) => !ids.includes(c.id));
@@ -5870,6 +5925,7 @@ function reduce(state: AppState, bands: FakeBands, rest: StatusMessage | null, s
     case "back":
       if (plugins.stoppedOpen) plugins.stoppedOpen = false;
       else if (ws.songDialog) ws.songDialog = null;
+      else if (ws.settings?.advancedOpen) ws.settings.advancedOpen = false;
       else if (ws.settings) ws.settings = null;
       else bands.back();
       break;
@@ -5918,7 +5974,10 @@ function reduce(state: AppState, bands: FakeBands, rest: StatusMessage | null, s
       else if (!ws.recovery) ws.hint = null;
       break;
     case "discardRecovered":
-      if (ws.recovery?.kind === "recovered") ws.recovery = null;
+      if (ws.recovery?.kind === "recovered") {
+        ws.recovery = null;
+        ws.songDialog = { id: 1, kind: "deleteRecovery", title: state.song.name, previous: false };
+      }
       break;
     // The fake scans nothing: a retry stays 「ためしています…」, and 「場所を足す…」 and 「もう一度スキャン」 do nothing.
     case "openScanStopped":
@@ -6137,7 +6196,7 @@ export function createFakeTransport(initial?: AppState): Transport {
       if (command.type === "setPluginParam") values = tables.set(command.table, command.param, command.value);
       if (command.type === "typeParam" && command.param.kind === "plugin") {
         const p = command.param;
-        const typed = tables.type(p.table, p.param, command.text);
+        const typed = tables.type(p.table, p.param, command.text, state.workspace.language);
         values = typed.values;
         const said: StatusMessage | null = typed.rejected !== null
           ? { id: "paramRejected", param: p, kept: typed.rejected }

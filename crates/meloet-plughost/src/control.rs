@@ -13,6 +13,7 @@
 //! is written, so meloet can count how long the making takes.
 
 use std::collections::{HashMap, VecDeque};
+use std::io::Write;
 use std::os::fd::{AsRawFd, OwnedFd};
 use std::os::unix::net::UnixStream;
 use std::sync::Arc;
@@ -214,7 +215,6 @@ impl Host {
         if let Some(display) = &self.display {
             display.destroy(top.id);
         }
-        self.told.retain(|(of, _), _| *of != slot);
         let held: Vec<(u32, u32)> = (self.holds.keys())
             .filter(|(of, _)| *of == slot)
             .copied()
@@ -222,6 +222,7 @@ impl Host {
         for (slot, id) in held {
             self.let_go(slot, id, formats::now_us());
         }
+        self.told.retain(|(of, _), _| *of != slot);
         Some(top)
     }
 
@@ -354,6 +355,10 @@ impl Host {
             if top.inside {
                 let left = self.left(slot);
                 self.notices.push(left);
+                if let Some(controller) = self.slots.get_mut(slot as usize).and_then(Option::as_mut)
+                {
+                    controller.editor_left();
+                }
             }
             self.notices.push(if top.asked_to_show.is_some() {
                 let message = "closed before it was on the screen".into();
@@ -414,12 +419,25 @@ impl Host {
         }
     }
 
+    /// The X connection is gone: every window is closed as if its plugin had closed it, and
+    /// the connection is let go. The next window asked for makes a new one.
+    fn display_lost(&mut self) {
+        for slot in 0..self.tops.len() as u32 {
+            self.closed(slot);
+        }
+        self.display = None;
+    }
+
     /// What happened to the windows from outside the plugins.
     fn window_events(&mut self, events: &mut Vec<WindowEvent>) {
         events.clear();
         match &self.display {
             Some(display) => display.events(events),
             None => return,
+        }
+        if self.display.as_ref().is_some_and(Display::broken) {
+            self.display_lost();
+            return;
         }
         let slot_of = |tops: &[Option<Top>], id: u32| {
             (tops.iter())
@@ -1053,6 +1071,20 @@ impl Inbox {
     }
 }
 
+/// Writes the answer to request `id`. One too long for a frame is answered with an error: a
+/// frame that is too long is refused before any of it is written.
+fn answer(to: &mut impl Write, id: u64, reply: Reply, blob: &[u8]) -> Result<(), WireError> {
+    match write_frame(to, &FromHost::Reply { id, reply }, blob) {
+        Err(WireError::Malformed(what)) => {
+            let reply = Reply::Error {
+                message: format!("the answer cannot be sent: {what}"),
+            };
+            write_frame(to, &FromHost::Reply { id, reply }, &[])
+        }
+        written => written,
+    }
+}
+
 /// Writes what the plugins did by themselves since the last call.
 fn tell(host: &mut Host, writer: &mut UnixStream) -> Result<(), WireError> {
     for notice in host.notices.drain(..) {
@@ -1142,11 +1174,7 @@ pub fn run(control: UnixStream, memory: OwnedFd, offline: bool) -> i32 {
             };
             let quit = matches!(message.request, Request::Quit);
             let (reply, blob) = host.handle(message.request, blob);
-            let answer = FromHost::Reply {
-                id: message.id,
-                reply,
-            };
-            if let Err(e) = write_frame(&mut writer, &answer, &blob) {
+            if let Err(e) = answer(&mut writer, message.id, reply, &blob) {
                 eprintln!("meloet-plughost: {e}");
                 break 'run 2;
             }
@@ -1179,4 +1207,216 @@ pub fn run(control: UnixStream, memory: OwnedFd, offline: bool) -> i32 {
         std::mem::forget(slots);
     }
     code
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::{Cell, RefCell};
+    use std::rc::Rc;
+
+    use meloet_plugin::ipc::Geometry;
+    use meloet_plugin::wire::ParamInfo;
+
+    use super::*;
+    use crate::formats::{Opened, Read};
+
+    /// A plugin's main-thread half that says what it is given to say and counts the times the
+    /// person was said to have left its window.
+    #[derive(Default)]
+    struct Told {
+        says: Rc<RefCell<Vec<Said>>>,
+        left: Rc<Cell<u32>>,
+    }
+
+    impl Controller for Told {
+        fn params(&mut self) -> Vec<ParamInfo> {
+            Vec::new()
+        }
+        fn param(&mut self, _id: u32) -> Option<ParamNow> {
+            None
+        }
+        fn text(&mut self, _id: u32, _value: f64) -> Option<String> {
+            None
+        }
+        fn read_text(&mut self, _id: u32, _text: &str) -> Option<Read> {
+            None
+        }
+        fn set_param(&mut self, _id: u32, _value: f64) {}
+        fn save_state(&mut self) -> Result<Vec<u8>, String> {
+            Ok(Vec::new())
+        }
+        fn load_state(&mut self, _state: &[u8]) -> Result<(), String> {
+            Ok(())
+        }
+        fn open_editor(&mut self, _parent: u32) -> Result<Opened, String> {
+            Err("no window".into())
+        }
+        fn close_editor(&mut self) {}
+        fn editor_left(&mut self) {
+            self.left.set(self.left.get() + 1);
+        }
+        fn idle(&mut self) {}
+        fn poll(&mut self, said: &mut Vec<Said>) {
+            said.append(&mut self.says.borrow_mut());
+        }
+    }
+
+    /// A host of two slots with no display, the first with a plugin whose window is open.
+    fn host(controller: Told) -> Host {
+        let map = Arc::new(
+            Mapping::create(Geometry {
+                max_frames: 64,
+                channels: 2,
+                slots: 2,
+                to_plugin_events: 16,
+                from_plugin_events: 16,
+            })
+            .unwrap(),
+        );
+        let audio = rt::start(map.clone(), false).unwrap();
+        let top = || Top {
+            id: 7,
+            size: (320, 200),
+            resizable: false,
+            follows_child: false,
+            inside: false,
+            asked_to_show: None,
+        };
+        Host {
+            map,
+            audio,
+            slots: vec![Some(Box::new(controller)), None],
+            greeted: true,
+            offline: false,
+            display: None,
+            tops: vec![Some(top()), None],
+            asked: VecDeque::new(),
+            told: HashMap::new(),
+            holds: HashMap::new(),
+            touches: vec![0; 2],
+            moved: vec![None, None],
+            params_set: vec![None; 2],
+            state_put: vec![None; 2],
+            watched: Vec::new(),
+            watch_told: Instant::now(),
+            notices: Vec::new(),
+            idled: Instant::now(),
+            focus_looked: Instant::now(),
+        }
+    }
+
+    fn end(host: Host) {
+        assert!(host.audio.stop());
+    }
+
+    #[test]
+    fn the_value_held_back_is_told_when_the_window_closes() {
+        let plugin = Told::default();
+        let says = plugin.says.clone();
+        let mut host = host(plugin);
+        // Two moves within one look: the second is held back.
+        says.borrow_mut().extend([
+            Said::ParamChanged(5, 0.5, 10),
+            Said::ParamChanged(5, 0.75, 20),
+        ]);
+        host.look_after(&mut Vec::new());
+        host.notices.clear();
+        host.close_window(0);
+        let notices = std::mem::take(&mut host.notices);
+        end(host);
+        assert!(
+            matches!(
+                notices[..],
+                [
+                    Notice::ParamChanged {
+                        slot: 0,
+                        id: 5,
+                        value: 0.75,
+                        text: None,
+                        t_us: 20
+                    },
+                    Notice::ParamEnd { slot: 0, id: 5, .. },
+                ]
+            ),
+            "{notices:?}"
+        );
+    }
+
+    #[test]
+    fn closing_the_window_the_person_is_in_is_leaving_it() {
+        let plugin = Told::default();
+        let left = plugin.left.clone();
+        let mut host = host(plugin);
+        host.tops[0].as_mut().unwrap().inside = true;
+        host.closed(0);
+        let notices = std::mem::take(&mut host.notices);
+        end(host);
+        assert_eq!(
+            notices,
+            [
+                Notice::EditorLeft {
+                    slot: 0,
+                    touches: 0
+                },
+                Notice::EditorClosed { slot: 0 }
+            ]
+        );
+        assert_eq!(left.get(), 1);
+    }
+
+    #[test]
+    fn when_the_display_is_lost_every_window_is_closed() {
+        let plugin = Told::default();
+        let left = plugin.left.clone();
+        let mut host = host(plugin);
+        host.tops[0].as_mut().unwrap().inside = true;
+        host.display_lost();
+        let notices = std::mem::take(&mut host.notices);
+        let closed = host.tops.iter().all(Option::is_none) && host.display.is_none();
+        end(host);
+        assert_eq!(
+            notices,
+            [
+                Notice::EditorLeft {
+                    slot: 0,
+                    touches: 0
+                },
+                Notice::EditorClosed { slot: 0 }
+            ]
+        );
+        assert!(closed);
+        assert_eq!(left.get(), 1);
+    }
+
+    #[test]
+    fn an_answer_too_long_for_a_frame_is_an_error() {
+        let mut written = Vec::new();
+        answer(&mut written, 3, Reply::State, &[1, 2, 3]).unwrap();
+        let blob = vec![0u8; MAX_BLOB_LEN + 1];
+        answer(&mut written, 4, Reply::State, &blob).unwrap();
+        let mut from = &written[..];
+        let (first, blob) = read_frame::<FromHost>(&mut from).unwrap();
+        assert_eq!(
+            (first, blob),
+            (
+                FromHost::Reply {
+                    id: 3,
+                    reply: Reply::State
+                },
+                vec![1, 2, 3]
+            )
+        );
+        let (second, blob) = read_frame::<FromHost>(&mut from).unwrap();
+        assert!(
+            matches!(
+                second,
+                FromHost::Reply {
+                    id: 4,
+                    reply: Reply::Error { .. }
+                }
+            ),
+            "{second:?}"
+        );
+        assert!(blob.is_empty() && from.is_empty());
+    }
 }

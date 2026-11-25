@@ -320,6 +320,11 @@ BOARDS = {
     "exportMidiProblem": None,
     "exportDoneMidi": None,
     "exportDoneMidiTracks": None,
+    # The question before writing over files there already (protocol 39; the spec has no mock).
+    "exportReplace": None,
+    "exportReplaceTracks": None,
+    "exportReplaceClips": None,
+    "exportReplaceMidi": None,
     # Two or more clips, the check before export.
     "multiClip": "F8-MultiClip",
     "exportCheck": "F8-ExportCheck",

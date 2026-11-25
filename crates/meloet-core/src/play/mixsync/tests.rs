@@ -563,3 +563,32 @@ fn what_is_passed_by_and_the_order_come_back_from_the_file_and_for_a_new_engine(
     e.check(m, "new");
     assert_eq!(e.strip(m, SA).bypassed, [false; 4]);
 }
+
+/// A seat emptied and taken by a vocal track that sounds the same in one change: the engine
+/// dropped the voice with the seat, and is told it again.
+#[test]
+fn a_seat_emptied_has_its_voice_told_again() {
+    use crate::play::{OpenInput, Play};
+
+    let mut play = Play::new(false, 1);
+    let effects = &mut Vec::new();
+    play.add_vocal_track(true, effects);
+    let id = play.song.session.play_target.expect("selected");
+    play.toggle_monitor(id.0);
+    let input = Some(OpenInput {
+        channels: 2,
+        sample_rate: 48_000,
+    });
+    let seat = play.seats.of(id).unwrap();
+    let told = |effects: &[Effect]| {
+        effects.iter().any(|e| {
+            matches!(e, Effect::Engine(EngineOp::Voice { seat: s, voice: Some(v) }) if *s == seat && v.on)
+        })
+    };
+    play.sync_voices(input, effects);
+    assert!(told(effects));
+    effects.clear();
+    play.clear_seat(seat, effects);
+    play.sync_voices(input, effects);
+    assert!(told(effects), "{effects:?}");
+}

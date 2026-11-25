@@ -350,6 +350,8 @@ export function paintVelocityLane(out: Batch, box: Box, p: RollPicture, dpr: num
     out.rect(x - capOff, top, x - capOff + capW, top + HAIR, rgb(FRAME));
   };
 
+  // On drums, notes on keys the kit has no row for are not shown (spec 3), so they get no bar either.
+  const onRow = (key: number) => !g.drum || g.drum.keys.includes(key);
   const n = p.shown;
   if (n) {
     const d = p.drag?.kind === "velocity" ? p.drag : null;
@@ -357,7 +359,7 @@ export function paintVelocityLane(out: Batch, box: Box, p: RollPicture, dpr: num
     const sel = p.selected;
     eachNoteIn(n, from, to, (i) => {
       const s = noteStart(n, i);
-      if (s < from || s >= to) return;
+      if (s < from || s >= to || !onRow(n.take.keys[i]!)) return;
       const v = n.take.velocities[i]!;
       const color: ColorName = sel && sel[i] ? "color.gray.10" : "color.accent.ink";
       if (d && dragged!.has(i)) {
@@ -370,7 +372,7 @@ export function paintVelocityLane(out: Batch, box: Box, p: RollPicture, dpr: num
   }
   if (p.live) {
     for (const l of p.live) {
-      if (l.start < from || l.start >= to) continue;
+      if (l.start < from || l.start >= to || !onRow(l.key)) continue;
       bar(l.start, l.velocity, l.length === null ? "color.rec" : "color.accent.ink");
     }
   }

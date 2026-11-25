@@ -560,6 +560,25 @@ describe("status line", () => {
       true,
     ],
     [{ id: "keyboardInputStopped" }, "鍵盤からの入力が止まりました。曲はそのままです。いま、つなぎなおしています。", false],
+    [{ id: "vocalsNotRecorded", keys: false }, "歌を録れません。作業の場所に書けません。", false],
+    [{ id: "vocalsNotRecorded", keys: true }, "歌を録れません。作業の場所に書けません。鍵盤はこのまま録ります。", false],
+    [{ id: "recordingStoppedDisk", reason: "cannotWrite" }, "ディスクに書けなくなったので、録音を止めました。録れた所までは残しています。", false],
+    [
+      { id: "recordingStoppedDisk", reason: "fileFull" },
+      "音のファイルがいちばん大きい所まで来たので、録音を止めました。録れた所までは残しています。",
+      false,
+    ],
+    [{ id: "audioNotCopied", file: "声.wav" }, "「声.wav」を入れられませんでした。作業の場所に書けません。", false],
+    [
+      { id: "audioImported", file: "ドラム.wav", track: { number: 6, name: "歌" }, tick: 4 * 7_680, count: 3, skipped: 0 },
+      "ドラム.wav を入れました（6 歌 ・ 5. 1. 0000）。",
+      false,
+    ],
+    [
+      { id: "audioImported", file: "ドラム.wav", track: { number: 6, name: "歌" }, tick: 4 * 7_680, count: 3, skipped: 2 },
+      "ドラム.wav を入れました（6 歌 ・ 5. 1. 0000）。2 個は読めませんでした。",
+      false,
+    ],
   ] as const)("知らせ %o", (message, sentence, button) => {
     show(
       StatusLine,

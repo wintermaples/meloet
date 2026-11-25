@@ -4,6 +4,7 @@ import type { TrackView } from "../src/bridge";
 import * as G from "../src/components/arrangeGeom";
 import type { GlRect } from "../src/gl/slot";
 import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
+import { TempoMap } from "../src/time/tempoMap";
 
 const BAR = 4 * TPQ;
 /** 1 bar is 64 px (100 %, mock.arrange.bar). */
@@ -269,8 +270,20 @@ describe("ruler drag → command (the owner's decision: the loop is a ruler drag
     expect(G.loopBars({ start: 4 * BAR, end: 8 * BAR }, BAR)).toEqual({
       from: 5,
       to: 9,
+      start: 4 * BAR,
+      end: 8 * BAR,
     });
     expect(G.loopBars(null, BAR)).toBeNull();
+  });
+
+  it("a loop range off the bar lines (markers 5.3 and 7.2 in 4/4): drawn at its ticks, numbered as the status line (5–8)", () => {
+    const range = { start: 4 * BAR + 2 * TPQ, end: 6 * BAR + TPQ };
+    const map = new TempoMap({ tempoBpm: 120, meterNum: 4, meterDen: 4, headRamp: false, tempoPoints: [], meterChanges: [] });
+    for (const grid of [BAR, map]) expect(G.loopBars(range, grid)).toEqual({ from: 5, to: 8, ...range });
+    // Grabbing the drawn right end keeps the left end at the bar line that holds it (5), as SetLoop takes bar lines.
+    const loop = G.loopBars(range, BAR)!;
+    expect(G.startRulerDrag(v, G.tickToX(v, range.end) + 2, BAR, loop, 8)).toEqual({ kind: "edge", fixed: 5 });
+    expect(G.startRulerDrag(v, G.tickToX(v, range.start) - 2, BAR, loop, 8)).toEqual({ kind: "edge", fixed: 8 });
   });
 });
 
@@ -306,6 +319,21 @@ describe("the clip that was pressed", () => {
     expect(G.clipAt(view(), dims, tracks, 300, 1)).toBeNull();
     expect(G.clipAt(view(), dims, tracks, 600, 30)).toBeNull();
     expect(G.clipAt(view(), dims, tracks, 100, 64 * 3)).toBeNull();
+  });
+});
+
+describe("the moving picture of a clip move", () => {
+  // Row 0 has two bands under it (48 + 24), row 2 is a 160 row.
+  const rows: G.LaneDims = { ...dims, tops: [0, 136, 200], heights: [64, 64, 160] };
+  it("each clip is drawn on the row it lands on, with that row's top and height", () => {
+    expect(G.movedClipBox(view(), rows, 3, 0, 1, 0, BAR)).toEqual(G.clipBox(view(), rows, 1, 0, BAR));
+    expect(G.movedClipBox(view(), rows, 3, 1, 1, 0, BAR)).toEqual({ x0: 0, x1: 64, y0: 203, y1: 200 + 160 - 1 - 3 });
+    // A group of rows 0 and 1 moved one row down: the clip of row 0 is not shifted by the grabbed clip's px (136).
+    expect(G.movedClipBox(view(), rows, 3, 0, 1, 0, BAR).y0).toBe(139);
+  });
+  it("past the last or the first row (a move that cannot be made), rows of trackH go on", () => {
+    expect(G.movedClipBox(view(), rows, 3, 2, 1, 0, BAR)).toEqual({ x0: 0, x1: 64, y0: 360 + 3, y1: 360 + 64 - 1 - 3 });
+    expect(G.movedClipBox(view(), rows, 3, 0, -1, BAR, 2 * BAR)).toEqual({ x0: 64, x1: 128, y0: -64 + 3, y1: -1 - 3 });
   });
 });
 

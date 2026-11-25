@@ -6,8 +6,8 @@
 import { CONTROL_CC, CONTROL_PITCH_BEND, type Command, type ControlKind, type IndexRange, type TakeNotes } from "../../bridge";
 import { t } from "../../text";
 import { pad3, signed4 } from "../meterFormat";
-import type { Meter } from "../time";
-import { indexesOf, positionText, snapTick, tickToX, xToTick, type RollGeom, type Shown } from "./geom";
+import type { Bars } from "../time";
+import { indexesOf, positionText, snapTick, tickToX, xToTick, type RollGeom, type Shown, type Snapper } from "./geom";
 import type { Mods } from "./drag";
 import type { LaneTag, Tool } from "./view.svelte";
 
@@ -207,7 +207,10 @@ export interface LaneInput {
   box(): LaneBox;
   /** The ticks of one grid step */
   step(): number;
-  meter(): Meter;
+  /** Snap to the grid the lane draws (counted from the start of the time signature span; from 0 in steps of step if not given). */
+  grid?(): Snapper;
+  /** The time signatures the readings count bars and beats in (the tempo map, or one time signature). */
+  meter(): Bars;
   tool(): Tool;
   /** pianoRoll.selectedControls (empty if not from the shown take) */
   selected(): readonly IndexRange[];
@@ -215,12 +218,16 @@ export interface LaneInput {
   reachPx(): number;
   stillPx(): number;
   send(command: Command): void;
+  /** While recording or counting in: Rust takes no edit, so a press only selects (no drag that edits starts). */
+  busy?(): boolean;
 }
 
 export class LaneMouse {
   drag: LaneDrag | null = null;
   /** The point the erase tool is over (-1 for none) */
   eraseHover = -1;
+  /** The take shown at the press: the indexes in the drag belong to it. */
+  private pressTake: number | null = null;
 
   constructor(private readonly input: LaneInput) {}
 
@@ -246,7 +253,7 @@ export class LaneMouse {
 
   /** The point the erase tool is over when nothing is pressed. True if it changed. */
   hover(x: number, y: number): boolean {
-    const erase = this.input.tool() === "erase" ? this.hit(x, y) : -1;
+    const erase = this.input.tool() === "erase" && !this.input.busy?.() ? this.hit(x, y) : -1;
     const changed = erase !== this.eraseHover;
     this.eraseHover = erase;
     return changed;
@@ -256,11 +263,14 @@ export class LaneMouse {
     const i = this.input;
     const n = i.shown();
     const c = i.control();
+    const busy = i.busy?.() ?? false;
     this.eraseHover = -1;
     if (!c) return;
+    this.pressTake = n?.take.id ?? null;
     const press: Press = { x, y, moved: false };
     const hit = this.hit(x, y);
     if (i.tool() === "erase") {
+      if (busy) return;
       this.drag = { kind: "erase", press, x, y, hits: new Set(hit >= 0 ? [hit] : []) };
       return;
     }
@@ -280,11 +290,12 @@ export class LaneMouse {
         i.send({ type: "selectControls", take, points: [hit], mode: mods.shift ? "add" : "replace" });
         points = mods.shift ? [...selected, hit] : [hit];
       }
+      if (busy) return;
       this.drag = { kind: "move", press, points, grab: hit, ticks: 0, value: 0, selectOnClick };
       return;
     }
     if (i.tool() === "draw") {
-      if (!n) return;
+      if (!n || busy) return;
       this.drag = { kind: "add", press, tick: this.snapped(x, mods), value: yToValue(c, i.box(), y) };
       return;
     }
@@ -293,7 +304,8 @@ export class LaneMouse {
 
   private snapped(x: number, mods: Mods): number {
     const tick = xToTick(this.input.geom(), x);
-    return Math.max(0, mods.shift ? Math.round(tick) : snapTick(tick, this.input.step()));
+    const grid = this.input.grid?.();
+    return Math.max(0, mods.shift ? Math.round(tick) : grid ? grid(tick, false) : snapTick(tick, this.input.step()));
   }
 
   /** Moved while held. True if the look changed. */
@@ -312,7 +324,7 @@ export class LaneMouse {
     switch (d.kind) {
       case "move": {
         if (!n) return false;
-        const { ticks, value } = moveAmount(n, c, b, d, x - d.press.x, y, mods.shift ? null : i.step(), g.ppt);
+        const { ticks, value } = moveAmount(n, c, b, d, x - d.press.x, y, mods.shift ? null : i.step(), g.ppt, i.grid?.());
         if (ticks === d.ticks && value === d.value) return false;
         d.ticks = ticks;
         d.value = value;
@@ -354,7 +366,7 @@ export class LaneMouse {
     this.drag = null;
     const c = this.input.control();
     if (!d || !c) return null;
-    const command = finishLane(d, this.input.shown()?.take.id ?? null, c);
+    const command = finishLane(d, this.pressTake, c);
     if (command) this.input.send(command);
     return command;
   }
@@ -366,21 +378,26 @@ export class LaneMouse {
     return true;
   }
 
+  /** Cancels the drag when the shown take is no longer the one of the press (its indexes would point at other points). True if cancelled. */
+  dropIfTakeChanged(): boolean {
+    return this.drag !== null && (this.input.shown()?.take.id ?? null) !== this.pressTake && this.cancel();
+  }
+
   /** The text for the 「その場の読み値」 and the status line. */
   reading(): string | null {
     const d = this.drag;
     const n = this.input.shown();
     const c = this.input.control();
     if (!d || !c) return null;
-    const meter = this.input.meter();
+    const bars = this.input.meter();
     switch (d.kind) {
       case "move": {
         if (!d.press.moved || !n) return null;
         if (isOnOff(c)) return switchText(settle(c, n.take.controlValues[d.grab]! + d.value));
-        return t("pr.readControl", { delta: deltaText(c, d.value), position: positionText(pointTick(n, d.grab) + d.ticks, meter) });
+        return t("pr.readControl", { delta: deltaText(c, d.value), position: positionText(pointTick(n, d.grab) + d.ticks, bars) });
       }
       case "add":
-        return isOnOff(c) ? switchText(d.value) : t("pr.readControl", { delta: valueText(c, d.value), position: positionText(d.tick, meter) });
+        return isOnOff(c) ? switchText(d.value) : t("pr.readControl", { delta: valueText(c, d.value), position: positionText(d.tick, bars) });
       case "box":
         return d.press.moved ? t("pr.points", { count: d.hits.length }) : null;
       case "erase":
@@ -402,10 +419,11 @@ export function moveAmount(
   y: number,
   step: number | null,
   ppt: number,
+  grid?: Snapper,
 ): { ticks: number; value: number } {
   const start = pointTick(n, d.grab);
   const target = start + dx / ppt;
-  let ticks = (step ? snapTick(target, step) : Math.round(target)) - start;
+  let ticks = (step ? (grid ? grid(target, false) : snapTick(target, step)) : Math.round(target)) - start;
   let first = Infinity;
   let low = Infinity;
   let high = -Infinity;

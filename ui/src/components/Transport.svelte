@@ -434,6 +434,7 @@
         chars={10}
         minChars={positionChars}
         test="transport-position"
+        disabled={recordingNow}
       />
     </div>
     <div class="col" use:glSlot={COVER}>
@@ -453,6 +454,7 @@
       label={t("transport.tempo")}
       chars={6}
       test="transport-tempo"
+      disabled={recordingNow}
     />
   </div>
   <div class="col" use:glSlot={COVER}>
@@ -466,6 +468,7 @@
       label={t("transport.timeSignature")}
       chars={5}
       test="transport-meter"
+      disabled={recordingNow}
     />
   </div>
 

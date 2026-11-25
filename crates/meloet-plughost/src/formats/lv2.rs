@@ -1721,7 +1721,7 @@ impl Lv2Processor {
 }
 
 impl Processor for Lv2Processor {
-    fn process(&mut self, block: &mut ProcessBlock<'_>) {
+    fn process(&mut self, block: &mut ProcessBlock<'_>) -> bool {
         let frames = block.outputs[0].len();
         let shared = Arc::clone(&self.shared);
         let shared = &*shared;
@@ -1732,7 +1732,7 @@ impl Processor for Lv2Processor {
                 output.copy_from_slice(input);
             }
             self.outputs.missed(frames);
-            return;
+            return false;
         }
         // SAFETY: inside the gate nothing else touches the instance.
         let instance = unsafe { &mut *shared.instance.get() };
@@ -1939,6 +1939,7 @@ impl Processor for Lv2Processor {
             shared.latency.store(frames, Relaxed);
         }
         shared.gate.leave();
+        true
     }
 
     fn reset(&mut self) {
@@ -2262,21 +2263,24 @@ impl Controller for Lv2Controller {
     }
 
     fn save_state(&mut self) -> Result<Vec<u8>, String> {
-        let _claim = (self.shared.gate.claim(GATE_WAIT)).ok_or("the plugin is busy")?;
-        // SAFETY: inside the gate nothing else touches the instance.
-        let instance = unsafe { &*self.shared.instance.get() };
-        let state = instance.state().map_err(|e| format!("state: {e:?}"))?;
+        let shared = &self.shared;
+        let (state, kept) = {
+            let _claim = (shared.gate.claim(GATE_WAIT)).ok_or("the plugin is busy")?;
+            // SAFETY: inside the gate nothing else touches the instance.
+            let instance = unsafe { &*shared.instance.get() };
+            let state = instance.state().map_err(|e| format!("state: {e:?}"))?;
+            // Only what is known: a value nobody knows is not made known by being saved.
+            let kept: Vec<(u32, f64)> = (shared.params.iter().enumerate())
+                .filter(|(at, param)| {
+                    matches!(param.target, Target::Patch { .. }) && shared.known[*at].load(Relaxed)
+                })
+                .map(|(at, param)| (param.id, shared.value(at)))
+                .collect();
+            (state, kept)
+        };
         let text = state
             .to_string(STATE_URI)
             .map_err(|e| format!("state: {e:?}"))?;
-        let shared = &self.shared;
-        // Only what is known: a value nobody knows is not made known by being saved.
-        let kept: Vec<(u32, f64)> = (shared.params.iter().enumerate())
-            .filter(|(at, param)| {
-                matches!(param.target, Target::Patch { .. }) && shared.known[*at].load(Relaxed)
-            })
-            .map(|(at, param)| (param.id, shared.value(at)))
-            .collect();
         let mut bytes = Vec::with_capacity(8 + kept.len() * 12 + text.len());
         bytes.extend_from_slice(STATE_MAGIC);
         bytes.extend_from_slice(&(kept.len() as u32).to_le_bytes());

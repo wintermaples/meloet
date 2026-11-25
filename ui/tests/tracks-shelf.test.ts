@@ -250,6 +250,22 @@ describe("track head (mock R6-Tracks, R7-Arrange6)", () => {
     expect(app.sent).toEqual([{ type: "renameTrack", track: 12, name: "外で決める" }]);
   });
 
+  it("name input box: a new song part while typing (a save, an AI edit) keeps the typed text", () => {
+    const state = scene("tracks6");
+    show(Arrange, state);
+    trackEdit.renaming = 12;
+    flushSync();
+    const field = q("[data-test=track-name-field]") as HTMLInputElement;
+    field.value = "打ちかけ";
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    flushSync();
+    app.setState({ ...state, song: { ...state.song, tracks: state.song.tracks.map((tr) => ({ ...tr })) } });
+    flushSync();
+    expect((q("[data-test=track-name-field]") as HTMLInputElement).value).toBe("打ちかけ");
+    keyOn(q("[data-test=track-name-field]")!, "Enter");
+    expect(app.sent).toEqual([{ type: "renameTrack", track: 12, name: "打ちかけ" }]);
+  });
+
   it("pressing the name twice opens the input box", () => {
     show(Arrange, scene("tracks6"));
     qa(".track-name")[2]!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));

@@ -226,14 +226,67 @@ fn a_mute_lane_takes_the_place_of_the_mute_put_by_hand() {
     let effects = cmd(m, Command::ToggleSolo { track: 2 });
     assert_eq!(silent(&effects), [vec![seat, third]]);
     cmd(m, Command::ToggleSolo { track: 2 });
-    // At rest, the hand's mute is what counts again.
+    // M mutes what the lane plays; at rest, the hand's mute is what counts again. The hand's
+    // mute was on already, so the step is the rest alone.
+    let before = steps(m).len();
+    let effects = cmd(m, Command::ToggleMute { track: 1 });
+    assert!(resting(m, mute));
+    assert!(m.view().song.tracks[0].muted);
+    assert_eq!(silent(&effects), [vec![seat]], "{effects:?}");
+    assert_eq!(steps(m).len(), before + 1);
+    cmd(m, Command::Undo);
+    let effects = cmd(m, Command::Undo);
+    assert_eq!(silent(&effects), [vec![seat]], "no point: the hand's mute");
+}
+
+#[test]
+fn m_on_a_mute_lane_that_mutes_lets_the_track_play() {
+    let m = &mut ready();
+    crate::play::mix::tests::three_tracks(m);
+    let mute = AutoTarget::Mute;
+    cmd(
+        m,
+        Command::AddLane {
+            home: meloet_protocol::LaneHome::Track { track: 1 },
+            target: mute,
+        },
+    );
+    let lane = lane_id(m, mute);
+    // The engine reads the lane, which mutes the track; the hand's mute is off.
+    cmd(
+        m,
+        Command::AddAutoPoint {
+            lane,
+            tick: 0,
+            value: Some(1.0),
+        },
+    );
+    let seat = m.play().seats.of(TrackId(1)).unwrap();
+    assert!(!m.view().song.tracks[0].muted);
+    let before = steps(m).len();
     let effects = cmd(m, Command::ToggleMute { track: 1 });
     assert!(resting(m, mute));
     assert!(!m.view().song.tracks[0].muted);
     assert!(silent(&effects).is_empty(), "{effects:?}");
+    assert!(!m.play().silent_sent.contains(&seat));
+    assert_eq!(steps(m).len(), before + 1);
+    assert!(matches!(last_step(m), StepKind::RestLane { .. }));
+    // Under a lane that plays the track, with the hand's mute off: a mute and the rest.
     cmd(m, Command::Undo);
-    let effects = cmd(m, Command::Undo);
-    assert_eq!(silent(&effects), [vec![seat]], "no point: the hand's mute");
+    let lane = lane_id(m, mute);
+    cmd(
+        m,
+        Command::AddAutoPoint {
+            lane,
+            tick: 0,
+            value: Some(0.0),
+        },
+    );
+    let effects = cmd(m, Command::ToggleMute { track: 1 });
+    assert!(resting(m, mute));
+    assert!(m.view().song.tracks[0].muted);
+    assert_eq!(silent(&effects), [vec![seat]], "{effects:?}");
+    assert!(matches!(last_step(m), StepKind::Mute { muted: true, .. }));
 }
 
 #[test]
@@ -272,7 +325,8 @@ fn lanes_and_points_are_steps_and_the_selection_comes_back_with_undo() {
     assert!(m.view().automation.folded.is_empty());
     assert_eq!(steps(m).len(), before + 1);
 
-    // A point on the grid (1/16 = Q / 4 ticks), the line's value without one: the hand's.
+    // A point at the tick sent, off the piano roll's grid (the screen has snapped it: the start of a beat, ticks
+    // with Shift, 7-readings A-21); the line's value without one: the hand's.
     cmd(
         m,
         Command::AddAutoPoint {
@@ -281,7 +335,7 @@ fn lanes_and_points_are_steps_and_the_selection_comes_back_with_undo() {
             value: None,
         },
     );
-    assert_eq!(points(m, VOLUME), [(Q / 4, 0.8)]);
+    assert_eq!(points(m, VOLUME), [(Q / 4 + 10, 0.8)]);
     let second_id = lane_id(m, VOLUME);
     assert_ne!(second_id, first_id);
     let selected = m.view().automation.selected.unwrap();
@@ -459,6 +513,46 @@ fn esc_lets_the_lane_move_again_with_no_step() {
     cmd(m, Command::CancelMixPreview);
     assert_eq!(steps(m).len(), before);
     assert!(!resting(m, VOLUME));
+}
+
+/// On release the engine has the lanes of the step before the hand lets go of the lane, so
+/// the old line never plays in between.
+#[test]
+fn the_lanes_of_the_step_come_before_the_hand_lets_go() {
+    use crate::play::EngineOp;
+    use crate::state::Effect;
+    let order = |effects: &[Effect]| -> Vec<&str> {
+        (effects.iter())
+            .filter_map(|e| match e {
+                Effect::Engine(EngineOp::Automation { .. }) => Some("lanes"),
+                Effect::Engine(EngineOp::HoldLane { on: false, .. }) => Some("let go"),
+                _ => None,
+            })
+            .collect()
+    };
+    let m = &mut ready();
+    with_volume_lane(m);
+    cmd(m, gain(-6.0, false));
+    let effects = cmd(m, gain(-6.0, true));
+    assert!(resting(m, VOLUME));
+    assert_eq!(order(&effects), ["lanes", "let go"], "a rest");
+
+    cmd(m, Command::Undo);
+    cmd(
+        m,
+        Command::SetLaneWrite {
+            home: meloet_protocol::LaneHome::Track { track: 1 },
+            target: VOLUME,
+            on: true,
+        },
+    );
+    cmd(m, Command::PlayStop);
+    play_at(m, 1_000, (2 * Q) as f64);
+    cmd(m, gain(-6.0, false));
+    play_at(m, 2_000, (2 * Q + Q / 4) as f64);
+    let effects = cmd(m, gain(0.0, true));
+    assert!(matches!(last_step(m), StepKind::WriteAutomation { .. }));
+    assert_eq!(order(&effects), ["lanes", "let go"], "what was written");
 }
 
 #[test]
@@ -658,10 +752,12 @@ fn the_mute_writes_a_point_or_rests() {
     cmd(m, Command::ToggleMute { track: 1 });
     assert_eq!(points(m, mute), [(0, 0.0), (1000, 1.0)]);
     assert!(!m.view().song.tracks[0].muted, "the mute itself stays");
+    // Stopped where the lane mutes (M is lit): the press lets the track play.
     cmd(m, Command::PlayStop);
     cmd(m, Command::ToggleMute { track: 1 });
-    assert!(m.view().song.tracks[0].muted);
+    assert!(!m.view().song.tracks[0].muted);
     assert!(resting(m, mute));
+    assert!(matches!(last_step(m), StepKind::RestLane { .. }));
 }
 
 #[test]

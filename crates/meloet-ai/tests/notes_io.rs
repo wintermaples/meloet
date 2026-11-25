@@ -894,7 +894,7 @@ fn what_is_written_out_comes_back_the_same() {
         (json!({ "tracks": [9] }), "no track 9"),
         (
             json!({ "path": dir.join("x.wav").display().to_string() }),
-            ".mid",
+            ".mid or .midi",
         ),
         (
             json!({ "path": "/nonexistent-k11notes/x.mid" }),

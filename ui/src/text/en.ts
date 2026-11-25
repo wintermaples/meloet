@@ -1,17 +1,17 @@
 // The screen's wording in English (round 12, D4). Japanese (ja.ts) is the source: this table has the same keys and the
 // same {holes}, and follows it. A text that changes with a number may be a pair: the form for 1 and the form for any other
-// number, chosen by the value of the hole `by`.
+// number, chosen by the value of the hole `by`. A text with two such numbers is a pair of pairs.
 
 import type { StepName } from "../bridge/generated/StepName";
 import type { TextKey } from "./ja";
 
-export type EnText = string | { readonly by: string; readonly one: string; readonly other: string };
+export type EnText = string | { readonly by: string; readonly one: EnText; readonly other: EnText };
 
 /** The form for 1 and the form for any other number of the hole `by`. */
-const n = (by: string, one: string, other: string): EnText => ({ by, one, other });
+const n = (by: string, one: EnText, other: EnText): EnText => ({ by, one, other });
 
 /** The joints of ja.ts in English. */
-export const enJoins = { term: " — ", status: " · ", list: ", ", sentence: " ", end: "." };
+export const enJoins = { term: " — ", status: " · ", list: ", ", sentence: " ", end: ".", range: "–", open: " (", close: ")" };
 
 export const enTexts: Record<TextKey, EnText> = {
   "msg.keyboardMissing": "Plug in a USB keyboard and it shows here. You can also write notes with the mouse.",
@@ -30,8 +30,12 @@ export const enTexts: Record<TextKey, EnText> = {
   "msg.unusableHeadingChooser": "Switched by the PC {switched} · Off in the PC's settings {stopped}",
   "msg.unusableHeadingSettings": "meloet does not change the PC's settings",
   "msg.unusableInputHeading": "Inputs you cannot use now",
-  "msg.countingIn": "Count-in · recording starts in {beats} beats. Space to stop",
-  "msg.countingInRest": "Recording starts in {beats} beats. Space to stop",
+  "msg.countingIn": n(
+    "beats",
+    "Count-in · recording starts in {beats} beat. Space to stop",
+    "Count-in · recording starts in {beats} beats. Space to stop",
+  ),
+  "msg.countingInRest": n("beats", "Recording starts in {beats} beat. Space to stop", "Recording starts in {beats} beats. Space to stop"),
   "msg.recording": "Recording to {track} · stop to keep it as take {take}",
   "msg.loopRecording": "Recording to {track} · loop {from}–{to}, pass {lap} · each pass is a take",
   "msg.takeSwitched": "{track} · {clip} is now take {take} / {takes}",
@@ -44,7 +48,11 @@ export const enTexts: Record<TextKey, EnText> = {
   "msg.keyboardInputStopped": "Input from the keyboard stopped. The song is safe. meloet is connecting again.",
   "msg.micTooLoud": "The mic is too loud (it reached 0 dB). Move it a little away, or turn down the input level on the PC.",
   "msg.scanning": "Scanning {done} / {total} · what is done can be used now",
-  "msg.scanDone": "The scan is done · {added} added to the shelf. {stopped} stopped while being checked and were left out. meloet and the song are safe.",
+  "msg.scanDone": n(
+    "stopped",
+    "The scan is done · {added} added to the shelf. {stopped} stopped while being checked and was left out. meloet and the song are safe.",
+    "The scan is done · {added} added to the shelf. {stopped} stopped while being checked and were left out. meloet and the song are safe.",
+  ),
   "msg.windowNotYet": "This plugin's window cannot open yet. You can move its parameters here. meloet does not support this kind of window yet. The sound plays as usual.",
   "msg.noWindow": "This plugin has no window. You can move its parameters here.",
   "msg.windowsOpen": n("count", "{count} plugin window is open", "{count} plugin windows are open"),
@@ -118,6 +126,10 @@ export const enTexts: Record<TextKey, EnText> = {
   "songDialog.unsaved": "Changes not saved",
   "songDialog.cannotSave": "Could not save",
   "songDialog.broken": "A song that cannot open",
+  "songDialog.deleteRecovery": "Recovery file",
+  "msg.deleteRecoveryFile": "Delete the recovery file too? If you delete it, the changes you dropped will not come back after meloet stops suddenly.",
+  "button.deleteRecoveryFile": "Delete",
+  "button.keepRecoveryFile": "Keep",
   "status.dialogOpen": "{dialog} is open",
   "msg.soundsMissingSong": n("count", "The sound pack is missing, so {count} track plays with a sine wave.", "The sound pack is missing, so {count} tracks play with a sine wave."),
   "shelf.soundsMissing": "The sound pack is missing. Only the sine wave can be used now. Installing meloet again puts it back.",
@@ -1098,7 +1110,7 @@ export const enTexts: Record<TextKey, EnText> = {
   "lane.restore": "Restore",
   "lane.resting": "Resting · {value}",
   "lane.restingBare": "Resting",
-  "lane.now": "Now {value} · {count} pts",
+  "lane.now": n("count", "Now {value} · {count} pt", "Now {value} · {count} pts"),
   "lane.count": "Points {count}",
   "lane.add": "+ Add lane ▾",
   "lane.addEffectParams": "Effect parameters…",
@@ -1137,9 +1149,14 @@ export const enTexts: Record<TextKey, EnText> = {
   "history.pluginParam": "Change a parameter of {plugin}",
   "history.pluginWindowWhat": "Plugin window",
   "history.placePluginWindow": "{strip} · plugin window",
-  "history.head": "{total} steps · now at step {current}. The {redo} above are undone and can be redone",
-  "history.headLatest": "{total} steps · now at step {current} (the newest)",
-  "history.headAllUndone": "{total} steps · all undone · {redoKey} to redo",
+  // {total} is at least 2 here (one step done, one undone), so only {redo} needs the form for 1.
+  "history.head": n(
+    "redo",
+    "{total} steps · now at step {current}. The {redo} above is undone and can be redone",
+    "{total} steps · now at step {current}. The {redo} above are undone and can be redone",
+  ),
+  "history.headLatest": n("total", "{total} step · now at step {current} (the newest)", "{total} steps · now at step {current} (the newest)"),
+  "history.headAllUndone": n("total", "{total} step · all undone · {redoKey} to redo", "{total} steps · all undone · {redoKey} to redo"),
   "history.headEmpty": "No steps yet · each thing you do lines up here, one step at a time",
   "history.undo": "Undo",
   "history.redo": "Redo",
@@ -1161,6 +1178,7 @@ export const enTexts: Record<TextKey, EnText> = {
   "msg.clipSplit": "Split {clip} at {position}.",
   "msg.audioRendering": "Making the sound of {clip} {percent} % · until it is ready, the original plays",
   "msg.audioImported": "Brought in {file} ({track} · {position}).",
+  "msg.audioSkipped": n("skipped", "{skipped} file could not be read.", "{skipped} files could not be read."),
   "clip.loading": "Loading {percent} %",
   "msg.audioUnreadable": "“{file}” cannot be read (wav · mp3 · flac · ogg can).",
   "msg.audioDragging": n("count", "Dragging {count} audio file · drop on the left for separate tracks, on the right to line them up on one", "Dragging {count} audio files · drop on the left for separate tracks, on the right to line them up on one"),
@@ -1190,7 +1208,11 @@ export const enTexts: Record<TextKey, EnText> = {
   "clipParams.follow": "Follow the song's tempo",
   "clipParams.sourceTempo": "Tempo of this sound",
   "clipParams.pitch": "Pitch",
-  "clipParams.pitchValue": "{semitones} semitones {cents} cents",
+  "clipParams.pitchValue": n(
+    "semitones",
+    n("cents", "{semitones} semitone {cents} cent", "{semitones} semitone {cents} cents"),
+    n("cents", "{semitones} semitones {cents} cent", "{semitones} semitones {cents} cents"),
+  ),
   "clipParams.keepFormant": "Keep the voice's character",
   "clipParams.findTempo": "Find",
   "clipParams.tune": "Pull to scale",
@@ -1332,6 +1354,11 @@ export const enTexts: Record<TextKey, EnText> = {
   "msg.audioTooManyChannels": "“{file}” has 3 or more channels and cannot be read (mono and stereo can).",
   "msg.savingAudio": "Saving · copying audio files {done} / {total} ({doneMb} / {totalMb} MB)",
   "msg.diskTooSlow": "Audio files could not be read in time, so the vocal cut out a little (the disk was busy).",
+  "msg.vocalsNotRecorded": "Cannot record the vocal. Cannot write to the work place.",
+  "msg.vocalsNotRecordedKeys": "Cannot record the vocal. Cannot write to the work place. The keyboard is still being recorded.",
+  "msg.recordingStoppedDisk": "The disk could not be written to, so recording stopped. What was recorded so far is kept.",
+  "msg.recordingStoppedFileFull": "The audio file reached its largest size, so recording stopped. What was recorded so far is kept.",
+  "msg.audioNotCopied": "Could not bring in “{file}”. Cannot write to the work place.",
   "pack.fetching": "Fetching the sound pack",
   "pack.fetchingBytes": "{percent} % · {done} / {total} MB",
   "pack.fetchingLeft": "about {minutes} min left",
@@ -1505,6 +1532,8 @@ export const enTexts: Record<TextKey, EnText> = {
   "keyList.paramMove": "Parameters: move the value (fine)",
   "keyList.paramType": "Parameters: type a value",
   "keyList.paramFind": "Parameters: to the search box",
+  "keyList.metronome": "Metronome: move the volume / tap the tempo",
+  "keyList.closeExported": "Close “Exported”",
   "pack.fetchingPercent": "{percent} %",
   "clips.selected": n("count", "{count} clip selected", "{count} clips selected"),
   "clips.groupAll": "Change together",
@@ -1552,6 +1581,12 @@ export const enTexts: Record<TextKey, EnText> = {
   "export.midiNoSuchTrack": "There is no track {number}",
   "export.midiUnreadable": "Write the numbers like “1-3, 5”",
   "export.midiNoTrack": "No track to include",
+  "export.replaceOne": "“{file}” is already there. It will be replaced.",
+  "export.replaceMany": n(
+    "count",
+    "{count} file with the same name is already there. It will be replaced.",
+    "{count} files with the same names are already there. They will be replaced.",
+  ),
   "msg.exportedMidi": n("tracks", "Exported {file} (MIDI · {tracks} track).", "Exported {file} (MIDI · {tracks} tracks)."),
   "msg.exportedMidiFiles": n("count", "Exported {count} file (MIDI).", "Exported {count} files (MIDI)."),
   "exported.title": "Exported",
@@ -1570,7 +1605,11 @@ export const enTexts: Record<TextKey, EnText> = {
   "msg.fadeDragging": "{edge} fade of {clip} {value} (dragging) · let go to set it · {cancelKey} to cancel",
   "clip.fadeEdgeIn": "In",
   "clip.fadeEdgeOut": "Out",
-  "msg.pitchDragging": "Pitch {semitones} semitones {cents} cents (dragging)",
+  "msg.pitchDragging": n(
+    "semitones",
+    n("cents", "Pitch {semitones} semitone {cents} cent (dragging)", "Pitch {semitones} semitone {cents} cents (dragging)"),
+    n("cents", "Pitch {semitones} semitones {cents} cent (dragging)", "Pitch {semitones} semitones {cents} cents (dragging)"),
+  ),
   "msg.tuneDragging": "Pull to scale {percent} % (dragging)",
   "settings.latencyUnit": "ms",
   "status.exportShort": "Export {percent} %",

@@ -4,7 +4,7 @@ title: Params panel row stays frozen at the dragged value after a drag that writ
 area: UI-MIX
 kind: bug
 severity: medium
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -43,4 +43,4 @@ Fix plan: in `ui/src/components/params/ParamRow.svelte` drop `held` when the ans
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`ui/src/components/params/ParamRow.svelte`: a step sent from the row (release of a drag, arrow keys, ◂ ▸) keeps `held` only until the state has reached the rev that answers it (`commitStep`, `answer`), so a release that only writes the lane goes back to `auto`; the clearing on `value` stays. Test: `ui/tests/fix-ui-values.test.ts` "after a drag whose answer leaves the song value as it was, the row follows the lane again".

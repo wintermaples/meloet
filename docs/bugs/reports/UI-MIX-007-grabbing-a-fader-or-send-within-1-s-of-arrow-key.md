@@ -4,7 +4,7 @@ title: Grabbing a fader or send within 1 s of arrow keys starts from the old val
 area: UI-MIX
 kind: ui-ux
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -43,4 +43,4 @@ Fix plan (as suggested): in `down`, `keys.flush()` first and `from = keyed ? key
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`ui/src/components/mixer/control.svelte.ts` `down`: `keys.flush()` first, and the drag starts from `keyed` when there is one. Test: `ui/tests/fix-ui-values.test.ts` "UI-MIX-007: grabbing a fader right after arrow keys".

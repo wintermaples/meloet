@@ -4,7 +4,7 @@ title: Typed dB, pan, metronome volume and sound knob values do not read full-wi
 area: UI-PARITY
 kind: parity
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -50,4 +50,4 @@ Fix plan (as suggested): start each of the four parsers with `text.normalize("NF
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`parseDb`, `parsePan` (`ui/src/components/mixer/scale.ts`), `parseClickDb` (`ui/src/components/metronome.ts`) and `typedKnob` (`ui/src/components/params/knobRows.ts`) start with `normalize("NFKC")`. Test: `ui/tests/fix-ui-values.test.ts` "UI-PARITY-009: full-width digits".

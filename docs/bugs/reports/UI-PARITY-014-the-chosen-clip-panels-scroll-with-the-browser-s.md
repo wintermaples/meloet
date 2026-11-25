@@ -4,7 +4,7 @@ title: The chosen-clip panels scroll with the browser's own scroll bar, while th
 area: UI-PARITY
 kind: parity
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -47,4 +47,4 @@ Fix plan (as suggested): wrap the groups of `ui/src/components/params/ClipPanel.
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`ui/src/components/params/ClipPanel.svelte` and `ClipsPanel.svelte`: the groups are inside `<ScrollArea>` (as BuiltinList); the `.list` rule with `overflow-y: auto` is gone. No test (looks only); a shot of `multiClip` (shoot_ui, 1280x800, 100/125) shows the panel as before when it fits; a panel taller than the rail was not shot.

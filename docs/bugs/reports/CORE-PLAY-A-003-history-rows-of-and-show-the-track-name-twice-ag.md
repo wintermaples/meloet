@@ -4,7 +4,7 @@ title: History rows of 「アルペジオを変える」 and 「音のつまみ�
 area: CORE-PLAY-A
 kind: ui-ux
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -47,4 +47,4 @@ Fix plan (screen only): `ui/src/components/history/stepText.ts` `rowWhatText`: w
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`ui/src/components/history/stepText.ts` `rowWhatText`: with the track as the place, a `track` 「（何を）」 of the same track gives the bare row, and `soundKnob` gives `history.changeAt` with the knob name and `param.value.percent` (「明るさ 50 → 25 %」). The status line keeps `stepWhatText`. The fake (`fakeWave3.ts`) gives the same row as Rust and needed no change. Test: `ui/tests/fix-ui-values.test.ts` "CORE-PLAY-A-003: rows whose right column is the track do not name it again".

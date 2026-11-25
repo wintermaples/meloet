@@ -4,7 +4,7 @@ title: The quantize strength and swing bars show no gray.7 start mark while drag
 area: UI-PARITY
 kind: parity
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -45,4 +45,4 @@ Fix plan (as suggested): in `ui/src/components/pianoroll/PercentSlider.svelte` k
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`ui/src/components/pianoroll/PercentSlider.svelte`: keeps `from` (the shown value) at the press and draws a `.knob.ghost` (border `line.hair` gray.7, no fill, as ParamRow) while dragging. Test: `ui/tests/fix-ui-values.test.ts` "UI-PARITY-013: the strength and swing bars show where the drag started".

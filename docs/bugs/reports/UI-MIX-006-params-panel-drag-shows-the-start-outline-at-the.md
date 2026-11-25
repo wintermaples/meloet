@@ -4,7 +4,7 @@ title: Params panel drag shows the start outline at the song value, not where an
 area: UI-MIX
 kind: ui-ux
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -43,4 +43,4 @@ Fix plan (as suggested): `from = shown` in `ondown`, read before `held` is set, 
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`ui/src/components/params/ParamRow.svelte` `ondown`: `from = shown` (the handle's place, the lane's value when a lane moves it). Test: `ui/tests/fix-ui-values.test.ts` "the start frame is where the handle was (the lane's value), not the song value".

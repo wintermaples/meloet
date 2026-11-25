@@ -4,7 +4,7 @@ title: Mixer and built-in param drags are not cancelled when their part goes awa
 area: UI-MIX
 kind: bug
 severity: medium
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -44,4 +44,4 @@ Fix plan (as suggested): `ui/src/components/mixer/control.svelte.ts` cleanup →
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`ui/src/components/mixer/control.svelte.ts` and `ui/src/components/params/ParamRow.svelte`: the unmount cleanup calls `cancel()` first (sends `cancelMixPreview` for a running drag; `MixPreview.cancel()` already drops its pending frame). Test: `ui/tests/fix-ui-values.test.ts` "UI-MIX-001: a drag whose part goes away is cancelled".

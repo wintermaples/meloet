@@ -25,6 +25,7 @@
   import { current, send } from "../../state/app.svelte";
   import { shownWork } from "../../state/audioWork.svelte";
   import { askWhole } from "../automation/coverIf";
+  import ScrollArea from "../../lib/ScrollArea.svelte";
   import { clipEdit, renameCommand, startClipRename, stopClipRename } from "../clipName.svelte";
   import { tip } from "../../lib/tip.svelte";
   import { STATUS_JOIN, t } from "../../text";
@@ -273,6 +274,7 @@
       </div>
     </div>
   {:else}
+    <ScrollArea>
     <div class="list">
       <button class="m-plain group m-focus-in" onclick={() => toggle("clip")} data-group="clip">
         <span class={folded.includes("clip") ? "m-lbl" : "m-hi"}>{folded.includes("clip") ? "▸" : "▾"}</span>
@@ -395,6 +397,7 @@
         </div>
       {/if}
     </div>
+    </ScrollArea>
   {/if}
 {/if}
 
@@ -462,10 +465,6 @@
   .buttons {
     display: flex;
     gap: var(--space-2);
-  }
-  .list {
-    min-height: 0;
-    overflow-y: auto;
   }
   .group {
     width: 100%;

@@ -33,6 +33,10 @@
       done = true;
       onsubmit(input?.value ?? "");
       giveBack();
+      // Text that could not be read keeps the box open; leaving it then stops as before.
+      void tick().then(() => {
+        if (input?.isConnected) done = false;
+      });
     } else if (e.key === "Escape") {
       e.preventDefault();
       e.stopPropagation();

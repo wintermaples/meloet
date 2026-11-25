@@ -1,0 +1,67 @@
+---
+id: PLUG-001
+title: Plugin host: touch() leaves a seat without ringing the bell, so a block asked meanwhile can make meloet stop the whole host
+area: PLUG
+kind: bug
+severity: medium
+status: reported
+found: 2026-11-25
+---
+
+# PLUG-001: Plugin host: touch() leaves a seat without ringing the bell, so a block asked meanwhile can make meloet stop the whole host
+
+## Where
+
+crates/meloet-plughost/src/rt.rs:394-399 (`Handle::touch`: takes the seat, no `self.bell.ring()` after)
+crates/meloet-plughost/src/rt.rs:561-575 (`run`: a seat another thread holds is passed over, then the thread sleeps on the bell for up to `IDLE_NS`, line 34)
+crates/meloet-plughost/src/control.rs:241 (`take_hold` calls `audio.touch(slot, id, true)`)
+crates/meloet-plughost/src/control.rs:251 (`let_go` calls `audio.touch(slot, id, false)`)
+crates/meloet-plugin/src/ipc/ends.rs:228-243 (`await_overdue`: nobody took the request and `progress` did not move, so the slot and the whole mapping are stopped)
+
+## What happens
+
+When the plugin host's main thread is inside `Handle::touch` (it holds the slot's seat for a moment) at the moment the engine asks that slot for a block, the audio thread that wakes for the block finds the seat busy, passes it over, finds nothing else to do and goes back to sleep on the bell. `touch` then leaves the seat without ringing the bell, so nothing wakes the audio thread again until its 100 ms time limit (`IDLE_NS`) or until some other slot is asked.
+
+In a host with one plugin (the usual case: one instance of a plugin per process) nothing else rings. The engine's deadline passes (silent or dry block), and at the next block's deadline `await_overdue` sees: request not taken, `progress` unchanged, no thread inside a plugin. It marks the slot and the shared header as stopped. meloet then kills the process and shows the plugin as stopped (「（名前）が止まりました…」); every plugin of that host is silent until 「もう一度読みこむ」.
+
+It is timing-dependent and rare per event, but it can happen any time the person takes hold of or lets go of a parameter in a plugin's window while the engine runs blocks.
+
+## What should happen
+
+The main thread rings the bell every time it leaves a seat, so a block asked while it was there is not passed over. This is the rule the audio thread relies on: the comment in `run` (rt.rs:562-563) says "the main thread rings the bell when it leaves one", and every other seat user does it: `install` (rt.rs:347), `remove` (354), `set_param` (366), `params_taken` (375), `outputs` (415), `forget_params` (425). A busy or late host must not be taken for a dead one (docs/architecture.md 20-2, 23-14).
+
+## How to trigger
+
+Read from the code, not run.
+1. Load one VST3 or LV2 plugin with a window (one plugin in its host process) and let the engine run blocks (playing, or the output just open).
+2. Open its window and grab a knob without moving it (VST3 `beginEdit` / LV2 `ui:touch` grabbed: `Said::ParamBegin` alone, no `set_param` that would ring), or release a knob after the last move (`Said::ParamEnd`), or let an LV2 parameter that has no touch go quiet for 0.5 s (`LET_GO`).
+3. If the engine submits that slot's block while `touch` holds the seat, and the woken audio thread looks at the seat in that moment, the host is stopped two blocks later.
+
+## Cause
+
+`Handle::touch` is the only main-thread method that takes a seat and does not call `self.bell.ring()` afterwards. The audio thread reads the bell count before it walks the seats (`let seen = bell.count()`), so a ring made by the engine before that walk does not wake it again; only a later ring does. With no ring, the thread sleeps for `IDLE_NS` (100 ms), longer than two engine blocks, and the engine's watch in `await_overdue` cannot tell this from a frozen process.
+
+## Suggested fix
+
+Ring the bell at the end of `Handle::touch`, as the sibling methods do (after the `Taken` guard is dropped):
+
+```rust
+pub fn touch(&mut self, slot: u32, id: u32, on: bool) -> Result<(), String> {
+    if let Some(run) = self.seat(slot)?.run() {
+        run.touch(id, on);
+    }
+    // A block asked for while the main thread was at the seat was passed over.
+    self.bell.ring();
+    Ok(())
+}
+```
+
+No protocol or file-shape change.
+
+## Verification
+
+<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+
+## Fix
+
+<!-- Filled after fixing: the commit, the test that now watches it. -->

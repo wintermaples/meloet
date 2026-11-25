@@ -28,6 +28,7 @@ struct CopyAsk {
     ticket: u64,
     /// Where it is on the track.
     place: PluginPlace,
+    key: Arc<str>,
     /// `Plug::puts` when it was asked: a state put back into it since makes the answer old.
     puts: u32,
     /// `None` until it answers; then the state to give the copy, `None` for the song's.
@@ -65,6 +66,7 @@ impl Play {
                 Some(CopyAsk {
                     ticket: p.ticket,
                     place,
+                    key: p.plugin.key.clone(),
                     puts: p.puts,
                     said: None,
                 })
@@ -127,7 +129,13 @@ impl Play {
             return None;
         }
         let waiting = self.plugs.copying.waiting.take()?;
-        let said = (waiting.asks.into_iter()).map(|a| (a.place, a.said.flatten()));
+        // A state is only for the plugin that said it: one moved or replaced meanwhile gives
+        // the copy the song's state.
+        let said = (waiting.asks.into_iter()).map(|a| {
+            let there = self.plugin_place_of(a.ticket) == Some(a.place)
+                && self.doc().plugin(a.place).is_some_and(|p| p.key == a.key);
+            (a.place, a.said.flatten().filter(|_| there))
+        });
         Some((waiting.track, said.collect()))
     }
 }

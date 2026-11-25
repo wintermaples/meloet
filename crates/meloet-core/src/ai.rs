@@ -714,7 +714,8 @@ pub enum AiPutEnd {
     /// The plugin refused it; the text is for the log.
     Refused(String),
     /// The plugin's process stopped while it took it (the state may be broken): it is loaded
-    /// again with the song's state.
+    /// again with the state it had before (with the song's state when an undo or a redo came
+    /// meanwhile).
     Stopped,
     /// An undo or a redo put another state into the plugin first, or it was loaded again with
     /// the song's state (another sample rate).

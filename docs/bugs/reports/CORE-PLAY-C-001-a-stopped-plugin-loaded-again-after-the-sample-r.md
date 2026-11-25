@@ -4,7 +4,7 @@ title: A stopped plugin loaded again after the sample rate changed runs at the o
 area: CORE-PLAY-C
 kind: bug
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -56,4 +56,6 @@ Fix plan: `crates/meloet-core/src/state.rs` / `play/plugs.rs` / `play/plugs/aist
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`Effect::ReloadPlugin` carries `sample_rate` (`crates/meloet-core/src/state.rs`); `reload_plugin` (`play/plugs.rs`) and `reload_at` (`play/plugs/aistate.rs`) give it the rate of now, the service passes it on (`service.rs`), and `Hosts::reload(id, sample_rate, block, done)` writes it into the slot's spec before the new process loads the plugin (`plugins/hosts.rs`). A plug remembers the rate it was asked at (`Plug::rate`); one that was being loaded again when the rate changed is loaded once more, with the state it has, when it is there (`plugin_loaded` → `load_again_at`). The callers of `Hosts::reload` in `tests/plugin_hosts.rs` and `tests/plugin_windows.rs` name the rate.
+
+Tests: `play::plugs::tests::a_stopped_plugin_is_loaded_again_at_the_rate_the_stream_runs_at_now` (the reload effect has the new rate; a reload overtaken by another rate is loaded again at it), `tests/plugin_state_put.rs` `a_reload_is_at_the_rate_asked_for_and_without_a_state_tried_and_never_read_back` (the `Load` of a reload names the new rate, with a stand-in plugin host).

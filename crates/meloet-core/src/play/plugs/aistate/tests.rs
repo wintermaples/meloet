@@ -247,14 +247,18 @@ fn a_state_that_stops_the_process_makes_no_step_and_the_plugin_is_loaded_again()
     let ticket = put(&mut r, place, kill.into());
     // The answer comes first, then the news that the process stopped.
     r.settle();
+    let why = failed(&r, ticket);
     assert!(
-        failed(&r, ticket).contains("stopped"),
-        "{}",
-        failed(&r, ticket)
+        why.contains("stopped") && why.contains("with the state it had before the put"),
+        "{why}"
     );
     assert_eq!(end(&mut r, ticket), AiPutEnd::Stopped);
     let effects = r.go(Input::PluginStopped { ticket: surge });
-    assert!(effects.contains(&Effect::ReloadPlugin { ticket: surge }));
+    let reload = Effect::ReloadPlugin {
+        ticket: surge,
+        sample_rate: 48_000,
+    };
+    assert!(effects.contains(&reload));
     r.go(Input::PluginLoaded { ticket: surge });
     assert_eq!(r.undo_count(), steps);
     assert_eq!(in_song(&r, place), first);
@@ -269,7 +273,7 @@ fn a_state_that_stops_the_process_makes_no_step_and_the_plugin_is_loaded_again()
     r.go(Input::PluginStopped { ticket: surge });
     let gone = PluginSaid::StatePut(Err(HostError::Gone));
     let effects = r.said(surge, gone);
-    assert!(effects.contains(&Effect::ReloadPlugin { ticket: surge }));
+    assert!(effects.contains(&reload));
     assert!(matches!(outcome(&r, ticket), AiOutcome::Failed(_)));
     assert_eq!(end(&mut r, ticket), AiPutEnd::Stopped);
     assert_eq!(in_song(&r, place), first);
@@ -279,7 +283,7 @@ fn a_state_that_stops_the_process_makes_no_step_and_the_plugin_is_loaded_again()
     r.host.now_us += REVIVE_US + 1;
     r.host.dead.insert(surge);
     let effects = r.go(Input::PluginStopped { ticket: surge });
-    assert!(!effects.contains(&Effect::ReloadPlugin { ticket: surge }));
+    assert!(!effects.contains(&reload));
 }
 
 #[test]
@@ -361,7 +365,10 @@ fn an_undo_while_a_state_stops_the_process_loads_the_plugin_anew_with_the_songs_
     assert!(failed(&r, ticket).contains("stopped"));
     assert_eq!(end(&mut r, ticket), AiPutEnd::Stopped);
     let effects = r.go(Input::PluginStopped { ticket: surge });
-    assert!(!effects.contains(&Effect::ReloadPlugin { ticket: surge }));
+    assert!(
+        !(effects.iter())
+            .any(|e| matches!(e, Effect::ReloadPlugin { ticket, .. } if *ticket == surge))
+    );
     let loads = loads(&effects);
     assert_eq!(loads.len(), 1, "{effects:?}");
     assert_eq!(

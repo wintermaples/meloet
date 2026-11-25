@@ -98,6 +98,8 @@ pub(super) struct Plug {
     /// The keys it names, as its plugin host said last ([`keys::cleaned`]); `None` while it
     /// has said nothing or names no key.
     key_names: Option<Arc<[KeyName]>>,
+    /// The sample rate its plugin host was last asked to run it at.
+    rate: u32,
 }
 
 impl Plug {
@@ -418,6 +420,7 @@ impl Play {
             sets: None,
             told: outputs.clone(),
             key_names: None,
+            rate: self.plugs.rate,
         });
         effects.push(Effect::LoadPlugin {
             ticket,
@@ -505,17 +508,24 @@ impl Play {
     }
 
     /// A trial on `seat` ended and the seat's own instrument is back: its plugin, when it
-    /// became ready meanwhile, goes on the seat now.
+    /// became ready meanwhile, goes on the seat now; when it did not load, the sine wave does.
     pub(super) fn place_waiting(&mut self, seat: usize, effects: &mut Vec<Effect>) {
-        if let Some(plug) = self.plugs.at_mut(Spot::Seat(seat))
-            && plug.phase == Phase::Ready
-            && !plug.placed
-        {
-            plug.placed = true;
-            effects.push(Effect::Engine(EngineOp::Plug {
-                ticket: plug.ticket,
-                spot: plug.spot,
-            }));
+        let Some(plug) = self.plugs.at_mut(Spot::Seat(seat)) else {
+            return;
+        };
+        match plug.phase {
+            Phase::Ready if !plug.placed => {
+                plug.placed = true;
+                effects.push(Effect::Engine(EngineOp::Plug {
+                    ticket: plug.ticket,
+                    spot: plug.spot,
+                }));
+            }
+            Phase::Failed => effects.push(Effect::Engine(EngineOp::Instrument {
+                seat,
+                instrument: InstrumentRef::SINE,
+            })),
+            _ => {}
         }
     }
 
@@ -567,6 +577,13 @@ impl Play {
         }
         // Loaded again, it may list its parameters another way.
         self.table_stale(ticket);
+        // Loaded again at a sample rate the stream no longer runs at.
+        let rate = self.plugs.rate;
+        if let Some(at) =
+            (self.plugs.list.iter()).position(|p| p.ticket == ticket && p.rate != rate)
+        {
+            self.load_again_at(at, true, effects);
+        }
     }
 
     /// The lanes of the track a plugin of the song sits on go to the engine again, which
@@ -655,38 +672,49 @@ impl Play {
     /// Loads every plugin of the book again under a new ticket. `live`: with the state each
     /// has now (the old ones still run); else with the state it was asked for with.
     fn load_again(&mut self, live: bool, effects: &mut Vec<Effect>) {
-        let plugs = &mut self.plugs;
-        for at in 0..plugs.list.len() {
-            let old = plugs.list[at].clone();
-            let state = match old.phase {
-                // A state on its way in is not in the song yet, and its step never comes.
-                Phase::Ready if live && !plugs.ai.putting_into(old.ticket) => {
-                    PlugState::Of(old.ticket)
-                }
-                Phase::Ready | Phase::Loading if old.plugin.state.is_empty() => PlugState::Fresh,
-                Phase::Ready | Phase::Loading => PlugState::Bytes(old.plugin.state.clone()),
-                Phase::Stopped | Phase::Reloading | Phase::Failed => continue,
-            };
-            let Some((bundle, _)) = plugs.known.get(&*old.plugin.key).cloned() else {
-                continue;
-            };
-            let ticket = plugs.ticket();
-            if old.phase == Phase::Ready && !old.placed {
-                effects.push(Effect::DropPlugin { ticket: old.ticket });
-            }
-            let plug = &mut plugs.list[at];
-            plug.ticket = ticket;
-            plug.phase = Phase::Loading;
-            plug.told = wanted_outputs(old.spot, &old.plugin);
-            effects.push(Effect::LoadPlugin {
-                ticket,
-                key: old.plugin.key.clone(),
-                bundle,
-                state,
-                sample_rate: plugs.rate,
-                outputs: plug.told.clone(),
-            });
+        for at in 0..self.plugs.list.len() {
+            self.load_again_at(at, live, effects);
         }
+    }
+
+    /// [`Play::load_again`] of the plugin at `at` of the book.
+    fn load_again_at(&mut self, at: usize, live: bool, effects: &mut Vec<Effect>) {
+        let plugs = &mut self.plugs;
+        let old = plugs.list[at].clone();
+        let state = match old.phase {
+            // A state on its way in is not in the song yet, and its step never comes. One
+            // that was never in the engine has the song's state.
+            Phase::Ready if live && old.placed && !plugs.ai.putting_into(old.ticket) => {
+                PlugState::Of(old.ticket)
+            }
+            // A stopped one waits for 「もう一度読みこむ」 while the engine that holds it runs;
+            // into a new engine it is loaded anew, as the song has it.
+            Phase::Stopped if live => return,
+            Phase::Reloading | Phase::Failed => return,
+            _ if old.plugin.state.is_empty() => PlugState::Fresh,
+            _ => PlugState::Bytes(old.plugin.state.clone()),
+        };
+        let Some((bundle, _)) = plugs.known.get(&*old.plugin.key).cloned() else {
+            return;
+        };
+        let ticket = plugs.ticket();
+        if old.phase == Phase::Ready && !old.placed {
+            effects.push(Effect::DropPlugin { ticket: old.ticket });
+        }
+        plugs.stopped.retain(|t| *t != old.ticket);
+        let plug = &mut plugs.list[at];
+        plug.ticket = ticket;
+        plug.phase = Phase::Loading;
+        plug.rate = plugs.rate;
+        plug.told = wanted_outputs(old.spot, &old.plugin);
+        effects.push(Effect::LoadPlugin {
+            ticket,
+            key: old.plugin.key.clone(),
+            bundle,
+            state,
+            sample_rate: plugs.rate,
+            outputs: plug.told.clone(),
+        });
     }
 
     /// The stream runs at `rate`: a plugin is made for one rate, so every one is loaded
@@ -848,21 +876,27 @@ impl Play {
         let Some(spot) = self.spot_of(Self::slot_place(slot)) else {
             return;
         };
+        let sample_rate = self.plugs.rate;
         let Some(plug) = self.plugs.at_mut(spot) else {
             return;
         };
         match plug.phase {
             Phase::Stopped => {
                 plug.phase = Phase::Reloading;
+                plug.rate = sample_rate;
                 let ticket = plug.ticket;
-                effects.push(Effect::ReloadPlugin { ticket });
+                effects.push(Effect::ReloadPlugin {
+                    ticket,
+                    sample_rate,
+                });
             }
             Phase::Failed => {
                 let plugin = plug.plugin.clone();
                 self.drop_plug(spot, effects);
-                self.want_plug(spot, &plugin, None, effects);
-                // The seat sounds as the sine wave until now.
-                if let Spot::Seat(seat) = spot
+                // The seat sounds as the sine wave until now, and stays so when this PC does
+                // not have the plugin any more.
+                if self.want_plug(spot, &plugin, None, effects) == Want::Loading
+                    && let Spot::Seat(seat) = spot
                     && self.trial_seat() != Some(seat)
                 {
                     effects.push(Effect::Engine(EngineOp::Instrument {

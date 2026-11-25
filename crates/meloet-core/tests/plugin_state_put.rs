@@ -1,6 +1,7 @@
-//! A state put into a plugin while the engine runs its blocks, and a process whose answer
-//! breaks: the plugin processes as `Hosts` drives them (the real `meloet-plughost` with its fake
-//! plugins, and a stand-in process). Every process is gone when its test ends.
+//! A state put into a plugin while the engine runs its blocks, a process whose answer breaks,
+//! and what a plugin is loaded again with: the plugin processes as `Hosts` drives them (the
+//! real `meloet-plughost` with its fake plugins, and stand-in processes). Every process is gone
+//! when its test ends.
 
 mod plughost;
 
@@ -12,7 +13,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use meloet_core::plugins::hosts::{
-    DEFAULT_GEOMETRY, HostError, HostNews, HostOptions, Hosts, LoadSpec, Loaded, wait,
+    DEFAULT_GEOMETRY, HostError, HostNews, HostOptions, Hosts, LoadSpec, Loaded, StartState, wait,
 };
 use meloet_engine::{
     BlockTiming, Chord, Engine, EngineCommand, EngineConfig, EngineParts, PluginInstrument,
@@ -194,5 +195,118 @@ fn a_process_whose_answer_cannot_be_read_is_killed_and_told_as_stopped() {
         "the process is gone"
     );
     drop((loaded, hosts));
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// A stand-in for `meloet-plughost` that writes down the rate of every `Load` and the state of
+/// every `SetState` it gets, and whose answer to `GetState` cannot be read.
+const LOGGING_HOST: &str = r#"#!/usr/bin/env python3
+import json, os, struct, time
+
+def take(n):
+    got = b""
+    while len(got) < n:
+        part = os.read(0, n - len(got))
+        if not part:
+            raise SystemExit(0)
+        got += part
+    return got
+
+def say(id, reply):
+    text = json.dumps({"kind": "reply", "id": id, "reply": reply}).encode()
+    os.write(0, struct.pack("<II", len(text), 0) + text)
+
+def note(line):
+    with open(os.environ["MELOET_TEST_HOST_LOG"], "a") as log:
+        log.write(line + "\n")
+
+while True:
+    text_len, blob_len = struct.unpack("<II", take(8))
+    message = json.loads(take(text_len))
+    blob = take(blob_len)
+    request = message["request"]
+    if request["type"] == "hello":
+        say(message["id"], {"type": "hello", "version": request["version"], "offline": False})
+    elif request["type"] == "load":
+        note("load %d" % request["sampleRate"])
+        say(message["id"], {"type": "loaded", "plugin": {"latency": 0, "audioInputs": 0,
+            "audioOutputs": 2, "editor": "none", "live": False}})
+    elif request["type"] == "setState":
+        note("state " + blob.hex())
+        say(message["id"], {"type": "ok"})
+    elif request["type"] == "getState":
+        os.write(0, struct.pack("<II", 0xffffffff, 0))
+        while True:
+            time.sleep(1)
+    else:
+        say(message["id"], {"type": "ok"})
+"#;
+
+/// A plugin that stops is loaded again at the rate asked for, with the state remembered for
+/// it: a state put back is remembered at once, one tried (the AI link's) only once the
+/// plugin's state is read back after it, which the stop here prevents.
+#[test]
+fn a_reload_is_at_the_rate_asked_for_and_without_a_state_tried_and_never_read_back() {
+    let dir = plughost::temp_dir("reload-rate-state");
+    let exe = dir.join("logging-host");
+    std::fs::write(&exe, LOGGING_HOST).unwrap();
+    std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let log = dir.join("log");
+    let (tx, news) = mpsc::channel();
+    let mut env = plughost::fake_env();
+    env.push(("MELOET_TEST_HOST_LOG".into(), log.clone().into()));
+    let options = HostOptions {
+        exe,
+        env,
+        geometry: DEFAULT_GEOMETRY,
+    };
+    let hosts = Hosts::start(options, move |news| {
+        let _ = tx.send(news);
+    });
+    let stopped = || loop {
+        match news.recv_timeout(Duration::from_secs(3)) {
+            Ok(HostNews::Stopped { .. }) => break,
+            Ok(_) => {}
+            Err(_) => panic!("the process was not told as stopped"),
+        }
+    };
+    let parts = engine();
+    let block = parts.handle.plugin_block().clone();
+    let spec = LoadSpec {
+        key: PluginKey::lv2("urn:meloet:fake:sine").unwrap(),
+        bundle: "/nowhere/fake.lv2".into(),
+        sample_rate: RATE,
+        outputs: Default::default(),
+    };
+    let song = StartState::Bytes(vec![1, 1]);
+    let loaded = wait(|done| hosts.load_with(spec, song, block.clone(), done)).unwrap();
+    let id = loaded.id;
+
+    wait(|done| hosts.try_state(id, vec![2, 2], done)).unwrap();
+    assert_eq!(wait(|done| hosts.state(id, done)), Err(HostError::Gone));
+    stopped();
+    let again = wait(|done| hosts.reload(id, 44_100, block.clone(), done)).unwrap();
+
+    wait(|done| hosts.set_state(id, vec![3, 3], done)).unwrap();
+    assert_eq!(wait(|done| hosts.state(id, done)), Err(HostError::Gone));
+    stopped();
+    let third = wait(|done| hosts.reload(id, 44_100, block, done)).unwrap();
+
+    let said = std::fs::read_to_string(&log).unwrap();
+    let said: Vec<&str> = said.lines().collect();
+    assert_eq!(
+        said,
+        [
+            "load 48000",
+            "state 0101",
+            "state 0202",
+            "load 44100",
+            "state 0101",
+            "state 0303",
+            "load 44100",
+            "state 0303"
+        ]
+    );
+    drop((loaded, again, third, hosts, parts));
     let _ = std::fs::remove_dir_all(dir);
 }

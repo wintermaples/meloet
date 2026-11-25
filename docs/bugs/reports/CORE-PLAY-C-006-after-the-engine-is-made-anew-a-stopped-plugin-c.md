@@ -4,7 +4,7 @@ title: After the engine is made anew, a stopped plugin can no longer be loaded a
 area: CORE-PLAY-C
 kind: bug
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -51,4 +51,6 @@ Fix plan: `crates/meloet-core/src/play/plugs.rs` `load_again`: when not `live` (
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`crates/meloet-core/src/play/plugs.rs` `load_again_at` (the body of `load_again`): with a new engine (`live` false) a `Phase::Stopped` plugin is loaded anew like the others, with the song's state (`Bytes`, `Fresh` when empty), under a new ticket, and its old ticket leaves `plugs.stopped`. At another sample rate (`live`) it still waits for 「もう一度読みこむ」. `Reloading` and `Failed` stay as they were.
+
+Test: `play::plugs::tests::a_stopped_plugin_is_loaded_anew_as_the_song_has_it_when_the_engine_is_made_anew`.

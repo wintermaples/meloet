@@ -4,7 +4,7 @@ title: Duplicate track gives the plugin states it asked for to the copy by slot 
 area: CORE-PLAY-C
 kind: bug
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -50,4 +50,6 @@ Fix plan: `crates/meloet-core/src/play/plugs/copies.rs`: keep the plugin's key i
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`crates/meloet-core/src/play/plugs/copies.rs`: `CopyAsk` keeps the key of the plugin asked; when the last answer comes, a state is kept only where the plugin of its ticket is still at the place it was asked at and the song's plugin there has that key. Any other state is dropped, and the copy keeps the song's state there. `play/tracks.rs` (`make_copy`) is unchanged.
+
+Test: `play::plugs::tests::a_copy_gets_a_state_only_where_the_plugin_that_said_it_is` (asks out, `MoveInsert`, answers in).

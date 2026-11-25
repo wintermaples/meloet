@@ -4,7 +4,7 @@ title: A track's plugin that became ready under a replace audition loses its sta
 area: CORE-PLAY-C
 kind: bug
 severity: medium
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -54,4 +54,6 @@ Fix plan: `crates/meloet-core/src/play/plugs.rs` `load_again`: for `Ready && !pl
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`crates/meloet-core/src/play/plugs.rs` `load_again_at` (the body of `load_again`): only a plugin that is in the engine is loaded again with `PlugState::Of` its ticket; one that became ready under a trial and was never placed gets the song's state (`Bytes`, `Fresh` when empty). The `DropPlugin` stays.
+
+Test: `play::plugs::tests::a_tracks_plugin_that_became_ready_under_a_trial_keeps_the_songs_state_at_another_rate`.

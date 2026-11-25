@@ -1,0 +1,5 @@
+# fix-core-plugs — seen while fixing, not fixed
+
+- crates/meloet-core/src/service.rs:3576-3595 — an AI put whose `SetState` is refused still sends the `Hosts::state` after it, and `Hosts` remembers what the plugin says then (it may have taken part of the state); `put_song_state_back` puts the song's state back only into a `Ready` plug, so a plug that is not `Ready` by then keeps that half state for a later reload.
+- crates/meloet-core/src/service.rs:2588-2597 with play/plugs.rs `load_again_at` — a plugin that is `Reloading` when the engine is made anew: the lost engine hands back its stopped slot, and `unload_gone` may take the ticket out of `ids` and unload the slot in `Hosts` while the reload is on its way or just after it answered; the reloaded plugin then goes into the new engine with a slot `Hosts` let go of. Read only, not reproduced.
+- crates/meloet-core/src/play/plugs.rs `reload_plugin` + `place_waiting` — a seat's own plugin that failed under a 「入れかえる」 audition, then 「もう一度読みこむ」 during the same audition after the plugin left this PC: no plug is left at the seat, so Esc gives the seat back its silent stand-in, not the sine wave.

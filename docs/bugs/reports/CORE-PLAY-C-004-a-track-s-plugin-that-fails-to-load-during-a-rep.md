@@ -4,7 +4,7 @@ title: A track's plugin that fails to load during a replace audition leaves the 
 area: CORE-PLAY-C
 kind: bug
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -51,4 +51,6 @@ Fix plan: `crates/meloet-core/src/play/plugs.rs` `place_waiting`: when the seat'
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`crates/meloet-core/src/play/plugs.rs` `place_waiting`: when the seat's own plugin did not load (`Phase::Failed`), the engine gets `EngineOp::Instrument { SINE }` for the seat after `EndTrial`. When the tried sound is kept, the own plugin is dropped and nothing more is needed (`play/shelf.rs` unchanged).
+
+Test: `play::plugs::tests::a_tracks_plugin_that_does_not_load_under_a_trial_sounds_as_the_sine_wave_after_it`.

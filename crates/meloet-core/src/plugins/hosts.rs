@@ -288,10 +288,11 @@ pub struct ProcessInfo {
 
 enum Ask {
     Load(LoadSpec, StartState, Arc<PluginBlock>, Done<Loaded>),
-    Reload(SlotId, Arc<PluginBlock>, Done<Loaded>),
+    Reload(SlotId, u32, Arc<PluginBlock>, Done<Loaded>),
     Unload(SlotId, Done<()>),
     State(SlotId, Done<Vec<u8>>),
-    SetState(SlotId, Vec<u8>, Done<()>),
+    /// The `bool`: the state is remembered for `reload` once the plugin took it.
+    SetState(SlotId, Vec<u8>, bool, Done<()>),
     Preset(SlotId, PresetAsk, Done<PresetSaid>),
     Params(SlotId, Done<Vec<ParamInfo>>),
     Param(SlotId, u32, Done<(f64, String)>),
@@ -388,11 +389,17 @@ impl Hosts {
         self.ask(Ask::Load(spec, state, block, done));
     }
 
-    /// A plugin that stopped, into a new process, with the state and the parameter values
-    /// remembered for it. The `Loaded` has the same id; it takes the place of the stopped
-    /// slot in the engine.
-    pub fn reload(&self, id: SlotId, block: Arc<PluginBlock>, done: Done<Loaded>) {
-        self.ask(Ask::Reload(id, block, done));
+    /// A plugin that stopped, into a new process at `sample_rate`, with the state and the
+    /// parameter values remembered for it. The `Loaded` has the same id; it takes the place
+    /// of the stopped slot in the engine.
+    pub fn reload(
+        &self,
+        id: SlotId,
+        sample_rate: u32,
+        block: Arc<PluginBlock>,
+        done: Done<Loaded>,
+    ) {
+        self.ask(Ask::Reload(id, sample_rate, block, done));
     }
 
     /// Lets the plugin go; its id is of no more use. The engine must not run its slot any
@@ -411,7 +418,14 @@ impl Hosts {
     /// (20-3), so two of these for plugins of one process are kept a block apart: the second
     /// is asked for that much later, and so is everything asked after it.
     pub fn set_state(&self, id: SlotId, state: Vec<u8>, done: Done<()>) {
-        self.ask(Ask::SetState(id, state, done));
+        self.ask(Ask::SetState(id, state, true, done));
+    }
+
+    /// As [`Hosts::set_state`], for a state that may be broken (the AI link's): it is not
+    /// remembered for `reload`; what [`Hosts::state`] reads back after it is. Until then a
+    /// reload puts back what was remembered before.
+    pub fn try_state(&self, id: SlotId, state: Vec<u8>, done: Done<()>) {
+        self.ask(Ask::SetState(id, state, false, done));
     }
 
     /// An ask about the presets of an LV2 plugin. A stopped plugin answers `Gone`.
@@ -638,7 +652,9 @@ impl Run {
                     },
                 ));
             }
-            Ask::Reload(id, block, done) => done(self.reload(id, &block)),
+            Ask::Reload(id, sample_rate, block, done) => {
+                done(self.reload(id, sample_rate, &block));
+            }
             Ask::Unload(id, done) => done(self.unload(id)),
             Ask::State(id, done) => {
                 let state = self
@@ -653,12 +669,12 @@ impl Run {
                 }
                 done(state);
             }
-            Ask::SetState(id, state, done) => {
+            Ask::SetState(id, state, keep, done) => {
                 self.space_states(id);
                 let set = self
                     .ask_slot(id, |slot| Request::SetState { slot }, &state)
                     .and_then(ok);
-                if let (Ok(()), Some(slot)) = (&set, self.slots.get_mut(&id)) {
+                if let (true, Ok(()), Some(slot)) = (keep, &set, self.slots.get_mut(&id)) {
                     slot.state = Some(state);
                     slot.params.clear();
                 }
@@ -1162,11 +1178,17 @@ impl Run {
         }
     }
 
-    fn reload(&mut self, id: SlotId, block: &Arc<PluginBlock>) -> Result<Loaded, HostError> {
-        let slot = self.slots.get(&id).ok_or(HostError::UnknownSlot)?;
+    fn reload(
+        &mut self,
+        id: SlotId,
+        sample_rate: u32,
+        block: &Arc<PluginBlock>,
+    ) -> Result<Loaded, HostError> {
+        let slot = self.slots.get_mut(&id).ok_or(HostError::UnknownSlot)?;
         if slot.home.is_some() {
             return Err(HostError::NotStopped);
         }
+        slot.spec.sample_rate = sample_rate;
         let (spec, state, params) = (slot.spec.clone(), slot.state.clone(), slot.params.clone());
         let (home, engine_slot, watch, plugin) =
             self.place(&spec, state.as_deref(), &params, block)?;

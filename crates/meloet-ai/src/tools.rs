@@ -579,6 +579,12 @@ impl Tools {
         self.write(AiAsk::Screen(command)).await
     }
 
+    /// A toggle of the screen's, for the state `on`: meloet does nothing when the switch is
+    /// so already as the ask reaches it.
+    async fn screen_when(&self, command: Command, on: bool) -> CallToolResult {
+        self.write(AiAsk::ScreenWhen { command, on }).await
+    }
+
     /// An ask answered with a ticket, and then how it ended.
     async fn ticketed(&self, ask: AiAsk) -> Result<(AiDone, Option<PathBuf>), CallToolResult> {
         let what = ask.name();

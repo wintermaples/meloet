@@ -4,7 +4,7 @@ title: Toggle tools (set_mute, set_solo, bypass_effect, set_loop_on) read, then 
 area: AI
 kind: bug
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -47,4 +47,6 @@ Fix plan: let the core thread decide. `crates/meloet-core/src/ai.rs`: an ask tha
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`crates/meloet-core/src/ai.rs`: a core-internal ask `AiAsk::ScreenWhen { command, on }` (a toggle for the state `on`). `crates/meloet-core/src/state/ai.rs` (`ai_write`): on the core thread it answers `AiRefusal::Unchanged` when the switch is `on` already, else it runs the toggle as `AiAsk::Screen` does. `crates/meloet-core/src/play/ai.rs`: `Play::ai_switch` reads the switch a toggle would flip (track mute, return mute, solo, bypass, `loop_on`). `crates/meloet-ai/src/tools.rs` (`screen_when`), `tools/mixer.rs` (`set_mute`, `set_solo`, `bypass_effect`) and `tools/timing.rs` (`set_loop_on`) send it and keep their early "no change". No protocol change. Docs: `docs/development/ai-tools.md`, `docs/architecture.md` (24-16).
+
+Test: `a_toggle_for_a_state_ends_in_that_state` in `crates/meloet-ai/tests/link.rs` (each of the four toggles asked twice for `on`, as two calls that both read before either reached meloet: the first flips it, the second is `Unchanged`, the state ends as asked, for `on` true and false).

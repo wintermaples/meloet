@@ -153,6 +153,26 @@ impl Play {
         (session.loop_on, session.soloed.clone())
     }
 
+    /// Whether the switch a toggle intent flips is on now; `None` for another intent, or
+    /// when the switch is not there.
+    pub(crate) fn ai_switch(&self, command: &Command) -> Option<bool> {
+        let doc = self.doc();
+        let session = &self.song.session;
+        match command {
+            Command::ToggleMute { track } => doc.track(TrackId(*track)).map(|t| t.muted),
+            Command::ToggleReturnMute { bus } => Some(doc.returns[bus_of(*bus).index()].muted),
+            Command::ToggleSolo { track } => {
+                (doc.track(TrackId(*track))).map(|_| session.soloed.contains(&TrackId(*track)))
+            }
+            Command::ToggleBypass { insert } => {
+                let slot = usize::from(insert.slot);
+                doc.insert(strip_id(insert.strip), slot).map(|i| i.bypassed)
+            }
+            Command::ToggleLoop => Some(session.loop_on),
+            _ => None,
+        }
+    }
+
     /// A batch begins here. The name field of a marker just made is no part of that
     /// marker's step any more: a rename in the batch is a step of the batch.
     pub(crate) fn ai_mark(&mut self) -> AiMark {

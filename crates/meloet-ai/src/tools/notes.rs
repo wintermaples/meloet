@@ -258,7 +258,7 @@ pub(super) fn notes_line(d: &AiDone, value: &Value) -> String {
         ));
     }
     if n.cut_count > 0 {
-        line.push_str(&format!(" {} written shorter (see changed).", n.cut_count));
+        line.push_str(&format!(" {} written shorter (see cut).", n.cut_count));
     }
     line
 }

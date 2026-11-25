@@ -469,7 +469,7 @@ impl Tools {
         if muted == args.on {
             return Ok(self.no_change().await);
         }
-        Ok(self.screen(command).await)
+        Ok(self.screen_when(command, args.on).await)
     }
 
     /// Solos a track or ends its solo. Solo changes only what plays: it is no undo step and
@@ -491,7 +491,8 @@ impl Tools {
         if read.song.session.soloed.contains(&id) == args.on {
             return Ok(self.no_change().await);
         }
-        Ok(self.screen(Command::ToggleSolo { track: id.0 }).await)
+        let command = Command::ToggleSolo { track: id.0 };
+        Ok(self.screen_when(command, args.on).await)
     }
 
     /// Puts an effect (built-in or plugin) into an empty insert slot, as one undo step.
@@ -606,7 +607,9 @@ impl Tools {
             strip: strip_ref(strip),
             slot: slot as u8,
         };
-        Ok(self.screen(Command::ToggleBypass { insert }).await)
+        Ok(self
+            .screen_when(Command::ToggleBypass { insert }, args.on)
+            .await)
     }
 }
 

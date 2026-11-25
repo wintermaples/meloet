@@ -4,7 +4,7 @@ title: get_automation gives at most 2000 points of a lane with no paging; later 
 area: AI
 kind: ui-ux
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -45,4 +45,6 @@ Fix plan: `crates/meloet-ai/src/tools/automation.rs`: `get_automation` gets its 
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`crates/meloet-ai/src/tools/automation.rs`: `get_automation` takes optional `first` and `max` (default and most 2000), as `get_notes` names them, applied to every lane's points; each lane answers `first` and `next_first` (null when none are left); indexes stay the indexes in the lane. The tool's description names them. `docs/development/ai-tools.md`: a `get_automation` section.
+
+Test: `get_automation_gives_every_point_in_pages` in `crates/meloet-ai/tests/link.rs` (a lane of 2001 points: the first page ends with `next_first` 2000, the second page holds index 2000).

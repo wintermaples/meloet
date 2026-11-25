@@ -297,6 +297,6 @@ impl Tools {
         if read.song.session.loop_on == a.on {
             return Ok(self.no_change().await);
         }
-        Ok(self.screen(Command::ToggleLoop).await)
+        Ok(self.screen_when(Command::ToggleLoop, a.on).await)
     }
 }

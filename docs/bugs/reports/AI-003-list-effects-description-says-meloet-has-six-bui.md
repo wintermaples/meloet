@@ -4,7 +4,7 @@ title: list_effects description says meloet has six built-in effects; there are 
 area: AI
 kind: parity
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -42,4 +42,4 @@ Fix plan: `crates/meloet-ai/src/tools/params.rs`: "meloet's own nine" (the word 
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`crates/meloet-ai/src/tools/params.rs`: the description of `list_effects` says "meloet's own nine" (the description is a doc comment the rmcp macro reads, so it cannot be counted from `EffectKind::ALL`). `docs/development/ai-tools.md` gave no number. Watched by `every_tool_says_what_it_is` (word count) only.

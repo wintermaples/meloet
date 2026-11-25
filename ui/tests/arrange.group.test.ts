@@ -89,6 +89,21 @@ describe("move together (B-71)", () => {
   });
 });
 
+describe("move to a track of the other kind (architecture 22-15)", () => {
+  it("a keyboard clip on a vocal track, or an audio clip on a keyboard track, is 「できない」 (nothing is sent on release)", () => {
+    const t = tracks();
+    t[2] = { ...t[2]!, kind: { kind: "vocal", input: null, mono: true, armed: false, monitor: false } as unknown as TrackView["kind"] };
+    // 41 (row 1, 5–9) goes 1 row down onto the vocal track, where 5–9 is empty.
+    expect(CD.groupPlaceable(t, CD.groupOf(t, [41]), 0, 1, false)).toBe(false);
+    const audio = { ...t[2]!.clips[0]!, audio: {} as ClipView["audio"] };
+    t[2] = { ...t[2]!, clips: [audio] };
+    // The audio clip (row 2, 1–3) goes 1 row up onto a keyboard track, where 1–3 is empty.
+    expect(CD.groupPlaceable(t, CD.groupOf(t, [audio.id]), 0, -1, false)).toBe(false);
+    // On its own vocal track it may move.
+    expect(CD.groupPlaceable(t, CD.groupOf(t, [audio.id]), 2 * BAR, 0, false)).toBe(true);
+  });
+});
+
 describe("box select (clipsInBox)", () => {
   it("clips that touch the box. The same from either corner", () => {
     // x 100–300, y 30–100: 1 and 3 on row 0, 41 on row 1.

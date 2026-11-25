@@ -57,7 +57,7 @@
     zoomArrangeBy,
   } from "./pianoroll/view.svelte";
   import { shownTick, ticksPerBar, ticksPerBeat } from "./time";
-  import { barLineTick, eachLine, mapOf, nearestBarTick, nearestBeatTick, snapToStep } from "../time/bars";
+  import { eachLine, mapOf, nearestBarTick, nearestBeatTick, snapToStep } from "../time/bars";
   import type { GridLine } from "../gl/slot";
   import MarkerRow from "./timeline/MarkerRow.svelte";
   import TempoBand from "./timeline/TempoBand.svelte";
@@ -95,6 +95,24 @@
   let scrollTick = $state(0);
   /** Whether to page along with the playhead. Stops when moved sideways by hand, and follows again on the next play. */
   let follow = true;
+  /**
+   * A pointer is held down inside the arrange (a clip, box select, ruler, marker, tempo point, lane or comp band drag).
+   * No paging then: drags count px from the press, so what is held would land a page away from the pointer.
+   */
+  let held = false;
+  const holdDown = () => (held = true);
+  const holdUp = () => (held = false);
+  onMount(() => {
+    const opts = { capture: true };
+    window.addEventListener("pointerup", holdUp, opts);
+    window.addEventListener("pointercancel", holdUp, opts);
+    window.addEventListener("blur", holdUp);
+    return () => {
+      window.removeEventListener("pointerup", holdUp, opts);
+      window.removeEventListener("pointercancel", holdUp, opts);
+      window.removeEventListener("blur", holdUp);
+    };
+  });
 
   /** px per bar. The horizontal zoom step (arrangeView.barPx is px at 100 %) times the same scale as mock.arrange.bar. */
   const barPx = $derived((metrics.px("mock.arrange.bar") * arrangeView.barPx) / DEFAULT_ARRANGE_BAR);
@@ -370,14 +388,14 @@
   const songLoop = $derived(song.loopOn ? G.loopBars(song.loopRange, map) : null);
   /** The look during a drag. Cleared when the Rust answer (the next diff) comes. */
   let preview = $state<G.BarRange | null>(null);
-  const shownLoop = $derived(preview ?? songLoop);
+  const shownLoop = $derived(preview ? G.barLoop(preview, map) : songLoop);
   $effect(() => {
     void current.rev;
     untrack(() => {
       if (!drag) preview = null;
     });
   });
-  const loopX = (bar: number) => G.tickToX(view, barLineTick(map, bar));
+  const loopX = (tick: number) => G.tickToX(view, tick);
 
   // ---- Clip drag (move, copy with Alt, trim an edge; arrangeDrag.ts) ----
 
@@ -571,8 +589,8 @@
     }
     if (shownLoop) {
       const h = rows.height;
-      for (const bar of [shownLoop.from, shownLoop.to]) {
-        const x = G.tickToX(v, barLineTick(map, bar));
+      for (const tick of [shownLoop.start, shownLoop.end]) {
+        const x = G.tickToX(v, tick);
         if (x >= 0 && x < v.width) out.push({ x, y: 0, w: dims.hair, h, color: "color.gray.8" });
       }
     }
@@ -1080,7 +1098,7 @@
   function frame(): void {
     const tick = shownTick(transport, current.telemetry, offsetUs === null ? null : performance.now() * 1000 + offsetUs);
     let scrollX = scrollTick * pxPerTick;
-    if (follow) {
+    if (follow && !held) {
       const next = G.followScroll(tick * pxPerTick, scrollX, viewWidth);
       if (next !== scrollX) {
         scrollX = next;
@@ -1261,7 +1279,8 @@
   const still = () => metrics.px("space.1");
 
   function rulerDown(e: PointerEvent): void {
-    if (e.button !== 0) return;
+    // While recording or counting in, core takes neither a loop range nor a move of the play position.
+    if (e.button !== 0 || busy) return;
     const left = (e.currentTarget as HTMLElement).getBoundingClientRect().left;
     const x = e.clientX - left;
     drag = { d: G.startRulerDrag(view, x, map, songLoop, metrics.px("space.2")), downX: x, left };
@@ -1707,7 +1726,14 @@
     {#if keysHere}<div class="focus-mark" data-test="arrange-focus-mark"></div>{/if}
   </section>
 {:else}
-  <section class="arrange" style:height="{height}px" onpointerdowncapture={focusArrange}>
+  <section
+    class="arrange"
+    style:height="{height}px"
+    onpointerdowncapture={() => {
+      focusArrange();
+      holdDown();
+    }}
+  >
     <div class="head" onwheel={wheelHeads}>
       <div class="row title-row">
         <span class="m-name" use:term={"アレンジ"}>{t("arrange.title")}</span>
@@ -1768,7 +1794,7 @@
           {/each}
         </div>
         {#if shownLoop}
-          <div class="loop-mark" style:left="{loopX(shownLoop.from)}px" style:width="{loopX(shownLoop.to) - loopX(shownLoop.from)}px"></div>
+          <div class="loop-mark" style:left="{loopX(shownLoop.start)}px" style:width="{loopX(shownLoop.end) - loopX(shownLoop.start)}px"></div>
         {/if}
         <FadeBox tracks={song.tracks} {view} shut={busy || layout.arrangeOverview} />
       </div>
@@ -1974,7 +2000,7 @@
         {/if}
         <AudioClipNotes {view} {dims} tracks={song.tracks} askHost={timeBox} />
         <AudioClipHandles {view} {dims} tracks={song.tracks} selected={selectedSet} {busy} />
-        <DropFrame {view} {dims} tracks={song.tracks} {map} {perBar} />
+        <DropFrame {view} {dims} tracks={song.tracks} {map} {perBar} tracksBottom={rows.tracksHeight} />
         {#if boxFrame}
           <div
             class="box-frame"
@@ -1987,13 +2013,13 @@
         {/if}
         {#if switcher}
           <div class="switcher" role="presentation" data-over-clips onpointerdown={(e) => e.stopPropagation()} style:left="{switcher.x}px" style:top="{switcher.y}px" style:height="{switchH}px">
-            <button class="tog step" aria-label={t("arrange.takePrev")} onclick={() => send({ type: "stepTake", delta: -1 })}>◂</button>
+            <button class="tog step" aria-label={t("arrange.takePrev")} disabled={busy} onclick={() => send({ type: "stepTake", delta: -1 })}>◂</button>
             <span class="m-hi">
               {#each textParts("arrange.takeSwitch", { take: switcher.take, takes: switcher.takes }) as part, i (i)}
                 {#if part.hole}<span class="m-num">{part.text}</span>{:else}{@render termed(part.text, "テイク")}{/if}
               {/each}
             </span>
-            <button class="tog step" aria-label={t("arrange.takeNext")} onclick={() => send({ type: "stepTake", delta: 1 })}>▸</button>
+            <button class="tog step" aria-label={t("arrange.takeNext")} disabled={busy} onclick={() => send({ type: "stepTake", delta: 1 })}>▸</button>
             <span class="m-num m-lbl">{t("arrange.takeKey")}</span>
           </div>
         {/if}
@@ -2366,6 +2392,33 @@
     z-index: 3;
     border: var(--line-hair) solid var(--color-accent-ink);
     pointer-events: none;
+  }
+  .tog.step {
+    width: var(--part-toggle-size);
+    height: var(--part-toggle-size);
+    flex-shrink: 0;
+    padding: 0;
+    border: var(--line-hair) solid var(--color-gray-6);
+    border-radius: var(--radius-1);
+    background: var(--color-gray-1);
+    color: var(--color-gray-8);
+    font: inherit;
+    text-align: center;
+    cursor: pointer;
+  }
+  .tog.step:hover {
+    border-color: var(--color-gray-8);
+    color: var(--color-gray-10);
+  }
+  .tog.step:active {
+    background: var(--color-gray-2);
+    border-color: var(--color-gray-8);
+  }
+  .tog.step:disabled {
+    background: var(--color-gray-1);
+    border-color: var(--color-gray-5);
+    color: var(--color-gray-7);
+    cursor: default;
   }
   .switcher {
     position: absolute;

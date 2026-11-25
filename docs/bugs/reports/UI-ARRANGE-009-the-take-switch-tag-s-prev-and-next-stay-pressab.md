@@ -4,7 +4,7 @@ title: The take switch tag's prev and next stay pressable while recording and co
 area: UI-ARRANGE
 kind: ui-ux
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -46,4 +46,5 @@ Fix plan: in `ui/src/components/Arrange.svelte` give ◂ and ▸ `disabled={busy
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`ui/src/components/Arrange.svelte`: ◂ and ▸ of the take switch tag get `disabled={busy}` (recording or count-in) and the disabled look (with UI-ARRANGE-008); a disabled button sends nothing.
+Test: `ui/tests/arrange.test.ts` "while recording or counting in, ◂ ▸ of the switch tab are disabled and send nothing".

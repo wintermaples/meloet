@@ -217,11 +217,15 @@ export class PeakStore {
   }
 }
 
-/** Every audio file the song's clips play (the shown take of each clip), and the files being recorded. */
+/** Every audio file the song's clips play or show (every take of each clip), and the files being recorded. */
 export function songAudioIds(
-  song: { tracks: readonly { clips: readonly { audio: { audio: number } | null }[] }[] },
+  song: {
+    tracks: readonly { clips: readonly { audio: { audio: number; takes?: readonly { audio: number }[] } | null }[] }[];
+  },
   recording: readonly { audio: number }[] = [],
 ): number[] {
-  const ids = song.tracks.flatMap((t) => t.clips.flatMap((c) => (c.audio ? [c.audio.audio] : [])));
+  const ids = song.tracks.flatMap((t) =>
+    t.clips.flatMap((c) => (c.audio ? [c.audio.audio, ...(c.audio.takes ?? []).map((k) => k.audio)] : [])),
+  );
   return [...new Set([...ids, ...recording.map((r) => r.audio)])];
 }

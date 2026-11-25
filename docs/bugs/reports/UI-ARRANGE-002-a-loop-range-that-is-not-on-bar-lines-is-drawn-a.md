@@ -4,7 +4,7 @@ title: A loop range that is not on bar lines is drawn at the nearest bar lines, 
 area: UI-ARRANGE
 kind: bug
 severity: medium
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -60,4 +60,5 @@ Fix plan: in `ui/src/components/arrangeGeom.ts` give the loop two readings: the 
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+Screen only (Rust stays). `ui/src/components/arrangeGeom.ts`: `loopBars` now gives a `LoopRange`: the numbers by the rule of core's `Play::bars` (the bar that holds the start, the bar line at the end or after it) and the ticks `start` / `end` as they are; `barLoop` gives a ruler drag's bar lines with their ticks; `startRulerDrag` measures the grab at the drawn ticks, and the end that stays is its outward bar line number (`SetLoop` takes bar lines, so a range off the bar lines becomes whole bars, outward, when one end is dragged). `ui/src/components/Arrange.svelte`: the loop mark on the ruler and the two loop lines over the clips are drawn at the ticks; 「マーカー ・ ループ a–b」 uses the outward numbers (the same as the status line). `ui/src/components/pianoroll/Roll.svelte` (3 lines: `shownLoop`, `loopX`, the loop mark): the piano roll's ruler draws at the ticks too.
+Tests: `ui/tests/arrange.geom.test.ts` "a loop range off the bar lines (markers 5.3 and 7.2 in 4/4) …" (new; the old "loop range (ticks) → bar line numbers" now also expects `start` / `end`), `ui/tests/arrange.test.ts` "a loop range off the bar lines (5.3–7.2): the mark at its ticks, 「ループ 5–8」 …".

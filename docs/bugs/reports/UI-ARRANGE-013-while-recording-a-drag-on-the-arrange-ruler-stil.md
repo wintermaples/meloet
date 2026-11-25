@@ -4,7 +4,7 @@ title: While recording, a drag on the arrange ruler still shows a new loop range
 area: UI-ARRANGE
 kind: ui-ux
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -46,4 +46,5 @@ Fix plan: in `ui/src/components/Arrange.svelte` return early in `rulerDown` whil
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+Arrange half. `ui/src/components/Arrange.svelte` `rulerDown` returns at once while `busy` (recording or count-in): no loop preview, no `setLoop`, no `locate`. The piano roll's ruler (`pianoroll/Roll.svelte`) is left to the piano roll fixer.
+Test: `ui/tests/arrange.test.ts` "while recording or counting in, a drag or a press on the ruler shows no loop range and sends nothing".

@@ -65,14 +65,20 @@
 
   let field = $state<HTMLInputElement>();
   let draft = $state("");
+  let draftFor: number | null = null;
   $effect(() => {
     const id = trackEdit.renaming;
-    if (id === null) return;
+    if (id === null) {
+      draftFor = null;
+      return;
+    }
     const track = song.tracks.find((x) => x.id === id);
     if (!track) {
       trackEdit.renaming = null;
       return;
     }
+    if (id === draftFor) return;
+    draftFor = id;
     draft = track.name;
     void tick().then(() => {
       field?.focus();

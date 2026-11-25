@@ -4,7 +4,7 @@ title: Plugin host: touch() leaves a seat without ringing the bell, so a block a
 area: PLUG
 kind: bug
 severity: medium
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -68,4 +68,5 @@ Fix plan: `crates/meloet-plughost/src/rt.rs` `Handle::touch`: `self.bell.ring();
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+- `crates/meloet-plughost/src/rt.rs` `Handle::touch`: rings the bell after it leaves the seat, as every other seat user does.
+- Test: `rt::tests::taking_hold_of_a_parameter_rings_the_bell_after` (meloet-plughost): the bell is read as an audio thread reads it before it looks at the seats; after `touch` (take hold, let go) it must have moved, so a thread that found the seat taken does not sleep until `IDLE_NS`. The race itself has no test: the main thread's moment inside `touch` cannot be held from a test without new machinery.

@@ -221,7 +221,8 @@ impl Adsr {
 
     fn release_amount(&mut self) {
         if self.rising() {
-            self.fall = 1.0 - self.rise;
+            // The release goes on from the amount the attack had reached.
+            self.fall = 1.0 - self.amount();
         }
         self.seg = Seg::Release;
     }
@@ -548,4 +549,34 @@ fn fetch(
     out[done..].fill(0.0);
     *pos = at;
     more
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A key let go in the attack of the modulation envelope: pitch and cutoff go on from where
+    /// the attack had brought them, and fall from there.
+    #[test]
+    fn the_modulation_release_goes_on_from_the_attack() {
+        let shape = EnvShape {
+            delay_s: 0.0,
+            attack_s: 1.0,
+            hold_s: 0.0,
+            decay_s: 1.0,
+            sustain: 0.5,
+            release_s: 1.0,
+            key_hold: 0.0,
+            key_decay: 0.0,
+        };
+        for frames in [4_800.0, 12_000.0, 24_000.0, 36_000.0] {
+            let mut env = Adsr::start(&shape, 60, 48_000.0);
+            env.advance(frames);
+            let before = env.amount();
+            env.release_amount();
+            assert!((env.amount() - before).abs() < 1e-6, "{frames}: {before}");
+            env.advance(32.0);
+            assert!(env.amount() < before, "{frames}");
+        }
+    }
 }

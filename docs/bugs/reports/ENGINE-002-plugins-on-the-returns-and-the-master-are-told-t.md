@@ -4,7 +4,7 @@ title: Plugins on the returns and the master are told the transport of the last 
 area: ENGINE
 kind: bug
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -57,4 +57,5 @@ Fix plan: `crates/meloet-engine/src/engine.rs` `render`: keep `told` of the firs
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+- `crates/meloet-engine/src/engine.rs` `render`: the transport of the first stretch is kept with `piece_ctx` and written back into `PluginBlock` before the returns' and the master's inserts run.
+- Test: `plugins_on_the_returns_and_the_master_are_told_the_head_of_the_piece` in `crates/meloet-engine/tests/lookahead.rs` (a stand-in plugin effect on return A and on the master reads `PluginBlock` as a plugin slot's `submit` does, in blocks cut by a key every 100 frames).

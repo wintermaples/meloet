@@ -4,7 +4,7 @@ title: VST3: SetParam can answer with the value set before, because param() repl
 area: PLUG
 kind: bug
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -52,4 +52,5 @@ Fix plan: `crates/meloet-plughost/src/formats/vst3.rs`: in `Vst3Controller::set_
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+- `crates/meloet-plughost/src/formats/vst3.rs`: `Vst3Controller::set_param` hears the ring first (values from before land before the new one), sets the value and keeps its id (`just_set`); the next `hear_audio` (the one inside the `param()` that answers `SetParam`) passes over that parameter's values in the ring, which were given before the set (a block that ran with the value before while `Handle::set_param` waited for the seat). Other parameters are heard as before. The trait and `control.rs` are unchanged.
+- Test: `formats::vst3::tests::a_value_set_is_answered_over_the_one_before_it_heard_from_the_audio_thread` (`#[ignore]`, needs Surge XT (VST3)); written but not run in this fix (the request said not to run ignored tests). There is no fake VST3 controller to test it without a real plugin.

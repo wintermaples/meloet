@@ -152,9 +152,24 @@ impl SlotRun {
         for (channel, input) in self.inputs.iter_mut().enumerate() {
             self.end.read_input(channel, &mut input[..frames]);
         }
+        if block.flags & block_flags::RESET != 0 {
+            // What was held is forgotten: a key of a block the plugin did not run is not
+            // started after it.
+            self.events
+                .retain(|e| !matches!(e, ToPlugin::Midi { .. }) || ends_sound(e));
+        }
         let watched = self.watched.load(Relaxed);
         while let Some(event) = self.end.pop_event() {
             let held = matches!(event, ToPlugin::Param { id, .. } if self.touched.contains(&id));
+            // The events of blocks the plugin did not run may fill the room: a key let go
+            // still gets in, in place of the first event that ends no sound.
+            if !held
+                && self.events.len() == self.events.capacity()
+                && ends_sound(&event)
+                && let Some(at) = self.events.iter().position(|e| !ends_sound(e))
+            {
+                self.events.remove(at);
+            }
             if !held && self.events.len() < self.events.capacity() {
                 if watched && let ToPlugin::Param { id, value, .. } = event {
                     let _ = self.moved.push((id, value));
@@ -168,14 +183,22 @@ impl SlotRun {
         let transport = self.end.transport();
         self.sink.clear();
         let [left, right] = &mut self.outputs;
-        self.processor.process(&mut ProcessBlock {
+        let ran = self.processor.process(&mut ProcessBlock {
             inputs: [&self.inputs[0][..frames], &self.inputs[1][..frames]],
             outputs: [&mut left[..frames], &mut right[..frames]],
             events: &self.events,
             transport: &transport,
             sink: &mut self.sink,
         });
-        self.events.clear();
+        if ran {
+            self.events.clear();
+        } else {
+            // They go with the next block, at its first frame.
+            for event in &mut self.events {
+                let (ToPlugin::Midi { frame, .. } | ToPlugin::Param { frame, .. }) = event;
+                *frame = 0;
+            }
+        }
         for (channel, output) in self.outputs.iter().enumerate() {
             self.end.write_output(channel, &output[..frames]);
         }
@@ -188,6 +211,22 @@ impl SlotRun {
         }
         self.end.finish();
         true
+    }
+}
+
+/// A key let go, a pedal let go, all sound or all notes off.
+fn ends_sound(event: &ToPlugin) -> bool {
+    match *event {
+        ToPlugin::Midi {
+            data: [status, number, value],
+            ..
+        } => match status & 0xf0 {
+            0x80 => true,
+            0x90 => value == 0,
+            0xb0 => matches!(number, 120 | 123) || (matches!(number, 64 | 66) && value < 64),
+            _ => false,
+        },
+        ToPlugin::Param { .. } => false,
     }
 }
 
@@ -395,6 +434,8 @@ impl Handle {
         if let Some(run) = self.seat(slot)?.run() {
             run.touch(id, on);
         }
+        // A block asked for while the main thread was at the seat was passed over.
+        self.bell.ring();
         Ok(())
     }
 
@@ -420,7 +461,7 @@ impl Handle {
     /// is put back: a change made before it must not land after it.
     pub fn forget_params(&mut self, slot: u32) -> Result<(), String> {
         if let Some(run) = self.seat(slot)?.run() {
-            run.events.clear();
+            run.events.retain(|e| matches!(e, ToPlugin::Midi { .. }));
         }
         self.bell.ring();
         Ok(())
@@ -681,7 +722,7 @@ mod tests {
     struct Count(Arc<[std::sync::atomic::AtomicU32; 8]>);
 
     impl Processor for Count {
-        fn process(&mut self, block: &mut ProcessBlock<'_>) {
+        fn process(&mut self, block: &mut ProcessBlock<'_>) -> bool {
             for cell in self.0.iter() {
                 cell.store(0, SeqCst);
             }
@@ -693,8 +734,124 @@ mod tests {
             for output in block.outputs.iter_mut() {
                 output.fill(0.0);
             }
+            true
         }
         fn reset(&mut self) {}
+    }
+
+    /// Stands for a plugin whose gate the main thread holds while `busy`: then it is not run.
+    /// The events of the blocks it runs are written down in `heard`.
+    struct Gated {
+        busy: Arc<AtomicBool>,
+        heard: Arc<std::sync::Mutex<Vec<ToPlugin>>>,
+    }
+
+    impl Processor for Gated {
+        fn process(&mut self, block: &mut ProcessBlock<'_>) -> bool {
+            for output in block.outputs.iter_mut() {
+                output.fill(0.0);
+            }
+            if self.busy.load(SeqCst) {
+                return false;
+            }
+            let mut heard = self.heard.lock().unwrap();
+            for &event in block.events {
+                if heard.len() < heard.capacity() {
+                    heard.push(event);
+                }
+            }
+            true
+        }
+        fn reset(&mut self) {}
+    }
+
+    /// A block that goes round the plugin (its gate is held) loses no key: its events reach
+    /// the plugin with the next block that runs, at its first frame. When they fill the room,
+    /// a key let go takes the place of another event. After a reset no key of before starts.
+    #[test]
+    fn the_events_of_a_block_the_plugin_did_not_run_go_with_the_next() {
+        let map = Arc::new(
+            Mapping::create(Geometry {
+                max_frames: 64,
+                channels: 2,
+                slots: 1,
+                to_plugin_events: 64,
+                from_plugin_events: 64,
+            })
+            .unwrap(),
+        );
+        let mut engine = EngineEnd::new(map.clone(), 0).unwrap();
+        let end = PluginEnd::new(map.clone(), 0).unwrap();
+        let busy = Arc::new(AtomicBool::new(false));
+        let heard = Arc::new(std::sync::Mutex::new(Vec::with_capacity(1024)));
+        let gated = Gated {
+            busy: busy.clone(),
+            heard: heard.clone(),
+        };
+        let (mut run, _moved) = SlotRun::new(&map, end, Box::new(gated), 0);
+        let midi = |frame, data| ToPlugin::Midi { frame, data };
+        let (on, off) = ([0x90, 60, 100], [0x80, 60, 0]);
+        let mut block = |run: &mut SlotRun, frames: usize, events: &[ToPlugin], flags: u32| {
+            assert!(engine.begin(frames));
+            for &event in events {
+                assert!(engine.push_event(event));
+            }
+            engine.set_flags(flags);
+            engine.submit();
+            assert!(run.serve());
+            assert!(engine.wait(monotonic_ns()));
+            let mut heard = heard.lock().unwrap();
+            let got = heard.clone();
+            heard.clear();
+            got
+        };
+        let before = rtcheck::count();
+
+        busy.store(true, SeqCst);
+        let param = ToPlugin::Param {
+            frame: 30,
+            id: 5,
+            value: 0.5,
+        };
+        let skipped = [midi(10, on), param, midi(50, off)];
+        assert!(block(&mut run, 64, &skipped, 0).is_empty());
+        busy.store(false, SeqCst);
+        let at_head = [
+            midi(0, on),
+            ToPlugin::Param {
+                frame: 0,
+                id: 5,
+                value: 0.5,
+            },
+            midi(0, off),
+            midi(3, [0x90, 62, 100]),
+        ];
+        assert_eq!(block(&mut run, 16, &[midi(3, [0x90, 62, 100])], 0), at_head);
+        assert!(block(&mut run, 16, &[], 0).is_empty());
+
+        busy.store(true, SeqCst);
+        assert!(block(&mut run, 64, &skipped, 0).is_empty());
+        busy.store(false, SeqCst);
+        let after_reset = [at_head[1], at_head[2]];
+        assert_eq!(block(&mut run, 64, &[], block_flags::RESET), after_reset);
+
+        // Full of parameter changes from the main thread: a new key is lost, a key let go and
+        // the pedal let go are not.
+        busy.store(true, SeqCst);
+        while run.events.len() < run.events.capacity() {
+            run.queue(7, 0.25);
+        }
+        let pedal_up = [0xb0, 64, 0];
+        let late = [midi(0, [0x90, 64, 100]), midi(20, off), midi(30, pedal_up)];
+        assert!(block(&mut run, 64, &late, 0).is_empty());
+        busy.store(false, SeqCst);
+        let got = block(&mut run, 64, &[], 0);
+        let keys: Vec<ToPlugin> = (got.iter().copied())
+            .filter(|e| matches!(e, ToPlugin::Midi { .. }))
+            .collect();
+        assert_eq!(keys, [midi(0, off), midi(0, pedal_up)]);
+        assert_eq!(got.len(), run.events.capacity());
+        assert_eq!(rtcheck::count() - before, 0);
     }
 
     /// While the person holds a parameter in the window, meloet's points for it are passed
@@ -746,6 +903,36 @@ mod tests {
         moved.watch(false);
         assert_eq!(block(&mut run, None), [2, 1]);
         assert_eq!(moved.take().count(), 0);
+    }
+
+    /// An audio thread reads the bell, finds the seat taken by the main thread and sleeps on
+    /// what it read: the main thread rings when it leaves, or a block asked for meanwhile
+    /// waits until `IDLE_NS`.
+    #[test]
+    fn taking_hold_of_a_parameter_rings_the_bell_after() {
+        let map = Arc::new(
+            Mapping::create(Geometry {
+                max_frames: 64,
+                channels: 2,
+                slots: 1,
+                to_plugin_events: 64,
+                from_plugin_events: 64,
+            })
+            .unwrap(),
+        );
+        let _engine = EngineEnd::new(map.clone(), 0).unwrap();
+        let end = PluginEnd::new(map.clone(), 0).unwrap();
+        let counts = Arc::new(Default::default());
+        let (run, _moved) = SlotRun::new(&map, end, Box::new(Count(counts)), 0);
+        let mut handle = start(map.clone(), true).unwrap();
+        handle.install(run).unwrap();
+        let bell = Bell::new(map);
+        for on in [true, false] {
+            let seen = bell.count();
+            handle.touch(0, 5, on).unwrap();
+            assert_ne!(bell.count(), seen, "touch {on}");
+        }
+        assert!(handle.stop());
     }
 
     /// What a plugin makes of a jump of a parameter in the middle of a block: the block of

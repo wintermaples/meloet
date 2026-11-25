@@ -4,7 +4,7 @@ title: Recorded takes keep notes of one tick in release order, so an edit that c
 area: MODEL-A
 kind: bug
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -50,4 +50,6 @@ Fix plan: `crates/meloet-model/src/record.rs` `Recorder::take`: `notes.sort_by_k
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`crates/meloet-model/src/record.rs` `Recorder::take`: the notes are sorted by `(start, key)` (stable). `live_notes` is left as it is (only drawn; no intent points into it).
+
+Test: `record::tests::notes_of_one_tick_are_in_the_order_of_key` (meloet-model; a chord let go top first gives keys `[60, 64, 67]`, and `change_velocity` by 0 is `Unchanged`).

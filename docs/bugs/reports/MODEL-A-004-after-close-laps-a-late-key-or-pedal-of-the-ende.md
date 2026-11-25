@@ -4,7 +4,7 @@ title: After close_laps, a late key or pedal of the ended pass goes back into th
 area: MODEL-A
 kind: bug
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -63,4 +63,6 @@ Fix plan: in `crates/meloet-model/src/record.rs` `close_laps`, after the loop, w
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+Keys half fixed, controller half left as it is. `crates/meloet-model/src/record.rs` `Recorder::push`: a key pressed late for an ended pass first enters the pass going on (`enter_lap(open_from)`), so it goes there also when nothing of that pass came before the close. The verifier's plan (`enter_lap(upto + 1)` at the end of `close_laps`) was not used: it writes the next pass's head while a pedal-up of the ended pass may still be on its way, so a late pedal-up would leave the whole next pass with the pedal down (Fable agreed). Controller moves are as before: with no pass going on yet, a late move stays with the ended pass and its point is lost, while the next pass starts from the moved value; with a pass going on, the move lands there at its tick and that pass's head keeps the old value (asserted as meant in `a_pedal_of_a_pass_goes_there_though_notes_of_the_next_pass_came_first`). Which of these is right is left to the lead (`docs/bugs/later/FIX-fix-model-a.md`).
+
+Test: `record::tests::late_keys_go_on_when_nothing_of_the_next_pass_came_first` (meloet-model; also checks that a late pedal-up does not leave the next pass with the pedal down at its head).

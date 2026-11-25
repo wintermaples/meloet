@@ -4,7 +4,7 @@ title: Overdub into an empty place drops the pedal, bend and modulation played b
 area: MODEL-A
 kind: bug
 severity: medium
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -49,4 +49,6 @@ Fix plan: in `crates/meloet-model/src/record/overdub.rs` `in_the_gap`, before th
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`crates/meloet-model/src/record/overdub.rs` `in_the_gap`: the points before the cut go through the recorder's own head rule (`record.rs` `set_head`), and the pedal, bend and modulation not at rest go to tick 0 of the cut take, except a controller that has a point right at the cut. `docs/architecture.md` 24-7 says so.
+
+Test: `record::overdub::tests::with_no_clip_there_the_new_clip_starts_with_what_was_held` (meloet-model).

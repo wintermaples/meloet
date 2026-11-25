@@ -4,7 +4,7 @@ title: Joining clips keeps origin indexes on notes of a take with no origin, so 
 area: MODEL-A
 kind: bug
 severity: high
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -51,4 +51,6 @@ Fix plan: in `crates/meloet-model/src/arrange.rs` `join_clips`, write `from: Non
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`crates/meloet-model/src/arrange.rs` `join_clips`: every note put into the joined take gets `from: None`. `crates/meloet-core/src/songfile.rs` `to_take` (the lead's decision): a note with an origin index in a take with no origin reads as a plain note (the index is dropped), so songs and recovery files already written with this fault open again; an index past the origin's notes in a take that has an origin still does not read. `docs/architecture.md` 14 says so.
+
+Tests: `arrange::tests::joining_a_quantized_clip_keeps_no_origin_indexes` (meloet-model), `songfile::tests::a_joined_quantized_clip_comes_back` and `songfile::tests::an_origin_note_in_a_take_with_no_origin_reads_as_plain` (meloet-core). Changed: `songfile::tests::origins_that_cannot_be_do_not_read` no longer counts "an origin note in a take with no origin" as broken.

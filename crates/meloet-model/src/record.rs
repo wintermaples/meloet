@@ -132,6 +132,8 @@ impl Recorder {
         let tick = event.tick;
         match event.kind {
             RecEventKind::NoteOn { key, velocity } if key <= 127 && velocity > 0 => {
+                // A key that comes late for an ended pass goes into the pass going on.
+                self.enter_lap(self.open_from);
                 self.release(key, tick);
                 self.held[usize::from(key)] = Some(Held {
                     lap: self.laps.len() - 1,
@@ -298,7 +300,7 @@ impl Recorder {
                 (s, e, n.key, n.velocity)
             })
             .collect();
-        notes.sort_by_key(|n| n.0);
+        notes.sort_by_key(|n| (n.0, n.2));
         let reach = notes.iter().map(|n| n.1).max().unwrap_or(origin + 1);
         let end = if last || self.loop_range.is_none() {
             stop.max(reach).min(ceil)

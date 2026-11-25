@@ -803,6 +803,32 @@ fn joining_cuts_notes_at_their_clip_end_and_keeps_only_the_shown_takes() {
     assert!(t.origin.is_none());
 }
 
+/// The joined take has no origin, so its notes come from none of the quantized take's.
+#[test]
+fn joining_a_quantized_clip_keeps_no_origin_indexes() {
+    let (doc, a) = record(
+        &two_tracks(),
+        T1,
+        take(
+            BAR,
+            BAR,
+            vec![note(13, Q / 2, 60), note(2 * Q + 7, Q / 2, 64)],
+        ),
+    );
+    let (doc, b) = record(&doc, T1, take(2 * BAR, BAR, vec![note(0, 100, 67)]));
+    let (q, _) =
+        crate::quantize::quantize(&doc, a, &[], crate::QuantizeSettings::default()).unwrap();
+    let doc = q.edit.doc;
+    let shown = &doc.clip(a).unwrap().1.active_take().take;
+    assert!(shown.origin.is_some());
+    assert!(shown.notes.iter().all(|n| n.from.is_some()));
+    let (e, _) = join_clips(&doc, &[a, b]).unwrap();
+    let t = &e.doc.clip(a).unwrap().1.active_take().take;
+    assert!(t.origin.is_none());
+    assert_eq!(t.notes.len(), 3);
+    assert!(t.notes.iter().all(|n| n.from.is_none()));
+}
+
 #[test]
 fn joining_does_nothing_unless_two_neighbours_of_one_keys_track() {
     let (doc, a, b) = song();
@@ -1038,4 +1064,69 @@ fn an_audio_clip_repeats_with_its_takes_and_shape() {
         assert!(Arc::ptr_eq(&mine[0].take, &theirs[0].take));
     }
     assert_eq!(e.edit.doc.audio, doc.audio);
+}
+
+/// A vocal clip kept, then the step that brought its file in undone: the paste puts the file
+/// back into the audio table in its own step, and its undo takes it out again.
+#[test]
+fn a_pasted_vocal_clip_brings_its_file_back_into_the_audio_table() {
+    use crate::audio::clips::{ImportPlan, ImportedAudio, import_audio};
+    use crate::{NewAudio, TrackKind, VocalInput};
+    let mut doc = two_tracks();
+    doc.tracks[1] = Arc::new(Track {
+        kind: TrackKind::Vocal {
+            input: VocalInput::Mono1,
+        },
+        ..Track::clone(&doc.tracks[1])
+    });
+    let file = |n: u8, name: &str| ImportedAudio {
+        audio: NewAudio {
+            uid: [n; 16],
+            file: format!("{name}.wav"),
+            frames: 96_000,
+            sample_rate: 48_000,
+            channels: 1,
+            bits: Some(24),
+        },
+        sha256: [n; 32],
+        name: name.to_owned(),
+    };
+    let mut h = crate::History::new();
+    let (e, made) = import_audio(
+        &doc,
+        vec![file(7, "歌")],
+        ImportPlan::InRow(Some(T2)),
+        0,
+        crate::Language::Ja,
+    )
+    .unwrap();
+    h.apply(&mut doc, e);
+    let source = doc.audio[0].clone();
+    let kept = copy_clips(&doc, &[made[0].clip]).unwrap();
+    h.undo(&mut doc);
+    assert!(doc.audio.is_empty());
+    let before = doc.clone();
+    let pasted = paste_clips(&doc, &kept, T2, 4 * BAR).unwrap();
+    assert_eq!(pasted.edit.step, StepKind::PasteClips { count: 1 });
+    assert_eq!(pasted.edit.doc.audio.len(), 1);
+    assert!(Arc::ptr_eq(&pasted.edit.doc.audio[0], &source));
+    let (_, p) = pasted.edit.doc.clip(pasted.clips[0]).unwrap();
+    assert!(Arc::ptr_eq(&p.takes.vocal()[0].take.source, &source));
+    h.apply(&mut doc, pasted.edit);
+    h.undo(&mut doc);
+    assert!(doc.audio.is_empty());
+    doc.next_id = before.next_id;
+    assert!(doc == before);
+    // A file still in the table stays as it is: the same table.
+    let (e, made) = import_audio(
+        &before,
+        vec![file(8, "ベース")],
+        ImportPlan::InRow(Some(T2)),
+        0,
+        crate::Language::Ja,
+    )
+    .unwrap();
+    let kept = copy_clips(&e.doc, &[made[0].clip]).unwrap();
+    let pasted = paste_clips(&e.doc, &kept, T2, 4 * BAR).unwrap();
+    assert!(Arc::ptr_eq(&pasted.edit.doc.audio, &e.doc.audio));
 }

@@ -4,7 +4,7 @@ title: A song file's loop range is read past MAX_TICK, which set_loop refuses
 area: CORE-FILES
 kind: bug
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -46,4 +46,6 @@ Fix plan: `crates/meloet-core/src/songfile.rs` `to_song`: `Some(r) => Some(TickR
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`crates/meloet-core/src/songfile.rs` `to_song`: a loop whose end is above `MAX_TICK` does not read, as `timeline::set_loop` refuses it. `docs/architecture.md` 14 says so.
+
+Test: `songfile::tests::ticks_past_max_tick_do_not_read` (meloet-core; loop ends `u64::MAX` and `MAX_TICK + 1` are broken, `MAX_TICK` reads).

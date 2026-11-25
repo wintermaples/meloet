@@ -578,6 +578,65 @@ fn closed_passes_are_given_once_and_late_keys_go_on() {
     assert_eq!(plain.finish(100, 0).unwrap().takes.len(), 1);
 }
 
+/// When nothing of the next pass came before the close, a late key of the ended pass goes
+/// into the pass going on all the same; a late pedal-up does not leave that pass with the
+/// pedal down at its head.
+#[test]
+fn late_keys_go_on_when_nothing_of_the_next_pass_came_first() {
+    let mut r = Recorder::new(BAR, bars_2_3(), HeldControls::default());
+    r.push(on(B + 100, 0, 60));
+    r.push(off(B + 200, 0, 60));
+    assert_eq!(r.close_laps(0).len(), 1);
+    r.push(on(2 * B - 20, 0, 65));
+    r.push(off(2 * B - 10, 0, 65));
+    r.push(on(B + 10, 1, 64));
+    r.push(off(B + 60, 1, 64));
+    let pass1 = r.close_laps(1);
+    assert_eq!(pass1.len(), 1);
+    assert_eq!(notes(&pass1[0]), [(10, 50, 64), (BAR - 20, 10, 65)]);
+
+    let mut r = Recorder::new(BAR, bars_2_3(), HeldControls::default());
+    r.push(cc(B + 50, 0, CC_SUSTAIN, 127));
+    r.push(on(B + 100, 0, 60));
+    r.push(off(B + 200, 0, 60));
+    assert_eq!(r.close_laps(0).len(), 1);
+    r.push(cc(2 * B - 30, 0, CC_SUSTAIN, 0));
+    r.push(on(B + 10, 1, 64));
+    r.push(off(B + 60, 1, 64));
+    let pass1 = r.close_laps(1);
+    assert_eq!(pass1.len(), 1);
+    assert!(
+        !controls(&pass1[0]).contains(&(0, sustain(127))),
+        "{:?}",
+        controls(&pass1[0])
+    );
+}
+
+/// Keys of one tick are in the order of key, as in every other take, however they were let
+/// go; so an edit that changes nothing makes no step.
+#[test]
+fn notes_of_one_tick_are_in_the_order_of_key() {
+    let events = [
+        on(B, 0, 60),
+        on(B, 0, 64),
+        on(B, 0, 67),
+        off(B + 100, 0, 67),
+        off(B + 110, 0, 64),
+        off(B + 120, 0, 60),
+    ];
+    let r = run(BAR, None, &events, (B + 200, 0)).unwrap();
+    let take = r.takes[0].clone();
+    let keys: Vec<u8> = take.notes.iter().map(|n| n.key).collect();
+    assert_eq!(keys, [60, 64, 67]);
+    let doc = crate::Doc::new_default();
+    let track = doc.tracks[0].id;
+    let (e, added) = crate::edit::add_recording(&doc, track, vec![take], 0).unwrap();
+    assert_eq!(
+        crate::notes::change_velocity(&e.doc, added.clip, &[0, 1, 2], 0),
+        Err(crate::EditError::Unchanged)
+    );
+}
+
 /// As the core does when the engine says where the person stopped.
 fn run_stopped(
     start: u64,

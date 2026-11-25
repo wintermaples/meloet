@@ -4,7 +4,7 @@ title: Pasting a kept vocal clip after its audio left the audio table makes a si
 area: MODEL-A
 kind: bug
 severity: high
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -55,4 +55,6 @@ Fix plan: in `crates/meloet-model/src/arrange.rs` `paste_clips` (after `place`),
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`crates/meloet-model/src/arrange.rs` `paste_clips`: each file a kept vocal clip plays that is not in `Doc::audio` goes back into a copy of the table (in the order of id), set on the pasted `Doc` in the same step; when nothing is missing the table stays the same `Arc`. The core's `sync_audio_sources` sees the new table and sends `EngineOp::AudioSources` with the file; undoing the paste sends the table without it. The file itself stays in the work place or the song folder while the song is open (architecture 22: the in-memory table keeps unused files, the work place is cleared only when the song is let go of), so the store finds it. `docs/architecture.md` 17 (Paste) says so.
+
+Tests: `arrange::tests::a_pasted_vocal_clip_brings_its_file_back_into_the_audio_table` (meloet-model) and `songfile::vocal_tests::a_vocal_clip_pasted_after_its_import_was_undone_keeps_its_file` (meloet-core: `Play` import, copy, undo, paste; the engine gets the table with the file; `decode(encode(..))` gives the song back; undo sends the table without it).

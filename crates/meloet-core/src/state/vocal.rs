@@ -60,8 +60,8 @@ fn ms(us: f64) -> f32 {
 }
 
 impl Model {
-    /// The status line of a recording that was stopped because the sound went away, with
-    /// the number of the take it left.
+    /// The status line of a recording that was stopped because the sound went away, or its
+    /// files could not be written on, with the number of the take it left.
     pub(super) fn cut_notice(&self, cut: Cut, take: u32) -> StatusMessage {
         match cut {
             Cut::AudioSystem => StatusMessage::RecordingStoppedAudioSystem { take },
@@ -69,6 +69,7 @@ impl Model {
                 output: self.output_name(),
                 take,
             },
+            Cut::Disk(reason) => StatusMessage::RecordingStoppedDisk { reason },
         }
     }
 

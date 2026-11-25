@@ -183,6 +183,17 @@ pub enum LatencyFailure {
     NoInput,
 }
 
+/// Why the files of a recording could not be written on (`StatusMessage::RecordingStoppedDisk`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub enum DiskStop {
+    /// The disk refused a write: it is full, or cannot be written.
+    CannotWrite,
+    /// A file reached the size a wav file can have.
+    FileFull,
+}
+
 /// "録っていた歌 1 つを、止まる直前（9. 3. 0000 ごろ）まで残しました。" (spec 3 「録っている
 /// 途中で PC が終わったとき」), a line more in the hint about the recovery file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

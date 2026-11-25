@@ -4,7 +4,7 @@ title: A long vocal track name makes the recorded file name longer than the file
 area: CORE-AUDIO
 kind: bug
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -49,4 +49,4 @@ Fix plan: `crates/meloet-core/src/vocalrec.rs` `file_name`: cut the cleaned name
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`crates/meloet-core/src/vocalrec.rs` `file_name`: the cleaned track name is cut with `crate::export::job::cut_name` (200 bytes, on a character boundary, no space or dot left at its end) before the id and `.wav`; the same function names the files of 「逆にする」 and 「音のクリップにする」. `cut_name` stays where it is (one function); nothing changed in `meloet-model`. Test: `vocalrec::tests::a_long_track_name_is_cut_to_fit_a_file_name` (it fails without the fix).

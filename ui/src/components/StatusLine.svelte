@@ -745,6 +745,12 @@
         return plain("msg.savingAudio", { done: m.done, total: m.total, doneMb: mb(m.doneBytes), totalMb: mb(m.totalBytes) });
       case "diskTooSlow":
         return plain("msg.diskTooSlow");
+      case "vocalsNotRecorded":
+        return plain(m.keys ? "msg.vocalsNotRecordedKeys" : "msg.vocalsNotRecorded");
+      case "recordingStoppedDisk":
+        return plain(m.reason === "fileFull" ? "msg.recordingStoppedFileFull" : "msg.recordingStoppedDisk");
+      case "audioNotCopied":
+        return plain("msg.audioNotCopied", { file: m.file });
       case "packAsking":
         return plain("pack.askingStatus");
       case "soundReady":

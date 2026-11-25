@@ -2645,6 +2645,12 @@ export const texts = {
     totalMb: "240",
   }),
   "msg.diskTooSlow": s6("Disk too slow", "音のファイルを読むのが間に合わず、歌が少し切れました（ディスクがいそがしかったため）。"),
+  // When the files of a recording, or a file brought in, cannot be written (spec 7, A-24 "Texts when a recording or a file cannot be written", CORE-AUDIO-003, 004, 005).
+  "msg.vocalsNotRecorded": e("歌を録れません。作業の場所に書けません。", "builder:2026-11-25"),
+  "msg.vocalsNotRecordedKeys": e("歌を録れません。作業の場所に書けません。鍵盤はこのまま録ります。", "builder:2026-11-25"),
+  "msg.recordingStoppedDisk": e("ディスクに書けなくなったので、録音を止めました。録れた所までは残しています。", "builder:2026-11-25"),
+  "msg.recordingStoppedFileFull": e("音のファイルがいちばん大きい所まで来たので、録音を止めました。録れた所までは残しています。", "builder:2026-11-25"),
+  "msg.audioNotCopied": e("「{file}」を入れられませんでした。作業の場所に書けません。", "builder:2026-11-25", { file: "声.wav" }),
   // Sound pack (spec 2, spec 3 (43-B, 44-A, 45-A), spec 6, mock F8-Pack*). The two lines of the hint band split the spec 6 text.
   "pack.fetching": s6("Fetching the sound pack", "音の素材を取りにいっています", undefined, "part"),
   "pack.fetchingBytes": s6("Fetching the sound pack", "{percent} % ・ {done} / {total} MB", { percent: "38", done: "92", total: "240" }, "part"),

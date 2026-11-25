@@ -4,7 +4,7 @@ title: A new voice recording can take the name of a file the song's folder alrea
 area: CORE-AUDIO
 kind: bug
 severity: high
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -60,4 +60,4 @@ Fix plan: `crates/meloet-core/src/service/input.rs` `start_vocals`: a name is ta
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`crates/meloet-core/src/service/input.rs`: the names of a recording's files come from the new `free_recording_names`: a name is taken when the work place has the file (as before), when any place the song looks in has it (`AudioStore::find`: the song's `音/`, the earlier folders), or when the song's audio table names it; then « (2)», « (3)», …. `crates/meloet-core/src/state.rs` `Effect::StartVocalRecording` carries `taken` (the file names of `doc.audio`), filled in `crates/meloet-core/src/play.rs` `record` and passed on in `crates/meloet-core/src/service.rs`. Tests: `service::input::tests::a_recording_never_takes_a_name_the_song_has` (the real naming function on a real `AudioStore` with a song folder; it fails without the fix) and `state::vocal_tests::only_the_voice_is_recorded_when_there_is_no_keys_track_and_a_loop_makes_takes` (the second recording's effect carries the table's names). `state::vocal_tests::the_keys_and_the_voice_are_recorded_together_as_one_step` was changed to expect `taken: []`.

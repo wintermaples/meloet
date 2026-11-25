@@ -810,3 +810,102 @@ fn the_head_of_a_wav_is_the_bytes_it_always_was() {
         );
     }
 }
+
+#[test]
+fn a_found_file_with_other_contents_is_made_ready_again_from_itself() {
+    let root = temp_dir("audio-found-other");
+    let store = Arc::new(store(&root));
+    let (keeper, rx) = keeper(&store);
+    let ogg = fixture("click.ogg");
+    let source = Arc::new(AudioSource {
+        id: AudioId(13),
+        uid: [7; 16],
+        file: "声.ogg".into(),
+        frames: 44_100,
+        sample_rate: 44_100,
+        channels: 2,
+        bits: None,
+        sha256: Some(sha256_of(&ogg).unwrap()),
+    });
+    store.set_sources(vec![(source.uid, source.file.clone())]);
+    // What was made from the file before it went missing, and what another file has.
+    let made = |uid: &[u8; 16], rate: u32| {
+        let path = store.cache_path(uid, rate).unwrap();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        write_wav(&path, rate, 2, 32, 480, |_, _| 0.5);
+        path
+    };
+    let decoded = [made(&source.uid, 48_000), made(&source.uid, 96_000)];
+    let other = made(&[8; 16], 48_000);
+    let peaks = store.peaks_path(&source.uid).unwrap();
+    std::fs::create_dir_all(peaks.parent().unwrap()).unwrap();
+    std::fs::write(&peaks, b"old peaks").unwrap();
+    let found = |path: &Path| {
+        keeper.find(source.clone(), path.to_owned());
+        let AudioNews::Found { found, .. } = next(&rx) else {
+            panic!("not found");
+        };
+        found
+    };
+
+    // The same bytes: what was made from them is still theirs.
+    assert_eq!(found(&ogg), Finding::Taken);
+    assert!(decoded.iter().all(|p| p.is_file()) && peaks.is_file());
+    assert_eq!(
+        store.playable(&source.uid, &source.file, 48_000),
+        Playable::Ready
+    );
+
+    // Other bytes at the same rate and channels: made again from the file found.
+    let work = store.work_dir().unwrap();
+    std::fs::remove_file(work.join(&source.file)).unwrap();
+    assert_eq!(found(&fixture("click.mp3")), Finding::Taken);
+    assert!(decoded.iter().all(|p| !p.exists()) && !peaks.exists());
+    assert!(other.is_file());
+    assert_eq!(
+        store.playable(&source.uid, &source.file, 48_000),
+        Playable::NeedsCache(work.join(&source.file))
+    );
+}
+
+#[test]
+fn a_file_that_cannot_be_copied_in_says_so() {
+    let root = temp_dir("audio-not-copied");
+    // No state folder: no work place.
+    let store = Arc::new(AudioStore::new(None).with_cache(Some(root.join("cache"))));
+    let (keeper, rx) = keeper(&store);
+    keeper.bring(
+        1,
+        vec![fixture("click.ogg"), root.join("ない.mp3")],
+        Vec::new(),
+    );
+    let AudioNews::Brought { files, .. } = next(&rx) else {
+        panic!("not brought");
+    };
+    assert_eq!(
+        files,
+        [
+            Brought::Unreadable("click.ogg".into(), Unread::NotCopied),
+            Brought::Unreadable("ない.mp3".into(), Unread::Broken)
+        ]
+    );
+    let source = Arc::new(AudioSource {
+        id: AudioId(13),
+        uid: [7; 16],
+        file: "声.ogg".into(),
+        frames: 44_100,
+        sample_rate: 44_100,
+        channels: 2,
+        bits: None,
+        sha256: None,
+    });
+    keeper.find(source, fixture("click.ogg"));
+    assert_eq!(
+        next(&rx),
+        AudioNews::Found {
+            audio: 13,
+            file: "click.ogg".into(),
+            found: Finding::NotCopied
+        }
+    );
+}

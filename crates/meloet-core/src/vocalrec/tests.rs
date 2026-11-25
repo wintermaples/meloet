@@ -149,6 +149,19 @@ fn the_file_name_is_the_track_and_the_id() {
     assert_eq!(file_name("..", 4), "歌 4.wav");
 }
 
+#[test]
+fn a_long_track_name_is_cut_to_fit_a_file_name() {
+    let long = "歌".repeat(100);
+    let name = file_name(&long, 12);
+    // Room is left for the « (2)» of a taken name.
+    assert!(name.len() + " (99)".len() <= 255, "{} bytes", name.len());
+    assert!(name.starts_with("歌歌歌"), "{name}");
+    assert!(name.ends_with("歌 12.wav"), "{name}");
+    // Cut between two characters, with no space or dot left before the id.
+    let name = file_name(&format!("{} .x", "a".repeat(199)), 3);
+    assert_eq!(name, format!("{} 3.wav", "a".repeat(199)));
+}
+
 /// An engine with no stream, to fill a clock: block `n` reaches the DAC at `dac_us(n)`.
 struct Out {
     parts: EngineParts,

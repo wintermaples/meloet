@@ -32,6 +32,8 @@ pub enum Unread {
     Broken,
     /// Three channels or more (`StatusMessage::AudioTooManyChannels`).
     TooManyChannels,
+    /// It reads, and could not be copied into the work place (`StatusMessage::AudioNotCopied`).
+    NotCopied,
 }
 
 /// What [`facts`] says of a file that does not read.

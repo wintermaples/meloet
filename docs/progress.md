@@ -12,7 +12,7 @@ Branch: each piece of work is done on its own branch made from `main` (`fea/`, `
 
 | What | Version | Where |
 |---|---|---|
-| Contract between Rust and the screen (protocol) | 36 | `crates/meloet-protocol/src/lib.rs` (`PROTOCOL_VERSION`), architecture 24-5, 24-11, 24-15, 25-1, 25-2, 25-3, 25-37, 25-38 and 25-39 |
+| Contract between Rust and the screen (protocol) | 38 | `crates/meloet-protocol/src/lib.rs` (`PROTOCOL_VERSION`), architecture 24-5, 24-11, 24-15, 25-1, 25-2, 25-3, 25-37, 25-38 and 25-39 |
 | Telemetry binary | 5 | architecture 3-3 and 25-2 |
 | Take content binary | 2 | architecture 3-4 |
 | Peaks answer | kind 4, version 1 | `crates/meloet-protocol/src/audio.rs` |

@@ -4,7 +4,7 @@ title: A recording that a full disk or the 4 GB wav limit stops ends with no not
 area: CORE-AUDIO
 kind: ui-ux
 severity: medium
-status: needs-lead
+status: fixed
 found: 2026-11-25
 ---
 
@@ -58,4 +58,4 @@ Severity `medium` stands (the take is kept, but the person is not told why the r
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+Protocol 38 (the lead's decision): `StatusMessage::RecordingStoppedDisk { reason }` with `DiskStop::{CannotWrite, FileFull}` (`crates/meloet-protocol/src/lib.rs`, `vocal.rs`). `Input::VocalsCannotGoOn` carries the reason (`crates/meloet-core/src/service/input.rs` `poll_input`: a write error is `CannotWrite`, else the wav size limit `FileFull`); its arm in `crates/meloet-core/src/state.rs` keeps it with the recording as `Cut::Disk` (`crates/meloet-core/src/play.rs`, `play/vocal.rs` `vocals_cut`), and `cut_notice` (`state/vocal.rs`) says it once the take is in, as for a stream that went away. Texts `msg.recordingStoppedDisk` and `msg.recordingStoppedFileFull` (`builder:2026-11-25`), `StatusLine.svelte`. Tests: `state::vocal_tests::a_recording_its_files_cannot_be_written_on_stops_and_says_why_once_the_take_is_in`, `tests38::the_messages`, the rows of 「知らせ」 in `ui/tests/connect-components.test.ts`.

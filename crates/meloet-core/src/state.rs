@@ -304,7 +304,9 @@ pub enum Input {
     },
     /// The files reached the size a wav file can have, or the disk refused: the recording
     /// is to stop.
-    VocalsCannotGoOn,
+    VocalsCannotGoOn {
+        reason: meloet_protocol::DiskStop,
+    },
     /// The answer to [`Effect::LatencyClick`]: what the round trip of the click took more
     /// than the PC says, in microseconds; `None`: it did not come back.
     LatencyAnswer {
@@ -638,10 +640,12 @@ pub enum Effect {
     /// Make the files of a recording in the work folder and start writing the input into
     /// them, before the engine is told to record. Answer with [`Input::VocalsStarted`] or
     /// [`Input::VocalsNotStarted`]. `x_us`: what the round trip takes more than the PC says.
+    /// `taken`: the names of the song's audio table, which a new file must not get.
     StartVocalRecording {
         files: Vec<VocalFileAsk>,
         format: RecordFormat,
         x_us: i64,
+        taken: Vec<String>,
     },
     /// Write what is still on its way and close the files. Answer with
     /// [`Input::VocalsWritten`].
@@ -1393,7 +1397,14 @@ impl Model {
                 self.play
                     .vocals_started(names, path.as_deref(), &mut effects);
             }
-            Input::VocalsNotStarted => self.play.vocals_not_started(),
+            Input::VocalsNotStarted => {
+                if let Some(keys) = self.play.vocals_not_started() {
+                    self.notice = Some(StatusMessage::VocalsNotRecorded { keys });
+                    if !keys {
+                        self.play.stop_recording(&mut effects);
+                    }
+                }
+            }
             Input::VocalsWritten(written) => {
                 let ours = self.play.recording_vocals();
                 let skipped = written.gap_count.saturating_add(written.dropped_blocks);
@@ -1408,8 +1419,9 @@ impl Model {
                 }
             }
             Input::VocalFaults { gaps, dropped } => self.play.vocal_faults(gaps, dropped),
-            Input::VocalsCannotGoOn => {
+            Input::VocalsCannotGoOn { reason } => {
                 if self.play.recording_vocals() {
+                    self.play.vocals_cut(Cut::Disk(reason));
                     self.play.stop_recording(&mut effects);
                 }
             }
@@ -3246,6 +3258,10 @@ impl Model {
                 FileDropView { addable: true, .. } => StatusMessage::Sf2Dragging,
                 _ => StatusMessage::NotSf2Dragging,
             });
+        }
+        // Over the recording, which goes on without the vocals.
+        if let Some(m @ StatusMessage::VocalsNotRecorded { .. }) = &self.notice {
+            return Some(m.clone());
         }
         if let Some(m) = self.play.moving_status() {
             return Some(m);

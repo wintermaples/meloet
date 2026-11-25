@@ -125,7 +125,7 @@ pub(super) struct VocalPart {
     pub started: bool,
     /// What the note on the disk says now.
     pub noted: Option<Marks>,
-    /// The stream went away and the recording waits for the disk writer: why it stopped,
+    /// The recording was cut short and waits for the disk writer: why it stopped,
     /// for the status line once the take is in the song.
     pub cut: Option<Cut>,
 }
@@ -396,15 +396,16 @@ impl Play {
     }
 
     /// The disk writer could not make the files: the recording goes on without the vocals.
-    pub fn vocals_not_started(&mut self) {
-        if let Some(rec) = &mut self.rec {
-            rec.vocal.tracks.clear();
-        }
+    /// Returns whether it goes on with the keys; `None` when no vocal track was recorded.
+    pub fn vocals_not_started(&mut self) -> Option<bool> {
+        let rec = self.rec.as_mut().filter(|r| !r.vocal.tracks.is_empty())?;
+        rec.vocal.tracks.clear();
+        Some(rec.track.is_some())
     }
 
     /// The disk writer stopped and says what it wrote: a recording that waited for it goes
     /// into the song now. Returns why the recording stopped and the number of the take it
-    /// left, when the stream went away under it ([`Play::vocals_cut`]).
+    /// left, when it was cut short ([`Play::vocals_cut`]).
     pub fn vocals_written(
         &mut self,
         written: Written,
@@ -423,8 +424,9 @@ impl Play {
         cut.filter(|_| landed).zip(keys_take.or(vocal_take))
     }
 
-    /// The stream went away while vocals are recorded: the take comes into the song when
-    /// the disk writer has written what it holds, and `cut` is said then.
+    /// The stream went away, or the files cannot be written on, while vocals are recorded:
+    /// the take comes into the song when the disk writer has written what it holds, and `cut`
+    /// is said then.
     pub fn vocals_cut(&mut self, cut: Cut) {
         if let Some(rec) = &mut self.rec
             && !rec.vocal.tracks.is_empty()

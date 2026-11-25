@@ -691,6 +691,29 @@ describe("typing tempo and time signature", () => {
     expect(field("meter")).toBeNull();
     expect(app.sent).toEqual([]);
   });
+
+  it("while recording or counting in, tempo, time signature and position do not open and do not look typable (core takes none of them, as in the tempo band)", async () => {
+    const names = ["tempo", "meter", "position"] as const;
+    for (const state of ["recording", "countIn"] as const) {
+      show(Transport, ready((s) => (s.transport.state = state)));
+      for (const name of names) {
+        const shown = q<HTMLButtonElement>(`button[data-test="transport-${name}"]`)!;
+        expect(shown.classList.contains("m-typable"), name).toBe(false);
+        expect(shown.getAttribute("aria-disabled"), name).toBe("true");
+        shown.click();
+        flushSync();
+        await tick();
+        expect(q(`input[data-test="transport-${name}"]`), name).toBeNull();
+      }
+    }
+    expect(app.sent).toEqual([]);
+    show(Transport, ready());
+    for (const name of names) {
+      const shown = q<HTMLButtonElement>(`button[data-test="transport-${name}"]`)!;
+      expect(shown.classList.contains("m-typable"), name).toBe(true);
+      expect(shown.getAttribute("aria-disabled"), name).toBeNull();
+    }
+  });
 });
 
 describe("status line tag and notices", () => {

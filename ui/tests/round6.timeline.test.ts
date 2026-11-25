@@ -5,10 +5,11 @@ import type { AppState, TimelineView } from "../src/bridge";
 import { fakeScene } from "../src/bridge/fake";
 import Arrange from "../src/components/Arrange.svelte";
 import { contextMenu, type MenuRow } from "../src/components/menu/contextMenu.svelte";
-import { cancelDrag } from "../src/components/pianoroll/view.svelte";
+import { cancelDrag, dragReading } from "../src/components/pianoroll/view.svelte";
 import { timelineKeyCommand } from "../src/components/timeline/keys";
 import { lastPick, pickClips, pickTimeline } from "../src/components/timeline/pick";
 import * as T from "../src/components/timeline/tempoGeom";
+import TempoBand from "../src/components/timeline/TempoBand.svelte";
 import Transport from "../src/components/Transport.svelte";
 import { readPosition } from "../src/components/valueClamp";
 import { barsText } from "../src/components/pianoroll/geom";
@@ -152,9 +153,9 @@ describe("tempo band shape", () => {
     const s = T.tempoScale(pts, 48, 12, 1);
     const v = { pxPerTick: 64 / BAR, scrollX: 0, width: 1000 };
     const start: T.PointDrag = { tick: THREE_FOUR, fromBpm: 120, toTick: THREE_FOUR, bpm: 120, downX: 512, downY: 12, moved: false };
-    const d = T.dragPoint(start, v, s, map, 512 + 17, 12 - 6, 4, false);
+    const d = T.dragPoint(start, v, s, map, 512 + 17, 12 - 6, 4);
     expect(d).toMatchObject({ moved: true, toTick: THREE_FOUR + TPQ, bpm: 126 });
-    const head = T.dragPoint({ ...start, tick: 0, toTick: 0, fromBpm: 96, bpm: 96 }, v, s, map, 600, 12, 4, false);
+    const head = T.dragPoint({ ...start, tick: 0, toTick: 0, fromBpm: 96, bpm: 96 }, v, s, map, 600, 12, 4);
     expect(head.toTick).toBe(0);
     const onto = T.draggedPoints(pts, { ...start, moved: true, toTick: FOUR_FOUR, bpm: 110 });
     expect(onto.map((p) => [p.tick, p.bpm])).toEqual([
@@ -225,6 +226,7 @@ afterEach(() => {
   mounted = null;
   target.remove();
   contextMenu.open = null;
+  dragReading.text = null;
 });
 
 function show(state: AppState, component: Component<any> = Arrange): void {
@@ -378,6 +380,145 @@ describe("marker row (mock R10-Markers)", () => {
     ]);
     rows[0]!.run();
     expect(app.sent.at(-1)).toEqual({ type: "loopFromMarker", id: 3 });
+  });
+});
+
+describe("dragging markers, tempo points and time signature flags", () => {
+  /** The scene's timeline with one thing changed, as core's answer to a move. */
+  const answered = (edit: (tl: TimelineView) => void): AppState => {
+    const s = scene("tempo");
+    edit(s.timeline);
+    return s;
+  };
+  const tagLeft = (name: string) => qa('[data-test="marker-tag"]').find((tag) => text(tag) === name)!.style.left;
+
+  it("with Shift, a tempo point and a marker still go to the start of a beat, as core puts them (spec 3 Y17, Y18; architecture 21-15)", () => {
+    show(scene("tempo"));
+    const row = q('[data-test="tempo-row"]')!;
+    pointer(row, "pointerdown", 512, 12);
+    pointer(row, "pointermove", 512 + 17, 6, { shiftKey: true });
+    expect(text(q('[data-test="tempo-reading"]'))).toBe("9. 2. 0000");
+    pointer(row, "pointerup", 512 + 17, 6, { shiftKey: true });
+    expect(app.sent.at(-1)).toEqual({ type: "moveTempoPoint", tick: THREE_FOUR, toTick: THREE_FOUR + TPQ, bpm: 126 });
+
+    const tag = qa('[data-test="marker-tag"]')[1]!;
+    const markers = q('[data-test="marker-row"]')!;
+    pointer(tag, "pointerdown", 256);
+    pointer(markers, "pointermove", 256 + 66, 10, { shiftKey: true });
+    expect(text(q('[data-test="marker-reading"]'))).toBe("6. 1. 0000");
+    pointer(markers, "pointerup", 256 + 66, 10, { shiftKey: true });
+    expect(app.sent.at(-1)).toEqual({ type: "moveMarker", id: 2, tick: 5 * BAR });
+  });
+
+  it("the reading in place is on the status line too; it goes on release and on Esc (spec 2 「その場の読み値」)", () => {
+    show(scene("tempo"));
+    const row = q('[data-test="tempo-row"]')!;
+    pointer(row, "pointerdown", 512, 12);
+    pointer(row, "pointermove", 512 + 17, 6);
+    expect(dragReading.text).toBe("9. 2. 0000");
+    pointer(row, "pointerup", 512 + 17, 6);
+    expect(dragReading.text).toBeNull();
+
+    const meters = q('[data-test="meter-row"]')!;
+    pointer(qa('[data-test="meter-flag"]')[2]!, "pointerdown", 704);
+    pointer(meters, "pointermove", 704 + 64);
+    expect(dragReading.text).toBe(text(q('[data-test="tempo-reading"]')));
+    expect(dragReading.text).toBe("14. 1. 0000");
+    expect(cancelDrag()).toBe(true);
+    flushSync();
+    expect(dragReading.text).toBeNull();
+    pointer(meters, "pointerup", 704 + 64);
+
+    const markers = q('[data-test="marker-row"]')!;
+    pointer(qa('[data-test="marker-tag"]')[1]!, "pointerdown", 256);
+    pointer(markers, "pointermove", 256 + 66);
+    expect(dragReading.text).toBe("6. 1. 0000");
+    pointer(markers, "pointerup", 256 + 66);
+    expect(dragReading.text).toBeNull();
+  });
+
+  it("after release a marker keeps its moved place until core's answer; the answer or a rev with no change ends it", async () => {
+    show(scene("tempo"));
+    const markers = q('[data-test="marker-row"]')!;
+    pointer(qa('[data-test="marker-tag"]')[1]!, "pointerdown", 256);
+    pointer(markers, "pointermove", 256 + 66);
+    pointer(markers, "pointerup", 256 + 66);
+    expect(tagLeft("Aメロ")).toBe("320px");
+    expect(q(".from")).not.toBeNull();
+    app.setState(answered((tl) => (tl.markers[1]!.tick = 5 * BAR)));
+    flushSync();
+    expect(tagLeft("Aメロ")).toBe("320px");
+    expect(q(".from")).toBeNull();
+
+    // An answer that changed nothing (the same rev): back to where the marker is.
+    app.setState(scene("tempo"));
+    flushSync();
+    pointer(qa('[data-test="marker-tag"]')[1]!, "pointerdown", 256);
+    pointer(markers, "pointermove", 256 + 66);
+    pointer(markers, "pointerup", 256 + 66);
+    expect(tagLeft("Aメロ")).toBe("320px");
+    await Promise.resolve();
+    await Promise.resolve();
+    flushSync();
+    expect(tagLeft("Aメロ")).toBe("256px");
+  });
+
+  it("after release a tempo point and a time signature flag keep their moved place until core's answer", () => {
+    show(scene("tempo"));
+    const row = q('[data-test="tempo-row"]')!;
+    pointer(row, "pointerdown", 512, 12);
+    pointer(row, "pointermove", 512 + 17, 6);
+    pointer(row, "pointerup", 512 + 17, 6);
+    expect(qa(".value").map(text)).toEqual(["96.00", "104.00", "126.00", "96.00"]);
+    expect(qa(".value")[2]!.style.left).toBe(`${512 + 16 + 6}px`);
+    app.setState(
+      answered((tl) => {
+        tl.tempoPoints[1] = { tick: THREE_FOUR + TPQ, tempoBpm: 126, ramp: false };
+        tl.selected = { kind: "tempoPoint", tick: THREE_FOUR + TPQ };
+      }),
+    );
+    flushSync();
+    expect(qa(".value").map(text)).toEqual(["96.00", "104.00", "126.00", "96.00"]);
+    expect(qa(".value.selected").map(text)).toEqual(["126.00"]);
+
+    const meters = q('[data-test="meter-row"]')!;
+    pointer(qa('[data-test="meter-flag"]')[1]!, "pointerdown", 512);
+    pointer(meters, "pointermove", 512 + 50);
+    pointer(meters, "pointerup", 512 + 50);
+    expect(app.sent.at(-1)).toEqual({ type: "moveMeterChange", bar: 8, toBar: 9 });
+    expect(qa('[data-test="meter-flag"]').map((f) => f.style.left)).toEqual(["0px", "560px", "704px"]);
+    expect(q(".flag-from")).not.toBeNull();
+    app.setState(answered((tl) => (tl.meterChanges[0]!.bar = 9)));
+    flushSync();
+    expect(qa('[data-test="meter-flag"]').map((f) => f.style.left)).toEqual(["0px", "576px", "720px"]);
+    expect(q(".flag-from")).toBeNull();
+  });
+
+  it("an unreadable lower number typed on a flag is told as the lower number, as the transport's box does (spec 6)", () => {
+    show(scene("tempo"));
+    qa('[data-test="meter-flag"]')[1]!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+    flushSync();
+    const field = q('[data-test="meter-flag-field"]') as HTMLInputElement;
+    for (const [typed, rejected] of [
+      ["3/x", { field: "meterDen", kept: "4" }],
+      ["x/4", { field: "meterNum", kept: "3" }],
+    ] as const) {
+      field.value = typed;
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+      field.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+      flushSync();
+      expect(app.sent.at(-1)).toEqual({ type: "rejectValue", ...rejected, range: null });
+    }
+  });
+
+  it("the folded row's tempo and time signature at the play line stay at the row's left edge when the arrange is scrolled", () => {
+    const s = scene("tempoFolded");
+    app.setState(s);
+    const view = { pxPerTick: 64 / BAR, scrollX: 500, width: WIDTH };
+    mounted = mount(TempoBand, { target, props: { view, map: mapOf(s.timeline), timeline: s.timeline, now: "96.00 ・ 4/4", busy: false } });
+    flushSync();
+    expect(text(q('[data-test="tempo-now"]'))).toBe("96.00 ・ 4/4");
+    expect(q('[data-test="tempo-now"]')!.style.left).toBe("");
   });
 });
 

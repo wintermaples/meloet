@@ -584,8 +584,8 @@ impl Play {
         self.set_folded(key, folded && self.lane_at(key).is_some());
     }
 
-    /// `AddAutoPoint`: on the grid of the piano roll, counted from the head of the meter's
-    /// stretch as quantize counts it.
+    /// `AddAutoPoint`: at the tick as sent, as `MoveAutoPoints` takes its `dTick` (the screen
+    /// snaps it: the start of a beat, ticks with Shift; 7-readings A-21).
     pub fn add_auto_point(
         &mut self,
         lane: u32,
@@ -597,21 +597,9 @@ impl Play {
             return;
         };
         let flat = self.hand_place((home, l.target));
-        let tick = self.on_grid(tick);
         if let Ok((e, id, at)) = auto::add_point(self.doc(), LaneId(lane), tick, value, flat) {
             self.apply_points(e, id, vec![at as u32], effects);
         }
-    }
-
-    fn on_grid(&self, tick: u64) -> u64 {
-        let tick = tick.min(meloet_model::MAX_TICK);
-        let map = self.map();
-        let (start, meter, next) = map.meter_stretch(tick);
-        let step = self.song.session.roll.grid.ticks(meter).max(1);
-        let n = (tick - start + step / 2) / step;
-        let at = start.saturating_add(n.saturating_mul(step));
-        next.map_or(at, |next| at.min(next))
-            .min(meloet_model::MAX_TICK)
     }
 
     pub fn move_auto_points(

@@ -4,7 +4,7 @@ title: Marker and tempo point drags with Shift show an unsnapped place, but Rust
 area: UI-ARRANGE
 kind: parity
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -51,4 +51,9 @@ Fix plan (choice (a)): drop the Shift branch in `ui/src/components/timeline/Mark
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+Not committed yet (the lead commits).
+
+- `ui/src/components/timeline/MarkerRow.svelte`: a marker drag always snaps to the nearest beat (the Shift branch is gone).
+- `ui/src/components/timeline/tempoGeom.ts`: `dragPoint` always snaps to the nearest beat; its `shift` parameter and the "ticks with Shift" comment are gone; `TempoBand.svelte` no longer passes it.
+
+Test: `ui/tests/round6.timeline.test.ts` — "with Shift, a tempo point and a marker still go to the start of a beat, as core puts them (spec 3 Y17, Y18; architecture 21-15)". The shape test "drag: sideways to beat starts, …" only lost the `false` argument.

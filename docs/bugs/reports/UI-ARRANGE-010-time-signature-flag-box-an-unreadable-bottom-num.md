@@ -4,7 +4,7 @@ title: Time signature flag box: an unreadable bottom number is reported as the t
 area: UI-ARRANGE
 kind: parity
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -44,4 +44,8 @@ Fix plan (as suggested): in `ui/src/components/timeline/TempoBand.svelte:302` us
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+Not committed yet (the lead commits).
+
+- `ui/src/components/timeline/TempoBand.svelte`: the flag box's `reject` uses the typed text: `meterFieldOf(draft)` picks the half, and that half's old number is kept (as the transport's box). Also covers the old UI-PARITY-004.
+
+Test: `ui/tests/round6.timeline.test.ts` — "an unreadable lower number typed on a flag is told as the lower number, as the transport's box does (spec 6)".

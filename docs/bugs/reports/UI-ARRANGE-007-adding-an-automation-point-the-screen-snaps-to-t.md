@@ -4,7 +4,7 @@ title: Adding an automation point: the screen snaps to the beat, Rust snaps agai
 area: UI-ARRANGE
 kind: parity
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -47,4 +47,8 @@ Fix plan: in `crates/meloet-core/src/play/automation.rs` make `add_auto_point` t
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+Not committed yet (the lead commits).
+
+- `crates/meloet-core/src/play/automation.rs`: `add_auto_point` takes the tick as sent (the model's `add_point` still clamps it to `MAX_TICK`), like `move_auto_points` takes `dTick`; `on_grid` is removed (nothing else used it) and the doc comment says so. Other callers checked: the AI link writes points through `play/ai.rs` (`Put`), not this intent; the Rust tests that send `AddAutoPoint` use ticks on beats, except the one below.
+
+Test: `crates/meloet-core/src/play/automation/tests.rs` `lanes_and_points_are_steps_and_the_selection_comes_back_with_undo` now expects the point at `Q / 4 + 10` as sent (it expected the piano roll's 1/16 grid, `Q / 4`, before).

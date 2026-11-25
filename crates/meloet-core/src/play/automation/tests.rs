@@ -272,7 +272,8 @@ fn lanes_and_points_are_steps_and_the_selection_comes_back_with_undo() {
     assert!(m.view().automation.folded.is_empty());
     assert_eq!(steps(m).len(), before + 1);
 
-    // A point on the grid (1/16 = Q / 4 ticks), the line's value without one: the hand's.
+    // A point at the tick sent, off the piano roll's grid (the screen has snapped it: the start of a beat, ticks
+    // with Shift, 7-readings A-21); the line's value without one: the hand's.
     cmd(
         m,
         Command::AddAutoPoint {
@@ -281,7 +282,7 @@ fn lanes_and_points_are_steps_and_the_selection_comes_back_with_undo() {
             value: None,
         },
     );
-    assert_eq!(points(m, VOLUME), [(Q / 4, 0.8)]);
+    assert_eq!(points(m, VOLUME), [(Q / 4 + 10, 0.8)]);
     let second_id = lane_id(m, VOLUME);
     assert_ne!(second_id, first_id);
     let selected = m.view().automation.selected.unwrap();

@@ -4,7 +4,7 @@
 <script lang="ts">
   import { onDestroy, onMount, tick as nextTick } from "svelte";
   import { INSERT_SPACE_BARS_DEFAULT, INSERT_SPACE_BARS_MAX, type MarkerView, type TimelineView } from "../../bridge";
-  import { send } from "../../state/app.svelte";
+  import { current, send } from "../../state/app.svelte";
   import { t } from "../../text";
   import { nearestBeatTick } from "../../time/bars";
   import type { TempoMap } from "../../time/tempoMap";
@@ -40,13 +40,24 @@
     width: number;
   }
   let drag = $state<Drag | null>(null);
+  /** The look kept after release until core's answer (so the tag does not jump back for a moment): only while the marker it names is still at its old place. */
+  let pending = $state.raw<{ drag: Drag; rev: number | null } | null>(null);
+  const kept = $derived.by(() => {
+    const d = pending?.drag;
+    return d && timeline.markers.some((m) => m.id === d.id && m.tick === d.tick) ? d : null;
+  });
+  $effect(() => {
+    const p = pending;
+    if (p && (!kept || (p.rev !== null && current.rev >= p.rev))) pending = null;
+  });
+  const shown = $derived(drag ?? kept);
   let reading = $state<{ x: number; y: number } | null>(null);
   let readingW = $state(0);
   let readingH = $state(0);
 
   const tags = $derived(
     timeline.markers
-      .map((m) => ({ ...m, x: tickToX(view, drag?.moved && drag.id === m.id ? drag.toTick : m.tick) }))
+      .map((m) => ({ ...m, x: tickToX(view, shown?.moved && shown.id === m.id ? shown.toTick : m.tick) }))
       .filter((m) => m.x > -view.width && m.x < view.width),
   );
 
@@ -55,6 +66,7 @@
     e.stopPropagation();
     pickTimeline();
     const el = e.currentTarget as HTMLElement;
+    pending = null;
     drag = { id: m.id, tick: m.tick, toTick: m.tick, downX: xOf(e), moved: false, width: el.offsetWidth };
     row!.setPointerCapture?.(e.pointerId);
   }
@@ -65,26 +77,39 @@
     const moved = !busy && (d.moved || Math.abs(x - d.downX) >= metrics.px("space.1"));
     if (!moved) return;
     const at = d.tick + (x - d.downX) / view.pxPerTick;
-    const toTick = e.shiftKey ? Math.max(0, Math.round(at)) : nearestBeatTick(map, at);
+    const toTick = nearestBeatTick(map, at);
     if (moved !== d.moved || toTick !== d.toTick) drag = { ...d, moved, toTick };
     const r = row!.getBoundingClientRect();
     reading = { x: e.clientX - r.left, y: e.clientY - r.top };
+    dragReading.text = positionText(toTick, map);
+  }
+  /** Drops the reading in place and its text on the status line. */
+  function unread(): void {
+    if (reading) dragReading.text = null;
+    reading = null;
   }
   function up(): void {
     const d = drag;
     drag = null;
-    reading = null;
+    unread();
     if (!d) return;
     if (!d.moved) send({ type: "goToMarker", id: d.id });
-    else if (d.toTick !== d.tick) send({ type: "moveMarker", id: d.id, tick: d.toTick });
+    else if (d.toTick !== d.tick) {
+      const made = { drag: d, rev: null as number | null };
+      pending = made;
+      void send({ type: "moveMarker", id: d.id, tick: d.toTick }).then((rev) => {
+        if (pending === made) pending = { ...made, rev: rev ?? -Infinity };
+      });
+    }
   }
   function cancel(): boolean {
     if (!drag) return false;
     drag = null;
-    reading = null;
+    unread();
     return true;
   }
   onMount(() => onDragCancel(cancel));
+  onDestroy(unread);
 
   function rowDown(e: PointerEvent): void {
     if (e.button === 0 && timeline.selected?.kind === "marker") send({ type: "selectTimeline", target: null });
@@ -237,8 +262,8 @@
   oncontextmenu={rowMenu}
   data-test="marker-row"
 >
-  {#if drag?.moved}
-    <div class="from" style:left="{tickToX(view, drag.tick)}px" style:width="{drag.width}px"></div>
+  {#if shown?.moved}
+    <div class="from" style:left="{tickToX(view, shown.tick)}px" style:width="{shown.width}px"></div>
   {/if}
   {#each tags as m (m.id)}
     {#if timeline.renaming === m.id}
@@ -263,7 +288,7 @@
     {:else}
       <span
         class="tag"
-        class:selected={selectedId === m.id || drag?.id === m.id}
+        class:selected={selectedId === m.id || shown?.id === m.id}
         class:m-typable={!busy}
         role="presentation"
         style:left="{m.x}px"

@@ -4,7 +4,7 @@ title: Automation lane: the kept look of a point drag is applied to the next lan
 area: UI-ARRANGE
 kind: bug
 severity: high
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -64,4 +64,10 @@ Fix plan (agreed, the smallest): in `ui/src/components/automation/AutoLane.svelt
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+Not committed yet (the lead commits).
+
+- `ui/src/components/automation/AutoLane.svelte`: the kept look is tied to the lane id it was made on. While the answer's new lane id has no points yet, the drag is drawn over the points it was made on (`peekLanePoints(pending.laneId)`), and the kept look ends when the new points arrive (or, with the same lane id, when the rev is reached). A held drag remembers its lane id (`dragLane`): when the lane gets another id, it is not drawn, the next move cancels it and the release sends nothing.
+- `ui/src/components/automation/autoGeom.ts`: `dragPoints` and `draggedPoints` return the input unchanged when an index is not in the points, so a wrong index cannot throw while drawing.
+- `ui/src/bridge/fake.ts`: `moveAutoPoints` moves the points under a new lane id and chooses them, as `auto::move_points` does (fake scenes now go the real way).
+
+Tests: `ui/tests/automation.lane-drag.test.ts` — "after release, the moved look stays on the old points until the new lane's points arrive; no error, and not moved twice", "a point held while the lane gets a new id (undo, the AI link) lets go of the drag: no error, nothing sent" (both threw `TypeError … reading 'tick'` before), and "the moved points under a new lane id, chosen; …" for the fake.

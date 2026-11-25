@@ -743,7 +743,7 @@ pub enum Command {
     /// column while pressed (mock R3-PRMouse), a note while it is pressed, a drag at each change
     /// of key, ↑ ↓ on selected notes as a chord. Whatever was sounding stops first: this
     /// replaces it. Empty `keys` only stops. The screen times how long it sounds (↑ ↓: about
-    /// 0.3 s) and sends `AuditionOff`, and sends the fixed velocity while
+    /// 0.3 s) and then sends `Audition` with empty `keys`, and sends the fixed velocity while
     /// `KeyboardsView::velocity_fixed` is on. Keys outside the locked scale are left out, and
     /// keys past the first 16.
     ///
@@ -1521,7 +1521,8 @@ pub enum Command {
     /// R2 a key of the PC keyboard while `KeyboardsView::typed_keys`: as a key of a MIDI
     /// keyboard (the sound, the input meter, recording, R1), at `TYPED_KEY_VELOCITY` or the
     /// fixed velocity. `t_us`: when it was pressed or let go, CLOCK_MONOTONIC µs of Rust
-    /// (the screen turns `KeyboardEvent.timeStamp` into it with `HelloReply::mono_us`); a
+    /// (the screen turns `KeyboardEvent.timeStamp` into it with the offset it measures by
+    /// round trips of the shell's `clock` call, `clockOffsetUs` in `ui/src/bridge/`); a
     /// recorded key takes its place from it. Nothing while `typed_keys` is off, nor for a
     /// `note` above 127.
     TypedKey {

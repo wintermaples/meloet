@@ -325,6 +325,84 @@ fn while_recording_writes_are_errors_with_the_reason() {
     assert_eq!(ports.last(), Some(&AiPort::Closed));
 }
 
+/// A meloet playing with 「● 書く」 on and the mute lane armed: the mute button writes a
+/// point into the lane, and the track's own mute stays.
+struct LaneTakesMute(Recording);
+
+impl Meloet for LaneTakesMute {
+    fn song(&self) -> Option<AiSong> {
+        let mut song = self.0.song()?;
+        song.busy = None;
+        Some(song)
+    }
+
+    fn ask(&self, ask: AiAsk) -> AiAnswer {
+        assert!(matches!(ask, AiAsk::ScreenWhen { on: true, .. }), "{ask:?}");
+        AiAnswer::Done(Box::new(meloet_core::ai::AiDone {
+            step: None,
+            undo_count: 1,
+            clip: None,
+            take: None,
+            notes: None,
+            track: None,
+            ticket: None,
+            pending: false,
+        }))
+    }
+
+    fn measure(
+        &self,
+        m: AiMeasure,
+        p: &mut dyn FnMut(u8),
+        s: &dyn Fn() -> bool,
+    ) -> Result<AiLevels, AiRefusal> {
+        self.0.measure(m, p, s)
+    }
+
+    fn measure_outputs(
+        &self,
+        m: AiOutputsMeasure,
+        p: &mut dyn FnMut(u8),
+        s: &dyn Fn() -> bool,
+    ) -> Result<AiOutputLevels, AiRefusal> {
+        self.0.measure_outputs(m, p, s)
+    }
+
+    fn render(
+        &self,
+        r: AiRender,
+        p: &mut dyn FnMut(u8),
+        s: &dyn Fn() -> bool,
+    ) -> Result<AiRendered, AiRefusal> {
+        self.0.render(r, p, s)
+    }
+
+    fn port(&self, port: AiPort) {
+        self.0.port(port);
+    }
+}
+
+#[test]
+fn a_mute_the_lane_took_is_told_as_a_point_written() {
+    let runtime = scratch("lanemute");
+    let options = options(&runtime);
+    let socket = options.socket_path().unwrap();
+    let meloet = Arc::new(LaneTakesMute(Recording {
+        ports: Mutex::new(Vec::new()),
+    }));
+    let link = AiLink::start(meloet, options).unwrap();
+    link.switch(true);
+    wait_for("the socket", || socket.exists());
+    let mut c = Client::start(&socket);
+    let answer = c.call("set_mute", json!({ "track": 1, "on": true }));
+    assert_eq!(answer["isError"], false, "{answer}");
+    let value = &answer["structuredContent"];
+    assert_eq!(value["wrote_mute_lane"], true, "{answer}");
+    assert_eq!(value["muted"], false, "{answer}");
+    let text = answer["content"][0]["text"].as_str().unwrap();
+    assert!(text.contains("mute lane"), "{text}");
+}
+
 #[test]
 fn too_many_calls_are_turned_away() {
     let runtime = scratch("bucket");
@@ -703,6 +781,16 @@ fn automation_and_time_are_steps() {
     ] {
         refused(&mut c, tool, args);
     }
+    // A knob the built-in sound does not have: why, not "add it with add_lane".
+    let said = refused(
+        &mut c,
+        "add_lane",
+        json!({ "track": 1, "target": "instrument", "param": 999 }),
+    );
+    assert!(
+        said.contains("cannot have a lane") && !said.contains("add_lane"),
+        "{said}"
+    );
     assert_eq!(steps(&r), at);
     undo_all(&mut c, &r, &before);
 }
@@ -1217,4 +1305,26 @@ fn an_audio_file_comes_in_and_its_clip_is_changed() {
     std::fs::write(&broken, b"not audio").unwrap();
     refused(&mut c, "import_audio", json!({ "path": broken }));
     undo_all(&mut c, &r, &before);
+}
+
+#[test]
+fn a_rename_of_the_marker_the_person_just_made_says_it_changed() {
+    let r = running("fresh");
+    let mut c = Client::start(&r.socket);
+    r.core.send(meloet_protocol::Command::AddMarker {
+        name: "A".into(),
+        tick: Some(0),
+    });
+    wait_for("the marker", || steps(&r) == 1);
+    let marker = ok(&mut c, "song_overview", json!({}))["markers"][0]["id"].clone();
+    let said = ok(
+        &mut c,
+        "rename_marker",
+        json!({ "marker": marker, "name": "サビ" }),
+    );
+    assert_eq!(said["changed"], true, "{said}");
+    // The name is a part of the step that made the marker.
+    assert_eq!(steps(&r), 1);
+    let overview = ok(&mut c, "song_overview", json!({}));
+    assert_eq!(overview["markers"][0]["name"], "サビ", "{overview}");
 }

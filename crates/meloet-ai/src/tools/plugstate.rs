@@ -309,18 +309,21 @@ impl Tools {
         ending: &str,
         bytes: Arc<[u8]>,
     ) -> Result<PathBuf, CallToolResult> {
-        self.scratch.clean(crate::scratch::KEEP);
-        let dir = self.scratch.dir().map_err(|e| {
-            failed(format!(
-                "the private temporary folder is not usable ({e}); ask with `inline: true`"
-            ))
-        })?;
-        let path = self.scratch.name(&dir, name, ending);
-        let to = path.clone();
-        off_thread(move || write_state_file(&to, &bytes))
-            .await?
-            .map_err(|e| failed(format!("the state could not be written ({e})")))?;
-        Ok(path)
+        let scratch = self.scratch.clone();
+        let (name, ending) = (name.to_owned(), ending.to_owned());
+        off_thread(move || {
+            scratch.clean(crate::scratch::KEEP);
+            let dir = scratch.dir().map_err(|e| {
+                failed(format!(
+                    "the private temporary folder is not usable ({e}); ask with `inline: true`"
+                ))
+            })?;
+            let path = scratch.name(&dir, &name, &ending);
+            write_state_file(&path, &bytes)
+                .map_err(|e| failed(format!("the state could not be written ({e})")))?;
+            Ok(path)
+        })
+        .await?
     }
 }
 

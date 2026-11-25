@@ -130,22 +130,27 @@ impl Tools {
     }
 
     /// A new place in the temporary folder, or why there is none.
-    fn scratch_place(&self, what: &str, ending: &str) -> Result<PathBuf, CallToolResult> {
-        self.scratch.clean(crate::scratch::KEEP);
-        let dir = self.scratch.dir().map_err(|e| {
-            failed(format!(
-                "this tool cannot be used: the private temporary folder is not usable ({e})"
-            ))
-        })?;
-        let place = self.scratch.name(&dir, what, ending);
-        if ending.is_empty() {
-            use std::os::unix::fs::DirBuilderExt;
-            std::fs::DirBuilder::new()
-                .mode(0o700)
-                .create(&place)
-                .map_err(|e| failed(format!("this tool cannot be used now ({e})")))?;
-        }
-        Ok(place)
+    async fn scratch_place(&self, what: &str, ending: &str) -> Result<PathBuf, CallToolResult> {
+        let scratch = self.scratch.clone();
+        let (what, ending) = (what.to_owned(), ending.to_owned());
+        super::plugstate::off_thread(move || {
+            scratch.clean(crate::scratch::KEEP);
+            let dir = scratch.dir().map_err(|e| {
+                failed(format!(
+                    "this tool cannot be used: the private temporary folder is not usable ({e})"
+                ))
+            })?;
+            let place = scratch.name(&dir, &what, &ending);
+            if ending.is_empty() {
+                use std::os::unix::fs::DirBuilderExt;
+                std::fs::DirBuilder::new()
+                    .mode(0o700)
+                    .create(&place)
+                    .map_err(|e| failed(format!("this tool cannot be used now ({e})")))?;
+            }
+            Ok(place)
+        })
+        .await?
     }
 
     async fn render_scratch(
@@ -158,7 +163,10 @@ impl Tools {
         ct: &CancellationToken,
     ) -> Result<CallToolResult, McpError> {
         let read = check!(self.read().await);
-        let to = check!(self.scratch_place(name, if folder { "" } else { "wav" }));
+        let to = check!(
+            self.scratch_place(name, if folder { "" } else { "wav" })
+                .await
+        );
         let ask = AiRender {
             what,
             to: to.clone(),

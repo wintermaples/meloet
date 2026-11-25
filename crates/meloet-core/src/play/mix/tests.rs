@@ -176,3 +176,44 @@ fn mute_is_taken_while_recording_and_the_recording_goes_on() {
     cmd(m, Command::Undo);
     assert_eq!(m.view().song.undo_count, steps);
 }
+
+/// The AI's `set_mute` sets the mute put by hand, which `get_mixer` shows: where a mute lane
+/// mutes the track and the hand's mute is off, it mutes it and the lane rests, one step.
+#[test]
+fn the_ai_flips_the_mute_put_by_hand_whatever_its_lane_gives() {
+    use crate::ai::{AiAnswer, AiAsk};
+    use meloet_protocol::{AutoTarget, LaneHome};
+
+    let m = &mut ready();
+    let target = AutoTarget::Mute;
+    let home = LaneHome::Track { track: 1 };
+    cmd(m, Command::AddLane { home, target });
+    let view = m.view();
+    let lane = (view.song.tracks[0].lanes.iter())
+        .find(|l| l.target == target)
+        .unwrap()
+        .lane_id;
+    cmd(
+        m,
+        Command::AddAutoPoint {
+            lane,
+            tick: 0,
+            value: Some(1.0),
+        },
+    );
+    let steps = m.view().song.undo_count;
+    m.handle(Input::Ai(AiAsk::Screen(Command::ToggleMute { track: 1 })));
+    assert!(matches!(m.take_ai_answer(), Some(AiAnswer::Done(_))));
+    let view = m.view();
+    let track = &view.song.tracks[0];
+    assert!(track.muted);
+    assert!(
+        track
+            .lanes
+            .iter()
+            .find(|l| l.target == target)
+            .unwrap()
+            .resting
+    );
+    assert_eq!(view.song.undo_count, steps + 1);
+}

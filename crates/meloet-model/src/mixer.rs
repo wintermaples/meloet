@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use crate::automation::{AutoTarget, drop_orphan_lanes, lower_volume_points};
-use crate::edit::{Edit, EditError, Ids, track_index};
+use crate::edit::{Edit, EditError, Ids, track_index, with_instrument};
 use crate::effects::{EffectKind, delay, reverb};
 use crate::history::StepKind;
 use crate::instrument::{InstrumentGroup, PluginRef};
@@ -751,7 +751,7 @@ pub fn remove_missing(doc: &Doc, missing: Missing) -> Result<Edit, EditError> {
         }
         let mut track = Track::clone(slot);
         if uses(&track.instrument) {
-            track.instrument = InstrumentRef::SINE;
+            track = with_instrument(&track, InstrumentRef::SINE);
             tracks += 1;
         }
         empty(&mut track.channel);

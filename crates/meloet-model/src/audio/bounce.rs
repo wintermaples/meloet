@@ -39,7 +39,8 @@ fn of_the_strip(target: AutoTarget) -> bool {
 /// sounds at the song's tempo there, not following the tempo. The new track is named as
 /// `from` with [`BOUNCED_SUFFIX`] (and a number from 2 when a track has that name); it has
 /// the fader, the pan and the sends of `from` and their lanes, and no inserts. `from` is
-/// muted and keeps everything else. The audio goes into the audio table as a recording does.
+/// muted, with its mute lane at rest when it moves (so that the mute is heard), and keeps
+/// everything else. The audio goes into the audio table as a recording does.
 /// `WrongKind` for a vocal track; `BadTake(0)` for audio that cannot be.
 pub fn bounce_track(
     doc: &Doc,
@@ -141,6 +142,12 @@ pub fn bounce_track(
         muted: true,
         ..Track::clone(source_track)
     });
+    if source_track
+        .lane(AutoTarget::Mute)
+        .is_some_and(|l| l.moves())
+    {
+        crate::automation::set_resting(&mut new, from, AutoTarget::Mute, true);
+    }
     new.tracks.insert(at, Arc::new(new_track));
     let mut table = doc.audio.as_ref().clone();
     table.push(source);

@@ -4,7 +4,7 @@ title: A vocal track accepts lanes of the built-in sound knobs, which move nothi
 area: MODEL-B
 kind: bug
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -45,4 +45,4 @@ Fix plan: `crates/meloet-model/src/automation.rs` `Track::has_target`: `AutoTarg
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`crates/meloet-model/src/automation.rs` `Track::has_target`: `AutoTarget::Instrument` is false on a vocal track. `add_lane` then gives `NoSuchInsert` (the AI's `add_lane` is answered `NoSuchLane`), `check_lanes` refuses such a lane, and the song file reader leaves it out, so a file that holds one still opens without it. `knobs::set_sound_knob` was not touched: the screen offers no knobs for a vocal track (`picked_at` in `play/mixer.rs`) and no AI tool sets knobs. Tests: `automation::tests::a_vocal_track_has_no_lanes_of_an_instrument` (model) and `songfile::vocal_tests::a_lane_of_an_instrument_on_a_vocal_track_is_left_out` (core: the file opens, the lane is left out, the volume lane stays).

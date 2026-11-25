@@ -4,7 +4,7 @@ title: Typed effect values read full-width digits but not full-width unit letter
 area: MODEL-B
 kind: bug
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -49,4 +49,4 @@ Fix plan: `crates/meloet-model/src/effects.rs` `ParamSpec::read`: add `'Ａ'..='
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`crates/meloet-model/src/effects.rs` `ParamSpec::read`: full-width Latin letters (`Ａ`-`Ｚ`, `ａ`-`ｚ`) become their ASCII letters before the unit is read (Rust side, so the AI link's typed values get it too). The full-width space of the plan needed no line: `trim` and `trim_start` already take it as a space (the case 「５００　ＭＳ」 shows it). Test: cases 「５００ｍｓ」, 「５００　ＭＳ」, 「１．５ｓ」, 「２ｋＨｚ」 added to `effects::tests::a_typed_value_reads_with_or_without_its_unit`.

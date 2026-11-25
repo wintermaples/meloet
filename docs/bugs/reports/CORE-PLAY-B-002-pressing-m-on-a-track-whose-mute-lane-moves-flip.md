@@ -4,7 +4,7 @@ title: Pressing M on a track whose mute lane moves flips the hidden hand mute, n
 area: CORE-PLAY-B
 kind: bug
 severity: medium
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -56,4 +56,4 @@ Fix plan: `crates/meloet-core/src/play/mix.rs` `toggle_mute`: when the track's m
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`crates/meloet-core/src/play/mix.rs`: `toggle_mute` (M on the screen) with a mute lane that moves sets the hand's mute to the opposite of what the lane gives at the play line, `lane.value_at(self.play_line())`, and rests the lane; when the hand's mute is that already, the step is the rest alone (`RestLane`). The AI's `set_mute`, which sets the hand's mute that `get_mixer` shows by sending `ToggleMute`, keeps flipping the hand's mute: `crates/meloet-core/src/state/ai.rs` sends the AI's `ToggleMute` to the new `Play::ai_toggle_mute`. `docs/architecture.md` 21-11 says both. Tests: `play::automation::tests::a_mute_lane_takes_the_place_of_the_mute_put_by_hand` changed (hand mute on, lane at 0.0: the press now leaves the hand's mute on, rests the lane, and the track is silent; it used to turn the hand's mute off and the track kept playing), `play::automation::tests::the_mute_writes_a_point_or_rests` changed (stopped where the lane gives 1.0, the press leaves the hand's mute off and the step is `RestLane`; it used to turn the hand's mute on), new `play::automation::tests::m_on_a_mute_lane_that_mutes_lets_the_track_play`, new `play::mix::tests::the_ai_flips_the_mute_put_by_hand_whatever_its_lane_gives`.

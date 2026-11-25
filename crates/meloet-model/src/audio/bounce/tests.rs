@@ -154,6 +154,31 @@ fn undo_takes_the_whole_step_back_and_redo_brings_it() {
 }
 
 #[test]
+fn a_mute_lane_that_moves_rests_in_the_same_step_so_the_mute_is_heard() {
+    let (e, lane) = auto::add_lane(&song(), T1, AutoTarget::Mute, true).unwrap();
+    let (e, _, _) = auto::add_point(&e.doc, lane, 0, Some(0.0), 0.0).unwrap();
+    let doc = e.doc;
+    let mut history = History::default();
+    let mut now = doc.clone();
+    let b = bounce_track(&now, T1, audio(48_000), 0, Language::Ja).unwrap();
+    history.apply(&mut now, b.edit);
+    let from = now.track(T1).unwrap();
+    assert!(from.muted);
+    let rested = from.lane(AutoTarget::Mute).unwrap();
+    assert!(rested.resting, "the hand's mute is what is heard");
+    assert_eq!(rested.points, doc.track(T1).unwrap().automation[3].points);
+    assert!(history.undo(&mut now).is_some());
+    assert_eq!(held(&now), held(&doc));
+    assert!(
+        now.track(T1)
+            .unwrap()
+            .lane(AutoTarget::Mute)
+            .unwrap()
+            .moves()
+    );
+}
+
+#[test]
 fn a_name_that_is_taken_gets_a_number_and_the_clip_follows_the_songs_tempo_map() {
     let mut doc = song();
     let (e, vocal) = add_vocal_track(&doc, None, crate::Language::Ja).unwrap();

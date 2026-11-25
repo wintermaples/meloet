@@ -117,6 +117,11 @@ impl Display {
         self.conn.as_raw_fd()
     }
 
+    /// The connection is gone (the X server ended): nothing of it works any more.
+    pub fn broken(&self) -> bool {
+        self.conn.has_error().is_some()
+    }
+
     fn flush(&self) {
         let _ = self.conn.flush();
     }

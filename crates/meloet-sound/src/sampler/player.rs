@@ -31,8 +31,9 @@ const CC_EXPRESSION: u8 = 11;
 const DEFAULT_VOLUME: u8 = 100;
 /// Volume, expression and pan reach a new value in about this time.
 const MIX_SMOOTH_S: f32 = 0.02;
-/// A voice with a shape is never further from its file's pitch than this.
-const MAX_SHAPED_SEMITONES: f32 = 120.0;
+/// A voice starts no further from its file's pitch than this. A shape's modulation and
+/// vibrato, the bend and the vibrato knob move it on from there.
+const MAX_SEMITONES: f32 = 120.0;
 /// The groups of release sounds that take turns which a press of the song keeps its turns
 /// for; a key with more takes turns as they come in the others.
 const RELEASE_GROUPS: usize = 4;
@@ -473,11 +474,9 @@ impl State {
             }
         };
 
-        let mut semitones =
-            (f32::from(key) - f32::from(region.root)) * region.keytrack + region.tune_semitones;
-        if region.shape.is_some() {
-            semitones = semitones.clamp(-MAX_SHAPED_SEMITONES, MAX_SHAPED_SEMITONES);
-        }
+        let semitones = ((f32::from(key) - f32::from(region.root)) * region.keytrack
+            + region.tune_semitones)
+            .clamp(-MAX_SEMITONES, MAX_SEMITONES);
         let step = f64::from(semitones / 12.0).exp2() * f64::from(sample.rate)
             / f64::from(self.sample_rate);
         // SFZ's amp_veltrack: (velocity / 127)^2 at 100 %, no change at 0 %, turned round below 0.

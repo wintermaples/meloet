@@ -308,15 +308,21 @@ impl TransportClock {
 
     /// When the song rendered at `frame` reaches the ear: [`TransportClock::time_of_frame`]
     /// of the frame where it comes out of the master's inserts, which delayed it by
-    /// [`Segment::ear`] frames (docs/architecture.md 20-8).
+    /// [`Segment::ear`] frames (docs/architecture.md 20-8). A frame older than every stretch
+    /// kept is counted back from the oldest, with its delay.
     pub fn heard_time_of_frame(&self, frame: f64) -> Option<f64> {
         let written = self.written.load(Ordering::Acquire);
         let oldest = written.saturating_sub(SLOTS as u64);
-        let ear = (oldest..written)
+        let mut ear = 0;
+        for segment in (oldest..written)
             .rev()
             .filter_map(|serial| self.read(serial))
-            .find(|segment| segment.frame0 as f64 <= frame)
-            .map_or(0, |segment| segment.ear);
+        {
+            ear = segment.ear;
+            if segment.frame0 as f64 <= frame {
+                break;
+            }
+        }
         self.time_of_frame(frame + f64::from(ear))
     }
 

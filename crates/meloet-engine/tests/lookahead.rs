@@ -854,6 +854,84 @@ fn the_song_of_a_frame_is_heard_when_it_comes_out_of_the_master() {
     assert_eq!(common::audio_block_counts(), (0, 0));
 }
 
+/// A frame the clock no longer keeps is counted back from the oldest stretch, delay and all.
+#[test]
+fn the_song_of_a_frame_older_than_the_clock_keeps_is_heard_behind_the_masters_delay_too() {
+    for lag in LAGS {
+        let mut rig = Rig::new();
+        rig.master_lag(lag);
+        rig.run(600);
+        let clock = rig.parts.handle.clock().clone();
+        assert_eq!(clock.kept_frame_at(dac_us(3_000)), None, "no longer kept");
+        let heard = clock.heard_time_of_frame(3_000.0).expect("rendered");
+        let out = clock.time_of_frame(3_000.0).expect("rendered") + lag_us(lag);
+        assert!((heard - out).abs() < 1.0, "lag {lag}: {heard} vs {out}");
+    }
+}
+
+/// R within the master's delay after the play started: nothing of the play is heard yet, so
+/// the recording begins where the play did.
+#[test]
+fn recording_before_the_play_comes_out_of_the_master_begins_where_the_play_did() {
+    let mut rig = Rig::new();
+    rig.master_lag(1_000);
+    rig.run(8);
+    rig.send(EngineCommand::Play { from: 2 * Q });
+    rig.run(2);
+    rig.recorded();
+    rig.send(EngineCommand::RecordHere {
+        muted: TrackSet::default(),
+    });
+    rig.run(1);
+    let got = rig.recorded();
+    let started = got.iter().find_map(|r| match *r {
+        Recorded::Started { from, .. } => Some(from),
+        _ => None,
+    });
+    assert_eq!(started, Some(2 * Q), "{got:?}");
+}
+
+/// A lane that went round the loop ahead of the song is no longer ahead once the song
+/// stops: a loop set while stopped sends nothing to its instrument.
+#[test]
+fn a_loop_set_while_stopped_sends_nothing_to_a_track_that_had_gone_round_ahead() {
+    const AHEAD: u32 = 1_000;
+    let pedal = InstrumentEvent::Control {
+        controller: 64,
+        value: 127,
+    };
+    let mut rig = Rig::new();
+    let mut tape = rig.tape(0);
+    rig.sequence(0, &[(Q, on(60)), (5 * Q / 4, pedal), (3 * Q / 2, off(60))]);
+    rig.lookahead(0, AHEAD);
+    rig.send(EngineCommand::SetLoop {
+        start: Q,
+        end: 2 * Q,
+        on: true,
+    });
+    rig.send(EngineCommand::Play { from: Q / 2 });
+    // The loop's end is 36 000 frames after the start: the lane goes round 1000 before.
+    rig.run(138);
+    assert!((35_000..36_000).contains(&rig.frames), "{}", rig.frames);
+    let t_us = 1_000_000 + rig.frames * 1_000_000 / RATE;
+    rig.send(EngineCommand::Stop { t_us });
+    rig.run(4);
+    drain(&mut tape);
+    rig.send(EngineCommand::SetLoop {
+        start: Q,
+        end: 3 * Q,
+        on: true,
+    });
+    rig.run(4);
+    assert_eq!(drain(&mut tape), [], "while stopped");
+
+    // The next play starts like any other: the pedal of before the position is chased once.
+    rig.send(EngineCommand::Play { from: 7 * Q / 4 });
+    rig.run(1);
+    let sent: Vec<_> = drain(&mut tape).into_iter().map(|(_, e)| e).collect();
+    assert_eq!(sent, [pedal]);
+}
+
 /// A plugin on the master that says another delay while the song plays: when it delays more,
 /// the position heard stands until the song comes out again; when less, it jumps on. It never
 /// goes back, and the clicks waiting move with the song, or are not heard where the song of

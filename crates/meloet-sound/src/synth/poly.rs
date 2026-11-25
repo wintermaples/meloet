@@ -8,6 +8,7 @@ use meloet_engine::knobs::{VoiceKnobs, vibrato_ratio};
 use meloet_engine::{Instrument, InstrumentEvent, SongPlace};
 
 use super::dsp::{Rng, Svf, decay_coef, pulse, saw, svf_g};
+use crate::effects::dsp::flush;
 
 const MAX_VOICES: usize = 16;
 const MAX_OSCS: usize = 4;
@@ -532,7 +533,7 @@ impl PolySynth {
             if v.stage == Stage::Idle {
                 continue;
             }
-            v.filter_env *= filter_env_fall;
+            v.filter_env = flush(v.filter_env * filter_env_fall);
             let cutoff =
                 v.cutoff_hz * ctx.cutoff_mod * (v.filter_env_octaves * v.filter_env).exp2();
             let mut g_step = (svf_g(cutoff, sample_rate) - v.g) / n;
@@ -689,5 +690,34 @@ impl Instrument for PolySynth {
 
     fn set_knob(&mut self, knob: u32, place: f32) {
         self.knobs.set(knob, place);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The filter envelope of a note held long is 0 or above 1e-18: it does not go on
+    /// falling into denormal numbers under the note.
+    #[test]
+    fn the_filter_envelope_of_a_held_note_ends_at_zero() {
+        for mut synth in [PolySynth::lead(), PolySynth::bass()] {
+            synth.prepare(48_000.0, 256);
+            synth.event(InstrumentEvent::NoteOn {
+                note: 48,
+                velocity: 127,
+            });
+            let (mut left, mut right) = ([0.0f32; 256], [0.0f32; 256]);
+            let sounding = |s: &PolySynth| {
+                let voices = s.voices.iter().filter(|v| v.stage != Stage::Idle);
+                voices.map(|v| v.filter_env).collect::<Vec<f32>>()
+            };
+            for _ in 0..48_000 * 15 / 256 {
+                synth.render(&mut left, &mut right);
+                let envs = sounding(&synth);
+                assert!(envs.iter().all(|e| *e == 0.0 || *e >= 1.0e-18), "{envs:?}");
+            }
+            assert_eq!(sounding(&synth), [0.0]);
+        }
     }
 }

@@ -489,7 +489,7 @@ An example in version 6 (shortened; fields that are empty or default are left ou
   - New song, open, close: if there are changes, 「保存していない変更があります」 (save / don't save / cancel). If saving fails, go to 「保存できない」.
   - Cannot save: choose a place → folder window → save to `<chosen>/<name>/<name>.meloet`, then go on with what was waiting (close, new song, open).
   - Broken: if `.prev` reads, 「1 つ前を開く」. The opened song is "changed" (the next save rewrites `<name>.meloet`). If there is no `.prev`, only the spec's first sentence and 「やめる」.
-  - During recording and count-in, save, open and new song are not taken. A close request stops recording, puts what was recorded into the song, and then decides.
+  - During recording and count-in, save, open and new song are not taken. A close request stops recording, puts what was recorded into the song, and then decides. A close request while a save is being written is kept until the save answers, and then decides (it comes before a new song or an open that was to follow the save); when the save fails, 「保存できない」 comes and the close is dropped.
   - After opening or a new song: clear the steps, position to 0, clear selections, send everything to the engine again.
   - Answers to a dialog carry that dialog's id (when dialogs replace each other in a row, like "don't save → file window → broken", a late answer to the earlier dialog must not hit the next one).
 
@@ -583,7 +583,7 @@ An example in version 6 (shortened; fields that are empty or default are left ou
 - `Audition { keys }` is a chord of up to 16 keys (the engine's `Chord` is `[u8; 16]` and a length; no memory taken). The earlier chord is let go before sounding. Empty only stops. Keys outside a scale lock also sound (for the keyboard column and note audition; the draw tool cannot press outside the scale). How long it sounds is timed by the screen.
 
 **Save as** (B-59)
-- The shell shows GTK's save window (title 「名前をつけて保存」 is a constant in `pcwindow.rs`; the current song name is filled in; no overwrite check). The parent of the returned path is the place, and the last part (without `.meloet`) is the name.
+- The shell shows GTK's save window (title 「名前をつけて保存」 is a constant in `pcwindow.rs`; the current song name is filled in; no overwrite check). It starts in the folder that holds the song's folder, or else the songs folder (the folder window of 「保存できない」 → choose a place starts there too; 「ひらく…」 starts in the song's folder, or else the songs folder). The parent of the returned path is the place, and the last part (without `.meloet`) is the name.
 - The same `save_new` as the first save makes `<name>/<name>.meloet` (characters not allowed become `_`; the same name gets 「 2」…, and so does the song name). How it is written, "cannot save", and removing the recovery file are as for a normal save. Later saves go to the new file. In 「保存できない」 → choose a place, the typed name is used too. Cancelling the window does nothing. Not taken during recording or count-in.
 - Superseded in part by 22-4: save as also copies the audio the saved `Doc` points to into the new folder's `音/` (the old folder is not touched).
 
@@ -847,7 +847,7 @@ Research: `docs/history/research/plugin-formats.md`, `plugin-ipc.md`, `sf2-playb
 - **Scanner** (`scanner.rs`): one `meloet-plughost scan` child per bundle, at most half the CPUs and 4 at once, at nice 19. Not SCHED_IDLE: the 30 s timeout is wall-clock and a busy PC would make slow plugins look hung.
   - Timeout: 30 s since the last `Probing`. If the child dies or goes silent after `Probing`, only that plugin is marked stopped and the rest of the bundle is scanned with `--skip`.
   - The cache (`$XDG_CACHE_HOME/meloet/plugins/scan.json`) is written every 2 s and at the end by its own thread `meloet-scan-save` (newest request only). No cache = first scan (everything, with the band); otherwise changed bundles only, without the band, and the status line speaks only about new plugins.
-  - **The scan starts after the screen's hello (`subscribe`)**, or after 10 s (`PluginOptions::wait_for_screen`). **Child processes are started one at a time, app-wide** (`meloet_plugin::launch::spawn`). **Why**: under VS Code's CodeLLDB, concurrent spawns left meloet stopped with no window, and spawns overlapping WebKit's library loading showed as pauses; the window also comes up sooner.
+  - **The scan starts after the screen's hello (`subscribe`)** (the page's; the shell's own listening for the zoom, `Core::listen`, does not count), or after 10 s (`PluginOptions::wait_for_screen`). **Child processes are started one at a time, app-wide** (`meloet_plugin::launch::spawn`). **Why**: under VS Code's CodeLLDB, concurrent spawns left meloet stopped with no window, and spawns overlapping WebKit's library loading showed as pauses; the window also comes up sooner.
   - One scan at a time; 「もう一度ためす」 and 「場所を足す」 wait for the running scan. 「もう一度スキャン」 skips stopped plugins (spec Y13). Retrying a bundle says 「今度は入りました」 if anything got in or nothing stopped.
 - **Plugin host manager** (`Hosts`, `hosts.rs`): one long-lived thread `meloet-plugins` spawns, talks to and watches every child (`PR_SET_PDEATHSIG` fires when the spawning thread ends). Up to 16 slots of one `PluginKey` per process; the 17th opens a new process. Calls answer by callback; the core thread never waits.
   - Every 10 ms it checks pidfds and `PluginWatch::stopped()`; a stopped host gets `SIGKILL` → wait → all its slots stopped. No socket answer in 5 s (30 s for Load) also means stopped. Detection takes about 1–11 ms. Recording goes on when a plugin stops.
@@ -2139,7 +2139,7 @@ Protocol 26 unchanged. Added: the export engine, the job thread, file writers, P
 
 **PC windows and opening the folder**
 
-- `ShellRequest::PickExportPlace { folder, name, folder_only }` → `Core::export_place_picked`. The shell (`pcwindow.rs`) has `Pick::ExportFile` (save window; title reuses «名前をつけて保存»; the window asks about overwriting) and `Pick::ExportFolder` (folder window, «場所をえらぶ»). Temporary (titles are not in the spec).
+- `ShellRequest::PickExportPlace { folder, name, folder_only }` → `Core::export_place_picked`. The shell (`pcwindow.rs`) has `Pick::ExportFile` (save window; title reuses «名前をつけて保存»; the window asks about overwriting) and `Pick::ExportFolder` (folder window, «場所をえらぶ»). Temporary (titles are not in the spec). Only the chosen format's own ending (in any case) is taken off the name typed; other text after a dot stays in the name. When the file that would be written is not the one the window asked about (typed without that ending, or in other capitals) and is there already, the save window is shown again with that file's name, so its question is about it.
 - «フォルダをひらく» uses the existing path (`Effect::ShowFile` → `ShellRequest::ShowFile` → `pcwindow::show_file`): `org.freedesktop.FileManager1.ShowItems` with the file selected, else `xdg-open <folder>`. Why: the same interface as "show place" for recordings and songs.
 
 **Tests**
@@ -2315,7 +2315,7 @@ This step only added the shapes, TS types and fake scenes; 23-8 and 23-9 made th
 
 **2. The check before export (41-A, 42-C)**
 
-- `ExportCheck::Counting` and `Done` carry `over: u32`: the number of places so far above 0 dB (counted as B-95-2: a run of frames over is one place; after 100 ms not over, the next one is a new place). `peak_db` is the highest point (inside an over place if there is one). `over` is counted for every bit depth. `clips` (whether the chosen format will clip) is as before: `false` for 32-bit even with `over` ≥ 1.
+- `ExportCheck::Counting` and `Done` carry `over: u32`: the number of places so far above 0 dB (counted as B-95-2: a run of frames over is one place; after 100 ms not over, the next one is a new place). `peak_db` is the highest point (inside an over place if there is one). `over` is counted for every bit depth. `clips` (whether the chosen format will clip) is as before: `false` for a 32-bit wav even with `over` ≥ 1.
   - 「用意をしています」 is the existing `Waiting`; 「たしかめています 38 %」 and the peak so far are `Counting`.
 - `ExportDialogView::solo: Option<ExportSolo { first: TrackRef, others }>`: the soloed tracks (first in track order and how many others), for 「いま 2 ベース をソロにしています。…」. Solo is not applied to exports (as before).
 - The status line parts 「 ・ たしかめています 38 %」 and 「 ・ 0 dB をこえる所があります」 (F8-ExportCheck, F8-ExportClip) are made by the screen from `ExportDialogOpen` and `export.dialog.check`.
@@ -2356,7 +2356,7 @@ The protocol shapes are those of 23-7. The sound pack is in 23-9.
 **2. The check before export**
 
 - Counting (B-95-2): `OverPlaces` in `export/job.rs`. It looks at the frames that go into the file (the head latency is not in it, the tail is). A frame where either channel is above 1.0 is over (exactly 1.0 is not). After 4800 frames not over (100 ms at 48 kHz), the next over frame starts a new place.
-- Per-track export sums the counts of the files. `ExportNews::Counted` carries `over`. `clips` = `over > 0` and not 32-bit. What is counted is the master before the final cut: 23-16.
+- Per-track export sums the counts of the files. `ExportNews::Counted` carries `over`. `clips` = `over > 0` and not a 32-bit wav (the bits kept for wav while mp3 is chosen do not count). What is counted is the master before the final cut: 23-16.
 - Solo: `ExportDialogView::solo` from `export::Scene::soloed`. Solo is not in `Asked`, so changing it does not restart the export job.
 
 **3. Notices from the core**

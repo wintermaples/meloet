@@ -4,7 +4,7 @@ title: Save as opens in the current song's own folder, so the new song folder is
 area: CORE-STATE
 kind: ui-ux
 severity: medium
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -48,4 +48,6 @@ Fix plan: `crates/meloet-core/src/service.rs`: a second helper for windows that 
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`crates/meloet-core/src/service.rs`: a second helper `Worker::place_folder` (the folder that holds the song's folder, else the songs folder, each only when it is a directory; the shared filter is `first_folder`). `Effect::PickSaveAs` and `Effect::PickFolder` (「保存できない」 → 「場所をえらぶ」) use it; 「ひらく…」 keeps `start_folder`. `docs/architecture.md` 18 says where the windows start.
+
+Test: `service::shell_tests::the_pcs_windows_start_among_the_song_folders_or_in_the_songs_folder` (`service/shell_tests.rs`, a new test file of the core with a shell that records what it is asked).

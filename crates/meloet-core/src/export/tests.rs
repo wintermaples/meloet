@@ -349,6 +349,57 @@ fn the_place_is_chosen_in_the_pcs_window() {
 }
 
 #[test]
+fn a_name_typed_keeps_its_dots_and_only_the_formats_ending_is_taken_off() {
+    let mut m = song();
+    cmd(&mut m, Command::OpenExport);
+    let mut pick = |typed: &str| {
+        assert_eq!(cmd(&mut m, Command::ChooseExportPlace).len(), 1);
+        let picked = PathBuf::from("/home/me/デスクトップ").join(typed);
+        assert!(news(&mut m, ExportNews::PlacePicked(Some(picked))).is_empty());
+        export(&m).dialog.unwrap().place
+    };
+    assert_eq!(pick("デモ v1.2"), "~/デスクトップ/デモ v1.2.wav");
+    assert_eq!(
+        pick("Mix 2026.11.25.WAV"),
+        "~/デスクトップ/Mix 2026.11.25.wav"
+    );
+    assert_eq!(pick("できた.flac"), "~/デスクトップ/できた.flac.wav");
+}
+
+#[test]
+fn the_window_comes_again_to_ask_about_the_file_really_written() {
+    let dir = crate::settings::temp_dir("export-ask-again");
+    std::fs::write(dir.join("デモ v1.2.wav"), b"").unwrap();
+    let mut m = song();
+    cmd(&mut m, Command::OpenExport);
+    let first = export(&m).dialog.unwrap().place;
+    let again = ExportAsk::PickPlace {
+        folder: Some(dir.clone()),
+        name: "デモ v1.2.wav".into(),
+        folder_only: false,
+    };
+    // The window asked about 「デモ v1.2」 and 「デモ v1.2.WAV」, which are not there.
+    for typed in ["デモ v1.2", "デモ v1.2.WAV"] {
+        cmd(&mut m, Command::ChooseExportPlace);
+        let asked = news(&mut m, ExportNews::PlacePicked(Some(dir.join(typed))));
+        assert_eq!(asked, std::slice::from_ref(&again), "{typed}");
+        assert_eq!(export(&m).dialog.unwrap().place, first, "not taken yet");
+        assert!(cmd(&mut m, Command::ChooseExportPlace).is_empty(), "shown");
+        assert!(news(&mut m, ExportNews::PlacePicked(None)).is_empty());
+        assert_eq!(export(&m).dialog.unwrap().place, first, "put away");
+    }
+    cmd(&mut m, Command::ChooseExportPlace);
+    news(&mut m, ExportNews::PlacePicked(Some(dir.join("デモ v1.2"))));
+    let file = dir.join("デモ v1.2.wav");
+    assert!(news(&mut m, ExportNews::PlacePicked(Some(file.clone()))).is_empty());
+    assert_eq!(
+        export(&m).dialog.unwrap().place,
+        file.to_string_lossy(),
+        "asked about it"
+    );
+}
+
+#[test]
 fn an_export_runs_in_the_status_line_and_ends() {
     let mut m = song();
     let job = the_job(&cmd(&mut m, Command::OpenExport)).id;
@@ -861,4 +912,28 @@ fn a_matched_file_does_not_clip_and_its_gain_can_be_down() {
     );
     loudness(&mut m, ExportLoudness::AsIs);
     assert_eq!(clips(&m), (true, 1));
+}
+
+#[test]
+fn an_mp3_clips_whatever_bits_were_kept_for_wav() {
+    let mut m = song();
+    let job = the_job(&cmd(&mut m, Command::OpenExport)).id;
+    news(&mut m, counted(job, 100, Some(0.5), true));
+    let clips = |m: &Model| match export(m).dialog.unwrap().check {
+        ExportCheck::Done { clips, .. } => clips,
+        other => panic!("{other:?}"),
+    };
+    let format = |m: &mut Model, format| set(m, ExportChange::Format { format });
+    set(
+        &mut m,
+        ExportChange::Bits {
+            bits: RecordFormat::Bits32,
+        },
+    );
+    assert!(!clips(&m), "floats");
+    assert!(format(&mut m, ExportFormat::Mp3).is_empty());
+    assert_eq!(export(&m).dialog.unwrap().bits, RecordFormat::Bits32);
+    assert!(clips(&m), "an mp3 is written within full scale");
+    format(&mut m, ExportFormat::Wav);
+    assert!(!clips(&m));
 }

@@ -281,6 +281,9 @@ struct Dialog {
     /// `None`: there is nothing to render (an empty song, or MIDI, which renders nothing).
     job: Option<Job>,
     picking: bool,
+    /// The file that would be written for the name typed, which is there already and is not
+    /// the one the window asked about: the window is shown again with it.
+    again: Option<PathBuf>,
     /// F2: the window for 「絵」 is shown.
     picking_picture: bool,
 }
@@ -429,6 +432,7 @@ impl Exporting {
                         serial: scene.serial,
                         job: None,
                         picking: false,
+                        again: None,
                         picking_picture: false,
                     });
                 }
@@ -642,6 +646,15 @@ impl Exporting {
             self.close(asks);
             return;
         }
+        if let Some(again) = self.dialog.as_mut().and_then(|d| d.again.take()) {
+            asks.push(ExportAsk::PickPlace {
+                folder: again.parent().map(Path::to_path_buf),
+                name: (again.file_name())
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+                folder_only: false,
+            });
+        }
         let wanted = self.asked(scene);
         let had = (self.dialog.as_ref()).and_then(|d| Some(&d.job.as_ref()?.asked));
         if had == wanted.as_ref() {
@@ -735,9 +748,17 @@ impl Exporting {
                 };
                 if self.range == ExportRange::Tracks {
                     self.folder = Some(path);
-                } else if let Some(name) = path.file_stem() {
+                } else if let Some(typed) = path.file_name() {
+                    let name = typed_name(&typed.to_string_lossy(), self.format).to_owned();
+                    let real = path.with_file_name(format!("{name}.{}", self.format.extension()));
+                    // The window asked only about writing over the name typed.
+                    if real != path && real.exists() {
+                        dialog.picking = true;
+                        dialog.again = Some(real);
+                        return;
+                    }
                     self.folder = path.parent().map(Path::to_path_buf);
-                    self.name = Some(name.to_string_lossy().into_owned());
+                    self.name = Some(name);
                 }
             }
             ExportNews::Counted {
@@ -913,9 +934,11 @@ impl Exporting {
         };
         let over = job.over;
         // 32 bits are floats: a sample over 0 dB is written as it is. Matched, the true peak
-        // stays under 0 dB.
+        // stays under 0 dB. The bits kept for wav do not count for a format without bits.
         let matched = self.loudness_of(Some(job)) == ExportLoudness::Match;
-        let clips = over > 0 && self.bits != RecordFormat::Bits32 && !matched;
+        let floats = self.bits == RecordFormat::Bits32
+            && self.format.bits_choices().contains(&RecordFormat::Bits32);
+        let clips = over > 0 && !floats && !matched;
         match &job.failed {
             Some(reason) => ExportCheck::Failed {
                 reason: reason.clone(),
@@ -1084,6 +1107,19 @@ fn mp3_rate(rate: u32) -> u32 {
         _ if EXPORT_MP3_SAMPLE_RATES.contains(&rate) => rate,
         _ if rate.is_multiple_of(11_025) => 44_100,
         _ => 48_000,
+    }
+}
+
+/// The name typed in the save window, without the ending of `format` (in any case); other
+/// text after a dot is part of the name.
+fn typed_name(typed: &str, format: ExportFormat) -> &str {
+    match typed.rsplit_once('.') {
+        Some((name, ending))
+            if !name.is_empty() && ending.eq_ignore_ascii_case(format.extension()) =>
+        {
+            name
+        }
+        _ => typed,
     }
 }
 

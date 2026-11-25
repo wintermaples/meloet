@@ -978,3 +978,19 @@ fn an_arpeggio_on_the_tracks_changes_nothing_of_the_export() {
     assert!(plain.iter().any(|s| s.abs() > 0.05), "the song sounds");
     assert!(plain == on, "the same samples");
 }
+
+#[test]
+fn a_track_name_too_long_for_a_file_name_is_cut_between_characters() {
+    let long = "あ".repeat(100);
+    let first = free_name(&long, "flac", &[]);
+    let second = free_name(&long, "flac", std::slice::from_ref(&first));
+    assert_eq!(first, format!("{}.flac", "あ".repeat(66)));
+    assert_eq!(second, format!("{} 2.flac", "あ".repeat(66)));
+    assert!(second.len() <= 255);
+    // A cut that ends on a dot leaves none.
+    let dotted = format!("{}.{}", "a".repeat(199), "b".repeat(10));
+    assert_eq!(
+        free_name(&dotted, "wav", &[]),
+        format!("{}.wav", "a".repeat(199))
+    );
+}

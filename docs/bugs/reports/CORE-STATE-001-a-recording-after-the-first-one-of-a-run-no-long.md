@@ -4,7 +4,7 @@ title: A recording after the first one of a run no longer writes the waiting cha
 area: CORE-STATE
 kind: bug
 severity: medium
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -53,4 +53,6 @@ Fix plan: `crates/meloet-core/src/state/recovery.rs` `recovery_tick`: `let was_b
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`crates/meloet-core/src/state/recovery.rs` `recovery_tick`: `was_busy` is now set after every input (`let was_busy = std::mem::replace(..); let started = busy && !was_busy;`), so every recording or count-in that starts over a waiting change writes it at once, not only the first one of a run.
+
+Test: `state::recovery::tests::every_recording_over_a_waiting_change_writes_it_first` (`state/recovery/tests.rs`).

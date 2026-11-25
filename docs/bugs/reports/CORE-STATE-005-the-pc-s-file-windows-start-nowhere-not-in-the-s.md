@@ -4,7 +4,7 @@ title: The PC's file windows start nowhere, not in the songs folder, when the so
 area: CORE-STATE
 kind: bug
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -47,4 +47,6 @@ Fix plan: `crates/meloet-core/src/service.rs` `start_folder`: filter each choice
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`crates/meloet-core/src/service.rs` `start_folder`: each choice is filtered before the fall back (`first_folder`: the song's folder when it is a directory, else the songs folder when it is one). Done together with CORE-STATE-002 (`place_folder` uses the same filter).
+
+Test: `service::shell_tests::the_pcs_windows_start_among_the_song_folders_or_in_the_songs_folder` (the part after the song's folder is removed: 「ひらく…」, 「名前をつけて保存…」 and 「保存できない」 → 「場所をえらぶ」 start in the songs folder).

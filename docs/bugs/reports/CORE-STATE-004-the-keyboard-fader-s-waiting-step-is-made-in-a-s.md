@@ -4,7 +4,7 @@ title: The keyboard fader's waiting step is made in a song that replaced the one
 area: CORE-STATE
 kind: bug
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -49,4 +49,6 @@ Fix plan: `crates/meloet-core/src/state/songs.rs` `Model::replace_song`: `self.f
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`crates/meloet-core/src/state/songs.rs` `Model::replace_song`: `self.fader = Default::default()`, so the keyboard fader's waiting step (and what it caught) goes with the song it was moved in; it is never made in the new song.
+
+Test: `state::songs::tests::a_keyboard_fader_step_still_waiting_goes_with_the_song_it_was_for` (`state/songs/tests.rs`).

@@ -4,7 +4,7 @@ title: A file name typed in the export save window loses the text after its last
 area: CORE-EXPORT
 kind: bug
 severity: medium
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -51,4 +51,6 @@ Fix plan: `crates/meloet-core/src/export.rs` `PlacePicked`: take `path.file_name
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`crates/meloet-core/src/export.rs` `ExportNews::PlacePicked`: the name is the whole file name typed with only the chosen format's own ending taken off, in any case (`typed_name`); other text after a dot stays (「デモ v1.2」 → 「デモ v1.2.wav」; 「できた.flac」 under wav → 「できた.flac.wav」, the lead's decision). When the file that would be written is not the one the window asked about (typed without the ending, or in other capitals) and is there already, the place is not taken: the dialog keeps `again` and `Exporting::settle` shows the save window again with that file's name, so the PC's own "write over?" question is about it; put away, the place stays as it was. No new wording. `docs/architecture.md` 22-20 (the export place) says so.
+
+Tests: `export::tests::a_name_typed_keeps_its_dots_and_only_the_formats_ending_is_taken_off` and `export::tests::the_window_comes_again_to_ask_about_the_file_really_written` (`export/tests.rs`).

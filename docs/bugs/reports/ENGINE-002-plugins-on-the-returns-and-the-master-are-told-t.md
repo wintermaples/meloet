@@ -4,7 +4,7 @@ title: Plugins on the returns and the master are told the transport of the last 
 area: ENGINE
 kind: bug
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -49,7 +49,11 @@ Keep the transport of the first stretch (`told` of the first iteration, next to 
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (no test run). In `Engine::render` the stretch loop writes `self.plugin_block.set_transport(&told)` at the head of every stretch (`engine.rs:2964-2965`) and keeps only the built-in effects' `ctx` of the first one (`piece_ctx`). The returns' and the master's inserts run after the loop (`engine.rs:3025-3065`), and a plugin effect's `submit` (`plugin.rs:211`) copies `self.block.transport()` at that moment, which is the last stretch's. Architecture 21-3 says the returns and the master "get the value at the head of the render". Severity `low` stands: the told position is off by less than one block, and only plugins on a return or the master that follow the host position can show it.
+
+Corrections: none.
+
+Fix plan: `crates/meloet-engine/src/engine.rs` `render`: keep `told` of the first stretch next to `piece_ctx` (a `Copy` value, no allocation) and call `self.plugin_block.set_transport(&first)` once before the returns' loop. Test: grow `tests/lookahead.rs` `plugins_are_told_where_the_song_is` with a fake plugin effect on the master in a block that is cut into several stretches.
 
 ## Fix
 

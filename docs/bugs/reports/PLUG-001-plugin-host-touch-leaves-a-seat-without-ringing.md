@@ -4,7 +4,7 @@ title: Plugin host: touch() leaves a seat without ringing the bell, so a block a
 area: PLUG
 kind: bug
 severity: medium
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -60,7 +60,11 @@ No protocol or file-shape change.
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (no test run; it is a race between two threads of the host and the engine, and I found no small test that forces the order). `Handle::touch` (`rt.rs:394-399`) is the only main-thread method that takes a seat and does not ring the bell after; `install`, `remove`, `set_param`, `params_taken`, `outputs`, `forget_params` all do, with the same comment. The path to a stopped host holds: the engine's `submit` rings once (`ends.rs:292-296`); the audio thread wakes, reads `seen`, finds the seat busy and sleeps up to `IDLE_NS` (100 ms); the engine does not ring again while the block is `pending` (`submit` returns at once); the first `wait` stores `seen_progress`; at the next block `await_overdue` sees `taken != seq`, `progress` unchanged (only `take_request` and `finish` raise it) and no thread inside a plugin, and marks the mapping stopped.
+
+Correction: the window is narrower than the report's steps suggest. The main thread holds the seat in `touch` only for a push into a small `Vec`, so the audio thread must look at the seat in those few instructions. It is rare per touch; but a host with one plugin has no other ring to save it, and the result is a stopped plugin, so severity `medium` stands (I would not argue with `low` by frequency).
+
+Fix plan: `crates/meloet-plughost/src/rt.rs` `Handle::touch`: `self.bell.ring();` after the seat guard is dropped, with the same comment as the siblings. No test can watch the race itself; a unit test that `touch` raises the bell count is enough.
 
 ## Fix
 

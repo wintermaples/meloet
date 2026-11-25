@@ -4,7 +4,7 @@ title: list_effects description says meloet has six built-in effects; there are 
 area: AI
 kind: parity
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -36,7 +36,9 @@ Write "meloet's own nine" (or "meloet's own effects") in the doc comment. The de
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading. The doc comment of `list_effects` (`crates/meloet-ai/src/tools/params.rs:582-585`), which is the tool's description, says "meloet's own six"; `EffectKind::ALL` has nine (gate, deEsser and saturation since round 12), and the answer's `builtin` lists them all. Severity `low`.
+
+Fix plan: `crates/meloet-ai/src/tools/params.rs`: "meloet's own nine" (the word count stays the same, so `every_tool_says_what_it_is` still passes). Check `docs/development/ai-tools.md` for the same number and change it there too if it says six.
 
 ## Fix
 

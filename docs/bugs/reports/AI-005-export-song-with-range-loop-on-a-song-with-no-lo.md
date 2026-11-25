@@ -4,7 +4,7 @@ title: export_song with range "loop" on a song with no loop writes the whole son
 area: AI
 kind: ui-ux
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -37,7 +37,9 @@ For `RangeArg::Loop` with `doc.loop_range == None`, answer `failed("the song has
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading. `export_song` (`crates/meloet-ai/src/tools/files.rs:480-482`): `RangeArg::Loop => doc.loop_range.or_else(|| TickRange::new(0, song_end))`, so with no loop range the whole song is written and the answer does not say so; the argument's description says "The loop's bars." The sibling `set_loop_on` refuses in the same case ("the song has no loop range; set one with set_loop"). Severity `low`.
+
+Fix plan: `crates/meloet-ai/src/tools/files.rs`: for `RangeArg::Loop` with no `loop_range`, `failed("the song has no loop range; set one with set_loop, or give range \"song\"")`. Check `crates/meloet-ai/tests/` for a test that relies on the fallback and change it with it; one line in `docs/development/ai-tools.md` under `export_song` errors.
 
 ## Fix
 

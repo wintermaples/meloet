@@ -4,7 +4,7 @@ title: Clicking a clip on a vocal track selects it without the vocal-track rules
 area: CORE-PLAY-A
 kind: bug
 severity: medium
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -46,7 +46,11 @@ In `Play::click`, when not busy and the track differs, use the same path as `sel
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (no test run). `Play::click` (`play.rs:1070-1079`) writes `session.play_target = Some(track.id)` and nothing else; `selected_track_changed` (`play/vocal.rs:203-216`), the only place that sets `last_keys` and adds to `armed_vocals`, is called by `select_track`, `open_piano_roll` (`clips.rs:75`), `make_copy` (`tracks.rs:129`), `place_pattern` (`patterns.rs:153`) and `vocal.rs:245`, not by `click`. The screen sends only `selectClip` for a press on a clip (`Arrange.svelte:1378-1434`), no `selectTrack` with it. With `last_keys` empty, `Song::keys_target()` is `None` after the click, so the keys sound nowhere and the vocal track has no ●. Severity `medium` stands.
+
+Corrections: when the selection moves from a keys track to a vocal track by a clip click, `last_keys` is not cleared either, so the second sentence of "What happens" holds as written (an older keys track can be the target).
+
+Fix plan: `crates/meloet-core/src/play.rs` `Play::click`: `let before = self.song.session.play_target.replace(track.id); if before != Some(track.id) { self.selected_track_changed(before); }` inside the `!self.busy()` branch. The same two lines where `delete_track` (`play/tracks.rs:24-27`) and `after_change` (`play.rs:1414-1417`) move the selection, if a test shows they land on a vocal track (they are the same rule; keep the change to what a test proves). The `NoInput` notice on a clip click: give it the way `SelectTrack` does in `state.rs:1857` (the existing message, no new wording). Tests in `crates/meloet-core/src/play/clips_tests.rs` or `tests.rs`: after `SelectClip` of a vocal clip, `keys_target` is the keys track selected before and the vocal track is armed.
 
 ## Fix
 

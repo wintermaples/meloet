@@ -4,7 +4,7 @@ title: Toggle tools (set_mute, set_solo, bypass_effect, set_loop_on) read, then 
 area: AI
 kind: bug
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -39,7 +39,11 @@ Let the core decide with the wanted value: an AI ask such as `AiAsk::SetToggle {
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (no test run). `set_mute`, `set_solo`, `bypass_effect` and `set_loop_on` each read the song on the AI side (`self.read()`), compare with `on`, and then send a plain toggle through `AiAsk::Screen(Command::Toggle…)`. The core's dry run for these (`crates/meloet-core/src/play/ai.rs:279-341`) does not know the wanted value, so nothing checks that the switch is still as read when the toggle runs. Two calls of the same tool at once, or the person's M / S / L between the read and the ask, flip it the wrong way, and both answers say `changed: true`. The tools carry `idempotent_hint = true`. Severity `low` stands: it needs two asks inside a few milliseconds.
+
+Corrections: none.
+
+Fix plan: let the core thread decide. `crates/meloet-core/src/ai.rs`: an ask that carries the wanted value with the toggle (for example `AiAsk::ScreenWhen { command, on: bool }`, core-internal, not part of the screen's contract); `crates/meloet-core/src/play/ai.rs` / `state/ai.rs`: on the core thread read the switch the command would flip (track or return mute, solo, bypass of the insert, `loop_on`) and answer `AiRefusal::Unchanged` when it is `on` already, else run the toggle as now. `crates/meloet-ai/src/tools/mixer.rs` and `tools/timing.rs` send it and keep their early "no change" for the common case. Test in `crates/meloet-ai/tests/link.rs`: the ask with `on: true` twice in a row leaves the track muted and the second is "no change".
 
 ## Fix
 

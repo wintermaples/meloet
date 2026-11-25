@@ -4,7 +4,7 @@ title: A song file's loop range is read past MAX_TICK, which set_loop refuses
 area: CORE-FILES
 kind: bug
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -38,7 +38,11 @@ In `to_song`, also require `r.end <= MAX_TICK` (`TickRange::new(r.start, r.end).
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by a test I ran (scratch worktree, `cargo test -p meloet-core --features dev-hooks --lib verify_core_files_002`): a song with a loop, encoded, the loop's `"end"` changed in the JSON to `18446744073709551615`; `songfile::decode` gives `Ok` with `loop_range: Some(TickRange { start: 0, end: 18446744073709551615 })`. `timeline::set_loop` refuses an end past `MAX_TICK`, and `play.rs:437` casts the end to `i64`. What the recording and the engine then do with it I read only. Severity `low` stands (a file changed by hand).
+
+Corrections: none.
+
+Fix plan: `crates/meloet-core/src/songfile.rs` `to_song`: `Some(r) => Some(TickRange::new(r.start, r.end).filter(|_| r.end <= MAX_TICK)?)`. Test in `songfile/tests.rs`.
 
 ## Fix
 

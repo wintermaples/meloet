@@ -4,7 +4,7 @@ title: A new voice recording can take the name of a file the song's folder alrea
 area: CORE-AUDIO
 kind: bug
 severity: high
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -52,7 +52,11 @@ In `start_vocals`, treat a name as taken also when `self.audio_store.find(name).
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by a test I ran (scratch worktree, `cargo test -p meloet-core --features dev-hooks --lib verify_core_audio_001`), with one step taken from the code by reading. The test: an `AudioStore` with a song folder whose `音/` holds 「歌 40.wav」 (a file brought in and saved earlier) and an empty work place. The rule of `start_vocals` (`service/input.rs:219-223`, `!dir.join(name).exists()` on the work place only) says the name `vocalrec::file_name("歌", 40)` = 「歌 40.wav」 is free; the recording is written to `work/音/歌 40.wav`. Then, run on the real store: `AudioStore::find("歌 40.wav")` gives the song folder's file (content "the file brought in"), so the new clip plays the other file; `settle` (a save) does not move the recording, because the name is already in `音/`; `clear_work` (the song let go of) removes it. After that the only 「歌 40.wav」 is the brought-in file: the recording is gone. `start_vocals` itself was not called in the test (it needs the whole service and an input stream); its naming rule is the two lines quoted, and `Play::vocal_file_asks` gives `<track name> <audio id>.wav` with no look at the table. Severity `high` stands (a recording is lost, and until then another file plays in its place), though it needs a brought-in file whose name is `<track name> <a later audio id>.wav`, for example a take taken over from another meloet song.
+
+Corrections: none. The half about a table entry whose file is missing, and `keep_vocals` passing over a recovered file of a name the table has (`input.rs:621-624`), I read only.
+
+Fix plan: `crates/meloet-core/src/service/input.rs` `start_vocals`: a name is taken also when `self.audio_store.find(name).is_some()` (all the places the song looks in) or when the song's audio table has that file name; go on to « (2)» as now. The table's names must come with the ask: `crates/meloet-core/src/state.rs` `Effect::StartVocalRecording` gains `taken: Vec<String>` (the file names of `doc.audio`, as the import passes `taken`), filled in `play.rs:857`. Tests: `state/vocal_tests.rs` (the effect carries the table's names) and a service-level or store-level test of the name choice (a small free function `free_recording_name(store, dir, taken, names, ask)` makes it testable without a stream).
 
 ## Fix
 

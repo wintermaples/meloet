@@ -4,7 +4,7 @@ title: A recording that a full disk or the 4 GB wav limit stops ends with no not
 area: CORE-AUDIO
 kind: ui-ux
 severity: medium
-status: reported
+status: needs-lead
 found: 2026-11-25
 ---
 
@@ -45,7 +45,16 @@ Keep the reason (`full` or an error) with the recording, as `Cut` is kept for a 
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Real, checked by reading (no test run). `Job::write` sets `said.full` when a file has no room left (`vocalrec.rs:959-962`) and `said.error` on a failed write or sync; `poll_input` (`service/input.rs:423-427`) turns either into `Input::VocalsCannotGoOn`; its arm (`state.rs:1409-1413`) only calls `stop_recording`. The take is kept, and no notice is set; a stream that went away gets one through `cut_notice` (`RecordingStoppedAudioSystem` / `RecordingStoppedOutputMissing`). Architecture 22-7 says the 4 GB stop goes the "same path as the sound stopped (4-2)", and 4-2 says "a notice is shown".
+
+Looked for an existing message: `RecordingStoppedAudioSystem` names PipeWire, `RecordingStoppedOutputMissing` names the output, `InputLost` names the input that was unplugged (「…録音を止めました。録れた所までは残しています。」), `RecordingGaps` and `DiskTooSlow` are about skips. None can be used without saying a wrong cause. `ja.ts` has `pack.diskFull` (about the sound pack) and nothing for a recording.
+
+Why `needs-lead`: new wording for two causes (the disk cannot be written; the file reached the largest size a wav can hold) and a new `StatusMessage` variant (protocol addition). Choices:
+1. One new variant with a reason (`full` / `error`), said when the take is in, as `cut_notice` does: for example 「ディスクに書けなくなったので、録音を止めました。録れた所までは残しています。」 and 「ファイルがいちばん大きい所まで来たので、録音を止めました。録れた所までは残しています。」 (the second half is the wording of `msg.inputLost`). The reason travels with the recording from `Input::VocalsCannotGoOn { full }`. Recommended; the owner decides the text.
+2. One text for both causes (shorter, less exact).
+3. Leave it and list it in `docs/progress.md`.
+
+Severity `medium` stands (the take is kept, but the person is not told why the recording ended, and can record again into the same full disk).
 
 ## Fix
 

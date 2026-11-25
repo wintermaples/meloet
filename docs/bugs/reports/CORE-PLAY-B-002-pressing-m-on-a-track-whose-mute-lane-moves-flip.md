@@ -4,7 +4,7 @@ title: Pressing M on a track whose mute lane moves flips the hidden hand mute, n
 area: CORE-PLAY-B
 kind: bug
 severity: medium
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -46,7 +46,13 @@ Read from the code, not run.
 In `toggle_mute`, when the lane moves, take the target value as `mute_pressed` does: `wanted = !(lane.value_at(self.play_line()).unwrap_or(hand) >= 0.5)`, and set `muted = wanted` (a set, not a toggle) together with the rest via `rest_with` (when the hand value is already `wanted`, the edit is unchanged and `apply_resting` makes the rest step alone). Needs a small model helper to set the mute to a value (or toggle only when `t.muted != wanted`). No protocol or file change; the test above changes.
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading; the existing test `a_mute_lane_takes_the_place_of_the_mute_put_by_hand` (`play/automation/tests.rs:193-237`) shows today's behavior itself: hand mute on, a mute lane with a point 0.0 (the track plays, M is not lit), `ToggleMute` → the lane rests, the hand mute goes off, and `silent` is empty: the track still plays after the person pressed M to mute it.
+
+Is it meant? I found nothing that says so. Spec 3 (Y16, `3-bands.md:204`): the lane rests and "the value stays where the hand put it"; for a button the hand puts it to the opposite of what it shows, and the mixer shows the lane's value at the play line (`MixerStrips.svelte:99-103` `shownMuted`), not the hidden `muted`. `7-readings.md` has no reading for M under a mute lane (line 445 only says a mute set rests the lane "as pressing M does"). Architecture 21-11 says "value + rest in one step" for a control whose lane moves, and the comment of `toggle_mute` says "the mute and its rest as one step"; neither says the value is the flip of the hidden one. The sibling `mute_pressed` (`play/automation.rs:904-922`), the same press with 「● 書く」 on, reads `lane.value_at(tick)` and writes the opposite. So the test fixes an accident of the first build, not a decision, and it changes with the fix. Severity `medium` stands.
+
+Corrections: none.
+
+Fix plan: `crates/meloet-core/src/play/mix.rs` `toggle_mute`: when the track's mute lane moves, `wanted = !(lane.value_at(self.play_line()).unwrap_or(hand) >= 0.5)`; build the edit only when `t.muted != wanted` (then `edit::toggle_mute`), else pass `Err(EditError::Unchanged)` to `rest_with`, which then makes the rest step alone. No model change is needed. Tests: change the last part of `a_mute_lane_takes_the_place_of_the_mute_put_by_hand` (after the press the track is silent and `muted` is true) and add the other case (lane 1.0, hand off: the press leaves the track playing with `muted` false). If the lead reads Y16 the other way, the choice is to keep the code and write the reading into `7-readings.md`; I do not recommend it.
 
 ## Fix
 

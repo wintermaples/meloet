@@ -4,7 +4,7 @@ title: The shell's own zoom subscription counts as the screen's greeting, so the
 area: EDGE
 kind: bug
 severity: medium
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -44,7 +44,11 @@ Smallest change: let the shell subscribe without announcing the screen, for exam
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (the real app was not started). Tauri 2.12.5 (`~/.cargo/registry/src/*/tauri-2.12.5/src/app.rs`, the version in `Cargo.lock`): the builder's `setup` closure is called from `fn setup` (`app.rs:2688-2701`), which first builds the windows of the config and then calls the closure, on `RuntimeRunEvent::Ready` (`app.rs:1442-1443`), on the main thread, before the event loop has run any page load. In meloet's closure (`main.rs:557-560`) `follow_scale` calls `core.subscribe(..)` (`main.rs:254`), and `Core::subscribe` (`service.rs:888-891`) always sends `Msg::ScreenReady`; the core thread then calls `plugins.release()` and `handle(Input::ScreenUp)` (`service.rs:2844-2849`). The page's own `subscribe` command (`main.rs:105`) can only come after the page loaded. So the shell's subscription is always the first, and the scan, the song handed over by the PC, the pack check and the update check never wait for the page; `SCAN_WAITS_FOR_SCREEN` never matters. Architecture 20-10 and the CodeLLDB note in CLAUDE.md say the scan starts after the screen's greeting. Children are still started one at a time (`launch::spawn`), so I do not claim the CodeLLDB hang is back; the pauses while WebKit loads and the later window are what 20-10 names. Severity `medium` stands.
+
+Corrections: none.
+
+Fix plan: `crates/meloet-core/src/service.rs`: a second method (for example `Core::listen(messages)`) that only calls `self.hub.subscribe(messages, <a telemetry sink that says false>)` and sends nothing; `crates/meloet-app/src/main.rs` `follow_scale` uses it. The page's `subscribe` command keeps `Core::subscribe`. Test in `service/tests.rs` or `plug_tests.rs`: with `wait_for_screen`, `listen` does not release the held scan and `subscribe` does. After the fix, check by hand once that a start under VS Code's 「meloet（デバッグ）」 still shows the window.
 
 ## Fix
 

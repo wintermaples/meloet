@@ -4,7 +4,7 @@ title: An AI state put whose plugin process stops after taking the bytes is load
 area: CORE-PLAY-C
 kind: bug
 severity: medium
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -44,7 +44,11 @@ In `ai_state_put`, for `Err(HostError::Gone)` always revive the put plugin from 
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (no test run; it needs a real plugin with the sound running, which I did not start). `Run::answer` for `Ask::SetState` (`hosts.rs:656-666`) stores the put bytes as `Slot::state` as soon as the host process answers `Ok`. `PluginAsk::PutState` (`service.rs:3574-3591`) sends `set_state` and then `state`; when the first is `Ok` and the second is `Gone`, the core gets `StatePut(Err(Gone))`. `ai_state_put` (`aistate.rs:186-190`) calls `revive(ticket, restored)`, and `from_song` is true only after an undo or redo; else `reload_at` pushes `Effect::ReloadPlugin`, and `Run::reload` loads `slot.state`, which is now the put state. Architecture 24-16 G says a state put while blocks run is taken by Surge XT only in its next block, after `SetState` was answered; so a crash there comes after the `Ok`. The same chapter promises "`ReloadPlugin` with the state `Hosts` kept (a failed set does not replace it)" and the answer text says "loaded again with the song's state". The case measured in 24-16 G (the half-cut state, "it is reloaded and the song is safe") was with no sound running, where the set itself fails; that case is right today. Severity `medium` stands (the song's plugin plays a state the song does not hold, and a state that crashes is put in again at every reload).
+
+Corrections: none.
+
+Fix plan: `crates/meloet-core/src/play/plugs/aistate.rs` `ai_state_put`: for `Err(HostError::Gone)` call `self.revive(ticket, true, effects)`, so the put plugin is loaded anew from the song (`load_from_song`); the other plugins of the same process keep the `ReloadPlugin` path. Test in the aistate tests: a put whose answer is `Gone` gives `Effect::LoadPlugin` with the song's state, not `ReloadPlugin`. If `crates/meloet-ai/tests/plugstate.rs` (ignored, real plugins) has the half-cut case, add the same with the sound running when someone can run it.
 
 ## Fix
 

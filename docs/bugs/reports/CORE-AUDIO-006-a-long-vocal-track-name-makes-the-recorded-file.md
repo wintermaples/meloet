@@ -4,7 +4,7 @@ title: A long vocal track name makes the recorded file name longer than the file
 area: CORE-AUDIO
 kind: bug
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -41,7 +41,11 @@ In `file_name`, cut the cleaned track name at a character boundary so that the w
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (no test run). `vocalrec::file_name` (`vocalrec.rs:68-77`) puts the whole cleaned track name into `<name> <id>.wav`; `rename_track` only trims a name. Past about 82 Japanese characters the file name is over 255 bytes, `WavFile::create` fails, `start_vocals` answers `VocalsNotStarted`, and the voice is not recorded (silently, CORE-AUDIO-003). The same function names the files of 「逆にする」 and 「音のクリップにする」. The same fault for exported files is CORE-EXPORT-003. Severity `low` stands (a very long track name).
+
+Corrections: none.
+
+Fix plan: `crates/meloet-core/src/vocalrec.rs` `file_name`: cut the cleaned name at a character boundary to at most 200 bytes (then trim spaces and dots again) before the id and `.wav` are added; that leaves room for the « (n)» and suffixes added later. Share the cut with `export/job.rs` `free_name` (one small helper) when CORE-EXPORT-003 is fixed. Test next to the `file_name` tests: 100 Japanese characters give a name of at most 255 bytes that ends in ` <id>.wav`.
 
 ## Fix
 

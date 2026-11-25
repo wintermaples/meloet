@@ -4,7 +4,7 @@ title: LV2: a block that goes round the plugin while the main thread holds the g
 area: PLUG
 kind: bug
 severity: medium
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -51,7 +51,11 @@ No protocol or file-shape change.
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (no test run; I did not start plugins). `Lv2Processor::process` (`lv2.rs:1723-1736`) returns at once when `gate.enter()` fails, before it reads `block.events`, and `SlotRun::serve` (`rt.rs:171-178`) clears `self.events` after `process` whatever happened. So the note-ons, note-offs and parameter points of a passed-by block are gone. The gate is claimed on the main thread in `save_state` (through `state.to_string` and the copy), `load_state`, `set_param` of a control port and `save_preset`; all happen while a song can play. `Vst3Processor::process` (`vst3.rs:970-980`) has the same early return. Architecture only says the block "goes without the plugin" (the sound); nothing says its events may be dropped. Severity `medium` stands (a hanging note after a save while playing).
+
+Corrections: none.
+
+Fix plan (one place for both formats, no new buffer): `crates/meloet-plughost/src/formats/mod.rs` `Processor::process` returns whether the plugin ran (`bool`); `lv2.rs` and `vst3.rs` return `false` on the gate's early return; `crates/meloet-plughost/src/rt.rs` `SlotRun::serve` clears `self.events` only after a block that ran, so the kept events go with the next block (they are pushed while `len < capacity`, as now; a kept event's frame is brought into the next block's length at frame 0). Also in `lv2.rs` `save_state`: drop the claim right after `instance.state()` (as `save_preset` does), since `to_string` and the copy do not touch the instance. Test in `rt.rs` tests with the fake processor: a block whose gate is held, then one that runs, gets the first block's note-off.
 
 ## Fix
 

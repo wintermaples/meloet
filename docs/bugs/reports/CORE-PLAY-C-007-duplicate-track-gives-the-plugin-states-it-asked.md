@@ -4,7 +4,7 @@ title: Duplicate track gives the plugin states it asked for to the copy by slot 
 area: CORE-PLAY-C
 kind: bug
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -42,7 +42,11 @@ Keep the key (or the ticket) in `CopyAsk` / `CopyStates`, and in `make_copy` giv
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (no test run). `ask_copy_states` (`play/plugs/copies.rs:46-90`) checks the key once when it asks and keeps only `ticket`, `place`, `puts`. `copy_state_said` hands back `(place, state)`, and `make_copy` (`play/tracks.rs:109-122`) puts each state on whatever plugin the copy has at that place now, under that plugin's key. `forget_copy` runs only for another song or a history jump, so a `MoveInsert` or a replace on the source track between the asks and the last answer is not noticed. Severity `low` stands (the two intents must fall inside the wait for the answers, tens to hundreds of milliseconds).
+
+Corrections: none.
+
+Fix plan: `crates/meloet-core/src/play/plugs/copies.rs`: keep the plugin's key in `CopyAsk` and hand it back with the state (`CopyStates` rows of `(place, key, state)`); `crates/meloet-core/src/play/tracks.rs` `make_copy`: give a state only where the copy's plugin at that place has that key, else leave the song's state. (Following a moved plugin by its ticket is more than the fix needs.) Test in the copies tests: asks out, `MoveInsert`, answers in → no state lands on the other plugin.
 
 ## Fix
 

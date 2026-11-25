@@ -4,7 +4,7 @@ title: When the files of a voice recording cannot be made, the recording goes on
 area: CORE-AUDIO
 kind: ui-ux
 severity: medium
-status: reported
+status: needs-lead
 found: 2026-11-25
 ---
 
@@ -43,7 +43,16 @@ Set a notice in the `Input::VocalsNotStarted` arm of state.rs (and, if wanted, s
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Real, checked by reading (no test run). `Side::start` (`vocalrec.rs:591-615`) fails on `create_dir_all`, `WavFile::create` or the folder sync (and when no input is open); `start_vocals` (`service/input.rs:257-263`) prints to stderr and answers `Input::VocalsNotStarted`; its arm in `state.rs:1394` only calls `Play::vocals_not_started` (`play/vocal.rs:398-403`), which drops the vocal tracks from the recording. No notice is set anywhere, and the recording goes on.
+
+Looked for an existing message, as the lead asked: `StatusMessage` has `NoInput`, `InputLost` (「…が抜けました。録音を止めました。…」), `RecordingStoppedAudioSystem` / `RecordingStoppedOutputMissing`, `RecordingGaps`, `DiskTooSlow` (reading, while playing), `BounceFailed` (`msg.bounceFailedWrite` 「音にできませんでした。作業の場所に書けません。」), `ClipWorkFailed` (about clips). None says "the voice is not being recorded because its file could not be made"; each names another cause, so using one would mislead. `ui/src/text/ja.ts` has no other fitting key (the save dialog's 「ここには保存できませんでした（書きこむ権利がないか、空きが足りません）…」 is about the song's place).
+
+Why `needs-lead`: the fix needs new wording (spec 6 has none) and a new `StatusMessage` variant (a protocol addition: decide the version). Choices:
+1. A new variant (for example `VocalsNotStarted`) with a text from the owner, set in the `Input::VocalsNotStarted` arm; when the recording had only vocal tracks, also stop it (nothing would be recorded). Cost: protocol + `ja.ts` / `en.ts` + the status line's table + a fake scene. Recommended. A text to offer the owner, in the words of `msg.bounceFailedWrite`: 「声を録れません。作業の場所に書けません。」 (and for a recording with keys: the keys go on).
+2. No new wording: stop the recording at once with no take and say nothing. Still silent; not recommended.
+3. Leave it and list it in `docs/progress.md`.
+
+Severity `medium` stands: a whole take can be sung into nothing; it needs a work place that cannot be written.
 
 ## Fix
 

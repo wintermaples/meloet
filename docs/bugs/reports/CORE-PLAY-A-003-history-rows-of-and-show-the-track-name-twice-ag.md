@@ -4,7 +4,7 @@ title: History rows of 「アルペジオを変える」 and 「音のつまみ�
 area: CORE-PLAY-A
 kind: ui-ux
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -39,7 +39,11 @@ Screen side, as `soundReplaced` is done: in `rowWhatText`, when `row.place?.kind
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (no test run). `play/history.rs:1136-1160` gives `StepWhat::Track` (SetArp) and `StepWhat::SoundKnob` with the place `on_track(track)`; `rowWhatText` (`ui/src/components/history/stepText.ts:199-203`) drops the track only for `soundReplaced`, so both rows name the track in 「（何を）」 and again in the right column. Spec 3 (94-6): "for steps whose row shows the track name in the right column, 「（何を）」 does not include the track name"; `7-readings.md` line 396 keeps the name only for rows whose right column is 「アレンジ」 or 「ミキサー」. Severity `low` stands.
+
+On the wording: no new text key is needed, so this is `confirmed`, not `needs-lead`. 「アルペジオを変える」 with the track as its place becomes the bare row (`history.rowBare`). The knob row without the track is 「明るさ 50 → 25 %」, which existing keys already say: `history.changeAt` (`{place} {from} → {to}`, spec:3) with the knob's name as `place`, `from` the number, and `to` through `param.value.percent` (`{value} %`, spec:3). Both keys exist in `ja.ts` and `en.ts`.
+
+Fix plan (screen only): `ui/src/components/history/stepText.ts` `rowWhatText`: when `row.place?.kind === "track"`: for `what.kind === "track"` return `null` (bare row); for `what.kind === "soundKnob"` return the `history.changeAt` form above. The status line keeps `stepWhatText` with the track. `ui/src/bridge/fakeWave3.ts:27` follows. Tests in the history text tests next to the `soundReplaced` case.
 
 ## Fix
 

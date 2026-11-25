@@ -4,7 +4,7 @@ title: A track's plugin that became ready under a replace audition loses its sta
 area: CORE-PLAY-C
 kind: bug
 severity: medium
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -46,7 +46,11 @@ Push the `DropPlugin { ticket: old.ticket }` after the `LoadPlugin` (the hosts' 
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (no test run). In `load_again` (`play/plugs.rs:659-690`) a plug that is `Ready` gets `PlugState::Of(old.ticket)` when `live`; when it is also `!old.placed`, `Effect::DropPlugin { ticket: old.ticket }` is pushed before the `Effect::LoadPlugin`. The service handles effects in order: `DropPlugin` (`service.rs:3338-3348`) removes `ready[old]` and `ids[old]`, then `load_plugin` (`service.rs:3649-3652`) finds no `ids[old]` for `PlugState::Of(old)` and loads `StartState::Fresh`. A seat's own plugin is `Ready` and not placed only while a replace audition runs on that seat (`plugin_loaded`, `plugs.rs:549`). The plugin then has its default state while the song still holds the saved one, and a save asks the plugin. Severity `medium` stands: it is a rare order of events (an output at another rate during a replace audition whose own plugin became ready under it), but the saved song loses the plugin's state.
+
+Corrections: none.
+
+Fix plan: `crates/meloet-core/src/play/plugs.rs` `load_again`: for `Ready && !placed` use the song's state instead of the instance's (`PlugState::Bytes(old.plugin.state.clone())`, `Fresh` when empty): an instance that was never placed was never played or changed, so both are the same, and the order of the two effects no longer matters. Keep the `DropPlugin`. Test in `state/added_tests.rs`: a rate change during a replace audition gives `LoadPlugin` with `Bytes(the song's state)`.
 
 ## Fix
 

@@ -4,7 +4,7 @@ title: Removing a missing plugin instrument keeps its lanes of parameters 0-3, w
 area: MODEL-B
 kind: bug
 severity: medium
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -42,7 +42,11 @@ In `remove_missing`, when `uses(&track.instrument)`, replace the instrument the 
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (no test run). `mixer::remove_missing` sets `track.instrument = InstrumentRef::SINE` by hand and then calls `drop_orphan_lanes`; `Track::has_target(Instrument { param })` on a built-in sound is `SoundKnob::from_index(param)` + `knob_usable`, and `knob_usable(SINE, _)` is true for all four knobs, so lanes of the plugin's parameters 0 to 3 stay and are read as knob lanes. `edit::with_instrument` (the path of `set_instrument` and `remove_instrument`) drops every `AutoTarget::Instrument` lane and resets `knobs`; this path does neither. Architecture 21-5 names `RemoveMissing` among the steps that remove the lanes. Severity `medium` stands (wrong sound after a normal action on a song opened without its plugin; LV2 parameter ids are port indexes, so 0 to 3 are common).
+
+Corrections: none.
+
+Fix plan: `crates/meloet-model/src/edit.rs`: make `with_instrument` `pub(crate)`; `crates/meloet-model/src/mixer.rs` `remove_missing`: when `uses(&track.instrument)`, build the track with `with_instrument(&track, InstrumentRef::SINE)` before emptying the inserts and `drop_orphan_lanes`. Test next to `lanes_go_with_what_they_move` in the mixer tests: a missing plugin instrument with lanes of param 2 and param 9; after `remove_missing` neither is there and `knobs` is the default.
 
 ## Fix
 

@@ -4,7 +4,7 @@ title: A recording after the first one of a run no longer writes the waiting cha
 area: CORE-STATE
 kind: bug
 severity: medium
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -45,7 +45,11 @@ Add a test: record once, then change and record again within 2 s, and expect a `
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (no test run; the line decides it alone). `recovery_tick` (`state/recovery.rs:209`): `let started = busy && !std::mem::replace(&mut self.recovery.was_busy, busy);`. `&&` does not run its right side when `busy` is false, so `was_busy` is written only while busy and is never set back to false after the first recording of a run. At every later start `replace` returns `true`, `started` is false, and the `if busy { … return; }` block writes nothing. The comment in the block says the write is meant for every recording that starts over a waiting change. Severity `medium` stands (after an end in the middle of a recording, the song before the last change comes back, and the kept voice is placed on it).
+
+Corrections: none.
+
+Fix plan: `crates/meloet-core/src/state/recovery.rs` `recovery_tick`: `let was_busy = std::mem::replace(&mut self.recovery.was_busy, busy); let started = busy && !was_busy;`. Test in `state/recovery/tests.rs` next to `nothing_is_written_while_recording_and_the_take_is_written_after`: record and stop once, then a change and Record inside 2 s gives `Effect::WriteRecovery`.
 
 ## Fix
 

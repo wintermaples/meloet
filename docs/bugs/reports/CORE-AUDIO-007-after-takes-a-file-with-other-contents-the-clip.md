@@ -4,7 +4,7 @@ title: After 「さがす…」 takes a file with other contents, the clip keeps
 area: CORE-AUDIO
 kind: bug
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -48,7 +48,11 @@ In `Work::found`, when the found file's SHA-256 differs from `source.sha256` (or
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (no test run). `Work::found` (`audiofiles/keeper.rs:414-443`) copies a file of the same rate and channel count into the work place under the missing source's name and calls `file_arrived`; nothing made from the old contents is let go. `AudioStore::playable` and `PcmStore::open` (`audiofiles.rs:251-262, 429-439`) take the decoded copy `audio/<uid>-<rate>.wav` whenever the found file is not itself a wav at the engine's rate, and `watch` (`keeper.rs:465-467`) keeps the peaks file while its frame count equals `source.frames`. The uid does not change, so the old decoded copy plays and the old waveform is drawn. Architecture 22-18 A2 accepts a file with another SHA-256 on purpose ("maybe the same song saved again by another app"), and 22-8 / 22-9 call the cache a copy that can be made again. Severity `low` stands (only after 「さがす…」 with a file of other contents, and for the decoded copy only when the file is not a wav at the engine's rate).
+
+Corrections: none. I did not check when the cache of a missing source is cleaned; if it is already gone, only the peaks half is left.
+
+Fix plan: `crates/meloet-core/src/audiofiles/keeper.rs` `Work::found`: after the copy, when the found file's SHA-256 is not `source.sha256` (or there is none), remove the decoded copies of that uid and its peaks file (a small method on `AudioStore`, which is the one place that knows the cache paths) and take the uid out of `peaks_made`, before `file_arrived`. Test in `audiofiles/tests.rs`: a cached copy and peaks for a uid, `found` with a file of other bytes → both are gone and `playable` says `NeedsCache`.
 
 ## Fix
 

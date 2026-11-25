@@ -3,8 +3,8 @@ id: CORE-PLAY-C-001
 title: A stopped plugin loaded again after the sample rate changed runs at the old sample rate
 area: CORE-PLAY-C
 kind: bug
-severity: medium
-status: reported
+severity: low
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -46,7 +46,13 @@ Give the reload the present rate: `Effect::ReloadPlugin { ticket, sample_rate: s
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (no test run). `load_again` (`play/plugs.rs:668`) passes over `Phase::Stopped | Phase::Reloading | Phase::Failed`; 「もう一度読みこむ」 of a stopped plugin sends `Effect::ReloadPlugin { ticket }` (`plugs.rs:855-858`, also `aistate.rs:365`), the service calls `Hosts::reload(id, block, ..)` (`service.rs:3364-3373`), and `Run::reload` (`hosts.rs:1165-1172`) loads with `slot.spec`, whose `sample_rate` is the one of the first load (`Request::Load { sample_rate: spec.sample_rate }`, `hosts.rs:1110-1117`). Nothing gives `Hosts` the new rate. A `Failed` plugin goes through `want_plug` and gets the present rate.
+
+Severity changed from `medium` to `low`: it needs a plugin whose process stopped and, before it is loaded again, an output at another sample rate. The sound is wrong when it happens, but it is a rare corner, and taking the plugin out and in again is the way around.
+
+Corrections: none.
+
+Fix plan: `crates/meloet-core/src/state.rs` / `play/plugs.rs` / `play/plugs/aistate.rs`: `Effect::ReloadPlugin { ticket, sample_rate: self.plugs.rate }`; `crates/meloet-core/src/service.rs` passes it on; `crates/meloet-core/src/plugins/hosts.rs` `reload(id, sample_rate, block, done)` writes `slot.spec.sample_rate` before `place`. For `Phase::Reloading` at the moment of a rate change: remember in the plug that the rate changed and, in `plugin_loaded`, load it again once through the normal path (the plugin is `Ready` then, so `load_again`'s rule applies). Tests in `state/added_tests.rs` next to `plugins_are_loaded_again_for_another_sample_rate_and_for_a_new_engine` (the reload effect carries the new rate) and in the hosts' tests with the fake host (the `Load` of a reload names the new rate).
 
 ## Fix
 

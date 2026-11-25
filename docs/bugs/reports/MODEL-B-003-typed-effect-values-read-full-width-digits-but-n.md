@@ -4,7 +4,7 @@ title: Typed effect values read full-width digits but not full-width unit letter
 area: MODEL-B
 kind: bug
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -41,7 +41,11 @@ In the character map of `ParamSpec::read`, also turn full-width Latin letters (`
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (no test run). `ParamSpec::read` maps only full-width digits, `−`, `－`, `＋` and `．` to ASCII; the unit is compared with ASCII `ms`, `s`, `k` after `to_lowercase()`, which leaves full-width letters full-width. `ParamRow.svelte:174` sends the typed text as it is. So 「５００ｍｓ」 for a parameter in seconds reads as 500. Severity `low` stands (needs the input method in full-width alphanumerics and a typed unit of another scale).
+
+Corrections: none.
+
+Fix plan: `crates/meloet-model/src/effects.rs` `ParamSpec::read`: add `'Ａ'..='Ｚ' | 'ａ'..='ｚ'` to the character map (to the ASCII letter, code − 0xFEE0), and the full-width space `'\u{3000}'` to a plain space while there. Rust side only, so the AI link's typed values get it too. Cases 「５００ｍｓ」, 「１．５ｓ」, 「２ｋＨｚ」 in the test `a_typed_value_reads_with_or_without_its_unit`.
 
 ## Fix
 

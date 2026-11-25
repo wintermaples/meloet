@@ -4,7 +4,7 @@ title: A track's plugin that fails to load during a replace audition leaves the 
 area: CORE-PLAY-C
 kind: bug
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -43,7 +43,11 @@ In `place_waiting` (or in `end_audition` for replace mode), when the seat's own 
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (no test run). `seat_instrument` (`play/plugs.rs:440-459`) gives the engine `InstrumentRef::Plugin` for a plugin that is loading (the silent stand-in). When the load fails while a trial is on that seat, `plugin_unreadable` (`plugs.rs:607-624`) sets `Phase::Failed` and leaves the sine out (`trial_seat != Some(seat)` is false), but still returns `StatusMessage::PluginUnreadable`. On Esc, `end_audition` (`play/shelf.rs:364-375`) sends `EndTrial { keep: false }` and calls `place_waiting`, which acts only on a `Ready` plug. The seat's own instrument stays the silent stand-in, against spec 3 (89-12) and the status line just shown. Severity `low` stands (a load that fails late, during a replace audition on that very track).
+
+Corrections: none.
+
+Fix plan: `crates/meloet-core/src/play/plugs.rs` `place_waiting`: when the seat's own plug is `Phase::Failed`, push `EngineOp::Instrument { seat, instrument: InstrumentRef::SINE }`. Check the other end of a replace audition too (the tried sound is kept: then the own plug is dropped and nothing is needed). Test in the shelf or plugs tests: load fails under a trial, Esc, the seat gets the sine.
 
 ## Fix
 

@@ -4,7 +4,7 @@ title: Joining clips keeps origin indexes on notes of a take with no origin, so 
 area: MODEL-A
 kind: bug
 severity: high
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -43,7 +43,11 @@ In `join_clips`, write `from: None` for every note put into the joined take (as 
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by a test I ran (scratch worktree, `cargo test -p meloet-core --features dev-hooks --lib verify_model_a_001`): a new song with two neighbouring keys clips, `quantize::quantize` on the first, `arrange::join_clips` on both, then `songfile::decode(&songfile::encode(..))`. Before the join the song reads back; after it the joined take has `origin: None` and notes `from: [Some(1), None]`, and `decode` gives `Err(Broken)`. The recovery file goes through the same `decode`, so it is lost too. Severity `high` stands (the saved song cannot be opened).
+
+Corrections: none; the lines and the cause are as written. Both callers (`play/clips.rs:40` and the AI link's `play/ai.rs:377`) go through the same `arrange::join_clips`.
+
+Fix plan: in `crates/meloet-model/src/arrange.rs` `join_clips`, write `from: None` in the `Note` pushed into the joined take. Tests: in `crates/meloet-model/src/arrange/tests.rs` (no note of the joined take has `from`), and in `crates/meloet-core/src/songfile/tests.rs` (quantize, join, `decode(encode(..))` gives the song back). A song file already written this way stays unreadable; making the reader forgive a `From` note in a take with no origin (read it as plain) would bring such files back, but that is a choice for the lead and not needed for the fix.
 
 ## Fix
 

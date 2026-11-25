@@ -4,7 +4,7 @@ title: After close_laps, a late key or pedal of the ended pass goes back into th
 area: MODEL-A
 kind: bug
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -23,7 +23,7 @@ With a loop and 「重ねる」, the core calls `Recorder::close_laps(upto)` whe
 
 A key pressed in the last moment of the closed pass whose event reaches the core after that close (the engine reports it a block later) then goes into the closed pass, not into "the pass that is going on":
 - A late key: the closed pass gets notes again, and the next `close_laps` gives it as a take of its own. With 「重ねる」 each take is its own step, so the person gets an extra 「録音」 step holding that one note (or an extra take in the clip, when 「重ねる」 was just turned on and `add_recording` takes the passes).
-- A late pedal up (or bend, modulation) with no late note: it goes into the closed pass's `controls`; that pass has no notes, so the next `close_laps` gives no take and clears it. The pedal up is lost, so the pass-0 take keeps the pedal down to the end of the clip and the next passes' notes in the same clip ring on.
+- A late pedal up (or bend, modulation) with no late note: it goes into the closed pass's `controls`; that pass has no notes, so the next `close_laps` gives no take and clears it. The pedal-up point is lost from the song (the pass-0 take has no pedal up in its last moments). The next pass still starts with the pedal up, because the recorder's held values take the move.
 
 When some event of the new pass came before the close, the same late key goes into the new pass, as the test `closed_passes_are_given_once_and_late_keys_go_on` expects. So the result depends on whether the person happened to play in the first 15 ms of the new pass.
 
@@ -55,7 +55,11 @@ At the end of `close_laps`, when the last pass in `laps` has `number <= upto`, c
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by a test I ran (scratch worktree, `cargo test -p meloet-model --lib verify_model_a_004`): the sequence of "How to trigger" gives two takes at `close_laps(1)`: `[(7660, 10, 65)]` and `[(10, 50, 64)]`, where the doc of `close_laps` and the test `closed_passes_are_given_once_and_late_keys_go_on` promise one take holding both. The core calls `close_laps` from `Play::pass_over` (`play.rs:1844`) as soon as a heard position of the next pass comes, so the order is reachable.
+
+Correction: the pedal half is smaller than written. A late pedal-up of the closed pass is dropped from that pass, but `HeldControls` still takes it, so the next pass does not start with the pedal down (my test `verify_model_a_004_pedal` passed: the head of pass 1 has no `CC 64 = 127`). What is lost is only the pedal-up point in the last moments of the closed pass's take. Severity `low` stands.
+
+Fix plan: in `crates/meloet-model/src/record.rs` `close_laps`, after the loop, when the last entry of `laps` has `number <= upto`, call `self.enter_lap(upto + 1)`. Add the sequence above to `record/tests.rs`. Check `finish` afterwards: an empty pass that was entered this way must not give an empty take or count as a pass with notes.
 
 ## Fix
 

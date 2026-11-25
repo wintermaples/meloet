@@ -4,7 +4,7 @@ title: Overdub into an empty place drops the pedal, bend and modulation played b
 area: MODEL-A
 kind: bug
 severity: medium
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -41,7 +41,11 @@ In `in_the_gap`, before filtering, find the last sustain (CC 64), modulation (CC
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by a test I ran (scratch worktree, `cargo test -p meloet-model --lib verify_model_a_003`): a clip in bars 1-2, then `overdub_recording` of a take from tick 0 with `CC 64 = 127` at tick 0 and one note in bar 3. The new clip (bars 3-4) has no control point, and the old clip gets none either: the pedal is gone from the song. Severity `medium` stands (pedal held from the start of a recording is the normal way to play; the way around is to write the point by hand).
+
+Corrections: none.
+
+Fix plan: in `crates/meloet-model/src/record/overdub.rs` `in_the_gap`, before the filter, take the last CC 64, CC 1 and pitch bend value at a tick `< cut` (the take's controls are sorted by tick); for each that is not at rest and has no point of the same controller at exactly `cut`, put it at tick 0 of the cut take. Reuse the rule `playback.rs` `track_events` already has for a trimmed head rather than writing a second one, if it can be shared. Test next to `with_no_clip_there_a_new_clip_fills_only_the_empty_place` in `record/overdub/tests.rs`.
 
 ## Fix
 

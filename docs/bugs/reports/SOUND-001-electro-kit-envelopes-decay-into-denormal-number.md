@@ -4,7 +4,7 @@ title: Electro kit envelopes decay into denormal numbers and stay there for the 
 area: SOUND
 kind: bug
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -74,7 +74,11 @@ single samples; the stored hashes of the knob tests (architecture 25-27, "hashin
 all 31 built-in sounds") may need to be looked at in case one such tiny value was in them.
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading and by a calculation I ran (python with numpy float32, the same multiply as `Voice::tick` at 48 kHz): the click envelope (`ring(0.0015)`, coef 0.9862071) is denormal from 0.131 s and sticks at 5e-44 from 0.149 s; the kick's pitch envelope (`dc(0.030)`, coef 0.9993058) is denormal from 2.62 s and sticks at 1.009e-42. These match the report's table. `Voice::tick` (`kit.rs:271-276`) has no flush, and the voice ends only on `env[0] + env[1] < SILENT` (`kit.rs:439`), so the short envelopes stay denormal while `env[0]` rings. I did not measure the CPU cost in meloet; the fault is against the written rule (CLAUDE.md: "set denormal small values to 0 in loops"; architecture 19-2), and the cost depends on the CPU. Severity `low` stands.
+
+Corrections: none.
+
+Fix plan: `crates/meloet-sound/src/synth/kit.rs` `Voice::tick`: after the multiplies, set each `env[k]` below 1e-18 to 0 (use the flush of `crate::effects::dsp` if it is reachable from `synth`, else a two-line local one). Add the kit to the denormal test (`denormals_stay_finite_and_small` or a new test next to the kit's tests: after 3 s of a kick, `env[1]` and `env[2]` are exactly 0). Run the hash tests of the built-in sounds after the change; update a stored hash only if the kit's changed and only after checking the difference is below 1e-18.
 
 ## Fix
 

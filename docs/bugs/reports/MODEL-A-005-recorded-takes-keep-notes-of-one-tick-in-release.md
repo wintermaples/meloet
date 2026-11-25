@@ -4,7 +4,7 @@ title: Recorded takes keep notes of one tick in release order, so an edit that c
 area: MODEL-A
 kind: bug
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -42,7 +42,11 @@ In `Recorder::take`, sort by `(start, key)` (`notes.sort_by_key(|n| (n.0, n.2))`
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by a test I ran (scratch worktree, `cargo test -p meloet-model --lib verify_model_a_005`): three keys pressed on one tick and let go top first give a take with keys `[67, 64, 60]`. `put_take_reaching` (`notes.rs:873-885`) sorts the new notes by `(start, key)` and compares them with the old notes in the take's order, so for such a take an edit that changes nothing is not `Unchanged` (read, not run end to end). Severity `low` stands: it needs two keys on the same tick, and the cost is one empty history row.
+
+Corrections: none.
+
+Fix plan: `crates/meloet-model/src/record.rs` `Recorder::take`: `notes.sort_by_key(|n| (n.0, n.2))`. Test in `record/tests.rs` (the order of a same-tick chord). Leave `live_notes` alone unless the screen's indexes into a live take must match the final take; check that while fixing.
 
 ## Fix
 

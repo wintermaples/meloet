@@ -4,7 +4,7 @@ title: The keyboard fader's waiting step is made in a song that replaced the one
 area: CORE-STATE
 kind: bug
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -41,7 +41,11 @@ Keep the song's serial in `Pending` and drop the pending step in `commit_fader` 
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (no test run). `keyboard_fader` (`state/buttons.rs:110-115`) keeps `Pending { track, db, at_us }`; `fader_due` / `commit_fader` send `SetGain { strip: Track { id }, commit: true }` half a second later; `Model::replace_song` (`state/songs.rs:537-541`) does not touch `self.fader`. Track ids start again in every song, so the step lands on the track of the new song that has the same id. Severity `low` stands (the song must be replaced within 0.5 s of a fader move).
+
+Corrections: none.
+
+Fix plan: `crates/meloet-core/src/state/songs.rs` `Model::replace_song`: `self.fader = Default::default();` (if `Fader` holds something that must outlive a song, such as the pick-up position, clear only `pending` and `set`). Test in `state/buttons_tests.rs` or next to the fader tests: fader move, replace the song, tick after 0.5 s → no step in the new song.
 
 ## Fix
 

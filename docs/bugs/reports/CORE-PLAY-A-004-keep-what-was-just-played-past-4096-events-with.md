@@ -4,7 +4,7 @@ title: Keep what was just played: past 4096 events with one key in the phrase, t
 area: CORE-PLAY-A
 kind: bug
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -36,7 +36,11 @@ Drop the oldest controller move after index 0 instead of index 1 blindly: find t
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (no test run). `Phrase::push` (`play/recent.rs:152-169`): when the phrase is full and holds at most one key press, it calls `self.events.remove(1)` without looking at the event. With the press at index 0 and its release right after it, the release is the first event dropped, and `keep_played` then ends the key at the end of the phrase. The comment there says only controller moves are meant to go. Severity `low` stands (one key and more than 4095 controller moves in one phrase).
+
+Corrections: none.
+
+Fix plan: `crates/meloet-core/src/play/recent.rs` `Phrase::push`: in the `else` branch remove the first event at index ≥ 1 that is a `Cc` or `PitchBend`; fall back to `remove(1)` only when there is none. Test next to `one_key_held_under_thousands_of_controller_moves_stays` in `recent/tests.rs`: press, release after 1000 µs, 5000 CC moves, keep; the note keeps its played length.
 
 ## Fix
 

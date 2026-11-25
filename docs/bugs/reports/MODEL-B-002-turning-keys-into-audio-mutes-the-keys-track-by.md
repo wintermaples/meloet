@@ -4,7 +4,7 @@ title: Turning keys into audio mutes the keys track by hand only; a moving mute 
 area: MODEL-B
 kind: bug
 severity: medium
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -42,7 +42,11 @@ In `bounce_track`, when the keys track's mute lane moves, also put it to rest in
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (no test run). `bounce_track` (`crates/meloet-model/src/audio/bounce.rs:137-141`) sets only `muted: true`; `Play::silent_tracks` (`play/mix.rs:50-56`) counts the hand mute only when the track has no mute lane that moves; `bounce_doc` (`play/bounce.rs:104-123`) strips only the fader, pan and send lanes, so the render follows the mute lane too. Result as written: where the lane says "not muted", the keys track and its audio both sound. Spec 3 A7: "The keys track is muted (all of it)." Severity `medium` stands.
+
+Corrections: none.
+
+Fix plan: `crates/meloet-model/src/audio/bounce.rs` `bounce_track`: when the keys track has an `AutoTarget::Mute` lane with `moves()`, set it to rest in the same step (the way `mute_sets.rs:192-202` does). Test in the bounce tests of the model (the lane rests after the step; undo brings it back moving) and one in `crates/meloet-core/src/play/bounce/tests.rs` that `silent_tracks` holds the keys track's seat after the step.
 
 ## Fix
 

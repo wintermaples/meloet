@@ -3,8 +3,8 @@ id: CORE-EXPORT-002
 title: A file name typed in the export save window loses the text after its last dot
 area: CORE-EXPORT
 kind: bug
-severity: low
-status: reported
+severity: medium
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -41,7 +41,13 @@ In `PlacePicked`, take the whole file name and strip only an ending meloet write
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (no test run). `ExportNews::PlacePicked` (`export.rs:738-741`) keeps `path.file_stem()` as the name, and `file_name` (`export.rs:896-899`) adds the format's ending. `Path::file_stem` cuts at the last dot whatever follows it, so 「デモ v1.2」 becomes 「デモ v1.wav」. GTK's save window asks about writing over the name that was typed (`pcwindow.rs:132-135`), and the export itself moves the finished file over whatever has the final name (`export/job.rs` `move_to`, a plain rename), so the cut name can replace an earlier export with no question. `split_save_as` (`state/songs.rs:565-571`) strips only its own ending.
+
+Severity changed from `low` to `medium`, as the finder also thought: names with a dot (a version, a date) are normal use, the file gets a name the person did not type, and an earlier export under the cut name is replaced without the question the window is there to ask. It is not `high`: what is lost is an exported file, not the song.
+
+Corrections: none.
+
+Fix plan: `crates/meloet-core/src/export.rs` `PlacePicked`: take `path.file_name()` and strip only an ending meloet writes (the endings of `ExportFormat`, any case: wav, flac, mp3, mid); keep everything else. Test in `export/tests.rs` next to the `ChooseExportPlace` test: 「デモ v1.2」 → 「デモ v1.2.wav」; 「できた.FLAC」 under wav → 「できた.wav」.
 
 ## Fix
 

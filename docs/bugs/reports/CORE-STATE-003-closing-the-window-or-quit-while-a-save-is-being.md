@@ -4,7 +4,7 @@ title: Closing the window or Quit while a save is being written is dropped witho
 area: CORE-STATE
 kind: ui-ux
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -40,7 +40,11 @@ When `files.waiting` is `Some(Waiting::Save(_))`, set a flag (or reuse `close_wh
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (no test run). `close_requested` (`state/songs.rs:454-457`) returns at once when `files.waiting.is_some()`, and nothing keeps the request; the case right below it (a recording) keeps it in `files.close_when_recorded`. A save of a song with plugins or audio answers later (`service.rs` `save_song` on its own thread), so a close or 「meloet を終わる」 in that time is lost. Severity `low` stands (the way around is to close again).
+
+Corrections: `files.waiting` is also set while an open or another file job waits; the fix below is for the save, and a close during the others can be kept the same way if it costs nothing more.
+
+Fix plan: `crates/meloet-core/src/state/songs.rs`: in `close_requested`, when something waits, set a flag (a new `close_when_free`, or reuse `close_when_recorded` if its reader is called after the save's answer too) and return; where `SongSaved` / `SongNotSaved` (and the other answers that clear `files.waiting`) are handled, call `close_requested` again when the flag is set and no dialog came up from the answer (after `SongNotSaved` the 「保存できない」 dialog comes first and the flag is dropped). Test in `state/songs/tests.rs`: `CloseRequested` during a waiting save, then `SongSaved` → `Effect::Exit`.
 
 ## Fix
 

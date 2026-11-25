@@ -4,7 +4,7 @@ title: The master inserts' latency is not added to the heard position: play line
 area: ENGINE
 kind: bug
 severity: medium
-status: reported
+status: needs-lead
 found: 2026-11-25
 ---
 
@@ -55,7 +55,16 @@ No protocol or song-file change. A test like `tests/lookahead.rs` with a fake ma
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Real, checked by reading (no test run; it needs a plugin on the master that reports latency, and I did not start plugins). Architecture 20-8 says the master inserts' latency is "not compensated, but added to the position at the ear (chapter 11)". In the code `Strip::latency()` of the master is read only by `Engine::master_latency()` (`engine.rs:1646`), and that is called only by the export (`export/job.rs`). `dac_us` / `segment_now` build every clock stretch from `playback_us` alone, and the metronome's `click_sum` is added to the output after the master's inserts (`engine.rs:3091-3104`). Only plugin effects report a latency (`Effect::latency` is 0 for every built-in effect, `effect.rs:46`), so this shows only with a plugin on the master that has latency; with meloet's own limiter nothing is off. Chapter 11 itself has no word on it, and `docs/progress.md` does not list it as open.
+
+Corrections: none to the lines. On the clock and the latency measurement: the probe click is added after the master (`self.probe.add`, `engine.rs:3087`) and the measurement reads `TransportClock::time_of_frame` (`probe.rs:199`); the vocal recorder reads `frame_at` / `kept_frame_at` / `time_of_frame` (`vocalrec.rs:912, 1030`, `service/input.rs:404, 534`). So the frame line must stay the plain DAC time, or the measured latency would grow by the master's latency.
+
+Why `needs-lead`: it is a real-time change of the clock (a new field in `Segment`, which is packed into fixed words), of the metronome and of the recorded-position rules, and it needs a measurement with a real latent plugin. Choices:
+1. Do what 20-8 says. Place: a per-stretch `ear_us` (`master_strip.latency() / rate`, read once a block) in `Segment` (`clock.rs`), added only where a time is turned into a song position (`Segment::at`, so `heard_at`, `heard_now`, and the engine's own `stamp` / `stamp_recent` / stop position), not in `frame_at` / `time_of_frame`. The core's `vocal_mark` (`service/input.rs:395-412`), which turns a song frame into a time through `time_of_frame`, adds the same amount. The metronome click starts `master_latency` frames after its beat frame. Cost: engine (audio thread, clock word layout), core vocal marks, tests like `tests/lookahead.rs`, and a measurement (`record-timing.sh`) with a latent plugin on the master. This is the one I recommend, as its own job after the sweep (meloet-very-hard), not as a quick fix.
+2. Only delay the metronome by the master's latency. Cheap, fixes the click against the song, leaves the play line and recorded keys late by L.
+3. Change 20-8 to say it is not added, and list it in `docs/progress.md` as a known limit. No code.
+
+Severity `medium` stands: recorded positions are wrong by L, but only with a latent plugin on the master, and taking it off while recording is the way around.
 
 ## Fix
 

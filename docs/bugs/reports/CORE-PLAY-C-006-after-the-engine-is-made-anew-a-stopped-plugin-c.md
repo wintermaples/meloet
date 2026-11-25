@@ -4,7 +4,7 @@ title: After the engine is made anew, a stopped plugin can no longer be loaded a
 area: CORE-PLAY-C
 kind: bug
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -43,7 +43,11 @@ In `load_again(false)`, load a `Stopped` plugin anew like the others (`PlugState
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (no test run). `plugs_lost` (`play/plugs.rs:701-707`) calls `load_again(false)`, which passes over `Phase::Stopped` (`plugs.rs:668`). The engine lost with its stream held the stopped plugin's slot (`HousedInstrument` / `HousedEffect`, `plugins/housed.rs`); when it is dropped its `Gone` tells the service, and `unload_gone` (`service.rs:2587-2598`) takes the ticket out of `ids` and unloads the slot in `Hosts`. A later `Effect::ReloadPlugin` finds no id (`service.rs:3364-3373`) and answers `Input::PluginUnreadable`, which puts `Reloading` back to `Stopped` (`plugs.rs:603-604`). 「もう一度読みこむ」 stays offered and does nothing. Severity `low` stands (it needs a stopped plugin and an engine lost with its stream, which the code itself treats as a failure path: "the engine was lost with an earlier stream; making a new one").
+
+Corrections: none.
+
+Fix plan: `crates/meloet-core/src/play/plugs.rs` `load_again`: when not `live` (the engine was made anew), load a `Stopped` plug anew like the others, from the song's state (`PlugState::Bytes(old.plugin.state)` or `Fresh`), with a new ticket, and take its old ticket out of `plugs.stopped`. `Reloading` and `Failed` stay as they are. What `Hosts` remembered of parameters moved since the last state is lost in this corner; that is acceptable against a plugin that cannot come back. Test next to `plugins_are_loaded_again_for_another_sample_rate_and_for_a_new_engine`.
 
 ## Fix
 

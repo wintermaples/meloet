@@ -4,7 +4,7 @@ title: A voice file starts half a quarter note before the roll, not half a beat 
 area: CORE-AUDIO
 kind: bug
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -48,7 +48,11 @@ Take the half beat from the meter at the roll tick, as the engine does: `let bea
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (no test run). `vocal_mark` (`service/input.rs:407-411`): `half_beat_us = 30e6 / map.tempo_at(tick)`; the tempo is quarter notes a minute whatever the meter, so this is always half a quarter note. The keys' rule in the engine is `record_from - record_beat / 2` with `record_beat = Meter::ticks_per_beat()` = `TICKS_PER_QUARTER * 4 / den` (`engine.rs:1130-1132`, `2712`). Architecture 22-6: "the same length as the key rule". In x/2 the voice file starts half as early as the keys are kept, in x/8 twice as early. Severity `low` stands (only meters whose lower number is not 4, and only the part before the clip's start).
+
+Corrections: none.
+
+Fix plan: `crates/meloet-core/src/service/input.rs` `vocal_mark`: take the beat from the meter at the roll tick: `let beat = map.meter_at(tick.max(0.0) as u64).meter.ticks_per_beat() as f64; let half_beat_us = beat / 2.0 / TICKS_PER_QUARTER as f64 * 60e6 / map.tempo_at(tick).max(1.0);`. A unit test of the small calculation (pull it into a function): 4/4, 2/2 and 6/8 at one tempo.
 
 ## Fix
 

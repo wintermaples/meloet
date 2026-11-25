@@ -4,7 +4,7 @@ title: mp3 export check says the file does not clip when 32-bit was chosen for w
 area: CORE-EXPORT
 kind: bug
 severity: medium
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -46,7 +46,11 @@ In `check`, count the bits as floats only when the format takes them: for exampl
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (no test run). `check` (`export.rs:919`): `clips = over > 0 && self.bits != RecordFormat::Bits32 && !matched`, with no look at `self.format`. `ExportChange::Format` (`export.rs:524-531`) keeps `self.bits` when the new format has no bits choices (mp3, MIDI), so `Bits32` chosen for wav stays while the format is mp3. `Mp3Sink::push` (`export/sink.rs:380-391`) clamps every sample to ±1.0. So the check says "no clipping" for an mp3 that is written clipped. Severity `medium` stands (the person is told the file is fine; the way around is to set wav back to 24 bits).
+
+Corrections: none.
+
+Fix plan: `crates/meloet-core/src/export.rs` `check`: `let floats = self.format == ExportFormat::Wav && self.bits == RecordFormat::Bits32; let clips = over > 0 && !floats && !matched;` (ask `self.format.bits_choices().contains(&RecordFormat::Bits32)` instead of naming wav if that reads better). Look for other readers of `self.bits` that forget the format (the done text, the job's own bits) while there. Test in `export/tests.rs` or `mp3_tests.rs`: wav 32 bits, then mp3, a render with `over > 0` → `clips: true`.
 
 ## Fix
 

@@ -4,7 +4,7 @@ title: Opening another song leaves the old song's track lanes playing in the eng
 area: CORE-PLAY-B
 kind: bug
 severity: high
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -43,7 +43,11 @@ Read from the code, not run.
 In `send_automation`, when `all` is true, send `EngineOp::Automation { seat, lanes: Vec::new() }` for every seat in `now` whose heads are empty (or: do not skip a seat with empty heads when `all` is true), as the master's lane is sent "also none". This also closes the known hole of progress.md line 377 (a new stream). No protocol or file change.
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by a test I ran (scratch worktree, `cargo test -p meloet-core --features dev-hooks --lib verify_core_play_b_001`): with the stream open (`ready()`), a volume lane with two points on track 1, then `Play::replace_song(Song::new_default(), ..)`. Track 1 of the old song and of the new song both sit on seat 0, and among the effects of the replace there is no `EngineOp::Automation` and no `EngineOp::ClearSeat` at all. On the engine side (read): a track's `AutoSet` is replaced only by `EngineCommand::SetAutomation` (`engine.rs:1951-1957`) and dropped only by `ClearTrack` (`engine.rs:2093-2112`); seating another instrument does not touch it. So the old song's lanes keep moving the new song's track on that seat. I did not run the engine to hear it. Severity `high` stands (wrong sound, down to silence, in a song that has no lanes; the fader does nothing).
+
+Corrections: none. This is wider than the known line in `docs/progress.md` ("lanes deleted (or rested) while no stream runs stay in the engine"): here a stream runs the whole time.
+
+Fix plan: `crates/meloet-core/src/play/autosync.rs` `send_automation`: with `all`, do not pass over a seat whose heads are empty: send `EngineOp::Automation { seat, lanes: Vec::new() }` for it (as the master's lane is told "also none"). Seats the new song does not take are emptied by `reseat` already. Test in `crates/meloet-core/src/play/automation/tests.rs`: after a replace, every taken seat got an `Automation` op, empty for a track without lanes. The fix also closes the known line of `docs/progress.md` for a new stream; take that line out with the fix if a test shows it.
 
 ## Fix
 

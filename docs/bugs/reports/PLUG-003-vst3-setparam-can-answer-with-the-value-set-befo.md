@@ -4,7 +4,7 @@ title: VST3: SetParam can answer with the value set before, because param() repl
 area: PLUG
 kind: bug
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -44,7 +44,11 @@ Answer `SetParam` from the controller without replaying the ring after the value
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (no test run). `Request::SetParam` (`control.rs:804-824`) calls `controller.set_param(id, v2)` (`vst3.rs:1459`, a plain `setParamNormalized`), then answers with `c.param(id)`, and `Vst3Controller::param` (`vst3.rs:1410-1414`) runs `hear_audio()` first, which applies every `(id, value)` the audio thread queued (`vst3.rs:987-997` queues the last value of every `ToPlugin::Param` of a block, meloet's own included). An echo of the value set before, still in the ring, lands over v2 and is what the answer reads. LV2's `param` reads the kept value and replays nothing. Severity `low` stands (needs a block that ends between the host's 10 ms poll and the next `SetParam`; the row is one step off until the next reading).
+
+Corrections: none.
+
+Fix plan: `crates/meloet-plughost/src/formats/vst3.rs`: in `Vst3Controller::set_param` call `self.hear_audio()` before `setParamNormalized`, and give the `SetParam` arm an answer that does not replay the ring after the set (a private `param_now(id)` without `hear_audio`, used by `param()` after its own `hear_audio()`); `crates/meloet-plughost/src/control.rs` uses it through the controller trait only if the trait needs a new method, else keep the change inside `vst3.rs` by remembering "just set" for the next `param` call. Test with the fake VST3-like controller if one exists in `control.rs` tests; else a unit test of the order in `vst3.rs`.
 
 ## Fix
 

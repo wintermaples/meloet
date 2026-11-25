@@ -4,7 +4,7 @@ title: write_notes, copy_notes and import_midi text says "see changed" for short
 area: AI
 kind: ui-ux
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -36,7 +36,9 @@ Change "(see changed)" to "(see cut)" in `notes_line`. Text for the AI only (Eng
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading. `notes_line` (`crates/meloet-ai/src/tools/notes.rs:260-262`) writes "N written shorter (see changed)."; `notes_value` in the same file puts the shortened notes in `cut` (with `cut_count`, `cut_more`), and `changed` in an answer is the boolean of a successful write. The tool instructions (`tools.rs:106`) also say "Read not_written and cut". Severity `low`.
+
+Fix plan: `crates/meloet-ai/src/tools/notes.rs`: "(see cut)". If a test pins the old text (`grep "see changed" crates/meloet-ai`), change it with it.
 
 ## Fix
 

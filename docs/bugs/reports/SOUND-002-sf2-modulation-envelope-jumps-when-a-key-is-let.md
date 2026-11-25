@@ -4,7 +4,7 @@ title: SF2 modulation envelope jumps when a key is let go during its attack
 area: SOUND
 kind: bug
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -67,7 +67,13 @@ protocol, file shape, wording or looks change. A test like
 the attack would watch it.
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (no test run). `Adsr::amount()` gives the convex value `1 + 400/960 · log10(rise)` during the attack; `release_amount()` sets `fall = 1 - rise`, so the first value after the key up is `rise`, the straight-line value: at `rise = 0.25` the amount goes from 0.749 to 0.25 at once. I checked the report's table by hand (0.10 → 0.583, 0.50 → 0.875).
+
+What I relied on: (1) the neighbour `release_level()` in the same file, which turns the attack's level into the matching `fall` ("The release goes on from the loudness the attack had reached"); (2) the SF2 text for generator 30 `releaseModEnv`, as I remember it (not read from a file in this job, so confidence C): "the release phase linearly ramps toward zero from the current level", which means the level the envelope had, not the straight-line one; (3) FluidSynth, also from memory (confidence C): at note-off inside the modulation envelope's attack it turns the convex value into the linear one so the release starts from the same value. All three point the same way; no primary source was opened.
+
+Corrections: none. Severity `low` stands (needs an SF2 preset with a modulation-envelope attack and a key let go inside it).
+
+Fix plan: `crates/meloet-sound/src/sampler/shape.rs` `release_amount`: when `rising()`, `self.fall = 1.0 - self.amount()` (read before `seg` changes). Test in `crates/meloet-sound/tests/sf2.rs` next to `the_modulation_envelope_moves_the_pitch`, or a unit test of `Adsr`: `amount()` just before and just after `release_amount()` in the attack are equal.
 
 ## Fix
 

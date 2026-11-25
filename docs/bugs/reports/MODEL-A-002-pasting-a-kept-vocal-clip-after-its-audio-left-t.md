@@ -4,7 +4,7 @@ title: Pasting a kept vocal clip after its audio left the audio table makes a si
 area: MODEL-A
 kind: bug
 severity: high
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -47,7 +47,11 @@ In `paste_clips`, for every placed vocal clip, add each `take.source` that `doc.
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by a test I ran (scratch worktree, `cargo test -p meloet-core --features dev-hooks --lib verify_model_a_002`): from the vocal song of `songfile/vocal_tests.rs`, one `History` step puts clip 43 and its file (audio 51) in; `arrange::copy_clips` of clip 43; `History::undo`; `arrange::paste_clips` on the vocal track. The pasted song's audio table is `[AudioId(50)]` only, and `songfile::decode(&songfile::encode(..))` gives `Err(Broken)`. The core keeps `clip_board` across undo (`play.rs:1198`, cleared only at `play.rs:2093` when the song is replaced), and `Play::paste_clips` (`play.rs:1245`) has no guard of its own. Severity `high` stands.
+
+Corrections: none. The engine side is as written too: `EngineOp::AudioSources` carries `doc.audio` only, so until the save the pasted clip is silent.
+
+Fix plan: in `crates/meloet-model/src/arrange.rs` `paste_clips` (after `place`), for each kept vocal clip add every `take.source` whose `AudioId` is not in `doc.audio` to a copy of the table (sorted by id, as the reader does) and set it on the new `Doc` in the same step. Tests: `crates/meloet-model/src/arrange/tests.rs` (the table holds the file after the paste) and `crates/meloet-core/src/songfile/vocal_tests.rs` (import, copy, undo, paste, `decode(encode(..))`). The file on disk: check while fixing that a recording / import undone and then pasted still has its file where `audiosync` looks for it (the file of an undone step is kept for redo, so it should; I did not run that part).
 
 ## Fix
 

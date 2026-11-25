@@ -4,7 +4,7 @@ title: An audio file that could not be copied in (full disk, no work place) is r
 area: CORE-AUDIO
 kind: ui-ux
 severity: low
-status: reported
+status: needs-lead
 found: 2026-11-25
 ---
 
@@ -42,7 +42,15 @@ Add a case to `Unread` (and `Finding`) for "could not be written into the work p
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Real, checked by reading (no test run). `Work::bring` (`audiofiles/keeper.rs:389-393`) first reads the file's facts, then maps every error of `store.bring_in` (the copy into the work place) to `Unread::NotAudio`; `Work::found` (`keeper.rs:414-442`) gives `Finding::Unreadable` when there is no work place or the copy fails. `state/audio.rs:245, 291` turn both into `StatusMessage::AudioUnreadable`: 「「声.wav」は読めません（読めるのは wav ・ mp3 ・ flac ・ ogg）。」 for a file that reads well.
+
+Looked for an existing message: `AudioUnreadable`, `AudioBroken`, `AudioTooManyChannels`, `AudioFoundMismatch` each name another cause; `ClipWorkFailed` (「{count} つのクリップは、音のファイルを読めないか書けないので、そのままにしました。」) is about clips that are already in the song; `msg.bounceFailedWrite` and `msg.exportFailedWrite` are about their own jobs. None says "the file could not be copied in".
+
+Why `needs-lead`: new wording and a new `StatusMessage` variant (protocol addition), plus a new case in `Unread` and `Finding`. Choices:
+1. A new variant (for example `AudioNotCopied { file }`) with the owner's text, for example 「「声.wav」を入れられませんでした。作業の場所に書けません。」 (the second sentence is the one of `msg.bounceFailedWrite`). Recommended, and best decided together with CORE-AUDIO-003 and -004, which need the same kind of sentence.
+2. Leave it and list it in `docs/progress.md`.
+
+Severity `low` stands (a full disk or a work place that cannot be written).
 
 ## Fix
 

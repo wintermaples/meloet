@@ -4,7 +4,7 @@ title: Per-track export fails as a whole when a track name is longer than a file
 area: CORE-EXPORT
 kind: bug
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -41,7 +41,11 @@ In `free_name`, cut `clean` at a character boundary so that `clean`, the number 
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (no test run). `free_name` (`export/job.rs:299-313`) takes out `/`, `\`, NUL and control characters and has no limit on the length; `rename_track` only trims a name. A track name of more than about 84 Japanese characters gives a file name over 255 bytes, `move_to` (or the MIDI writer, `export/midi.rs:342-348`) fails, and the whole per-track export ends as `ExportFailure::CannotWrite`. Severity `low` stands (a very long track name).
+
+Corrections: none.
+
+Fix plan: `crates/meloet-core/src/export/job.rs` `free_name`: cut `clean` at a character boundary so that the name with the number and `.<ending>` stays within 255 bytes (cut `clean` to at most 200 bytes, then trim spaces and dots again). Test next to the `free_name` tests: 100 Japanese characters give a name of at most 255 bytes that ends in the ending, and two such tracks get different names.
 
 ## Fix
 

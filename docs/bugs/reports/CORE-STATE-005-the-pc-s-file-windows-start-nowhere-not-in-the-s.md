@@ -4,7 +4,7 @@ title: The PC's file windows start nowhere, not in the songs folder, when the so
 area: CORE-STATE
 kind: bug
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -39,7 +39,11 @@ Filter the song's folder before falling back: `self.model.song_path().and_then(|
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (no test run). `start_folder` (`service.rs:3798-3806`): `song_path().and_then(parent).map(PathBuf::from).or_else(|| songs_dir.clone()).filter(|d| d.is_dir())`. When the song has a path, the `or_else` is never taken, and a folder that is gone is then thrown away by the filter: `None`, not the songs folder its own comment promises. Severity `low` stands.
+
+Corrections: none.
+
+Fix plan: `crates/meloet-core/src/service.rs` `start_folder`: filter each choice before falling back (`…parent().filter(|d| d.is_dir()).map(PathBuf::from).or_else(|| self.songs_dir.clone().filter(|d| d.is_dir()))`). Do it together with CORE-STATE-002, which adds a second helper with the same shape.
 
 ## Fix
 

@@ -4,7 +4,7 @@ title: A song file's notes and control points are read with any tick; Note::end 
 area: CORE-FILES
 kind: bug
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -40,7 +40,11 @@ In `to_take`, refuse the take (return `None`, so the song does not read as with 
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by a test I ran (scratch worktree, `cargo test -p meloet-core --features dev-hooks --lib verify_core_files_001`): a song with one clip, encoded, the note `[37,200,60,90]` changed in the JSON to `[37,18446744073709551615,60,90]`; `songfile::decode` gives `Ok`, and `meloet_model::playback::track_events` then panics at `crates/meloet-model/src/song.rs:59` ("attempt to add with overflow", debug build). Release builds wrap, as the report says (read, not run). Severity `low` stands: only a file changed by hand or damaged has such a note; meloet never writes one.
+
+Corrections: none.
+
+Fix plan: `crates/meloet-core/src/songfile.rs` `to_take`: a note is taken only when `start < MAX_TICK` and `start.checked_add(length)` is `Some(end)` with `end <= MAX_TICK`; a control point only when `tick <= MAX_TICK`; else the take is `None` and the song does not read, as for the other broken rules. Tests in `songfile/tests.rs` (both notes of the report and a control point past `MAX_TICK` give `Err(Broken)`).
 
 ## Fix
 

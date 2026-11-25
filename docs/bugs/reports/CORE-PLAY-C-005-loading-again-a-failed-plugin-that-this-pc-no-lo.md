@@ -4,7 +4,7 @@ title: Loading again a failed plugin that this PC no longer has leaves its track
 area: CORE-PLAY-C
 kind: bug
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -41,7 +41,11 @@ Look at the answer as `load_from_song` does: send `InstrumentRef::Plugin(plugin)
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (no test run). In the `Phase::Failed` arm of `reload_plugin` (`play/plugs.rs:860-873`) the answer of `want_plug` is thrown away and `EngineOp::Instrument { instrument: InstrumentRef::Plugin(plugin) }` is always sent (outside a trial). `want_plug` answers `Want::Missing` and loads nothing when `plugs.known` has no bundle for the key (`plugs.rs:402-405`), and the engine's stand-in for a plugin is silent. `seat_instrument` (`plugs.rs:446-449`) maps `Want::Missing` to the sine. Severity `low` stands (the plugin must leave the PC between the failed load and the press).
+
+Corrections: none.
+
+Fix plan: `crates/meloet-core/src/play/plugs.rs` `reload_plugin`: `match self.want_plug(..)`: `Want::Loading` → the plugin stand-in as now; `Want::Missing` → `InstrumentRef::SINE` (the seat already plays the sine, so sending nothing is as good; choose the one that reads clearer). Test in the plugs tests: failed plug, the key leaves `known`, reload → no `EngineOp::Instrument { Plugin }`.
 
 ## Fix
 

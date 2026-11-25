@@ -4,7 +4,7 @@ title: Scan stamp of a plugin bundle that is a symbolic link never changes, so a
 area: PLUG
 kind: bug
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -46,7 +46,11 @@ Read the bundle itself with `std::fs::metadata` (following a link at the top onl
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (no test run). `BundleStamp::add` calls `std::fs::symlink_metadata` on the bundle path itself; for a bundle that is a symbolic link this is the link (not a directory), so the stamp is the link's own modified time and the length of its text. `bundles_in` (`scanner.rs:245-256`) takes the entry by its name ending, link or not, and `places_todo` returns `None` for an unchanged stamp. A changed target is not scanned again, and a link that points nowhere still stamps the same and stays on the shelf. Severity `low` stands (only linked bundles; 「もう一度スキャン」 is not offered for a plugin that did not stop).
+
+Corrections: none.
+
+Fix plan: `crates/meloet-plugin/src/scan.rs` `BundleStamp::read`: read the bundle itself with `std::fs::metadata` (follow the link at the top only), keep `symlink_metadata` below it. `crates/meloet-core/src/plugins/scanner.rs` `bundles_in`: pass over an entry whose `std::fs::metadata` fails (a link to nowhere), so its record goes with the bundles that are gone. Tests: `scan.rs` (a linked bundle's stamp changes when a file in the target changes) and the scanner's tests (a dangling link is not a bundle). `SCAN_CACHE_VERSION` stays; linked bundles are scanned once more after the change.
 
 ## Fix
 

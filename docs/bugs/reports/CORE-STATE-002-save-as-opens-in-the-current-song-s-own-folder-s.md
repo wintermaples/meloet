@@ -4,7 +4,7 @@ title: Save as opens in the current song's own folder, so the new song folder is
 area: CORE-STATE
 kind: ui-ux
 severity: medium
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -40,7 +40,11 @@ For `Effect::PickSaveAs` start in the parent of the song folder (`song_path().pa
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (no test run). `Effect::PickSaveAs` (`service.rs:3235-3240`) starts the save window in `start_folder()`, the parent of the song file, which for a saved song is its own song folder `<songs>/<name>/`. `split_save_as` (`state/songs.rs:565-571`) takes the parent of the path the window gives as the place and makes the new song folder there, so a new name typed without changing the folder lands in `<songs>/<name>/<new name>/`. Architecture 18 ("Save as") and 14 (one folder per song in the songs folder) and spec 3 ("makes a folder named 「名前」 in the chosen place") do not say where the window starts; nothing says the inside of a song folder is meant. Severity `medium` stands (the plain use of the command gives a song inside another song's folder).
+
+Corrections: none.
+
+Fix plan: `crates/meloet-core/src/service.rs`: a second helper for windows that make a song folder in the chosen place: the folder that holds the current song folder (`song_path().parent().parent()`), else the songs folder, each only when it is a directory (see CORE-STATE-005 for the order of the filter). `Effect::PickSaveAs` uses it; `Effect::PickFolder` (「保存できない」 → 「場所をえらぶ」, which also makes a new song folder in the chosen place) uses it too. 「ひらく…」 keeps `start_folder`. A small unit test of the helper with a temp folder.
 
 ## Fix
 

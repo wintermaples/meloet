@@ -4,7 +4,7 @@ title: L with no loop range while playing makes the 4-bar range at the bar where
 area: CORE-PLAY-A
 kind: bug
 severity: medium
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -41,7 +41,11 @@ Use `self.play_line()` in place of `self.position` at play.rs 994 (`let head = m
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (no test run). `Play::toggle_loop` (`play.rs:986-1000`) uses `map.meter_at(self.position)`, and `position` is "where play and record start from; while moving, where it started" (`play.rs:490-491`). `play_line()` (`play.rs:961-970`) is what the other "where the play line is" commands use. Spec 3 line 52: "4 bars from the bar of the current position"; nothing in `7-readings.md` reads it as the start position. The existing test covers only the stopped case. Severity `medium` stands.
+
+Corrections: none. (What the engine does with a loop that ends behind the play line I did not run; the report's reading of `SetLoop` is not needed for the fault.)
+
+Fix plan: `crates/meloet-core/src/play.rs` `toggle_loop`: `map.meter_at(self.play_line())`. Test in `crates/meloet-core/src/play/tests.rs` next to `the_loop_turned_on_with_no_range_takes_four_bars_from_the_current_one`: playing, with a heard position in bar 20, L gives bars 20 to 24.
 
 ## Fix
 

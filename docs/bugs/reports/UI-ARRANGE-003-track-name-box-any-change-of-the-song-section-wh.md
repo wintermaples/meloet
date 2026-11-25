@@ -4,7 +4,7 @@ title: Track name box: any change of the song section while typing puts the old 
 area: UI-ARRANGE
 kind: bug
 severity: medium
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -42,7 +42,9 @@ Guard it like the clip name box: remember the id the draft was made for (`let dr
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (not run). `TrackHeads.svelte:68-81`: the effect reads `trackEdit.renaming` and `song.tracks` (`song` is `$derived(current.state!.song)`, a new object whenever the `song` part of the state is replaced), and on every run sets `draft = track.name` and calls `focus()` / `select()`. Nothing guards "only when the box opens". Mod S does run while typing (`handleKeydown` in `keys/attach.ts`: `WITH_MOD` actions are taken while `isTyping`), and a save changes the song part. The sibling boxes named in the report do guard it (`Arrange.svelte` `nameFor`, `MarkerRow.svelte` `openFor`).
+
+Fix plan (as suggested): in `ui/src/components/TrackHeads.svelte` remember the id the draft was filled for; fill `draft` and focus only when `trackEdit.renaming` changes to a new id; keep "track gone → close" on every run; clear the remembered id when `renaming` goes back to null. Add a test in `ui/tests/` (type, replace the song part with a new object, the typed text stays).
 
 ## Fix
 

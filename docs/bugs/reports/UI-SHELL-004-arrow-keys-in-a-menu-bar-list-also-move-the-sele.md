@@ -4,7 +4,7 @@ title: Arrow keys in a menu bar list also move the selected notes in the piano r
 area: UI-SHELL
 kind: bug
 severity: medium
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -46,7 +46,15 @@ In MenuList's `onkeydown`, call `ev.stopImmediatePropagation()` (as MetronomeWin
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed with a test that was run (scratch worktree, not kept): `MenuBar` mounted in a `#app` div as in the real app (its list moves itself to `body`), `handleKeydown` on `document`, the piano roll open with one note selected and pressed last. F10, then ↓: the focus moved to the next row of the list **and** a `moveNotes` intent was sent. The existing test (`ui/tests/menu.test.ts:581-630`) mounts into `body` and has the piano roll closed, so it sees neither.
+
+Why (read in `ui/node_modules/svelte` 5.57.3, `src/internal/client/render.js`): delegated events are heard on the mount target and on `document`; a node outside the mount target is served by the `document` listener, and `stopPropagation()` there cannot stop `handleKeydown`, which is on the same node.
+
+This is more than the known note in `docs/progress.md` ("Lists moved to body … stop key events with stopPropagation, which does not stop the document key handler on the same node (R3 found it; not checked whether it does harm)"): here is the harm, an undo step in the song per arrow key, in the menu bar and context menu lists. The fix should close that note too (`ChoiceMenu`, the zoom lists).
+
+One root with UI-SHELL-001, -002, -003, -004, -005, UI-PARITY-011, UI-PARITY-015 and UI-MIX-004: a key that belongs to the part in front (a dialog, an open list, a focused control) falls through to the document key handler (`handleKeydown` in `ui/src/keys/attach.ts`), which does not know that part is in front. Fix them as one piece of work with one rule in `handleKeydown`: (1) one "which dialog is in front" check used by every context (`outputChooser`, `shelf`, `history`) and by the Enter / Esc branches, in the order the dialogs are drawn in `App.svelte`; (2) return early when `ev.defaultPrevented` (a part that took the key says so), which covers lists moved to `body`; then each part only has to take its own keys.
+
+Fix plan for this report: `handleKeydown` returns early when `ev.defaultPrevented` (`MenuList.svelte:117` already calls `preventDefault` for the keys it takes), placed after the `typedKeys` / hint lines if those must still see the key. Check the other `preventDefault` callers in `ui/src` so no key that the document handler must still see is prevented earlier (grep `preventDefault` in keydown handlers). Add the test above to `ui/tests/menu.test.ts` (mount into a child of `body`).
 
 ## Fix
 

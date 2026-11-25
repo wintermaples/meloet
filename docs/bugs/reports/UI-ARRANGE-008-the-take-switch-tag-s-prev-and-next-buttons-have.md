@@ -4,7 +4,7 @@ title: The take switch tag's prev and next buttons have no style since the track
 area: UI-ARRANGE
 kind: bug
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -39,7 +39,9 @@ Give the two buttons a style in Arrange.svelte again (the old `.tog` / `.tog.ste
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (not run; no picture taken). `Arrange.svelte:1990, 1996` use `class="tog step"`; the style block of `Arrange.svelte` has no `.tog` or `.step` rule (grep: none), `.tog` exists only in `TrackHeads.svelte` and `mixer/Strip.svelte` (scoped, they do not reach this markup), and `ui/src` has no global rule for `button` other than `:focus-visible` in `components/common.css`. `git show 7120b19 -- ui/src/components/Arrange.svelte` shows the `.tog`, `.tog.step`, `.tog.step:hover`, `.tog.step:active` rules being removed. So the two buttons have the browser's default button look.
+
+Fix plan: in `ui/src/components/Arrange.svelte` give the two buttons the classes the piano roll's tag uses (`m-plain step`, `pianoroll/Toolbar.svelte:225-234`) with the same small `.step` rules, or put the removed `.tog.step` rules back. Compare with mock F-Takes (`tools/design/shoot_ui.py`). No new colors or sizes. Fix together with UI-ARRANGE-009 (same two buttons).
 
 ## Fix
 

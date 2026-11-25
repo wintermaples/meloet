@@ -4,7 +4,7 @@ title: The chosen-clip panels scroll with the browser's own scroll bar, while th
 area: UI-PARITY
 kind: parity
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -41,7 +41,9 @@ Wrap the content of `.list` in `<ScrollArea>` (as BuiltinList does) and drop `ov
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (not run; no picture taken). `ClipPanel.svelte:466-469` and `ClipsPanel.svelte:182-185` scroll a plain `div` (`.list { min-height: 0; overflow-y: auto; }`) with nothing hiding the browser's bar (`scrollbar-width: none` / `::-webkit-scrollbar` appear only in `lib/ScrollArea.svelte` and `mixer/MixerStrips.svelte`). Spec 2 line 94, word for word: "Scroll bar | Width 8. Background gray.3, a 1px line.thin line on the left, handle gray.6. Corner 0. The bars of the browser and the OS are not used. The same one is used in lists, dialog content, the output chooser, parameters and the shelf".
+
+Fix plan (as suggested): wrap the groups of `ui/src/components/params/ClipPanel.svelte` and `ClipsPanel.svelte` in `<ScrollArea>` as `BuiltinList.svelte:129` does and drop `overflow-y: auto` from `.list`; check with `tools/design/shoot_ui.py` at a low window that the bar is the 8-wide one and that the rows keep their width (the bar takes 8 px when shown).
 
 ## Fix
 

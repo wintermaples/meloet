@@ -4,7 +4,7 @@ title: The mixer band tab always says 0.0 dB, not the master fader value
 area: UI-SHELL
 kind: bug
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -36,7 +36,9 @@ Fill the hole from `app.song.master.gainDb` with the same number form the master
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (not run). `BandRow.svelte:39` fills the tab with the constant `dbNumber(0)`; `band.masterDb` is used nowhere else (grep), and `SongView.master.gainDb` (`number | null`) holds the fader. Spec 3 line 11: "Mixer | Band tab: the value of the master fader (not the loudness. A new song is 0.0 dB)". The note in `docs/progress.md` ("The mixer band's tab shows the master's hand value also while its lane moves it") is about which value, not about a constant.
+
+Fix plan (as suggested): in `ui/src/components/BandRow.svelte` fill the hole from `app.song.master.gainDb` in the form the master strip shows (`faderText` in `ui/src/components/mixer/scale.ts`, which has the −∞ text for `null`); remove the "stays at 0.0 dB for now" comment; `ui/tests/screen.test.ts:90` measures the tab's width with 「マスター 0.0 dB」: check the tab keeps room for the longest value (「−60.0 dB」 / −∞).
 
 ## Fix
 

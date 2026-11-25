@@ -4,7 +4,7 @@ title: Key list and About open over the export dialog, and Enter in them starts 
 area: UI-SHELL
 kind: bug
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -40,7 +40,11 @@ Add `state.export.dialog === null && exportedOpen(state) === null` to `noDialog`
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (not run). `menus.ts:306`: `noDialog = !songDialog && !settings && !stoppedOpen`; the export dialog and 「書き出しました」 are not in it, so 「キーの一覧」 and 「meloet について」 stay usable over them. `attach.ts` then answers a plain Enter with `startExport` / `closeExport` whatever is in front (the Enter branches do not look at `about.open` / `keyList.open`). 7-readings: "Who holds 「meloet について」 | … While another dialog is open, the menu bar is disabled".
+
+One root with UI-SHELL-001, -002, -003, -004, -005, UI-PARITY-011, UI-PARITY-015 and UI-MIX-004: a key that belongs to the part in front (a dialog, an open list, a focused control) falls through to the document key handler (`handleKeydown` in `ui/src/keys/attach.ts`), which does not know that part is in front. Fix them as one piece of work with one rule in `handleKeydown`: (1) one "which dialog is in front" check used by every context (`outputChooser`, `shelf`, `history`) and by the Enter / Esc branches, in the order the dialogs are drawn in `App.svelte`; (2) return early when `ev.defaultPrevented` (a part that took the key says so), which covers lists moved to `body`; then each part only has to take its own keys.
+
+Fix plan for this report: in `ui/src/components/menu/menus.ts` add `state.export.dialog === null && exportedOpen(state) === null` (and the latency dialog) to `noDialog`; and in `attach.ts` the plain-Enter branches do nothing while About or the key list is open (the shared "dialog in front" check gives this for free).
 
 ## Fix
 

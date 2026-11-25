@@ -4,7 +4,7 @@ title: Typed dB, pan, metronome volume and sound knob values do not read full-wi
 area: UI-PARITY
 kind: parity
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -44,7 +44,9 @@ Start each of `parseDb`, `parsePan`, `parseClickDb` and `typedKnob` with `text.n
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (not run). `parseDb` and `parsePan` (`mixer/scale.ts:63-78`), `parseClickDb` (`metronome.ts:59-63`) and `typedKnob` (`params/knobRows.ts:41-45`) map only 「−」 (and 「ー」) and then use `\d` / `Number`, which do not read full-width digits; the other boxes call `normalize("NFKC")` first (`valueClamp.ts:23`, `time.ts`, `noteFields.ts`, `clipFields.ts`). 7-readings says full-width is read for the position box, the repeat count and track numbers ("people type with the Japanese input on").
+
+Fix plan (as suggested): start each of the four parsers with `text.normalize("NFKC")` (keep the 「−」 → "-" mapping after it: NFKC leaves U+2212; it does turn U+FF0D 「－」 into "-"). Tests beside the existing parser tests: 「－３」, 「Ｌ２０」, 「－１２」, 「３５」. Touches the same `submit` path as UI-MIX-005; do them in one pass.
 
 ## Fix
 

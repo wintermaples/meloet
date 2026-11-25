@@ -4,7 +4,7 @@ title: A note or CC drag sends the take id shown at release with the indexes pic
 area: UI-ROLL
 kind: bug
 severity: medium
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -44,7 +44,9 @@ Keep the take id in the drag at the press (a `take` field in `Drag` and `LaneDra
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (not run). `RollDrag.down` keeps indexes of the take shown at the press and no take id; `up()` reads `this.takeId()` at release (`drag.ts:375-381`) and `finish(d, take)` joins that id with the old indexes (452-473); `LaneMouse.up` the same (`cc.ts:352-357`). Nothing cancels a drag when the shown take changes (grep in `Roll.svelte` / `CcLanes.svelte`: `cancel()` only from Esc and `pointercancel`), and `handleKeydown` (`keys/attach.ts`) does not look at a held drag, so Mod Z during a held drag reaches core. Rust's guard (architecture 16: "If the id is not the shown take, Rust does nothing") is passed because the id sent is the new one.
+
+Fix plan (as suggested): in `ui/src/components/pianoroll/drag.ts` keep the take id in the drag at `down` and use it in `up` / `finish`; the same for `LaneDrag` in `cc.ts`; core then does nothing for a drag whose take is gone (the drawn look goes back by itself). Also cancel the held drag when `n.take.id` changes (the moving picture would otherwise be drawn with old indexes on the new take's notes, the same kind of fault as UI-ARRANGE-001). Tests in `ui/tests/pianoroll*.test.ts`: press, change the shown take, release → the intent carries the press-time id.
 
 ## Fix
 

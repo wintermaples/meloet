@@ -4,7 +4,7 @@ title: Pressing outside a note list, CC list or selected-notes field box pulls t
 area: UI-PARITY
 kind: parity
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -44,7 +44,9 @@ Give NoteFieldInput a separate blur path (for example `onblur={() => oncancel(fa
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (not run; the browser's order of events was not tried in WebKitGTK). `NoteFieldInput.svelte:65` uses `oncancel` for blur as well as Esc; `NoteListPanel.svelte:173-175` answers with `close(true)`, which focuses the row after `tick()`; `CcListPanel.svelte` and `NoteInspector.svelte` (`queueMicrotask(() => fieldButtons[name]?.focus())`) do the same. Whatever the order of the browser's focus steps, the row's `focus()` runs after the blur, so the box the person pressed does not keep the focus (either the move is stopped, or the row takes it right after). `NumberField.svelte` tells the two apart (`close(false)` on blur, `close(true)` on Enter / Esc).
+
+Fix plan (as suggested): give the blur its own path: in `ui/src/components/pianoroll/NoteFieldInput.svelte` call `oncancel(false)` on blur and `oncancel(true)` on Esc (or a second prop), and in `NoteListPanel.svelte`, `CcListPanel.svelte`, `NoteInspector.svelte` pass that on to `close(refocus)` / `closeField(refocus)`. Tests: blur → the box closes and `document.activeElement` is not the row.
 
 ## Fix
 

@@ -4,7 +4,7 @@ title: Piano roll drag readings count bars, beats and lengths in the song's firs
 area: UI-ROLL
 kind: bug
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -41,7 +41,11 @@ Give `RollDrag` and `LaneMouse` the tempo map for their readings: `positionText(
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (not run). `Roll.svelte:75` makes `meter` from `timeline.meterNum` / `meterDen` (the song's first time signature) and gives it to `RollDrag` (285) and `CcLanes`; `drag.ts:404-415` and `cc.ts:380-383` make the readings with `positionText(tick, meter)` / `lengthText` / `signedLength`. `positionText` with a plain meter counts bars of that one meter from tick 0. The note list and 「選んだノート」 use the map. Only songs with a time signature change are hit (hence low).
+
+One root with UI-ROLL-005 and UI-ROLL-006: the piano roll hands its parts the first time signature (`Roll.svelte:75`, `commands.ts:32-33`) where the tempo map (`map`, `Roll.svelte:77`) is needed. Fix the three together: give `RollInput` / `LaneInput` / `PianoRollKeyContext` the map, and take "the meter at this tick" from it.
+
+Fix plan for this report: `ui/src/components/pianoroll/drag.ts` and `cc.ts` read positions with `positionText(tick, map)` and lengths with the meter at the note (`meterAtOf(map, tick)`), as `NoteListPanel.svelte:36` / `noteFields.ts:217` do. Test: a 4/4 song with 3/4 from bar 5, the draw reading at tick 42240 says 「7. 1. 0000」.
 
 ## Fix
 

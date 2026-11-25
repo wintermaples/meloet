@@ -4,7 +4,7 @@ title: English plural pair picks the plural for a signed -1 written with the min
 area: UI-TEXT
 kind: parity
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -39,7 +39,9 @@ In `english()`, read the value after replacing U+2212 with "-" and compare its a
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (not run; the JavaScript facts are plain: `Number("−1")` with U+2212 is `NaN`, `Number("+1")` is 1). `english()` (`ui/src/text/index.ts:53-56`) picks `one` only for `Number(v) === 1`; `signed` (`pianoroll/geom.ts:441`) writes 「−1」 with U+2212, and `pr.readMove` / `arrange.readMove` are `n("keys", …)` / `n("delta", …)` pairs (`en.ts:914`, 721). So "−1 semitones" / "(−1 bars)" against "+1 semitone" / "(+1 bar)".
+
+Fix plan (as suggested): in `english()` read the value with U+2212 turned into "-" and compare its absolute value with 1. Check `barsDeltaText` (`arrangeDrag.ts`) gives a form `Number` reads after that (no spaces or units inside the hole). Test in `ui/tests/language.test.ts`: `t("pr.readMove", { keys: "−1", … })` ends with "semitone".
 
 ## Fix
 

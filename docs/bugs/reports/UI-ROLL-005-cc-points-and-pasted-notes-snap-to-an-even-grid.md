@@ -4,7 +4,7 @@ title: CC points and pasted notes snap to an even grid from the song start, off 
 area: UI-ROLL
 kind: bug
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -40,7 +40,11 @@ Use `gridTick(mapOf(timeline), tick, step, false, grid.division === 0)` in these
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (not run). `cc.ts:294-297` and 408, `commands.ts:40` and `Roll.svelte:1106` use the plain `snapTick(tick, step)` (`geom.ts:212`, multiples of `step` from tick 0), while notes and the ruler use `gridTick(map, …)` (`Roll.svelte:283`, 1049) and the lines are drawn from the map. After a time signature change whose head is not a multiple of the grid step (or with the 「1 小節」 grid), the two differ. 7-readings A-7: "Paste position from the right-click on an empty place | The nearest grid line (the same snapping as pressing the ruler)".
+
+One root with UI-ROLL-004 and UI-ROLL-006 (the piano roll uses only the first time signature); fix together.
+
+Fix plan for this report (as suggested): give `LaneInput` (`cc.ts`) a snapper like `RollInput.grid`, pass the map (or the same snapper) to `pianoRollCommand` (`commands.ts`, it has `state.timeline` → `mapOf`) and use `gridTick` at `Roll.svelte:1106`. Test: 3/4 with 4/4 from bar 2, grid 1/2, a CC point at tick 9000 lands on 9600.
 
 ## Fix
 

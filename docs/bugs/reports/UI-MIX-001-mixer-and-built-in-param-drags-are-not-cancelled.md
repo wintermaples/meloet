@@ -4,7 +4,7 @@ title: Mixer and built-in param drags are not cancelled when their part goes awa
 area: UI-MIX
 kind: bug
 severity: medium
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -12,7 +12,7 @@ found: 2026-11-25
 
 ## Where
 
-ui/src/components/mixer/control.svelte.ts:178-184 (the onMount cleanup of mixControl: `off(); keys.flush();`, no `cancel()`)
+ui/src/components/mixer/control.svelte.ts:80-86 (the onMount cleanup of mixControl: `off(); keys.flush();`, no `cancel()`)
 ui/src/components/params/ParamRow.svelte:143-149 (the onMount cleanup: `off(); stopFrame();`, no `cancel()`)
 ui/src/components/params/PluginParamRow.svelte:91-97 (the sibling that does it right: `if (drag) cancel();`)
 
@@ -38,7 +38,9 @@ In the unmount cleanup, cancel a running drag first, as PluginParamRow does: in 
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (not run). Lines corrected in `Where` (`control.svelte.ts:80-86`). The unmount cleanup of `mixControl` is `off(); keys.flush();` and that of `ParamRow.svelte:143-149` is `off(); stopFrame();`; neither calls its own `cancel()`, while `PluginParamRow.svelte:91-97` does (`if (drag) cancel()`). One-letter keys are taken while a mouse button is held (`handleKeydown` has no guard), so M / U / P during a drag unmounts the part. Rust side: `commit: false` values stay in `Mixer::previews` (`crates/meloet-core/src/play/mixer.rs:245-251`) until the same control is set again, `CancelMixPreview`, or the next mixer change, and a grip made by `hand_moved` (`play/automation.rs:715`) is removed only by `hand_let_go` or the cancel path; so the heard value and the song differ, and a lane stays held.
+
+Fix plan (as suggested): `ui/src/components/mixer/control.svelte.ts` cleanup → `off(); cancel(); keys.flush();`; `ui/src/components/params/ParamRow.svelte` cleanup → `off(); cancel(); stopFrame();` (`cancel()` does nothing with no drag). Check that `MixPreview.cancel()` also drops its pending animation frame (`ui/src/components/mixer/mixDrag.ts`). Tests: mount a strip, press and move, unmount → `cancelMixPreview` was sent.
 
 ## Fix
 

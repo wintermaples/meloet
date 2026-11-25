@@ -4,7 +4,7 @@ title: Adding an automation point: the screen snaps to the beat, Rust snaps agai
 area: UI-ARRANGE
 kind: parity
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -39,7 +39,11 @@ Needs a decision by the lead on which grid automation points use. The smallest c
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (not run). `add_auto_point` (`crates/meloet-core/src/play/automation.rs:587-604`) always runs `on_grid`, which uses `self.song.session.roll.grid` (the piano roll's grid); the screen has already put the tick on the start of a beat, or left it as it is with Shift (`autoGeom.ts:348-352`), and shows that place in the reading.
+
+Which side to follow is decided by 7-readings A-21 (so not `needs-lead`): "Snapping of added and moved points | The start of a beat. With Shift, ticks. | mock R10-AutoEdit". The screen follows it, and `move_auto_points` already takes the screen's `dTick` as sent; only `add_auto_point` differs.
+
+Fix plan: in `crates/meloet-core/src/play/automation.rs` make `add_auto_point` take the tick as sent (only `min(MAX_TICK)`), remove `on_grid` if nothing else uses it (grep first: the AI link's add may call the same function; if the AI tool relies on the grid, keep the snap on that path only), and change the doc comment of `add_auto_point` and any Rust test that expects the piano roll's grid. No protocol or wording change.
 
 ## Fix
 

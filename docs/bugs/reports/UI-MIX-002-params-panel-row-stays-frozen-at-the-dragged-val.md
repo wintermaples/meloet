@@ -4,7 +4,7 @@ title: Params panel row stays frozen at the dragged value after a drag that writ
 area: UI-MIX
 kind: bug
 severity: medium
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -37,7 +37,9 @@ Clear `held` at the end of a drag when the answer cannot be the song value, or s
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (not run). `ParamRow.svelte:60-72`: `shown = held ?? auto ?? value`, and `held` is cleared only by the effect on `value`; `onup` (121-132) leaves `held = v` after `commit: true`. Rust: a release on an armed lane while playing ends in `LetGo::Written` (`crates/meloet-core/src/play/automation.rs:756-762`), and `play/params.rs:210` does nothing more for `Written`, so the parameter's own value in the song does not change, the `value` prop stays the same number and the effect never runs. `PluginParamRow` and `mixControl` do not keep the value past the release this way.
+
+Fix plan: in `ui/src/components/params/ParamRow.svelte` drop `held` when the answer to the release has come, not only when `value` changes: `set(v, true)` goes through `send()`, which returns the rev; clear `held` when that promise resolves and no new drag has started (this also covers a release whose value Rust refuses), and keep the existing effect. Simpler but weaker: also read `auto` in the clearing effect. Test: `auto` set, drag, release with `value` unchanged → the row shows `auto` again.
 
 ## Fix
 

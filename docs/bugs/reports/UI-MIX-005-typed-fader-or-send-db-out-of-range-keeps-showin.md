@@ -4,7 +4,7 @@ title: Typed fader or send dB out of range keeps showing the typed number when R
 area: UI-MIX
 kind: bug
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -12,9 +12,9 @@ found: 2026-11-25
 
 ## Where
 
-ui/src/components/mixer/control.svelte.ts:219-226 (`submit` sets `keyed = { value: v }` with the typed value)
-ui/src/components/mixer/control.svelte.ts:132-139 (`keyed` is cleared only when the song value changes)
-ui/src/components/mixer/scale.ts:345-351 (`parseDb` leaves out-of-range values to Rust)
+ui/src/components/mixer/control.svelte.ts:118-125 (`submit` sets `keyed = { value: v }` with the typed value)
+ui/src/components/mixer/control.svelte.ts:38-41 (`keyed` is cleared only when the song value changes)
+ui/src/components/mixer/scale.ts:63-68 (`parseDb` leaves out-of-range values to Rust)
 
 ## What happens
 
@@ -38,7 +38,9 @@ Do not keep the typed value in `keyed` after `send(opts.make(v, true))` (set `ke
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (not run). Lines corrected in `Where`. `submit` (`control.svelte.ts:118-125`) keeps the parsed number in `keyed`; `keyed` is cleared only by the effect on `opts.value()` (38-41); `parseDb` (`scale.ts:63-68`) does not clamp; `Gain::from_db` (`crates/meloet-model/src/mixer.rs:29-36`) makes above +6 → +6 and below −60 → −∞. When the clamped result is the value the strip already has, no state change comes and `shown` stays the typed number. Related: UI-PARITY-009 (typed values out of range say nothing); the two can be fixed in one pass over the same `submit`.
+
+Fix plan: in `ui/src/components/mixer/control.svelte.ts` `submit`, do not keep the typed value past the answer: keep `keyed` only until `send(...)` resolves (then set it to null if it is still this one), so the strip shows the song value whatever Rust did; no clamp rule is copied to the screen. Test: fader at +6, type 12 → after the reply the shown value is +6.0.
 
 ## Fix
 

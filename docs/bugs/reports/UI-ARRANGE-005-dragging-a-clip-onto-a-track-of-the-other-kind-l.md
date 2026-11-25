@@ -4,7 +4,7 @@ title: Dragging a clip onto a track of the other kind looks allowed; Rust refuse
 area: UI-ARRANGE
 kind: parity
 severity: medium
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -39,7 +39,11 @@ In `groupPlaceable`, return false when a clip would land on a track of the other
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (not run), the drag half. `groupPlaceable` (`arrangeDrag.ts:149-158`) checks only "a track is there, not before 0, no overlap"; the model's `place` returns `EditError::WrongKind` for a keyboard clip on a vocal track and the other way round (`crates/meloet-model/src/arrange.rs:235-236`), and `apply_placed` (`crates/meloet-core/src/play.rs:1257-1261`) turns every error but `Overlap` into "nothing, no text". So the screen shows `move` / `copy` and a place that Rust will refuse. Architecture 17 gives the rule for places a move cannot go: the "not allowed" cursor, nothing sent.
+
+Fix plan: in `ui/src/components/arrangeDrag.ts` `groupPlaceable`, return false when `(clip.audio !== null) !== (track.kind.kind === "vocal")`; add a case to the arrange drag tests. No protocol or wording change.
+
+The paste half (「貼りつけ」 on an empty place of a track of the other kind, `Arrange.svelte:1653`) is real too but is left out of this report's fix: the screen only knows `clipboardClips` (a count), so disabling the row needs a new protocol field. It goes to `docs/bugs/later/VERIFY-UI.md`.
 
 ## Fix
 

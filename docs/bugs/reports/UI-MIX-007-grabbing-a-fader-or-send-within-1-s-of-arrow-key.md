@@ -4,7 +4,7 @@ title: Grabbing a fader or send within 1 s of arrow keys starts from the old val
 area: UI-MIX
 kind: ui-ux
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -12,8 +12,8 @@ found: 2026-11-25
 
 ## Where
 
-ui/src/components/mixer/control.svelte.ts:147-155 (`down`: `const from = opts.value()`, the KeySteps wait is not flushed)
-ui/src/components/mixer/control.svelte.ts:233-236 (`shown` shows `keyed` before the drag)
+ui/src/components/mixer/control.svelte.ts:49-57 (`down`: `const from = opts.value()`, the KeySteps wait is not flushed)
+ui/src/components/mixer/control.svelte.ts:132-134 (`shown` shows `keyed` before the drag)
 
 ## What happens
 
@@ -37,7 +37,9 @@ Call `keys.flush()` at the start of `down` and take `from` from the shown value 
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (not run). Lines corrected in `Where`. `down` (`control.svelte.ts:49-57`) takes `from = opts.value()` and does not call `keys.flush()`; `shown` is `keyed.value` before the press and `live.now = from` after it, so the handle jumps back by the keyed amount; the `KeySteps` timer (`mixDrag.ts:84`, `KEY_COMMIT_MS`) then fires during the drag and sends `commit: true` with the key value. `startTyping` and Enter already flush.
+
+Fix plan (as suggested): in `down`, `keys.flush()` first and `from = keyed ? keyed.value : opts.value()` (`ui/src/components/mixer/control.svelte.ts`). Test: ↑ three times, press within the wait → one `commit: true` with the keyed value before the drag, `live.from` is the keyed value.
 
 ## Fix
 

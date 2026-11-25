@@ -3,8 +3,8 @@ id: UI-ROLL-007
 title: Showing a clip of another song with the same clip id keeps the old zoom, scroll and rows
 area: UI-ROLL
 kind: bug
-severity: medium
-status: reported
+severity: low
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -42,7 +42,11 @@ Keep the song serial with the shown clip (for example `prView.shownClip = { id, 
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (not run). `Roll.svelte:489` fits only `if (prView.shownClip !== clip.id)`; `prView.shownClip` (`view.svelte.ts:40`) is module state and is written nowhere else (grep: these two places), so it lives across songs. Ids are per song and a new song starts at `NEW_SONG_NEXT_ID = 4` (`crates/meloet-model/src/mixer.rs:354`, `song.rs:409`), so the first clip of two new songs made the same way has the same id; reopening the same file gives the same ids too. `shown.svelte.ts:54-74` keeps songs apart by `song.serial`.
+
+Severity lowered to low: the piano roll keeps a wrong zoom and scroll once (the notes may be out of view); nothing is lost and one scroll or zoom puts it right; it is a small visual fault in the README's terms.
+
+Fix plan (as suggested): in `ui/src/components/pianoroll/Roll.svelte` compare the song too: keep `song.serial` beside `prView.shownClip` (a second field in `view.svelte.ts`) and fit when either differs. Test: mount, show clip id 5 of serial 1, then a state with serial 2 and the same clip id → the scroll is set to the clip's start again.
 
 ## Fix
 

@@ -4,7 +4,7 @@ title: The transport's tempo and time signature boxes open and take Enter while 
 area: UI-PARITY
 kind: parity
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -44,7 +44,11 @@ Give NumberField a `disabled` prop (no `m-typable`, `open` does nothing; the rea
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (not run). `Transport.svelte:446-470`: the tempo and time signature `NumberField`s get no busy state, and `NumberField.svelte:90` always has `m-typable` and opens; `set_tempo` / `set_meter` return `None` at once while `busy()` (`crates/meloet-core/src/play/timeline.rs:192-195`, 222-224), and `commitClamped` (`Transport.svelte:294-297`) still sends `clampValue`, so for an out-of-range text the status line says the value was set though nothing was. The tempo band's boxes are not typable while busy. 7-readings line 77 (hover of typable numbers): not while the number cannot be typed.
+
+One root with UI-ROLL-008 (which now holds UI-PARITY-005), UI-ARRANGE-009 and UI-ARRANGE-013 (parts that look usable while recording or counting in though Rust refuses).
+
+Fix plan (as suggested): a `disabled` prop on `ui/src/components/NumberField.svelte` (no `m-typable`, `open` does nothing, the reading looks as now), passed as the transport's recording / count-in state for the tempo and the time signature in `ui/src/components/Transport.svelte`. Check the position box (`locate` is refused while busy too, `play.rs:928-931`) and give it the same prop if it opens today. No protocol or wording change.
 
 ## Fix
 

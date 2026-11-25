@@ -4,7 +4,7 @@ title: Up and down in a built-in effect's parameter list can choose a row out of
 area: UI-PARITY
 kind: parity
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -42,7 +42,9 @@ Bind the ScrollArea's `viewport` in BuiltinList and, after `pick(next)` from a k
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (not run). `BuiltinList.svelte` `onkeydown` ends with `pick(next)`; `pick` focuses the list with `preventScroll: true` and sends `selectParam`; the file has no `reveal` (grep), while `PluginList.svelte:106` has `reveal` and calls it after `pick(next)` (170). So a row chosen with ↑ ↓ can lie outside the visible part of the `ScrollArea`.
+
+Fix plan (as suggested): in `ui/src/components/params/BuiltinList.svelte` bind the `ScrollArea`'s viewport and, after `pick(next)` from a key, bring the row into view with the same `reveal` as `PluginList` (share one small function rather than a second copy). Check `SoundKnobList.svelte` needs nothing (four rows).
 
 ## Fix
 

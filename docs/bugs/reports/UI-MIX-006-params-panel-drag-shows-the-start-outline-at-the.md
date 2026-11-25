@@ -4,7 +4,7 @@ title: Params panel drag shows the start outline at the song value, not where an
 area: UI-MIX
 kind: ui-ux
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -37,7 +37,9 @@ Take `from = shown` in ondown (before `held` is set). No protocol change, no new
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (not run). `ParamRow.svelte` `ondown`: `from = value` (the song value) while the handle is drawn at `shown = held ?? auto ?? value`; the gray.7 outline is drawn at `fractionOf(spec, from)`. With a lane moving the parameter, `auto !== value`, so the outline is not where the handle was. `mixControl` takes `from = opts.value()`, which the strips feed with the shown (lane) value.
+
+Fix plan (as suggested): `from = shown` in `ondown`, read before `held` is set, in `ui/src/components/params/ParamRow.svelte`; the release test `v === from && !previewed` then compares with the shown value too, which is the right "nothing moved" test.
 
 ## Fix
 

@@ -3,8 +3,8 @@ id: UI-PARITY-007
 title: After an unreadable Enter, the mixer, metronome and percent typing boxes no longer close when focus leaves
 area: UI-PARITY
 kind: bug
-severity: medium
-status: reported
+severity: low
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -45,7 +45,11 @@ Let `onsubmit` return whether it closed the box (the mixer's `submit` already re
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (not run). `ValueField.svelte:27-31` sets `done = true` before calling `onsubmit`, and `onblur` (42-44) cancels only when `!done`; the parents that keep the box open for unreadable text (`mixControl.submit` returns false and leaves `typing` on, `control.svelte.ts:118-125`; `TrackHeads.svelte:48-50`; `MetronomeWindow.svelte:153-156`; `PercentSlider.svelte:83-85`; 7-readings A-18: "Text that cannot be read keeps the box open") leave the same `ValueField` mounted with `done` stuck at true, so a later blur closes nothing. The header of `ValueField.svelte` says leaving the box stops.
+
+Severity lowered to low: it needs an unreadable Enter first, and Esc or a readable Enter still closes the box; nothing in the song is touched.
+
+Fix plan: in `ui/src/components/params/ValueField.svelte` set `done` back to false after `onsubmit` returns when the field is still mounted (the smallest change, no parent changes), or let `onsubmit` return whether it closed. Test: unreadable Enter, then blur → `oncancel` is called.
 
 ## Fix
 

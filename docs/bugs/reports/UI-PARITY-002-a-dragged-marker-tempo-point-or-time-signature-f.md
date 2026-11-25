@@ -4,7 +4,7 @@ title: A dragged marker, tempo point or time signature flag jumps back to its ol
 area: UI-PARITY
 kind: parity
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -39,7 +39,9 @@ Keep the released drag as `pending` and use it for the shown positions until `cu
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (not run; the length of the jump was not measured). `MarkerRow.svelte:73-79` `up`, `TempoBand.svelte:116-121` `laneUp` and 183-188 `rowUp` set the drag to null and then send; the shown places come from `timeline` as it was until core's answer arrives, so the thing is drawn at its old place for those frames. The other drag parts keep the look until the answer (`AutoLane` `pending`, `Arrange` `clipPending`, `Roll` / `CcLanes` `pending`, `CompBand`).
+
+Fix plan: the same kept look in `ui/src/components/timeline/MarkerRow.svelte` and `TempoBand.svelte`: keep the released drag until `current.rev` reaches the rev `send()` resolves with; drop it on a new press, on Esc, and when the marker / point / flag it names is gone. Write it so it cannot fail the way UI-ARRANGE-001 does: the kept look must be tied to the thing by its name (marker id; tempo point tick; flag bar), and used only while that thing is still in `timeline`, never by an index. Note Rust snaps the sent tick (architecture 21-15) and reselects the moved point; with UI-ARRANGE-006 fixed the kept place equals the answered one.
 
 ## Fix
 

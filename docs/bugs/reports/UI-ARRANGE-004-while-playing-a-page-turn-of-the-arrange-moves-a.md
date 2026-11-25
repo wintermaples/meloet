@@ -4,7 +4,7 @@ title: While playing, a page turn of the arrange moves a held clip, marker or po
 area: UI-ARRANGE
 kind: ui-ux
 severity: medium
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -42,7 +42,9 @@ Skip the follow paging in `frame()` while a drag or box select of the arrange is
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (not run). `frame()` (`Arrange.svelte:1080-1094`) pages with `followScroll` whenever `follow` is true; `follow` is set true when play starts (1124) and false only at a sideways wheel or scrollbar move (1184, 1672), never at a pointer press. The drags count px since the press (`arrangeDrag.ts:198`, `MarkerRow.svelte:67`, `autoGeom.ts:204`, `tempoGeom.ts:255`) and place what is held with the current view, so after a page turn the held thing is one view width away from the pointer, and release puts it there. `wheelRows` (1209-1211) already refuses to scroll during a clip drag for this reason. Severity stays medium: it needs "drag while playing across a page turn", but then the clip (or marker, point) lands a whole page away, off the screen, without the person seeing where.
+
+Fix plan: in `ui/src/components/Arrange.svelte` do not page in `frame()` while something is held in the arrange. The smallest form that covers the clip drag, the box select and the drags of `MarkerRow`, `TempoBand`, `AutoLane` and `CompBand` without a flag in each: one "a pointer is down inside the arrange" flag on the arrange's root (capture-phase `pointerdown`, cleared on `pointerup` / `pointercancel` on the window), read by `frame()`. Paging goes on at the first frame after release. The piano roll has the same fault (`pianoroll/Roll.svelte:894-901`, `prView.follow` during note and CC drags): fix it in the same change with the same rule.
 
 ## Fix
 

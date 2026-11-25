@@ -4,7 +4,7 @@ title: English texts with a count before a noun have no singular form (1 beats, 
 area: UI-TEXT
 kind: parity
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -42,7 +42,15 @@ Make each an `n(by, one, other)` pair in en.ts: `msg.countingIn`/`msg.countingIn
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (not run). The keys named are plain strings in `ui/src/text/en.ts` (33-34, 47, 1101, 1140-1142), and each can get the count 1 (the last beat of a count-in, the first step, one point, one stopped plugin). 7-readings D4: "Numbers | A text whose noun follows a number has a form for 1 and one for any other number (`n(by, one, other)` in en.ts); Japanese is unchanged." 61 other texts use `n(...)`.
+
+Fix plan (English only, the forms the rule asks for; no Japanese change): in `ui/src/text/en.ts`
+- `msg.countingIn`, `msg.countingInRest`: `n("beats", "… in {beats} beat. …", "… in {beats} beats. …")`;
+- `history.headLatest`, `history.headAllUndone`: `n("total", "{total} step · …", "{total} steps · …")`;
+- `history.head` has two counts and `n` takes one: pair by `total` and word the second half so it reads for any number, for example "… now at step {current}. Undone above: {redo}, can be redone" (the lead or owner may choose other words; the English table is the developers' translation approved by the owner, so tell the owner in the fix's list of wording changes);
+- `lane.now`: `n("count", "Now {value} · {count} pt", "Now {value} · {count} pts")`;
+- `msg.scanDone`: `n("stopped", "… {stopped} stopped while being checked and was left out. …", "… were left out. …")`.
+Add the singular cases to `ui/tests/language.test.ts`. Do UI-TEXT-003 first or together (the same `english()`).
 
 ## Fix
 

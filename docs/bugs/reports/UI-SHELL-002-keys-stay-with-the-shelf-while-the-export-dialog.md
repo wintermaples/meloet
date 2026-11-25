@@ -4,7 +4,7 @@ title: Keys stay with the shelf while the export dialog or the exported dialog i
 area: UI-SHELL
 kind: bug
 severity: medium
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -46,7 +46,11 @@ In `shelfHasKeys` also return false when `state.export.dialog !== null` or `expo
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed with a test that was run (scratch worktree, not kept): with `shelfUi.keys = true`, the shelf in front and `export.dialog` set, Enter did not send `startExport`; with `shelfUi.keys = false` it did. Read: `shelfHasKeys` (`tracks.svelte.ts:58-67`) leaves out `export.dialog` and the exported dialog, which `historyKeys` (`attach.ts:424-435`) has; `handlePointerdown` clears `shelfUi.keys` only for presses inside `.app`, and dialogs are outside it (`App.svelte`).
+
+One root with UI-SHELL-001, -002, -003, -004, -005, UI-PARITY-011, UI-PARITY-015 and UI-MIX-004: a key that belongs to the part in front (a dialog, an open list, a focused control) falls through to the document key handler (`handleKeydown` in `ui/src/keys/attach.ts`), which does not know that part is in front. Fix them as one piece of work with one rule in `handleKeydown`: (1) one "which dialog is in front" check used by every context (`outputChooser`, `shelf`, `history`) and by the Enter / Esc branches, in the order the dialogs are drawn in `App.svelte`; (2) return early when `ev.defaultPrevented` (a part that took the key says so), which covers lists moved to `body`; then each part only has to take its own keys.
+
+Fix plan for this report: in `ui/src/components/tracks.svelte.ts` `shelfHasKeys` also returns false for `state.export.dialog !== null`, `exportedOpen(state) !== null`, the latency dialog, About and the key list (the shared "dialog in front" check). `docs/progress.md` lists "one-letter keys still work" under About and the key list as known; that note is about letters, not about the shelf's Enter and arrows.
 
 ## Fix
 

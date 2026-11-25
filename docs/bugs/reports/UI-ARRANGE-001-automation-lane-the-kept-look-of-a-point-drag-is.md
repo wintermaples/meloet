@@ -4,7 +4,7 @@ title: Automation lane: the kept look of a point drag is applied to the next lan
 area: UI-ARRANGE
 kind: bug
 severity: high
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -50,7 +50,17 @@ Apply the kept drag to the points it was made on, not to `pts`: while `pending.l
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed, with a test that was run (2026-11-25, scratch worktree, not kept): a vitest test mounted `AutoLane.svelte` (svelte 5.57.3, jsdom) with a lane of three points (the points given through a mocked `peekLanePoints`), sent pointerdown / pointermove / pointerup on the middle point (`moveAutoPoints` was sent), then gave the lane prop the same lane with a new `laneId` whose points are not there, and called `flushSync()`. Result: `flushSync` threw `TypeError: Cannot read properties of undefined (reading 'tick')` with `draggedPoints` in the stack. In that run `pending.laneId !== lane.laneId` already held, so the clearing `$effect` would have dropped `pending`; the throw came first.
+
+Why the order is so (read in `ui/node_modules/svelte`, 5.57.3): `use:glSlot={{ kind: "rects", rects }}` reads `rects` inside a `render_effect` (`src/internal/client/dom/elements/actions.js:22`), and render effects are run before user `$effect`s. With no `<svelte:boundary>` in `ui/src` (grep: none), the error leaves `Batch.#process`, which calls `reset_all(root)` and throws again (`reactivity/batch.js:366-378`).
+
+Not run, read only: the "moved a second time" picture after the new points arrive (it needs `send()` to resolve before the patch; the logic in the report is right as far as I can read it), and the throw during a held drag when the `laneId` changes (`dragPoints`, `moveReading`: the same `pts[i]!` on an empty or shorter list).
+
+Rust side checked: `auto::move_points` returns a new `LaneId` (`crates/meloet-model/src/automation.rs:425-429`), so every real move goes this way. The fake bridge does nothing for `moveAutoPoints`, which is why no test saw it.
+
+Severity stays high: an uncaught error on every point move in the real app, and the batch is thrown away (other parts of the screen miss that state).
+
+Fix plan (agreed, the smallest): in `ui/src/components/automation/AutoLane.svelte` make the kept look safe at the source: `const shownDrag = $derived(drag ?? (pending && pending.laneId === lane.laneId ? pending.drag : null))`, and drop a held `drag` when `lane.laneId` is no longer the one it was started on (remember the lane id in the drag, or cancel it in the same derived). In `ui/src/components/automation/autoGeom.ts` make `draggedPoints` and `dragPoints` return the input unchanged when an index is not in `pts` (so a wrong index can never throw in render). With only this, the new lane's points are not here yet, so the lane is empty for the frames until they arrive (as it already is after an add or a delete). If the lead wants no blink, draw the old lane's points (`peekLanePoints(pending.laneId)`) with the drag until `points?.id === lane.laneId`; that is the report's first choice and also needs no protocol change. Add a test of the mounted lane with a new `laneId` after a move (the form above), and make the fake bridge give a new lane id on `moveAutoPoints` so scenes go the real way.
 
 ## Fix
 

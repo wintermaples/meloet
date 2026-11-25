@@ -4,7 +4,7 @@ title: Automation point, marker and tempo or time signature drags show their rea
 area: UI-PARITY
 kind: parity
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -39,7 +39,9 @@ In each part, set `dragReading.text` to the same text as the in-place reading wh
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (not run). `dragReading.text` (`pianoroll/view.svelte.ts:152`) is the only way a drag reading reaches the status line; `AutoLane.svelte`, `TempoBand.svelte` and the marker drag of `MarkerRow.svelte` keep a local `reading` only (grep: `dragReading` appears in `MarkerRow.svelte` only for the 「この前に空きを入れる…」 box, not in the other two). Spec 2 "Reading in place": "Shown only while dragging, 6 away to the upper left of the cursor. At the edge of the screen, moved inward. The same value is also shown in the status line". 7-readings A-20 only says what the reading holds.
+
+Fix plan (as suggested): in `ui/src/components/automation/AutoLane.svelte`, `ui/src/components/timeline/TempoBand.svelte` and `MarkerRow.svelte`, write the same text to `dragReading.text` whenever the local reading changes, and null on release, on cancel and on destroy (as `Arrange.svelte` does for clip drags). The status line then changes while these drags move: run `tools/measure/webkit-damage.sh` once with a point drag (the status line and the arrange are far apart on the page).
 
 ## Fix
 

@@ -4,7 +4,7 @@ title: Edit > Delete in the menu bar ignores a marker, tempo change or automatio
 area: UI-PARITY
 kind: parity
 severity: medium
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -42,7 +42,9 @@ Give the menu row the same choice as the key: when the keys go to the arrange, b
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (not run). The Delete key goes through `laneDeleteCommand` and `timelineKeyCommand` first (`keys/attach.ts:476-501`, they look at what was pressed last), then `keyAction`; the menu row (`menus.ts:145`) calls `runKeyAction({ kind: "deleteSelected" })`, which is `{ type: "deleteSelected" }` (`attach.ts:205-206`, clips only; `crates/meloet-core/src/play.rs` `delete_selected`), and its `usable` looks only at `selectedClips`. 7-readings A-21: "Delete | Works on the thing pressed and chosen last (clips, tempo points and flags, markers, automation points)." The header rule of `menus.ts` / `attach.ts`: rows with a key go the same way as the key. Medium is right: with a clip still chosen and a marker pressed last, the row deletes the clip, not the marker the person is looking at (one undo puts it back).
+
+Fix plan (as suggested): in `ui/src/keys/attach.ts` make one function "what Delete does now" (lane → timeline → the old `deleteSelected` path) used by both `handleKeydown` and `runKeyAction` / the usable check of the menu row; `ui/src/components/menu/menus.ts:145` takes `usable` from it. Tests in `ui/tests/menu.test.ts`: marker pressed last + a clip chosen → the row sends `deleteTimeline`; no clip chosen → the row is usable.
 
 ## Fix
 

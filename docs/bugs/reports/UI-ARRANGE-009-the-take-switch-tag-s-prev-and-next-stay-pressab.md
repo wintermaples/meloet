@@ -4,7 +4,7 @@ title: The take switch tag's prev and next stay pressable while recording and co
 area: UI-ARRANGE
 kind: ui-ux
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -38,7 +38,11 @@ Give the two buttons the disabled state while `busy` (as the other disabled butt
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (not run). `Arrange.svelte:1990, 1996` always send `stepTake`; `step_take` returns at once while `busy()` (`crates/meloet-core/src/play.rs:1295-1298`). The context menu rows and the menu bar row for the same action are disabled while busy, and the piano roll's tag disables its buttons.
+
+One root with UI-ROLL-008 (which now holds UI-PARITY-005), UI-ARRANGE-013 and UI-PARITY-010: parts that look usable while recording or counting in though Rust refuses the intent. Each is fixed in its own file, but by one rule: read the same `busy` (transport not stopped in the recording sense, as `songBusy` in `ui/src/keys/attach.ts` and the `busy` already in `Arrange.svelte`), show the disabled state, send nothing.
+
+Fix plan: in `ui/src/components/Arrange.svelte` give ◂ and ▸ `disabled={busy}` (or `aria-disabled` plus no send, as the arrange's other disabled buttons do) and the disabled look. Same two buttons as UI-ARRANGE-008; fix together. No protocol or wording change.
 
 ## Fix
 

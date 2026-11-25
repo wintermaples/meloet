@@ -4,7 +4,7 @@ title: Piano roll toolbar take buttons switch the arrange's chosen clip, not the
 area: UI-ROLL
 kind: bug
 severity: medium
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -47,7 +47,13 @@ Make ◂ ▸ act on the shown clip. Either (a) give `StepTake` an optional clip 
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (not run). The tag is made from the shown clip (`Toolbar.svelte:77-81`), its buttons send `stepTake` with no clip (225, 234), and `step_take` acts on `self.selected` (`crates/meloet-core/src/play.rs:1299`); `select_clip(None)` clears `selected` and keeps the piano roll's clip (1055-1060). So after a press on an empty place of the arrange the buttons do nothing, and after a box that leaves another clip chosen they change that other clip. The buttons are also not disabled while counting in or recording elsewhere (`disabled={takeTag.recording}` only), where `step_take` returns at `busy()`; that half is the same root as UI-ROLL-008 / UI-ARRANGE-009.
+
+A fix without a protocol change exists, so this is `confirmed`, not `needs-lead`:
+
+Fix plan: in `ui/src/components/pianoroll/Toolbar.svelte`, when `current.state.arrange.selectedClip !== clip.id`, send `{ type: "selectClip", clip: clip.id }` before `stepTake` (both through `send`, which keeps the order; `selectClip` is not an undo step and the piano roll already shows that clip, so only the arrange's choice moves to the clip whose take is being switched, which is also what the arrange's own tag needs to show the result). Disable ◂ ▸ also while `transport.state` is `recording` or `countIn`. Add a test: shown clip ≠ chosen clip → the two intents in this order.
+
+The other way, if the lead does not want the arrange's choice to move: give `StepTake` a clip id (protocol version change, the T key and the menu rows then send the chosen clip). Not needed for the fix.
 
 ## Fix
 

@@ -4,7 +4,7 @@ title: Track made by Turn this track into audio is named with a Japanese suffix 
 area: UI-TEXT
 kind: parity
 severity: low
-status: reported
+status: needs-lead
 found: 2026-11-25
 ---
 
@@ -37,7 +37,13 @@ Pass `meloet_model::Language` into `bounce_track` (from `Play::names`, as `add_v
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Real (read, not run): `bounce_track` names the new track with the fixed `BOUNCED_SUFFIX = "（音）"` (`crates/meloet-model/src/audio/bounce.rs:17`, 158-168) and takes no `Language`, while architecture 25-36 "Names made in Rust" passes the language in wherever meloet makes a name (`vocal_track_name`, `add_vocal_track`, `import_audio` …) and its list of things that stay Japanese (folders in a song, file names, logs, the AI link) does not hold this name. So an English page gets "Piano（音）".
+
+`needs-lead` because the English suffix is new wording. I looked for an existing text: spec 3 (A7) has only 「（元の名前）（音）」 (「ピアノ（音） 2」 when taken); 7-readings D4 "Names of new things" lists the approved English names and has none for this; `ui/src/text/en.ts` has the action ("Turn this track into audio", `menu.bounceTrack`; "Turn into audio clips") but no name form. Rust names are not in `ui/src/text/` anyway (they are picked with `language.pick` in the model).
+
+Recommended wording: Japanese stays 「（音）」; English " (audio)" (a space, half-width brackets), so "Piano (audio)", and "Piano (audio) 2" when taken. Where the words come from: "audio" is the word `en.ts` and `docs/spec/glossary.md` use for 音 in this feature ("Turn this track into audio", "audio clips"); the bracket form is the one of `msg.recordingVocal` "{track} ({input})".
+
+Choices: (a) pass `Language` into `bounce_track` (from `Play::names`, as `add_vocal_track` gets it) and pick the suffix; add the name to 7-readings D4 "Names of new things"; tests of `bounced_name` in both languages. No protocol or song-file change; old songs keep their names (a name never changes by itself). (b) keep 「（音）」 in both languages and add it to the "not changed" list of architecture 25-36. I recommend (a). The work file name (`bounce_file_name`, `crates/meloet-core/src/play/bounce.rs`) follows the track name and needs no change.
 
 ## Fix
 

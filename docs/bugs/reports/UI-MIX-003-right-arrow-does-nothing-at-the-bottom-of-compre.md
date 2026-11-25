@@ -4,7 +4,7 @@ title: Right arrow does nothing at the bottom of compressor attack, delay interv
 area: UI-MIX
 kind: bug
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -37,7 +37,9 @@ In keyStep, when the stepped value rounds back to the same value, move by one un
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed with a test that was run (scratch worktree, not kept): for every continuous parameter of `EFFECT_PARAMS`, `keyStep(p, min, +1, false)` and `keyStep(p, max, −1, false)` were compared with the start value; exactly three did not move: `compressor[2]` (ms, at 0.1), `delay[1]` (ms, at 1) and `limiter[2]` (ms, at 1), as the report says. (Only the two ends of each range were run; the report's claim that no value inside a range is stuck was not run again.)
+
+Fix plan (as suggested): in `ui/src/components/params/paramRows.ts` `keyStep`, when the stepped value equals `roundTo(p, value)`, step by one unit of the last shown place instead; add the three cases to the tests of `paramRows`.
 
 ## Fix
 

@@ -4,7 +4,7 @@ title: About's license search shows only the match count in headings, not matche
 area: UI-SHELL
 kind: parity
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -39,7 +39,11 @@ While `searching`, pass `t("shelf.matchCount", { shown, total })` as the count, 
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (not run). Spec 3 line 131, word for word: "While searching, only the headings with matches are shown open, and the count of a heading becomes 「合う数 / 全部」." `AboutDialog.svelte:137, 162, 175` always show the length of the filtered list. `ui/tests/about.test.ts:258` (`["▾ MIT 1"]` while searching) fixes today's form, but nothing in the spec or 7-readings says that form is meant (7-readings has no line on About's counts), so the spec stands and the test changes with the fix.
+
+Wording: the form 「{shown} / {total}」 exists as `shelf.matchCount` (`ui/src/text/ja.ts:636`, source mock:F5-ShelfSearch; `en.ts` has it), and spec 3 line 141 says the shelf works "the same as the second page of 「meloet について」", so the same key is used; no new wording.
+
+Fix plan (as suggested): in `ui/src/components/about/AboutDialog.svelte` pass `t("shelf.matchCount", { shown, total })` as the heading count while searching, the totals from the lists before filtering (`ui/src/components/about/licenses.ts`: give `partGroups` the total per license, or call it once with an empty query); change `ui/tests/about.test.ts:258` to the new form.
 
 ## Fix
 

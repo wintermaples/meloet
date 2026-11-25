@@ -4,7 +4,7 @@ title: The folded tempo row's text of the play line's tempo and meter scrolls aw
 area: UI-ARRANGE
 kind: ui-ux
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -37,7 +37,9 @@ Place it at the row's left edge (drop the `style:left`, keep `.now`'s `margin-le
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (not run). `TempoBand.svelte:362` places the folded row's text at `left: -view.scrollX` (the song's head) plus `margin-left: space.1`; `now` is the value at the play line, kept up to date by `showNow` in `Arrange.svelte`. 7-readings A-20: "「96.00 ・ 4/4」 on the folded row | The values at the play line. | spec 3". A value that follows the play line is a label of the row, and at the song's head it leaves the view after any sideways scroll of more than its own width. The mocks show it at the row's left edge (they are not scrolled, so they do not tell the two apart; the reading above does). The only test of it (`ui/tests/round6.timeline.test.ts:270`) checks the text, not the place.
+
+Fix plan (as suggested): in `ui/src/components/timeline/TempoBand.svelte` drop `style:left` from the `.now` span (it keeps `position: absolute; top; margin-left`, so it sits at the row's left edge). Then run `tools/measure/webkit-damage.sh` once with the song playing and the row folded, since the text now changes in place while the arrange pages.
 
 ## Fix
 

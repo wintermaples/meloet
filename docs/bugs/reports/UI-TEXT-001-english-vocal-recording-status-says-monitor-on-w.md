@@ -4,7 +4,7 @@ title: English vocal recording status says monitor on while monitoring is off
 area: UI-TEXT
 kind: parity
 severity: medium
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -40,7 +40,9 @@ Smallest: in en.ts make the piece inside `msg.recordingVocal` and `msg.recording
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (not run). `StatusLine.svelte:259-264` removes `t("meter.monitorOn") + STATUS_JOIN` from the sentence with `String.replace`; in English that is "Monitor on · " (`en.ts:1295`), while `msg.recordingVocal` / `msg.recordingVocals` have "monitor on · " (`en.ts:1154`, 1567). The match is case-sensitive, so nothing is removed and the status line says "monitor on" with the monitor off. Japanese has 「モニター オン」 in both. Medium is right: the line says something false about what the person hears.
+
+Fix plan (no new wording): in `ui/src/components/StatusLine.svelte` do not find the piece by another key's text. Split the sentence on its own joints instead: the text part that follows the last hole before `{stopKey}` is 「…・ モニター オン ・ 止めるには 」 / " · monitor on · " + the lead of the next piece; remove the segment between two `STATUS_JOIN`s that holds no hole (the monitor piece is the only such segment in these two texts in both tables). If the lead prefers the plain way: compare without case (`toLowerCase` on both) — one line, but still tied to two keys saying the same words. Add a test in `ui/tests/language.test.ts`: English, monitor off → no "monitor on".
 
 ## Fix
 

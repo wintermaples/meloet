@@ -4,7 +4,7 @@ title: While recording, a drag on the arrange ruler still shows a new loop range
 area: UI-ARRANGE
 kind: ui-ux
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -38,7 +38,11 @@ Return early in `rulerDown` while `busy` (or do not set `preview` in `rulerMove`
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (not run). `rulerDown` / `rulerMove` (`Arrange.svelte:1263-1273`) have no `busy` check, so the preview range is shown; `set_loop` and `locate` return at once while `busy()` (`crates/meloet-core/src/play.rs:1012-1015`, 928-931), so the reply's rev equals `before` and the preview is dropped. The other drags of the arrange already refuse to start while busy.
+
+One root with UI-ROLL-008 (which now holds UI-PARITY-005), UI-ARRANGE-009 and UI-PARITY-010 (parts that look usable while recording or counting in though Rust refuses): fix by the same rule, the `busy` the arrange already has.
+
+Fix plan: in `ui/src/components/Arrange.svelte` return early in `rulerDown` while `busy` (nothing shown, nothing sent); do the same in the piano roll's ruler handlers (`ui/src/components/pianoroll/Roll.svelte:1028-1039`, covered by UI-ROLL-008's fix if that one is done first). No protocol or wording change.
 
 ## Fix
 

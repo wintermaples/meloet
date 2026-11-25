@@ -4,7 +4,7 @@ title: Esc and Enter in the latency dialog act on the sound settings dialog unde
 area: UI-SHELL
 kind: bug
 severity: medium
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -45,7 +45,11 @@ In attach.ts, before the settings branches: when `state.workspace.latencyDialog`
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed with a test that was run (scratch worktree, not kept): with `workspace.settings` and `workspace.latencyDialog` both set, `handleKeydown` sent exactly `{ type: "back" }` for Esc and `{ type: "settingsApply" }` for Enter. Read: core's `Back` (`crates/meloet-core/src/state.rs:1702-1710`) closes the scan-stopped dialog, the song dialog, then `self.dialog` (the sound settings); it never touches the latency dialog; `App.svelte:98-107` draws the latency dialog in place of the settings while both are set. `LatencyDialog.svelte:49-50` has `cancel` "(Esc)", called only by the button.
+
+One root with UI-SHELL-001, -002, -003, -004, -005, UI-PARITY-011, UI-PARITY-015 and UI-MIX-004: a key that belongs to the part in front (a dialog, an open list, a focused control) falls through to the document key handler (`handleKeydown` in `ui/src/keys/attach.ts`), which does not know that part is in front. Fix them as one piece of work with one rule in `handleKeydown`: (1) one "which dialog is in front" check used by every context (`outputChooser`, `shelf`, `history`) and by the Enter / Esc branches, in the order the dialogs are drawn in `App.svelte`; (2) return early when `ev.defaultPrevented` (a part that took the key says so), which covers lists moved to `body`; then each part only has to take its own keys.
+
+Fix plan for this report: in `ui/src/keys/attach.ts`, when `state.workspace.latencyDialog` is set: Esc sends `stopLatencyMeasure` while measuring, else `closeLatencyMeasure` (what `cancel` does; share one function with the dialog); plain Enter sends nothing to the settings (spec 3 gives this dialog no Enter rule, so nothing is the safe choice). No protocol or wording change.
 
 ## Fix
 

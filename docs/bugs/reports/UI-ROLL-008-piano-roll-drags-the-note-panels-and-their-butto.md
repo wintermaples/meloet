@@ -4,7 +4,7 @@ title: Piano roll drags, the note panels and their buttons stay usable while rec
 area: UI-ROLL
 kind: parity
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -40,7 +40,11 @@ Add the busy check used elsewhere (`transport.state === "recording" || transport
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (not run). Rust: `aimed` returns `None` while `busy()` (`crates/meloet-core/src/play.rs:2349-2354`), and the note intents go through it; `add_note` returns while busy. Screen: `Roll.svelte:280` blocks drags only in `liveMode` (135: the shown clip is the one being recorded), so during the count-in and while another clip is recorded, drags, drawing, the panel buttons and the list fields all work on the screen and are dropped by core with nothing said. The right-click menu (`rollMenu.ts:32`) and the menu bar already use `busy`. 7-readings A-7 "Right-click during recording and count-in" gives the rule (rows that change the song are disabled).
+
+One root with UI-ARRANGE-009, UI-ARRANGE-013 and UI-PARITY-010 (parts that look usable while recording or counting in though Rust refuses). Also reported as UI-PARITY-005 (the drag half of this report, seen from the parity side: every arrange drag only chooses while busy; merged into this report and deleted). From it, more places: `ui/src/components/pianoroll/Roll.svelte:346-360` (`down`), `drag.ts:191-250` (`RollDrag.down` starts move, resize, velocity, erase and draw with no busy check), `CcLanes.svelte:137-145` and `cc.ts:255-270` (CC points); the siblings that only choose while busy: `Arrange.svelte:1376-1385`, `TempoBand.svelte:99, 166`, `MarkerRow.svelte:65`, `CompBand.svelte:90`, `AudioClipHandles.svelte:174, 268`. While busy, `down` should send only the selection it would send now and start no drag.
+
+Fix plan (as suggested): one `busy` for the piano roll (`transport.state === "recording" || transport.state === "countIn"`, the rule of `songBusy` in `ui/src/keys/attach.ts`), used in: `NoteInspector.svelte` (`live`, `toolUsable`, `canQuantize`, `canUnquantize`: the disabled looks exist), `NoteListPanel.svelte` / `CcListPanel.svelte` (do not open a field), `Roll.svelte` / `CcLanes.svelte` / `drag.ts` / `cc.ts` (no move, resize, draw, erase, velocity or CC point drag starts; selecting by press or box stays), and the piano roll ruler's loop drag (the twin of UI-ARRANGE-013). No protocol or wording change.
 
 ## Fix
 

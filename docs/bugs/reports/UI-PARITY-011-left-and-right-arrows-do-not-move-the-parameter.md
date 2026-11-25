@@ -4,7 +4,7 @@ title: Left and right arrows do not move the parameter row chosen with up and do
 area: UI-PARITY
 kind: ui-ux
 severity: medium
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -45,7 +45,12 @@ In the three list `onkeydown`s, take ← → (and Shift ← →) when a row is c
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (not run). `BuiltinList.svelte:75-78` `pick` focuses the list box; its `onkeydown` (108-123) takes only Enter and ↑ ↓ and returns for everything else without stopping it; ← → then reach `handleKeydown` and become `nudge` (the same path that UI-SHELL-004's test showed sending `moveNotes`). `SoundKnobList.svelte` and `PluginList.svelte` have the same shape. Spec 3 (E3): "← → move the chosen row, ↑ ↓ choose, Enter types"; spec 4 lists the three as one group "In the parameters".
+
+One root with UI-SHELL-001, -002, -003, -004, -005, UI-PARITY-011, UI-PARITY-015 and UI-MIX-004: a key that belongs to the part in front (a dialog, an open list, a focused control) falls through to the document key handler (`handleKeydown` in `ui/src/keys/attach.ts`), which does not know that part is in front. Fix them as one piece of work with one rule in `handleKeydown`: (1) one "which dialog is in front" check used by every context (`outputChooser`, `shelf`, `history`) and by the Enter / Esc branches, in the order the dialogs are drawn in `App.svelte`; (2) return early when `ev.defaultPrevented` (a part that took the key says so), which covers lists moved to `body`; then each part only has to take its own keys.
+For this report the key is not taken by anyone, so the early return on `defaultPrevented` does not help by itself: the lists must take ← →.
+
+Fix plan for this report: in the `onkeydown` of `ui/src/components/params/BuiltinList.svelte`, `SoundKnobList.svelte` and `PluginList.svelte`, when a row is chosen, take ← → and Shift ← → (the handler returns early on `shiftKey` today) and run the same step the row's control runs (`keyStep` of `ParamRow.svelte:157-165` / the step of `PluginParamRow.svelte:105-116`; share the function rather than write a second one); `preventDefault` + `stopPropagation`. Tests per list: choose a row, → sends `setParam` and no `moveNotes`.
 
 ## Fix
 

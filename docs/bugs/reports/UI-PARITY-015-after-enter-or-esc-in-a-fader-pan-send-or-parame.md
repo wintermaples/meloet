@@ -4,7 +4,7 @@ title: After Enter or Esc in a fader, pan, send or parameter value box the focus
 area: UI-PARITY
 kind: parity
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -13,7 +13,7 @@ found: 2026-11-25
 ## Where
 
 ui/src/components/params/ValueField.svelte:25-41 (Enter and Esc call `onsubmit` / `oncancel`; the input is then removed and nothing gets the focus)
-ui/src/components/mixer/control.svelte.ts:88-98 (Enter on a focused fader, pan or send opens the box), :121-128 and :143-145 (`submit`, `stopTyping` only turn `typing` off)
+ui/src/components/mixer/control.svelte.ts:88-98 (Enter on a focused fader, pan or send opens the box), :118-125 and :139-141 (`submit`, `stopTyping` only turn `typing` off)
 ui/src/components/params/BuiltinList.svelte:83-88, SoundKnobList.svelte:51-54, PluginList.svelte:129-131 (Enter on the chosen row opens the box); params/paramUi.svelte.ts:15-19 (`stopTyping` only clears the row)
 Siblings that do it right: ui/src/components/NumberField.svelte:41-47 and :55, :60 (`close(true)` focuses the reading again after Enter or Esc); pianoroll/NoteListPanel.svelte:134-140 and CcListPanel.svelte:125-131 (the row gets the focus back)
 
@@ -43,7 +43,11 @@ When the box closes from Enter or Esc (not from blur), focus the control that op
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (not run). `ValueField.svelte:25-41` calls `onsubmit` / `oncancel` and is then removed; `mixControl` (`mixer/control.svelte.ts:121-128`) and `paramUi.stopTyping` only turn typing off; nothing focuses the fader / knob / send or the list again, so `document.activeElement` falls to `body` and the next arrow goes to the document handler. `NumberField.svelte` (`close(true)`) and the note list give the focus back.
+
+One root with UI-SHELL-001, -002, -003, -004, -005, UI-PARITY-011, UI-PARITY-015 and UI-MIX-004: a key that belongs to the part in front (a dialog, an open list, a focused control) falls through to the document key handler (`handleKeydown` in `ui/src/keys/attach.ts`), which does not know that part is in front. Fix them as one piece of work with one rule in `handleKeydown`: (1) one "which dialog is in front" check used by every context (`outputChooser`, `shelf`, `history`) and by the Enter / Esc branches, in the order the dialogs are drawn in `App.svelte`; (2) return early when `ev.defaultPrevented` (a part that took the key says so), which covers lists moved to `body`; then each part only has to take its own keys.
+
+Fix plan for this report: when the box closes by Enter or Esc (not by blur), focus what opened it: in `ui/src/components/mixer/control.svelte.ts` remember `e.currentTarget` of the Enter that opened the box and focus it after `typing = false` (after `tick()`); in `ui/src/components/params/BuiltinList.svelte`, `SoundKnobList.svelte`, `PluginList.svelte` focus the list box after `stopTyping()` from a key. Tests: Enter, type, Enter → `document.activeElement` is the control again.
 
 ## Fix
 

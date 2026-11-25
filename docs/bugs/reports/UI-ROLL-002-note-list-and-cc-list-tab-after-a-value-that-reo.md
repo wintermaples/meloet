@@ -4,7 +4,7 @@ title: Note list and CC list: Tab after a value that reorders the take opens the
 area: UI-ROLL
 kind: bug
 severity: medium
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -44,7 +44,9 @@ Follow the edited note, not the row: Rust selects the edited notes after an edit
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (not run). `finish` (`NoteListPanel.svelte:149-164`) sends the value and at once opens the next field at the same row number with `draft` from the take shown before the answer; `editSpec` (123) is made again from whatever note is at that row in the new take; `commitCommand` (`noteFields.ts:315-317`) compares the typed number with `spec.current` of that other note, so the old text, unchanged, is sent as a change to the other note with the new take's id (Rust takes it: the id is the shown take). Nothing closes or refills the box when the take id changes (the header comment says the row number is kept on purpose across the new id). `CcListPanel.svelte:132-146` does the same by index. The worked example is right: the model keeps notes in start, then key order.
+
+Fix plan (the smaller of the two in the report, no new mechanism): in `ui/src/components/pianoroll/NoteListPanel.svelte` and `CcListPanel.svelte`, when a decided value was really sent (`command !== null`) and the field can move the row (note list: `position`, `key`; CC list: position), do not open the next field from the old take: wait for the reply (`send()` returns the rev) and for the take with the new id, then open the next field on the row of the note Rust selected (architecture 16: edited notes are selected after an edit; `pr.selectedNotes` → row through `indexes`), with its text from the new take; if that row cannot be found, close the box. For fields that cannot reorder (length, velocity, CC value) today's path stays. Tests: the report's example for both lists (Tab after a position that reorders, then Enter: no second intent; the box is on the moved note).
 
 ## Fix
 

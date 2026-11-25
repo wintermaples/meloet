@@ -4,7 +4,7 @@ title: Time signature flag box: an unreadable bottom number is reported as the t
 area: UI-ARRANGE
 kind: parity
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -36,7 +36,11 @@ Use the typed text as the transport does: `reject={(draft) => { const field = me
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (not run). `TempoBand.svelte:302` sends a fixed `field: "meterNum"` and ignores the draft; `ValueInput.svelte:39` does pass the typed text (`reject(draft)`); the transport's box uses `meterFieldOf(draft)` (`Transport.svelte:303-306`, `time.ts:88-92`: bottom when the top reads as 1 to 12). Both boxes read with the same `readMeter`.
+
+Also reported as UI-PARITY-004 (the same line, the same fix; that report was merged into this one and deleted). From it: the header of `timeline/ValueInput.svelte` says "The look and rules are the same as the transport's number box (NumberField.svelte)", and spec 6 "Not readable as a number" names the field that could not be read and its old value.
+
+Fix plan (as suggested): in `ui/src/components/timeline/TempoBand.svelte:302` use the draft, `reject={(draft) => { const field = meterFieldOf(draft); send({ type: "rejectValue", field, kept: String(field === "meterNum" ? editFlag.num : editFlag.den), range: null }); }}`; add a case to `ui/tests/round6.timeline.test.ts` (「4/x」 on a flag → `field: "meterDen"`). No protocol or wording change.
 
 ## Fix
 

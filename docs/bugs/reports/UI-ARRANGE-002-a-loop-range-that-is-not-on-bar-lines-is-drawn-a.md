@@ -4,7 +4,7 @@ title: A loop range that is not on bar lines is drawn at the nearest bar lines, 
 area: UI-ARRANGE
 kind: bug
 severity: medium
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -47,7 +47,16 @@ Needs a decision by the lead: (a) make `loop_from_marker` put the range on whole
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (not run). `loopBars` (`arrangeGeom.ts:296-302`) rounds both ends to the nearest bar line, `loop_from_marker` (`play/timeline.rs:464-480`) keeps the marker ticks, and Rust's `bars` (`play.rs:757-766`) rounds outward; the worked example is right (5.5 → line 6 by the tie rule, 7.25 → line 7; Rust says 5–8).
+
+Which side to follow is decided by the documents, so this is not `needs-lead`:
+- architecture 21-2: "Notes, clips, automation points, markers, tempo points and the loop range **keep their ticks**" when a time signature change is added earlier. So a loop range that is not on bar lines exists whatever `loop_from_marker` does, and the screen has to draw it right.
+- spec 3 (Y18): 「ここから次のマーカーまでをループに」 "(for the last marker, up to the end of the song)", and markers snap to beats, not bars: the range is meant to end at the marker. The doc comment of Rust's `bars` ("The bars the range touches … its first bar, and the bar line at its end or after it") shows Rust already expects such ranges.
+- spec 3 line 52 / 92 ("Dragging on the ruler sets the loop range in whole bars", "The loop range stays in whole bars") is about what a ruler drag makes; the ruler drag still makes whole bars.
+
+So choice (b): Rust stays, the screen changes.
+
+Fix plan: in `ui/src/components/arrangeGeom.ts` give the loop two readings: the place to draw (`range.start` / `range.end` in ticks, as they are) and the numbers for the heading by the rule of `Play::bars` (the bar that holds the start, and the bar line at or after the end; the screen's tempo map has what is needed). In `ui/src/components/Arrange.svelte` use the ticks for `loopX`, the two loop lines and the accent mark (370, 380, 572-578, 1770-1772) and the outward numbers for 「マーカー ・ ループ a–b」 (1722-1724); the same in `ui/src/components/pianoroll/Roll.svelte:1015`. `startRulerDrag` (1267): when an end is grabbed, the end that stays keeps its tick; `SetLoop` takes bar lines, so check in `crates/meloet-protocol` whether the fixed end can be sent as it is; if it cannot, the fixed end goes outward to its bar line on release (say so in the fix), not to the nearest one. Add a case to `ui/tests/arrange.test.ts` (loop 5.3–7.2 in 4/4: drawn at the ticks, heading 5–8). No protocol or wording change expected.
 
 ## Fix
 

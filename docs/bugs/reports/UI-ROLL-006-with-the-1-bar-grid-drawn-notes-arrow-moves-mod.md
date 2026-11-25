@@ -4,7 +4,7 @@ title: With the 1-bar grid, drawn notes, arrow moves, Mod D and drum squares use
 area: UI-ROLL
 kind: bug
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -41,7 +41,11 @@ For division 0 take the step from the bar at the place: the drawn start for draw
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (not run). `Roll.svelte:117` `step = G.gridTicks(pr.grid, meter)` with the first time signature (75); `gridTicks` (`geom.ts:207-210`) gives `ticksPerBar(meter)` for division 0, so with 「1 小節」 every length and distance (drawn note, shortest resize, ← →, Mod D in `commands.ts:33`, drum square width) is the first bar's length everywhere. Other grids do not depend on the meter, so only 「1 小節」 in a song with a time signature change is hit (low). Rust's own grid uses the bar at the place (`crates/meloet-core/src/play/automation.rs` `on_grid`, `meloet-model/src/quantize.rs`).
+
+One root with UI-ROLL-004 and UI-ROLL-005; fix together (the map instead of the first meter).
+
+Fix plan for this report: make the step a function of the place for division 0, `ticksPerBar(meterAtOf(map, tick))`: in `ui/src/components/pianoroll/drag.ts` (the drawn start for draw and resize), `commands.ts` (the earliest moved note for ← → and Mod D), and `Roll.svelte:124` (drum squares: the bar of each square, or of the view's left edge if one width per view is needed by the drawing). Check what Rust does with the sent `ticks` (it takes them as sent), so the screen alone decides. Tests with a 4/4 → 3/4 song.
 
 ## Fix
 

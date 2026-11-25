@@ -4,7 +4,7 @@ title: The draw tool sounds its note or chord while the song plays, records or c
 area: UI-ROLL
 kind: ui-ux
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -37,7 +37,9 @@ Call `i.audition.play(…)` in the draw branch only when `i.mayAudition()` is tr
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (not run). `drag.ts:241` and 250 call `i.audition.play(…)` in the draw branch with no `i.mayAudition()` check; the press and move branches have it (227, 317), and `mayAudition` is `notesMayAudition(app) && !liveMode` (`Roll.svelte:230`, only when stopped). Spec 3 line 96: "Notes: a note sounds when pressed (until released; stopped at the length of the note), each time its pitch changes while dragging, and when it is moved with ↑ ↓ (for about 0.3 s). Nothing sounds when selecting with a box, on Mod A, when choosing a row in the list, or during play and recording." Only the keyboard column is said to sound during recording.
+
+Fix plan (as suggested): in `ui/src/components/pianoroll/drag.ts` wrap the two `i.audition.play` calls of the draw branch in `if (i.mayAudition())`; check that the pitch-change audition while a drawn note is dragged (around line 340) has the same check. Test: transport playing, draw → no `audition` intent.
 
 ## Fix
 

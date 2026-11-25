@@ -4,7 +4,7 @@ title: Marker and tempo point drags with Shift show an unsnapped place, but Rust
 area: UI-ARRANGE
 kind: parity
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -39,7 +39,15 @@ Needs a decision by the lead. (a) Drop the Shift branch on the screen (always `n
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (not run). The screen leaves out snapping with Shift (`MarkerRow.svelte:68`, `tempoGeom.ts:255`), Rust always snaps (`play/timeline.rs` `move_marker`: `let tick = self.snapped(tick)`; `move_tempo_point` the same; `snapped` = nearest beat).
+
+Which side to follow is decided by the documents (so not `needs-lead`): Rust is right, the screen changes.
+- spec 3 (Y17): "A tempo can change at the start of a beat."
+- spec 3 (Y18): "Move: drag sideways (snaps to the beat; the reading is the position)."
+- architecture 21-15: "**Snapping to beats is done by both**: the screen snaps with the map (`nextBeat`) for the look while dragging, and the core snaps again by the same rule (nearest beat; at exactly half, the later)."
+- spec 4's row "While dragging, do not snap to the grid — Shift + drag" speaks of the grid; these two drags do not use the grid but the beat rule above. 7-readings has no line that gives Shift to marker or tempo point drags (A-20), while A-21 gives it to automation points in words ("The start of a beat. With Shift, ticks.").
+
+Fix plan (choice (a)): drop the Shift branch in `ui/src/components/timeline/MarkerRow.svelte:68` and in `dragPoint` of `ui/src/components/timeline/tempoGeom.ts:255` (always `nearestBeatTick`), and fix the comment above `dragPoint` ("ticks with Shift"). Check `ui/tests/` for a test that expects the Shift form (`tempoGeom` tests) and change it. No protocol change.
 
 ## Fix
 

@@ -4,7 +4,7 @@ title: Peaks of the other takes of a comped clip are treated as unused and can b
 area: UI-BRIDGE
 kind: bug
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -43,7 +43,9 @@ In `songAudioIds`, also collect the `audio` of every entry of `c.audio.takes` (i
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (not run). `songAudioIds` (`bridge/peaks.ts:220-227`) collects only `c.audio.audio` (its own comment: "the shown take of each clip"); `waveParts` (`arrange/wave.ts:82-99`) draws each comp piece from `take.audio` of `a.takes`, and the comp band draws every take. `PeakStore.keepOnly` (186-201) moves every level whose file is not in the list to `dropped` and lets go of the oldest once `dropped` is over `KEEP_DROPPED_PEAK_BYTES` (4 MB). So the files of the other takes of a comped clip are treated as unused on every change of the `song` part. The numbers of the example (bytes per minute of a level) were not worked again; the fault does not depend on them, only how soon it shows. Low is right: the waves come back after a fetch.
+
+Fix plan (as suggested): in `ui/src/bridge/peaks.ts` `songAudioIds` also collects `audio` of every entry of `c.audio.takes` (widen the parameter type, update the doc comment); add a case to `ui/tests/bridge.peaks.test.ts`. No protocol change.
 
 ## Fix
 

@@ -4,7 +4,7 @@ title: Drum row names of the piano roll lose their term tips in English
 area: UI-TEXT
 kind: parity
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -38,7 +38,9 @@ In `drumTerm`, also match the English word of each term when the page is English
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (not run). `drumTerm` (`pianoroll/drums.ts:111-115`) tests the shown name against Japanese words only; the name comes through `t()`, so on an English page it is "Kick", "Snare" … and nothing matches; `Roll.svelte:996, 1181` then draw no tip. 7-readings D4: "Term tips | Looked up by the Japanese word as before; in English a name shown in English (drum names, …) finds its term too."
+
+Fix plan (as suggested): in `ui/src/components/pianoroll/drums.ts` `drumTerm`, when `textLanguage() === "en"`, also test the name against `findTerm(word)?.term` without case (the rule `termParts` uses in `components/format.ts:79-80`), and return the Japanese word (the key `use:term` takes). Keep "longer first". Check the English terms of the eight words against the English kit names in `en.ts` ("Closed hi-hat" must find ハイハット, "Side stick" サイドスティック) in a test in `ui/tests/language.test.ts`.
 
 ## Fix
 

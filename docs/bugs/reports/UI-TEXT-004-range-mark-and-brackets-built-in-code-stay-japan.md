@@ -4,7 +4,7 @@ title: Range mark and brackets built in code stay Japanese in English status lin
 area: UI-TEXT
 kind: parity
 severity: low
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -42,7 +42,11 @@ Add a range joint and a bracket form to the text tables (for example `common.ran
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (not run). The marks are written in code: `rangeText` (`components/format.ts:153-155`, 「〜」), `tickRangeText` (`time/bars.ts:150`), `valueClamp.ts:79, 113`, `StatusLine.svelte:162`, the full-width brackets in `StatusLine.svelte:250, 256`, and Rust's `format!("{}〜{}", …)` for a plugin parameter's range (`crates/meloet-core/src/play/params.rs:576`). They do not change with the language, while `en.ts` writes ranges "1–127" and brackets " (…)". 7-readings D4 "Joints" lists 「 ・ 」 and 「、」 and sentences; the range mark and the brackets were missed there, not kept on purpose.
+
+No new wording is needed, only the two marks `en.ts` already uses, so `confirmed`:
+
+Fix plan: add two joints beside `LIST_COMMA` / `STATUS_JOIN` (`ui/src/text/ja.ts`, `en.ts` `enJoins`, `index.ts`): the range mark (「〜」 / "–") and the bracket pair (「（」「）」 / " (" ")"); use them in `rangeText`, `tickRangeText`, the two places of `valueClamp.ts`, and `StatusLine.svelte:162, 250, 256`. Japanese output must stay the same character for character (the tests of spec 6 texts watch it). For the plugin range made in Rust: core knows the language (`Play::names`, architecture 25-36), so `play/params.rs:576` picks the mark by it (`language.pick("〜", "–")`); no protocol change. (Sending the two ends apart would be cleaner but changes `ParamEnd`, a protocol version; not needed.) Add one line to 7-readings D4 "Joints" with the two marks.
 
 ## Fix
 

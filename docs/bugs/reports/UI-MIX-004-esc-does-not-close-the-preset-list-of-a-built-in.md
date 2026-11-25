@@ -4,7 +4,7 @@ title: Esc does not close the preset list of a built-in effect unless focus is i
 area: UI-MIX
 kind: ui-ux
 severity: medium
-status: reported
+status: confirmed
 found: 2026-11-25
 ---
 
@@ -12,9 +12,9 @@ found: 2026-11-25
 
 ## Where
 
-ui/src/components/params/PresetMenu.svelte:363-378 (Esc is read only by `onkeydown` on the `.menu` div)
-ui/src/components/params/PresetMenu.svelte:366-369 (the first Esc in the name box removes the box, and focus leaves the menu)
-ui/src/components/params/BuiltinList.svelte:419 (the 「プリセット ▾」 button that opens it sits outside the menu)
+ui/src/components/params/PresetMenu.svelte:58-68, 72 (Esc is read only by `onkeydown` on the `.menu` div)
+ui/src/components/params/PresetMenu.svelte:62 (the first Esc in the name box removes the box, and focus leaves the menu)
+ui/src/components/params/BuiltinList.svelte:132 (the list is opened here; the 「プリセット ▾」 button that opens it sits outside the menu)
 
 ## What happens
 
@@ -38,7 +38,11 @@ Register the open list with `menuOpened(onclose)` (lib/menu.ts) while it is open
 
 ## Verification
 
-<!-- Filled by the verifier only: confirmed or not, how it was checked, corrections to the above. -->
+Confirmed by reading (not run). Lines corrected: Esc is read only by `onkeydown` on the `.menu` div (`PresetMenu.svelte:58-68`, 72); the list is opened from `BuiltinList.svelte:132` by a button outside it; nothing focuses the list on open, and `naming = false` (62) removes the focused name box. The list is not registered with `menuOpened` (`lib/menu.ts`), so `closeMenus()` in `handleKeydown` does not know it and Esc goes on to `back` (which folds a band or leaves the place the person was in). Spec 3 line 409: "Esc puts the row back, Esc again closes the list". Not checked in WebKitGTK whether a press on 「プリセット ▾」 leaves the focus on the button or on the body; in both cases it is outside the list.
+
+One root with UI-SHELL-001, -002, -003, -004, -005, UI-PARITY-011, UI-PARITY-015 and UI-MIX-004: a key that belongs to the part in front (a dialog, an open list, a focused control) falls through to the document key handler (`handleKeydown` in `ui/src/keys/attach.ts`), which does not know that part is in front. Fix them as one piece of work with one rule in `handleKeydown`: (1) one "which dialog is in front" check used by every context (`outputChooser`, `shelf`, `history`) and by the Enter / Esc branches, in the order the dialogs are drawn in `App.svelte`; (2) return early when `ev.defaultPrevented` (a part that took the key says so), which covers lists moved to `body`; then each part only has to take its own keys.
+
+Fix plan for this report (as suggested): in `ui/src/components/params/PresetMenu.svelte` register the open list with `menuOpened(onclose)` while it is mounted, as `InputMeter.svelte:96` and `MuteSetBox.svelte:65` do, so the third turn of Esc closes it wherever the focus is; keep "Esc in the name box puts the row back" in the list's own handler, and after `naming = false` focus the list (tabindex −1) so the second Esc is the list's. 
 
 ## Fix
 

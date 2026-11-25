@@ -4,7 +4,7 @@ Where meloet is now, the work still open, and notes for the next round. Read thi
 
 The history of rounds 1 to 9 (what each round did, in order, with every number) is in [`history/progress.ja.md`](history/progress.ja.md). It is in Japanese and is not changed any more. This file does not repeat that history; it only says what is true now. When something here and the history disagree, this file is newer.
 
-Last written: 2026-11-24, at the end of round 12 (branch `fea/round12`, not merged into `main`; section 6, "Round 12").
+Last written: 2026-11-25, after the bug sweep (branch `fix/bug-sweep`, not merged into `main`; section 6, "Bug sweep").
 
 Branch: each piece of work is done on its own branch made from `main` (`fea/`, `fix/`, `doc/`, `refactor/`, `chore/`; the rule is in `CLAUDE.md`), and goes into `main` when the owner asks. `foundation` is no longer used (the owner: the basic build is done); older lines that name it are records of that time.
 
@@ -374,7 +374,6 @@ The owner's request of 2026-11-23 (`docs/history/round12-spec.ja.html`; it calls
 - Sound and engine
   - The master limiter's gain does not come back to exactly 1 after it has held the sound down (`gain += step × (1 − gain)` stops one step under 1 in f32, `effects/limiter.rs`), so two plays of a song that drove the limiter differ in the last bits.
   - An effect that follows the tempo (the delay with 「テンポに合わせる」) reads the tempo per rendered stretch, and stretches are cut at the next note of every track: inside a tempo ramp it sounds slightly different solo than in the mix (found by A7; up to 5e-3).
-  - A track's lanes deleted (or rested) while no stream runs stay in the engine until that track's lanes change again (`Audio::op` drops automation without a stream; the master's lane is always sent now, the tracks' are not).
   - A hand-set pan under a moving volume lane jumps within 32 frames instead of 20 ms (since round 6; now also the master).
   - Knob lanes and effect lanes glide 20 ms at a jump of the play line while playing.
   - The arpeggio: `stream_gone` does not call `drop_after` (a take can be a note or two longer); the settings' measured latency counts MIDI NoteOns that the arpeggio delays; no look-ahead for tracks whose plugins delay the sound.
@@ -451,6 +450,23 @@ Left open after stage 2:
 - `measure_plugin_outputs` holds the capture in memory, so 16 sets allow about 43 s at 48 kHz in one call.
 - Yoshimi-Multi's track outputs are on by default (20-15); they can now be switched off.
 - `PluginInfo.audio_outputs` is read by no shipped code (tests only); it now says 1 or 2 (how the fold ends), never the count of ports.
+
+### Bug sweep (2026-11-25, `fix/bug-sweep`)
+
+The owner's order: read all of `crates/` and `ui/` for bugs and UI/UX problems, check each finding, fix the true ones; no feature added or removed, except the missing half of a pair (similar screen parts, Rust and the screen, Japanese and English wording).
+
+- Reports: one file per finding in [`bugs/reports/`](bugs/reports/), index in [`bugs/INDEX.md`](bugs/INDEX.md), form and fields in [`bugs/README.md`](bugs/README.md), made with `tools/bugs/report.py`. 23 finders (opus) wrote 114; two verifiers (fable; Rust side, screen side) left 110 (1 was meant behavior, 3 were doubles; 16 were proven with a test that was run); 15 fixers (opus) fixed all 110, each with a test where a test can reach it. Every report says how it was checked (`Verification`) and what changed (`Fix`).
+- Things that are not bugs, or were met on the way and not fixed, are one line each in [`bugs/later/`](bugs/later/) (about 260 lines; `FIX-*.md` are the fixers' own, `VERIFY-*.md` the verifiers'). Not read against the open list above; read them before the next sweep.
+- Changed on the way: protocol 38 (three new status messages: the vocal cannot be recorded, the disk stopped a recording, a file could not be copied in; architecture 3 and 22-7). The song file, the recovery file and the wire to the plugin host keep their versions. A song written with the join fault (origin indexes on a take with no origin) opens again (architecture 14).
+- Decided by the lead and written in `spec/7-readings.md`: two rows of the key list (the metronome window, closing 「書き出しました」), the English name of a track turned into audio (" (audio)"), the range mark and brackets by language, the wording of the three new messages.
+- The hole "a track's lanes deleted while no stream runs stay in the engine" (was in section 3) is closed by the fix of CORE-PLAY-B-001.
+
+Left open:
+- Nothing was tried in the real app by the fixers. Still to do by hand or by measurement: the master inserts' delay in the position reaching the ear (ENGINE-001: `record-timing.sh` and the click against the song with a latent plugin on the master; a delay longer than the clock's ring counts back from the oldest segment and is off across a loop jump, architecture 20-8); the export window that comes again for a name that would write over a file (CORE-EXPORT-002, GTK); the plugin scan starting after the page's greeting under 「meloet（デバッグ）」 in VS Code (EDGE-001); the looks of the take tag buttons, the clip panels' scroll bar and Mono 600.
+- Not measured: `tools/measure/webkit-damage.sh` after two screen changes (the folded tempo row's text now stays at the row's left edge, UI-ARRANGE-011; marker, tempo point, flag and lane point drags now write their reading to the status line, UI-PARITY-001).
+- MODEL-A-004 is fixed for late keys only; a late controller move of a pass that has ended is still dropped or lands in the ended pass (`bugs/later/FIX-fix-model-a.md`).
+- The AI's `set_mute` on a track whose mute lane moves: when the mute put by hand already is what was asked, the answer is "no change" and the lane goes on (as before the sweep; M on the screen now acts on what is heard).
+- Not read by the finders: most of the fake scenes (`ui/src/bridge/fake*.ts`, not in the shipped screen). The dialogs were read one by one, but compared with each other only by search.
 
 ## 7. Notes for Windows and Mac
 

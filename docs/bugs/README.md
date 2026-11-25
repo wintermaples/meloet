@@ -15,4 +15,4 @@ Findings of a sweep over the code (`crates/` and `ui/`): bugs, UI/UX problems, a
 
 ## Sweeps
 
-- 2026-11-25: the first sweep (branch `fix/bug-sweep`).
+- 2026-11-25: the first sweep (branch `fix/bug-sweep`): 114 found, 110 true, 110 fixed. What is left open is in `docs/progress.md`, section 6, "Bug sweep".

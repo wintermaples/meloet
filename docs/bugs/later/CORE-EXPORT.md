@@ -1,2 +1,0 @@
-- crates/meloet-core/src/export.rs:636-689 — `Asked` does not hold `scene.sample_rate` nor the stopped plugins: a job of the open dialog keeps the rate and skip list it started with if they change meanwhile.
-- crates/meloet-core/src/analysis.rs:256-265 — any frames the ring had no room for reset the play's integrated loudness and true peak (meant by the module doc, but M3 then shows a shorter measure with no sign).

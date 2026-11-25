@@ -1,5 +1,0 @@
-# UI-TEXT: worth a look later
-
-- ui/src/text/ja.ts — 16 keys are never read by the screen (found by grepping every `"key"` outside ui/src/text/, with the template-built prefixes counted as used): `msg.bufferFixedDetail`, `msg.countingIn`, `msg.formatSwitch`, `msg.pluginScanFailed`, `msg.cpuOverload`, `msg.notesNotMoved`, `msg.notesNotDuplicated`, `msg.takeDeleted`, `plugin.loadFailed`, `button.windows`, `button.switchFormat`, `button.keepRemoved`, `arrange.addTrackKinds`, `status.windows`, `msg.exporting`, `export.noClipping`. Several are spec 6 scenes (for example "Buffer is fixed (deep in the sound settings)", CPU overload); check whether each scene is shown some other way or is simply not built.
-- ui/src/text/en.ts:1551 — `export.midiVocal` says "voice track" while every other English text and glossary.md say "vocal track" (the Japanese source says 「声のトラック」 here, unlike 「歌のトラック」 elsewhere).
-- ui/src/text/en.ts:2440-2457 — scale mode names are lower case ("major", "minor pentatonic") for 「C メジャー」 → "C major", but the same words are also the rows of the scale list, where they show in lower case next to "Dorian" and "Mixolydian".

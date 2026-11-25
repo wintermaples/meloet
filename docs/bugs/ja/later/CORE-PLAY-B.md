@@ -1,3 +1,0 @@
-- crates/meloet-core/src/play/sounds.rs:282-296 — `sound_installed`(音素材の新しい版)が、まだ読んでいる最中の古い版を捨てた後、その古い読み込みの答えが新しい `loading` の項目とぶつかり、新しい版として扱われます(`src/sounds.rs` の `Library::keep` が最初の読み込みを残します)。そのため、新しい版は meloet をもう一度起動するまで使われないことがあります。競合状態ですが、フェッチャーのファイル差し替えまでは追っていません。
-- crates/meloet-core/src/play/autosync.rs:243-263 — `held` はレーンごとに一つの印です。ミキサーやパネルのつまみと、プラグインの窓でのタッチが同じレーンを共有し、先に離した方が両方の保持を離します。
-- crates/meloet-core/src/play/automation.rs:913-915 — 再生中に「● 書く」が入っていて、まだ聞こえている位置がない場合、M の押下は(`mute_pressed` が true を返し)、手も知らせもなく受け取られます。

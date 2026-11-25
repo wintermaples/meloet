@@ -1,5 +1,0 @@
-# CORE-PLAY-B — fixed in the second pass (2026-11-25)
-
-- crates/meloet-core/src/play/automation.rs:753 and play/mixer.rs:256-266 — on release the lane's `HoldLane` off is pushed before the rest or write step's `SetAutomation`; if the audio thread drains the command ring between the two, the old line plays for one block (a short ramp toward the line and back).
-- crates/meloet-core/src/play/vocal.rs:291-322 — `voices_sent` is kept by seat and `clear_seat` does not forget it: when one change empties a vocal track's seat and gives it to another vocal track with the same input and `on`, no `Voice` is sent although `ClearTrack` dropped the engine's voice (no audible effect found while `on` is false; a history jump can do it).
-- ui/src/components/TrackHeads.svelte:270-271 — the track head's M shows the hand-set `track.muted` while the mixer's M (`MixerStrips.svelte:99-103`) shows the moving mute lane's value; the two M of one track can disagree (spec says nothing of the head's M under a lane).

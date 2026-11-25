@@ -1,7 +1,0 @@
-# Later: UI-BRIDGE (ui/src/bridge, gl, state, time, lib, design, dev)
-
-- ui/src/bridge/index.ts:72-74 — `pickTransport` names `createFakeTransport` with no build-time gate, so the fake transport and every scene (bridge/fake*.ts, about 9000 lines) ship in the release page. It never runs in the app (`__TAURI_INTERNALS__` is always there); size only.
-- ui/src/bridge/peaks.ts:152-175 — `more()` of a growing level copies every peak it has into a new Int16Array on each poll (`WAVE_POLL_MS`, 10 a second), so a long recording copies more and more each poll (a 10-minute stereo take at level 0 is about 0.9 MB a poll).
-- ui/src/gl/pool.ts:139-143 — a canvas given back to the pool keeps its wave textures (up to `WAVE_TEX_KEEP_BYTES`, 16 MB of GPU memory per canvas) until another region takes it and a picture goes over the limit.
-- ui/src/state/app.svelte.ts:70-72 — errors after connecting (a snapshot taken again that fails, telemetry that cannot be read, a send that is refused) only set `current.failure`, which App.svelte shows only while there is no state; the person is not told the screen may be behind. A design question, not a fault seen in use.
-- ui/src/dev/watch.ts:47 — `getContext("webgl2")` on every canvas of the page: a canvas with no context yet would get a new WebGL context (counted in the budget). Today every canvas in the page has one (WebGL or bitmaprenderer), so nothing is made; development only.

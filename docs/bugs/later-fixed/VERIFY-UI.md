@@ -1,3 +1,0 @@
-# VERIFY-UI — fixed in the second pass (2026-11-25)
-
-- ui/src/components/Arrange.svelte:1653 — 「貼りつけ」 on an empty place of a track of the other kind (keyboard clips onto a vocal track, or the other way) is usable and Rust refuses it with nothing said (`EditError::WrongKind` → `None` in `apply_placed`); disabling the row needs the clipboard's kinds in the protocol (split off from UI-ARRANGE-005).

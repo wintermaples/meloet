@@ -1,3 +1,0 @@
-# VERIFY-UI — 2 回目で直した点 (2026-11-25)
-
-- ui/src/components/Arrange.svelte:1653 — 別の種類のトラックの空いた場所（鍵盤のクリップを歌のトラックへ、またはその逆）への「貼りつけ」は使えますが、Rust は何も知らせずに拒みます（`EditError::WrongKind` → `apply_placed` で `None`）。行を使えなくするには、プロトコルにクリップボードの種類が必要です（UI-ARRANGE-005 から切り分けました）。

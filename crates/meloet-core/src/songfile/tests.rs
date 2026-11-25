@@ -541,6 +541,38 @@ fn newer_older_and_broken_files_do_not_read() {
     }
 }
 
+/// Notes, control points and the loop stay within `MAX_TICK`, as the model's edits keep them.
+#[test]
+fn ticks_past_max_tick_do_not_read() {
+    let good = rich_json();
+    let with = |f: &dyn Fn(&mut serde_json::Value)| {
+        let mut v = good.clone();
+        f(&mut v);
+        decode(&serde_json::to_vec(&v).unwrap())
+    };
+    let broken: [&dyn Fn(&mut serde_json::Value); 6] = [
+        &|v| v["takes"][0]["notes"][0] = serde_json::json!([1, u64::MAX, 60, 100]),
+        &|v| v["takes"][0]["notes"][0] = serde_json::json!([0, 1u64 << 63, 60, 100]),
+        &|v| v["takes"][0]["notes"][0] = serde_json::json!([0, MAX_TICK + 1, 60, 100]),
+        &|v| v["takes"][0]["controls"][2] = serde_json::json!([MAX_TICK + 1, 1, 12]),
+        &|v| v["song"]["loop"]["end"] = u64::MAX.into(),
+        &|v| v["song"]["loop"]["end"] = (MAX_TICK + 1).into(),
+    ];
+    for (i, f) in broken.iter().enumerate() {
+        assert!(matches!(with(*f), Err(ReadError::Broken)), "case {i}");
+    }
+    let song = with(&|v| {
+        v["takes"][0]["notes"][0] = serde_json::json!([0, MAX_TICK, 60, 100]);
+        v["takes"][0]["controls"][2] = serde_json::json!([MAX_TICK, 1, 12]);
+        v["song"]["loop"]["end"] = MAX_TICK.into();
+    })
+    .unwrap();
+    assert_eq!(song.doc.loop_range.unwrap().end(), MAX_TICK);
+    for t in &song.doc.tracks {
+        meloet_model::playback::track_events(&song.doc, t.id);
+    }
+}
+
 #[test]
 fn a_save_keeps_the_one_before_and_only_a_good_one() {
     let dir = temp_dir("songfile-prev");
@@ -810,11 +842,9 @@ fn origins_that_cannot_be_do_not_read() {
         decode(&serde_json::to_vec(&v).unwrap())
     };
     assert!(with(&|_| {}).is_ok());
-    let broken: [&dyn Fn(&mut serde_json::Value); 6] = [
+    let broken: [&dyn Fn(&mut serde_json::Value); 5] = [
         // An origin note past the end of the origin.
         &|v| v["takes"][q]["notes"][0][4] = 3.into(),
-        // An origin note in a take with no origin.
-        &|v| v["takes"][o]["notes"][0] = serde_json::json!([10, 50, 60, 90, 0]),
         // No such origin take.
         &|v| v["takes"][q]["origin"]["take"] = 77.into(),
         // An origin of an origin.
@@ -828,6 +858,62 @@ fn origins_that_cannot_be_do_not_read() {
     for (i, f) in broken.iter().enumerate() {
         assert!(matches!(with(*f), Err(ReadError::Broken)), "case {i}");
     }
+}
+
+/// A take with no origin reads a note with an index into an origin as a plain note.
+#[test]
+fn an_origin_note_in_a_take_with_no_origin_reads_as_plain() {
+    let song = quantized_song();
+    let mut v: serde_json::Value = serde_json::from_slice(&encode(&song)).unwrap();
+    let o = (v["takes"].as_array().unwrap().iter())
+        .position(|t| t["id"] == 8)
+        .unwrap();
+    v["takes"][o]["notes"][0] = serde_json::json!([10, 50, 60, 90, 0]);
+    let back = decode(&serde_json::to_vec(&v).unwrap()).unwrap();
+    assert_eq!(back, song);
+    // The same in a take shown by a clip.
+    let mut v = rich_json();
+    v["takes"][0]["notes"][1]
+        .as_array_mut()
+        .unwrap()
+        .push(5.into());
+    assert_eq!(read_json(&v), rich_song("x", 3));
+}
+
+/// Joining a quantized clip with its neighbour: the joined take has no origin, and the song
+/// comes back from its file.
+#[test]
+fn a_joined_quantized_clip_comes_back() {
+    use meloet_model::edit::{NewTake, add_recording};
+    let mut song = Song::new_default();
+    let track = song.doc.tracks[0].id;
+    let mut clips = Vec::new();
+    for (origin, start) in [(0, 13), (4 * Q, 0)] {
+        let take = NewTake {
+            origin,
+            length: 4 * Q,
+            notes: vec![Note {
+                start,
+                length: 100,
+                key: 60,
+                velocity: 90,
+                from: None,
+            }],
+            controls: Vec::new(),
+        };
+        let (e, added) = add_recording(&song.doc, track, vec![take], 0).unwrap();
+        song.doc = e.doc;
+        clips.push(added.clip);
+    }
+    let (q, _) =
+        meloet_model::quantize::quantize(&song.doc, clips[0], &[], QuantizeSettings::default())
+            .unwrap();
+    song.doc = q.edit.doc;
+    let (e, joined) = meloet_model::arrange::join_clips(&song.doc, &clips).unwrap();
+    song.doc = e.doc;
+    let (_, c) = song.doc.clip(joined).unwrap();
+    assert!(c.active_take().take.origin.is_none());
+    assert_eq!(decode(&encode(&song)).unwrap(), song);
 }
 
 #[test]

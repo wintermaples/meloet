@@ -267,6 +267,65 @@ fn vocal_tracks_and_audio_that_cannot_be_do_not_read() {
     ));
 }
 
+/// A vocal clip kept, the import of its file undone, then pasted: the file is back in the
+/// audio table, the engine hears of it, and the song comes back from its file. Undoing the
+/// paste takes the file out again.
+#[test]
+fn a_vocal_clip_pasted_after_its_import_was_undone_keeps_its_file() {
+    use crate::play::{EngineOp, Play};
+    use crate::state::Effect;
+    use meloet_model::{ImportPlan, ImportedAudio, NewAudio};
+    use meloet_protocol::ClipSpot;
+    fn tables(effects: &[Effect]) -> Vec<Vec<u32>> {
+        (effects.iter())
+            .filter_map(|e| match e {
+                Effect::Engine(EngineOp::AudioSources { sources }) => {
+                    Some(sources.iter().map(|a| a.id.0).collect())
+                }
+                _ => None,
+            })
+            .collect()
+    }
+    let e = &mut Vec::new();
+    let mut p = Play::new(false, 0);
+    p.replace_song(vocal_song(), false, e);
+    let file = ImportedAudio {
+        audio: NewAudio {
+            uid: [9; 16],
+            file: "ギター.wav".to_owned(),
+            frames: 96_000,
+            sample_rate: 48_000,
+            channels: 1,
+            bits: Some(24),
+        },
+        sha256: [9; 32],
+        name: "ギター".to_owned(),
+    };
+    let plan = ImportPlan::InRow(Some(TrackId(40)));
+    p.import_audio(vec![file], plan, 24 * BAR, 0, e);
+    let (_, clip) = (p.song().doc.tracks[1].clips.iter())
+        .map(|c| (c.start, c.id))
+        .max()
+        .unwrap();
+    let audio = p.song().doc.audio.last().unwrap().id.0;
+    assert_eq!(p.song().doc.audio.len(), 3);
+    p.copy_clips(&[clip.0]);
+    p.undo(e);
+    assert_eq!(p.song().doc.audio.len(), 2);
+    e.clear();
+    let to = Some(ClipSpot {
+        track: 40,
+        tick: 28 * BAR,
+    });
+    assert_eq!(p.paste_clips(to, e), None);
+    assert_eq!(tables(e), [vec![50, 51, audio]]);
+    let back = decode(&encode(p.song())).unwrap();
+    assert_eq!(&back, p.song());
+    e.clear();
+    p.undo(e);
+    assert_eq!(tables(e), [vec![50, 51]]);
+}
+
 #[test]
 fn a_vocal_track_without_its_input_records_from_the_first_one() {
     let mut v = vocal_json();

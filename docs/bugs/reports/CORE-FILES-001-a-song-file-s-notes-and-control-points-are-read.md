@@ -4,7 +4,7 @@ title: A song file's notes and control points are read with any tick; Note::end 
 area: CORE-FILES
 kind: bug
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -48,4 +48,6 @@ Fix plan: `crates/meloet-core/src/songfile.rs` `to_take`: a note is taken only w
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`crates/meloet-core/src/songfile.rs` `to_take`: a take with a note whose `start + length` overflows or is above `MAX_TICK`, or with a control point above `MAX_TICK`, does not read (`ReadError::Broken`), as the other broken rules. `docs/architecture.md` 14 says so.
+
+Test: `songfile::tests::ticks_past_max_tick_do_not_read` (meloet-core; both notes of the report, a note ending past `MAX_TICK` and a control point past it are broken; the same values at `MAX_TICK` read and `track_events` does not panic).

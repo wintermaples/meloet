@@ -248,7 +248,8 @@ pub fn overdub_recording(
     ))
 }
 
-/// `take` cut to the empty place of the track around its notes, `first` to `last_start`.
+/// `take` cut to the empty place of the track around its notes, `first` to `last_start`. The
+/// pedal, bend and modulation in force where it is cut, when not at rest, go to its tick 0.
 fn in_the_gap(track: &Track, take: NewTake, first: i64, last_start: i64) -> NewTake {
     let low = (track.clips.iter())
         .filter(|c| c.end as i64 <= first)
@@ -264,6 +265,16 @@ fn in_the_gap(track: &Track, take: NewTake, first: i64, last_start: i64) -> NewT
         .min(take.origin + take.length);
     let cut = low - take.origin;
     let length = high - low;
+    let mut head = Vec::new();
+    for p in take.controls.iter().filter(|p| p.tick < cut) {
+        super::set_head(&mut head, p.value);
+    }
+    let same = |a: ControlValue, b: ControlValue| match (a, b) {
+        (ControlValue::Cc { number: x, .. }, ControlValue::Cc { number: y, .. }) => x == y,
+        (ControlValue::PitchBend(_), ControlValue::PitchBend(_)) => true,
+        _ => false,
+    };
+    head.retain(|&h| !(take.controls.iter()).any(|p| p.tick == cut && same(p.value, h)));
     NewTake {
         origin: low,
         length,
@@ -277,12 +288,16 @@ fn in_the_gap(track: &Track, take: NewTake, first: i64, last_start: i64) -> NewT
                 }
             })
             .collect(),
-        controls: (take.controls.into_iter())
-            .filter(|p| p.tick >= cut && p.tick - cut < length)
-            .map(|p| ControlPoint {
-                tick: p.tick - cut,
-                ..p
-            })
+        controls: (head.into_iter())
+            .map(|value| ControlPoint { tick: 0, value })
+            .chain(
+                (take.controls.into_iter())
+                    .filter(|p| p.tick >= cut && p.tick - cut < length)
+                    .map(|p| ControlPoint {
+                        tick: p.tick - cut,
+                        ..p
+                    }),
+            )
             .collect(),
     }
 }

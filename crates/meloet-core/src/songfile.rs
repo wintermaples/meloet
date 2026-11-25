@@ -1821,7 +1821,7 @@ fn to_song(file: SongFile) -> Option<Song> {
             track_ids.contains(&id) || id < d.next_id
         })),
         loop_range: match loop_range {
-            Some(r) => Some(TickRange::new(r.start, r.end)?),
+            Some(r) => Some(TickRange::new(r.start, r.end).filter(|_| r.end <= MAX_TICK)?),
             None => None,
         },
         tracks,
@@ -1901,7 +1901,8 @@ fn to_take(t: TakeFile, origin: Option<TakeOrigin>) -> Option<Take> {
         .map(|n| {
             let (start, length, key, velocity, from) = match n {
                 NoteFile::Plain(s, l, k, v) => (s, l, k, v, None),
-                // An index into the origin take, so only in a take that has one.
+                // An index into the origin take. A take with no origin reads the note as plain.
+                NoteFile::From(s, l, k, v, _) if origin.is_none() => (s, l, k, v, None),
                 NoteFile::From(s, l, k, v, f) => {
                     ((f as usize) < from_len).then_some((s, l, k, v, OriginIndex::new(f)))?
                 }
@@ -1931,7 +1932,11 @@ fn to_take(t: TakeFile, origin: Option<TakeOrigin>) -> Option<Take> {
             }),
         })
         .collect::<Option<Vec<_>>>()?;
-    if !notes.is_sorted_by_key(|n| n.start) || !controls.is_sorted_by_key(|c| c.tick) {
+    if !notes.is_sorted_by_key(|n| n.start)
+        || !controls.is_sorted_by_key(|c| c.tick)
+        || (notes.iter()).any(|n| n.start.checked_add(n.length).is_none_or(|e| e > MAX_TICK))
+        || controls.last().is_some_and(|c| c.tick > MAX_TICK)
+    {
         return None;
     }
     Some(Take {

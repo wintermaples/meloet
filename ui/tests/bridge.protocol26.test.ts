@@ -123,6 +123,7 @@ describe("fake scenes (mock F7-Export, F7-Exporting, R11-Fit)", () => {
       realtime: false,
       realtimeForced: false,
       canExport: true,
+      replace: null,
       loudness: "asIs",
       canMatch: true,
       loudnessResult: { gainDb: -1.5, limited: false, lufs: -14 },

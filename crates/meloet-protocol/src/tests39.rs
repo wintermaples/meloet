@@ -1,5 +1,6 @@
 //! The shapes protocol 39 added (bug sweep, 2026-11-25): the song dialog that asks, right
-//! after "戻さない", whether the recovery file goes too.
+//! after "戻さない", whether the recovery file goes too; the export dialog asks before it
+//! writes over files that are there already.
 
 use serde_json::{Value, json};
 
@@ -42,5 +43,23 @@ fn the_recovery_file_question() {
             answer: SongAnswer::Keep,
         },
         json!({"type": "answerSongDialog", "dialog": 4, "answer": "keep"}),
+    );
+}
+
+#[test]
+fn the_question_before_writing_over() {
+    both_ways(
+        ExportReplace {
+            count: 1,
+            file: "はじめての曲.wav".into(),
+        },
+        json!({"count": 1, "file": "はじめての曲.wav"}),
+    );
+    both_ways(
+        ExportReplace {
+            count: 3,
+            file: "ピアノ.wav".into(),
+        },
+        json!({"count": 3, "file": "ピアノ.wav"}),
     );
 }

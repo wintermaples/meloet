@@ -3903,6 +3903,7 @@ function fakeExportDialog(song: SongView, over: Partial<ExportDialogView> = {}):
     realtime: false,
     realtimeForced: false,
     canExport: true,
+    replace: null,
     loudness: "asIs",
     canMatch: false,
     loudnessResult: null,
@@ -3998,6 +3999,16 @@ SCENES.exportMp3 = exportDialogScene({
   picture: "表紙.png",
 });
 
+// Protocol 39: 「書き出す」 found the file there already and asks before writing over it.
+SCENES.exportReplace = exportDialogScene({ replace: { count: 1, file: "はじめての曲.wav" } });
+// 「トラックごと」: three of the four files are there already.
+SCENES.exportReplaceTracks = exportDialogScene({ range: "tracks", place: "~/音楽/", replace: { count: 3, file: "ピアノ.wav" } });
+// It clips and the file is there: the check first, then the question, one 「このまま書き出す」.
+SCENES.exportReplaceClips = exportDialogScene({
+  check: { state: "done", peakDb: 1.2, clips: true, over: 3, lufs: null, truePeakDb: null },
+  replace: { count: 1, file: "はじめての曲.wav" },
+});
+
 // ---- MIDI export (protocol 36; spec 3 "MIDI export", spec 7 A-31) ----
 
 /** The band's 「1 ピアノ」 to 「3 ドラム」, the vocal track 「4 歌」, then 「5 パッド」; 「1 ピアノ」 selected. */
@@ -4034,6 +4045,8 @@ SCENES.exportMidi = midiDialogScene({});
 SCENES.exportMidiNumbers = midiDialogScene({ midiTracks: "numbers", midiNumbers: "1-2, 4" });
 // 「番号で」 「1-3, 9」: 「9 番のトラックはありません」 in color.rec, and 「書き出す」 is disabled.
 SCENES.exportMidiProblem = midiDialogScene({ midiTracks: "numbers", midiNumbers: "1-3, 9" });
+// Protocol 39: the MIDI file is there already; the question is where the check of audio would be.
+SCENES.exportReplaceMidi = midiDialogScene({ replace: { count: 1, file: "はじめての曲.mid" } });
 
 /** The song of F7-Exporting: the band, "5 Surge XT" and 「6 歌」 with one clip; saved, the keys on 「1 ピアノ」. */
 function exportingSong(s: AppState, run: ExportRunView): void {
@@ -4359,6 +4372,11 @@ export function reduceExport(state: AppState, command: Command): Change[] | null
         view.run = null;
         break;
       }
+      // While it asks before writing over files, only the question goes (protocol 39).
+      if (view.dialog.replace) {
+        view.dialog.replace = null;
+        break;
+      }
       view.dialog = null;
       message = null;
       break;
@@ -4366,6 +4384,7 @@ export function reduceExport(state: AppState, command: Command): Change[] | null
       const d = view.dialog;
       const c = command.change;
       if (!d) return [];
+      d.replace = null;
       if (c.kind === "range") {
         if ((c.range === "loop" && !d.loopRange) || (c.range === "tracks" && d.tracks === 0)) return [];
         d.range = c.range;

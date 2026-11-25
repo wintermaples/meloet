@@ -61,8 +61,8 @@ pub use export::{
     EXPORT_MP3_DEFAULT_KBPS, EXPORT_MP3_KBPS, EXPORT_MP3_SAMPLE_RATES, EXPORT_PICTURE_MAX_BYTES,
     EXPORT_TAIL_MAX_S, EXPORT_WAVE_BARS, ExportChange, ExportCheck, ExportDialogView,
     ExportFailure, ExportFormat, ExportLoudness, ExportLoudnessResult, ExportMidiProblem,
-    ExportMidiTrack, ExportMidiTracks, ExportRange, ExportRunView, ExportSolo, ExportStoppedPlugin,
-    ExportTail, ExportView,
+    ExportMidiTrack, ExportMidiTracks, ExportRange, ExportReplace, ExportRunView, ExportSolo,
+    ExportStoppedPlugin, ExportTail, ExportView,
 };
 pub use history::{HistoryRow, HistoryView, MeterValue, StepName, StepPlace, StepWhat, StripName};
 pub use knobs::{SOUND_KNOB_DEFAULTS, SoundKnob, SoundKnobsView};
@@ -1355,7 +1355,8 @@ pub enum Command {
     /// runs.
     OpenExport,
     /// 「閉じる」, 「やめる」 and Esc in the dialog: it closes, and what the check wrote so
-    /// far is thrown away.
+    /// far is thrown away. While the dialog asks before writing over files
+    /// (`ExportDialogView::replace`), only the question goes and the dialog stays.
     CloseExport,
     /// A choice of the dialog.
     SetExport {
@@ -1366,7 +1367,9 @@ pub enum Command {
     ChooseExportPlace,
     /// 「書き出す」, 「このまま書き出す」 and Enter in the dialog: it closes and the export
     /// runs (`ExportView::run`); what the check wrote already is kept and used. Only with
-    /// `ExportDialogView::can_export`.
+    /// `ExportDialogView::can_export`. When files it would write are there already, the
+    /// dialog stays and asks first (`ExportDialogView::replace`); sent again while it asks,
+    /// it writes over them.
     StartExport,
     /// 「やめる」 of the status line: the export stops and what it wrote is taken away
     /// (`ExportRunView::Cancelled`).

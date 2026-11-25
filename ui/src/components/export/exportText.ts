@@ -1,6 +1,6 @@
 // Text of the export dialog and the progress in the status line (spec 3 34-B, spec 6; mock F7-Export, F7-Exporting, F-Export; docs/history/design-notes.ja.md B-94-69 to 75).
 // Pure functions that do not know the DOM.
-import { EXPORT_MATCH_LUFS, EXPORT_MATCH_TRUE_PEAK_DB, EXPORT_TAIL_MAX_S, RECORD_FORMATS, type ExportCheck, type ExportDialogView, type ExportFailure, type ExportLoudnessResult, type ExportMidiProblem, type ExportMidiTrack, type ExportRunView, type ExportSolo, type RecordFormat } from "../../bridge";
+import { EXPORT_MATCH_LUFS, EXPORT_MATCH_TRUE_PEAK_DB, EXPORT_TAIL_MAX_S, RECORD_FORMATS, type ExportCheck, type ExportDialogView, type ExportFailure, type ExportLoudnessResult, type ExportMidiProblem, type ExportMidiTrack, type ExportReplace, type ExportRunView, type ExportSolo, type RecordFormat } from "../../bridge";
 import { t, type TextKey } from "../../text";
 import { dbNumber, SILENT_DB, textParts, type TextPart } from "../format";
 import { barBeatTick, positionText, type Bars } from "../time";
@@ -167,6 +167,10 @@ export function midiProblemText(problem: ExportMidiProblem): string {
       return t("export.midiNoTrack");
   }
 }
+
+/** The question before writing over files that are there already (in rec): one file by its name, more by their count. */
+export const replaceText = (replace: ExportReplace): string =>
+  replace.count === 1 ? t("export.replaceOne", { file: replace.file }) : t("export.replaceMany", { count: replace.count });
 
 /** When it clips, 「このまま書き出す」 (spec 6 "Export would clip"). */
 export const clips = (check: ExportCheck): boolean => (check.state === "done" || check.state === "counting") && check.clips;

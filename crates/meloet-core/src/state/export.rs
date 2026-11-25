@@ -84,6 +84,7 @@ impl Model {
 
     /// After every input.
     pub(super) fn settle_export(&mut self, effects: &mut Vec<Effect>) {
+        effects.extend(self.export.take_left().map(Effect::Export));
         if !self.export.dialog_open() {
             return;
         }

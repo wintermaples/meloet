@@ -1,5 +1,6 @@
 <!-- Export (spec 3 34-B, 41-A, 42-C; spec 2 "Dialog"; spec 6 "Before export"; mock F7-Export, F-Export, F8-ExportCheck, F8-ExportClip, R11-Fit; round 12 F1).
      Range, format, loudness, where to save, the check before export (while counting, 「書き出す」 can be pressed once a number has come; soloed tracks are told here), 「くわしく」.
+     When 「書き出す」 finds its files there already, Rust keeps the dialog and asks in the place of the check, with 「このまま書き出す」 (protocol 39).
      The content is a copy of Rust's export.dialog; the screen only sends intents.
      When it does not fit the window, the heading and the bottom buttons stay and the inside scrolls (R11-Fit). -->
 <script lang="ts">
@@ -25,6 +26,7 @@
     midiTakenText,
     midiVocalLines,
     rangeLabel,
+    replaceText,
     soloText,
     spanText,
     tailText,
@@ -73,6 +75,7 @@
   const midi = $derived(dialog?.format === "midi");
   /** Nothing is measured for MIDI, so it never clips. */
   const clipping = $derived(dialog !== null && !midi && clips(dialog.check));
+  const replacing = $derived(dialog?.replace ? replaceText(dialog.replace) : null);
 
   /** Pressing ▾ opens a list under it (the same form as the advanced sound settings). */
   function choose(e: MouseEvent, entries: MenuEntry[]): void {
@@ -242,6 +245,13 @@
           </div>
         </section>
 
+        {#if midi && replacing}
+          <!-- MIDI has no check: the question is where the check would be. -->
+          <section data-test="export-replace-midi">
+            <span class="rec wrap" data-test="export-replace">{replacing}</span>
+          </section>
+        {/if}
+
         {#if !midi}
           <section data-test="export-check">
             <span class="label">{t("export.check")}</span>
@@ -277,6 +287,9 @@
             {/if}
             {#if solo}
               <span class="label wrap" data-test="export-solo">{solo}</span>
+            {/if}
+            {#if replacing}
+              <span class="rec wrap" data-test="export-replace">{replacing}</span>
             {/if}
           </section>
 
@@ -362,8 +375,8 @@
 
       <div class="foot">
         <Button test="export-cancel" onclick={close}>{t("button.cancel")}<span class="mono label">{t("key.esc")}</span></Button>
-        <Button primary={!clipping} test="export-start" disabled={!dialog.canExport} onclick={start}
-          >{clipping ? t("button.exportAnyway") : t("export.start")}<span class="mono label">{t("key.enter")}</span></Button
+        <Button primary={!clipping && !replacing} test="export-start" disabled={!dialog.canExport} onclick={start}
+          >{clipping || replacing ? t("button.exportAnyway") : t("export.start")}<span class="mono label">{t("key.enter")}</span></Button
         >
       </div>
     </div>

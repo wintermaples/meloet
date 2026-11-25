@@ -248,6 +248,15 @@ export function noteName(key: number): string {
   return `${NOTE_NAMES[((key % 12) + 12) % 12]}${Math.floor(key / 12) - 1}`;
 }
 
+/** Whether every row of the keyboard column carries its letter: only when a row is at least as tall as the label's text size. */
+export const allRowLetters = (rowH: number, textPx: number) => rowH >= textPx;
+
+/** The label of a key's row in the keyboard column: 「C3」 on C rows; with `all`, the letter alone on the others (「C#」「D」), else none. */
+export function rowLabel(key: number, all: boolean): string | null {
+  if (key % 12 === 0) return noteName(key);
+  return all ? NOTE_NAMES[((key % 12) + 12) % 12]! : null;
+}
+
 /** Row background: white keys row.white, black keys row.black, rows outside the scale row.out while the scale is locked. */
 export function rowColor(key: number, s: MusicalScale): ColorName {
   if (s.lock && !inScale(key, s)) return "color.row.out";

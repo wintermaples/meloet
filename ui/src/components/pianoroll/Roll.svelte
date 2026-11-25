@@ -6,6 +6,8 @@
      While playing, the sounding notes of the shown clip are lit in the track's color on that same canvas (round 12 E1, glow.ts), drawn again only when the set changes, in a box that stays put while they stay inside it.
      The pianoRollLive box goes from the top left of the note area to the bottom edge of the CC lanes (CC lane drags go on the same canvas).
      The play line, the box for choosing, and text are HTML.
+     The highlighted row (the row under the pointer, or where a dragged note lies) is the row's ground on the pianoRoll and pianoRollKeys canvases,
+     and an HTML box in the name field; all three change only when the row does.
      The row height is the vertical zoom step (prView.rowPx, docs/history/design-notes.ja.md B-63). The note height is row − 1. The vertical − ＋ is in the corner left of the ruler.
      Pressing the keyboard column on the left plays only while held (B-62; audition.ts). Pressing the ruler sets the play position; dragging sets the loop range (B-61).
      Right-click opens a list (B-60; drawn by App's ContextMenu).
@@ -33,14 +35,25 @@
   import { cursorCss } from "./cursor";
   import { Auditioner, chordOf, fixedOr100, NUDGE_MS, notesMayAudition, onNudgeKeys, ticksToMs } from "./audition";
   import { pianoRollCommand } from "./commands";
-  import { RollDrag, type CursorKind, type Drag, type Mods, type Shadow } from "./drag";
+  import { heldRow, RollDrag, type CursorKind, type Drag, type Mods, type Shadow } from "./drag";
   import { chordHover, chordPick } from "./chordPick.svelte";
   import { SINGLE, stampStatus } from "./chords";
   import { drumKeysOf, drumName, drumTerm, rollShowsDrums } from "./drums";
   import * as G from "./geom";
   import { ghostClips, ghostHidden, ghostShown, ghostTracks, ghostWindow, ghostWindowIndex, shownTrackId } from "./ghosts";
   import { glowFit, glowMaxWidth, glowNext, glowShows, type GlowBox, type GlowSpan } from "./glow";
-  import { noteMarks, paintLive, paintRoll, paintRollKeys, paintVelocityLane, type LivePicture, type NoteLook, type RollPicture, type RollSizes } from "./paint";
+  import {
+    noteMarks,
+    paintLive,
+    paintRoll,
+    paintRollKeys,
+    paintVelocityLane,
+    ROW_HIGHLIGHT,
+    type LivePicture,
+    type NoteLook,
+    type RollPicture,
+    type RollSizes,
+  } from "./paint";
   import { rollMenu, type RollMenuActions } from "./rollMenu";
   import { shown } from "./shown.svelte";
   import { originFor, shownFor } from "./shownNotes";
@@ -317,6 +330,7 @@
   function showShadow(next: Shadow | null): void {
     shadow = next;
     chordHover.text = next ? stampStatus(drums ? SINGLE : chordPick.pick, next.key) : null;
+    placeRow();
   }
   function clearShadow(): void {
     if (drag.setShadow(null) || shadow) showShadow(null);
@@ -344,8 +358,60 @@
 
   function at(e: MouseEvent): { x: number; y: number } {
     const r = area!.getBoundingClientRect();
+    areaBox = r;
     return { x: e.clientX - r.left, y: e.clientY - r.top };
   }
+
+  // ---- The highlighted row: the row under the pointer over the note area or the keyboard column, or where a dragged note lies. Only a look ----
+
+  /** The key of the highlighted row (null: none). */
+  let rowKey = $state<number | null>(null);
+  /** The pointer's last place in the piano roll (client px), NaN once it left. */
+  let pointerX = NaN;
+  let pointerY = NaN;
+  /** The note area's box as last read (by `at`, or here once after it was dropped), so a move over the keyboard column reads no box. */
+  let areaBox: DOMRect | null = null;
+  const keysW = $derived(metrics.px(drums ? "part.drum.keys" : "size.col.keys"));
+
+  function pointerRow(): number | null {
+    if (Number.isNaN(pointerX) || !area) return null;
+    const r = (areaBox ??= area.getBoundingClientRect());
+    const x = pointerX - r.left;
+    const y = pointerY - r.top;
+    if (y < 0 || y >= areaH || x < -keysW || x >= areaW) return null;
+    const key = G.yToKey(g, y);
+    return key >= G.KEY_MIN && key <= G.KEY_MAX ? key : null;
+  }
+
+  function placeRow(): void {
+    const d = drag.drag;
+    const held = heldRow(d, d ? null : shadow, liveMode ? null : n, drums ? SINGLE : chordPick.pick);
+    const key = held ?? pointerRow();
+    if (key !== rowKey) rowKey = key;
+  }
+
+  function rollMove(e: MouseEvent): void {
+    pointerX = e.clientX;
+    pointerY = e.clientY;
+    placeRow();
+  }
+  function rollLeave(): void {
+    pointerX = pointerY = NaN;
+    placeRow();
+  }
+  // A scroll or a zoom puts another row under a still pointer. A new size may also have moved the box.
+  let boxSize = "";
+  $effect(() => {
+    void g;
+    const size = `${areaW}:${areaH}:${keysW}`;
+    untrack(() => {
+      if (size !== boxSize) {
+        boxSize = size;
+        areaBox = null;
+      }
+      placeRow();
+    });
+  });
 
   // Recording or the count-in starts under a still pointer: drop the edit look at once.
   $effect(() => {
@@ -358,6 +424,8 @@
   });
 
   function changed(e: MouseEvent | null): void {
+    if (e) rollMove(e);
+    else placeRow();
     dragVersion += 1;
     dragReading.text = drag.reading();
     onreading?.(dragReading.text && e ? { x: e.clientX, y: e.clientY } : null);
@@ -551,14 +619,18 @@
 
   /**
    * Lighting of drum row names (spec 3 (85)): the names of sounding and played rows become accent (rec while recording). The line.mark on the left is WebGL.
+   * The name of the highlighted row (not lit) is gray.10 on its gray.6 ground.
    * Rewritten in the same frame as the key column picture (the names are over the key column canvas, so dirty rectangles do not increase).
    */
   let drumNamesBox = $state<HTMLElement>();
-  function markDrumNames(lit: (key: number) => boolean): void {
+  function markDrumNames(lit: (key: number) => boolean, row: number | null): void {
     if (!drumNamesBox) return;
     for (const el of drumNamesBox.children as HTMLCollectionOf<HTMLElement>) {
-      const on = lit(Number(el.dataset.key));
+      const key = Number(el.dataset.key);
+      const on = lit(key);
       if (el.classList.contains("lit") !== on) el.classList.toggle("lit", on);
+      const hl = !on && key === row;
+      if (el.classList.contains("hl") !== hl) el.classList.toggle("hl", hl);
     }
   }
   $effect(() => {
@@ -575,8 +647,8 @@
       paint: (out, box, ctx) => {
         const lit = (k: number) => ctx.isDown(k) || isSounding(k) || heard.includes(k);
         const recording = transport.state === "recording";
-        paintRollKeys(out, box, keysGeom, lit, ctx.dpr, { width: metrics.px("line.mark"), color: recording ? "color.rec" : "color.accent.ink" });
-        if (keysGeom.drum) markDrumNames(lit);
+        paintRollKeys(out, box, keysGeom, lit, ctx.dpr, { width: metrics.px("line.mark"), color: recording ? "color.rec" : "color.accent.ink" }, rowKey);
+        if (keysGeom.drum) markDrumNames(lit, rowKey);
       },
     },
     live: { kind: "paint", paint: (out, box, ctx) => livePicture && paintLive(out, box, livePicture, ctx.dpr) },
@@ -641,6 +713,7 @@
       drag: d,
       eraseHover,
       ghosts: ghosts && { notes: ghosts, playTick: untrack(() => shownTick(transport, current.telemetry, null)) },
+      row: untrack(() => rowKey),
     };
     rollMarks = noteMarks(G.noteCount(notes), d, eraseHover);
     untrack(() => {
@@ -652,6 +725,18 @@
   $effect(() => {
     keysGeom = g;
     untrack(() => redraw("keys"));
+  });
+
+  // Only the note area and the key column are drawn again when the highlighted row changes; nothing else of the picture is made again.
+  $effect(() => {
+    const row = rowKey;
+    untrack(() => {
+      if (rollPicture && rollPicture.row !== row) {
+        rollPicture = { ...rollPicture, row };
+        redraw("roll");
+      }
+      redraw("keys");
+    });
   });
 
   // The moving surface: its place (CSS px) and how far it is moved (transform).
@@ -1032,17 +1117,24 @@
     }
     return out;
   });
+  /**
+   * Every row's letter, the octave only on C rows; only the C rows when a row is lower than the label's text.
+   * Placed from key 127 down and moved together by `keyLabelsY`, so a vertical scroll moves one box and changes no label.
+   */
   const keyLabels = $derived.by(() => {
     const out: { key: number; y: number; text: string }[] = [];
     if (drums) return out;
-    const rows = G.rowsShown(g);
-    for (let r = 0; r < rows; r++) {
-      const key = prView.topKey - r;
-      if (key < 0) break;
-      if (key % 12 === 0) out.push({ key, y: r * rowH, text: G.noteName(key) });
+    const all = G.allRowLetters(rowH, metrics.px("text.s.size"));
+    for (let key = G.KEY_MAX; key >= G.KEY_MIN; key--) {
+      const text = G.rowLabel(key, all);
+      if (text) out.push({ key, y: (G.KEY_MAX - key) * rowH, text });
     }
     return out;
   });
+  const keyLabelsY = $derived(-(G.KEY_MAX - prView.topKey) * rowH);
+  /** The highlighted row's part in the name field (the rest of the band is WebGL). NaN: none. */
+  const bandY = $derived(rowKey === null || drums ? NaN : G.keyToY(g, rowKey));
+  const bandColor = `var(--${ROW_HIGHLIGHT.replaceAll(".", "-")})`;
 
   // ---- Ruler: pressing sets the play position (snapped to the grid; not with Shift), dragging sets the loop range (in bars; the same as the arrange ruler) ----
 
@@ -1161,9 +1253,18 @@
   const scrollTotal = $derived(Math.max((scrollMaxTick + areaW / 2 / ppt) * ppt + areaW / 2, prView.scrollTick * ppt + areaW));
 </script>
 
-<svelte:window onpointerup={letGo} onpointercancel={letGo} />
+<svelte:window onpointerup={letGo} onpointercancel={letGo} onblur={rollLeave} />
 
-<div class="roll" class:drums use:glRegion={"pianoRoll"} onpointerdowncapture={() => (pointerHeld = true)}>
+<div
+  class="roll"
+  class:drums
+  use:glRegion={"pianoRoll"}
+  role="presentation"
+  onpointerdowncapture={() => (pointerHeld = true)}
+  onpointermove={rollMove}
+  onpointerenter={() => (areaBox = null)}
+  onpointerleave={rollLeave}
+>
   <div class="ruler">
     <div class="ruler-gap">
       <button
@@ -1209,6 +1310,7 @@
       onpointermove={keysMove}
       onpointerup={keysUp}
       onpointercancel={keysUp}
+      onpointerenter={() => (areaBox = null)}
       data-test="pr-keys"
     >
       {#if drums}
@@ -1222,9 +1324,19 @@
         </div>
       {:else}
         <div class="key-names">
-          {#each keyLabels as k (k.key)}
-            <span class="m-num key-name" style:top="{k.y}px" style:height="{rowH}px">{k.text}</span>
-          {/each}
+          <div
+            class="row-band"
+            style:height="{rowH}px"
+            style:background={bandColor}
+            style:transform="translateY({Number.isNaN(bandY) ? 0 : bandY}px)"
+            style:visibility={Number.isNaN(bandY) ? "hidden" : null}
+            data-test="pr-row-band"
+          ></div>
+          <div class="key-labels" style:transform="translateY({keyLabelsY}px)">
+            {#each keyLabels as k (k.key)}
+              <span class="m-num key-name" style:top="{k.y}px" style:height="{rowH}px" data-key={k.key}>{k.text}</span>
+            {/each}
+          </div>
         </div>
       {/if}
       <div class="key-shapes" use:glRegion={"pianoRollKeys"} use:painted={"keys"}></div>
@@ -1427,6 +1539,13 @@
     flex-shrink: 0;
     position: relative;
   }
+  .row-band,
+  .key-labels {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+  }
   .key-name {
     position: absolute;
     right: 0;
@@ -1465,6 +1584,9 @@
     color: var(--color-gray-9);
   }
   .drum-name.used {
+    color: var(--color-gray-10);
+  }
+  .drum-names :global(.drum-name.hl) {
     color: var(--color-gray-10);
   }
   .drum-names :global(.drum-name.lit) {

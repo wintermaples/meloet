@@ -4,7 +4,7 @@ title: Keys stay with the shelf while the export dialog or the exported dialog i
 area: UI-SHELL
 kind: bug
 severity: medium
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -54,4 +54,4 @@ Fix plan for this report: in `ui/src/components/tracks.svelte.ts` `shelfHasKeys`
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`ui/src/components/tracks.svelte.ts`: `shelfHasKeys` is false while any dialog is in front (`dialogInFront` of `ui/src/keys/front.ts`: also the export dialog, 「書き出しました」, the latency dialog, About and the key list). `historyKeys` and `auditionToCancel` in `ui/src/keys/attach.ts` use the same check. Test: `ui/tests/keys.front.test.ts` "UI-SHELL-002: the shelf behind the export dialog or 「書き出しました」 does not take Enter or ↓".

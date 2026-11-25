@@ -12,6 +12,7 @@
   import { openContextMenu } from "../menu/contextMenu.svelte";
   import ParamRow from "./ParamRow.svelte";
   import PresetMenu from "./PresetMenu.svelte";
+  import { arrowToChosenRow } from "./rowKeys";
   import { presetName } from "./presetName";
   import { allRows, rowCount, searchRows, stepRow, valueText } from "./paramRows";
   import { paramUi } from "./paramUi.svelte";
@@ -105,8 +106,9 @@
     }
   }
 
-  // Spec 4 "In the parameters: choose the row above / below" (↑ ↓) and "type a value" (Enter). Only while the focus is in the panel.
+  // Spec 4 "In the parameters: choose the row above / below" (↑ ↓), "move the value" (← →) and "type a value" (Enter). Only while the focus is in the panel.
   function onkeydown(ev: KeyboardEvent): void {
+    if (arrowToChosenRow(ev, list, visibleRows.find((r) => sel.row !== null && r.covers.includes(sel.row))?.param ?? null)) return;
     if (ev.ctrlKey || ev.metaKey || ev.altKey || ev.shiftKey || ev.isComposing) return;
     if (ev.key === "Enter") {
       ev.preventDefault();
@@ -118,7 +120,9 @@
     ev.preventDefault();
     ev.stopPropagation();
     const next = stepRow(visibleRows, sel.row, ev.key === "ArrowDown" ? 1 : -1);
-    if (next !== null) pick(next);
+    if (next === null) return;
+    pick(next);
+    list?.querySelector(`[data-param="${next}"]`)?.scrollIntoView?.({ block: "nearest" });
   }
 </script>
 

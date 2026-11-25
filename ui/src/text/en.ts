@@ -1518,6 +1518,8 @@ export const enTexts: Record<TextKey, EnText> = {
   "keyList.paramMove": "Parameters: move the value (fine)",
   "keyList.paramType": "Parameters: type a value",
   "keyList.paramFind": "Parameters: to the search box",
+  "keyList.metronome": "Metronome: move the volume / tap the tempo",
+  "keyList.closeExported": "Close “Exported”",
   "pack.fetchingPercent": "{percent} %",
   "clips.selected": n("count", "{count} clip selected", "{count} clips selected"),
   "clips.groupAll": "Change together",

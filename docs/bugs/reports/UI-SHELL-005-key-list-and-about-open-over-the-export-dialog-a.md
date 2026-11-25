@@ -4,7 +4,7 @@ title: Key list and About open over the export dialog, and Enter in them starts 
 area: UI-SHELL
 kind: bug
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -48,4 +48,4 @@ Fix plan for this report: in `ui/src/components/menu/menus.ts` add `state.export
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`ui/src/components/menu/menus.ts`: `noDialog` also needs no export dialog and no 「書き出しました」 (the latency dialog is open only with the sound settings, already in it). `ui/src/keys/attach.ts`: plain Enter does nothing while About or the key list is in front (`dialogInFront`). Tests: `ui/tests/keys.front.test.ts` "UI-SHELL-005: the key list and About cannot be opened over …" and "UI-SHELL-005: Enter in the key list or About over the export dialog does not export".

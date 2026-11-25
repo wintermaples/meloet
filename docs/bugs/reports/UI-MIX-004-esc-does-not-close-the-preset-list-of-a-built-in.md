@@ -4,7 +4,7 @@ title: Esc does not close the preset list of a built-in effect unless focus is i
 area: UI-MIX
 kind: ui-ux
 severity: medium
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -46,4 +46,4 @@ Fix plan for this report (as suggested): in `ui/src/components/params/PresetMenu
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`ui/src/components/params/PresetMenu.svelte`: the open list registers with `menuOpened` (`lib/menu.ts`) while mounted, so the menus' turn of Esc (`closeMenus` in `keys/attach.ts`) closes it wherever the focus is. Esc in the name box still puts the row back first (the list's own handler stops it); the next Esc closes the list through `closeMenus`, so the list itself is not focused. Test: `ui/tests/round12.presets.test.ts` "UI-MIX-004: Esc closes the list wherever the focus is; in the name box the first Esc puts the row back".

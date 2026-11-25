@@ -74,6 +74,21 @@ describe("the four rows of a sound that comes with meloet", () => {
     expect(qa("[data-test=param-automation]")).toHaveLength(4);
   });
 
+  it("UI-PARITY-011: with the focus on the list, → moves the chosen row (「明るさ」 35 %) and goes no further", () => {
+    show(ParamsPanel, scene("paramsSoundKnobs"), { onfold: () => {} });
+    const list = q("[data-test=sound-knobs]")!;
+    list.focus();
+    const reached: string[] = [];
+    const seen = (ev: KeyboardEvent) => reached.push(ev.key);
+    document.addEventListener("keydown", seen);
+    app.sent.length = 0;
+    list.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }));
+    flushSync();
+    document.removeEventListener("keydown", seen);
+    expect(app.sent).toEqual([knobCommand("brightness", 40, true)]);
+    expect(reached).toEqual([]);
+  });
+
   it("a drag is heard (commit: false once a frame) and is one step when let go; Esc sends CancelMixPreview", () => {
     show(ParamsPanel, scene("paramsSoundKnobs"), { onfold: () => {} });
     const slider = qa("[data-test=param-slider]")[2]!;

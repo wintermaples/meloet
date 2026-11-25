@@ -2886,6 +2886,9 @@ export const texts = {
   "keyList.paramMove": e("パラメータ：値を動かす（細かく）", "builder:2026-11-23"),
   "keyList.paramType": e("パラメータ：値を打ちこむ", "builder:2026-11-23"),
   "keyList.paramFind": e("パラメータ：さがす箱へ", "builder:2026-11-23"),
+  // Rows added in the bug sweep (spec 7, G1 "Rows added in the bug sweep", UI-SHELL-008).
+  "keyList.metronome": e("メトロノーム：音量を動かす ／ テンポを手拍子で", "builder:2026-11-25"),
+  "keyList.closeExported": e("「書き出しました」を閉じる", "builder:2026-11-25"),
   // [Text made by the screen alone] (spec 3, spec 6 version 12, mock F8-*)
   // Status line progress while the sound pack is fetched and a flow hint is shown (「44-B の形」 of spec 3 (44-A), mock Opt8-PackShow).
   "pack.fetchingPercent": e("{percent} %", "mock:Opt8-PackShow", { percent: "38" }),

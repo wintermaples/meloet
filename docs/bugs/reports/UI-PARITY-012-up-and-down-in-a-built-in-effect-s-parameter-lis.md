@@ -4,7 +4,7 @@ title: Up and down in a built-in effect's parameter list can choose a row out of
 area: UI-PARITY
 kind: parity
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -48,4 +48,4 @@ Fix plan (as suggested): in `ui/src/components/params/BuiltinList.svelte` bind t
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`ui/src/components/params/BuiltinList.svelte`: after ↑ ↓ choose a row, the row `[data-param]` is brought into view with `scrollIntoView({ block: "nearest" })` (as `EndpointRow.svelte` does; PluginList's `reveal` counts virtual rows, so it is not shared). `SoundKnobList.svelte` has four rows and needs nothing. Test: `ui/tests/params.test.ts` "UI-PARITY-012: ↑ ↓ bring the chosen row into view".

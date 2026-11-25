@@ -92,6 +92,12 @@ describe("the table (keyList.ts)", () => {
     expect(find("クリップをくり返す")[0]).toMatchObject({ group: "arrange", keys: "Ctrl R" });
   });
 
+  it("UI-SHELL-008: the metronome window's keys and Enter of 「書き出しました」 are listed (spec 4)", () => {
+    expect(find("メトロノーム：音量を動かす ／ テンポを手拍子で")[0]).toMatchObject({ group: "play", keys: "← → ／ Space Enter" });
+    expect(find("「書き出しました」を閉じる")[0]).toMatchObject({ group: "file", keys: "Esc ／ Enter" });
+    expect(keyListGroups(linux, "手拍子").flatMap((g) => g.rows.map((r) => r.label))).toEqual(["メトロノーム：音量を動かす ／ テンポを手拍子で"]);
+  });
+
   it("the filter looks at the words, the keys and the group name; case does not matter", () => {
     expect(keyListGroups(linux, "ループ").map((g) => [g.label, g.rows.map((r) => r.label)])).toEqual([["再生と録音", ["ループ"]]]);
     const mixer = keyListGroups(linux, "ミキサー");

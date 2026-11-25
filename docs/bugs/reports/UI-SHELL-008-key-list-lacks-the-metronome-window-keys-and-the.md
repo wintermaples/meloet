@@ -4,7 +4,7 @@ title: Key list lacks the metronome window keys and the Enter of 「書き出し
 area: UI-SHELL
 kind: parity
 severity: low
-status: needs-lead
+status: fixed
 found: 2026-11-25
 ---
 
@@ -55,4 +55,4 @@ Choices: (a) add the two rows with this wording (source `builder:<date>` until t
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+Choice (a), the lead's decision. `ui/src/keys/keyList.ts` `OTHER_ROWS`: 「曲とファイル」 「「書き出しました」を閉じる」 (Esc ／ Enter) and 「再生と録音」 「メトロノーム：音量を動かす ／ テンポを手拍子で」 (← → ／ Space Enter). `ui/src/text/ja.ts`, `en.ts`: `keyList.metronome`, `keyList.closeExported` (`builder:2026-11-25`, with a comment pointing at spec 7 G1). `docs/spec/7-readings.md` G1: the row "Rows added in the bug sweep" (decided by the lead, 2026-11-25, bug sweep UI-SHELL-008; where each word comes from). Test: `ui/tests/keyList.test.ts` "UI-SHELL-008: the metronome window's keys and Enter of 「書き出しました」 are listed (spec 4)".

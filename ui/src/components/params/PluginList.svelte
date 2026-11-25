@@ -14,6 +14,7 @@
   import { metrics } from "../metrics.svelte";
   import { paramUi } from "./paramUi.svelte";
   import PluginParamRow from "./PluginParamRow.svelte";
+  import { arrowToChosenRow } from "./rowKeys";
   import {
     foldedAtFirst,
     hiddenKnobs,
@@ -154,6 +155,7 @@
   }
 
   function onkeydown(ev: KeyboardEvent): void {
+    if (arrowToChosenRow(ev, list, sel.row)) return;
     if (ev.ctrlKey || ev.metaKey || ev.altKey || ev.shiftKey || ev.isComposing) return;
     if (ev.key === "Enter") {
       ev.preventDefault();

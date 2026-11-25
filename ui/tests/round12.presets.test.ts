@@ -9,6 +9,7 @@ import { presetName } from "../src/components/params/presetName";
 import RightRail from "../src/components/RightRail.svelte";
 import StatusLine from "../src/components/StatusLine.svelte";
 import { contextMenu } from "../src/components/menu/contextMenu.svelte";
+import { handleKeydown, type KeyDeps } from "../src/keys/attach";
 import { texts } from "../src/text/ja";
 import * as app from "./fake-app.svelte";
 
@@ -169,6 +170,35 @@ describe("「プリセット ▾」 in the params panel", () => {
     q("preset-button")!.click();
     flushSync();
     expect(all("preset-factory").every((b) => (b as HTMLButtonElement).disabled)).toBe(true);
+  });
+
+  it("UI-MIX-004: Esc closes the list wherever the focus is; in the name box the first Esc puts the row back", () => {
+    show(scene("presets"));
+    const deps: KeyDeps = { state: () => app.current.state, send: app.send, nav: { platform: "Linux" } };
+    const on = (ev: KeyboardEvent) => handleKeydown(ev, deps);
+    document.addEventListener("keydown", on);
+    const esc = (el: Element) => {
+      el.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+      flushSync();
+    };
+    try {
+      q("preset-button")!.click();
+      flushSync();
+      esc(document.body);
+      expect(q("preset-menu")).toBeNull();
+      q("preset-button")!.click();
+      flushSync();
+      q("preset-save")!.click();
+      flushSync();
+      esc(q("preset-name")!);
+      expect(q("preset-name")).toBeNull();
+      expect(q("preset-menu")).not.toBeNull();
+      esc(document.activeElement ?? document.body);
+      expect(q("preset-menu")).toBeNull();
+      expect(app.sent.filter((c) => c.type === "back")).toEqual([]);
+    } finally {
+      document.removeEventListener("keydown", on);
+    }
   });
 
   it("「いまの設定を残す…」 is a name box: Enter keeps, Esc puts the row back, then Esc closes the list", () => {

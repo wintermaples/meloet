@@ -693,6 +693,7 @@ pub fn load(
         mode: process_mode(activation.offline),
         frames_run: 0,
         sets,
+        reset_later: false,
     };
     let controller = Vst3Controller {
         view: None,
@@ -742,6 +743,8 @@ struct Vst3Processor {
     /// Of an instrument: its output buses as output sets. An effect's main output bus goes
     /// straight to the pair.
     sets: Option<BusSets>,
+    /// A reset came while the main thread held the plugin; the next block that runs does it.
+    reset_later: bool,
 }
 
 // SAFETY: the pointers point into buffers this struct owns or are set anew before each use,
@@ -921,6 +924,16 @@ fn context(transport: &Transport, sample_rate: f64, frames_run: i64) -> ProcessC
 }
 
 impl Vst3Processor {
+    /// Only while the audio thread is inside the gate.
+    fn stop_and_start(&self) {
+        // SAFETY: VST3 lets the audio thread stop and start the processing; a plugin drops
+        // what it holds (voices, tails) there.
+        rtcheck::plugin(|| unsafe {
+            self.instance.processor.setProcessing(0);
+            self.instance.processor.setProcessing(1);
+        });
+    }
+
     fn take(&mut self, event: &ToPlugin) {
         match *event {
             ToPlugin::Midi { frame, data } => {
@@ -978,6 +991,9 @@ impl Processor for Vst3Processor {
                 sets.outputs.missed(frames);
             }
             return false;
+        }
+        if std::mem::take(&mut self.reset_later) {
+            self.stop_and_start();
         }
         self.events.clear();
         self.changes.clear();
@@ -1084,13 +1100,10 @@ impl Processor for Vst3Processor {
 
     fn reset(&mut self) {
         if self.instance.gate.enter() {
-            // SAFETY: VST3 lets the audio thread stop and start the processing; a plugin drops
-            // what it holds (voices, tails) there.
-            rtcheck::plugin(|| unsafe {
-                self.instance.processor.setProcessing(0);
-                self.instance.processor.setProcessing(1);
-            });
+            self.stop_and_start();
             self.instance.gate.leave();
+        } else {
+            self.reset_later = true;
         }
         if let Some(sets) = &mut self.sets {
             sets.outputs.snap();

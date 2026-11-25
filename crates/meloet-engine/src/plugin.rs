@@ -159,7 +159,15 @@ pub struct PluginSlot {
     missed_at: u64,
     /// Every answer is waited for without a deadline.
     export: bool,
+    /// What ends sound and found the ring full (a host late for many blocks): the keys whose
+    /// note-off did, and the messages of [`ENDING`], a bit each. Sent before anything else
+    /// once there is room.
+    lost_offs: u128,
+    lost_ends: u8,
 }
+
+/// Pedals let go, all sound off, all notes off.
+const ENDING: [[u8; 3]; 4] = [[0xb0, 64, 0], [0xb0, 66, 0], [0xb0, 120, 0], [0xb0, 123, 0]];
 
 impl PluginSlot {
     /// `end`: made on this slot before the plugin was loaded into it. `block`: the engine's
@@ -180,6 +188,8 @@ impl PluginSlot {
             asked: None,
             missed_at: 0,
             export: false,
+            lost_offs: 0,
+            lost_ends: 0,
         };
         (slot, watch)
     }
@@ -204,11 +214,44 @@ impl PluginSlot {
     }
 
     fn midi(&mut self, data: [u8; 3]) {
-        self.end.push_event(ToPlugin::Midi { frame: 0, data });
+        if self.send_lost() && self.end.push_event(ToPlugin::Midi { frame: 0, data }) {
+            return;
+        }
+        match data {
+            [0x80, note, _] | [0x90, note, 0] => self.lost_offs |= 1 << (note & 0x7f),
+            [0xb0, 64, 0..=63] => self.lost_ends |= 1,
+            [0xb0, 66, 0..=63] => self.lost_ends |= 2,
+            [0xb0, 120, _] => self.lost_ends |= 4,
+            [0xb0, 123, _] => self.lost_ends |= 8,
+            _ => {}
+        }
+    }
+
+    /// Sends what [`PluginSlot::lost_offs`] and [`PluginSlot::lost_ends`] hold, as far as the
+    /// ring has room. True when nothing is left.
+    fn send_lost(&mut self) -> bool {
+        while self.lost_ends != 0 {
+            let at = self.lost_ends.trailing_zeros();
+            let data = ENDING[at as usize];
+            if !self.end.push_event(ToPlugin::Midi { frame: 0, data }) {
+                return false;
+            }
+            self.lost_ends &= !(1 << at);
+        }
+        while self.lost_offs != 0 {
+            let note = self.lost_offs.trailing_zeros();
+            let data = [0x80, note as u8, 0];
+            if !self.end.push_event(ToPlugin::Midi { frame: 0, data }) {
+                return false;
+            }
+            self.lost_offs &= !(1 << note);
+        }
+        true
     }
 
     /// Hands the block that `begin` started to the host process.
     fn submit(&mut self) {
+        self.send_lost();
         self.end.set_transport(&self.block.transport());
         if std::mem::take(&mut self.reset) {
             self.end.set_flags(block_flags::RESET);

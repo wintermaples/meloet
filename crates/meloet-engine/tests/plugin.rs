@@ -406,3 +406,87 @@ fn an_export_slot_waits_for_a_slow_plugin_and_stops_when_no_answer_can_come() {
     marker.join().unwrap();
     assert_eq!(common::audio_block_counts(), (0, 0));
 }
+
+/// The keys' messages the plugin's end finds in its ring.
+fn midi_heard(host: &mut PluginEnd) -> Vec<[u8; 3]> {
+    let mut heard = Vec::new();
+    while let Some(event) = host.pop_event() {
+        if let ToPlugin::Midi { data, .. } = event {
+            heard.push(data);
+        }
+    }
+    heard
+}
+
+#[test]
+fn a_note_off_that_found_the_ring_full_is_sent_once_there_is_room() {
+    let map = Arc::new(Mapping::create(GEOMETRY).unwrap());
+    let block = Arc::new(PluginBlock::default());
+    let (instrument, _) = slot(&map, 0, &block);
+    let mut instrument = PluginInstrument(instrument);
+    let mut host = PluginEnd::new(map.clone(), 0).unwrap();
+    let wheel = InstrumentEvent::Control {
+        controller: 1,
+        value: 0,
+    };
+    let (mut left, mut right) = ([0.0f32; 16], [0.0f32; 16]);
+
+    {
+        let _audio = meloet_engine::rt::enter();
+        instrument.event(InstrumentEvent::NoteOn {
+            note: 60,
+            velocity: 100,
+        });
+        // The host process is late: what is played meanwhile fills the ring.
+        for _ in 0..GEOMETRY.to_plugin_events {
+            instrument.event(wheel);
+        }
+        instrument.event(InstrumentEvent::NoteOff { note: 60 });
+        instrument.event(InstrumentEvent::Control {
+            controller: 64,
+            value: 0,
+        });
+        instrument.event(InstrumentEvent::AllNotesOff);
+    }
+    // It catches up: none of them is there.
+    let heard = midi_heard(&mut host);
+    assert!(
+        heard
+            .iter()
+            .all(|data| *data == [0x90, 60, 100] || data[1] == 1)
+    );
+    {
+        let _audio = meloet_engine::rt::enter();
+        // The next message has them before it.
+        instrument.event(InstrumentEvent::NoteOn {
+            note: 62,
+            velocity: 100,
+        });
+    }
+    assert_eq!(
+        midi_heard(&mut host),
+        [
+            [0xb0, 64, 0],
+            [0xb0, 123, 0],
+            [0x80, 60, 0],
+            [0x90, 62, 100]
+        ]
+    );
+
+    {
+        let _audio = meloet_engine::rt::enter();
+        for _ in 0..GEOMETRY.to_plugin_events {
+            instrument.event(wheel);
+        }
+        instrument.event(InstrumentEvent::NoteOff { note: 62 });
+    }
+    assert!(!midi_heard(&mut host).contains(&[0x80, 62, 0]));
+    {
+        let _audio = meloet_engine::rt::enter();
+        // The next block has it, though nothing else was played; nobody answers that block.
+        block.set_deadline(monotonic_ns());
+        instrument.render(&mut left, &mut right);
+    }
+    assert_eq!(midi_heard(&mut host), [[0x80, 62, 0]]);
+    assert_eq!(common::audio_block_counts(), (0, 0));
+}

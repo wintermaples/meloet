@@ -139,6 +139,9 @@ fn not_in_preset(generator: usize) -> bool {
 
 /// A preset whose tables are broken could name the same zones again and again.
 const MAX_ZONES: usize = 16_384;
+/// The instrument zones looked at for one preset, all its preset zones together. Broken tables
+/// could also name an instrument of many zones again and again with none of them played.
+const MAX_LOOKED_AT: usize = 1 << 20;
 
 /// The generators one zone of the file sets.
 #[derive(Clone, Copy)]
@@ -258,6 +261,7 @@ pub(super) fn zones(tables: &Tables, index: usize) -> Vec<Zone> {
         usize::from(next.bag),
         INSTRUMENT,
     );
+    let mut looked_at = 0;
     for local in &preset_local {
         let pg = preset_global.map_or(*local, |global| global.under(local));
         let inst = usize::from(pg.amount[INSTRUMENT]);
@@ -265,6 +269,10 @@ pub(super) fn zones(tables: &Tables, index: usize) -> Vec<Zone> {
         else {
             continue;
         };
+        looked_at += usize::from(next.bag).saturating_sub(usize::from(header.bag));
+        if looked_at > MAX_LOOKED_AT {
+            return out;
+        }
         let (inst_global, inst_local) = zones_of(
             &tables.ibag,
             &tables.igen,

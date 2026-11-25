@@ -156,13 +156,15 @@ impl Sf2File {
             .collect())
     }
 
-    /// The keys the preset has a zone on, lowest first.
+    /// The keys the preset has a playable zone on, lowest first.
     pub fn keys(&self, bank: u16, program: u16) -> Result<Vec<u8>, Sf2Error> {
         let index = self.find(bank, program)?;
         let mut has = [false; 128];
         for zone in zones::zones(&self.tables, index) {
-            let (lo, hi) = (zone.key_lo.min(127), zone.key_hi.min(127));
-            for key in lo..=hi {
+            if self.spec(&zone).is_none() {
+                continue;
+            }
+            for key in zone.key_lo..=zone.key_hi.min(127) {
                 has[usize::from(key)] = true;
             }
         }
@@ -183,7 +185,7 @@ impl Sf2File {
         let mut names: Vec<Vec<String>> = vec![Vec::new(); 128];
         let mut has = [false; 128];
         for zone in zones::zones(&self.tables, index) {
-            if zone.key_lo > 127 || zone.vel_hi == 0 {
+            if self.spec(&zone).is_none() {
                 continue;
             }
             let (lo, hi) = (zone.key_lo, zone.key_hi.min(127));

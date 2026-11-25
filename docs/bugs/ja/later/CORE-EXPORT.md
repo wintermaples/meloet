@@ -1,0 +1,5 @@
+- crates/meloet-core/src/export/job.rs:279-293 — 最後の `move_to` の後、`Finished` が読まれる前に届いた CancelExport は、ファイルを残したまま、実行結果には「途中までのファイルは消しました」と出ます（とても短い区間です）。
+- crates/meloet-core/src/export.rs:979-984 — MIDI の `can_export` は、ダイアログが開いていることも `!running()` も必要としません。二回目の StartExport（素早い二度押し）は MIDI ファイルを書き直し、音声の実行中に届いたものは、`Drop` なしに `Run::Going` を置き換えてしまいます。
+- crates/meloet-core/src/export/job.rs:259-264 — 「トラックごと」は、選んだフォルダの同じ名前のファイルを、確認なしに上書きします（一つのファイルとして保存するときの保存ウィンドウは確認します）。
+- crates/meloet-core/src/export.rs:636-689 — `Asked` は `scene.sample_rate` も止まっているプラグインも保持しません。そのため、開いているダイアログのジョブは、途中でそれらが変わると、始まったときのレートと飛ばす一覧をそのまま使います。
+- crates/meloet-core/src/analysis.rs:256-265 — リングに入る余地がなかったフレームがあると、再生中の統合ラウドネスとトゥルーピークがリセットされます（モジュールの説明書きでは意図どおりですが、そのとき M3 は、何も示さずに短い計測結果を表示します）。

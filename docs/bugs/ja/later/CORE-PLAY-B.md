@@ -1,0 +1,6 @@
+- crates/meloet-core/src/play/sounds.rs:282-296 — `sound_installed`(音素材の新しい版)が、まだ読んでいる最中の古い版を捨てた後、その古い読み込みの答えが新しい `loading` の項目とぶつかり、新しい版として扱われます(`src/sounds.rs` の `Library::keep` が最初の読み込みを残します)。そのため、新しい版は meloet をもう一度起動するまで使われないことがあります。競合状態ですが、フェッチャーのファイル差し替えまでは追っていません。
+- crates/meloet-core/src/play/automation.rs:753 と play/mixer.rs:256-266 — 離すとき、レーンの `HoldLane` の off が、残りの手(rest または write step)の `SetAutomation` より先に送られます。二つの間にオーディオスレッドがコマンドのリングを空にすると、古い線が一ブロックの間鳴ります(線へ向かう短いランプと、戻るランプ)。
+- crates/meloet-core/src/play/vocal.rs:291-322 — `voices_sent` は席ごとに保持され、`clear_seat` はそれを忘れません。一回の変更でボーカルトラックの席が空になり、同じ入力と `on` を持つ別のボーカルトラックに渡されると、`ClearTrack` がエンジンの voice を捨てたのに、`Voice` は送られません(`on` が false の間は音への影響は見つかっていません。履歴のジャンプでは起こり得ます)。
+- crates/meloet-core/src/play/autosync.rs:243-263 — `held` はレーンごとに一つの印です。ミキサーやパネルのつまみと、プラグインの窓でのタッチが同じレーンを共有し、先に離した方が両方の保持を離します。
+- crates/meloet-core/src/play/automation.rs:913-915 — 再生中に「● 書く」が入っていて、まだ聞こえている位置がない場合、M の押下は(`mute_pressed` が true を返し)、手も知らせもなく受け取られます。
+- ui/src/components/TrackHeads.svelte:270-271 — トラックの見出しの M は、手で設定した `track.muted` を表示します。一方、ミキサーの M(`MixerStrips.svelte:99-103`)は、動いているミュートのレーンの値を表示します。同じトラックの二つの M が食い違うことがあります(仕様は、レーンの下にある見出しの M については何も書いていません)。

@@ -6,6 +6,7 @@ Findings of a sweep over the code (`crates/` and `ui/`): bugs, UI/UX problems, a
 - Make a report with `python3 -I tools/bugs/report.py new --area <AREA> --kind bug|ui-ux|parity --severity high|medium|low --title "<one line>"`, then fill the sections. Do not copy the template by hand.
 - `python3 -I tools/bugs/report.py index` checks every report and writes [`INDEX.md`](INDEX.md).
 - `python3 -I tools/bugs/html.py` writes [`report.html`](report.html): every report and every "later" line on one page for reading in a browser (search, filters by severity, kind and area; `report.html#<ID>` opens one report). Run it again after reports change.
+- Japanese translations of the reports, the "later" lines and this file are in [`ja/`](ja/) (same file names; made by helpers on 2026-11-25, checked by machine only for shape and code spans). `python3 -I tools/bugs/html.py --lang ja` writes [`report.ja.html`](report.ja.html) from them. The English files are the source: when a report changes, its translation must be changed too.
 - Things that are not bugs but are worth a look later (slowness, spec and mock disagreeing, design worries) go in [`later/`](later/), one file per area, one line each. They are not fixed in the sweep.
 
 ## Fields

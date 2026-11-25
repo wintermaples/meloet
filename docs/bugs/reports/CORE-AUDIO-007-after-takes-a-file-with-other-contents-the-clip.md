@@ -4,7 +4,7 @@ title: After 「さがす…」 takes a file with other contents, the clip keeps
 area: CORE-AUDIO
 kind: bug
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -56,4 +56,4 @@ Fix plan: `crates/meloet-core/src/audiofiles/keeper.rs` `Work::found`: after the
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`crates/meloet-core/src/audiofiles/keeper.rs` `Work::found`: after the copy, when the found file's SHA-256 is not `source.sha256` (or there is none), the new `AudioStore::drop_cache` (`crates/meloet-core/src/audiofiles.rs`) deletes the decoded copies of the uid at every rate and its peaks file, and the uid leaves `peaks_made`; `watch` then makes them again from the found file. The same bytes keep them. Test: `audiofiles::tests::a_found_file_with_other_contents_is_made_ready_again_from_itself` (it fails without the fix).

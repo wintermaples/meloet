@@ -374,6 +374,8 @@ impl ClipPick {
 pub enum Cut {
     AudioSystem,
     Output,
+    /// The files of the vocal tracks could not be written on.
+    Disk(meloet_protocol::DiskStop),
 }
 
 struct Rec {
@@ -858,6 +860,7 @@ impl Play {
                 files: Play::vocal_file_asks(&vocals),
                 format,
                 x_us,
+                taken: self.doc().audio.iter().map(|s| s.file.clone()).collect(),
             });
         }
         self.rec = Some(Rec {

@@ -3151,7 +3151,8 @@ impl Worker {
                         files,
                         format,
                         x_us,
-                    } => inputs.push_back(self.start_vocals(files, format, x_us)),
+                        taken,
+                    } => inputs.push_back(self.start_vocals(files, format, x_us, &taken)),
                     Effect::StopVocalRecording => inputs.push_back(self.stop_vocals()),
                     Effect::WriteRecNote(note) => {
                         // The note on the disk is another recording's from here on.

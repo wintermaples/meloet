@@ -65,13 +65,14 @@ pub fn work_audio_dir(state_dir: &Path) -> PathBuf {
     state_dir.join(WORK_AUDIO)
 }
 
-/// `<track name> <audio id>.wav`, with what a file name cannot hold taken out.
+/// `<track name> <audio id>.wav`, with what a file name cannot hold taken out, and the track
+/// name cut to fit a file name.
 pub fn file_name(track_name: &str, id: u32) -> String {
     let clean: String = track_name
         .chars()
         .filter(|c| !matches!(c, '/' | '\\' | '\0') && !c.is_control())
         .collect();
-    let clean = clean.trim().trim_matches('.');
+    let clean = crate::export::job::cut_name(clean.trim().trim_matches('.'));
     let name = if clean.is_empty() { "歌" } else { clean };
     format!("{name} {id}.wav")
 }

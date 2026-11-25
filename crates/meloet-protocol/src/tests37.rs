@@ -14,11 +14,6 @@ where
 }
 
 #[test]
-fn the_version() {
-    assert_eq!(PROTOCOL_VERSION, 37);
-}
-
-#[test]
 fn a_named_key() {
     both_ways(
         vec![

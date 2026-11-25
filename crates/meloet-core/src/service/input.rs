@@ -16,10 +16,11 @@ use meloet_engine::{
 use meloet_model::{
     Doc, NewAudio, TempoMap, TrackId, VocalInput, VocalRecording, add_vocal_recordings, edit,
 };
-use meloet_protocol::{KeptVocals, RecordFormat};
+use meloet_protocol::{DiskStop, KeptVocals, RecordFormat};
 use sha2::{Digest, Sha256};
 
 use super::{Audio, Shared, Worker, lock};
+use crate::audiofiles::AudioStore;
 use crate::peaks::{PeaksPlace, SharedPeaks};
 use crate::play::VocalFileAsk;
 use crate::state::{Delays, Input};
@@ -201,6 +202,7 @@ impl Worker {
         files: Vec<VocalFileAsk>,
         format: RecordFormat,
         x_us: i64,
+        taken: &[String],
     ) -> Input {
         let Some(dir) = self
             .input
@@ -210,18 +212,7 @@ impl Worker {
         else {
             return Input::VocalsNotStarted;
         };
-        // A name that is taken (a recording that was undone keeps its file) gets a number.
-        let mut names: Vec<String> = Vec::new();
-        for ask in &files {
-            let stem = ask.name.strip_suffix(".wav").unwrap_or(&ask.name);
-            let free = (1u32..)
-                .map(|n| match n {
-                    1 => ask.name.clone(),
-                    n => format!("{stem} ({n}).wav"),
-                })
-                .find(|name| !names.contains(name) && !dir.join(name).exists());
-            names.extend(free);
-        }
+        let names = free_recording_names(&self.audio_store, &dir, taken, &files);
         let job = RecordJob {
             files: (files.iter().zip(&names))
                 .map(|(ask, name)| RecordFile {
@@ -406,7 +397,7 @@ impl Worker {
             job.from_said = true;
             // Half a beat before the song rolls, as the keys keep.
             let (map, _) = handle.tempo_map();
-            let half_beat_us = 30e6 / map.tempo_at(tick).max(1.0);
+            let half_beat_us = half_beat_us(map, tick);
             let from_us = heard_us.map_or(f64::NEG_INFINITY, |t| t - half_beat_us + job.x_us);
             self.input.writer.from(from_us);
         }
@@ -423,7 +414,12 @@ impl Worker {
             let status: Written = self.input.writer.status();
             if !job.trouble_said && (status.full || status.error.is_some()) {
                 job.trouble_said = true;
-                inputs.push(Input::VocalsCannotGoOn);
+                inputs.push(Input::VocalsCannotGoOn {
+                    reason: match status.error {
+                        Some(_) => DiskStop::CannotWrite,
+                        None => DiskStop::FileFull,
+                    },
+                });
             }
             let faults = (status.gap_count + status.cut_count, status.dropped_blocks);
             if faults != job.faults_said {
@@ -605,6 +601,42 @@ pub(super) fn mic_meters(shared: &Shared) -> (Vec<meloet_protocol::MicMeter>, bo
     (meters, clipped)
 }
 
+/// Half a beat of the meter at `tick`, at the tempo there, in microseconds: how long before
+/// the song rolls the files begin, as the keys keep what was played from then.
+fn half_beat_us(map: &TempoMap, tick: f64) -> f64 {
+    let beat = map.meter_at(tick.max(0.0) as u64).meter.ticks_per_beat() as f64;
+    beat / 2.0 / meloet_model::TICKS_PER_QUARTER as f64 * 60e6 / map.tempo_at(tick).max(1.0)
+}
+
+/// The names the files of a recording get in the work place `dir`: the ones asked for, or
+/// with « (2)», « (3)», … where a name is taken: by a file of the work place (a recording that
+/// was undone keeps its file), of any place the song looks in, or by a name of the song's
+/// audio table (`taken`).
+fn free_recording_names(
+    store: &AudioStore,
+    dir: &Path,
+    taken: &[String],
+    files: &[VocalFileAsk],
+) -> Vec<String> {
+    let mut names: Vec<String> = Vec::new();
+    for ask in files {
+        let stem = ask.name.strip_suffix(".wav").unwrap_or(&ask.name);
+        let free = (1u32..)
+            .map(|n| match n {
+                1 => ask.name.clone(),
+                n => format!("{stem} ({n}).wav"),
+            })
+            .find(|name| {
+                !names.contains(name)
+                    && !taken.contains(name)
+                    && !dir.join(name).exists()
+                    && store.find(name).is_none()
+            });
+        names.extend(free);
+    }
+    names
+}
+
 /// Puts the files a recording left when meloet ended into `doc`, each as a clip on its vocal
 /// track, as far as it was written. Returns how many were kept and where the last ends.
 pub(super) fn keep_vocals(
@@ -687,5 +719,63 @@ pub(super) fn keep_vocals(
             eprintln!("meloet: the recording was not kept: {e:?}");
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use meloet_model::{Meter, Tempo, Timeline};
+
+    use super::*;
+    use crate::audiofiles::SONG_AUDIO;
+    use crate::settings::temp_dir;
+
+    #[test]
+    fn the_files_begin_half_a_beat_of_the_meter_before_the_roll() {
+        let at_120 = |num, den| {
+            let meter = Meter::new(num, den).unwrap();
+            TempoMap::new(&Timeline::new(Tempo::from_centi(12_000).unwrap(), meter))
+        };
+        // A quarter note is half a second at 120, whatever the meter.
+        assert_eq!(half_beat_us(&at_120(4, 4), 0.0), 250_000.0);
+        assert_eq!(half_beat_us(&at_120(2, 2), 0.0), 500_000.0);
+        assert_eq!(half_beat_us(&at_120(6, 8), 0.0), 125_000.0);
+        assert_eq!(half_beat_us(&at_120(6, 8), -300.0), 125_000.0);
+    }
+
+    #[test]
+    fn a_recording_never_takes_a_name_the_song_has() {
+        let root = temp_dir("rec-names");
+        let store = AudioStore::new(Some(root.join("state")));
+        let song = root.join("曲");
+        std::fs::create_dir_all(song.join(SONG_AUDIO)).unwrap();
+        store.set_song_dir(Some(song.clone()));
+        let work = vocalrec::work_audio_dir(&root.join("state"));
+        std::fs::create_dir_all(&work).unwrap();
+        let ask = |audio: u32| VocalFileAsk {
+            audio,
+            name: vocalrec::file_name("歌", audio),
+            channels: vec![0],
+        };
+        let names = |taken: &[String], asks: &[VocalFileAsk]| {
+            free_recording_names(&store, &work, taken, asks)
+        };
+        assert_eq!(names(&[], &[ask(40)]), ["歌 40.wav"]);
+
+        // A file brought in and saved earlier has the name: its song folder's file would
+        // play in place of the recording, and a save would keep that one.
+        std::fs::write(song.join(SONG_AUDIO).join("歌 40.wav"), b"brought in").unwrap();
+        assert_eq!(names(&[], &[ask(40)]), ["歌 40 (2).wav"]);
+        // A recording that was undone keeps its file in the work place.
+        std::fs::write(work.join("歌 40 (2).wav"), b"undone").unwrap();
+        assert_eq!(names(&[], &[ask(40)]), ["歌 40 (3).wav"]);
+        // A name of the audio table whose file is not found.
+        let taken = ["歌 41.wav".to_owned()];
+        assert_eq!(names(&taken, &[ask(41)]), ["歌 41 (2).wav"]);
+        // Two files of one recording never get the same name.
+        assert_eq!(
+            names(&taken, &[ask(41), ask(41)]),
+            ["歌 41 (2).wav", "歌 41 (3).wav"]
+        );
     }
 }

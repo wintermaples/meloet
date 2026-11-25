@@ -91,12 +91,12 @@ pub use timeline::{
     TempoPointView, TimelineRef, TimelineView,
 };
 pub use vocal::{
-    KeptVocals, LATENCY_CLICKS, LatencyDialogView, LatencyFailure, LatencyMeasure, LatencySource,
-    LatencyView, RecordFormat, SelectedSound, TrackKindView, VocalInput, VocalRecordingView,
-    VocalRef,
+    DiskStop, KeptVocals, LATENCY_CLICKS, LatencyDialogView, LatencyFailure, LatencyMeasure,
+    LatencySource, LatencyView, RecordFormat, SelectedSound, TrackKindView, VocalInput,
+    VocalRecordingView, VocalRef,
 };
 
-pub const PROTOCOL_VERSION: u32 = 37;
+pub const PROTOCOL_VERSION: u32 = 38;
 
 /// Screen → Rust. Intent only; Rust decides what the state becomes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -4067,6 +4067,24 @@ pub enum StatusMessage {
     MasterAutomationRestored,
     /// M5 `Command::AddFadeOut` in a song with no clip: there is no end to fade to.
     FadeOutNoClips,
+    // Protocol 38 (bug sweep, 2026-11-25).
+    /// The files of the vocal tracks could not be made as a recording started: "歌を録れません。
+    /// 作業の場所に書けません。" With `keys`, the keys are recorded all the same: "…鍵盤はこのまま
+    /// 録ります。" A recording of vocal tracks alone was stopped.
+    VocalsNotRecorded {
+        keys: bool,
+    },
+    /// A recording was stopped because its files could not be written on; what was recorded
+    /// is kept. "ディスクに書けなくなったので、録音を止めました。録れた所までは残しています。",
+    /// "音のファイルがいちばん大きい所まで来たので、…"
+    RecordingStoppedDisk {
+        reason: DiskStop,
+    },
+    /// A file brought in, or found by 「さがす…」, reads and could not be copied into the work
+    /// place: "「声.wav」を入れられませんでした。作業の場所に書けません。" Nothing was brought in.
+    AudioNotCopied {
+        file: String,
+    },
 }
 
 /// The selected notes of the piano roll, for the status line.
@@ -4298,3 +4316,5 @@ mod tests35;
 mod tests36;
 #[cfg(test)]
 mod tests37;
+#[cfg(test)]
+mod tests38;

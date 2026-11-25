@@ -4,8 +4,8 @@ use meloet_devices::{Availability, ClockSettings, LinkKind};
 use meloet_model::record::HeldControls;
 use meloet_model::{ClipTakes, TrackId};
 use meloet_protocol::{
-    Band, LatencyFailure, LatencyMeasure, LatencySource, RecordFormat, TrackKindView, TrackRef,
-    VocalRef,
+    Band, DiskStop, LatencyFailure, LatencyMeasure, LatencySource, RecordFormat, TrackKindView,
+    TrackRef, VocalRef,
 };
 
 use super::*;
@@ -466,6 +466,7 @@ fn the_keys_and_the_voice_are_recorded_together_as_one_step() {
             }],
             format: RecordFormat::Bits32,
             x_us: 0,
+            taken: Vec::new(),
         }
     );
     let view = m.view();
@@ -638,15 +639,15 @@ fn only_the_voice_is_recorded_when_there_is_no_keys_track_and_a_loop_makes_takes
             .all(|t| Arc::ptr_eq(&t.take.source, &doc.audio[0]))
     );
     let next_id = doc.next_id;
+    let first = doc.audio[0].file.clone();
 
-    // Another recording over the clip is its fourth take; its file has the next id.
+    // Another recording over the clip is its fourth take; its file has the next id, and no
+    // name of the audio table.
     let effects = record_vocals(&mut m);
-    assert!(
-        effects
-            .iter()
-            .any(|e| matches!(e, Effect::StartVocalRecording { files, .. }
-        if files[0].name == format!("歌 {next_id}.wav")))
-    );
+    assert!(effects.iter().any(
+        |e| matches!(e, Effect::StartVocalRecording { files, taken, .. }
+        if files[0].name == format!("歌 {next_id}.wav") && *taken == [first.clone()])
+    ));
     assert_eq!(m.view().transport.recording_vocals[0].take, 4);
 }
 
@@ -713,6 +714,11 @@ fn a_recording_stopped_before_it_rolls_leaves_no_file() {
     m.handle(Input::VocalsNotStarted);
     assert!(m.view().transport.recording_vocals.is_empty());
     assert!(m.view().transport.recording.is_some());
+    // Said at once, over the recording that goes on.
+    assert_eq!(
+        status(&m),
+        Some(StatusMessage::VocalsNotRecorded { keys: true })
+    );
     cmd(&mut m, Command::PlayStop);
     let effects = m.handle(Input::Record(RecordReport::Stopped {
         t_us: 1,
@@ -724,13 +730,82 @@ fn a_recording_stopped_before_it_rolls_leaves_no_file() {
 
     // The disk is full, or the microphone is pulled out: the recording is stopped.
     record_vocals(&mut m);
-    let effects = m.handle(Input::VocalsCannotGoOn);
+    let effects = m.handle(Input::VocalsCannotGoOn {
+        reason: DiskStop::CannotWrite,
+    });
     assert!(
         effects
             .iter()
             .any(|e| matches!(e, Effect::Engine(EngineOp::Stop { .. }))),
         "{effects:?}"
     );
+}
+
+#[test]
+fn a_recording_of_vocals_alone_whose_files_cannot_be_made_stops_and_says_so() {
+    let (mut m, _) = with_vocal(2);
+    cmd(&mut m, Command::DeleteTrack { track: 1 });
+    assert_eq!(m.view().song.keys_target, None);
+    cmd(&mut m, Command::Record);
+    started(&mut m, 0);
+    let effects = m.handle(Input::VocalsNotStarted);
+    assert!(
+        effects
+            .iter()
+            .any(|e| matches!(e, Effect::Engine(EngineOp::Stop { .. }))),
+        "{effects:?}"
+    );
+    assert_eq!(
+        status(&m),
+        Some(StatusMessage::VocalsNotRecorded { keys: false })
+    );
+
+    // Not recording vocals: nothing to say.
+    let (mut m, _) = with_vocal(2);
+    m.handle(Input::VocalsNotStarted);
+    assert_eq!(
+        status(&m).filter(|s| matches!(s, StatusMessage::VocalsNotRecorded { .. })),
+        None
+    );
+}
+
+#[test]
+fn a_recording_its_files_cannot_be_written_on_stops_and_says_why_once_the_take_is_in() {
+    for reason in [DiskStop::CannotWrite, DiskStop::FileFull] {
+        let (mut m, id) = with_vocal(1);
+        record_vocals(&mut m);
+        let effects = m.handle(Input::VocalsCannotGoOn { reason });
+        assert!(
+            effects
+                .iter()
+                .any(|e| matches!(e, Effect::Engine(EngineOp::Stop { .. }))),
+            "{effects:?}"
+        );
+        m.handle(Input::Record(RecordReport::Stopped {
+            t_us: 12,
+            tick: 4.0 * Q as f64,
+            lap: 0,
+        }));
+        let said = Some(StatusMessage::RecordingStoppedDisk { reason });
+        assert_ne!(status(&m), said);
+        // The gaps of the recording do not take its place.
+        m.handle(Input::VocalsWritten(Box::new(Written {
+            frames: 140_000,
+            sample_rate: 48_000,
+            gap_count: 2,
+            ..Written::default()
+        })));
+        let doc = &m.play.song().doc;
+        assert_eq!(doc.track(TrackId(id)).unwrap().clips.len(), 1);
+        assert_eq!(status(&m), said);
+    }
+
+    // Not recording vocals: nothing is stopped.
+    let (mut m, _) = with_vocal(1);
+    let effects = m.handle(Input::VocalsCannotGoOn {
+        reason: DiskStop::FileFull,
+    });
+    assert!(effects.is_empty(), "{effects:?}");
 }
 
 #[test]

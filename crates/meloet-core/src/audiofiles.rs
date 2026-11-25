@@ -243,6 +243,25 @@ impl AudioStore {
         Some(crate::peaks::peaks_path(&dir.join(CACHE_PEAKS), uid))
     }
 
+    /// Lets go of what was made from the audio with this `uid`: its decoded copies at every
+    /// rate and its peaks file. They are made again from the file the song has now.
+    pub fn drop_cache(&self, uid: &[u8; 16]) {
+        let Some(dir) = self.cache_dir() else {
+            return;
+        };
+        let head = format!("{}-", hex(uid));
+        for entry in (fs::read_dir(dir.join(CACHE_AUDIO)).into_iter().flatten()).flatten() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if name.starts_with(&head) && name.ends_with(".wav") {
+                let _ = fs::remove_file(entry.path());
+            }
+        }
+        if let Some(peaks) = self.peaks_path(uid) {
+            let _ = fs::remove_file(peaks);
+        }
+    }
+
     fn cached(&self, uid: &[u8; 16], sample_rate: u32) -> Option<wav::WavPcm> {
         let wav = wav::WavPcm::open(&self.cache_path(uid, sample_rate)?).ok()?;
         (wav.sample_rate() == sample_rate).then_some(wav)

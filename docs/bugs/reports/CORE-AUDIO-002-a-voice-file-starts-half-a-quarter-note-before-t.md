@@ -4,7 +4,7 @@ title: A voice file starts half a quarter note before the roll, not half a beat 
 area: CORE-AUDIO
 kind: bug
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -56,4 +56,4 @@ Fix plan: `crates/meloet-core/src/service/input.rs` `vocal_mark`: take the beat 
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`crates/meloet-core/src/service/input.rs`: `vocal_mark` takes the half beat from the new `half_beat_us(map, tick)`: half of `Meter::ticks_per_beat()` of the meter at the roll tick, at the tempo there (the engine's key rule). Only that line of `vocal_mark` changed. Test: `service::input::tests::the_files_begin_half_a_beat_of_the_meter_before_the_roll` (4/4, 2/2 and 6/8 at 120; it fails without the fix).

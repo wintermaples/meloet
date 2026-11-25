@@ -4,7 +4,7 @@ title: An audio file that could not be copied in (full disk, no work place) is r
 area: CORE-AUDIO
 kind: ui-ux
 severity: low
-status: needs-lead
+status: fixed
 found: 2026-11-25
 ---
 
@@ -54,4 +54,4 @@ Severity `low` stands (a full disk or a work place that cannot be written).
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+Protocol 38 (the lead's decision): `StatusMessage::AudioNotCopied { file }`. `Unread::NotCopied` (`crates/meloet-core/src/audiofiles/decode.rs`) and `Finding::NotCopied` (`audiofiles/keeper.rs`): `Work::bring` gives it when `bring_in` fails, `Work::found` when there is no work place or the copy fails; `crates/meloet-core/src/state/audio.rs` turns both into `AudioNotCopied`. Text `msg.audioNotCopied` (`builder:2026-11-25`), `StatusLine.svelte`. Tests: `audiofiles::tests::a_file_that_cannot_be_copied_in_says_so`, a new row in `state::audio::tests::files_that_do_not_read_bring_nothing_in`, a new step in `state::audio::tests::a_missing_file_is_said_looked_for_and_taken_out`, `tests38::the_messages`, the row of 「知らせ」 in `ui/tests/connect-components.test.ts`.

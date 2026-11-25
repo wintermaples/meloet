@@ -4,7 +4,7 @@ title: When the files of a voice recording cannot be made, the recording goes on
 area: CORE-AUDIO
 kind: ui-ux
 severity: medium
-status: needs-lead
+status: fixed
 found: 2026-11-25
 ---
 
@@ -56,4 +56,4 @@ Severity `medium` stands: a whole take can be sung into nothing; it needs a work
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+Protocol 38 (the lead's decision): `StatusMessage::VocalsNotRecorded { keys }` (`crates/meloet-protocol/src/lib.rs`). `crates/meloet-core/src/play/vocal.rs` `vocals_not_started` returns whether the recording goes on with the keys; the `Input::VocalsNotStarted` arm of `crates/meloet-core/src/state.rs` sets the notice and stops a recording of vocal tracks alone, and `Model::status` shows this notice before the recording's own line, so it is seen at once. Texts `msg.vocalsNotRecorded` and `msg.vocalsNotRecordedKeys` (`ui/src/text/ja.ts`, `en.ts`; `builder:2026-11-25`, spec 7 A-24 "Texts when a recording or a file cannot be written"), shown by `ui/src/components/StatusLine.svelte`. Tests: `state::vocal_tests::a_recording_of_vocals_alone_whose_files_cannot_be_made_stops_and_says_so`, the step "Said at once, over the recording that goes on" in `state::vocal_tests::a_recording_stopped_before_it_rolls_leaves_no_file`, `tests38::the_messages` (protocol), and the rows of 「知らせ」 in `ui/tests/connect-components.test.ts`.

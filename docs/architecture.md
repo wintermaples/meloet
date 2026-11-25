@@ -71,7 +71,7 @@ flowchart LR
 
 ## 3. The contract between Rust and the screen (report 7-3)
 
-The contract is **version 37** (`PROTOCOL_VERSION` in `crates/meloet-protocol/src/lib.rs`; the versions of round 12: 25-1 to 25-3, 25-37 to 25-39; 37: `TrackView::key_names` and the drum rows of a plugin that names keys, 24-16 E).
+The contract is **version 38** (`PROTOCOL_VERSION` in `crates/meloet-protocol/src/lib.rs`; the versions of round 12: 25-1 to 25-3, 25-37 to 25-39; 37: `TrackView::key_names` and the drum rows of a plugin that names keys, 24-16 E; 38: the status line messages `VocalsNotRecorded`, `RecordingStoppedDisk` and `AudioNotCopied`, when the files of a recording or a file brought in cannot be written, 22-7 and 22-18 A2).
 
 ### 3-1. Steps
 
@@ -1358,7 +1358,8 @@ cpal opens the input stream on its own thread (`pw_in`) and connection, but give
   - Data is written as soon as it comes, `fdatasync` every second. After SIGKILL or a crash, what was `write`n stays (about 0.1 s in the ring is lost); after power loss, up to the last `fdatasync`.
   - A normal stop writes the true length and `sync_all`.
   - **Half-recorded note** `work/rec.json` (written the safe way of 14 at record start, deleted when the recording enters the song). Contents and recovery flow: 22-16.
-- **4 GB limit** (32-bit size field; 4 h 8 min at 48 kHz/24-bit/stereo, 93 min at 96 kHz/32-bit/stereo): stop recording before the limit and keep what was recorded (same path as "the sound stopped", 4-2). RF64 is not used (symphonia 0.6.1 does not read it).
+- **4 GB limit** (32-bit size field; 4 h 8 min at 48 kHz/24-bit/stereo, 93 min at 96 kHz/32-bit/stereo): stop recording before the limit and keep what was recorded (same path as "the sound stopped", 4-2). RF64 is not used (symphonia 0.6.1 does not read it). A write the disk refuses stops the recording the same way. Once the take is in, the status line says why (`RecordingStoppedDisk`, protocol 38).
+- **Files that cannot be made** at the start (the work place cannot be written): the status line says so at once, over the recording (`VocalsNotRecorded`); a recording with keys goes on with them, one of vocal tracks alone is stopped.
 - Waveform peaks are made by the writer while writing (22-9, 22-18 A1).
 
 ### 22-8. Playing audio clips
@@ -1599,7 +1600,7 @@ The shared starting point for engine, core and screen of step 2.
   - Overflowed blocks become silence (`dropped`). **Lost input cycles** (a block later than the end of the previous one by more than half a block) are filled with silence (`gaps`), so frame counting stays right after the loss. Rules refined in 22-18 D, 22-21, 22-26.
 - **Recorded position**: only the start and lap heads use a time. The time the engine frame (`Rolling`, `LapChanged`) was heard (`time_of_frame` + `X`) is given to the writer, which answers "which file frame was sung then" (`DiskWriter::mark`, median of the newest 32 blocks). Between them, frames are counted (`vocalrec::takes_from`). Superseded in part by 22-26 (marks read from the engine-frame line).
   - Checked (`crates/meloet-core/tests/vocal_private.rs`): metronome recorded from the sink monitor, buffers 64/256/1024 with 16/24/32 bits: **0.0 frames** off on all 6 beats.
-- **One recording = one step**: stop → `StopVocalRecording` → writer finishes and writes the length → `VocalsWritten` → voice (`meloet_model::add_vocal_recordings`) first, key takes on top, all as one step. File ids come from `Doc.next_id` at record start (same as the audio table ids); a taken name gets « (2)». Files of a recording that left nothing (stopped in count-in) are deleted.
+- **One recording = one step**: stop → `StopVocalRecording` → writer finishes and writes the length → `VocalsWritten` → voice (`meloet_model::add_vocal_recordings`) first, key takes on top, all as one step. File ids come from `Doc.next_id` at record start (same as the audio table ids); a taken name (a file in any place the song looks in, or a name of the audio table) gets « (2)». The track name in a file name is cut to 200 bytes. Files of a recording that left nothing (stopped in count-in) are deleted.
 - **Half-recorded note** `work/rec.json` (version 1): file, track, rate, bits, start, loop, marks (file frames). Rewritten when the file is made, when recording starts, and each lap. At the next start, the voice is put as audio clips into the recovered song (else the saved song, else a new song) with `RecoveryView::Recovered.vocals`; a missing track gets a new vocal track. More rules: 22-18 A1.
 - **PC-reported latency** (`LatencyView.reportedMs`): output `playback − callback` + input `callback − capture` + one input block. Superseded by 22-26 (2): the extra block is added only for a sink monitor. The monitor latency («いまは 13 ms») adds one block waiting in the ring (computed, not measured).
 - `settings.json`: `input`, `buffer`, `sample_rate`, `record_bits`, `manual_latency_us`, `measured_latency` (output id, input id, rate, `x_us`, time) — renamed `measured_latency_2` in 22-26. Changing buffer or rate reopens output and input. A rate is asked for only if the device supports it (`supported_output_configs`); otherwise the device rate is used.
@@ -1739,7 +1740,8 @@ The shared start for four parallel jobs (A1 engine playback, A2 core audio files
 - Import: intent (`importAudio` → PC window, or `dropAudio`) → `Effect::BringAudio` → keeper copies and inspects → `AudioNews::Brought` → **one step here** (`import_audio`) → the table changed → `Effect::WatchAudio` → keeper answers present / missing / decoding and decodes what is needed (`Progress` at most every 250 ms). Clips are placed before decoding. Imports arriving during recording wait until it ends.
 - The keeper re-watches when the song changes, the table `Arc` changes, or the stream rate changes (so a new device rate rebuilds caches automatically).
 - "In one row": files that would overlap existing clips go to one new vocal track (shared). Order by byte order of file names (temporary). An import that would go over 64 tracks does nothing (no text).
-- "さがす…" accepts a file with the same rate and channel count, even with another SHA-256 (maybe the same song saved again by another app); otherwise `audioUnreadable` (temporary, B-94-30). The found file goes to the work place and moves to `音/` on the next save.
+- "さがす…" accepts a file with the same rate and channel count, even with another SHA-256 (maybe the same song saved again by another app); otherwise `audioUnreadable` (temporary, B-94-30). The found file goes to the work place and moves to `音/` on the next save. When its SHA-256 is not the table's, the decoded copies and the peaks of the uid are deleted, to be made again from it.
+- A file that reads and cannot be copied into the work place (bringing in, "さがす…") is `audioNotCopied` (protocol 38).
 - `Model::params_view` decides the clip panel: exactly one audio clip selected, and no insert or instrument selected after it.
 - Fades shrink to the clip length when a clip gets shorter (resize, split); the fade-out gives way first.
 

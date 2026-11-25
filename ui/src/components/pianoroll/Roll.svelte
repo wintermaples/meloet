@@ -1015,7 +1015,7 @@
   const songLoop = $derived(song.loopOn ? AG.loopBars(song.loopRange, map) : null);
   /** The look while dragging. Removed when Rust's answer (the next diff) comes. */
   let loopPreview = $state<AG.BarRange | null>(null);
-  const shownLoop = $derived(loopPreview ?? songLoop);
+  const shownLoop = $derived(loopPreview ? AG.barLoop(loopPreview, map) : songLoop);
   let rulerDrag: { d: AG.RulerDrag; downX: number; left: number } | null = null;
   $effect(() => {
     void current.rev;
@@ -1023,7 +1023,7 @@
       if (!rulerDrag) loopPreview = null;
     });
   });
-  const loopX = (bar: number) => AG.tickToX(rulerView, AG.lineTick(map, bar));
+  const loopX = (tick: number) => AG.tickToX(rulerView, tick);
 
   function rulerDown(e: PointerEvent): void {
     if (e.button !== 0) return;
@@ -1154,7 +1154,7 @@
       data-test="pr-ruler"
     >
       {#if shownLoop}
-        <div class="loop-mark" style:left="{loopX(shownLoop.from)}px" style:width="{loopX(shownLoop.to) - loopX(shownLoop.from)}px"></div>
+        <div class="loop-mark" style:left="{loopX(shownLoop.start)}px" style:width="{loopX(shownLoop.end) - loopX(shownLoop.start)}px"></div>
       {/if}
       {#each shownLabels as l (l.tick)}
         <span class="m-num mark" class:bar={l.bar} style:left="{l.x}px" bind:offsetWidth={labelW[l.tick]}>{l.text}</span>

@@ -4,7 +4,7 @@ title: While playing, a page turn of the arrange moves a held clip, marker or po
 area: UI-ARRANGE
 kind: ui-ux
 severity: medium
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -48,4 +48,5 @@ Fix plan: in `ui/src/components/Arrange.svelte` do not page in `frame()` while s
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`ui/src/components/Arrange.svelte`: a `held` flag, set by a capture-phase `pointerdown` on the arrange's section (covers the clip drag, box select, ruler, `MarkerRow`, `TempoBand`, `AutoLane`, `CompBand`) and cleared by `pointerup` / `pointercancel` on the window (capture phase) and the window's `blur`; `frame()` does not page while it is set, and pages at the first frame after release. No hook in `timeline/` or `automation/`. The piano roll half (`pianoroll/Roll.svelte`) is left to the piano roll fixer.
+Test: `ui/tests/arrange.test.ts` "while a pointer is held in the arrange (a drag), no page turn; it pages at the first frame after release".

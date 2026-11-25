@@ -4,7 +4,7 @@ title: Dragging a clip onto a track of the other kind looks allowed; Rust refuse
 area: UI-ARRANGE
 kind: parity
 severity: medium
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -47,4 +47,5 @@ The paste half (「貼りつけ」 on an empty place of a track of the other kin
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+Drag half only. `ui/src/components/arrangeDrag.ts` `groupPlaceable`: false when a clip would land on a track of the other kind (`(clip.audio !== null) !== (track.kind.kind === "vocal")`), so `ok` is false, the cursor is `not-allowed` and nothing is sent. The paste half stays in `docs/bugs/later/VERIFY-UI.md`.
+Test: `ui/tests/arrange.group.test.ts` "a keyboard clip on a vocal track, or an audio clip on a keyboard track, is 「できない」 …".

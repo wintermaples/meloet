@@ -174,10 +174,11 @@ export function dropTarget(v: View, d: LaneDims, tracks: readonly TrackView[], x
 
 /**
  * The box of the gray.7 frame where it goes. The length is not known yet, so it is `ticks` wide (one bar, for example). `rows` is the number of tracks.
- * A new track (`target.row === rows`) is just below the last row, at the normal row height.
+ * A new track (`target.row === rows`) is just below the last track block (`tracksBottom`: its row, band and lanes; `ArrangeRows.tracksHeight`),
+ * at the normal row height. Without `tracksBottom`, just below the last row.
  */
-export function dropFrameBox(v: View, d: LaneDims, target: DropTarget, rows: number, ticks: number): Box {
+export function dropFrameBox(v: View, d: LaneDims, target: DropTarget, rows: number, ticks: number, tracksBottom?: number): Box {
   if (target.row < rows) return clipBox(v, d, target.row, target.tick, target.tick + ticks);
-  const top = rows === 0 ? 0 : rowTop(d, rows - 1) + rowHeight(d, rows - 1);
+  const top = tracksBottom ?? (rows === 0 ? 0 : rowTop(d, rows - 1) + rowHeight(d, rows - 1));
   return { x0: tickToX(v, target.tick), x1: tickToX(v, target.tick + ticks), y0: top + d.inset, y1: top + d.trackH - d.hair - d.inset };
 }

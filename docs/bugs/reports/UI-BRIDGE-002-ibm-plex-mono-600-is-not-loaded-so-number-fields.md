@@ -4,7 +4,7 @@ title: IBM Plex Mono 600 is not loaded, so number fields at weight 600 get a mad
 area: UI-BRIDGE
 kind: ui-ux
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -50,4 +50,4 @@ Fix plan: add `import "@fontsource/ibm-plex-mono/600.css";` to `ui/src/design/fo
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`ui/src/design/fonts.ts`: `import "@fontsource/ibm-plex-mono/600.css";` (the files as they are, OFL-1.1). `node licenses/check.mjs` passes; the about dialog lists the package, not weights. Not looked at in a picture (no test: a font load).

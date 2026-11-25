@@ -147,6 +147,9 @@ describe("audio clip geometry (mock R11-Audio, F7-AudioEdit)", () => {
     // Frame: for an audio track, that row; for a new track, just below the lowest row.
     expect(dropFrameBox(V, D, { track: vocal.id, row: 5, tick: 4 * BAR }, 6, BAR)).toEqual(clipBox(V, D, 5, 4 * BAR, 5 * BAR));
     expect(dropFrameBox(V, D, { track: null, row: 6, tick: 4 * BAR }, 6, 2 * BAR)).toEqual({ x0: 256, x1: 384, y0: 6 * 64 + 3, y1: 7 * 64 - 4 });
+    // The last track has lanes and its 「＋ 帯を足す ▾」 row under it (the track blocks end at 6 * 64 + 2 * 24 + 24): the frame goes below them.
+    const bottom = 6 * 64 + 3 * 24;
+    expect(dropFrameBox(V, D, { track: null, row: 6, tick: 4 * BAR }, 6, 2 * BAR, bottom)).toEqual({ x0: 256, x1: 384, y0: bottom + 3, y1: bottom + 64 - 4 });
     // Left and right of the middle box (30-C): the left half of the window is 「別々のトラックに」.
     expect([dropModeAt(520, 1280), dropModeAt(639, 1280), dropModeAt(640, 1280), dropModeAt(760, 1280)]).toEqual(["separate", "separate", "inRow", "inRow"]);
   });

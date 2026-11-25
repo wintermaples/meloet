@@ -11,7 +11,14 @@
   import { dropFrameBox, dropTarget, type DropTarget } from "./audioClipGeom";
   import { dropModeFor, fileDrag, setDropResolver } from "./fileDrag.svelte";
 
-  let { view, dims, tracks, map, perBar }: { view: View; dims: LaneDims; tracks: readonly TrackView[]; map: TempoMap; perBar: number } = $props();
+  let {
+    view,
+    dims,
+    tracks,
+    map,
+    perBar,
+    tracksBottom,
+  }: { view: View; dims: LaneDims; tracks: readonly TrackView[]; map: TempoMap; perBar: number; tracksBottom: number } = $props();
 
   let root = $state<HTMLElement>();
   const drop = $derived(current.state!.workspace.fileDrop);
@@ -37,7 +44,7 @@
     const seen = (root.closest("[data-gl-clip]") ?? root).getBoundingClientRect();
     if (at.x < seen.left || at.x >= seen.right || at.y < seen.top || at.y >= seen.bottom) return null;
     const target = targetAt(at.x, at.y, dropModeFor(drop.audio, at.x, window.innerWidth));
-    const box = dropFrameBox(view, dims, target, tracks.length, 2 * perBar);
+    const box = dropFrameBox(view, dims, target, tracks.length, 2 * perBar, tracksBottom);
     const name = drop.audio > 1 ? t("drop.frameMore", { file: drop.name, more: drop.audio - 1 }) : drop.name;
     return { box, name };
   });

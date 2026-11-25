@@ -292,24 +292,43 @@ export interface BarRange {
   to: number;
 }
 
-/** The loop range (ticks) as bar line numbers. */
-export function loopBars(range: TickSpan | null, perBar: BarGrid): BarRange | null {
-  if (!range) return null;
-  return {
-    from: lineNear(perBar, range.start),
-    to: lineNear(perBar, range.end),
-  };
+/** A loop range: bar line numbers (the 5 and 9 of 「5–9」) and the ticks where it is drawn (`start`, `end`). */
+export interface LoopRange extends BarRange {
+  start: number;
+  end: number;
 }
+
+/**
+ * The loop range (ticks) as it is: drawn at its ticks, numbered as core numbers it in the status line (`Play::bars`):
+ * the bar that holds the start, and the bar line at the end or after it.
+ */
+export function loopBars(range: TickSpan | null, perBar: BarGrid): LoopRange | null {
+  if (!range) return null;
+  const start = Math.max(0, range.start);
+  const end = Math.max(0, range.end);
+  if (perBar instanceof TempoMap) {
+    const s = perBar.meterAt(start);
+    const e = perBar.meterAt(end);
+    return { from: s.bar + 1, to: (e.barTick === end ? e.bar : e.bar + 1) + 1, start: range.start, end: range.end };
+  }
+  return { from: Math.floor(start / perBar) + 1, to: Math.ceil(end / perBar) + 1, start: range.start, end: range.end };
+}
+
+/** A range of bar lines (a ruler drag), drawn at those bar lines. */
+export const barLoop = (r: BarRange, perBar: BarGrid): LoopRange => ({ ...r, start: lineTick(perBar, r.from), end: lineTick(perBar, r.to) });
 
 /** A ruler drag. range: a new range from the pressed line. edge: move one end of an existing range (fixed is the end that stays). */
 export type RulerDrag = { kind: "range"; anchor: number } | { kind: "edge"; fixed: number };
 
-/** If the press is within `grab` px of a range end, grab that end. */
-export function startRulerDrag(v: View, x: number, perBar: BarGrid, loop: BarRange | null, grab: number): RulerDrag {
+/**
+ * If the press is within `grab` px of a range end (at its ticks when known), grab that end.
+ * The end that stays is sent as its bar line number (`SetLoop` takes bar lines): the outward one of `loopBars`.
+ */
+export function startRulerDrag(v: View, x: number, perBar: BarGrid, loop: (BarRange & Partial<LoopRange>) | null, grab: number): RulerDrag {
   if (loop) {
-    const lineX = (bar: number) => tickToX(v, lineTick(perBar, bar));
-    const dFrom = Math.abs(x - lineX(loop.from));
-    const dTo = Math.abs(x - lineX(loop.to));
+    const lineX = (bar: number, tick: number | undefined) => tickToX(v, tick ?? lineTick(perBar, bar));
+    const dFrom = Math.abs(x - lineX(loop.from, loop.start));
+    const dTo = Math.abs(x - lineX(loop.to, loop.end));
     if (Math.min(dFrom, dTo) <= grab) return { kind: "edge", fixed: dFrom <= dTo ? loop.to : loop.from };
   }
   return { kind: "range", anchor: barLineAt(v, x, perBar) };

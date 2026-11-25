@@ -4,7 +4,7 @@ title: The take switch tag's prev and next buttons have no style since the track
 area: UI-ARRANGE
 kind: bug
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -45,4 +45,4 @@ Fix plan: in `ui/src/components/Arrange.svelte` give the two buttons the classes
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`ui/src/components/Arrange.svelte`: the `.tog.step` rules are back in the style block (size `part.toggle-size`, border gray.6, bg gray.1, text gray.8; hover border gray.8 / text gray.10; pressed bg gray.2 / border gray.8), plus the disabled look for UI-ARRANGE-009 (border gray.5, text gray.7). No new values. Not compared with mock F-Takes in a picture (pure CSS, no test).

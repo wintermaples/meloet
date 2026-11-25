@@ -4,7 +4,7 @@ title: Peaks of the other takes of a comped clip are treated as unused and can b
 area: UI-BRIDGE
 kind: bug
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -49,4 +49,5 @@ Fix plan (as suggested): in `ui/src/bridge/peaks.ts` `songAudioIds` also collect
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`ui/src/bridge/peaks.ts` `songAudioIds` also collects the `audio` of every entry of `c.audio.takes` (parameter type widened, doc comment updated); `ui/src/bridge/index.ts` unchanged (it already passes the song).
+Test: `ui/tests/bridge.peaks.test.ts` "audio the song uses: every take of a comped clip, not only the shown one".

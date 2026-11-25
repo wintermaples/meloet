@@ -4,6 +4,7 @@ import type { TrackView } from "../src/bridge";
 import * as G from "../src/components/arrangeGeom";
 import type { GlRect } from "../src/gl/slot";
 import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
+import { TempoMap } from "../src/time/tempoMap";
 
 const BAR = 4 * TPQ;
 /** 1 bar is 64 px (100 %, mock.arrange.bar). */
@@ -269,8 +270,20 @@ describe("ruler drag → command (the owner's decision: the loop is a ruler drag
     expect(G.loopBars({ start: 4 * BAR, end: 8 * BAR }, BAR)).toEqual({
       from: 5,
       to: 9,
+      start: 4 * BAR,
+      end: 8 * BAR,
     });
     expect(G.loopBars(null, BAR)).toBeNull();
+  });
+
+  it("a loop range off the bar lines (markers 5.3 and 7.2 in 4/4): drawn at its ticks, numbered as the status line (5–8)", () => {
+    const range = { start: 4 * BAR + 2 * TPQ, end: 6 * BAR + TPQ };
+    const map = new TempoMap({ tempoBpm: 120, meterNum: 4, meterDen: 4, headRamp: false, tempoPoints: [], meterChanges: [] });
+    for (const grid of [BAR, map]) expect(G.loopBars(range, grid)).toEqual({ from: 5, to: 8, ...range });
+    // Grabbing the drawn right end keeps the left end at the bar line that holds it (5), as SetLoop takes bar lines.
+    const loop = G.loopBars(range, BAR)!;
+    expect(G.startRulerDrag(v, G.tickToX(v, range.end) + 2, BAR, loop, 8)).toEqual({ kind: "edge", fixed: 5 });
+    expect(G.startRulerDrag(v, G.tickToX(v, range.start) - 2, BAR, loop, 8)).toEqual({ kind: "edge", fixed: 8 });
   });
 });
 

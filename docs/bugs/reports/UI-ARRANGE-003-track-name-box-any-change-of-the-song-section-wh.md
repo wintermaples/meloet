@@ -4,7 +4,7 @@ title: Track name box: any change of the song section while typing puts the old 
 area: UI-ARRANGE
 kind: bug
 severity: medium
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -48,4 +48,5 @@ Fix plan (as suggested): in `ui/src/components/TrackHeads.svelte` remember the i
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`ui/src/components/TrackHeads.svelte`: the effect remembers the track id the draft was filled for (`draftFor`) and fills `draft` and focuses only when `trackEdit.renaming` turns to a new id; "track gone → close" still runs on every change; the id is forgotten when the box closes.
+Test: `ui/tests/tracks-shelf.test.ts` "name input box: a new song part while typing (a save, an AI edit) keeps the typed text".

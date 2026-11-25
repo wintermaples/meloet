@@ -4,7 +4,7 @@ title: The drop frame for a new vocal track is drawn right under the last track'
 area: UI-ARRANGE
 kind: ui-ux
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -43,4 +43,5 @@ Fix plan (as suggested): give `dropFrameBox` the bottom of the track blocks (`ro
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`ui/src/components/arrange/audioClipGeom.ts` `dropFrameBox` takes the bottom of the track blocks (`tracksBottom`) and puts a new track's frame there; `ui/src/components/arrange/DropFrame.svelte` passes it on; `ui/src/components/Arrange.svelte` gives `rows.tracksHeight`.
+Test: `ui/tests/arrange.audioGeom.test.ts` (the `dropFrameBox` case: with the last track's lanes and 「＋ 帯を足す ▾」 row, the frame is below them).

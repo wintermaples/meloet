@@ -10,7 +10,7 @@ use super::*;
 use crate::ai::AiAsk;
 use crate::catalog::tests::{COMP_LV2, COMP_VST3, DRUMS_LV2, SURGE_LV2, SURGE_VST3};
 use crate::play::seats::tests::FakeEngine;
-use crate::play::windows::tests::{FRESH, FakeHost, Rig, state_of};
+use crate::play::windows::tests::{FRESH, FakeHost, LEVEL, Rig, state_of};
 use crate::sf2store::Sf2Key;
 use crate::state::added_tests::{loads, plugin, rigged, sf2};
 use crate::state::{Input, Model, PluginSaid};
@@ -448,7 +448,7 @@ fn random_plugins_and_presets_with_undo_and_redo_keep_the_engine_with_the_book()
     let (mut plugged, mut plugin_tracks, mut plugin_inserts, mut steps) = (0, 0, 0, 0);
     let (mut passed, mut moved, mut replaced, mut typed, mut other) = (0, 0, 0, 0, 0);
     let (mut entered, mut visits, mut dragged, mut windows) = (0, 0, 0, 0);
-    let mut duplicated = 0;
+    let (mut duplicated, mut tried_turned) = (0, 0);
     let texts = ["4", "−3 dB", "999", "x", "0.5 s", "1"];
     for seed in 1..=10u64 {
         let rng = &mut Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15));
@@ -501,6 +501,19 @@ fn random_plugins_and_presets_with_undo_and_redo_keep_the_engine_with_the_book()
                     if rng.below(3) > 0 && !mini.asked.is_empty() {
                         let last = mini.asked.len() - 1;
                         answer(m, mini, last, rng.below(8) == 0, &ctx);
+                    }
+                    // Now and then something is turned in the window of the row tried.
+                    let p = m.play();
+                    let tried = (p.trial_spot().and_then(|spot| p.plugs.at(spot)))
+                        .filter(|plug| plug.sounds())
+                        .map(|plug| plug.ticket);
+                    if let Some(ticket) = tried
+                        && rng.below(2) == 0
+                    {
+                        let value = rng.below(11) as f64 / 10.0;
+                        let turned = mini.host.turn(ticket, rng.below(3) as u32, value);
+                        go(m, mini, turned, &ctx);
+                        tried_turned += 1;
                     }
                     if rng.below(4) > 0 {
                         commands.push(Command::ShelfConfirm);
@@ -822,6 +835,7 @@ fn random_plugins_and_presets_with_undo_and_redo_keep_the_engine_with_the_book()
         "{entered} visits, {visits} were steps, {dragged} drags were, {windows} windows seen"
     );
     assert!(duplicated > 30, "{duplicated} tracks duplicated");
+    assert!(tried_turned > 30, "{tried_turned} rows turned while tried");
     let _ = (StripId::Master, TrackId(0));
 }
 
@@ -1019,4 +1033,124 @@ fn a_copy_gets_a_state_only_where_the_plugin_that_said_it_is() {
             plugin.key
         );
     }
+}
+
+fn track_ids(r: &Rig) -> Vec<u32> {
+    r.m.view().song.tracks.iter().map(|t| t.id).collect()
+}
+
+/// The track `before` did not have.
+fn new_track(r: &Rig, before: &[u32]) -> u32 {
+    let ids = track_ids(r);
+    *ids.iter()
+        .find(|t| !before.contains(t))
+        .expect("a new track")
+}
+
+fn state_in_song(r: &Rig, track: u32) -> Option<Arc<[u8]>> {
+    let place = PluginPlace::Instrument(TrackId(track));
+    (r.m.play().song().doc.plugin(place)).map(|p| p.state.clone())
+}
+
+/// Surge XT is tried on the shelf, and its level is turned in its window. Returns its ticket.
+fn tried_and_turned(r: &mut Rig, mode: ShelfMode) -> u64 {
+    r.cmd(Command::OpenShelf { mode });
+    let sound = Some(plugin(SURGE_VST3));
+    let effects = r.cmd(Command::ShelfSelectSound { sound });
+    let surge = r.loaded(&effects);
+    r.settle();
+    let turned = r.host.turn(surge, LEVEL, 0.9);
+    r.go(turned);
+    surge
+}
+
+#[test]
+fn the_step_of_confirm_holds_what_was_changed_in_the_tried_plugin() {
+    let turned = state_of([0.9, 0.0, 0.0]);
+
+    // A new track.
+    let mut r = Rig::new();
+    let before = track_ids(&r);
+    let surge = tried_and_turned(&mut r, ShelfMode::NewTrack);
+    let steps = r.undo_count();
+    r.cmd(Command::ShelfConfirm);
+    r.settle();
+    assert_eq!(r.undo_count(), steps + 1, "one step");
+    let new = new_track(&r, &before);
+    assert_eq!(state_in_song(&r, new), Some(turned.clone()));
+    assert_eq!(r.host.plugins[&surge], [0.9, 0.0, 0.0]);
+    assert_eq!(r.host.states_put, 0, "the plugin has it already");
+    // Undo takes the track away; redo brings it back with that state.
+    r.cmd(Command::Undo);
+    assert_eq!(state_in_song(&r, new), None);
+    let effects = r.cmd(Command::Redo);
+    assert_eq!(state_in_song(&r, new), Some(turned.clone()));
+    let again = loads(&effects);
+    assert_eq!(again.len(), 1, "{effects:?}");
+    assert_eq!(again[0].2, PlugState::Bytes(turned.clone()));
+
+    // In place of a track's sound.
+    let mut r = Rig::new();
+    let track = r.m.view().song.tracks[0].id;
+    tried_and_turned(&mut r, ShelfMode::Replace { track });
+    let steps = r.undo_count();
+    r.cmd(Command::ShelfConfirm);
+    r.settle();
+    assert_eq!(r.undo_count(), steps + 1, "one step");
+    assert_eq!(state_in_song(&r, track), Some(turned.clone()));
+    r.cmd(Command::Undo);
+    let effects = r.cmd(Command::Redo);
+    assert_eq!(loads(&effects)[0].2, PlugState::Bytes(turned));
+
+    // Tried with nothing changed: the song has it "as it starts", as before.
+    let mut r = Rig::new();
+    let (_, track, _) = r.surge();
+    r.settle();
+    assert_eq!(state_in_song(&r, track), Some(Arc::from(&[][..])));
+}
+
+#[test]
+fn with_no_answer_or_a_step_before_it_the_step_of_confirm_stays_as_it_was() {
+    // The plugin's process stops as it is asked.
+    let mut r = Rig::new();
+    let before = track_ids(&r);
+    let surge = tried_and_turned(&mut r, ShelfMode::NewTrack);
+    r.host.dead.insert(surge);
+    let steps = r.undo_count();
+    r.cmd(Command::ShelfConfirm);
+    r.settle();
+    assert_eq!(r.undo_count(), steps + 1);
+    let new = new_track(&r, &before);
+    assert_eq!(state_in_song(&r, new), Some(Arc::from(&[][..])));
+
+    // Another step comes first: the state is a step of its own after it, as at the end of a
+    // visit to the window.
+    let mut r = Rig::new();
+    let before = track_ids(&r);
+    let surge = tried_and_turned(&mut r, ShelfMode::NewTrack);
+    let steps = r.undo_count();
+    r.cmd(Command::ShelfConfirm);
+    let new = new_track(&r, &before);
+    let name = "B".to_owned();
+    r.cmd(Command::RenameTrack { track: new, name });
+    r.settle();
+    assert_eq!(r.undo_count(), steps + 3);
+    let place = PluginPlace::Instrument(TrackId(new));
+    let window = StepKind::PluginWindow { place };
+    assert_eq!(r.m.play().steps().last(), Some(&window));
+    assert_eq!(state_in_song(&r, new), Some(state_of([0.9, 0.0, 0.0])));
+    r.cmd(Command::Undo);
+    assert_eq!(state_in_song(&r, new), Some(Arc::from(&[][..])));
+    assert_eq!(r.host.plugins[&surge], FRESH, "as it started");
+
+    // The step is taken back and made again first: the track comes back as it was made.
+    let mut r = Rig::new();
+    let before = track_ids(&r);
+    tried_and_turned(&mut r, ShelfMode::NewTrack);
+    r.cmd(Command::ShelfConfirm);
+    let new = new_track(&r, &before);
+    r.cmd(Command::Undo);
+    r.cmd(Command::Redo);
+    r.settle();
+    assert_eq!(state_in_song(&r, new), Some(Arc::from(&[][..])));
 }

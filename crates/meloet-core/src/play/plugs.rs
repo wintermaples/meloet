@@ -338,6 +338,71 @@ impl Play {
         set_plugin_state(self.doc(), place, &plug.plugin.key, state, change).ok()
     }
 
+    /// The shelf's 「決める」 just made the auditioned plugin the instrument of `track`, as it
+    /// sounds: it is asked for its state, which that step is to hold.
+    pub(super) fn ask_confirm_state(&mut self, track: TrackId, effects: &mut Vec<Effect>) {
+        let place = PluginPlace::Instrument(track);
+        let Some(plug) = self.spot_of(place).and_then(|spot| self.plugs.at(spot)) else {
+            return;
+        };
+        let same = (self.doc().plugin(place)).is_some_and(|p| p.key == plug.plugin.key);
+        if !plug.sounds() || !same {
+            return;
+        }
+        let at = self.ai_place();
+        effects.push(Effect::AskPlugin {
+            ticket: plug.ticket,
+            ask: PluginAsk::State(StateAsk::Confirm {
+                at,
+                puts: plug.puts,
+            }),
+        });
+    }
+
+    /// The plugin said its state for the step of 「決める」: the step holds it, when it is
+    /// still the last step done. When another step came first, the state is a step of its own,
+    /// as at the end of a visit to the plugin's window. Nothing changes when it is the state
+    /// the plugin started with, or when another state was put into the plugin since.
+    pub(in crate::play) fn confirm_state_said(
+        &mut self,
+        ticket: u64,
+        (at, puts): ((u32, u64), u32),
+        state: Arc<[u8]>,
+        effects: &mut Vec<Effect>,
+    ) {
+        let Some(spot) = (self.plugs.of(ticket))
+            .filter(|p| p.sounds() && p.puts == puts && at.0 == self.serial)
+            .map(|p| p.spot)
+        else {
+            return;
+        };
+        if self.ai_place() != at || self.history.redo_count() > 0 {
+            self.plugin_changed(ticket, state, PluginChange::Window, effects);
+            return;
+        }
+        let (Some(place), Some(edit)) = (
+            self.place_of(spot),
+            self.plugin_state_edit(ticket, state, PluginChange::Window),
+        ) else {
+            return;
+        };
+        let Some(now) = edit.doc.plugin(place).cloned() else {
+            return;
+        };
+        // The plugin and its seat have the state already: nothing is put into the plugin, and
+        // a trial on the seat is not taken for stale.
+        if let Some(plug) = self.plugs.of_mut(ticket) {
+            plug.plugin = now.clone();
+        }
+        if let (Spot::Seat(seat), PluginPlace::Instrument(_)) = (spot, place) {
+            self.seats.set_instrument(seat, InstrumentRef::Plugin(now));
+        }
+        let before = self.doc().clone();
+        if self.history.amend(&mut self.song.doc, edit.doc) {
+            self.after_change(&before, effects);
+        }
+    }
+
     pub(super) fn has_plugin(&self, key: &str) -> bool {
         self.plugs.known.contains_key(key)
     }
@@ -577,6 +642,10 @@ impl Play {
         }
         // Loaded again, it may list its parameters another way.
         self.table_stale(ticket);
+        // What a row of the shelf starts with: 「決める」 gives the song another state only.
+        if Self::is_trial_spot(spot) {
+            self.want_base(ticket, effects);
+        }
         // Loaded again at a sample rate the stream no longer runs at.
         let rate = self.plugs.rate;
         if let Some(at) =

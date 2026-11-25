@@ -214,9 +214,7 @@ fn run_job(context: &Context, job: ScanJob) {
             let spawned = std::thread::Builder::new()
                 .name(format!("meloet-scan-{n}"))
                 .spawn_scoped(scope, move || {
-                    loop {
-                        let next = queue.lock().unwrap_or_else(|e| e.into_inner()).pop_front();
-                        let Some(todo) = next else { break };
+                    while let Some(todo) = next_todo(context, queue) {
                         if let Some(record) = scan_bundle(context, todo) {
                             (context.news)(ScanNews::Bundle {
                                 job: id,
@@ -239,6 +237,15 @@ fn run_job(context: &Context, job: ScanJob) {
             );
         }
     }
+}
+
+/// The bundle a thread scans next; none once meloet is ending, when its child would only be
+/// started to be killed.
+fn next_todo(context: &Context, queue: &Mutex<VecDeque<Todo>>) -> Option<Todo> {
+    if context.stop.load(Relaxed) {
+        return None;
+    }
+    queue.lock().unwrap_or_else(|e| e.into_inner()).pop_front()
 }
 
 /// Every bundle in the places, each once, in the order of their paths.
@@ -573,6 +580,32 @@ mod tests {
             "waited for the child"
         );
         assert_eq!(ScanCache::load(&cache_dir).plugins().count(), 2);
+    }
+
+    #[test]
+    fn no_bundle_is_taken_once_meloet_is_ending() {
+        let root = temp_dir("none-taken-once-ending");
+        let todo = |n: u32| {
+            let path = bundle(&root, &format!("b{n}.lv2"));
+            let stamp = BundleStamp::read(&path).unwrap();
+            Todo::fresh(path, PluginFormat::Lv2, stamp, None)
+        };
+        let queue = Mutex::new((0..3).map(todo).collect::<VecDeque<_>>());
+        let context = Context {
+            exe: root.join("no-host"),
+            env: Vec::new(),
+            timeout: Duration::from_secs(1),
+            stop: Arc::new(AtomicBool::new(false)),
+            news: Arc::new(|_| {}),
+        };
+        assert!(next_todo(&context, &queue).is_some());
+        context.stop.store(true, Relaxed);
+        assert!(next_todo(&context, &queue).is_none());
+        assert_eq!(
+            queue.lock().unwrap().len(),
+            2,
+            "the bundles left are not taken"
+        );
     }
 
     #[test]

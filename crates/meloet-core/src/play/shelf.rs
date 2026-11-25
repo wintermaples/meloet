@@ -299,6 +299,7 @@ impl Play {
                 self.song.session.play_target = Some(id);
                 self.move_plug(Spot::Seat(AUDITION_SEAT), Spot::Seat(seat), effects);
                 self.apply(e, effects);
+                self.ask_confirm_state(id, effects);
                 // The instrument that was auditioned becomes the track's, as it sounds. After
                 // the step, which gives the still empty seat its fader and sends at once: the
                 // sound then does not change as the instrument moves.
@@ -326,6 +327,7 @@ impl Play {
                 }
                 let lanes = self.lane_count();
                 self.apply(e, effects);
+                self.ask_confirm_state(track, effects);
                 let lanes_removed = lanes.saturating_sub(self.lane_count());
                 let track = self.track_ref(track)?;
                 Some(match builtin(&instrument) {

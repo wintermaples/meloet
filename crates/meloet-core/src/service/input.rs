@@ -10,8 +10,8 @@ use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::{Duration, Instant};
 
 use meloet_engine::{
-    AudioInput, EngineCommand, InputFeed, InputMeters, InputTarget, ProbeHeard, Recorded,
-    RunningInput, probe_wave,
+    AudioInput, EngineCommand, EngineHandle, InputFeed, InputMeters, InputTarget, ProbeHeard,
+    Recorded, RunningInput, probe_wave,
 };
 use meloet_model::{
     Doc, NewAudio, TempoMap, TrackId, VocalInput, VocalRecording, add_vocal_recordings, edit,
@@ -390,27 +390,36 @@ impl Worker {
     }
 
     /// Where the engine says the song rolls or a lap begins: the frame of the files that was
-    /// sung when that frame of the engine was heard (docs/architecture.md 22-6). At the roll
-    /// the disk writer is told where the files begin, too. `None`: no files are written, or
-    /// it is not a mark.
+    /// sung when the song of that frame of the engine was heard, which the master's inserts
+    /// delayed (docs/architecture.md 20-8, 22-6). At the roll the disk writer is told where
+    /// the files begin, too. `None`: no files are written, or it is not a mark.
     pub(super) fn vocal_mark(&mut self, recorded: &Recorded) -> Option<f64> {
+        let job = self.input.job.as_mut()?;
+        Self::mark(job, &self.input.writer, &self.audio.handle, recorded)
+    }
+
+    /// [`Worker::vocal_mark`] for the recording `job`, which `writer` writes.
+    fn mark(
+        job: &mut Job,
+        writer: &DiskWriter,
+        handle: &EngineHandle,
+        recorded: &Recorded,
+    ) -> Option<f64> {
         let (frame, rolling) = match *recorded {
             Recorded::Rolling { frame, tick } => (frame, Some(tick)),
             Recorded::LapChanged { frame, .. } => (frame, None),
             _ => return None,
         };
-        let job = self.input.job.as_mut()?;
-        let handle = &self.audio.handle;
-        let heard_us = handle.clock().time_of_frame(frame as f64);
+        let heard_us = handle.clock().heard_time_of_frame(frame as f64);
         if let Some(tick) = rolling.filter(|_| !job.from_said) {
             job.from_said = true;
             // Half a beat before the song rolls, as the keys keep.
             let (map, _) = handle.tempo_map();
             let half_beat_us = 30e6 / map.tempo_at(tick).max(1.0);
             let from_us = heard_us.map_or(f64::NEG_INFINITY, |t| t - half_beat_us + job.x_us);
-            self.input.writer.from(from_us);
+            writer.from(from_us);
         }
-        self.input.writer.mark(heard_us? + job.x_us)
+        writer.mark(heard_us? + job.x_us)
     }
 
     /// Looks at the input: the head of a recording, a disk that cannot go on, a stream that
@@ -689,3 +698,6 @@ pub(super) fn keep_vocals(
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

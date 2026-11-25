@@ -1466,6 +1466,9 @@ pub struct Engine {
     returns: [Strip; 2],
     /// Its fader and pan come before its slots (docs/architecture.md 19-11).
     master_strip: Strip,
+    /// How many frames the master's inserts delay everything by in this block: the song
+    /// reaches the ear that much after the DAC, and the metronome waits as long.
+    ear: u32,
     master_auto: MasterAuto,
     midi: Consumer<MidiIn>,
     /// The keys of the PC keyboard ([`EngineHandle::typed_in`]), read with `midi` in time order.
@@ -1572,6 +1575,7 @@ impl Engine {
             auto_ticks: vec![0.0; config.max_frames.div_ceil(MIX_STEP) + 1].into_boxed_slice(),
             returns: [Strip::new(), Strip::new()],
             master_strip: Strip::new(),
+            ear: 0,
             master_auto: MasterAuto::new(config.max_frames),
             midi: midi_rx,
             typed: typed_rx,
@@ -1808,6 +1812,12 @@ impl Engine {
         for track in self.tracks.iter_mut() {
             let instrument = track.instrument.as_ref().map_or(0, |i| i.latency());
             track.lookahead = instrument.saturating_add(track.strip.latency());
+        }
+        let ear = self.master_strip.latency();
+        if ear != self.ear {
+            self.click
+                .delay_waiting(i64::from(ear) - i64::from(self.ear));
+            self.ear = ear;
         }
         self.aim_streams();
         self.read_midi(timing, u64::MAX);
@@ -2186,8 +2196,14 @@ impl Engine {
                         && t.click_audible()
                     {
                         let (sound, gain) = (self.click_sound, self.click_gain);
-                        self.click
-                            .start(beat.downbeat, self.sample_rate, sound, gain);
+                        let delay = self.ear as usize;
+                        (self.click).start_after(
+                            delay,
+                            beat.downbeat,
+                            self.sample_rate,
+                            sound,
+                            gain,
+                        );
                     }
                     // Cannot fail: checked above, and this is the only producer.
                     let _ = self.retired_maps.push(old);
@@ -2266,7 +2282,12 @@ impl Engine {
                         }
                     }
                 }
-                EngineCommand::SetMetronome { on } => self.transport.metronome = on,
+                EngineCommand::SetMetronome { on } => {
+                    self.transport.metronome = on;
+                    if !self.transport.click_audible() {
+                        self.click.drop_waiting();
+                    }
+                }
                 EngineCommand::SetMonoListen { on } => {
                     self.mono.target = if on { 1.0 } else { 0.0 }
                 }
@@ -2278,6 +2299,9 @@ impl Engine {
                     self.click_sound = sound;
                     self.click_gain = gain;
                     self.transport.click_recording_only = recording_only;
+                    if !self.transport.click_audible() {
+                        self.click.drop_waiting();
+                    }
                 }
                 EngineCommand::Play { from } => {
                     self.end_recording(timing);
@@ -2748,6 +2772,8 @@ impl Engine {
             ticks_per_frame: t.speed_at(tick) / t.sample_rate,
             sec0: t.anchor_sec + t.frames as f64 / t.sample_rate,
             map_gen: t.map_gen,
+            ear: self.ear,
+            until_us: None,
             state: t.state,
             session: t.session,
             lap: t.lap,
@@ -2828,9 +2854,9 @@ impl Engine {
         let t = &mut self.transport;
         if t.click_frame <= t.frames {
             if t.click_audible() {
-                let (sound, gain) = (self.click_sound, self.click_gain);
-                self.click
-                    .start(t.next_click.downbeat, self.sample_rate, sound, gain);
+                let (sound, gain, delay) = (self.click_sound, self.click_gain, self.ear as usize);
+                let downbeat = t.next_click.downbeat;
+                (self.click).start_after(delay, downbeat, self.sample_rate, sound, gain);
             }
             t.advance_click();
         }

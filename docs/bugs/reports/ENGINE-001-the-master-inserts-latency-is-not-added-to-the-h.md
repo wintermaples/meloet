@@ -4,7 +4,7 @@ title: The master inserts' latency is not added to the heard position: play line
 area: ENGINE
 kind: bug
 severity: medium
-status: needs-lead
+status: fixed
 found: 2026-11-25
 ---
 
@@ -68,4 +68,16 @@ Severity `medium` stands: recorded positions are wrong by L, but only with a lat
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+Choice 1 (the lead's decision). No protocol, song-file or wire change.
+
+- `crates/meloet-engine/src/clock.rs`: `Segment` keeps `ear`, the master inserts' latency in frames of the block it starts in (in the spare half of the word that holds `map_gen`; the ring still has 11 words). `TransportClock::segment_at` takes the newest stretch whose song reaches the ear by then (`start_us + ear ≤ t`) and notes when the next one starts; `Segment::at` reads the line at `t − ear`, and stands at the end of the stretch (speed 0) while a later stretch with a larger delay is not heard yet. When the delay is longer than the ring reaches back, the oldest stretch kept is counted back from (else the keys would be lost). New `TransportClock::heard_time_of_frame` = `time_of_frame(frame + ear)`. `frame_at`, `kept_frame_at`, `time_of_frame` are unchanged.
+- `crates/meloet-engine/src/engine.rs`: `ear` = `master_strip.latency()` once a block (after the commands), written into each stretch; both places that start a metronome click give it that delay; a change of the delay moves the waiting clicks by the difference; turning the metronome (or `recording_only`) quiet drops them.
+- `crates/meloet-engine/src/transport.rs`: `Click::start_after` (delay 0 starts at once, as before), up to 16 waiting clicks in a fixed array, `delay_waiting`, `drop_waiting`. No memory taken on the audio thread.
+- `crates/meloet-core/src/service/input.rs`: the vocal mark asks the clock for `heard_time_of_frame` (its body moved into `Worker::mark` so a test can reach it; the half-beat lines are as they were).
+- `docs/architecture.md`: 12, 20-8, 21-3 (metronome), 22-26 (marks).
+
+With no latent plugin on the master (`ear` = 0) every number is as before: no existing test was changed, and all pass.
+
+Tests: in `crates/meloet-engine/tests/lookahead.rs`, with a fake master plugin `Lag` of 0, 100, 1000 and 30 000 frames: `the_position_heard_is_behind_the_dac_by_the_masters_delay` (also round a loop), `keys_played_with_the_beat_that_comes_out_land_on_it` (recorded keys with the count-in rule, the stop, kept keys), `the_metronome_clicks_with_the_song_behind_the_masters_delay` (playing and counting in, also a delay longer than a beat), `the_latency_measurement_does_not_hear_the_masters_delay`, `the_song_of_a_frame_is_heard_when_it_comes_out_of_the_master`, `a_change_of_the_masters_delay_never_moves_the_position_heard_back`; with 140 000 frames, longer than the ring, `keys_land_on_the_beat_also_behind_a_delay_longer_than_the_clock_keeps`; in core, `a_voice_is_marked_where_the_song_came_out_of_the_master` (`crates/meloet-core/src/service/input/tests.rs`, the real disk writer on the engine's clock). Five of the engine tests and the core test were seen failing on the old code; the long-delay test was seen failing without the oldest-stretch fallback.
+
+Checked by tests only. A measurement in the real app with a latent plugin on the master (`record-timing.sh`, the click against the song) is still to be done.

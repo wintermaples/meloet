@@ -478,7 +478,14 @@ impl Tools {
             .max()
             .unwrap_or(0);
         let span = match range {
-            RangeArg::Loop => doc.loop_range.or_else(|| TickRange::new(0, song_end)),
+            RangeArg::Loop => match doc.loop_range {
+                Some(range) => Some(range),
+                None => {
+                    return Ok(failed(
+                        "the song has no loop range; set one with set_loop, or give range \"song\"",
+                    ));
+                }
+            },
             RangeArg::Song | RangeArg::Tracks => TickRange::new(0, song_end),
         };
         let Some(span) = span else {

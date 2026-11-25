@@ -579,7 +579,7 @@ impl SetRow {
 
 #[tool_router(router = params_router, vis = "pub(super)")]
 impl Tools {
-    /// The effects an insert slot can take: meloet's own six with their parameters (on the
+    /// The effects an insert slot can take: meloet's own nine with their parameters (on the
     /// first page) and this PC's effect plugins by key, 50 a page (`limit`, `offset`; the
     /// answer has `total` and `next_offset`). Narrow it with `name`, `kind`, `format`, or
     /// `effect` for one; `brief` gives less of each.

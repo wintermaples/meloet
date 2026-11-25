@@ -4,7 +4,7 @@ title: write_notes, copy_notes and import_midi text says "see changed" for short
 area: AI
 kind: ui-ux
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -42,4 +42,4 @@ Fix plan: `crates/meloet-ai/src/tools/notes.rs`: "(see cut)". If a test pins the
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`crates/meloet-ai/src/tools/notes.rs` (`notes_line`): "(see cut)". No test pinned the old text; none added (one line of text).

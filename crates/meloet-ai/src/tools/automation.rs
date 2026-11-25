@@ -108,6 +108,13 @@ pub struct DeletePointsArgs {
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 pub struct TrackArgs {
     pub track: TrackRef,
+    /// The first point to give in each lane (index in the lane, from 0).
+    #[serde(default)]
+    pub first: Option<u32>,
+    /// How many points to give at most in each lane (default and most: 2000).
+    #[serde(default)]
+    #[schemars(range(min = 1, max = 2000))]
+    pub max: Option<u32>,
 }
 
 /// The track's id and the target, as the song and as the screen name it.
@@ -198,7 +205,8 @@ fn target_value(track: &meloet_model::Track, target: AutoTarget) -> Value {
 #[tool_router(router = automation_router, vis = "pub(super)")]
 impl Tools {
     /// The automation lanes of a track: what each moves, whether it rests, and its points
-    /// (index, tick, "bar.beat.tick", value 0 to 1 and what it means).
+    /// (index, tick, "bar.beat.tick", value 0 to 1 and what it means), up to 2000 a lane
+    /// from `first` (`max`; each lane gives `total` and `next_first`).
     #[tool(annotations(
         title = "Get automation",
         read_only_hint = true,
@@ -212,9 +220,11 @@ impl Tools {
         let read = check!(self.read().await);
         let (number, track) = check!(a.track.find(&read).map_err(failed));
         let map = TempoMap::new(&read.song.doc.timeline);
+        let first = a.first.unwrap_or(0) as usize;
+        let max = (a.max.unwrap_or(MAX_NOTES as u32) as usize).clamp(1, MAX_NOTES);
         let lanes: Vec<Value> = (track.automation.iter())
             .map(|lane| {
-                let points: Vec<Value> = (lane.points.iter().enumerate().take(MAX_NOTES))
+                let points: Vec<Value> = (lane.points.iter().enumerate().skip(first).take(max))
                     .map(|(i, p)| {
                         json!({ "index": i, "tick": p.tick, "at": song::at(&map, p.tick),
                             "value": p.value, "means": shown(track, lane.target, p.value) })
@@ -224,6 +234,9 @@ impl Tools {
                 v["resting"] = json!(lane.resting);
                 v["steps"] = json!(lane.step);
                 v["total"] = json!(lane.points.len());
+                v["first"] = json!(first);
+                let next = first.saturating_add(max);
+                v["next_first"] = json!((next < lane.points.len()).then_some(next));
                 v["points"] = json!(points);
                 v
             })

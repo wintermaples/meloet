@@ -7,7 +7,7 @@ The MCP tools of `meloet-ai` (94 after round 11; 95 with `rename_mute_set`, roun
 - Every tool: `openWorldHint: false`; read tools `readOnlyHint: true`; tools that delete or put a whole state `destructiveHint: true`. Each description is at most 60 words (`every_tool_says_what_it_is` in `crates/meloet-ai/tests/link.rs`).
 - An answer is a `CallToolResult` with a text and `structuredContent`. The text is one or a few lines for a person, then the same JSON as `structuredContent`. A failure is `isError: true` with a text that says why.
 - **A write that worked** answers at least `{changed: true, step, undo_steps, clip, take, track}` (`done_value`): `step` is the history row made (null when the step comes later, as for plugin states and imports), `undo_steps` the number of steps that can be undone now, `clip` / `take` / `track` where the tool gives them (else null).
-- **"No change"** (new in round 11) is a success, not an error: text "No change: the song already is like that.", `{changed: false, step: null, undo_steps}`. Tools that turn a value into a toggle (`set_mute`, `set_solo`, `bypass_effect`, `set_loop_on`, `add_lane` when the lane is there) answer the same when it is so already.
+- **"No change"** (new in round 11) is a success, not an error: text "No change: the song already is like that.", `{changed: false, step: null, undo_steps}`. Tools that turn a value into a toggle (`set_mute`, `set_solo`, `bypass_effect`, `set_loop_on`, `add_lane` when the lane is there) answer the same when it is so already. For the four switches meloet looks again when the ask reaches it, so two calls at once, or the person's button between the read and the ask, still end in the state asked for.
 - **Tracks** (new in round 11): every track argument (`track`, `tracks`, `to_track`, `alone`, `compare`, 40 in all) takes the number from 1, as `song_overview` lists them, or the stable id as the string `"id:7"`. Ids do not move when tracks are added, moved or deleted. Answers give the id beside each number: `id` in a track object, `track_id` beside `track`, `<key>_ids` beside a list (`tracks` → `track_ids`). Not track arguments: `move_clips` `tracks` (rows to move), `move_track` `to`, `import_midi` `midi_track`.
 - Places: "bar.beat.tick" (bar and beat from 1, tick from 0) or ticks from the song's start (1920 a quarter note). Where an argument is a `Place` it takes either.
 - Plugin place (the tools of parameters, states, presets and Surge XT): `track` (number or id) or `bus` (`"master"`, `"return_a"`, `"return_b"`), and `slot` 1–4 for an insert; leave `slot` out for the track's instrument plugin.
@@ -244,9 +244,20 @@ Example:
     "short_term_max_lufs": -16.9, "over_0db_places": 0, "seconds": 20.0 } ] }
 ```
 
+## Automation points and the export's range
+
+### `get_automation` (read only)
+
+- Arguments: `track`, and optional `first` (an index in the lane, from 0) and `max` (default and most 2000), as `get_notes` takes them; both apply to the points of every lane.
+- Answer: `{track, track_id, lanes: [...]}`; a lane gives what it moves, `resting`, `steps`, `total`, `first`, `next_first` (null when no points are left) and `points` with their indexes in the lane (the indexes `move_automation` and `delete_automation` take).
+
+### `export_song`
+
+- `range: "loop"` on a song with no loop range is refused: "the song has no loop range; set one with set_loop, or give range \"song\"". Nothing is written.
+
 ## Tools changed only by the common rules
 
-Track arguments that take ids, `changed: true` on success, and "no change" as a success: `delete_track`, `rename_track`, `move_track`, `set_instrument`, `set_volume`, `set_pan`, `set_send`, `set_mute`, `set_solo`, `insert_effect`, `replace_effect`, `remove_effect`, `move_effect`, `bypass_effect`, `get_automation`, `add_lane`, `delete_lane`, `write_automation`, `move_automation`, `delete_automation`, `render_audio`, `render_note`, `import_audio`, `add_track`, `song_overview`, `get_notes`, `get_mixer`.
+Track arguments that take ids, `changed: true` on success, and "no change" as a success: `delete_track`, `rename_track`, `move_track`, `set_instrument`, `set_volume`, `set_pan`, `set_send`, `set_mute`, `set_solo`, `insert_effect`, `replace_effect`, `remove_effect`, `move_effect`, `bypass_effect`, `add_lane`, `delete_lane`, `write_automation`, `move_automation`, `delete_automation`, `render_audio`, `render_note`, `import_audio`, `add_track`, `song_overview`, `get_notes`, `get_mixer`.
 
 ## Tools not changed in round 11
 

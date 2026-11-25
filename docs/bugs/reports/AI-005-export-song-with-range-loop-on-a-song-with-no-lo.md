@@ -4,7 +4,7 @@ title: export_song with range "loop" on a song with no loop writes the whole son
 area: AI
 kind: ui-ux
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -43,4 +43,6 @@ Fix plan: `crates/meloet-ai/src/tools/files.rs`: for `RangeArg::Loop` with no `l
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`crates/meloet-ai/src/tools/files.rs` (`export_song`): `range: "loop"` with no loop range answers `failed("the song has no loop range; set one with set_loop, or give range \"song\"")` and writes nothing. `docs/development/ai-tools.md`: an `export_song` line.
+
+Test: `the_export_writes_over_a_file_only_when_asked` in `crates/meloet-ai/tests/link.rs` gained the case (refused, the text says "no loop range", no file).

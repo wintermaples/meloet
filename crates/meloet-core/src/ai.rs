@@ -203,6 +203,12 @@ pub enum AiAsk {
     /// An intent the screen sends too, as the AI's step. Tracks are named by id, as the
     /// screen names them. Only the intents of [`screen_allowed`].
     Screen(Command),
+    /// [`AiAsk::Screen`] of a toggle (track or return mute, solo, bypass, the loop's switch)
+    /// for the state `on`: `Unchanged` when the switch is `on` already as meloet comes to it.
+    ScreenWhen {
+        command: Command,
+        on: bool,
+    },
     /// Notes of the take a clip shows now, by their indexes in it.
     EditNotes {
         take: u32,
@@ -486,7 +492,7 @@ pub enum AiEffect {
 impl AiAsk {
     pub fn name(&self) -> &'static str {
         match self {
-            AiAsk::Screen(_) => "change the song",
+            AiAsk::Screen(_) | AiAsk::ScreenWhen { .. } => "change the song",
             AiAsk::EditNotes { .. } => "edit notes",
             AiAsk::DeleteClips { .. } => "delete clips",
             AiAsk::SwitchTake { .. } => "switch the take",

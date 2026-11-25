@@ -981,6 +981,12 @@ fn the_export_writes_over_a_file_only_when_asked() {
     let mut mp3 = args.clone();
     mp3["format"] = json!("mp3");
     refused(&mut c, "export_song", mp3);
+    let mut looped = args.clone();
+    looped["range"] = json!("loop");
+    looped["name"] = json!("looped");
+    let text = refused(&mut c, "export_song", looped);
+    assert!(text.contains("no loop range"), "{text}");
+    assert!(!dir.join("looped.wav").exists());
     let flac = ok(
         &mut c,
         "export_song",
@@ -988,6 +994,100 @@ fn the_export_writes_over_a_file_only_when_asked() {
     );
     assert_eq!(flac["files"].as_array().unwrap().len(), 2, "{flac}");
     assert_eq!(steps(&r), steps_before, "exporting is no step");
+}
+
+/// Two asks for the same state that both read the switch before either reached meloet:
+/// the first flips it, the second changes nothing.
+#[test]
+fn a_toggle_for_a_state_ends_in_that_state() {
+    use meloet_protocol::{Command, InsertRef, StripRef};
+    let r = running("toggles");
+    let mut c = Client::start(&r.socket);
+    ok(
+        &mut c,
+        "insert_effect",
+        json!({ "track": 1, "slot": 1, "effect": "delay" }),
+    );
+    ok(&mut c, "set_loop", json!({ "from_bar": 1, "to_bar": 2 }));
+    ok(&mut c, "set_loop_on", json!({ "on": false }));
+    let song = r.core.ai_song().unwrap();
+    let track = song.song.doc.tracks[0].id.0;
+    let insert = InsertRef {
+        strip: StripRef::Track { id: track },
+        slot: 0,
+    };
+    let commands = [
+        Command::ToggleMute { track },
+        Command::ToggleSolo { track },
+        Command::ToggleBypass { insert },
+        Command::ToggleLoop,
+    ];
+    let state = || {
+        let song = r.core.ai_song().unwrap().song;
+        let t = &song.doc.tracks[0];
+        let bypassed = t.channel.inserts[0].as_ref().unwrap().bypassed;
+        let soloed = song.session.soloed.contains(&t.id);
+        [t.muted, soloed, bypassed, song.session.loop_on]
+    };
+    assert_eq!(state(), [false; 4]);
+    for on in [true, false] {
+        for command in &commands {
+            for twice in [false, true] {
+                let ask = AiAsk::ScreenWhen {
+                    command: command.clone(),
+                    on,
+                };
+                match (twice, r.core.ai(ask)) {
+                    (false, AiAnswer::Done(_)) => {}
+                    (true, AiAnswer::Refused(AiRefusal::Unchanged)) => {}
+                    (_, answer) => panic!("{command:?} {on} {twice}: {answer:?}"),
+                }
+            }
+        }
+        assert_eq!(state(), [on; 4]);
+    }
+}
+
+#[test]
+fn get_automation_gives_every_point_in_pages() {
+    let r = running("autopages");
+    let mut c = Client::start(&r.socket);
+    ok(
+        &mut c,
+        "add_lane",
+        json!({ "track": 1, "target": "volume" }),
+    );
+    let points: Vec<Value> = (0..2000)
+        .map(|i| json!({ "tick": i * 10, "value": 0.5 }))
+        .collect();
+    let args = json!({ "track": 1, "target": "volume", "points": points });
+    ok(&mut c, "write_automation", args);
+    let last = json!({ "track": 1, "target": "volume",
+        "points": [{ "tick": 100_000, "value": 0.25 }] });
+    ok(&mut c, "write_automation", last);
+    let page = ok(&mut c, "get_automation", json!({ "track": 1 }));
+    let lane = &page["lanes"][0];
+    assert_eq!(lane["total"], 2001);
+    assert_eq!(lane["points"].as_array().unwrap().len(), 2000);
+    assert_eq!(lane["next_first"], 2000);
+    let page = ok(
+        &mut c,
+        "get_automation",
+        json!({ "track": 1, "first": 2000 }),
+    );
+    let lane = &page["lanes"][0];
+    assert_eq!(lane["points"].as_array().unwrap().len(), 1, "{page}");
+    assert_eq!(lane["points"][0]["index"], 2000);
+    assert_eq!(lane["points"][0]["tick"], 100_000);
+    assert!(lane["next_first"].is_null(), "{page}");
+    let page = ok(
+        &mut c,
+        "get_automation",
+        json!({ "track": 1, "first": 5, "max": 2 }),
+    );
+    let lane = &page["lanes"][0];
+    assert_eq!(lane["points"][1]["index"], 6, "{page}");
+    assert_eq!(lane["next_first"], 7);
 }
 
 #[test]

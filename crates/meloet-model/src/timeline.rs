@@ -140,9 +140,18 @@ pub fn set_tempo_ramp(doc: &Doc, tick: u64, on: bool) -> Result<Edit, EditError>
     Ok(with_timeline(doc, t, StepKind::SetTempoRamp { tick, on }))
 }
 
+/// The point at `tick` goes. When it was the last one, the point before it (or the head) is
+/// the last now and has nothing to ramp to: its ramp goes too.
 pub fn delete_tempo_point(doc: &Doc, tick: u64) -> Result<Edit, EditError> {
     let mut t = Timeline::clone(&doc.timeline);
-    t.tempo_points.remove(point_index(&doc.timeline, tick)?);
+    let i = point_index(&doc.timeline, tick)?;
+    t.tempo_points.remove(i);
+    if i == t.tempo_points.len() {
+        match t.tempo_points.last_mut() {
+            Some(last) => last.ramp = false,
+            None => t.head_ramp = false,
+        }
+    }
     Ok(with_timeline(doc, t, StepKind::DeleteTempoPoint { tick }))
 }
 

@@ -78,18 +78,19 @@ pub fn quantize(
             if !p {
                 return (n, false);
             }
-            let (start, length) = match n.from.and_then(|j| origin.notes.get(j.get() as usize)) {
+            let (start, recorded) = match n.from.and_then(|j| origin.notes.get(j.get() as usize)) {
                 Some(o) => (zero + o.start, o.length),
                 None => (n.start, n.length),
             };
             let (start, length) = match settings.align {
+                // Only the start moves: the length is the note's own, as it is now.
                 QuantizeAlign::Start => {
-                    let length = length.min(c.end - c.start);
+                    let length = n.length.min(c.end - c.start);
                     (q(start).clamp(c.start, c.end - length), length)
                 }
                 QuantizeAlign::StartAndEnd => {
                     let s = q(start).clamp(c.start, c.end - 1);
-                    let e = q(start + length);
+                    let e = q(start + recorded);
                     let length = if e > s {
                         e - s
                     } else {

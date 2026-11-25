@@ -3,7 +3,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { AppState, Command } from "../src/bridge";
 import { createFakeTransport, fakeState } from "../src/bridge/fake";
 import { languageFromUrl } from "../src/bridge/fakeWave3";
+import { termParts } from "../src/components/format";
 import { stepNameText as stepText } from "../src/components/history/stepText";
+import { DRUM_KEYS, drumName, drumTerm } from "../src/components/pianoroll/drums";
 import { findTerm, LIST_COMMA, rawText, STATUS_JOIN, stepNameText, t, TERM_SEPARATOR, textLanguage, useLanguage } from "../src/text";
 
 afterEach(() => {
@@ -44,6 +46,21 @@ describe("t() in the language of the page", () => {
     expect(findTerm("バッファ")).toEqual({ term: "Buffer", description: expect.stringContaining("latency") });
     expect(findTerm("Kick")?.term).toBe("Kick");
     expect(findTerm("まだない言葉")).toBeUndefined();
+  });
+});
+
+describe("drum row names of the piano roll keep their term tips in English (UI-TEXT-005)", () => {
+  it("the English kit names find the same terms as the Japanese ones", () => {
+    const terms = () => DRUM_KEYS.map((k) => drumTerm(drumName(k)!));
+    const ja = terms();
+    expect(ja.every((word) => word !== null)).toBe(true);
+    useLanguage("en");
+    expect(terms()).toEqual(ja);
+    expect([drumTerm("Closed hi-hat"), drumTerm("Side stick"), drumTerm("Floor tom 2"), drumTerm("Tambourine")]).toEqual(["ハイハット", "サイドスティック", "タム", null]);
+    expect(termParts("Closed hi-hat", "ハイハット")).toEqual([
+      { text: "Closed ", term: false },
+      { text: "hi-hat", term: true },
+    ]);
   });
 });
 

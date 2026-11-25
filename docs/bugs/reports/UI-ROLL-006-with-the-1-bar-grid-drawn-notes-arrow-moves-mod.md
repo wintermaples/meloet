@@ -4,7 +4,7 @@ title: With the 1-bar grid, drawn notes, arrow moves, Mod D and drum squares use
 area: UI-ROLL
 kind: bug
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -49,4 +49,9 @@ Fix plan for this report: make the step a function of the place for division 0, 
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+Fixed together with UI-ROLL-004 and UI-ROLL-005. No protocol change.
+
+- `ui/src/components/pianoroll/drag.ts`: `RollInput.step(tick)` gives one grid step at a place; the draw tool takes it at the drawn start (length and shadow), resize at the grabbed note.
+- `ui/src/components/pianoroll/Roll.svelte`: `stepAt(tick)` = `gridTicks(grid, meterAtOf(map, tick))` for the mouse; drum squares are one cell of the bar at the view's left edge (`DrumGeom.hitW` is one width per view).
+- `ui/src/components/pianoroll/commands.ts`: → and Mod D take the step at the earliest selected note; ← the step just before it (from a bar's head, the length of the bar before), so a note on a bar line lands on a bar line.
+- Tests: `ui/tests/pianoroll.meters.test.ts` "the 「1 小節」 grid in bars of another time signature (UI-ROLL-006)" (2 tests). The drum square width has no test.

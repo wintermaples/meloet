@@ -5,7 +5,7 @@
 // keys not in the table use note names.
 
 import { DRUM_ROWS, INSTRUMENT_GROUPS, type AppState, type ClipView, type InstrumentKind, type KeyCount, type PluginKeyName, type TrackView } from "../../bridge";
-import { t, type TextKey } from "../../text";
+import { findTerm, t, textLanguage, type TextKey } from "../../text";
 import { noteName } from "../meterFormat";
 import { gmDrumName } from "../sounds";
 
@@ -110,8 +110,16 @@ export function keysLabel(keys: Iterable<number>, drums: Drums | boolean): strin
 /** Words in drum piece names that have a term tip (spec 5). Longer ones are checked first (「サイドスティック」). */
 const DRUM_TERMS = ["サイドスティック", "ハイハット", "クラッシュ", "キック", "スネア", "クラップ", "タム", "ライド"] as const;
 
+/** The term (its Japanese word, the key of `use:term`) in a drum piece name. In English, the term's English word as a whole word in any case (as `termParts` finds it). */
 export function drumTerm(name: string): string | null {
-  return DRUM_TERMS.find((word) => name.includes(word)) ?? null;
+  const english = textLanguage() === "en";
+  return DRUM_TERMS.find((word) => name.includes(word) || (english && hasWord(name, findTerm(word)?.term))) ?? null;
+}
+
+function hasWord(text: string, word: string | undefined): boolean {
+  if (!word) return false;
+  const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`\\b${escaped}(?:e?s)?\\b`, "i").test(text);
 }
 
 /**

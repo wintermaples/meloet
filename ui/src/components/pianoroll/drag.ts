@@ -3,7 +3,8 @@
 // Esc (cancel) goes back to before moving. Coordinates are CSS px of the note area (the velocity lane uses the same horizontal coordinate).
 
 import type { Command, MusicalScale } from "../../bridge";
-import type { Meter } from "../time";
+import type { Bars } from "../time";
+import { meterAtOf } from "../../time/bars";
 import type { Snapper } from "./geom";
 import { chordOf } from "./audition";
 import { isChord, rootOf, SINGLE, stampKeys, type ChordPick } from "./chords";
@@ -69,12 +70,13 @@ export type CursorKind = "default" | "move" | "copy" | "ew-resize" | "ns-resize"
 export interface RollInput {
   shown(): Shown | null;
   geom(): RollGeom;
-  /** The ticks of one grid step */
-  step(): number;
+  /** The ticks of one grid step at tick (with the 1-bar grid, the bar there). */
+  step(tick: number): number;
   /** Snap to a grid counted from the start of the time signature span (from 0 in steps of step if not given). */
   grid?(): Snapper;
   scale(): MusicalScale;
-  meter(): Meter;
+  /** The time signatures the readings count bars and beats in (the tempo map, or one time signature). */
+  meter(): Bars;
   tool(): Tool;
   /** pianoRoll.selectedNotes (empty if not from the shown take) */
   selected(): readonly IndexRange[];
@@ -89,6 +91,8 @@ export interface RollInput {
   drawVelocity(): number;
   /** Whether to play when a note is pressed or moved (only when stopped). */
   mayAudition(): boolean;
+  /** While recording or counting in: Rust takes no edit, so a press only selects (no drag that edits starts). */
+  busy?(): boolean;
   /** How many ms a length of ticks lasts (from the tempo). */
   ticksToMs(ticks: number): number;
   /** The sound the screen plays (Auditioner in audition.ts). */
@@ -111,6 +115,8 @@ export class RollDrag {
   /** The note the erase tool is over (-1 for none) */
   eraseHover = -1;
   shadow: Shadow | null = null;
+  /** The take shown at the press: the indexes in the drag belong to it. */
+  private pressTake: number | null = null;
 
   constructor(private readonly input: RollInput) {}
 
@@ -133,8 +139,9 @@ export class RollDrag {
     const key = yToKey(i.geom(), y);
     let shadow: Shadow | null = null;
     if (!hit && i.tool() === "draw" && isChord(pick) && key >= 0) {
-      const start = drawStart(xToTick(i.geom(), x), mods.shift ? null : i.step(), i.grid?.());
-      shadow = { start, length: i.step(), keys: stampKeys(pick, key), key };
+      const at = xToTick(i.geom(), x);
+      const start = drawStart(at, mods.shift ? null : i.step(at), i.grid?.());
+      shadow = { start, length: i.step(start), keys: stampKeys(pick, key), key };
     }
     const shadowChanged = this.setShadow(shadow);
     let cursor: CursorKind;
@@ -195,16 +202,20 @@ export class RollDrag {
     const press: Press = { x, y, moved: false };
     const hit = hitNote(n, g, x, y, i.edgePx(), true);
     const selected = this.selectedSet();
+    const busy = i.busy?.() ?? false;
     this.eraseHover = -1;
     this.shadow = null;
+    this.pressTake = n?.take.id ?? null;
 
     if (hit && n && hit.edge) {
       if (!selected.has(hit.note)) i.send({ type: "selectNotes", take: n.take.id, notes: [hit.note], mode: "replace" });
+      if (busy) return;
       const notes = selected.has(hit.note) ? [...selected] : [hit.note];
       this.drag = { kind: "resize", press, notes, grab: hit.note, edge: hit.start ? "start" : "end", ticks: 0 };
       return;
     }
     if (i.tool() === "erase") {
+      if (busy) return;
       this.drag = { kind: "erase", press, x, y, hits: new Set(hit ? [hit.note] : []) };
       return;
     }
@@ -222,6 +233,7 @@ export class RollDrag {
         i.send({ type: "selectNotes", take: n.take.id, notes: [hit.note], mode: mods.shift ? "add" : "replace" });
         notes = mods.shift ? [...selected, hit.note] : [hit.note];
       }
+      if (busy) return;
       this.drag = { kind: "move", press, notes, grab: hit.note, copy: mods.alt, ticks: 0, keys: 0, selectOnClick };
       // The pressed note, at its pitch and velocity, until release (stopped at the note's length).
       if (i.mayAudition()) i.audition.play([n.take.keys[hit.note]!], n.take.velocities[hit.note]!, i.ticksToMs(n.take.lengths[hit.note]!));
@@ -230,15 +242,16 @@ export class RollDrag {
     if (i.tool() === "draw") {
       const key = yToKey(g, y);
       // Nothing is written below the drum rows.
-      if (key < 0) return;
-      const step = i.step();
-      const start = drawStart(xToTick(g, x), mods.shift ? null : step, i.grid?.());
+      if (key < 0 || busy) return;
+      const at = xToTick(g, x);
+      const start = drawStart(at, mods.shift ? null : i.step(at), i.grid?.());
+      const step = i.step(start);
       const velocity = i.drawVelocity();
       const pick = this.chord();
       if (isChord(pick)) {
         const keys = stampKeys(pick, key);
         if (keys.length === 0) return;
-        i.audition.play(keys, velocity);
+        if (i.mayAudition()) i.audition.play(keys, velocity);
         this.drag = { kind: "draw", press, start, key: rootOf(pick, key), keys, length: step, velocity };
         return;
       }
@@ -247,7 +260,7 @@ export class RollDrag {
         i.send({ type: "addNote", take: this.takeId(), start, length: step, key, velocity });
         return;
       }
-      i.audition.play([key], velocity);
+      if (i.mayAudition()) i.audition.play([key], velocity);
       this.drag = { kind: "draw", press, start, key, keys: [key], length: step, velocity };
       return;
     }
@@ -258,7 +271,7 @@ export class RollDrag {
   downVelocity(x: number, y: number): void {
     const i = this.input;
     const n = i.shown();
-    if (!n) return;
+    if (!n || i.busy?.()) return;
     const g = i.geom();
     const full = i.velocityFullPx();
     const bottom = i.velocityHeight();
@@ -280,6 +293,7 @@ export class RollDrag {
     if (grab < 0) return;
     const selected = this.selectedSet();
     const notes = selected.has(grab) ? [...selected] : [grab];
+    this.pressTake = n.take.id;
     this.drag = { kind: "velocity", press: { x, y, moved: false }, notes, grab, delta: 0 };
   }
 
@@ -303,7 +317,7 @@ export class RollDrag {
       d.press.moved = true;
     }
     const g = i.geom();
-    const step = mods.shift ? null : i.step();
+    const step = mods.shift ? null : i.step(n && "grab" in d ? noteStart(n, d.grab) : 0);
     switch (d.kind) {
       case "move": {
         if (!n) return false;
@@ -337,7 +351,7 @@ export class RollDrag {
       case "draw": {
         // Drums do not show length, so a written note is always one grid cell (spec 3).
         if (g.drum) return false;
-        const length = drawLength(d.start, xToTick(g, x), i.step(), step !== null, i.grid?.());
+        const length = drawLength(d.start, xToTick(g, x), i.step(d.start), step !== null, i.grid?.());
         if (length === d.length) return false;
         d.length = length;
         return true;
@@ -377,8 +391,7 @@ export class RollDrag {
     this.drag = null;
     if (!d) return null;
     const i = this.input;
-    const take = this.takeId();
-    const command = finish(d, take);
+    const command = finish(d, this.pressTake);
     if (d.kind === "draw" || d.kind === "move") i.audition.stop();
     if (command) i.send(command);
     return command;
@@ -393,15 +406,22 @@ export class RollDrag {
     return true;
   }
 
+  /** Cancels the drag when the shown take is no longer the one of the press (its indexes would point at other notes). True if cancelled. */
+  dropIfTakeChanged(): boolean {
+    return this.drag !== null && this.takeId() !== this.pressTake && this.cancel();
+  }
+
   /** The text for the 「その場の読み値」 and the status line. Null when not shown. */
   reading(): string | null {
     const d = this.drag;
     const n = this.input.shown();
-    const meter = this.input.meter();
+    const bars = this.input.meter();
     if (!d) return null;
+    // Lengths count beats of the time signature where the note is.
+    const meter = meterAtOf(bars, d.kind === "draw" ? d.start : n && "grab" in d ? noteStart(n, d.grab) : 0);
     switch (d.kind) {
       case "draw":
-        return t("pr.readDraw", { key: keyLabel(d.key, this.input.geom().drum ? (this.input.geom().drum!.names ?? "builtin") : false), position: positionText(d.start, meter), length: lengthText(d.length, meter) });
+        return t("pr.readDraw", { key: keyLabel(d.key, this.input.geom().drum ? (this.input.geom().drum!.names ?? "builtin") : false), position: positionText(d.start, bars), length: lengthText(d.length, meter) });
       case "move": {
         if (!d.press.moved) return null;
         const drum = this.input.geom().drum;

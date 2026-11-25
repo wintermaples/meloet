@@ -4,7 +4,7 @@ title: A note or CC drag sends the take id shown at release with the indexes pic
 area: UI-ROLL
 kind: bug
 severity: medium
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -50,4 +50,9 @@ Fix plan (as suggested): in `ui/src/components/pianoroll/drag.ts` keep the take 
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+No protocol change.
+
+- `ui/src/components/pianoroll/drag.ts`: `RollDrag` keeps the take id shown at the press (`pressTake`) and sends it on release; `dropIfTakeChanged()` cancels a held drag when another take is shown.
+- `ui/src/components/pianoroll/cc.ts`: the same for `LaneMouse`.
+- `ui/src/components/pianoroll/Roll.svelte`, `ui/src/components/pianoroll/CcLanes.svelte`: an effect on the shown take id calls `dropIfTakeChanged()`.
+- Tests: `ui/tests/pianoroll.drag.test.ts` "a drag keeps the take of the press (UI-ROLL-003)" (3 tests); `ui/tests/pianoroll.cc.test.ts` "CC drags: the take of the press, and while recording (UI-ROLL-003, UI-ROLL-008)"; `ui/tests/pianoroll.hold-mount.test.ts` "a drag of the take shown at the press (UI-ROLL-003)".

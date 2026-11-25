@@ -2,10 +2,10 @@
 // Only when an intent to move notes with ↑ ↓ is made, the piano roll part is told (to play the moved notes; audition.ts).
 
 import type { AppState, Command } from "../../bridge";
-import type { Meter } from "../time";
+import { gridTick, mapOf, meterAtOf } from "../../time/bars";
 import { nudgedKeys } from "./audition";
 import { drumKeysOf, pianoRollDrums, pianoRollTrack } from "./drums";
-import { drumMoveKeys, duplicateTicks, gridTicks, indexesOf, snapTick, type Shown } from "./geom";
+import { drumMoveKeys, duplicateTicks, gridTicks, indexesOf, noteStart, type Shown } from "./geom";
 
 export type PianoRollKey =
   | { kind: "nudge"; steps: number; keys: number }
@@ -30,14 +30,15 @@ export interface PianoRollKeyContext {
 /** null is "do nothing". */
 export function pianoRollCommand(key: PianoRollKey, c: PianoRollKeyContext): Command | null {
   const pr = c.state.pianoRoll;
-  const meter: Meter = { num: c.state.timeline.meterNum, den: c.state.timeline.meterDen };
-  const step = gridTicks(pr.grid, meter);
+  const map = mapOf(c.state.timeline);
+  /** One grid step at tick: with the 1-bar grid, the bar there. */
+  const stepAt = (tick: number) => gridTicks(pr.grid, meterAtOf(map, tick));
   if (key.kind === "paste") {
     const range = pasteRange(c);
     if (pr.clipboardNotes === 0 || !range) return null;
     // Outside the clip, at its head: the clip grows only as far as the notes need.
     const inside = c.playTick >= range.from && c.playTick < range.to;
-    return { type: "pasteNotes", at: inside ? Math.max(0, snapTick(c.playTick, step)) : range.from };
+    return { type: "pasteNotes", at: inside ? gridTick(map, c.playTick, stepAt(c.playTick), false, pr.grid.division === 0) : range.from };
   }
   if (key.kind === "selectAll") return { type: "selectAllNotes" };
   const n = c.shown;
@@ -54,6 +55,8 @@ export function pianoRollCommand(key: PianoRollKey, c: PianoRollKeyContext): Com
   const notes = indexesOf(pr.selectedNotes).filter((i) => i < n.take.starts.length);
   if (notes.length === 0) return null;
   const take = n.take.id;
+  let first = Infinity;
+  for (const i of notes) first = Math.min(first, noteStart(n, i));
   switch (key.kind) {
     case "nudge": {
       let keys = key.keys;
@@ -64,6 +67,8 @@ export function pianoRollCommand(key: PianoRollKey, c: PianoRollKeyContext): Com
         keys = Math.abs(keys) === 1 ? drumMoveKeys({ keys: rows }, n.take.keys, notes, notes[0]!, -keys) : 0;
         if (keys === 0 && key.steps === 0) return null;
       }
+      // Moving back from a bar's start takes the length of the bar before.
+      const step = stepAt(key.steps < 0 ? Math.max(0, first - 1) : first);
       const command = { type: "moveNotes", take, notes, ticks: key.steps * step, keys, copy: false } as const;
       if (keys !== 0) nudgedKeys(command);
       return command;
@@ -71,7 +76,7 @@ export function pianoRollCommand(key: PianoRollKey, c: PianoRollKeyContext): Com
     case "deleteNotes":
       return { type: "deleteNotes", take, notes };
     case "duplicate":
-      return { type: "moveNotes", take, notes, ticks: duplicateTicks(n, notes, step), keys: 0, copy: true };
+      return { type: "moveNotes", take, notes, ticks: duplicateTicks(n, notes, stepAt(first)), keys: 0, copy: true };
     case "cut":
       return { type: "cutNotes", take, notes };
     case "copy":

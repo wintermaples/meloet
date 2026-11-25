@@ -382,3 +382,71 @@ describe("opened CC list (mount)", () => {
     expect(q<HTMLInputElement>("input")!.value).toBe("0");
   });
 });
+
+// ---- fixes of the bug sweep (2026-11-25) ----
+
+const settle = async () => {
+  await Promise.resolve();
+  await Promise.resolve();
+  flushSync();
+};
+
+describe("the opened CC list: Tab after a position, pressing outside, recording", () => {
+  it("Tab after a position that changes the order opens 「値」 of the moved point once Rust's take is shown; unchanged it sends nothing (UI-ROLL-002)", async () => {
+    const { s, take } = await scene("pianoRoll", undefined, withControls);
+    show(CcListPanel);
+    q('[data-point="0"] [data-field="position"]')!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    flushSync();
+    typeInto(q<HTMLInputElement>("input")!, "1.4.0000");
+    key(q("input")!, "Tab");
+    expect(app.sent).toEqual([{ type: "moveControls", take: take.id, points: [0], ticks: 3 * TPQ, value: 0 }]);
+    // Rust's answer: the sustain press now comes last, selected, in a take with a new id.
+    const answer: TakeNotes = {
+      ...take,
+      id: take.id + 100,
+      controlTicks: Uint32Array.from([(7 * TPQ) / 4, 2 * TPQ, (5 * TPQ) / 2, 3 * TPQ]),
+      controlKinds: Uint8Array.from([CONTROL_CC, CONTROL_PITCH_BEND, CONTROL_CC, CONTROL_CC]),
+      controlNumbers: Uint8Array.from([64, 0, 7, 64]),
+      controlValues: Int16Array.from([0, 2048, 100, 127]),
+    };
+    app.setState({ ...s, pianoRoll: { ...s.pianoRoll, take: answer.id, selectedControls: [{ start: 3, end: 4 }] } });
+    await settle();
+    expect(q("input")).toBeNull();
+    shown.setShown({ clip: shown.shown.clip, track: shown.shown.track, take: answer });
+    await settle();
+    expect(q<HTMLInputElement>("input")!.value).toBe("127");
+    expect(q("input")!.closest<HTMLElement>("[data-point]")!.dataset.point).toBe("3");
+    app.sent.length = 0;
+    key(q("input")!, "Enter");
+    await settle();
+    expect(app.sent).toEqual([]);
+  });
+
+  it("pressing another text box closes the box and leaves the focus there (UI-PARITY-008)", async () => {
+    await scene("pianoRoll", undefined, withControls);
+    show(CcListPanel);
+    q('[data-point="2"] [data-field="value"]')!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    flushSync();
+    const other = document.createElement("input");
+    document.body.append(other);
+    try {
+      other.focus();
+      await settle();
+      expect(q("input")).toBeNull();
+      expect(document.activeElement).toBe(other);
+    } finally {
+      other.remove();
+    }
+  });
+
+  it("while recording or counting in, no field opens (UI-ROLL-008)", async () => {
+    await scene("pianoRoll", (s) => (s.transport = { ...s.transport, state: "recording" }), withControls);
+    show(CcListPanel);
+    q('[data-point="2"] [data-field="value"]')!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    flushSync();
+    expect(q("input")).toBeNull();
+    key(qa(".row")[0]!, "Enter");
+    flushSync();
+    expect(q("input")).toBeNull();
+  });
+});

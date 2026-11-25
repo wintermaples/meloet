@@ -4,7 +4,7 @@ title: CC points and pasted notes snap to an even grid from the song start, off 
 area: UI-ROLL
 kind: bug
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -48,4 +48,10 @@ Fix plan for this report (as suggested): give `LaneInput` (`cc.ts`) a snapper li
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+Fixed together with UI-ROLL-004 and UI-ROLL-006. No protocol change.
+
+- `ui/src/components/pianoroll/cc.ts`: `LaneInput.grid()` (a snapper like `RollInput.grid`); adding and moving points snap with it (`moveAmount` takes it).
+- `ui/src/components/pianoroll/CcLanes.svelte`: gives the lane `gridTick(map, …)`.
+- `ui/src/components/pianoroll/commands.ts`: Mod V at the play line snaps with `gridTick(mapOf(timeline), …)`.
+- `ui/src/components/pianoroll/Roll.svelte`: 「貼りつけ」 from the right-click on an empty place snaps with `gridTick(map, …)`.
+- Tests: `ui/tests/pianoroll.meters.test.ts` "CC points and pastes land on the grid lines (UI-ROLL-005)" (3 tests).

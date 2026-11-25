@@ -4,7 +4,7 @@ title: Piano roll drags, the note panels and their buttons stay usable while rec
 area: UI-ROLL
 kind: parity
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -48,4 +48,10 @@ Fix plan (as suggested): one `busy` for the piano roll (`transport.state === "re
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+No protocol or wording change; the disabled looks that exist are used.
+
+- `ui/src/components/pianoroll/drag.ts`, `ui/src/components/pianoroll/cc.ts`: `busy()` in `RollInput` / `LaneInput`; while busy a press sends only the selection it sends now (note, edge, CC point; a box still selects) and no move, resize, draw, erase, velocity or CC point drag starts.
+- `ui/src/components/pianoroll/Roll.svelte`, `ui/src/components/pianoroll/CcLanes.svelte`: give `busy` (recording or counting in); the piano roll ruler starts no loop drag and sends no locate while busy (the twin of UI-ARRANGE-013).
+- `ui/src/components/pianoroll/NoteInspector.svelte`: `editable` (`live` and not `songBusy`) for the fields, the change-all rows, 「割合」「だんだん」「ばらつき」, 「のばす」, 「かける」 and 「もとの位置へ戻す」; the values stay shown, the field buttons are disabled.
+- `ui/src/components/pianoroll/NoteListPanel.svelte`, `ui/src/components/pianoroll/CcListPanel.svelte`: no field opens while busy (rows still select).
+- Tests: `ui/tests/pianoroll.drag.test.ts` "while recording or counting in (UI-ROLL-008)" (4 tests); `ui/tests/pianoroll.cc.test.ts` "… while recording, a press on a point only selects it …"; `ui/tests/pianoroll.panels.test.ts` "while recording or counting in, the panels do not edit (UI-ROLL-008)" (2 tests); `ui/tests/pianoroll.r5-notes.test.ts` "while recording or counting in, no field opens (UI-ROLL-008)"; `ui/tests/pianoroll.hold-mount.test.ts` "while counting in or recording (UI-ROLL-008, UI-ARRANGE-013)" (2 tests).

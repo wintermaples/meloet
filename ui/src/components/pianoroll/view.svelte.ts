@@ -38,6 +38,8 @@ export const prView = $state({
   follow: true,
   /** The clip shown now (to scroll to its start when it opens). */
   shownClip: null as number | null,
+  /** The song serial of shownClip (clip ids are per song). */
+  shownSerial: 0,
   /** Whether Delete, Mod A, Mod D, cut and so on go to the piano roll or the arrange. The place pressed last. */
   focus: "arrange" as "arrange" | "pianoRoll",
   /** Whether the last thing pressed in the piano roll was a note (including the velocity lane) or a CC point. Delete goes here when both are selected. */

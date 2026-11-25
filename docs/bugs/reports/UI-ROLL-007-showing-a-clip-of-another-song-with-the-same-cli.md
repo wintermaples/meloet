@@ -4,7 +4,7 @@ title: Showing a clip of another song with the same clip id keeps the old zoom, 
 area: UI-ROLL
 kind: bug
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -50,4 +50,8 @@ Fix plan (as suggested): in `ui/src/components/pianoroll/Roll.svelte` compare th
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+No protocol change.
+
+- `ui/src/components/pianoroll/view.svelte.ts`: `prView.shownSerial`, the song serial of `prView.shownClip`.
+- `ui/src/components/pianoroll/Roll.svelte`: the fit on opening runs when the clip id or the song serial differs.
+- Test: `ui/tests/pianoroll.hold-mount.test.ts` "fits again (zoom and scroll to the clip); the same song's clip keeps the view".

@@ -16,7 +16,8 @@
     right?: boolean;
     /** Decided. tab: 0 is Enter, 1 is Tab, −1 is Shift Tab. clamped: how to say what was rounded, if it was out of range. */
     onfinish: (value: number, tab: -1 | 0 | 1, clamped: FieldRead["clamped"]) => void;
-    oncancel: () => void;
+    /** refocus: true for Esc (the parent takes the focus back), false when the focus went elsewhere. */
+    oncancel: (refocus: boolean) => void;
     onreject: () => void;
   }
   let { spec, draft = $bindable(), label, test, right = false, onfinish, oncancel, onreject }: Props = $props();
@@ -39,7 +40,7 @@
       if (r === null) onreject();
       else onfinish(r.value, ev.shiftKey ? -1 : 1, r.clamped);
     } else if (ev.key === "Escape" && !ev.shiftKey) {
-      oncancel();
+      oncancel(true);
     } else if (ev.key === "ArrowUp" || ev.key === "ArrowDown") {
       if (r !== null) draft = spec.format(stepField(spec, r.value, (ev.key === "ArrowUp" ? 1 : -1) * (ev.shiftKey ? spec.shift : 1)));
     } else {
@@ -62,7 +63,7 @@
   data-test={test}
   bind:value={draft}
   bind:this={input}
-  onblur={oncancel}
+  onblur={() => oncancel(false)}
   {onkeydown}
 />
 

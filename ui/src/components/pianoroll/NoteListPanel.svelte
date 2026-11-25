@@ -11,6 +11,7 @@
   import { tick, untrack } from "svelte";
   import ScrollArea from "../../lib/ScrollArea.svelte";
   import { tipWhenCut } from "../../lib/tip.svelte";
+  import { songBusy } from "../../keys/attach";
   import { current, send } from "../../state/app.svelte";
   import { t } from "../../text";
   import { noteLengthText, notePositionText } from "../format";
@@ -132,11 +133,33 @@
   }
 
   function open(at: number, name: FieldName): void {
-    const spec = specAt(at, name);
+    after = null;
+    // While recording or counting in Rust takes no edit.
+    const spec = songBusy(app) ? null : specAt(at, name);
     if (!spec) return;
     editing = { at, name, draft: spec.initial, token: ++tokens };
     reveal(at);
   }
+
+  /**
+   * A Tab after a value that can change the order of the notes: the next field opens once Rust's answer and its take are shown,
+   * on the row of the edited note (Rust selects it), with its text from that take. old: the take id before; row: the step from that row.
+   */
+  let after = $state.raw<{ name: FieldName; row: -1 | 0 | 1; old: number; at: number; rev: number | null } | null>(null);
+  $effect(() => {
+    const a = after;
+    if (!a || a.rev === null || current.rev < a.rev || !take || take.id !== app.pianoRoll.take) return;
+    untrack(() => {
+      after = null;
+      let row = a.at;
+      if (take.id !== a.old) {
+        const edited = app.pianoRoll.selectedNotes[0]?.start;
+        row = edited === undefined ? -1 : indexes.indexOf(edited);
+      }
+      const at = row < 0 ? -1 : row + a.row;
+      if (at >= 0 && at < indexes.length) open(at, a.name);
+    });
+  });
 
   async function close(refocus: boolean): Promise<void> {
     const at = editing?.at;
@@ -151,13 +174,22 @@
     const spec = editSpec;
     if (!e || !spec || !take) return;
     const command = commitCommand(spec, value, take.id, [indexes[e.at]!]);
-    if (command) send(command);
+    const sent = command ? send(command) : null;
     if (clamped) send(clampCommand(clamped));
     if (tab === 0) {
       void close(true);
       return;
     }
     const next = nextField(e.name, tab < 0, fields);
+    if (sent && (e.name === "position" || e.name === "key")) {
+      void close(true);
+      const a = { name: next.name, row: next.row, old: take.id, at: e.at, rev: null };
+      after = a;
+      void sent.then((rev) => {
+        if (after === a) after = rev === null ? null : { ...a, rev };
+      });
+      return;
+    }
     const at = e.at + next.row;
     if (at < 0 || at >= indexes.length) void close(true);
     else open(at, next.name);
@@ -167,8 +199,8 @@
     if (editSpec && editing) send(rejectCommand(editSpec, editSpec.initial));
   }
 
-  function cancel(token: number): void {
-    if (editing?.token === token) void close(true);
+  function cancel(token: number, refocus: boolean): void {
+    if (editing?.token === token) void close(refocus);
   }
 
   function onRowDouble(ev: MouseEvent, at: number): void {
@@ -221,7 +253,7 @@
                     test="note-list-field"
                     right={name !== "key"}
                     onfinish={finish}
-                    oncancel={() => cancel(e.token)}
+                    oncancel={(refocus) => cancel(e.token, refocus)}
                     onreject={reject}
                   />
                 </span>

@@ -4,7 +4,7 @@ title: Piano roll toolbar take buttons switch the arrange's chosen clip, not the
 area: UI-ROLL
 kind: bug
 severity: medium
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -57,4 +57,7 @@ The other way, if the lead does not want the arrange's choice to move: give `Ste
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+No protocol change.
+
+- `ui/src/components/pianoroll/Toolbar.svelte`: ◂ ▸ send `selectClip` for the shown clip first when the arrange has another clip (or none) chosen, then `stepTake`; they are disabled while recording or counting in (`songBusy`), the rule of 「次のテイク」「前のテイク」 in the menu.
+- Tests: `ui/tests/pianoroll.band.test.ts` "◂ ▸ switch the take of the shown clip: when the arrange chose another clip or none, the shown one is chosen first (UI-ROLL-001)" and "◂ ▸ cannot be used while counting in or recording, as the menu's 「次のテイク」「前のテイク」 (UI-ROLL-001)".

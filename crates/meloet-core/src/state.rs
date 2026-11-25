@@ -599,10 +599,12 @@ pub enum Effect {
         ticket: u64,
         outputs: meloet_model::PluginOutputs,
     },
-    /// Start a new process for the stopped plugin loaded under `ticket`, with the state
-    /// remembered for it. Answer as for [`Effect::LoadPlugin`], with the same ticket.
+    /// Start a new process for the stopped plugin loaded under `ticket`, at `sample_rate`,
+    /// with the state remembered for it. Answer as for [`Effect::LoadPlugin`], with the same
+    /// ticket.
     ReloadPlugin {
         ticket: u64,
+        sample_rate: u32,
     },
     /// Ask the plugin loaded under `ticket`, off the core thread. Answers come as
     /// [`Input::PluginSaid`].

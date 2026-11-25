@@ -726,7 +726,10 @@ fn a_plugin_that_stops_does_not_stop_the_recording() {
     assert_eq!(view.status.message, Some(stopped.clone()));
 
     // "もう一度読みこむ": a new process, the same ticket. Until it answers it is as it was.
-    let reload = Effect::ReloadPlugin { ticket };
+    let reload = Effect::ReloadPlugin {
+        ticket,
+        sample_rate: 48_000,
+    };
     assert_eq!(cmd(&mut m, Command::ReloadPlugin { slot }), [reload]);
     assert_eq!(status(&m), Some(stopped.clone()));
     assert!(cmd(&mut m, Command::ReloadPlugin { slot }).is_empty());

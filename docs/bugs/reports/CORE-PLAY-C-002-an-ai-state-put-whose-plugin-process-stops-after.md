@@ -4,7 +4,7 @@ title: An AI state put whose plugin process stops after taking the bytes is load
 area: CORE-PLAY-C
 kind: bug
 severity: medium
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -52,4 +52,6 @@ Fix plan: `crates/meloet-core/src/play/plugs/aistate.rs` `ai_state_put`: for `Er
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+As the lead decided (not the plan above): `Hosts` keeps for a reload what it had until the plugin's own state is read back after an AI put. `Hosts::try_state` (`crates/meloet-core/src/plugins/hosts.rs`) sets a state without remembering it; the `Hosts::state` that follows remembers what the plugin says, and a stop in between reloads the state from before the put. `PluginAsk::PutState` uses it (`service.rs`); the put-backs of undo and redo (`Hosts::set_state`) are remembered at once as before. `ReloadPlugin` stays the way back for the put plugin, so the AI is now told what is reloaded: "the state it had before the put (with the song's state when an undo or a redo came meanwhile)" (`play/plugs/aistate.rs`, `crates/meloet-ai/src/tools/plugstate.rs`, the doc of `AiPutEnd::Stopped` in `ai.rs`, docs/architecture.md 24-16 G).
+
+Tests: `tests/plugin_state_put.rs` `a_reload_is_at_the_rate_asked_for_and_without_a_state_tried_and_never_read_back` (a stand-in plugin host writes down what it is given: after `try_state` and a stop, the reload gets the state from before; after `set_state`, the state put); `play::plugs::aistate::tests::a_state_that_stops_the_process_makes_no_step_and_the_plugin_is_loaded_again` checks the text.

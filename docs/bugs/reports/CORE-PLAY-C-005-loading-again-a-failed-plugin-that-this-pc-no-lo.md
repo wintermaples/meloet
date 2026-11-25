@@ -4,7 +4,7 @@ title: Loading again a failed plugin that this PC no longer has leaves its track
 area: CORE-PLAY-C
 kind: bug
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -49,4 +49,6 @@ Fix plan: `crates/meloet-core/src/play/plugs.rs` `reload_plugin`: `match self.wa
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`crates/meloet-core/src/play/plugs.rs` `reload_plugin`, `Phase::Failed`: the silent stand-in for the plugin goes to the engine only when `want_plug` answers `Want::Loading`, as `load_from_song` does; for `Want::Missing` nothing is sent and the seat keeps the sine wave it plays. `instruments.rs` is unchanged.
+
+Test: `play::plugs::tests::loading_again_a_plugin_this_pc_no_longer_has_leaves_the_sine_wave`.

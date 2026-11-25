@@ -198,7 +198,8 @@ impl Play {
             )),
             AiPutEnd::Stopped => AiOutcome::Failed(
                 "the plugin's process stopped while it took the state (the state may be \
-                 broken); it is loaded again with the song's state, and no step was made"
+                 broken); it is loaded again with the state it had before the put (with the \
+                 song's state when an undo or a redo came meanwhile), and no step was made"
                     .into(),
             ),
             AiPutEnd::Overtaken => AiOutcome::Failed(
@@ -359,10 +360,15 @@ impl Play {
             self.load_from_song(spot, effects);
             return;
         }
+        let sample_rate = self.plugs.rate;
         if let Some(plug) = self.plugs.at_mut(spot) {
             plug.phase = Phase::Reloading;
+            plug.rate = sample_rate;
         }
-        effects.push(Effect::ReloadPlugin { ticket });
+        effects.push(Effect::ReloadPlugin {
+            ticket,
+            sample_rate,
+        });
     }
 
     /// The plugin at `spot` is let go of and loaded anew with the state the song has.

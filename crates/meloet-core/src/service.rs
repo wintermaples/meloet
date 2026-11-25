@@ -3367,13 +3367,17 @@ impl Worker {
                             side.hosts.set_outputs(*id, outputs, Box::new(|_| {}));
                         }
                     }
-                    Effect::ReloadPlugin { ticket } => {
+                    Effect::ReloadPlugin {
+                        ticket,
+                        sample_rate,
+                    } => {
                         let id = (self.plugins.as_ref())
                             .and_then(|side| Some((side, side.ids.get(&ticket)?.0)));
                         match id {
                             Some((side, id)) => {
                                 let block = self.audio.handle.plugin_block().clone();
-                                side.hosts.reload(id, block, self.loaded_sink(ticket));
+                                let done = self.loaded_sink(ticket);
+                                side.hosts.reload(id, sample_rate, block, done);
                             }
                             None => inputs.push_back(Input::PluginUnreadable { ticket }),
                         }
@@ -3593,7 +3597,7 @@ impl Worker {
                         say(PluginSaid::StatePut(state.map(Arc::from)));
                     }
                 };
-                hosts.set_state(id, state.to_vec(), Box::new(set));
+                hosts.try_state(id, state.to_vec(), Box::new(set));
                 hosts.state(id, Box::new(got));
             }
             PluginAsk::ReadText { param, text } => {

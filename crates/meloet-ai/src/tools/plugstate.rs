@@ -279,8 +279,9 @@ impl Tools {
                  step was made"
             ),
             AiPutEnd::Stopped => "the plugin's process stopped while it took the state (the \
-                 state may be broken); it is loaded again with the song's state, and no step \
-                 was made"
+                 state may be broken); it is loaded again with the state it had before the put \
+                 (with the song's state when an undo or a redo came meanwhile), and no step was \
+                 made"
                 .into(),
             AiPutEnd::Overtaken => "an undo or a redo changed the plugin first, or it was \
                  loaded again with the song's state; no step was made"

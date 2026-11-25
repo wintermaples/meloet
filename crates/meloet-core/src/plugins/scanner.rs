@@ -250,7 +250,10 @@ fn bundles_in(places: &[PathBuf]) -> Vec<(PathBuf, PluginFormat)> {
         for entry in entries.flatten() {
             let path = entry.path();
             if let Some(format) = bundle_format(&path) {
-                found.push((path, format));
+                // A link that points nowhere is no bundle.
+                if path.exists() {
+                    found.push((path, format));
+                }
             } else if depth > 0 && entry.file_type().is_ok_and(|t| t.is_dir()) {
                 look(&path, depth - 1, found);
             }
@@ -589,6 +592,18 @@ mod tests {
         // A place inside another gives each bundle once.
         let found = bundles_in(&[root.join("lv2"), root.join("lv2")]);
         assert_eq!(found, [(a, PluginFormat::Lv2)]);
+    }
+
+    #[test]
+    fn a_bundle_that_is_a_link_is_found_while_it_points_somewhere() {
+        let root = temp_dir("linked-places");
+        let target = bundle(&root, "elsewhere/a.lv2");
+        let place = root.join("lv2");
+        std::fs::create_dir_all(&place).unwrap();
+        std::os::unix::fs::symlink(&target, place.join("a.lv2")).unwrap();
+        std::os::unix::fs::symlink(root.join("gone.lv2"), place.join("b.lv2")).unwrap();
+        let found = bundles_in(std::slice::from_ref(&place));
+        assert_eq!(found, [(place.join("a.lv2"), PluginFormat::Lv2)]);
     }
 
     #[test]

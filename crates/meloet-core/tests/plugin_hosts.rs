@@ -141,7 +141,7 @@ impl Side {
 
     fn reload(&self, rig: &Rig, id: SlotId) -> Result<Loaded, HostError> {
         let block = rig.parts.handle.plugin_block().clone();
-        wait(|done| self.hosts.reload(id, block, done))
+        wait(|done| self.hosts.reload(id, RATE, block, done))
     }
 
     fn level(&self, id: SlotId) -> f64 {

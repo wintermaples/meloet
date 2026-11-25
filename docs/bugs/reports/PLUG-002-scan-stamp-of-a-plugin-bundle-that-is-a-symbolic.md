@@ -4,7 +4,7 @@ title: Scan stamp of a plugin bundle that is a symbolic link never changes, so a
 area: PLUG
 kind: bug
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -54,4 +54,6 @@ Fix plan: `crates/meloet-plugin/src/scan.rs` `BundleStamp::read`: read the bundl
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`crates/meloet-plugin/src/scan.rs` `BundleStamp::read`: the bundle itself is read with `std::fs::metadata` (a link is followed at the top only); what is in it is read with `symlink_metadata` as before. `crates/meloet-core/src/plugins/scanner.rs` `bundles_in`: an entry with a bundle's name that points nowhere is passed over, so its record goes with the bundles that are gone. `SCAN_CACHE_VERSION` stays.
+
+Tests: `scan::tests::a_bundle_that_is_a_link_is_stamped_by_what_it_points_to` (meloet-plugin), `plugins::scanner::tests::a_bundle_that_is_a_link_is_found_while_it_points_somewhere` (meloet-core).

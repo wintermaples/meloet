@@ -155,11 +155,12 @@ impl Track {
     }
 
     /// Whether the track has what `target` moves: a plugin as its instrument, a knob its
-    /// sound that comes with meloet uses, an insert of that id (and for an effect of meloet,
-    /// a parameter of that place in its table).
+    /// sound that comes with meloet uses (a vocal track has neither), an insert of that id
+    /// (and for an effect of meloet, a parameter of that place in its table).
     pub fn has_target(&self, target: AutoTarget) -> bool {
         match target {
             AutoTarget::Volume | AutoTarget::Pan | AutoTarget::Send(_) | AutoTarget::Mute => true,
+            AutoTarget::Instrument { .. } if self.kind.is_vocal() => false,
             AutoTarget::Instrument { param } => match &self.instrument {
                 InstrumentRef::Plugin(_) => true,
                 other => crate::knobs::SoundKnob::from_index(param)

@@ -187,3 +187,48 @@ fn a_tail_that_rings_on_is_in_the_audio_up_to_ten_seconds() {
     assert!(with.len() / 2 <= without.len() / 2 + 10 * RATE as usize);
     assert_eq!(&with[..without.len()], &without[..]);
 }
+
+/// The step mutes the keys track for real: a mute lane of it that plays the track rests.
+#[test]
+fn the_keys_track_is_silent_after_the_step_under_its_mute_lane() {
+    use meloet_protocol::{Command, LaneHome};
+
+    use crate::play::EngineOp;
+    use crate::play::tests::{cmd, ready};
+
+    let m = &mut ready();
+    let home = LaneHome::Track { track: 1 };
+    let target = meloet_protocol::AutoTarget::Mute;
+    cmd(m, Command::AddLane { home, target });
+    let view = m.view();
+    let lane = (view.song.tracks[0].lanes.iter())
+        .find(|l| l.target == target)
+        .unwrap()
+        .lane_id;
+    cmd(
+        m,
+        Command::AddAutoPoint {
+            lane,
+            tick: 0,
+            value: Some(0.0),
+        },
+    );
+    let seat = m.play().seats.of(TrackId(1)).unwrap();
+    let audio = NewAudio {
+        uid: [3; 16],
+        file: "ピアノ（音） 9.wav".to_owned(),
+        frames: RATE.into(),
+        sample_rate: RATE,
+        channels: 2,
+        bits: Some(24),
+    };
+    let mut effects = Vec::new();
+    let notice = m.play_mut().bounce_made(TrackId(1), audio, 0, &mut effects);
+    assert!(matches!(notice, Some(StatusMessage::Bounced { .. })));
+    m.play_mut().sync_silent(&mut effects);
+    let silent = effects.iter().rev().find_map(|e| match e {
+        Effect::Engine(EngineOp::SilentTracks { tracks }) => Some(tracks.clone()),
+        _ => None,
+    });
+    assert_eq!(silent, Some(vec![seat]));
+}

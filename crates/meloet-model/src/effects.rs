@@ -122,6 +122,7 @@ impl ParamSpec {
         let text: String = (text.trim().chars())
             .map(|c| match c {
                 '０'..='９' => char::from_digit(c as u32 - '０' as u32, 10).unwrap_or(c),
+                'Ａ'..='Ｚ' | 'ａ'..='ｚ' => char::from_u32(c as u32 - 0xFEE0).unwrap_or(c),
                 '−' | '－' => '-',
                 '＋' => '+',
                 '．' => '.',
@@ -638,6 +639,10 @@ mod tests {
         assert_eq!(of(reverb, reverb::HIGH_CUT, "6 kHz"), Some(6000.0));
         assert_eq!(of(reverb, reverb::HIGH_CUT, "6000 Hz"), Some(6000.0));
         assert_eq!(of(reverb, reverb::MIX, "30%"), Some(30.0));
+        assert_eq!(of(reverb, reverb::DECAY, "５００ｍｓ"), Some(0.5));
+        assert_eq!(of(reverb, reverb::DECAY, "５００　ＭＳ"), Some(0.5));
+        assert_eq!(of(comp, compressor::ATTACK, "１．５ｓ"), Some(1500.0));
+        assert_eq!(of(reverb, reverb::HIGH_CUT, "２ｋＨｚ"), Some(2000.0));
         assert_eq!(of(EffectKind::Delay, delay::SYNC, "1"), Some(1.0));
         for text in [
             "", " ", "dB", "abc", "-", "+ dB", ".", "- .", "x4", "NaN", "inf",

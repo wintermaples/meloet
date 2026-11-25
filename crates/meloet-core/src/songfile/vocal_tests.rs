@@ -350,3 +350,17 @@ fn the_stretching_and_the_pitch_of_a_clip_come_back() {
                 "sync": {"tempo": 12_050, "headRamp": false, "points": []}})
     ));
 }
+
+#[test]
+fn a_lane_of_an_instrument_on_a_vocal_track_is_left_out() {
+    let mut v = vocal_json();
+    v["song"]["tracks"][1]["automation"] = json!([
+        {"target": {"kind": "instrument", "param": 0}, "points": [[0, 0.5]]},
+        {"target": {"kind": "volume"}, "points": [[0, 0.5]]},
+    ]);
+    let song = decode(&serde_json::to_vec(&v).unwrap()).unwrap();
+    let lanes = &song.doc.tracks[1].automation;
+    let targets: Vec<AutoTarget> = lanes.iter().map(|l| l.target).collect();
+    assert_eq!(targets, [AutoTarget::Volume]);
+    song.doc.check_lanes().unwrap();
+}

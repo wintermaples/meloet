@@ -374,6 +374,31 @@ fn lanes_go_with_what_they_move() {
 }
 
 #[test]
+fn a_missing_instrument_takes_its_lanes_and_the_knobs_along() {
+    let synth = InstrumentRef::Plugin(plugin("lv2:synth"));
+    let mut doc = edit::set_instrument(&Doc::new_default(), T1, synth)
+        .unwrap()
+        .doc;
+    // A parameter id that names a knob of the sine wave too, and one that does not.
+    for target in [
+        AutoTarget::Instrument { param: 2 },
+        AutoTarget::Instrument { param: 9 },
+        AutoTarget::Volume,
+    ] {
+        doc = add_lane(&doc, T1, target, false).unwrap().0.doc;
+    }
+    let knobs = crate::SoundKnobs::default().with(crate::SoundKnob::Brightness, 10.0);
+    Arc::make_mut(&mut doc.tracks[0]).knobs = knobs.unwrap();
+    let e = mixer::remove_missing(&doc, Missing::Plugin("lv2:synth")).unwrap();
+    let t = &e.doc.tracks[0];
+    assert_eq!(t.instrument, InstrumentRef::SINE);
+    let targets: Vec<_> = t.automation.iter().map(|l| l.target).collect();
+    assert_eq!(targets, [AutoTarget::Volume]);
+    assert!(t.knobs.is_default());
+    e.doc.check_lanes().unwrap();
+}
+
+#[test]
 fn the_instrument_takes_its_lanes_along() {
     let synth = InstrumentRef::Plugin(plugin("vst3:synth"));
     let doc = edit::set_instrument(&Doc::new_default(), T1, synth.clone())
@@ -398,6 +423,33 @@ fn the_instrument_takes_its_lanes_along() {
         edit::remove_instrument(&e.doc, T1).unwrap_err(),
         EditError::Unchanged
     );
+}
+
+#[test]
+fn a_vocal_track_has_no_lanes_of_an_instrument() {
+    let (e, vocal) = edit::add_vocal_track(&Doc::new_default(), None, crate::Language::Ja).unwrap();
+    let doc = e.doc;
+    for param in [0, 3, 9] {
+        let target = AutoTarget::Instrument { param };
+        assert!(!doc.track(vocal).unwrap().has_target(target));
+        assert_eq!(
+            add_lane(&doc, vocal, target, false).unwrap_err(),
+            EditError::NoSuchInsert
+        );
+    }
+    let (e, _) = add_lane(&doc, vocal, AutoTarget::Volume, false).unwrap();
+    let mut doc = e.doc;
+    let lane = Lane {
+        id: LaneId(doc.next_id),
+        target: AutoTarget::Instrument { param: 0 },
+        ..lane_with(vec![p(0, 0.5)], false)
+    };
+    doc.next_id += 1;
+    let ti = doc.tracks.iter().position(|t| t.id == vocal).unwrap();
+    Arc::make_mut(&mut doc.tracks[ti])
+        .automation
+        .push(Arc::new(lane));
+    assert!(doc.check_lanes().unwrap_err().contains("has no target"));
 }
 
 struct Rng(u64);

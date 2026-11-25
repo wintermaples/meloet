@@ -226,14 +226,67 @@ fn a_mute_lane_takes_the_place_of_the_mute_put_by_hand() {
     let effects = cmd(m, Command::ToggleSolo { track: 2 });
     assert_eq!(silent(&effects), [vec![seat, third]]);
     cmd(m, Command::ToggleSolo { track: 2 });
-    // At rest, the hand's mute is what counts again.
+    // M mutes what the lane plays; at rest, the hand's mute is what counts again. The hand's
+    // mute was on already, so the step is the rest alone.
+    let before = steps(m).len();
+    let effects = cmd(m, Command::ToggleMute { track: 1 });
+    assert!(resting(m, mute));
+    assert!(m.view().song.tracks[0].muted);
+    assert_eq!(silent(&effects), [vec![seat]], "{effects:?}");
+    assert_eq!(steps(m).len(), before + 1);
+    cmd(m, Command::Undo);
+    let effects = cmd(m, Command::Undo);
+    assert_eq!(silent(&effects), [vec![seat]], "no point: the hand's mute");
+}
+
+#[test]
+fn m_on_a_mute_lane_that_mutes_lets_the_track_play() {
+    let m = &mut ready();
+    crate::play::mix::tests::three_tracks(m);
+    let mute = AutoTarget::Mute;
+    cmd(
+        m,
+        Command::AddLane {
+            home: meloet_protocol::LaneHome::Track { track: 1 },
+            target: mute,
+        },
+    );
+    let lane = lane_id(m, mute);
+    // The engine reads the lane, which mutes the track; the hand's mute is off.
+    cmd(
+        m,
+        Command::AddAutoPoint {
+            lane,
+            tick: 0,
+            value: Some(1.0),
+        },
+    );
+    let seat = m.play().seats.of(TrackId(1)).unwrap();
+    assert!(!m.view().song.tracks[0].muted);
+    let before = steps(m).len();
     let effects = cmd(m, Command::ToggleMute { track: 1 });
     assert!(resting(m, mute));
     assert!(!m.view().song.tracks[0].muted);
     assert!(silent(&effects).is_empty(), "{effects:?}");
+    assert!(!m.play().silent_sent.contains(&seat));
+    assert_eq!(steps(m).len(), before + 1);
+    assert!(matches!(last_step(m), StepKind::RestLane { .. }));
+    // Under a lane that plays the track, with the hand's mute off: a mute and the rest.
     cmd(m, Command::Undo);
-    let effects = cmd(m, Command::Undo);
-    assert_eq!(silent(&effects), [vec![seat]], "no point: the hand's mute");
+    let lane = lane_id(m, mute);
+    cmd(
+        m,
+        Command::AddAutoPoint {
+            lane,
+            tick: 0,
+            value: Some(0.0),
+        },
+    );
+    let effects = cmd(m, Command::ToggleMute { track: 1 });
+    assert!(resting(m, mute));
+    assert!(m.view().song.tracks[0].muted);
+    assert_eq!(silent(&effects), [vec![seat]], "{effects:?}");
+    assert!(matches!(last_step(m), StepKind::Mute { muted: true, .. }));
 }
 
 #[test]
@@ -658,10 +711,12 @@ fn the_mute_writes_a_point_or_rests() {
     cmd(m, Command::ToggleMute { track: 1 });
     assert_eq!(points(m, mute), [(0, 0.0), (1000, 1.0)]);
     assert!(!m.view().song.tracks[0].muted, "the mute itself stays");
+    // Stopped where the lane mutes (M is lit): the press lets the track play.
     cmd(m, Command::PlayStop);
     cmd(m, Command::ToggleMute { track: 1 });
-    assert!(m.view().song.tracks[0].muted);
+    assert!(!m.view().song.tracks[0].muted);
     assert!(resting(m, mute));
+    assert!(matches!(last_step(m), StepKind::RestLane { .. }));
 }
 
 #[test]

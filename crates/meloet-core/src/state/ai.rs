@@ -517,7 +517,14 @@ impl Model {
                 // What the line said before is not what it says of this intent.
                 let said_before = self.notice.take();
                 let was = (self.play.changes(), self.play.ai_session());
-                self.command(command.clone(), effects);
+                match command {
+                    meloet_protocol::Command::ToggleMute { track } => {
+                        self.play.ai_toggle_mute(track, effects);
+                    }
+                    _ => {
+                        self.command(command.clone(), effects);
+                    }
+                }
                 let said = self.notice.as_ref().map(|notice| format!("{notice:?}"));
                 if said.is_none() {
                     self.notice = said_before;

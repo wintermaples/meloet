@@ -4,7 +4,7 @@ title: Removing a missing plugin instrument keeps its lanes of parameters 0-3, w
 area: MODEL-B
 kind: bug
 severity: medium
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -50,4 +50,4 @@ Fix plan: `crates/meloet-model/src/edit.rs`: make `with_instrument` `pub(crate)`
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`crates/meloet-model/src/mixer.rs` `remove_missing`: a track that sounds with the missing instrument gets the sine wave through `edit::with_instrument` (made `pub(crate)` in `crates/meloet-model/src/edit.rs`), so every lane of the old instrument's parameters goes and the knobs start again, as `set_instrument` and `remove_instrument` do. Test: `automation::tests::a_missing_instrument_takes_its_lanes_and_the_knobs_along` (lanes of param 2 and 9, knobs set by hand; after the step only the volume lane is left and the knobs are the default).

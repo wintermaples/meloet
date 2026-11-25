@@ -4,7 +4,7 @@ title: English vocal recording status says monitor on while monitoring is off
 area: UI-TEXT
 kind: parity
 severity: medium
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -46,4 +46,5 @@ Fix plan (no new wording): in `ui/src/components/StatusLine.svelte` do not find 
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`ui/src/components/StatusLine.svelte`: the monitor piece is no longer found by the text of `meter.monitorOn`. With the monitor off, `withoutMonitorPiece` splits each text part of the sentence on the joint mark (`STATUS_JOIN` without its spaces, as Japanese writes 「）・ 」) and drops the piece between two marks (the only piece with no hole on either side, in both tables). Japanese output is unchanged.
+Test: `ui/tests/round7.vocal.test.ts` "English: with monitor off, 「monitor on · 」 is removed too, and the inputs are in English brackets".

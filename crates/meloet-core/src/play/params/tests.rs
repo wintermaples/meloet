@@ -303,6 +303,32 @@ fn a_row_dragged_is_heard_let_go_is_one_step_and_esc_puts_the_value_back() {
 }
 
 #[test]
+fn the_range_of_a_clamped_plugin_value_is_joined_in_the_language_of_the_page() {
+    let mut r = Rig::new();
+    let (_, track, slot) = r.surge();
+    r.cmd(Command::SelectInstrument { track });
+    r.cmd(Command::SetLanguage {
+        language: meloet_protocol::Language::En,
+    });
+    r.settle();
+    let table = r.selected().table.unwrap();
+    let param = ParamRef::Plugin {
+        slot,
+        table,
+        param: LEVEL,
+    };
+    let text = "140".to_owned();
+    r.cmd(Command::TypeParam { param, text });
+    r.settle();
+    let end = ParamEnd::Plugin {
+        name: "Level".into(),
+        value: "100 %".into(),
+        range: "0 %–100 %".into(),
+    };
+    assert_eq!(status(&r.m), Some(StatusMessage::ParamClamped { to: end }));
+}
+
+#[test]
 fn a_typed_value_is_read_by_the_plugin_and_a_row_is_chosen_by_the_plugins_number() {
     let mut r = Rig::new();
     let (surge, track, slot) = r.surge();

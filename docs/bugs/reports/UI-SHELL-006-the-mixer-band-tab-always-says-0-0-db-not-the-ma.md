@@ -4,7 +4,7 @@ title: The mixer band tab always says 0.0 dB, not the master fader value
 area: UI-SHELL
 kind: bug
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -42,4 +42,5 @@ Fix plan (as suggested): in `ui/src/components/BandRow.svelte` fill the hole fro
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`ui/src/components/BandRow.svelte`: the mixer tab fills 「マスター {db}」 from `app.song.master.gainDb` (`common.db` with `dbNumber`, `common.dbSilent` for `null`, as the track heads do). The tab width is measured from the shown text by `bandCountsShown`, so a longer value drops the count by the existing rule; no fixed width to change.
+Test: `ui/tests/followup.test.ts` "the mixer tab says the master fader value (spec 3), −∞ when it is all the way down".

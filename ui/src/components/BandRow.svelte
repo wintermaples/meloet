@@ -32,11 +32,11 @@
       open: lower.includes("pianoRoll"),
       term: "ピアノロール",
     },
-    // The master fader value. It stays at 0.0 dB for now (docs/history/progress.ja.md).
+    // The master fader value, not the loudness (spec 3).
     {
       band: "mixer",
       name: t("band.mixer"),
-      count: t("band.masterDb", { db: t("common.db", { value: dbNumber(0) }) }),
+      count: t("band.masterDb", { db: app.song.master.gainDb === null ? t("common.dbSilent") : t("common.db", { value: dbNumber(app.song.master.gainDb) }) }),
       key: t("key.mixer"),
       open: lower.includes("mixer"),
       term: "ミキサー",

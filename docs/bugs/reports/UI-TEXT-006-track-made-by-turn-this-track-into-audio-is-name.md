@@ -4,7 +4,7 @@ title: Track made by Turn this track into audio is named with a Japanese suffix 
 area: UI-TEXT
 kind: parity
 severity: low
-status: needs-lead
+status: fixed
 found: 2026-11-25
 ---
 
@@ -47,4 +47,5 @@ Choices: (a) pass `Language` into `bounce_track` (from `Play::names`, as `add_vo
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+Lead's decision (a): `bounce_track` takes a `Language` (`crates/meloet-model/src/audio/bounce.rs`; `bounced_name` picks `BOUNCED_SUFFIX` 「（音）」 or " (audio)", same clash rule); `crates/meloet-core/src/play/bounce.rs` passes `self.names`. Songs already saved keep their names. The work file name (`bounce_file_name`) keeps 「（音）」 (file names are outside D4). Documents: architecture 25-36 "Names made in Rust" and A7 line, 7-readings D4 row "The name of a track turned into audio" (decided by the lead, 2026-11-25).
+Test: `crates/meloet-model/src/audio/bounce/tests.rs` `in_english_the_name_ends_in_audio_with_the_same_numbers` (the other callers in tests pass `Language::Ja`).

@@ -4,7 +4,7 @@ title: English plural pair picks the plural for a signed -1 written with the min
 area: UI-TEXT
 kind: parity
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -45,4 +45,5 @@ Fix plan (as suggested): in `english()` read the value with U+2212 turned into "
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`ui/src/text/index.ts` (`english()`): the value is read with 「−」 (U+2212) turned into "-", and its absolute value is compared with 1, so 「−1」 takes the form for 1 as 「+1」 does. `barsDeltaText` gives 「−1」 / 「−1.5」 (no units in the hole), which reads after that.
+Test: `ui/tests/language.test.ts` "English: a count of 1 takes the form for 1, also when signed with 「−」" (`pr.readMove` with 「−1」, `arrange.readMove` with 「−1」 and 「−1.5」).

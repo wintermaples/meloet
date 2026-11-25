@@ -4,7 +4,7 @@ title: About's license search shows only the match count in headings, not matche
 area: UI-SHELL
 kind: parity
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -47,4 +47,5 @@ Fix plan (as suggested): in `ui/src/components/about/AboutDialog.svelte` pass `t
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`ui/src/components/about/AboutDialog.svelte`: while searching, every heading count is `shelf.matchCount` 「{shown} / {total}」, the totals from the lists before filtering (`list.sounds`, `list.fonts`, `partGroups(parts, "")` per license). Not searching: the plain count as before.
+Test: `ui/tests/about.test.ts` "the search box filters. Headings with a match open and count 「合う数 / 全部」 (spec 3)" (changed from 「▾ MIT 1」 to 「▾ MIT 1 / 1」; 「▾ 書体 1 / 2」 added).

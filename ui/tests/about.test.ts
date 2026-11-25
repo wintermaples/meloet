@@ -249,21 +249,24 @@ describe("second page (R7-AboutLicense)", () => {
     expect(q("[data-test=about-sound]")).toBeNull();
   });
 
-  it("the search box filters. Headings with a match open", async () => {
+  it("the search box filters. Headings with a match open and count 「合う数 / 全部」 (spec 3)", async () => {
     await second();
     about.query = "tok";
     flushSync();
     expect(q("[data-test=about-sounds]")).toBeNull();
     expect(q("[data-test=about-fonts]")).toBeNull();
-    expect(all("[data-test=about-group]").map(words)).toEqual(["▾ MIT 1"]);
+    expect(all("[data-test=about-group]").map(words)).toEqual(["▾ MIT 1 / 1"]);
     expect(all("[data-test=about-part]").map(words)).toEqual(["tokio 1.0.0"]);
     about.query = "OFL";
     flushSync();
     expect(all("[data-test=about-part]").map(words)).toEqual(["IBM Plex Sans JP OFL-1.1", "IBM Plex Mono OFL-1.1"]);
     about.query = "Salamander";
     flushSync();
-    expect(words(q("[data-test=about-sounds]"))).toBe("▾ 音の素材 1");
+    expect(words(q("[data-test=about-sounds]"))).toBe("▾ 音の素材 1 / 1");
     expect(all("[data-test=about-sound]")).toHaveLength(1);
+    about.query = "Mono";
+    flushSync();
+    expect(words(q("[data-test=about-fonts]"))).toBe("▾ 書体 1 / 2");
   });
 
   it("「◂ meloet について」 goes to the first page", async () => {

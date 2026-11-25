@@ -33,6 +33,9 @@
   const fonts = $derived(fontsMatching(list.fonts, about.query));
   const parts = $derived(allParts(list));
   const groups = $derived(partGroups(parts, about.query));
+  const groupTotals = $derived(new Map(partGroups(parts, "").map((g) => [g.group, g.parts.length])));
+  // While searching, a heading counts 「合う数 / 全部」 (spec 3).
+  const countText = (shown: number, total: number): string => (searching ? t("shelf.matchCount", { shown, total }) : String(shown));
 
   let fullTexts = $state<TextsFile | null>(null);
   $effect(() => {
@@ -66,7 +69,7 @@
   {#if opened}{@render textBox(key)}{/if}
 {/snippet}
 
-{#snippet sectionHead(name: string, count: number, open: boolean, onclick: () => void, test: string)}
+{#snippet sectionHead(name: string, count: string, open: boolean, onclick: () => void, test: string)}
   <button type="button" class="hd m-focus-in" {onclick} data-test={test}>
     <span class={open ? "strong" : "label"}>{open ? "▾" : "▸"}</span>
     <span class="strong grow">{name}</span>
@@ -135,7 +138,7 @@
           </label>
 
           {#if sounds.length}
-            {@render sectionHead(t("about.sounds"), sounds.length, searching || about.sections.sounds, () => toggleSection("sounds"), "about-sounds")}
+            {@render sectionHead(t("about.sounds"), countText(sounds.length, list.sounds.length), searching || about.sections.sounds, () => toggleSection("sounds"), "about-sounds")}
             {#if searching || about.sections.sounds}
               {#if soundsPlace}
                 <div class="fields" data-test="about-sounds-place"><div class="field"><span class="mono label">{soundsPlace}</span></div></div>
@@ -157,7 +160,7 @@
           {/if}
 
           {#if fonts.length}
-            {@render sectionHead(t("about.fonts"), fonts.length, searching || about.sections.fonts, () => toggleSection("fonts"), "about-fonts")}
+            {@render sectionHead(t("about.fonts"), countText(fonts.length, list.fonts.length), searching || about.sections.fonts, () => toggleSection("fonts"), "about-fonts")}
             {#if searching || about.sections.fonts}
               {#each fonts as f (f.package)}
                 {@render itemRow(partKey({ name: f.package, version: f.version }), f.name, f.license)}
@@ -169,7 +172,7 @@
             <div class="parts-label"><span class="label">{t("about.parts")}</span></div>
             {#each groups as g (g.group)}
               {@const open = groupOpen(g.group)}
-              {@render sectionHead(g.label, g.parts.length, open, () => toggleGroup(g.group), "about-group")}
+              {@render sectionHead(g.label, countText(g.parts.length, groupTotals.get(g.group) ?? g.parts.length), open, () => toggleGroup(g.group), "about-group")}
               {#if open}
                 {#each g.parts as p (partKey(p))}
                   {@render itemRow(partKey(p), p.name, p.version)}

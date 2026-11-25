@@ -1,6 +1,7 @@
 // Reads the bar and beat lines from the tempo map (tempoMap.ts). Even when time signatures change the bar length, the ruler, grid and snapping use the same lines.
 // Knows neither the DOM nor Tauri. Not used at 60 Hz (only when scrolling or when the song changes).
 
+import { RANGE_MARK } from "../text";
 import { TempoMap, type TimelineShape } from "./tempoMap";
 import { TICKS_PER_QUARTER } from "./ticks";
 
@@ -147,7 +148,7 @@ export function tickOfPosition(map: TempoMap, bar: number, beat: number, tick: n
 }
 
 /** The range text for typing a 「ティック」 (「0〜1919」, or 「0〜0959」 in 6/8). */
-export const tickRangeText = (perBeat: number) => `0〜${String(perBeat - 1).padStart(4, "0")}`;
+export const tickRangeText = (perBeat: number) => `0${RANGE_MARK}${String(perBeat - 1).padStart(4, "0")}`;
 
 /** Line kinds: 0 bar start, 1 beat start, 2 finer lines. */
 export type LineKind = 0 | 1 | 2;

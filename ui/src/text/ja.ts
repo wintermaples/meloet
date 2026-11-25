@@ -3383,3 +3383,10 @@ export const STATUS_JOIN = " ・ ";
 
 /** The joint before the last 「と」 when listing three or more names (spec 6 「棚をひらいている（見出し）」, as in 「ピアノ ・ 鍵盤、ギター と ベース」). */
 export const LIST_COMMA = "、";
+
+/** The mark between the two ends of a range (spec 6 "Typed a value out of range", 「1〜127」). */
+export const RANGE_MARK = "〜";
+
+/** The brackets around a short note after a name (spec 6 "Recording vocals", 「6 歌（入口 1）」). */
+export const BRACKET_OPEN = "（";
+export const BRACKET_CLOSE = "）";

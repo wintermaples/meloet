@@ -2,7 +2,7 @@
 // When clamped, also returns the contents of the ClampValue to send (field, value, range). Pure functions with no DOM.
 
 import type { ValueField } from "../bridge";
-import { tempoText } from "./format";
+import { rangeText, tempoText } from "./format";
 import { barAt, barsMap, perBeatOf, tickOfPosition, tickRangeText } from "../time/bars";
 import { METER_DENS, METER_NUM_MAX, positionText, TEMPO_MAX, TEMPO_MIN, type Bars, type Meter } from "./time";
 
@@ -76,7 +76,7 @@ export function readBars(s: string, max: number): Read<number> | null {
   const raw = readScaled(s, 0);
   if (raw === null || !/^-?\d+$/.test(tidy(s))) return null;
   const value = clampTo(raw, 1, max);
-  return { value, clamp: value === raw ? null : { field: "bars", value: String(value), range: `1〜${max}` } };
+  return { value, clamp: value === raw ? null : { field: "bars", value: String(value), range: rangeText("1", String(max)) } };
 }
 
 /** Velocity (1 to 127). */
@@ -110,7 +110,7 @@ export function readPosition(s: string, bars: Bars): Read<number> | null {
     bar !== barRaw
       ? { field: "bar", value: shown, range: null }
       : beat !== beatRaw
-        ? { field: "beat", value: shown, range: `1〜${num}` }
+        ? { field: "beat", value: shown, range: rangeText("1", String(num)) }
         : tick !== tickRaw
           ? { field: "tick", value: shown, range: tickRangeText(perBeat) }
           : null;

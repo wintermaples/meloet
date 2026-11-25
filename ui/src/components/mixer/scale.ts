@@ -61,7 +61,7 @@ export const clampPan = (pan: number): number => Math.max(-100, Math.min(100, Ma
 
 /** Typed dB (「-3」「−3.0」「+2 dB」「−∞」). Out-of-range values are brought into range by Rust. undefined if it cannot be read. */
 export function parseDb(text: string): number | null | undefined {
-  const s = text.trim().replace(/[−ー]/g, "-").replace(/\s*dB$/i, "");
+  const s = text.normalize("NFKC").trim().replace(/[−ー]/g, "-").replace(/\s*dB$/i, "");
   if (/^-?(∞|inf)$/i.test(s)) return null;
   if (!/^[+-]?(\d+(\.\d*)?|\.\d+)$/.test(s)) return undefined;
   return Math.round(Number(s) * 100) / 100;
@@ -69,7 +69,7 @@ export function parseDb(text: string): number | null | undefined {
 
 /** Typed pan (「C」「L 20」「R20」「-20」「20」). undefined if it cannot be read. */
 export function parsePan(text: string): number | undefined {
-  const s = text.trim().replace(/[−ー]/g, "-").toUpperCase();
+  const s = text.normalize("NFKC").trim().replace(/[−ー]/g, "-").toUpperCase();
   if (s === t("mixer.panCenter").toUpperCase() || s === "0") return 0;
   const m = s.match(/^([LR])\s*(\d+)$/);
   if (m) return clampPan(Number(m[2]) * (m[1] === "L" ? -1 : 1));

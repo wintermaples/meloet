@@ -4,7 +4,7 @@ title: Right arrow does nothing at the bottom of compressor attack, delay interv
 area: UI-MIX
 kind: bug
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -43,4 +43,4 @@ Fix plan (as suggested): in `ui/src/components/params/paramRows.ts` `keyStep`, w
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`ui/src/components/params/paramRows.ts` `keyStep`: when one twentieth of the bar rounds back to the same value, it moves by one unit of the last shown place. Test: `ui/tests/fix-ui-values.test.ts` "UI-MIX-003: → moves at the bottom of log-scale rows".

@@ -4,7 +4,7 @@ title: Typed fader or send dB out of range keeps showing the typed number when R
 area: UI-MIX
 kind: bug
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -44,4 +44,4 @@ Fix plan: in `ui/src/components/mixer/control.svelte.ts` `submit`, do not keep t
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`ui/src/components/mixer/control.svelte.ts` `submit`: the typed value (`keyed`) is kept only until the state has reached the rev that answers it; then the strip shows the song value. Test: `ui/tests/fix-ui-values.test.ts` "UI-MIX-005: a typed value Rust keeps as it was".

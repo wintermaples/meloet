@@ -4,7 +4,7 @@ title: After an unreadable Enter, the mixer, metronome and percent typing boxes 
 area: UI-PARITY
 kind: bug
 severity: low
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -53,4 +53,4 @@ Fix plan: in `ui/src/components/params/ValueField.svelte` set `done` back to fal
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`ui/src/components/params/ValueField.svelte`: after Enter, when the box is still there after the next tick (text that could not be read), `done` goes back to false, so leaving the box stops it. No parent changed. Test: `ui/tests/fix-ui-values.test.ts` "UI-PARITY-007: after an Enter that could not be read, leaving the box closes it".

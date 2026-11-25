@@ -15,7 +15,7 @@
   import { EFFECT_PARAMS, type EffectKind, type InsertRef } from "../../bridge/types";
   import { forgetHand, noteHand } from "../automation/handValue";
   import { term } from "../../lib/tip.svelte";
-  import { send } from "../../state/app.svelte";
+  import { current, send } from "../../state/app.svelte";
   import { findTerm, t } from "../../text";
   import { metrics } from "../metrics.svelte";
   import { onDragCancel } from "../pianoroll/view.svelte";
@@ -70,12 +70,32 @@
       if (!dragging) held = null;
     });
   });
+  /** The rev that answers the last step sent; `held` goes once the state has reached it, even when `value` did not change. */
+  let answer = $state.raw<{ rev: number | null } | null>(null);
+  $effect(() => {
+    const a = answer;
+    if (!a || a.rev === null || current.rev < a.rev) return;
+    untrack(() => {
+      answer = null;
+      if (!dragging) held = null;
+    });
+  });
 
-  function set(v: number, commit: boolean): void {
+  function set(v: number, commit: boolean): Promise<number | null> {
     const c = command(v, commit);
     if (commit) forgetHand(c);
     else noteHand(c);
-    send(c);
+    return send(c);
+  }
+
+  /** Sends one step and shows `v` until Rust's answer has come. */
+  function commitStep(v: number): void {
+    held = v;
+    const mine = { rev: null as number | null };
+    answer = mine;
+    void set(v, true).then((rev) => {
+      if (answer === mine) answer = { rev: rev ?? -Infinity };
+    });
   }
 
   function at(ev: PointerEvent): number {
@@ -104,7 +124,8 @@
     if (ev.button !== 0 || !bar || disabled) return;
     ev.preventDefault();
     bar.setPointerCapture?.(ev.pointerId);
-    from = value;
+    from = shown;
+    answer = null;
     previewed = false;
     lastSent = null;
     dragging = true;
@@ -127,8 +148,7 @@
       held = null;
       return;
     }
-    held = v;
-    set(v, true);
+    commitStep(v);
   }
 
   function cancel(): boolean {
@@ -144,14 +164,14 @@
     const off = onDragCancel(cancel);
     return () => {
       off();
+      cancel();
       stopFrame();
     };
   });
 
   function change(v: number): void {
     if (v === shown) return;
-    held = v;
-    set(v, true);
+    commitStep(v);
   }
 
   // Spec 4 "In the parameters: move the value / move it finely" (← →, Shift ← →). Each press is one step.

@@ -5,6 +5,7 @@ Findings of a sweep over the code (`crates/` and `ui/`): bugs, UI/UX problems, a
 - One file per finding in [`reports/`](reports/), all in the form of [`TEMPLATE.md`](TEMPLATE.md).
 - Make a report with `python3 -I tools/bugs/report.py new --area <AREA> --kind bug|ui-ux|parity --severity high|medium|low --title "<one line>"`, then fill the sections. Do not copy the template by hand.
 - `python3 -I tools/bugs/report.py index` checks every report and writes [`INDEX.md`](INDEX.md).
+- `python3 -I tools/bugs/html.py` writes [`report.html`](report.html): every report and every "later" line on one page for reading in a browser (search, filters by severity, kind and area; `report.html#<ID>` opens one report). Run it again after reports change.
 - Things that are not bugs but are worth a look later (slowness, spec and mock disagreeing, design worries) go in [`later/`](later/), one file per area, one line each. They are not fixed in the sweep.
 
 ## Fields

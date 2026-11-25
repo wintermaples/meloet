@@ -4,7 +4,7 @@ title: L with no loop range while playing makes the 4-bar range at the bar where
 area: CORE-PLAY-A
 kind: bug
 severity: medium
-status: confirmed
+status: fixed
 found: 2026-11-25
 ---
 
@@ -49,4 +49,6 @@ Fix plan: `crates/meloet-core/src/play.rs` `toggle_loop`: `map.meter_at(self.pla
 
 ## Fix
 
-<!-- Filled after fixing: the commit, the test that now watches it. -->
+`crates/meloet-core/src/play.rs` `toggle_loop`: the 4 bars start at the bar of `play_line()` (what the listener hears while moving; `position` when stopped).
+
+Test (in `play/tests.rs`): `the_loop_turned_on_with_no_range_while_playing_takes_the_bar_of_the_play_line`.

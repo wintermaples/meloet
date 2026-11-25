@@ -1849,7 +1849,11 @@ impl Model {
             }
             Command::ToggleLoop => self.play.toggle_loop(effects),
             Command::SetLoop { from_bar, to_bar } => self.play.set_loop(from_bar, to_bar, effects),
-            Command::SelectClip { clip } => self.play.select_clip(clip),
+            Command::SelectClip { clip } => {
+                let before = self.play.selected_vocal();
+                self.play.select_clip(clip);
+                self.no_input_if_vocal_selected(before);
+            }
             Command::SelectTrack { track, from_arm } => {
                 if let Some(n) = self.play.select_track(track, from_arm) {
                     self.notice = Some(n);
@@ -2051,7 +2055,11 @@ impl Model {
                 }
             }
             Command::StopSample => self.play.stop_sample(effects),
-            Command::SelectClips { clips, mode } => self.play.select_clips(clips, mode),
+            Command::SelectClips { clips, mode } => {
+                let before = self.play.selected_vocal();
+                self.play.select_clips(clips, mode);
+                self.no_input_if_vocal_selected(before);
+            }
             Command::SelectAllClips => self.play.select_all_clips(),
             Command::CopyClips { clips } => self.play.copy_clips(&clips),
             Command::CutClips { clips } => self.play.cut_clips(&clips, effects),
@@ -2698,6 +2706,15 @@ impl Model {
     fn say(&mut self, play: impl FnOnce(&mut Play) -> Option<StatusMessage>) {
         if let Some(n) = play(&mut self.play) {
             self.notice = Some(n);
+        }
+    }
+
+    /// A click on a clip made a vocal track the selected one: with no input, says so as a
+    /// click on its header does.
+    fn no_input_if_vocal_selected(&mut self, before: Option<meloet_model::TrackId>) {
+        let now = self.play.selected_vocal();
+        if now.is_some_and(|v| before != Some(v)) && !self.has_input() {
+            self.notice = Some(StatusMessage::NoInput);
         }
     }
 

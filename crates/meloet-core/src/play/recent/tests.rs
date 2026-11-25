@@ -609,6 +609,25 @@ fn one_key_held_under_thousands_of_controller_moves_stays() {
 }
 
 #[test]
+fn one_key_let_go_under_thousands_of_controller_moves_keeps_its_length() {
+    let mut m = at_120();
+    let mut items = vec![still(0, S, on(60)), still(0, S + 250_000, off(60))];
+    items.extend((0..5000u64).map(|i| {
+        let kind = RecEventKind::Cc {
+            number: 1,
+            value: (i % 128) as u8,
+        };
+        still(0, S + 251_000 + i * 100, kind)
+    }));
+    played(&mut m, &items);
+    keep(&mut m, 2 * S);
+    let clip = clips(&m)[0].clone();
+    assert_eq!(notes(&m, &clip), [(60, 0, (Q / 2) as u32)]);
+    let take = TakeNotes::decode(&m.take_notes(clip.take_id).unwrap()).unwrap();
+    assert_eq!(take.controls.len(), MAX_EVENTS - 2, "the newest moves");
+}
+
+#[test]
 fn what_is_held_is_read_anew_after_a_recording_took_the_keys() {
     let pedal_down = HeldNow {
         keys: 0,

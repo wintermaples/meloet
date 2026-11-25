@@ -271,8 +271,15 @@ fn the_stream_opening_gets_everything() {
     assert_eq!(o[8], EngineOp::PlayTarget { seat: Some(0) });
     assert_eq!(o[9], EngineOp::MasterAutomation { lanes: vec![] });
     assert_eq!(
+        o[10],
+        EngineOp::Automation {
+            seat: 0,
+            lanes: vec![]
+        }
+    );
+    assert_eq!(
         o.len(),
-        10,
+        11,
         "the instruments stay as they are in the engine"
     );
 }
@@ -347,6 +354,22 @@ fn the_loop_turned_on_with_no_range_takes_four_bars_from_the_current_one() {
     assert!(m.view().song.loop_range.is_some());
     cmd(m, Command::GoToStart);
     assert_eq!(m.view().transport.position, 0);
+}
+
+#[test]
+fn the_loop_turned_on_with_no_range_while_playing_takes_the_bar_of_the_play_line() {
+    let m = &mut ready();
+    cmd(m, Command::PlayStop);
+    hear(m, 1, (19 * BAR + 300) as f64, TransportState::Playing, 0);
+    let o = ops(&cmd(m, Command::ToggleLoop));
+    assert_eq!(
+        o,
+        [EngineOp::Loop {
+            start: 19 * BAR,
+            end: 23 * BAR,
+            on: true
+        }]
+    );
 }
 
 #[test]

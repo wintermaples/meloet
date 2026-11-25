@@ -289,3 +289,37 @@ fn values_of_a_built_in_effect_are_one_step() {
     };
     assert_eq!(ask(&mut r, empty), AiAnswer::Refused(AiRefusal::SlotEmpty));
 }
+
+#[test]
+fn a_list_of_parameters_nobody_takes_within_a_second_is_not_given() {
+    let mut r = Rig::new();
+    let (surge, _, place) = surge(&mut r);
+    let list = |r: &mut Rig| ask(r, AiAsk::PluginParams { place });
+    let level = |answer: AiAnswer| match answer {
+        AiAnswer::Params(AiParams::Listed(list)) => list[0].value,
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(list(&mut r), AiAnswer::Params(AiParams::Waiting));
+    r.settle();
+    assert_eq!(level(list(&mut r)), Some(FRESH[0]));
+
+    // Asked again, and the list comes after the AI link stopped waiting for it.
+    assert_eq!(list(&mut r), AiAnswer::Params(AiParams::Waiting));
+    r.settle();
+    r.host.now_us += AI_LIST_KEEP_US + 1;
+    let turned = r.host.turn(surge, LEVEL, 0.25);
+    r.go(turned);
+    // A later read is not given that old list: the plugin is asked anew.
+    let effects = r.go(Input::Ai(AiAsk::PluginParams { place }));
+    assert_eq!(
+        r.m.take_ai_answer(),
+        Some(AiAnswer::Params(AiParams::Waiting))
+    );
+    let asked = PluginAsk::Params { ask: AI_PARAMS_ASK };
+    assert!(effects.contains(&Effect::AskPlugin {
+        ticket: surge,
+        ask: asked
+    }));
+    r.settle();
+    assert_eq!(level(list(&mut r)), Some(0.25));
+}

@@ -69,8 +69,9 @@ pub(super) struct Panel {
     owed: Vec<Dragged>,
     /// A step is being made of a change the plugin has already: the drags go on.
     own_step: bool,
-    /// Lists the AI link asked for, by the plugin's ticket, until it takes them.
-    ai_lists: HashMap<u64, Vec<ParamInfo>>,
+    /// Lists the AI link asked for, by the plugin's ticket, and when each came (`now_us`),
+    /// until it takes them.
+    ai_lists: HashMap<u64, (Vec<ParamInfo>, u64)>,
     /// The plugins asked for a list for the AI link, and when (`now_us`).
     ai_asked: Vec<(u64, u64)>,
     /// The sets of parameters the AI link asked for, the newest last; the last few that
@@ -109,6 +110,9 @@ struct AiTexts {
 const AI_PARAMS_ASK: u64 = u64::MAX - 1;
 /// How long a list asked for the AI link is waited for before it is asked again.
 const AI_ASK_AGAIN_US: u64 = 2_000_000;
+/// How long a list a plugin gave for the AI link waits for it to take it: the AI link asks
+/// every 50 ms while it waits.
+const AI_LIST_KEEP_US: u64 = 1_000_000;
 /// Sets of the AI link that ended and are kept for it to read.
 const AI_SETS_KEPT: usize = 16;
 /// Sets that have not ended are dropped beyond this many (a plugin that never answers).
@@ -233,10 +237,12 @@ impl Play {
         effects: &mut Vec<Effect>,
     ) -> Result<AiParams, AiRefusal> {
         let ticket = self.ai_ticket(place)?;
-        if let Some(list) = self.panel.ai_lists.remove(&ticket) {
+        let now = self.now_us;
+        let lists = &mut self.panel.ai_lists;
+        lists.retain(|_, (_, at)| now.saturating_sub(*at) <= AI_LIST_KEEP_US);
+        if let Some((list, _)) = lists.remove(&ticket) {
             return Ok(AiParams::Listed(list.into_iter().map(ai_param).collect()));
         }
-        let now = self.now_us;
         let asked = &mut self.panel.ai_asked;
         asked.retain(|(_, at)| now.saturating_sub(*at) < AI_ASK_AGAIN_US);
         if !asked.iter().any(|(t, _)| *t == ticket) {
@@ -870,8 +876,11 @@ impl Play {
                 ask: AI_PARAMS_ASK,
                 params,
             } => {
+                let now = self.now_us;
                 self.panel.ai_asked.retain(|(t, _)| *t != ticket);
-                self.panel.ai_lists.insert(ticket, params);
+                let lists = &mut self.panel.ai_lists;
+                lists.retain(|_, (_, at)| now.saturating_sub(*at) <= AI_LIST_KEEP_US);
+                lists.insert(ticket, (params, now));
             }
             PluginSaid::Params { ask, params } => self.params_listed(ticket, ask, params),
             PluginSaid::State {
@@ -930,7 +939,11 @@ impl Play {
             (StateAsk::Param { ai: Some(ai), .. }, None) => {
                 self.ai_set_ended(ai, AiSetEnd::NoState)
             }
-            (StateAsk::Base | StateAsk::Param { .. }, None) | (StateAsk::Copy(_), _) => {}
+            (StateAsk::Confirm { at, puts }, Some(state)) => {
+                self.confirm_state_said(ticket, (at, puts), state, effects);
+            }
+            (StateAsk::Base | StateAsk::Param { .. } | StateAsk::Confirm { .. }, None)
+            | (StateAsk::Copy(_), _) => {}
             (StateAsk::Entered(_) | StateAsk::Left(_), state) => {
                 self.visit_state(ticket, ask, state, effects);
             }

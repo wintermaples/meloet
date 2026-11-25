@@ -483,6 +483,10 @@ pub enum StateAsk {
     },
     /// For the copy 「トラックを複製」 makes of its track; the number of the duplicate.
     Copy(u64),
+    /// For the step of the shelf's 「決める」 that made the auditioned plugin a track's
+    /// instrument, which is to hold its state. `at`: the song and the number of its `Doc`
+    /// right after that step; `puts` as for `Param`.
+    Confirm { at: (u32, u64), puts: u32 },
 }
 
 /// Where [`Effect::SaveSong`] writes.

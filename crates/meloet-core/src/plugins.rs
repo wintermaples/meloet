@@ -395,6 +395,9 @@ impl Plugins {
                 None
             }
             ScanNews::Bundle { record, .. } => {
+                if let Some((done, _)) = &mut self.jobs.front_mut()?.count {
+                    *done += 1;
+                }
                 // A place that was removed while its scan ran.
                 self.place_of(&record.path)?;
                 let before = self.cache.get(&record.path);
@@ -404,11 +407,7 @@ impl Plugins {
                     .filter(|p| before.is_none_or(|b| b.plugins.iter().all(|q| q.key != p.key)))
                     .count();
                 self.cache.put(*record);
-                let job = self.jobs.front_mut()?;
-                job.new += new as u32;
-                if let Some((done, _)) = &mut job.count {
-                    *done += 1;
-                }
+                self.jobs.front_mut()?.new += new as u32;
                 if now_us.saturating_sub(self.saved_us) >= SAVE_EVERY_US {
                     self.save(now_us, effects);
                 }
@@ -561,5 +560,36 @@ mod tests {
         assert!(view.places.iter().all(|p| !p.added));
         assert_eq!(view.scan, ScanView::Idle);
         assert!(view.stopped.is_empty() && !view.stopped_open && !view.places_open);
+    }
+
+    #[test]
+    fn a_bundle_of_a_place_removed_during_a_scan_again_counts_as_done() {
+        let vars = |name: &str| (name == "HOME").then(|| OsString::from("/home/me"));
+        let mut p = Plugins::new(vars, vec!["/x".into()]);
+        let effects = &mut Vec::new();
+        p.start(ScanCache::default(), false, effects);
+        p.news(ScanNews::Done { job: 1 }, 0, effects);
+        p.rescan(effects);
+        let counted = ScanNews::Counted {
+            job: 2,
+            total: 2,
+            gone: Vec::new(),
+        };
+        p.news(counted, 0, effects);
+        assert!(p.remove_place("/x", 0, effects));
+        let record = BundleRecord {
+            path: "/x/y.lv2".into(),
+            format: meloet_plugin::PluginFormat::Lv2,
+            stamp: meloet_plugin::scan::BundleStamp {
+                modified_ns: 1,
+                size: 1,
+            },
+            plugins: Vec::new(),
+            stopped: Vec::new(),
+        };
+        let record = Box::new(record);
+        p.news(ScanNews::Bundle { job: 2, record }, 0, effects);
+        assert_eq!(p.view().scan, ScanView::Running { done: 1, total: 2 });
+        assert!(p.cache().get(Path::new("/x/y.lv2")).is_none());
     }
 }
